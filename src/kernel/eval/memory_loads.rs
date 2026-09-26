@@ -193,6 +193,21 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
             })
         })
         .or_else(|| {
+            // The cell may be stored under another spelling of this address:
+            // a C store through `p` after the path proved `p == id`, read
+            // here through `id`. The equality holds on this path, so the
+            // stored value is this snapshot's value at the address. Only a
+            // block the pointer classes put with others is retried.
+            assumptions
+                .pointer_classes
+                .other_spellings(&pointer)
+                .into_iter()
+                .find_map(|spelling| {
+                    let stored = memory.known_value(&spelling)?;
+                    value_type.accepts(&stored).then_some(stored)
+                })
+        })
+        .or_else(|| {
             canonicalized_symbolic_load_value_with_identity(
                 memory,
                 &pointer,

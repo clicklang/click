@@ -5700,9 +5700,27 @@ impl<'a> Proof<'a> {
             "`simp` failed for `{}`: could not establish {goal}{}",
             self.claim_label(),
             self.describe_goal_version_mismatch()
+                .or_else(|| self.describe_goal_decided_false())
                 .map(|mismatch| format!("\n  {mismatch}"))
                 .unwrap_or_default(),
         ))
+    }
+
+    /// A goal whose reads all resolved to values, and that is false with
+    /// them whatever else holds, is not merely unproved: it is refuted at
+    /// this point. Saying so sends the reader to what was read, not to look
+    /// for a missing fact.
+    fn describe_goal_decided_false(&self) -> Option<String> {
+        let Proposition::ConditionIs(condition, expected) = self.goal()? else {
+            return None;
+        };
+        (crate::surface::checking::simp_condition_without_assumptions(condition)
+            == Some(!*expected))
+        .then(|| {
+            "it is false at this point: the values its reads resolve to here refute it, so no \
+             further fact proves it."
+                .to_string()
+        })
     }
 
     /// The one explanation for "the goal and an available fact spell alike

@@ -11,6 +11,12 @@ question to `x`, and `x` is not proven distinct from itself. A rule that
 separated a local from a pointer a call returned, rather than resolving it,
 would admit this.
 
+The read now resolves through the proved pointer equality to the cell the later
+store wrote, so the claim is refuted outright rather than left unproved: the
+pointer classes that make an equal spelling's cell visible
+(`mdtests/load_through_a_pointer_alias_after_a_store.md`) are the same
+substitution of equals this test guards.
+
 ```c filename=returned_pointer_to_a_caller_local_may_alias_it.c
 int32* echo(int32* p) { return p; }
 
@@ -49,5 +55,5 @@ void v4() {
 ```
 
 ```expect
-fail: the store to `x` may have written it, and nothing tells that address apart from this read.
+fail: it is false at this point
 ```

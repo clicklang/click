@@ -150,7 +150,23 @@ Each stage lands green with its regressions and scaling curves:
    - The rbtree leaf's refold now finds its cells, but still fails to relate
      the child's pointer argument, loaded through the unfold's spelling, to
      `yid->rb_left`. That is load congruence, so the leaf needs stage 2.
-2. Loads.
+2. Loads. Started:
+   - A specification read that misses its exact cell looks the cell up at the
+     other spellings of the address that the pointer classes give. So
+     `have id->word == 5` after `p->word = 5` holds
+     (`mdtests/load_through_a_pointer_alias_after_a_store.md`, with the
+     negative `load_through_an_unrelated_pointer_rejected.md`).
+   - Load *names* stay keyed by exact spelling. The load-variable registry is
+     global across paths, so a name cannot depend on one path's equalities.
+     Load congruence belongs in each path's reasoning, not in naming.
+   - Open design point. A pointer loaded from memory is encoded as
+     `source.block + load(M, source) × width`, borrowing the block of the
+     spelling it was read through (`symbolic_pointer_load`). The same loaded
+     value read through two proved-equal spellings therefore gets two
+     representations whose difference is the spellings' base offset. That is
+     what still stops the rbtree leaf: the child argument `yid->rb_left`
+     evaluates to `yid.block + 4u`, while the unfold's reads gave
+     `ugp.block + 4u`. The classes correctly refuse to call these equal.
 3. Bitvector terms.
 4. Algebraic terms and pure-function applications.
 5. Tactics modulo the closure, plus a kernel-checked equality rule for

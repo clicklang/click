@@ -14,6 +14,12 @@ cannot offer a `separate(..)` here: the read has no source spelling of its own,
 because it goes through a pointer the function received rather than an object
 it names.
 
+The read now resolves through the proved pointer equality to the cell the later
+store wrote, so the claim is refuted outright rather than left unproved: the
+pointer classes that make an equal spelling's cell visible
+(`mdtests/load_through_a_pointer_alias_after_a_store.md`) are the same
+substitution of equals this test guards.
+
 ```c filename=returned_pointer_may_alias_a_global.c
 int32 g[4];
 
@@ -52,5 +58,5 @@ void f() {
 ```
 
 ```expect
-fail: the store to `g[0]` may have written it, and nothing tells that address apart from this read.
+fail: it is false at this point
 ```
