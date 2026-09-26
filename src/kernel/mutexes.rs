@@ -106,10 +106,55 @@ pub(super) struct MutexLedger {
     storage: Arc<MutexLedgerStorage>,
 }
 
+/// Coarse provenance buckets for retirement queries. A bucket may include
+/// conservatively ambiguous pointers, but must never omit a possible alias.
+/// Keeping fresh and concrete objects out of the ambiguous buckets avoids
+/// scanning unrelated initializations on every allocation retirement.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum StorageProvenance {
+    Local,
+    Global,
+    Fresh,
+    External,
+    Symbolic,
+    Other,
+}
+
+impl StorageProvenance {
+    fn of(block: &super::PointerBlock) -> Self {
+        use super::PointerBlock;
+        match block {
+            PointerBlock::Concrete(name) if name.starts_with("local:") => Self::Local,
+            PointerBlock::Concrete(_) => Self::Global,
+            PointerBlock::Heap(_) | PointerBlock::Temporary(_) => Self::Fresh,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_) => Self::External,
+            PointerBlock::Symbolic(_) => Self::Symbolic,
+            PointerBlock::Function(_)
+            | PointerBlock::FunctionSymbolic(_)
+            | PointerBlock::StringLiteral { .. } => Self::Other,
+        }
+    }
+
+    /// Possible aliases *outside* the queried block. Same-block footprints
+    /// are visited through `by_block`, including fresh and concrete objects.
+    fn cross_block_candidates(self) -> &'static [Self] {
+        use StorageProvenance::*;
+        match self {
+            Fresh => &[Symbolic],
+            Local => &[Symbolic, Other],
+            Global => &[Symbolic, External, Other],
+            External => &[Symbolic, Global, External, Other],
+            Symbolic => &[Local, Global, Fresh, External, Symbolic, Other],
+            Other => &[Local, Global, External, Symbolic, Other],
+        }
+    }
+}
+
 struct MutexLedgerStorage {
     identity: u64,
     entries: PersistentMap<Pointer, MutexEntry>,
     by_block: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
+    by_provenance: PersistentMap<StorageProvenance, PersistentMap<Pointer, u32>>,
     /// Initializations whose symbolic provenance may name any automatic object.
     /// Kept separately so a scope exit never scans unrelated concrete mutexes.
     ambiguous_automatic_storage: PersistentMap<Pointer, ()>,
@@ -618,6 +663,7 @@ impl MutexLedger {
                 identity: Self::fresh_identity(),
                 entries: PersistentMap::default(),
                 by_block: PersistentMap::default(),
+                by_provenance: PersistentMap::default(),
                 ambiguous_automatic_storage: PersistentMap::default(),
                 locked_count: 0,
                 return_obligation_count: 0,
@@ -631,17 +677,30 @@ impl MutexLedger {
         self.storage.entries.get(mutex)
     }
 
-    /// Visit only initialization footprints in the allocation's symbolic block.
-    /// Ambiguous same-block overlaps require proof of separation; distinct
-    /// concrete allocations never scan each other's mutexes.
+    /// Visit the queried block and provenance buckets that can alias it.
+    /// A different symbolic spelling is not proof of disjoint storage.
+    /// Separation facts discharge ambiguous footprints; fresh unrelated
+    /// allocations and concrete objects are excluded by the index.
     fn storage_retirement_refusal(
         &self,
         allocation: &super::CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<super::CRuntimeError> {
-        let entries = self.storage.by_block.get(&allocation.base().block)?;
+        let block = &allocation.base().block;
+        let direct = self
+            .storage
+            .by_block
+            .get(block)
+            .into_iter()
+            .flat_map(|entries| entries.iter());
+        let possible_aliases = StorageProvenance::of(block)
+            .cross_block_candidates()
+            .iter()
+            .filter_map(|provenance| self.storage.by_provenance.get(provenance))
+            .flat_map(|entries| entries.iter())
+            .filter(|(mutex, _)| &mutex.block != block);
         let allocation_resource = CResource::Memory(allocation.clone());
-        for (mutex, bytes) in entries.iter() {
+        for (mutex, bytes) in direct.chain(possible_aliases) {
             crate::instrumentation::record_deterministic_work(1);
             let storage = CResource::Memory(super::CMemoryRange::new_with_element_width(
                 mutex.clone(),
@@ -670,9 +729,21 @@ impl MutexLedger {
                     right: storage,
                 })
             {
-                return Some(super::CRuntimeError::MutexStorageInUse {
-                    mutex: mutex.clone(),
-                    allocation: allocation.base().clone(),
+                return Some(if &mutex.block == block {
+                    super::CRuntimeError::MutexStorageInUse {
+                        mutex: mutex.clone(),
+                        allocation: allocation.base().clone(),
+                    }
+                } else {
+                    super::CRuntimeError::MutexStorageSeparationRequired {
+                        allocation: allocation.clone(),
+                        storage: super::CMemoryRange::new_with_element_width(
+                            mutex.clone(),
+                            0u32.into(),
+                            (*bytes).into(),
+                            1,
+                        ),
+                    }
                 });
             }
         }
@@ -711,6 +782,21 @@ impl MutexLedger {
         Self {
             storage: Arc::new(MutexLedgerStorage {
                 identity: Self::fresh_identity(),
+                by_provenance: if self.get(&mutex).is_none() {
+                    let provenance = StorageProvenance::of(&mutex.block);
+                    let entries = self
+                        .storage
+                        .by_provenance
+                        .get(&provenance)
+                        .cloned()
+                        .unwrap_or_default()
+                        .with_inserted(mutex.clone(), entry.initialization().1);
+                    self.storage
+                        .by_provenance
+                        .with_inserted(provenance, entries)
+                } else {
+                    self.storage.by_provenance.clone()
+                },
                 by_block: if self.get(&mutex).is_none() {
                     let entries = self
                         .storage
@@ -758,6 +844,22 @@ impl MutexLedger {
                 } else {
                     self.storage.ambiguous_automatic_storage.clone()
                 },
+                by_provenance: {
+                    let provenance = StorageProvenance::of(&mutex.block);
+                    let entries = self
+                        .storage
+                        .by_provenance
+                        .get(&provenance)
+                        .expect("initialized mutex provenance")
+                        .without_key(mutex);
+                    if entries.is_empty() {
+                        self.storage.by_provenance.without_key(&provenance)
+                    } else {
+                        self.storage
+                            .by_provenance
+                            .with_inserted(provenance, entries)
+                    }
+                },
                 by_block: {
                     let entries = self
                         .storage
@@ -791,7 +893,7 @@ impl MutexLedger {
     }
 
     /// An unlocked empty mutex has no payload/guard return obligation yet.
-    /// Automatic-storage expiry and lifecycle output contracts remain separate gaps.
+    /// Lifecycle output contracts remain a separate gap.
     pub(super) fn has_return_obligation(&self) -> bool {
         self.storage.return_obligation_count != 0
     }
@@ -1809,6 +1911,215 @@ mod tests {
             storage_retirement_refusal(state.state(), &elsewhere, &assumptions),
             None
         );
+    }
+
+    #[test]
+    fn retirement_candidate_index_covers_every_possible_provenance_alias() {
+        use super::super::{PointerBlock, Variable};
+        // Include distinct members of every parameterized provenance class.
+        let mut blocks = vec![PointerBlock::ExternalArgument];
+        for index in 0..2 {
+            blocks.extend([
+                PointerBlock::Concrete(format!("local:{index}")),
+                PointerBlock::Concrete(format!("global:{index}")),
+                PointerBlock::Heap(index),
+                PointerBlock::Temporary(index),
+                PointerBlock::ExternalObject(Variable(index)),
+                PointerBlock::Symbolic(Variable(index)),
+                PointerBlock::FunctionSymbolic(Variable(index)),
+                PointerBlock::Function(format!("function{index}")),
+                PointerBlock::StringLiteral {
+                    identity: format!("literal{index}"),
+                    bytes: vec![0],
+                },
+            ]);
+        }
+        for allocation in &blocks {
+            for mutex in &blocks {
+                if allocation != mutex && !allocation.proven_distinct(mutex) {
+                    assert!(
+                        StorageProvenance::of(allocation)
+                            .cross_block_candidates()
+                            .contains(&StorageProvenance::of(mutex)),
+                        "missing possible alias: {allocation:?}, {mutex:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn retirement_requires_separation_from_symbolic_initializations() {
+        use super::super::*;
+        let base = Pointer {
+            block: PointerBlock::Heap(90_000),
+            offset: PointerOffsetTerm::constant(0),
+        };
+        let symbolic = Pointer::symbolic(Variable(90_001));
+        let context = MutexContext::new(CState::new())
+            .initialize_empty(symbolic.clone(), 40)
+            .unwrap();
+        let allocation = allocation_range(base, 48);
+        let storage = allocation_range(symbolic.clone(), 40);
+        let expected = Some(CRuntimeError::MutexStorageSeparationRequired {
+            allocation: allocation.clone(),
+            storage: storage.clone(),
+        });
+        let assumptions = PureFactContext::new();
+        assert_eq!(
+            storage_retirement_refusal(context.state(), &allocation, &assumptions),
+            expected
+        );
+        let mut hidden = context
+            .acquire_current(&symbolic, &assumptions)
+            .unwrap()
+            .into_state();
+        hidden.resources = ResourceContext::new();
+        assert_eq!(
+            storage_retirement_refusal(&hidden, &allocation, &assumptions),
+            expected
+        );
+        let separated = assumptions
+            .clone()
+            .assume_proposition(Proposition::CResourceSeparate {
+                left: CResource::Memory(allocation.clone()),
+                right: CResource::Memory(storage),
+            });
+        assert!(storage_retirement_refusal(context.state(), &allocation, &separated).is_none());
+        let destroyed = context.destroy(&symbolic, &assumptions).unwrap();
+        assert!(storage_retirement_refusal(destroyed.state(), &allocation, &assumptions).is_none());
+    }
+
+    #[test]
+    fn declaration_reentry_checks_old_mutex_storage_before_replacing_it() {
+        use super::super::*;
+        let (state, address) = automatic_holder();
+        let context = MutexContext::new(state)
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let layout = CAggregateLayout::new(48, 8, vec![]);
+        let declarations = [
+            CStatement::Declare {
+                name: "holder".into(),
+                c_type: CType::Int32,
+                volatile: false,
+                pointee_volatile: false,
+                constant: false,
+                pointee_constant: false,
+            },
+            CStatement::DeclareAggregate {
+                name: "holder".into(),
+                layout: layout.clone(),
+                construction: false,
+            },
+            CStatement::DeclareAggregate {
+                name: "holder".into(),
+                layout,
+                construction: true,
+            },
+        ];
+        for declaration in declarations {
+            for hidden in [false, true] {
+                let mut state = context.state().clone();
+                if hidden {
+                    state.resources = ResourceContext::new();
+                }
+                let paths = eval::execute_c_statement_paths(
+                    &state,
+                    &declaration,
+                    &PureFactContext::new(),
+                    &CExecutionEnvironment::new(),
+                    CExecutionSemantics::EXECUTE_BODIES,
+                    &mut ExecutionBudget::new(),
+                )
+                .unwrap();
+                assert!(matches!(&paths[0].outcome,
+                    CStatementOutcome::RuntimeError(CRuntimeError::MutexStorageScopeEnd { local, mutex, may_alias: false })
+                        if local == "holder" && mutex == &address));
+            }
+            let destroyed = context.destroy(&address, &PureFactContext::new()).unwrap();
+            let paths = eval::execute_c_statement_paths(
+                destroyed.state(),
+                &declaration,
+                &PureFactContext::new(),
+                &CExecutionEnvironment::new(),
+                CExecutionSemantics::EXECUTE_BODIES,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            let CStatementOutcome::Normal(state) = &paths[0].outcome else {
+                panic!("{paths:?}")
+            };
+            assert_ne!(state.locals().slot("holder").unwrap().block, address.block);
+            assert!(!state.memory().has_block(&address.block));
+        }
+    }
+
+    #[test]
+    fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
+        use super::super::*;
+        let mut samples = vec![];
+        let assumptions = PureFactContext::new();
+        for size in [16usize, 64, 256, 1024] {
+            let mut context = MutexContext::new(CState::new());
+            for index in 0..size {
+                for block in [
+                    PointerBlock::Heap(index as u64),
+                    PointerBlock::Concrete(format!("local:{index}")),
+                ] {
+                    context = context
+                        .initialize_empty(
+                            Pointer {
+                                block,
+                                offset: PointerOffsetTerm::constant(0),
+                            },
+                            40,
+                        )
+                        .unwrap();
+                }
+            }
+            let queries = [PointerBlock::Heap(90_000), PointerBlock::ExternalArgument];
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for block in &queries {
+                    let range = allocation_range(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::constant(0),
+                        },
+                        48,
+                    );
+                    assert!(
+                        storage_retirement_refusal(context.state(), &range, &assumptions).is_none()
+                    );
+                }
+            });
+            let symbolic = Pointer::symbolic(Variable(90_001));
+            let context = context.initialize_empty(symbolic, 40).unwrap();
+            let (_, ambiguous_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for block in queries {
+                    let range = allocation_range(
+                        Pointer {
+                            block,
+                            offset: PointerOffsetTerm::constant(0),
+                        },
+                        48,
+                    );
+                    assert!(matches!(
+                        storage_retirement_refusal(context.state(), &range, &assumptions),
+                        Some(CRuntimeError::MutexStorageSeparationRequired { .. })
+                    ));
+                }
+            });
+            samples.push((size, work, ambiguous_work));
+        }
+        let (_, absent, present) = samples[0];
+        for (size, work, ambiguous) in &samples {
+            let allowance = 64 * (size.ilog2() as usize - 4);
+            assert!(
+                *work <= absent + allowance && *ambiguous <= present + allowance,
+                "retirement lookup must be logarithmic: {samples:?}"
+            );
+        }
     }
 
     #[test]

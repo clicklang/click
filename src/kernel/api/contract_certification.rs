@@ -837,6 +837,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
         CRuntimeError::MissingReturn => "missing return".to_string(),
         CRuntimeError::MutexStorageScopeEnd { local, .. } => format!("initialized mutex storage must outlive local `{local}`"),
         CRuntimeError::MutexStorageInUse { .. } => "allocation storage still contains an initialized mutex".into(),
+        CRuntimeError::MutexStorageSeparationRequired { .. } => "requires separation between retired allocation and initialized mutex storage".into(),
         CRuntimeError::UnsupportedMutexStorageRetirement => "allocation retirement in a preserving guard contract needs checked mutex lifetime authority".into(),
         CRuntimeError::MissingMutexGuard { .. } => {
             "a required mutex_guard resource is not available".to_string()

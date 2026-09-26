@@ -32,7 +32,10 @@ the complete storage-lifetime and `mutex_use` protocol remains future work.
 Heap allocation retirement now checks initialized mutex storage. The modeled
 ABI records a 40-byte mutex footprint, indexed by memory block. Direct `free`,
 `realloc`, and helper contracts that retire or may replace an allocation refuse
-an overlapping initialized mutex. Destruction removes this dependency; unlocking
+an overlapping initialized mutex. Retirement also checks indexed provenance
+classes for possible aliases, including symbolic addresses that may designate
+an allocation with a different block identity. Unresolved overlap reports the
+required `separate(...)` fact. Destruction removes this dependency; unlocking
 does not. Abstract preserving-guard contracts conservatively refuse allocation
 retirement until checked lifecycle inputs can describe their dependencies.
 This adds no surface syntax. Initialization validity, writes to mutex bytes,
@@ -58,6 +61,8 @@ retain the same conservative transition freeze as preserving guard contracts;
 Automatic storage now cannot end while it contains an initialized mutex.
 The check covers normal block exit, `break`, `continue`, `goto`, return, and
 exceptional outcomes, including the retained certificate for scope retirement.
+Re-executing a declaration checks the old object's mutex dependencies before
+replacing its storage, for scalar declarations and aggregate construction alike.
 It consults the initialization index, so folding `mutex_live` or a guard cannot
 hide the dependency. Destroying all mutexes in the object permits its lifetime
 to end; unrelated concrete objects can end independently. A symbolic mutex

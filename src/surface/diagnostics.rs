@@ -832,6 +832,12 @@ pub(super) fn describe_runtime_error(
             };
             format!("Cannot release allocation storage while {subject} remains initialized; call pthread_mutex_destroy before releasing its storage")
         }
+        crate::kernel::CRuntimeError::MutexStorageSeparationRequired { allocation, storage } =>
+            format!("Requires {}; initialized mutex storage must remain live",
+                describe_pure_fact(&Proposition::CResourceSeparate {
+                    left: CResource::Memory(allocation.clone()),
+                    right: CResource::Memory(storage.clone()),
+                }, parameters, arguments)),
         crate::kernel::CRuntimeError::UnsupportedMutexStorageRetirement =>
             "Click does not yet support freeing or reallocating storage in a preserving guard contract; checked mutex lifetime authority is required".into(),
         crate::kernel::CRuntimeError::MissingMutexGuard { mutex } => format!(

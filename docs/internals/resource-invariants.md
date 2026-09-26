@@ -278,13 +278,17 @@ Heap retirement now checks an index of initialized mutex footprints. The
 modeled binding supplies the complete ABI storage extent, retained through
 lock/unlock and removed on destruction. Direct free/realloc and allocation
 retirement at verified calls use the same check, including contracts whose
-allocation continuity is unknown. Lookup visits only footprints in the affected
-symbolic block; unrelated concrete blocks incur no scan. Ambiguous same-block
-overlap requires checked separation. Abstract preserving helpers cannot yet
+allocation continuity is unknown. Lookup visits the affected block and indexed
+provenance classes that might alias it. A symbolic pointer can name a heap
+allocation even when their block spellings differ; absence from the same-block
+index is not separation. Ambiguous overlaps require checked `separate(...)`
+facts. Unrelated fresh allocations and concrete objects incur no scan. Abstract preserving helpers cannot yet
 retire allocations, since their lifetime dependencies lack checked inputs.
 Automatic-storage expiry now checks the same initialization dependency, by
 whole object rather than by a byte-range calculation. Every scope-leaving
 outcome and the retained `AutomaticLifetimeEnd` event recheck the dependency.
+Re-executing a scalar or aggregate declaration also checks the old object's
+dependency before retiring its storage and minting a new object identity.
 A separate persistent index tracks symbolic initializations that might alias
 any local, so absence from the concrete block's index cannot imply separation.
 Those ambiguous cases are conservatively refused; unrelated concrete mutexes

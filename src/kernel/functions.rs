@@ -10137,28 +10137,43 @@ mod allocation_continuity_tests {
                 ResourceContext::new()
             };
             let interface = CFunctionContractInterface::new(CType::Void, vec![]);
-            let state = super::super::mutexes::MutexContext::new(CState::new())
-                .initialize_empty(base.offset_by_bytes(8), 40)
-                .unwrap()
-                .into_state();
-            let result = apply_verified_heap_allocation_delta(
-                state.memory.clone(),
-                &state.memory,
-                &input,
-                &empty,
-                &output,
-                &[],
-                &interface,
-                &PureFactContext::new(),
-                None,
-                &state,
-            );
-            assert!(matches!(
-                result,
-                Err(VerifiedAllocationDeltaError::Runtime(
-                    CRuntimeError::MutexStorageInUse { .. }
-                ))
-            ));
+            for mutex in [
+                base.offset_by_bytes(8),
+                Pointer::symbolic(Variable(930_006)),
+            ] {
+                let symbolic = matches!(mutex.block, PointerBlock::Symbolic(_));
+                let state = super::super::mutexes::MutexContext::new(CState::new())
+                    .initialize_empty(mutex, 40)
+                    .unwrap()
+                    .into_state();
+                let result = apply_verified_heap_allocation_delta(
+                    state.memory.clone(),
+                    &state.memory,
+                    &input,
+                    &empty,
+                    &output,
+                    &[],
+                    &interface,
+                    &PureFactContext::new(),
+                    None,
+                    &state,
+                );
+                if symbolic {
+                    assert!(matches!(
+                        result,
+                        Err(VerifiedAllocationDeltaError::Runtime(
+                            CRuntimeError::MutexStorageSeparationRequired { .. }
+                        ))
+                    ));
+                } else {
+                    assert!(matches!(
+                        result,
+                        Err(VerifiedAllocationDeltaError::Runtime(
+                            CRuntimeError::MutexStorageInUse { .. }
+                        ))
+                    ));
+                }
+            }
         }
     }
 

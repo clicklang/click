@@ -3433,6 +3433,10 @@ pub enum CRuntimeError {
         mutex: Pointer,
         allocation: Pointer,
     },
+    MutexStorageSeparationRequired {
+        allocation: CMemoryRange,
+        storage: CMemoryRange,
+    },
     UnsupportedMutexStorageRetirement,
     /// The automatic object cannot expire while initialized mutex storage
     /// is known (or may be constrained) to lie in it.

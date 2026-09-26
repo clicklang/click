@@ -2789,9 +2789,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                     *pointee_constant,
                 ) {
                     Ok(state) => CStatementOutcome::Normal(state),
-                    Err(refusal) => {
-                        CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(refusal))
-                    }
+                    Err(refusal) => CStatementOutcome::RuntimeError(refusal),
                 }
             };
             vec![CStatementExecutionPath {
@@ -2814,9 +2812,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                 declare_aggregate_local(state, name, layout)
             } {
                 Ok(state) => CStatementOutcome::Normal(state),
-                Err(refusal) => {
-                    CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(refusal))
-                }
+                Err(refusal) => CStatementOutcome::RuntimeError(refusal),
             };
             vec![CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
@@ -3778,14 +3774,16 @@ pub(in crate::kernel) fn execute_c_while_paths(
 /// so it hands out each generation once. The mint checks that against memory
 /// regardless, because this is the place the uniqueness invariant is
 /// established rather than assumed.
-fn local_declaration_pointer(
-    state: &mut CState,
-    name: &str,
-) -> Result<Pointer, crate::kernel::LoanRefusalDiagnostic> {
+fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, CRuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
         && previous.block.starts_with("local:")
     {
+        if let Some(error) =
+            crate::kernel::mutexes::automatic_storage_refusal(state, name, &previous.block)
+        {
+            return Err(error);
+        }
         let end = state
             .memory
             .block_size(&previous.block)
@@ -3802,7 +3800,7 @@ fn local_declaration_pointer(
             &PureFactContext::default(),
             crate::kernel::LoanRefusalOperation::MemoryAccess,
         ) {
-            return Err(refusal);
+            return Err(CRuntimeError::LoanRefusal(refusal));
         }
         state.set_memory(state.memory.without_local_block(&previous.block));
         return Ok(fresh_local_object_identity(state, name));
@@ -3852,7 +3850,7 @@ pub(in crate::kernel) fn declare_local(
     pointee_volatile: bool,
     constant: bool,
     pointee_constant: bool,
-) -> Result<CState, crate::kernel::LoanRefusalDiagnostic> {
+) -> Result<CState, CRuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     // A declared local's block is placed at its type's alignment; record it
@@ -4098,7 +4096,7 @@ pub(in crate::kernel) fn declare_aggregate_local(
     state: &CState,
     name: &str,
     layout: &CAggregateLayout,
-) -> Result<CState, crate::kernel::LoanRefusalDiagnostic> {
+) -> Result<CState, CRuntimeError> {
     let mut state = state.clone();
     let pointer = local_declaration_pointer(&mut state, name)?;
     register_block_alignment(&pointer.block, layout.alignment_bytes());
@@ -4119,7 +4117,7 @@ fn begin_aggregate_construction(
     name: &str,
     layout: &CAggregateLayout,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<CState, crate::kernel::LoanRefusalDiagnostic>> {
+) -> ExecutionResult<Result<CState, CRuntimeError>> {
     let mut state = match declare_aggregate_local(state, name, layout) {
         Ok(state) => state,
         Err(refusal) => return Ok(Err(refusal)),
