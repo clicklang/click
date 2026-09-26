@@ -52,7 +52,32 @@ the lemma library shows wall time. The DFS lost 560 lines mostly by importing
 the two modules instead of copying their lemmas. `unmarked_monotone` and
 `unmarked_after_first_call_decreases` had no user and were deleted.
 
+## Quantified frames (landed)
+
+`src/kernel/quantified_frame.rs` carries a quantified fact across stores and
+checked call write sets as one checked `transport`, reading the context's own
+facts under a fresh binder and the fact's guard; `simp` reaches it for
+`at(label, x) == x` as it did for `old(x) == x`
+(`docs/internals/resource-tracker.md`, "Quantified frames are checked facts,
+not names"). The DFS framing of `left`/`right`, the `visited` frame for
+`k != cur` and the point-update halves, and the completeness proof's six
+snapshot instantiations and their rewrites are gone; so are the search's
+reflexive `have`s and repeated frame premises.
+
+| File | Lines before | after | C-proof work before | after |
+| --- | ---: | ---: | ---: | ---: |
+| `branching_graph_dfs.md` | 587 | 487 | 411,737 | 472,749 |
+| `search_terminates_by_unmarked_count.md` | 294 | 238 | 35,062 | 46,079 |
+
+"Before" is the previous proof on the previous kernel; on the new kernel the
+previous proofs cost 423,359 and 37,827. The explicit quantified transports
+cost more than the per-index ones they replace (about 10k units each where a
+read's history is not recorded, so the leaf falls back to the single-fact
+transport).
+
 ## Where the remaining proof text goes
+
+Measured before the quantified frame; its framing rows are what it removed.
 
 `branching_graph_dfs.md`, 587 lines (about 555 of Click):
 
@@ -99,22 +124,15 @@ header, and ranking 42, setup and statement steps 25.
 
 What a language or tooling change could remove, largest first:
 
-1. **Snapshot stability of a viewed, separated array** (about 60 DFS lines,
-   most of the ~70 instantiation lines in completeness, both `walk_frame`
-   applications, and in the search `walk_frame` plus ~40 lines). `left`,
-   `right`, and `next` are only viewed, and every write in scope is to a
-   separated `visited` or through a callee that only views them. The resource
-   tracker could answer that the array snapshots are the same resource state,
-   so `walk(old(left), ...)` and `walk(at(after_mark, left), ...)` would be
-   one term. This is the resource-tracker direction already under design.
-2. **A store's frame as one checked fact** (about 80 DFS and 44 search lines).
-   After `visited[cur] = 1`, every quantified fact about `visited[k]` with
-   `k != cur` needs its own transport, and the point-update lemma wants two
-   half-range agreements. A checked store summary
-   (`forall k: k != cur implies at(before, visited[k]) == visited[k]`) that
-   quantified facts can cite, or `transport` of a whole quantified fact whose
-   binder guard excludes the written index without a reflexive source, would
-   remove most of it.
+1. **Array arguments that agree on `0..n`** (both `walk_frame`
+   applications in the DFS, `walk_frame` in the search). `left` and
+   `at(after_mark, left)` are different arrays: parameters share one block,
+   and a caller may pass `visited == left + n`, so the store changes `left[n]`.
+   They agree on `0..n`, and `walk_frame` is the real theorem that `walk`
+   reads nothing else. Removing it needs a checked "agree on `[lo, hi)`"
+   relation that pure functions can consume, not a name.
+2. **A store's frame as one checked fact** — landed as the quantified frame
+   above.
 3. **Path-condition use of call guarantees** (about 25 DFS lines). Inside the
    branch where `left_result == 0`, opening `left_result == 0 implies X`
    takes an `extract`/`assumption` block each time.
@@ -128,9 +146,10 @@ What a language or tooling change could remove, largest first:
    `mdtests/induction_hypothesis_owes_the_range_extent.md`).
 
 The remaining ~250 DFS lines (contract, ranking, witness construction, the
-closure-summary case analysis) are the claim's own content. If items 1 and 2
-land, the DFS would be roughly 400 lines, dominated by inherent content; that
-is a reasonable point to close this issue.
+closure-summary case analysis) are the claim's own content. Item 2 has
+landed and the DFS is 487 lines; item 1 is a language question, and without
+it the remaining text is dominated by inherent content, which is a reasonable
+point to close this issue.
 
 ## Findings from the step 4 pass (reported, not filed)
 

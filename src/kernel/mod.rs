@@ -19,6 +19,7 @@ mod fold_read_summary;
 mod functions;
 mod owned_footprint_reach;
 mod population_access;
+mod quantified_frame;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
 #[cfg(test)]
@@ -65,6 +66,7 @@ pub(crate) use fold_read_summary::{FoldFrameRefusal, frame_fold_application_tran
 pub use pure_functions::{
     CPureFunctionDefinition, CPureFunctionParameter, register_pure_function_definition,
 };
+pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
 pub(crate) mod reasoning;
 pub(crate) mod resource_tracker;
 mod spec;

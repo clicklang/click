@@ -1630,10 +1630,11 @@ impl OpenBranchConstruction for OpenBranch {
     }
 }
 
-/// An equality with an `old(...)` operand can use that entry expression's
-/// reflexivity as an explicit transport source. Keep this selector
-/// intentionally syntactic: the fixed-state checker remains the authority for
-/// whether execution effects and result provenance permit the transport.
+/// An equality with an `old(...)` or `at(label, ...)` operand can use that
+/// snapshot expression's reflexivity as an explicit transport source. Keep
+/// this selector intentionally syntactic: the fixed-state checker remains the
+/// authority for whether execution effects and result provenance permit the
+/// transport.
 pub(in crate::surface::proof) fn old_reflexive_transport_source(
     goal: &ClickProposition,
 ) -> Option<ClickProposition> {
@@ -1645,9 +1646,13 @@ pub(in crate::surface::proof) fn old_reflexive_transport_source(
     else {
         return None;
     };
+    // An `old(..)` side first, then a side read at a marked program point:
+    // either names the earlier snapshot the other side's reads frame to.
     let old = match (left, right) {
         (_, ContractExpression::Old(_)) => right,
         (ContractExpression::Old(_), _) => left,
+        (_, ContractExpression::At { .. }) => right,
+        (ContractExpression::At { .. }, _) => left,
         _ => return None,
     };
     Some(ClickProposition::Comparison {

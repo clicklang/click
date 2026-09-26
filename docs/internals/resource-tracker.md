@@ -1100,6 +1100,47 @@ retired block's candidates and not the caller's whole frame); and the
 different pointer" with no proof, which selects a witness rather than proving
 anything.
 
+## Quantified frames are checked facts, not names
+
+A read's name must be the same in every proof context, so the naming walks
+read no facts; this holds for a function's entry facts too. Entry separation
+does not make it true: pointer parameters share one `ExternalArgument` block,
+and `separate(memory(left[0..n]), memory(visited[0..n]))` says nothing about
+`left[k]` outside `0..n`. With `visited == left + n` the contract holds and
+`visited[cur] = 1` writes `left[n + cur]`, so naming `left[k]` after the
+store by its entry version would be sound only for some `k`, and naming the
+whole `int32[]` argument `left` by its entry snapshot would be false outright
+(a pure function may read `left[n]`). A frame therefore stays a checked fact
+about the reads a guard admits.
+
+`src/kernel/quantified_frame.rs` is that fact. An explicit `transport(P, Q)`
+whose single-fact route refuses walks `P` and `Q` in parallel: each universal
+binder is renamed to a fresh identity, the target's guard is assumed on the
+proving side (an implication's antecedent is proved in the opposite
+direction), and each differing condition leaf is carried by the kernel's
+checked load-history question (`explicit_atomic_equality_from_memory_derivations`
+and the condition bridge's `memory_loads_proven_equal`), read in the querying
+context's own facts rather than only the listed ones, or by the ordinary
+single-fact transport, read in its own listed and certified premises. So `forall (k) { 0 <= k and k < n and k != cur implies
+at(before, visited[k]) == visited[k] }` crosses the store to `visited[cur]`,
+and `forall (k) { 0 <= k and k < n implies old(left[k]) == left[k] }` crosses
+it and a call whose checked write set is `visited[0..n]`. Every per-read
+decision is the store, call and history rule above; the frame adds only which
+facts a leaf may read, and like the fold read frame its answer enters no name
+and no assumption-free cache. A source that is a reflexive equality under
+binders and guards needs no proof, and `simp` offers `at(label, x) == x` its
+reflexive source as it already offered `old(x) == x`.
+
+The attacks are the `mdtests/quantified_frame_rejects_*.md` family: a guard
+that admits the written cell, a guard past a stated separation, a read past
+a separated range (the `visited == left + n` witness), an eight-byte store
+beside the excluded element, an unseparated alias, a global that may be the
+array, a call and a recursive call writing the range, a parameter
+reassigned before the store, both snapshot orders, a second store the guard
+admits, a guard whose own read the store widens, a loop havoc and a release
+by `free`. Each is refused with the leaf it
+had and the leaf it wanted.
+
 ## Iterated guarded ownership
 
 This section is the design record for the resource-body clause

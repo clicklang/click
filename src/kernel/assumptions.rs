@@ -40,9 +40,10 @@ pub(crate) use proposition_reasoning::finite_forall_goal_instances;
 /// How a structural walk compares two load atoms. The walk itself is exact —
 /// it only ever descends through matching constructors — so the whole
 /// relation is only as strong as the load-atom rule plugged in here.
-type LoadAtomsMatch<'a> = &'a dyn Fn(&Bitvector32Term, &Bitvector32Term) -> bool;
+pub(in crate::kernel) type LoadAtomsMatch<'a> =
+    &'a dyn Fn(&Bitvector32Term, &Bitvector32Term) -> bool;
 
-fn pointers_equal_with_load_atoms(
+pub(in crate::kernel) fn pointers_equal_with_load_atoms(
     left: &Pointer,
     right: &Pointer,
     loads_match: LoadAtomsMatch<'_>,
@@ -124,7 +125,7 @@ fn terms_equal_with_load_atoms(
 /// `loads_match`. Only matching constructors recurse and everything else
 /// falls back to `==`, so two structurally different conditions never match
 /// however permissive `loads_match` is.
-fn conditions_equal_with_load_atoms(
+pub(in crate::kernel) fn conditions_equal_with_load_atoms(
     left: &ConditionTerm,
     right: &ConditionTerm,
     loads_match: LoadAtomsMatch<'_>,

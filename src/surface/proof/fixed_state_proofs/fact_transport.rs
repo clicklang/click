@@ -249,8 +249,12 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
         // A premise that lowers to a syntactically reflexive equality (two
         // snapshot reads canonicalized to one term) needs no fact: the exact
         // check accepts every proposition that holds without facts
-        // (`proposition_holds_without_facts`).
-        if !available.listed_premise_available(&premise, &[], false) {
+        // (`proposition_holds_without_facts`), and a transport also accepts
+        // one that holds that way under binders and guards: the reflexive
+        // source a quantified frame transports from.
+        if !available.listed_premise_available(&premise, &[], false)
+            && !holds_without_facts_under_binders(&premise)
+        {
             let available = available.to_vec();
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `transport using` requires an exact premise: {}",
@@ -351,6 +355,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     // selected outcome snapshot that materializes to true likewise checks the
     // equivalent symbolic source used for frame transport.
     if !(result.is_some() && (available.contains(&source) || concrete_source_is_true))
+        && !holds_without_facts_under_binders(&source)
         && !exact_fact_is_available(&source, &explicit_premises)
         && !separation_bridged_fact_is_available(
             &source,
@@ -513,6 +518,67 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
             Ok(_) => return Ok(CheckedFixedStateFactTransport { source, target }),
             Err(refusal) => refusal,
         };
+        // A quantified fact crosses the same steps leaf by leaf: each universal
+        // binder is renamed fresh, each guard is assumed on the proving side,
+        // and each differing condition leaf is carried by its reads' checked
+        // load history, read in this context's own facts, or by the
+        // single-fact transport below, read in its own premises. Like the
+        // fold frame, the answer is this query's derivation and nothing else.
+        let quantified_frame = || {
+            crate::instrumentation::measure_operation(
+                "surface",
+                "fact transport",
+                "explicit fact transport: quantified frame",
+                || {
+                    let with_resources = |assumptions: PureFactContext| {
+                        state
+                            .resources()
+                            .observable_facts_assuming_valid(&assumptions)
+                            .into_iter()
+                            .fold(assumptions, PureFactContext::assume_proposition)
+                    };
+                    let resource_facts = state
+                        .resources()
+                        .observable_facts_assuming_valid(available.assumptions());
+                    let mut context_variables = std::collections::BTreeSet::new();
+                    for fact in effect_facts
+                        .iter()
+                        .map(ExecutionPureFact::proposition)
+                        .chain(resource_facts.iter())
+                    {
+                        context_variables.extend(crate::kernel::proposition_variables(fact));
+                    }
+                    let context = effect_facts
+                        .iter()
+                        .map(|fact| fact.proposition().clone())
+                        .chain(resource_facts)
+                        .fold(
+                            available.assumptions().clone(),
+                            PureFactContext::assume_proposition,
+                        );
+                    let leaf =
+                        |from: &Proposition, to: &Proposition, assumptions: &PureFactContext| {
+                            certified_fact_transport_reaches_through(
+                                from,
+                                to,
+                                state.memory(),
+                                &assumptions.clone().assume_proposition(from.clone()),
+                                &transition_facts,
+                            )
+                        };
+                    crate::kernel::frame_quantified_transport(
+                        &source,
+                        &target,
+                        &available,
+                        &context,
+                        &transport_assumptions,
+                        &leaf,
+                        &with_resources,
+                        &context_variables,
+                    )
+                },
+            )
+        };
         if !certified_fact_transport_reaches_through(
             &source,
             &target,
@@ -520,6 +586,31 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
             &transport_assumptions,
             &transition_facts,
         ) {
+            // Only where the single-fact route refused, so every transport it
+            // already carried costs exactly what it did.
+            // A smart closure asks the same failing frame once per snapshot
+            // and strategy; it answers a repeat from its failure memo, as it
+            // does for the reachability walk.
+            let mut frame_refusal = None;
+            let framed = crate::kernel::closure_memoized_fact_check(
+                crate::kernel::ClosureFactCheck::QuantifiedFrame,
+                &[&source, &target],
+                Some(state.memory()),
+                available.assumptions(),
+                effect_facts,
+                || match quantified_frame() {
+                    Ok(()) => true,
+                    Err(refusal) => {
+                        frame_refusal = Some(refusal);
+                        false
+                    }
+                },
+            );
+            if framed {
+                return Ok(CheckedFixedStateFactTransport { source, target });
+            }
+            let read_refusal =
+                frame_refusal.unwrap_or(crate::kernel::QuantifiedFrameRefusal::NothingToFrame);
             let mut rendered = describe_unreachable_fact_transport(
                 claim_label,
                 tactic_index,
@@ -535,6 +626,28 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
                     | crate::kernel::FoldFrameRefusal::NothingToFrame
             ) {
                 rendered.push_str(&format!("\n  fold read frame: {fold_refusal}"));
+            }
+            // The leaf pair says something the lines above do not only when a
+            // binder stood between the two propositions and their leaves.
+            let quantified = matches!(source, Proposition::ForAll { .. })
+                && matches!(target, Proposition::ForAll { .. });
+            match &read_refusal {
+                crate::kernel::QuantifiedFrameRefusal::LeafNotCarried { from, to }
+                    if quantified =>
+                {
+                    // One label set for both leaves, so a read they share is
+                    // spelled once and two different reads never share a name.
+                    let mut labels = render::SnapshotLabels::default();
+                    let had = render::render_proposition_labeled(from, &mut labels);
+                    let wanted = render::render_proposition_labeled(to, &mut labels);
+                    rendered.push_str(&format!(
+                        "\n  quantified frame: {read_refusal}\n  leaf it had: {had}\n  leaf it wanted: {wanted}"
+                    ));
+                }
+                crate::kernel::QuantifiedFrameRefusal::BinderExhausted => {
+                    rendered.push_str(&format!("\n  quantified frame: {read_refusal}"));
+                }
+                _ => {}
             }
             return Err(ClickError::new(rendered));
         }
@@ -1108,6 +1221,22 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     };
     crate::kernel::c_condition_fact_transport_target_in_context(&theorem, source, assumptions)
         == Some(target)
+}
+
+/// A proposition that holds without facts once its universal binders, guards
+/// and conjunctions are read through: `forall (k: int32) { G implies x == x }`
+/// holds for every `k` whatever `G` says. Only a transport's source and its
+/// `using` list read this; the shared rule
+/// (`proposition_holds_without_facts`) stays the leaf.
+fn holds_without_facts_under_binders(proposition: &Proposition) -> bool {
+    match proposition {
+        Proposition::ForAll { body, .. } => holds_without_facts_under_binders(body),
+        Proposition::Implies(_, consequent) => holds_without_facts_under_binders(consequent),
+        Proposition::And(left, right) => {
+            holds_without_facts_under_binders(left) && holds_without_facts_under_binders(right)
+        }
+        _ => crate::kernel::proposition_holds_without_facts(proposition),
+    }
 }
 
 #[cfg(test)]

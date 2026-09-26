@@ -137,6 +137,23 @@ charged to visible semantic output rather than hidden ambient state:
   its own transport. The surface regression
   `explicit_fold_read_transport_along_a_store_sequence_is_near_linear` pins
   the whole verification at 4 to 32 stores.
+- An explicit quantified frame (`src/kernel/quantified_frame.rs`) walks the
+  source and target once in parallel, renames each universal binder once,
+  and asks the kernel's existing checked load-history question once per
+  differing read; it indexes the context and never instantiates a
+  quantifier. Its single-fact fallback reads the single-fact route's own
+  premises rather than the whole context, since that route's cost grows with
+  the facts it is handed. It runs only where the single-fact transport
+  refused, so a transport that route already carried costs what it did, and
+  a smart closure answers a repeated failing frame from its failure memo. The surface
+  regressions `quantified_frame_is_near_linear_in_crossed_stores`,
+  `quantified_frame_is_near_linear_in_its_body` and
+  `quantified_frame_is_near_linear_in_unrelated_facts` pin the frame's named
+  work at 255 to 1,963 units for 4 to 32 crossed stores, 151 to 319 for 4 to
+  32 framed conjuncts, and a flat 133 for 4 to 32 unrelated requirements. The
+  store axis asserts only the frame's own work: executing a store to a
+  symbolic cell compares it with every earlier symbolic cell of its block,
+  which is quadratic in distinct symbolic stores.
 
 ## Execution capacity follows selected syntax
 

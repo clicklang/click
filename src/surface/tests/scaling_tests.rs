@@ -3527,7 +3527,7 @@ fn close_invariants_without_the_explicit_transport_costs_a_small_multiple() {
         .expect("the fixture transports the quantified bound explicitly");
     let end = start
         + explicit[start..]
-            .find("            have forall (k: int32) {\n                0 <= k and k < n implies at(iter, next[k]) == next[k]")
+            .find("            transport(\n                forall (k: int32) { 0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k]) },")
             .expect("the next explicit proof step follows the transport");
     let implicit = format!("{}{}", &explicit[..start], &explicit[end..]);
     let measure = |source: &str| {
@@ -3545,4 +3545,121 @@ fn close_invariants_without_the_explicit_transport_costs_a_small_multiple() {
         implicit_work <= explicit_work.saturating_mul(3) / 2,
         "closing without the explicit transport costs {implicit_work} units against {explicit_work}"
     );
+}
+
+/// One quantified frame case: `stores` stores into the owned `visited`, a
+/// quantified body of `conjuncts` framed reads of the viewed `left`, and
+/// `facts` unrelated requirements in the context.
+fn quantified_frame_project(stores: usize, conjuncts: usize, facts: usize) -> (String, String) {
+    // Each store writes its own cell `visited[c{index}]`: repeated stores to
+    // one cell collapse into one recorded step.
+    let indices = (0..stores)
+        .map(|index| format!(", int32 c{index}"))
+        .collect::<String>();
+    let store_lines = (0..stores)
+        .map(|index| format!("    visited[c{index}] = {index};\n"))
+        .collect::<String>();
+    let signature = format!("void mark(int32 *left, int32 *visited, int32 n, int32 x{indices})");
+    let c_source = format!("{signature} {{\n{store_lines}}}\n");
+    let bounds = (0..stores)
+        .map(|index| format!("    requires 0 <= c{index};\n    requires c{index} < n;\n"))
+        .collect::<String>();
+    let unrelated = (0..facts)
+        .map(|index| format!("    requires x != {index};\n"))
+        .collect::<String>();
+    let body = |now: &str| vec![format!("{now}(left[k]) == old(left[k])"); conjuncts].join(" and ");
+    let source = format!(
+        "forall (k: int32) {{ 0 <= k and k < n implies {} }}",
+        body("old")
+    );
+    let target = format!(
+        "forall (k: int32) {{ 0 <= k and k < n implies {} }}",
+        body("")
+    );
+    let steps = "    step();\n".repeat(stores);
+    let click_source = format!(
+        "verifying \"mark.c\";\n\n\
+         {signature} {{\n{bounds}{unrelated}    \
+             views left[0..n];\n    \
+             owns visited[0..n];\n    \
+             ensures {target};\n\
+         }} by {{\n{steps}    transport({source}, {target}) using {{ {source}; }};\n    \
+             execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+fn quantified_frame_samples(
+    axis: &str,
+    project: impl Fn(usize) -> (String, String),
+) -> Vec<ScalingSample> {
+    let mut samples = Vec::new();
+    let mut framing = Vec::new();
+    for size in [4usize, 8, 16, 32] {
+        let (c_source, click_source) = project(size);
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+        });
+        verified.unwrap_or_else(|error| {
+            panic!("{axis} at size {size} should verify: {}", error.message())
+        });
+        framing.push(
+            sample
+                .named_work
+                .get("operation `explicit fact transport: quantified frame`")
+                .copied()
+                .unwrap_or(0),
+        );
+        samples.push(sample);
+    }
+    eprintln!(
+        "{axis}: total {:?}, framing {framing:?}; named work: {}",
+        samples.iter().map(|sample| sample.work).collect::<Vec<_>>(),
+        named_growth_diagnostic(&samples)
+    );
+    assert!(
+        framing[0] > 0,
+        "{axis}: the quantified frame did not run: {framing:?}"
+    );
+    for pair in framing.windows(2) {
+        assert!(
+            pair[1] <= pair[0].saturating_mul(3),
+            "{axis}: quantified frame work is not near linear: {framing:?}"
+        );
+    }
+    samples
+}
+
+/// A quantified fact about a separated array crosses a straight line of
+/// stores into the owned array. The frame walks each read's history once, so
+/// its own work is near linear in the stores. The whole verification is not
+/// asserted on this axis: executing a store to a symbolic cell compares it
+/// with every earlier symbolic cell of its block, which is the store rule's
+/// cost and not the frame's.
+#[test]
+fn quantified_frame_is_near_linear_in_crossed_stores() {
+    quantified_frame_samples("quantified frame across stores", |size| {
+        quantified_frame_project(size, 1, 0)
+    });
+}
+
+/// The quantified body grows by one framed conjunct per step: one leaf and
+/// one read question each, so near linear in the body.
+#[test]
+fn quantified_frame_is_near_linear_in_its_body() {
+    let samples = quantified_frame_samples("quantified frame over its body", |size| {
+        quantified_frame_project(2, size, 0)
+    });
+    assert_near_linear_scaling("quantified frame over its body", &samples);
+}
+
+/// Unrelated requirements join the context the frame reads, but it reads it
+/// only by indexed lookup, so they cost the frame nothing beyond the
+/// context's own construction.
+#[test]
+fn quantified_frame_is_near_linear_in_unrelated_facts() {
+    let samples = quantified_frame_samples("quantified frame with unrelated facts", |size| {
+        quantified_frame_project(2, 1, size)
+    });
+    assert_near_linear_scaling("quantified frame with unrelated facts", &samples);
 }

@@ -383,6 +383,8 @@ pub(crate) enum ClosureFactCheck {
     /// Whether the certified reachability walk carries the source to the
     /// target.
     Reachability,
+    /// Whether the quantified frame carries the source to the target.
+    QuantifiedFrame,
 }
 
 /// A fact-transport check that failed inside one smart closure: its exact
