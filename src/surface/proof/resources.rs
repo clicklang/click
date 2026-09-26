@@ -4872,6 +4872,32 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
     let element_width = contract_segment_element_width(parameters, segment);
+    let segment_type = contract_segment_element_type(parameters, segment);
+    // The cells below as one run. Every element's value is its load in the
+    // naming memory, typed as the element for a scalar and kept as the word
+    // the load names for a pointer, so the run's element type is that word's
+    // type. A value wider than the stride would overlap the next element,
+    // which a run does not stand for.
+    let run_type = if !segment_type.is_pointer() {
+        segment_type
+    } else if element_width == 1 {
+        CType::UInt8
+    } else {
+        CType::Int32
+    };
+    if run_type.byte_width() <= element_width {
+        match memory.with_named_cell_run(
+            range.base().clone(),
+            element_width,
+            run_type,
+            *start,
+            *end,
+            crate::kernel::intern_c_memory(naming_memory.clone()),
+        ) {
+            Ok(seeded) => return seeded,
+            Err(unchanged) => memory = unchanged,
+        }
+    }
     for index in *start..*end {
         let pointer = offset_pointer_by_elements(
             range.base().clone(),

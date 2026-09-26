@@ -3029,9 +3029,7 @@ impl CMemory {
         if first >= count {
             return self;
         }
-        let may_touch_heap = AliasCandidates::of_block(&base.block)
-            .any_entry(&self.heap.live_allocations, |_, _| true);
-        if !self.union_cells.is_empty() || may_touch_heap {
+        if !self.run_can_stand_for_cells_at(&base) {
             let run = CellRun::new(
                 base,
                 element_width,
@@ -3048,6 +3046,63 @@ impl CMemory {
             }
             return self;
         }
+        self.with_run_of_cells(base, element_width, element_type, first, count, source)
+    }
+
+    /// [`Self::materialize_named_cell`] of each element `first..count` at
+    /// `base`, `base + element_width`, …, whose value is the load of that
+    /// element in `source` typed as `element_type` ([`cell_run_value`]), as
+    /// one [`CellRun`]: the cells it leaves are exactly those, in element
+    /// order, skipping every element that already holds a cell, at a cost
+    /// that does not depend on `count`.
+    ///
+    /// A named cell is not a C write, so where `materialize_named_cell`
+    /// declines some elements a run would not, the run is refused and
+    /// `Err` hands the memory back unchanged for the caller's own cells: an
+    /// automatic object's block (a named load does not initialize one), a
+    /// heap block (fresh storage stays uninitialized), and, as for
+    /// [`Self::with_seeded_cells`], a snapshot with typed union views or a
+    /// base that may lie in a live allocation.
+    pub(crate) fn with_named_cell_run(
+        self,
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        first: u32,
+        count: u32,
+        source: SharedCMemory,
+    ) -> Result<Self, Self> {
+        if first >= count {
+            return Ok(self);
+        }
+        if base.block.starts_with("local:")
+            || matches!(base.block, PointerBlock::Heap(_))
+            || !self.run_can_stand_for_cells_at(&base)
+        {
+            return Err(self);
+        }
+        Ok(self.with_run_of_cells(base, element_width, element_type, first, count, source))
+    }
+
+    /// Whether a run at `base` stands for the cells it seeds with nothing
+    /// else to do: no typed union view to displace, and no live allocation
+    /// the base may lie in to mark initialized.
+    fn run_can_stand_for_cells_at(&self, base: &Pointer) -> bool {
+        self.union_cells.is_empty()
+            && !AliasCandidates::of_block(&base.block)
+                .any_entry(&self.heap.live_allocations, |_, _| true)
+    }
+
+    /// The run of [`Self::with_seeded_cells`], its preconditions checked.
+    fn with_run_of_cells(
+        mut self,
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        first: u32,
+        count: u32,
+        source: SharedCMemory,
+    ) -> Self {
         let mut holes = IndexIntervals::default();
         holes.insert_range(0, first);
         let probe = CellRun::new(

@@ -3754,3 +3754,49 @@ fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
         named_growth_diagnostic(&samples),
     );
 }
+
+/// Unfolding a composite resource whose body holds a constant range exposes
+/// its cells as one run, so the proof costs the same whatever the range's
+/// length, for scalar elements and for pointer elements (whose cells keep
+/// the word their load names). Before, each element was a named cell: at
+/// 1000 elements a store after the unfold exhausted the smart budget.
+#[test]
+fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
+    let c_source = "int32 put(int32 *a) {\n    a[3] = 5;\n    return a[3];\n}\n\nvoid put_pointer(int32 **p, int32 *q) {\n    p[1] = q;\n}\n";
+    let click_source = |length: u64| {
+        format!(
+            "verifying \"put.c\";\n\nresource block(p: int32*) {{ owns p[0..{length}]; }}\nresource pointers(p: int32**) {{ owns p[0..{length}]; }}\n\nint32 put(int32 *a) {{\n    consumes block(a);\n    produces block(a);\n    ensures result == 5;\n    ensures a[4] == old(a[4]);\n}} by {{\n    unfold(block(a));\n    execute();\n    fold(block(a));\n    simp();\n}}\n\nvoid put_pointer(int32 **p, int32 *q) {{\n    consumes pointers(p);\n    produces pointers(p);\n    ensures p[2] == old(p[2]);\n    ensures p[1] == q;\n}} by {{\n    unfold(pointers(p));\n    execute();\n    fold(pointers(p));\n    simp();\n}}\n"
+        )
+    };
+    verify_c0_sources(&click_source(8), &[("put.c", c_source)]).expect("warm-up verifies");
+    let samples = [64u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&click_source(length), &[("put.c", c_source)])
+        });
+        verified.unwrap_or_else(|error| {
+            panic!(
+                "a composite range of {length} elements should verify: {}",
+                error.message()
+            )
+        });
+        (length, work)
+    });
+    let least = samples
+        .iter()
+        .map(|(_, work)| *work)
+        .min()
+        .expect("samples");
+    let most = samples
+        .iter()
+        .map(|(_, work)| *work)
+        .max()
+        .expect("samples");
+    assert!(least > 0, "{samples:?}");
+    // Flat across seven orders of magnitude of length: the samples differ
+    // by a few dozen units of fixed work that read the length's constant
+    // (about 3.5k units in all), while one unit per element would be 10^9.
+    assert!(
+        most - least <= 32,
+        "deterministic work depends on the composite range's length: {samples:?}"
+    );
+}
