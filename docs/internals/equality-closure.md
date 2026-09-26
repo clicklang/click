@@ -140,9 +140,16 @@ Each query is a `find`.
 
 ### What goes in the graph
 
-- **Pointers as terms.** A pointer is `ptr(block, offset)`, and offsets are
-  normalized affine terms. With congruence, `id == p` gives `id + 8 ≅ p + 8`
-  and `load(M, id + 8) ≅ load(M, p + 8)` without any displacement rule.
+- **Pointers as a union-find with offsets.** A pointer is a block and an
+  offset in exact affine normal form. Plain congruence would not relate
+  `id + 8` to `p + 8` from `id == p`, because a normalized `id + 8` is not an
+  application over `id`. So the pointer sort is a union-find with offsets
+  instead: each block's base is stated relative to its class representative,
+  `base(block) = base(rep) + delta`. Two pointers are equal when their blocks
+  share a representative and `delta + offset` normalizes alike, so chains and
+  displaced spellings are two lookups. Loads keyed by that canonical pointer
+  then get congruence (`load(M, id + 8) ≅ load(M, p + 8)`). The first part is
+  built: `src/kernel/assumptions/pointer_classes.rs`.
 - **Loads as applications.** A load is `load(M, ptr)` with the memory snapshot
   as an argument. Congruence holds only within one snapshot. Carrying a load
   across a write stays frame reasoning (`transport`, the memory derivation DAG), which is

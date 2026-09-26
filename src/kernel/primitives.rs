@@ -7376,6 +7376,12 @@ pub struct PureFactContext {
         PointerOffsetTerm,
         crate::persistent::PersistentSet<Pointer>,
     >,
+    /// The classes `pointer_block_aliases` connects, as a union-find with
+    /// offsets: each block's base relative to its class representative, so
+    /// a transitive or displaced pointer equality is two lookups. Derived
+    /// from the same true cross-block equalities; appended on insertion and
+    /// rebuilt from the alias index on the rare withdrawal.
+    pub(super) pointer_classes: super::assumptions::PointerClasses,
     /// Normalized same-block pointer equalities, indexed under each offset.
     pub(super) pointer_offset_aliases: crate::persistent::PersistentMap<
         PointerOffsetTerm,

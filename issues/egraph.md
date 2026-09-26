@@ -132,7 +132,24 @@ These are settled in the design note:
 ## Stages
 
 Each stage lands green with its regressions and scaling curves:
-1. Pointer closure. This unblocks the rbtree leaves.
+1. Pointer closure. Partly landed: pointer classes as a persistent union-find
+   with offsets (`src/kernel/assumptions/pointer_classes.rs`), filed from
+   every true cross-block pointer equality. Fold consumption retries a missed
+   memory fact at the other spellings of its base
+   (`mdtests/fold_through_a_pointer_alias.md`), and the two pointer-equality
+   walks answer cross-block questions from the classes first. Still to do:
+   - Move the remaining one-hop alias users (`exact_pointer_aliases`,
+     `pointer_spellings`, `resolve_symbolic_pointer_alias`) onto the classes
+     and delete them.
+   - Same-block offset equalities. The walks still hold these, and deciding a
+     same-block question by the affine normal form alone would equate offsets
+     whose loads are still named by exact spelling. It changed
+     `struct_wide_array_proof_expands_and_reverifies` that way, where
+     `p + 24` and `(p + 8) + 16` both occur. So this waits for stage 2.
+   - Both walks still exist.
+   - The rbtree leaf's refold now finds its cells, but still fails to relate
+     the child's pointer argument, loaded through the unfold's spelling, to
+     `yid->rb_left`. That is load congruence, so the leaf needs stage 2.
 2. Loads.
 3. Bitvector terms.
 4. Algebraic terms and pure-function applications.

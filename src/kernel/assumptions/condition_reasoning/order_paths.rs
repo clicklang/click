@@ -471,6 +471,11 @@ impl PureFactContext {
         left: &Pointer,
         right: &Pointer,
     ) -> bool {
+        // As in `has_indexed_pointer_equality_path`: the classes first, the
+        // scan below only for what they do not hold.
+        if left.block != right.block && self.pointer_classes.proves_equal(left, right) {
+            return true;
+        }
         let canonical_pointer =
             |pointer: &Pointer| crate::kernel::api::canonicalize_pointer_loads(pointer);
         let matches = |candidate: &Pointer, expected: &Pointer| {

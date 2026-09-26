@@ -4648,6 +4648,46 @@ impl ResourceContext {
     /// neither scanned nor materialized, and the returned snapshot preserves
     /// this context's mutation ancestry.
     pub(crate) fn without_fact_incrementally(
+        self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        // A memory fact is first consumed at its own spelling. When that
+        // misses and the pointer classes put its base's block with others,
+        // the same range is required at each other spelling of that address:
+        // an unfold may have published the cells under a loaded pointer that
+        // the proof now names by a binding proved equal to it.
+        // The class is enumerated only after that miss, so the common path
+        // pays one lookup however large the class is.
+        let (CResourceFact::Own(CResource::Memory(range), _)
+        | CResourceFact::View(CResource::Memory(range))) = fact
+        else {
+            return self.without_fact_at_its_spelling(fact, assumptions);
+        };
+        if !assumptions.pointer_classes.is_classed(&range.base.block) {
+            return self.without_fact_at_its_spelling(fact, assumptions);
+        }
+        let original = self.clone();
+        if let Some(consumed) = self.without_fact_at_its_spelling(fact, assumptions) {
+            return Some(consumed);
+        }
+        let spellings = assumptions.pointer_classes.other_spellings(&range.base);
+        spellings.into_iter().find_map(|base| {
+            let mut restated_range = range.clone();
+            restated_range.base = base;
+            let restated = match fact {
+                CResourceFact::Own(_, quantity) => {
+                    CResourceFact::Own(CResource::Memory(restated_range), quantity.clone())
+                }
+                CResourceFact::View(_) => CResourceFact::View(CResource::Memory(restated_range)),
+            };
+            original
+                .clone()
+                .without_fact_at_its_spelling(&restated, assumptions)
+        })
+    }
+
+    fn without_fact_at_its_spelling(
         mut self,
         fact: &CResourceFact,
         assumptions: &PureFactContext,
