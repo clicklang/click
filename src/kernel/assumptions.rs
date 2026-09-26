@@ -21,6 +21,8 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
+#[cfg(test)]
+pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
 mod constant_classes;
 mod pointer_classes;
 pub(in crate::kernel) use constant_classes::ConstantClasses;

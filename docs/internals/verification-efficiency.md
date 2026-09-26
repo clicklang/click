@@ -151,9 +151,23 @@ charged to visible semantic output rather than hidden ambient state:
   `quantified_frame_is_near_linear_in_unrelated_facts` pin the frame's named
   work at 255 to 1,963 units for 4 to 32 crossed stores, 151 to 319 for 4 to
   32 framed conjuncts, and a flat 133 for 4 to 32 unrelated requirements. The
-  store axis asserts only the frame's own work: executing a store to a
-  symbolic cell compares it with every earlier symbolic cell of its block,
-  which is quadratic in distinct symbolic stores.
+  store axis asserts the whole verification as well, since a store's
+  refusal to keep a cell it may alias reads only filed order facts (see
+  [Indexed contradiction and premise search](#indexed-contradiction-and-premise-search)).
+- A store keeps every earlier cell of its block that it proves it misses,
+  and it decides each one: the cell map offers no way to keep a group of
+  cells without asking each. So a straight line of `N` stores to cells the
+  facts prove distinct asks `N^2/2` cell questions. This is a known
+  violation of the contract, not an exception. Each question is a few units
+  when the cells differ by a constant displacement (`a[0] = …; a[1] = …`:
+  448 to 46,020 units of store work for 4 to 64 stores), but when only a
+  chain of order facts separates them (`c0 < c1 < … `) each question walks
+  the chain between its two indices, and the line costs `N^3` (830 to
+  1,032,462). Neither is pinned by a test. Removing the first needs the
+  cells of one block indexed by their symbolic offset atoms, so a store at
+  `S + k` visits only the cells at `S` within its byte window and the
+  cells at other atoms; removing the second also needs the order walk's
+  reachability shared across the questions one store asks.
 
 ## Execution capacity follows selected syntax
 
@@ -381,6 +395,33 @@ equalities filed under its pointer. With 64 to 512 unrelated atomic facts,
 the five queries of `condition_fact_queries_ignore_unrelated_facts`
 (`src/kernel/tests/memory_scaling_tests.rs`) examine 3 facts in all; they
 examined 265 to 2,057 before.
+
+The memory-resolution order walk
+(`has_order_path_for_memory_resolution`), which proves the index orders
+that separate two cells of one array, reads the same way. It used to
+compare every node it reached with every order fact and every condition
+fact, so a failing distinctness question cost the whole context; a store to
+`a[c]` beside other indices bounded by `0 <= ci < n` refused `c < ci` by
+reaching `n` and scanning all `2N` bounds, and `N` such stores were
+quadratic. Each fact set now files its order edges once, by lower endpoint,
+and its true equalities by side (`OrderWalkIndex` in
+`src/kernel/assumptions/condition_reasoning/order_paths.rs`). A node that
+is a constant or a variable that cannot name a load reads the edges filed
+under itself and its recorded-equality class, the edges under its exact
+constant, and, for a written constant, the edges from larger written
+constants and from endpoints an offset equality scales. Those are all the
+routes the walk's unchanged edge test has between two such terms; every
+other lower endpoint (a load, a sum) is read at every node, and a node
+that is itself a load, a sum, or a variable an offset equality scales
+reads every fact as before. So the answers are unchanged
+(`memory_resolution_order_walk_agrees_with_the_full_scan` compares the two
+walks), and a refusal beside 64 to 512 other bounded indices costs a flat
+27 units against 932 to 7,204 for the full scan
+(`memory_resolution_order_walk_ignores_shared_bounds_of_other_indices`).
+A line of 4 to 64 such stores costs 990 to 18,570 units of store work,
+where it cost 2,294 to 408,974
+(`stores_to_bounded_unordered_indices_are_near_linear` in
+`src/surface/tests/scaling_tests.rs`).
 
 A term's constant after equality normalization is a lookup in
 `ConstantClasses` (`src/kernel/assumptions/constant_classes.rs`), which the

@@ -7906,3 +7906,312 @@ fn signed_order_provers_agree_on_successor_terms() {
         assert_eq!(resolved, follows, "memory-resolution prover on `{name}`");
     }
 }
+
+/// The memory-resolution order walk reads, at each node, only the edges and
+/// equalities its fact set files under that node (`OrderWalkIndex`). Its
+/// answers must be the ones the full scan gives. Each row reaches its target
+/// through one route the filing has to account for: the recorded-equality
+/// class, exact constants on either side, a written constant node and its
+/// `<=` connection to a larger constant, an offset equality at element width
+/// (which the equality graph files) and at byte width (which it does not, so
+/// the walk declines to file that node), a lower endpoint that is a
+/// load-space variable (never filed), and the misses beside each. Every row
+/// is asked filed and by full scan, as a strict and a non-strict order.
+#[test]
+fn memory_resolution_order_walk_agrees_with_the_full_scan() {
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(89_400 + id));
+    let (x, y, z, w) = (variable(0), variable(1), variable(2), variable(3));
+    let load_space = Bitvector32Term::Variable(Variable((1 << 40) + 89_400));
+    let constant = |value: i32| Bitvector32Term::Constant(value as u32);
+    let lt = ConditionTerm::signed_less_than;
+    let le = ConditionTerm::signed_less_equal;
+    let eq = ConditionTerm::equal;
+    let offsets = |left: PointerOffsetTerm, right: PointerOffsetTerm| {
+        ConditionTerm::pointer_offset_equal(left, right)
+    };
+    let scaled =
+        |term: &Bitvector32Term, width: i64| PointerOffsetTerm::scale_int32(term.clone(), width);
+    let facts = |conditions: Vec<ConditionTerm>| {
+        conditions
+            .into_iter()
+            .fold(PureFactContext::new(), |facts, condition| {
+                facts.assume_condition(condition, true)
+            })
+    };
+    let unrelated_bounds = |mut conditions: Vec<ConditionTerm>| {
+        for index in 0..16 {
+            let bounded = variable(100 + index);
+            conditions.push(le(constant(0), bounded.clone()));
+            conditions.push(lt(bounded, w.clone()));
+        }
+        conditions
+    };
+    let cases: Vec<(
+        &str,
+        PureFactContext,
+        Bitvector32Term,
+        Bitvector32Term,
+        bool,
+    )> = vec![
+        (
+            "two edges",
+            facts(vec![lt(x.clone(), y.clone()), lt(y.clone(), z.clone())]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "two edges backwards",
+            facts(vec![lt(x.clone(), y.clone()), lt(y.clone(), z.clone())]),
+            z.clone(),
+            x.clone(),
+            false,
+        ),
+        (
+            "equality class",
+            facts(vec![eq(x.clone(), y.clone()), lt(y.clone(), z.clone())]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "equality class, reversed side",
+            facts(vec![eq(y.clone(), x.clone()), lt(y.clone(), z.clone())]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "equality class miss",
+            facts(vec![eq(x.clone(), y.clone()), lt(z.clone(), y.clone())]),
+            x.clone(),
+            z.clone(),
+            false,
+        ),
+        (
+            "shared exact constant",
+            facts(vec![
+                eq(x.clone(), constant(5)),
+                eq(y.clone(), constant(5)),
+                lt(y.clone(), z.clone()),
+            ]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "different exact constants",
+            facts(vec![
+                eq(x.clone(), constant(5)),
+                eq(y.clone(), constant(6)),
+                lt(y.clone(), z.clone()),
+            ]),
+            x.clone(),
+            z.clone(),
+            false,
+        ),
+        (
+            "through a written constant node",
+            facts(vec![eq(x.clone(), constant(2)), le(constant(3), z.clone())]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "constant below a constant bound",
+            facts(vec![le(constant(1), z.clone())]),
+            constant(0),
+            z.clone(),
+            true,
+        ),
+        (
+            "constant above a constant bound",
+            facts(vec![le(constant(5), z.clone())]),
+            constant(7),
+            z.clone(),
+            false,
+        ),
+        (
+            "constant equal to an exact endpoint",
+            facts(vec![eq(y.clone(), constant(7)), lt(y.clone(), z.clone())]),
+            constant(7),
+            z.clone(),
+            true,
+        ),
+        (
+            "element-width offset equality",
+            facts(vec![
+                offsets(scaled(&x, 4), scaled(&y, 4)),
+                lt(y.clone(), z.clone()),
+            ]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "byte-width offset equality",
+            facts(vec![
+                offsets(scaled(&x, 1), scaled(&y, 1)),
+                lt(y.clone(), z.clone()),
+            ]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "byte-width offset equality, other side",
+            facts(vec![
+                offsets(scaled(&y, 1), scaled(&x, 1)),
+                lt(y.clone(), z.clone()),
+            ]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "constant offset equality",
+            facts(vec![
+                offsets(PointerOffsetTerm::Constant(8), scaled(&y, 4)),
+                lt(y.clone(), z.clone()),
+            ]),
+            constant(2),
+            z.clone(),
+            true,
+        ),
+        (
+            "load-space lower endpoint",
+            facts(vec![
+                eq(x.clone(), load_space.clone()),
+                lt(load_space.clone(), z.clone()),
+            ]),
+            x.clone(),
+            z.clone(),
+            true,
+        ),
+        (
+            "non-strict edge",
+            facts(vec![le(x.clone(), y.clone())]),
+            x.clone(),
+            y.clone(),
+            false,
+        ),
+        (
+            "bounded indices beside unrelated bounds",
+            facts(unrelated_bounds(vec![
+                lt(x.clone(), y.clone()),
+                le(constant(0), x.clone()),
+                lt(y.clone(), w.clone()),
+            ])),
+            x.clone(),
+            y.clone(),
+            true,
+        ),
+        (
+            "unordered indices beside unrelated bounds",
+            facts(unrelated_bounds(vec![
+                le(constant(0), x.clone()),
+                lt(x.clone(), w.clone()),
+                le(constant(0), y.clone()),
+                lt(y.clone(), w.clone()),
+            ])),
+            x.clone(),
+            y.clone(),
+            false,
+        ),
+        (
+            "reaching the shared bound",
+            facts(unrelated_bounds(vec![
+                le(constant(0), x.clone()),
+                lt(x.clone(), w.clone()),
+            ])),
+            x.clone(),
+            w.clone(),
+            true,
+        ),
+    ];
+    for (name, facts, left, right, strict_follows) in cases {
+        for (order, strict) in [
+            (lt(left.clone(), right.clone()), true),
+            (le(left.clone(), right.clone()), false),
+        ] {
+            let filed = facts.proves_order_condition_for_memory_resolution(&order, true);
+            let scanned = crate::kernel::assumptions::with_order_walk_full_scan(|| {
+                facts.proves_order_condition_for_memory_resolution(&order, true)
+            });
+            assert_eq!(
+                filed, scanned,
+                "filed and scanned walks disagree on `{name}` ({order:?})"
+            );
+            if strict {
+                assert_eq!(filed, strict_follows, "strict order on `{name}`");
+            }
+            let path = facts.has_order_path_for_memory_resolution(&left, &right, strict);
+            let scanned_path = crate::kernel::assumptions::with_order_walk_full_scan(|| {
+                facts.has_order_path_for_memory_resolution(&left, &right, strict)
+            });
+            assert_eq!(
+                path, scanned_path,
+                "filed and scanned paths disagree on `{name}` (strict {strict})"
+            );
+        }
+    }
+}
+
+/// [`memory_resolution_order_walk_agrees_with_the_full_scan`] over generated
+/// fact sets: a small pool of variables (one in the load-variable space),
+/// constants, sums, and every fact shape the filing treats differently —
+/// strict and non-strict orders, equalities, and offset equalities at both
+/// widths — asked every pair of pool terms, filed and by full scan.
+#[test]
+fn memory_resolution_order_walk_agrees_with_the_full_scan_on_generated_facts() {
+    let mut pool = (0..5)
+        .map(|id| Bitvector32Term::Variable(Variable(89_500 + id)))
+        .collect::<Vec<_>>();
+    pool.push(Bitvector32Term::Variable(Variable((1 << 40) + 89_500)));
+    pool.extend([0, 1, 3, -1].map(|value: i32| Bitvector32Term::Constant(value as u32)));
+    pool.push(Bitvector32Term::Add(
+        Box::new(pool[0].clone()),
+        Box::new(Bitvector32Term::Constant(1)),
+    ));
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut next = |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % bound as u64) as usize
+    };
+    let mut compared = 0;
+    for _ in 0..120 {
+        let mut facts = PureFactContext::new();
+        for _ in 0..(2 + next(6)) {
+            let left = pool[next(pool.len())].clone();
+            let right = pool[next(pool.len())].clone();
+            let condition = match next(6) {
+                0 | 1 => ConditionTerm::signed_less_than(left, right),
+                2 => ConditionTerm::signed_less_equal(left, right),
+                3 => ConditionTerm::equal(left, right),
+                width => ConditionTerm::pointer_offset_equal(
+                    PointerOffsetTerm::scale_int32(left, if width == 4 { 4 } else { 1 }),
+                    PointerOffsetTerm::scale_int32(right, if width == 4 { 4 } else { 1 }),
+                ),
+            };
+            facts = facts.assume_condition(condition, true);
+        }
+        for left in &pool {
+            for right in &pool {
+                for strict in [true, false] {
+                    let filed = facts.has_order_path_for_memory_resolution(left, right, strict);
+                    let scanned = crate::kernel::assumptions::with_order_walk_full_scan(|| {
+                        facts.has_order_path_for_memory_resolution(left, right, strict)
+                    });
+                    assert_eq!(
+                        filed, scanned,
+                        "filed and scanned walks disagree on {left:?} -> {right:?} (strict {strict}) under {facts:?}"
+                    );
+                    compared += 1;
+                }
+            }
+        }
+    }
+    assert!(compared > 0);
+}

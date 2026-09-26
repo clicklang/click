@@ -739,6 +739,174 @@ impl PureFactContext {
         false
     }
 
+    /// The filing of this fact set that
+    /// [`Self::has_order_path_for_memory_resolution`] walks, shared by
+    /// fact-set identity exactly as [`Self::condition_order_facts`] is.
+    fn order_walk_index(&self) -> std::rc::Rc<OrderWalkIndex> {
+        let memo_id = super::super::dag_memo_assumptions_id(self);
+        if let Some(hit) = ORDER_WALK_INDEX_MEMO.with(|memo| memo.borrow().get(&memo_id).cloned()) {
+            crate::kernel::assumptions::reasoning_interrupted();
+            return hit;
+        }
+        let facts = self.condition_order_facts();
+        let mut complete = true;
+        let mut by_lower = BTreeMap::<Bitvector32Term, Vec<usize>>::new();
+        let mut by_exact_constant = BTreeMap::<i64, Vec<usize>>::new();
+        let mut by_written_constant = BTreeMap::<i64, Vec<usize>>::new();
+        let mut open = Vec::new();
+        for (index, (lower, _, _)) in facts.iter().enumerate() {
+            if !order_walk_keyable(lower) {
+                open.push(index);
+                continue;
+            }
+            // Filed under its canonical form too: the recorded-equality class
+            // a node looks up is spelled canonically.
+            let canonical = crate::kernel::eval::canonical_term(lower);
+            if &canonical != lower {
+                by_lower.entry(canonical).or_default().push(index);
+            }
+            by_lower.entry(lower.clone()).or_default().push(index);
+            if let Some(constant) = crate::kernel::assumptions::exact_signed_constant(lower, self) {
+                by_exact_constant.entry(constant).or_default().push(index);
+            }
+            if let Some(constant) = signed_bitvector_constant(lower) {
+                by_written_constant.entry(constant).or_default().push(index);
+            }
+        }
+        let mut equalities = Vec::new();
+        let mut equalities_by_side = BTreeMap::<Bitvector32Term, Vec<usize>>::new();
+        let mut offset_equality_atoms = BTreeSet::new();
+        for (condition, value) in self.condition_facts.iter() {
+            if crate::kernel::assumptions::reasoning_interrupted() {
+                complete = false;
+                break;
+            }
+            if !*value {
+                continue;
+            }
+            match condition {
+                ConditionTerm::Bitvector32Equal(left, right) => {
+                    let index = equalities.len();
+                    equalities.push((left.as_ref().clone(), right.as_ref().clone()));
+                    for side in [left.as_ref(), right.as_ref()] {
+                        if order_walk_keyable(side) {
+                            let filed = equalities_by_side.entry(side.clone()).or_default();
+                            if filed.last() != Some(&index) {
+                                filed.push(index);
+                            }
+                        }
+                    }
+                }
+                ConditionTerm::PointerOffsetEqual(left, right) => {
+                    for side in [left.as_ref(), right.as_ref()] {
+                        if let PointerOffsetTerm::Int32Scaled { value, .. } = side {
+                            offset_equality_atoms.insert(value.as_ref().clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let offset_equality_lowers = facts
+            .iter()
+            .enumerate()
+            .filter(|(_, (lower, _, _))| {
+                order_walk_keyable(lower) && offset_equality_atoms.contains(lower)
+            })
+            .map(|(index, _)| index)
+            .collect();
+        let index = std::rc::Rc::new(OrderWalkIndex {
+            facts,
+            by_lower,
+            by_exact_constant,
+            by_written_constant,
+            offset_equality_lowers,
+            open,
+            equalities,
+            equalities_by_side,
+            offset_equality_atoms,
+        });
+        // As for the order-fact collection: only a complete filing is shared.
+        if complete {
+            ORDER_WALK_INDEX_MEMO.with(|memo| {
+                let mut memo = memo.borrow_mut();
+                if memo.len() >= ORDER_WALK_INDEX_MEMO_LIMIT {
+                    memo.clear();
+                }
+                memo.insert(memo_id, index.clone());
+            });
+        }
+        index
+    }
+
+    /// The edges of `index` the order walk's node `current` can match,
+    /// ascending, or `None` when the node must read every edge.
+    ///
+    /// The walk's edge test is
+    /// `bitvector_terms_proven_equal_for_memory_resolution(current, lower)`
+    /// or, for two written constants, `current <= lower`. When `current` and
+    /// `lower` are each a constant or a variable that cannot name a load,
+    /// that comparison has exactly these routes: structural identity, two
+    /// exact constants (which then decide it outright, true or false), the
+    /// equality graph (`bitvector_terms_equal_from_facts`), and an exact
+    /// offset-equality fact over the two scaled terms. Every other route
+    /// needs a load (the load view of a load variable, the value stored under
+    /// a load, two loads' derivations) or a sum (additive cancellation, a
+    /// zero addend, congruence), and neither side of such a pair is one. So
+    /// a keyable node reads:
+    ///
+    /// * the open edges, whose lower endpoint is anything else;
+    /// * when it has an exact constant, the edges whose lower endpoint has
+    ///   the same one; one with a different constant is refused outright;
+    /// * the edges filed under a member of its recorded-equality class, which
+    ///   is everything the equality graph reaches;
+    /// * when it is a written constant, the edges whose written constant
+    ///   lower endpoint is at least it, and the edges whose lower endpoint an
+    ///   offset equality scales — a scaled constant is a constant offset,
+    ///   which such a fact can equate with a scaled variable.
+    ///
+    /// A variable an offset equality scales itself is declined: that route
+    /// could reach any endpoint the fact names.
+    fn order_walk_filed_edges(
+        &self,
+        index: &OrderWalkIndex,
+        current: &Bitvector32Term,
+    ) -> Option<Vec<usize>> {
+        let written = signed_bitvector_constant(current);
+        if written.is_none()
+            && (!order_walk_plain_variable(current)
+                || index.offset_equality_atoms.contains(current))
+        {
+            return None;
+        }
+        let mut edges = index.open.clone();
+        if let Some(constant) = crate::kernel::assumptions::exact_signed_constant(current, self)
+            && let Some(filed) = index.by_exact_constant.get(&constant)
+        {
+            edges.extend_from_slice(filed);
+        }
+        let canonical = crate::kernel::eval::canonical_term(current);
+        let keys = std::iter::once(current.clone())
+            .chain((&canonical != current).then_some(canonical))
+            .chain(self.bitvector_equality_class(current));
+        for key in keys {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(filed) = index.by_lower.get(&key) {
+                edges.extend_from_slice(filed);
+            }
+        }
+        if let Some(constant) = written {
+            for (_, filed) in index.by_written_constant.range(constant..) {
+                crate::instrumentation::record_deterministic_work(1);
+                edges.extend_from_slice(filed);
+            }
+            edges.extend_from_slice(&index.offset_equality_lowers);
+        }
+        edges.sort_unstable();
+        edges.dedup();
+        Some(edges)
+    }
+
     pub(in crate::kernel) fn has_order_path_for_memory_resolution(
         &self,
         left: &Bitvector32Term,
@@ -748,7 +916,8 @@ impl PureFactContext {
         if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
         }
-        let order_facts = self.condition_order_facts();
+        let walk_index = self.order_walk_index();
+        let order_facts = walk_index.facts.clone();
         let order_terms_match = |left: &Bitvector32Term, right: &Bitvector32Term| {
             if left == right {
                 return true;
@@ -817,7 +986,17 @@ impl PureFactContext {
             {
                 return true;
             }
-            for (edge_left, edge_right, edge_strict) in order_facts.iter() {
+            // The edges and equalities this node can match, in fact order.
+            // A node the filing covers reads its own entries; any other node
+            // reads every fact, as the walk always did.
+            let full_scan = order_walk_full_scan_forced();
+            let filed = (!full_scan)
+                .then(|| self.order_walk_filed_edges(&walk_index, &current))
+                .flatten();
+            let equalities_filed = !full_scan && order_walk_keyable(&current);
+            let edges = filed.unwrap_or_else(|| (0..order_facts.len()).collect());
+            for edge in edges {
+                let (edge_left, edge_right, edge_strict) = &order_facts[edge];
                 if crate::kernel::assumptions::reasoning_interrupted() {
                     return false;
                 }
@@ -835,19 +1014,28 @@ impl PureFactContext {
                     ));
                 }
             }
-            for (condition, value) in self.condition_facts.iter() {
+            // `order_terms_match` is structural identity unless both sides
+            // are loads, so a node that is not a load matches exactly the
+            // equalities that spell it as a side.
+            let equalities = if equalities_filed {
+                walk_index
+                    .equalities_by_side
+                    .get(&current)
+                    .cloned()
+                    .unwrap_or_default()
+            } else {
+                (0..walk_index.equalities.len()).collect()
+            };
+            for equality in equalities {
+                let (left, right) = &walk_index.equalities[equality];
                 if crate::kernel::assumptions::reasoning_interrupted() {
                     return false;
                 }
-                let (ConditionTerm::Bitvector32Equal(left, right), true) = (condition, value)
-                else {
-                    continue;
-                };
                 if order_terms_match(&current, left) {
-                    stack.push((right.as_ref().clone(), strict_so_far));
+                    stack.push((right.clone(), strict_so_far));
                 }
                 if order_terms_match(&current, right) {
-                    stack.push((left.as_ref().clone(), strict_so_far));
+                    stack.push((left.clone(), strict_so_far));
                 }
             }
         }
@@ -1592,4 +1780,92 @@ impl PureFactContext {
             PointerOffsetTerm::Variable(_) => false,
         }
     }
+}
+
+thread_local! {
+    static ORDER_WALK_INDEX_MEMO: std::cell::RefCell<
+        std::collections::HashMap<u64, std::rc::Rc<OrderWalkIndex>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+const ORDER_WALK_INDEX_MEMO_LIMIT: usize = 20_000;
+
+/// One fact set's order edges and true `int32` equalities, filed for the
+/// memory-resolution order walk
+/// ([`PureFactContext::has_order_path_for_memory_resolution`]).
+///
+/// That walk used to compare every node it reached with every order fact and
+/// every condition fact of the context, so each question cost the whole
+/// context. A store to `a[c5]` beside earlier cells `a[ci]` and bounds
+/// `0 <= ci < n` asks `c5 < ci` and `ci < c5` of every cell it keeps or
+/// drops; each walk reaches `n` and scanned every bound at both nodes, so
+/// `N` such stores cost `N^2`.
+///
+/// The filing is a pure syntactic function of the fact set, shared by
+/// fact-set identity. It decides nothing: a node reads a superset of the
+/// facts that could match it and applies the unchanged tests to each, in
+/// fact order, so the walk's answer is the one the full scan gives.
+pub(in crate::kernel) struct OrderWalkIndex {
+    /// [`PureFactContext::condition_order_facts`], in its order.
+    facts: std::rc::Rc<Vec<super::bounds::OrderFact>>,
+    /// Edges whose lower endpoint is a constant or a variable that cannot
+    /// name a load, by that endpoint and by its canonical form.
+    by_lower: BTreeMap<Bitvector32Term, Vec<usize>>,
+    /// Every other edge, ascending: read at every node.
+    open: Vec<usize>,
+    /// The keyable-lower edges by their lower endpoint's exact constant.
+    by_exact_constant: BTreeMap<i64, Vec<usize>>,
+    /// The edges whose lower endpoint is a written constant, by its signed
+    /// value.
+    by_written_constant: BTreeMap<i64, Vec<usize>>,
+    /// The keyable-lower edges whose lower endpoint an offset equality
+    /// scales.
+    offset_equality_lowers: Vec<usize>,
+    /// The true `int32` equalities, in fact order, as `(left, right)`.
+    equalities: Vec<(Bitvector32Term, Bitvector32Term)>,
+    /// The equalities with a side that is a constant or a variable that
+    /// cannot name a load, by that side, ascending.
+    equalities_by_side: BTreeMap<Bitvector32Term, Vec<usize>>,
+    /// The terms a true offset equality scales on one of its sides. A node
+    /// among them can equal an endpoint through that fact alone.
+    offset_equality_atoms: BTreeSet<Bitvector32Term>,
+}
+
+/// A variable the kernel never gives a load view: its id lies outside the
+/// reserved load-variable space.
+fn order_walk_plain_variable(term: &Bitvector32Term) -> bool {
+    matches!(term, Bitvector32Term::Variable(variable)
+        if !crate::kernel::eval::is_load_variable(variable))
+}
+
+/// A lower endpoint the walk files by its own spelling: a constant, or a
+/// variable the kernel never gives a load view.
+fn order_walk_keyable(term: &Bitvector32Term) -> bool {
+    matches!(term, Bitvector32Term::Constant(_)) || order_walk_plain_variable(term)
+}
+
+#[cfg(test)]
+thread_local! {
+    static ORDER_WALK_FULL_SCAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Runs `body` with the order walk reading every fact at every node, as it
+/// did before [`OrderWalkIndex`]: the reference the filed walk is checked
+/// against.
+#[cfg(test)]
+pub(in crate::kernel) fn with_order_walk_full_scan<R>(body: impl FnOnce() -> R) -> R {
+    let previous = ORDER_WALK_FULL_SCAN.with(|flag| flag.replace(true));
+    let result = body();
+    ORDER_WALK_FULL_SCAN.with(|flag| flag.set(previous));
+    result
+}
+
+#[cfg(test)]
+fn order_walk_full_scan_forced() -> bool {
+    ORDER_WALK_FULL_SCAN.with(std::cell::Cell::get)
+}
+
+#[cfg(not(test))]
+fn order_walk_full_scan_forced() -> bool {
+    false
 }

@@ -3632,15 +3632,17 @@ fn quantified_frame_samples(
 
 /// A quantified fact about a separated array crosses a straight line of
 /// stores into the owned array. The frame walks each read's history once, so
-/// its own work is near linear in the stores. The whole verification is not
-/// asserted on this axis: executing a store to a symbolic cell compares it
-/// with every earlier symbolic cell of its block, which is the store rule's
-/// cost and not the frame's.
+/// its own work is near linear in the stores, and so is the whole
+/// verification: each store's refusal to keep the earlier cell it may alias
+/// reads only the order facts filed under the two indices
+/// (`stores_to_bounded_unordered_indices_are_near_linear`), where it used to
+/// scan every index's bounds (40,117 to 142,848 units at 4 to 32 stores).
 #[test]
 fn quantified_frame_is_near_linear_in_crossed_stores() {
-    quantified_frame_samples("quantified frame across stores", |size| {
+    let samples = quantified_frame_samples("quantified frame across stores", |size| {
         quantified_frame_project(size, 1, 0)
     });
+    assert_near_linear_scaling("quantified frame across stores", &samples);
 }
 
 /// The quantified body grows by one framed conjunct per step: one leaf and
@@ -3801,5 +3803,89 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     assert!(
         most - least <= 32,
         "deterministic work depends on the composite range's length: {samples:?}"
+    );
+}
+
+/// `N` stores `a[ck] = k`, each index bounded by `0 <= ck < n` and none
+/// ordered against another, then a claim about the last one.
+fn bounded_index_stores(stores: usize) -> (String, String) {
+    let indices = (0..stores)
+        .map(|index| format!(", int32 c{index}"))
+        .collect::<String>();
+    let signature = format!("void mark(int32 *a, int32 n{indices})");
+    let store_lines = (0..stores)
+        .map(|index| format!("    a[c{index}] = {index};\n"))
+        .collect::<String>();
+    let c_source = format!("{signature} {{\n{store_lines}}}\n");
+    let bounds = (0..stores)
+        .map(|index| format!("    requires 0 <= c{index};\n    requires c{index} < n;\n"))
+        .collect::<String>();
+    let last = stores - 1;
+    let steps = "    step();\n".repeat(stores);
+    let click_source = format!(
+        "verifying \"mark.c\";\n\n{signature} {{\n{bounds}    owns a[0..n];\n    \
+         ensures a[c{last}] == {last};\n}} by {{\n{steps}    execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// A straight line of `N` stores to indices that facts bound but do not
+/// order. Each store drops the earlier cell it may alias, and deciding that
+/// asks whether its index is below or above the cell's; both refusals walk
+/// the order facts from the two indices to their shared bound `n`. The walk
+/// used to compare every node it reached with every order and condition fact
+/// of the context, which holds `2N` bounds, so each store cost the context
+/// and the line cost `N^2`: the store rule's work was 2,294, 7,902, 28,334,
+/// 106,062 and 408,974 units at 4 to 64 stores, almost all of it offset
+/// cancellation. The walk now reads the edges filed under each node
+/// (`OrderWalkIndex`), so a store's refusal costs the same beside any number
+/// of other indices' bounds: 990, 2,162, 4,506, 9,194 and 18,570 units.
+#[test]
+fn stores_to_bounded_unordered_indices_are_near_linear() {
+    const STORE_WORK: &str = "operation `verification statement: store`";
+    let samples = [4, 8, 16, 32, 64]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = bounded_index_stores(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "{size} bounded-index stores should verify: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    let store_work = samples
+        .iter()
+        .map(|sample| {
+            let work = sample.named_work.get(STORE_WORK).copied().unwrap_or(0);
+            assert!(work > 0, "the stores did not run: {sample:?}");
+            work
+        })
+        .collect::<Vec<_>>();
+    // A linear curve doubles per doubling; a quadratic one quadruples. The
+    // store rule is asked 9/4 at most over the three largest doublings, and
+    // the whole verification the same, which the old walk exceeded at every
+    // size (3.4 to 3.9 per doubling).
+    let within = |low: usize, high: usize| high.saturating_mul(4) <= low.saturating_mul(9);
+    assert!(
+        store_work
+            .windows(2)
+            .skip(1)
+            .all(|pair| within(pair[0], pair[1])),
+        "the store rule's work over bounded unordered indices is not near linear: {store_work:?}; named work: {}",
+        named_growth_diagnostic(&samples)
+    );
+    assert!(
+        samples
+            .windows(2)
+            .skip(1)
+            .all(|pair| within(pair[0].work, pair[1].work)),
+        "stores to bounded unordered indices are not near linear: {samples:?}; named work: {}",
+        named_growth_diagnostic(&samples)
     );
 }

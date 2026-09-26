@@ -1331,3 +1331,70 @@ fn extending_a_cloned_context_leaves_the_original_propositions() {
     assert_eq!(extended.prop_facts.len(), 65);
     assert!(!original.prop_facts.contains(&separation(64)));
 }
+
+/// The memory-resolution order walk beside `N` bounded indices that share its
+/// bound: `0 <= ui` and `ui < n` for each, with `0 <= x < n` and
+/// `0 <= y < n`. This is the context a store to `a[y]` asks `x < y` and
+/// `y < x` in when an earlier cell sits at `a[x]` (every index of the
+/// function is bounded the same way), and neither holds. Each walk reaches
+/// `n` and the constant bounds, and it used to compare each node it reached
+/// with every order fact and every condition fact, so the refusal cost the
+/// whole context and `N` such stores cost `N^2`. The filed walk reads the
+/// edges filed under each node, so a refused and a proved walk cost the same
+/// at every size once the fact set is filed (the filing is paid once per
+/// fact set). The full scan is measured beside it and has to grow, which is
+/// what makes this a regression for the old walk.
+#[test]
+fn memory_resolution_order_walk_ignores_shared_bounds_of_other_indices() {
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(97_000 + id));
+    let (x, y, n) = (variable(0), variable(1), variable(2));
+    let zero = Bitvector32Term::Constant(0);
+    let bounded = |facts: PureFactContext, index: &Bitvector32Term| {
+        facts
+            .assume_condition(
+                ConditionTerm::signed_less_equal(zero.clone(), index.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(index.clone(), n.clone()),
+                true,
+            )
+    };
+    let mut filed = Vec::new();
+    let mut scanned = Vec::new();
+    for size in [64u64, 128, 256, 512] {
+        let facts = (0..size).fold(
+            bounded(bounded(PureFactContext::new(), &x), &y),
+            |facts, index| bounded(facts, &variable(10 + index)),
+        );
+        let refused = ConditionTerm::signed_less_than(x.clone(), y.clone());
+        let proved = ConditionTerm::signed_less_than(x.clone(), n.clone());
+        // File the fact set once; the filing is not what is measured.
+        assert!(!facts.proves_order_condition_for_memory_resolution(&refused, true));
+        let measure = |condition: &ConditionTerm, expected: bool| {
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.proves_order_condition_for_memory_resolution(condition, true)
+            });
+            assert_eq!(answer, expected, "{condition:?} at {size}");
+            work
+        };
+        filed.push((size, measure(&refused, false) + measure(&proved, true)));
+        let (_, scan_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::assumptions::with_order_walk_full_scan(|| {
+                assert!(!facts.proves_order_condition_for_memory_resolution(&refused, true));
+            })
+        });
+        scanned.push((size, scan_work));
+    }
+    eprintln!(
+        "order walk beside N bounded indices (N, work): filed {filed:?}, full scan {scanned:?}"
+    );
+    assert!(
+        filed.iter().all(|(_, work)| *work == filed[0].1),
+        "the filed order walk visited unrelated bounds: {filed:?}"
+    );
+    assert!(
+        scanned[3].1 >= 4 * scanned[0].1,
+        "the full-scan reference no longer grows with the bounds, so this test measures nothing: {scanned:?}"
+    );
+}
