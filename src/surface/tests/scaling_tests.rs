@@ -3663,3 +3663,94 @@ fn quantified_frame_is_near_linear_in_unrelated_facts() {
     });
     assert_near_linear_scaling("quantified frame with unrelated facts", &samples);
 }
+
+/// A function whose contract views `size` arrays over one shared length and
+/// owns one more, with a body that touches none of them.
+fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
+    let params = (0..size)
+        .map(|index| format!("int32 *a{index}"))
+        .chain(owned.then(|| "int32 *out".to_string()))
+        .chain(std::iter::once("int32 n".to_string()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let c_source = format!("int32 f({params}) {{\n    return n;\n}}\n");
+    let mut click_source = format!("verifying \"f.c\";\nint32 f({params}) {{\n");
+    for index in 0..size {
+        click_source.push_str(&format!("    views a{index}[0..n];\n"));
+    }
+    if owned {
+        click_source.push_str("    owns out[0..1];\n");
+    }
+    click_source.push_str("    ensures result == n by auto;\n}\n");
+    (c_source, click_source)
+}
+
+/// The entry of a contract with `N` views beside one owner
+/// (`docs/internals/verification-efficiency.md`). The entry partition states
+/// `N` owner/view separations, and each of the `N` derived `viewable` facts
+/// looks for a held range covering it. That lookup used to ask every held
+/// range of the parameters' shared block, and each asked the
+/// explicit-separation veto first, which walks every separation: `N^3` at
+/// entry (1,542,282 units at `N = 32`, against 140,617 now).
+///
+/// Two curves are pinned near-linear: the derived-fact coverage check, which
+/// now asks the range written against the fact's own base first, and the
+/// veto, which is now asked only of a pair another route covers. The total is
+/// held under a quadratic ceiling: installing borrowed inputs still asks
+/// every held range of the block once per view
+/// (`ResourceContext::view_occurrences_for_fact`, which must see every
+/// candidate to refuse an ambiguous binding), so the total is not yet linear.
+#[test]
+fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
+    let samples = [4, 8, 16, 32]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = many_viewed_arrays(size, true);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("f.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("size {size} many-views fixture failed: {}", error.message())
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    let curve = |name: &str, require_reached: bool| {
+        samples
+            .iter()
+            .map(|sample| {
+                let work = sample.named_work.get(name).copied();
+                if require_reached {
+                    assert!(work.is_some(), "fixture did not reach {name}: {sample:?}");
+                }
+                ScalingSample {
+                    size: sample.size,
+                    work: work.unwrap_or(0),
+                    named_work: BTreeMap::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_near_linear_scaling(
+        "derived entry fact resource check beside many views",
+        &curve("operation `derived fact resource check`", true),
+    );
+    assert_near_linear_scaling(
+        "explicit-separation veto beside many views",
+        &curve(
+            "operation `memory range coverage: explicit separation`",
+            false,
+        ),
+    );
+    // A quadratic curve quadruples per doubling and a cubic one multiplies
+    // by eight; 4.5 separates them with room for fixed-cost noise.
+    assert!(
+        samples
+            .windows(2)
+            .skip(1)
+            .all(|pair| pair[1].work.saturating_mul(2) <= pair[0].work.saturating_mul(9)),
+        "many-views contract entry grows faster than quadratically: {samples:?}; named work: {}",
+        named_growth_diagnostic(&samples),
+    );
+}

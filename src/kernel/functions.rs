@@ -19757,6 +19757,7 @@ pub(crate) fn contract_entry_partition_facts(
         .iter()
         .filter_map(|clause| clause.fact.memory_view_range());
     let mut facts = Vec::new();
+    let mut seen = BTreeSet::new();
     for viewed in borrowed {
         for owned in &transferred {
             // A property of the two ranges alone, so the body proof and
@@ -19768,7 +19769,7 @@ pub(crate) fn contract_entry_partition_facts(
                 left: CResource::Memory((*owned).clone()),
                 right: CResource::Memory(viewed.clone()),
             };
-            if !facts.contains(&fact) {
+            if seen.insert(fact.clone()) {
                 facts.push(fact);
             }
         }

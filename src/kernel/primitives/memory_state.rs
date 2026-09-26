@@ -981,28 +981,42 @@ pub(crate) fn resource_context_has_symbolic_range_read(
     bytes: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
-    resources.facts().iter().any(|fact| {
-        let Some(range) = fact.memory_range() else {
-            return false;
-        };
-        let element_width = range.element_width();
-        let Some(elements) =
-            crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
-        else {
-            return false;
-        };
-        let required = CMemoryRange::new_with_element_width(
-            base.clone(),
-            Bitvector32Term::Constant(0),
-            elements,
-            element_width,
-        );
-        crate::kernel::primitives::resource_algebra::memory_range_covers(
-            range,
-            &required,
-            assumptions,
-        )
-    })
+    // The ranges written against `base` itself are asked first, from the base
+    // index; they are the usual answer. The whole-context scan is the same
+    // question over a superset, kept for a range reached through an alias or
+    // another spelling of the base, and paid only on a miss. Without the
+    // first phase, `N` derived facts over `N` held ranges of one block cost
+    // `N * N` coverage queries at a contract's entry.
+    resources
+        .memory_base_facts(base)
+        .any(|fact| memory_fact_reads_symbolic_range(fact, base, bytes, assumptions))
+        || resources
+            .facts()
+            .iter()
+            .any(|fact| memory_fact_reads_symbolic_range(fact, base, bytes, assumptions))
+}
+
+fn memory_fact_reads_symbolic_range(
+    fact: &CResourceFact,
+    base: &Pointer,
+    bytes: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> bool {
+    let Some(range) = fact.memory_range() else {
+        return false;
+    };
+    let element_width = range.element_width();
+    let Some(elements) = crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
+    else {
+        return false;
+    };
+    let required = CMemoryRange::new_with_element_width(
+        base.clone(),
+        Bitvector32Term::Constant(0),
+        elements,
+        element_width,
+    );
+    crate::kernel::primitives::resource_algebra::memory_range_covers(range, &required, assumptions)
 }
 
 impl CLocalEnvironment {

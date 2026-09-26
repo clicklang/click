@@ -2211,6 +2211,23 @@ impl ResourceContext {
             .map(|entry| self.fact(*entry))
     }
 
+    /// The memory facts whose range base is spelled exactly `base`, from the
+    /// base index. A subset of [`Self::memory_block_facts`]: a lookup that
+    /// usually succeeds on the range written against its own base asks these
+    /// first and falls back to the wider scan only on a miss.
+    pub(in crate::kernel) fn memory_base_facts(
+        &self,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &CResourceFact> {
+        self.storage
+            .index
+            .memory_by_base
+            .get(base)
+            .into_iter()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| self.fact(*entry))
+    }
+
     /// Necessary-shape candidates for proof-aware direct resource matching.
     /// Snapshot-insensitive matching cannot change a pointer block, resource
     /// family, composite/token name, or arity, so unrelated facts need not
@@ -6635,18 +6652,34 @@ pub(in crate::kernel) fn memory_range_covers(
     if available.base().blocks_proven_distinct(required.base()) {
         return false;
     }
-    if crate::instrumentation::measure_operation(
-        "kernel",
-        "memory range coverage",
-        "memory range coverage: explicit separation",
-        || {
-            assumptions.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
-                available, required,
-            )
-        },
-    ) {
-        return false;
-    }
+    // An explicit separation only vetoes a coverage another route proves, so
+    // it is asked last, and only of a pair some route covers. Asked first, it
+    // ran for every candidate range a coverage lookup scans, and each run
+    // walks the context's separation facts: a contract with `N` views beside
+    // one owner paid `N` lookups x `N` candidates x `N` facts at entry. The
+    // answer is the same conjunction either way.
+    memory_range_covered_by_some_route(available, required, assumptions)
+        && !crate::instrumentation::measure_operation(
+            "kernel",
+            "memory range coverage",
+            "memory range coverage: explicit separation",
+            || {
+                assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        available, required,
+                    )
+            },
+        )
+}
+
+/// The positive coverage routes of [`memory_range_covers`], for two
+/// equal-width ranges that are not syntactically equal and not in provably
+/// distinct blocks. The caller applies the explicit-separation veto.
+fn memory_range_covered_by_some_route(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
     if memory_range_covers_with_exact_index(available, required, assumptions) {
         return true;
     }
