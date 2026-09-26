@@ -55,11 +55,9 @@ A smart tactic that owns its body is one site. The `simp` written in a smart
 `close_invariants by` bundle selects that enclosing tactic, and expansion
 rewrites the whole site. A `have` whose body mixes several tactics is not a
 site itself; each smart tactic written in its body is, and expanding one
-rewrites exactly that tactic's source, leaving its neighbors as written. A
-smart tactic in a proof `if` or `cases` arm written inside a `have` body, or
-inside the body of a `have` in a loop's `initialize` phase, is not yet
-addressable on its own; selecting it fails and says to expand the claim with
-`--claim` instead.
+rewrites exactly that tactic's source, leaving its neighbors as written. The
+same holds for a smart tactic in a proof `if` or `cases` arm written inside a
+`have` body, and inside the body of a `have` in a loop's `initialize` phase.
 
 The claim form expands every smart tactic in one named function claim and is
 useful when aggregate smart work matters even though no individual site is
@@ -68,7 +66,8 @@ slow.
 Selection never changes how tactics are numbered: `click profile`, `click
 audit`, and tactic timing keep their flat per-claim source indices, and a
 tactic inside a `have` body is addressed by its enclosing `have`'s index plus
-its written position in each body.
+its written position in each body, and, inside an `if` or `cases` arm there,
+by which arm and its written position in that arm.
 
 The selected proof unit must verify before rewriting. Click verifies the
 complete rewritten proof unit before any output is written. Imported theorem

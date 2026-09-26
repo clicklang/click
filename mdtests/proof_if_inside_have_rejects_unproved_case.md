@@ -27,5 +27,5 @@ int32 unproved_have_case(int32 x) {
 ```
 
 ```expect
-fail: have body tactic 1: `simp` failed for `unproved_have_case.ensures_0`: could not establish `x <= 0`
+fail: have body tactic 1 > else arm tactic 1: `simp` failed for `unproved_have_case.ensures_0`: could not establish `x <= 0`
 ```

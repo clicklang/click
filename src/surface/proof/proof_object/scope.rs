@@ -613,6 +613,25 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    /// [`Self::try_authoritative_linear_script`] for a body whose driver
+    /// knows where each tactic was written: `sites[index]` addresses
+    /// `tactics[index]`.
+    pub(in crate::surface::proof) fn try_addressed_linear_script(
+        &self,
+        tactics: &[ProofTactic],
+        sites: &[ProofStepSite],
+    ) -> Result<Option<Self>, ClickError> {
+        let Some(body) = self
+            .body
+            .try_addressed_linear_script(tactics, sites, &mut None)?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     pub(in crate::surface::proof) fn try_authoritative_linear_script_reporting(
         &self,
         tactics: &[ProofTactic],

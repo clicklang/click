@@ -5794,18 +5794,43 @@ impl<'a> Proof<'a> {
         tactics: &[ProofTactic],
         declined: &mut Option<LinearScriptDecline>,
     ) -> Result<Option<Self>, ClickError> {
+        // Address each tactic's diagnostics by its position in the block the
+        // user wrote, so a failure inside one `have` body is distinguishable
+        // from the same failure inside another.
+        let sites = (0..tactics.len())
+            .map(|index| self.site().at_block_position(index))
+            .collect::<Vec<_>>();
+        self.try_addressed_linear_script(tactics, &sites, declined)
+    }
+
+    /// The linear script runner. `sites[index]` is where `tactics[index]`
+    /// was written. A proof `if` or `cases` arm is checked together with the
+    /// tactics after it, so its script joins the arm's own tactics, addressed
+    /// inside that arm, to the continuation, which keeps the addresses it has
+    /// in the enclosing block: every written tactic reports its own source
+    /// position however many arms check it.
+    pub(in crate::surface::proof) fn try_addressed_linear_script(
+        &self,
+        tactics: &[ProofTactic],
+        sites: &[ProofStepSite],
+        declined: &mut Option<LinearScriptDecline>,
+    ) -> Result<Option<Self>, ClickError> {
+        debug_assert_eq!(tactics.len(), sites.len());
         let pure_source = matches!(self.context.as_ref(), ProofContext::Pure(_));
         if tactics.is_empty() {
             *declined = Some(LinearScriptDecline::Shape);
             return Ok(None);
         }
+        let arm_sites = |index: usize, arm: usize, name: &'static str, written: usize| {
+            (0..written)
+                .map(|position| sites[index].in_arm(arm, name, position))
+                .chain(sites[index + 1..].iter().cloned())
+                .collect::<Vec<_>>()
+        };
 
         let mut proof = self.clone();
         for (index, tactic) in tactics.iter().enumerate() {
-            // Address this tactic's diagnostics by its position in the block
-            // the user wrote, so a failure inside one `have` body is
-            // distinguishable from the same failure inside another.
-            proof = proof.at_block_position(index);
+            proof = proof.at_site(&sites[index]);
             let nested_capture = proof.begin_nested_tactic_capture();
             if proof.focused_discharged() {
                 // A closer after a step that already discharged the goal (a
@@ -5924,49 +5949,62 @@ impl<'a> Proof<'a> {
                         script_arm_with_continuation(&proof_if.then_tactics, &tactics[index + 1..]);
                     let else_tactics =
                         script_arm_with_continuation(&proof_if.else_tactics, &tactics[index + 1..]);
+                    let then_sites = arm_sites(index, 0, "then", proof_if.then_tactics.len());
+                    let else_sites = arm_sites(index, 1, "else", proof_if.else_tactics.len());
                     let (split_proof, split, ids) =
                         proof.split_focused_if(proof_if.condition.clone())?;
                     let marker = split_proof.checkpoint();
                     let Some(then_done) = split_proof
                         .focus_branch(ids[0])?
-                        .try_authoritative_linear_script(&then_tactics)?
+                        .try_addressed_linear_script(&then_tactics, &then_sites, &mut None)?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
                     let Some(both_done) = then_done
                         .focus_branch(ids[1])?
-                        .try_authoritative_linear_script(&else_tactics)?
+                        .try_addressed_linear_script(&else_tactics, &else_sites, &mut None)?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
-                    proof = both_done.join_focused_if(
-                        &marker,
-                        split,
-                        ids,
-                        proof_if.condition.clone(),
-                    )?;
+                    proof = both_done
+                        .join_focused_if(&marker, split, ids, proof_if.condition.clone())?
+                        .at_site(&sites[index]);
                     return Ok(proof.focused_discharged().then_some(proof));
                 }
                 ProofTactic::Both(both) => {
+                    // A `both` arm proves one conjunct and continues nothing.
+                    let own_arm_sites = |arm: usize, name: &'static str, written: usize| {
+                        (0..written)
+                            .map(|position| sites[index].in_arm(arm, name, position))
+                            .collect::<Vec<_>>()
+                    };
+                    let left_sites = own_arm_sites(0, "left", both.left_tactics.len());
+                    let right_sites = own_arm_sites(1, "right", both.right_tactics.len());
                     let (split_proof, split, ids) = proof.split_focused_both()?;
                     let marker = split_proof.checkpoint();
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
-                        .try_authoritative_linear_script(&both.left_tactics)?
+                        .try_addressed_linear_script(&both.left_tactics, &left_sites, &mut None)?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
                     let Some(both_done) = left_done
                         .focus_branch(ids[1])?
-                        .try_authoritative_linear_script(&both.right_tactics)?
+                        .try_addressed_linear_script(
+                            &both.right_tactics,
+                            &right_sites,
+                            &mut None,
+                        )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
-                    proof = both_done.join_focused_both(&marker, split, ids)?;
+                    proof = both_done
+                        .join_focused_both(&marker, split, ids)?
+                        .at_site(&sites[index]);
                 }
                 ProofTactic::Cases(proof_cases) => {
                     let left_tactics = script_arm_with_continuation(
@@ -5977,29 +6015,28 @@ impl<'a> Proof<'a> {
                         &proof_cases.right_tactics,
                         &tactics[index + 1..],
                     );
+                    let left_sites = arm_sites(index, 0, "left", proof_cases.left_tactics.len());
+                    let right_sites = arm_sites(index, 1, "right", proof_cases.right_tactics.len());
                     let (split_proof, split, ids) =
                         proof.split_focused_cases(proof_cases.disjunction.clone())?;
                     let marker = split_proof.checkpoint();
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
-                        .try_authoritative_linear_script(&left_tactics)?
+                        .try_addressed_linear_script(&left_tactics, &left_sites, &mut None)?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
                     let Some(both_done) = left_done
                         .focus_branch(ids[1])?
-                        .try_authoritative_linear_script(&right_tactics)?
+                        .try_addressed_linear_script(&right_tactics, &right_sites, &mut None)?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
-                    proof = both_done.join_focused_cases(
-                        &marker,
-                        split,
-                        ids,
-                        proof_cases.disjunction.clone(),
-                    )?;
+                    proof = both_done
+                        .join_focused_cases(&marker, split, ids, proof_cases.disjunction.clone())?
+                        .at_site(&sites[index]);
                     return Ok(proof.focused_discharged().then_some(proof));
                 }
                 tactic => {

@@ -1178,33 +1178,34 @@ int32 bad(int32 x) {
         })
     }
 
-    /// A proof `if` arm and the continuation after a `have` are addressed by
-    /// line; a smart tactic in a `cases` arm written inside a `have` body is
-    /// refused with the reason instead of selecting a neighbor.
+    /// A proof `if` arm, the continuation after a `have`, and each arm of a
+    /// `cases` written inside a `have` body are addressed by line: the
+    /// expansion rewrites exactly the selected tactic's lines.
     #[test]
-    fn lines_in_proof_if_arms_select_and_a_cases_arm_in_a_have_body_is_refused() {
+    fn lines_in_proof_if_arms_and_in_cases_arms_inside_a_have_body_select() {
         click::cli::with_work_budget_verdicts(|| {
             let path = mdtest_path("proof_cases_after_c_branch_expands.md");
-            for line in [53, 65] {
-                assert_eq!(markdown_line(&path, line).trim(), "simp();");
+            let original = fs::read_to_string(&path).unwrap();
+            let original_lines = original.lines().collect::<Vec<_>>();
+            // (selected line, first and last line of the rewritten tactic): the
+            // `simp` in the smart `have` on line 59 selects that `have`.
+            for (line, first, last) in [(53, 53, 53), (65, 65, 65), (57, 57, 57), (60, 59, 61)] {
                 let expanded = run_location(&path, &line.to_string())
                     .unwrap_or_else(|error| panic!("line {line}: {error}"));
-                let original = fs::read_to_string(&path).unwrap();
                 assert_ne!(expanded, original);
+                let expanded_lines = expanded.lines().collect::<Vec<_>>();
                 // Every other line of the proof is kept as written.
                 assert_eq!(
-                    expanded.lines().take(line - 1).collect::<Vec<_>>(),
-                    original.lines().take(line - 1).collect::<Vec<_>>()
+                    expanded_lines[..first - 1],
+                    original_lines[..first - 1],
+                    "line {line}:\n{expanded}"
                 );
-            }
-            for line in [57, 60] {
-                let error = run_location(&path, &line.to_string())
-                    .expect_err("a smart tactic in a cases arm inside a have body is refused");
-                assert!(
-                    error.contains("inside a proof `cases` written in a `have` body"),
-                    "{error}"
+                let kept_after = original_lines.len() - last;
+                assert_eq!(
+                    expanded_lines[expanded_lines.len() - kept_after..],
+                    original_lines[last..],
+                    "line {line}:\n{expanded}"
                 );
-                assert!(error.contains("--claim use_pick.contract"), "{error}");
             }
         })
     }

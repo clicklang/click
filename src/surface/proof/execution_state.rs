@@ -204,7 +204,7 @@ fn undecided_tactic_expansion(
     if let Some(nested) = &capture.nested {
         return Err(ClickError::new(if capture.result.is_some() {
             format!(
-                "the selected tactic is written inside the `have` at source tactic {source_index} of {}; that `have` was checked, but by a driver that does not address the tactics written in its body (a loop `initialize` phase helper is one), so the selected tactic's own expansion (source path {:?}) could not be isolated; expand the whole claim with `--claim` instead",
+                "the selected tactic is written inside the tactic at source tactic {source_index} of {}; that tactic was checked, but no checked step reported the selected tactic's source path {:?}, so its own expansion could not be isolated (a verifier defect: every checked written tactic reports its path); expand the whole claim with `--claim` instead",
                 site.description(),
                 nested.path
             )

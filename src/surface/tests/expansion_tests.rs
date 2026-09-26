@@ -4383,7 +4383,8 @@ fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
 }
 
 /// Expands the smart `simp` written at `line` inside a mixed `have` body,
-/// checks that only that line changed, and re-verifies the rewrite.
+/// checks that only that line was replaced (by one or more lines), and
+/// re-verifies the rewrite.
 fn assert_mixed_have_body_simp_expands(
     click_source: &str,
     sources: &[(&str, &str)],
@@ -4395,14 +4396,19 @@ fn assert_mixed_have_body_simp_expands(
         .unwrap_or_else(|error| panic!("{line}:{column}: {}", error.message()));
     let original = click_source.lines().collect::<Vec<_>>();
     let rewritten = expanded.lines().collect::<Vec<_>>();
-    assert_eq!(rewritten.len(), original.len(), "{expanded}");
-    for (index, (before, after)) in original.iter().zip(&rewritten).enumerate() {
-        if index + 1 == line {
-            assert_ne!(before, after, "{expanded}");
-        } else {
-            assert_eq!(before, after, "{expanded}");
-        }
-    }
+    assert!(rewritten.len() >= original.len(), "{expanded}");
+    assert_eq!(rewritten[..line - 1], original[..line - 1], "{expanded}");
+    let kept_after = original.len() - line;
+    let replaced = &rewritten[line - 1..rewritten.len() - kept_after];
+    assert_eq!(
+        rewritten[rewritten.len() - kept_after..],
+        original[line..],
+        "{expanded}"
+    );
+    assert!(
+        !replaced.contains(&original[line - 1]),
+        "the selected line was kept: {expanded}"
+    );
     verify_c0_sources(&expanded, sources).expect("the rewritten body tactic should check");
     expanded
 }
@@ -4506,57 +4512,157 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
     assert_mixed_have_body_simp_expands(click_source, &[("count_up.c", c_source)], 16, 17);
 }
 
-/// A loop `initialize` phase checks its helper `have`s without addressing
-/// the tactics written in their bodies, so a smart tactic there cannot be
-/// isolated yet; expansion says so instead of rewriting a neighbor.
-#[test]
-fn a_have_body_tactic_in_a_loop_initialize_phase_is_refused_with_a_reason() {
-    let c_source = "int32 count_to_n(int32 n) {\n\
-        \x20   int32 i;\n\
-        \x20   i = 0;\n\
-        \x20   while (i < n) {\n\
-        \x20       i++;\n\
-        \x20   }\n\
-        \x20   return i;\n\
-        }\n";
-    let click_source = "verifying \"count_up.c\";\n\
-        int32 count_to_n(int32 n) {\n\
+const COUNT_UP_C: &str = "int32 count_to_n(int32 n) {\n\
+    \x20   int32 i;\n\
+    \x20   i = 0;\n\
+    \x20   while (i < n) {\n\
+    \x20       i++;\n\
+    \x20   }\n\
+    \x20   return i;\n\
+    }\n";
+
+/// A frontier-local counting loop whose `initialize` phase is `phase`.
+fn count_up_with_initialize(phase: &str) -> String {
+    format!(
+        "verifying \"count_up.c\";\n\
+        int32 count_to_n(int32 n) {{\n\
         \x20   requires n >= 0 and n <= 2147483647;\n\
         \x20   ensures result == n;\n\
-        } by {\n\
+        }} by {{\n\
         \x20   step();\n\
         \x20   step();\n\
-        \x20   loop {\n\
+        \x20   loop {{\n\
         \x20       decreases n - i;\n\
         \x20       invariant i >= 0;\n\
         \x20       invariant i <= n;\n\
-        \x20       initialize by {\n\
-        \x20           have 0 <= n by {\n\
+        \x20       initialize by {{\n\
+        {phase}\
+        \x20       }}\n\
+        \x20       preserve by {{\n\
+        \x20           step();\n\
+        \x20           close_invariants();\n\
+        \x20       }}\n\
+        \x20   }}\n\
+        \x20   step();\n\
+        \x20   simp();\n\
+        }}\n"
+    )
+}
+
+/// A loop `initialize` phase addresses the tactics written in a helper
+/// `have`'s body as other phases do, so the smart `simp` there expands on
+/// its own.
+#[test]
+fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
+    let click_source = count_up_with_initialize(
+        "\x20           have 0 <= n by {\n\
         \x20               have n == n by simp;\n\
         \x20               simp();\n\
         \x20           }\n\
+        \x20           simp();\n",
+    );
+    assert_mixed_have_body_simp_expands(&click_source, &[("count_up.c", COUNT_UP_C)], 15, 17);
+}
+
+/// The same holds for the body of the `have` that is one invariant's own
+/// initialization proof.
+#[test]
+fn source_expander_rewrites_a_have_body_tactic_in_an_initialize_invariant_body() {
+    let click_source = count_up_with_initialize(
+        "\x20           have i >= 0 by simp;\n\
+        \x20           have i <= n by {\n\
+        \x20               have n == n by simp;\n\
+        \x20               simp();\n\
+        \x20           }\n",
+    );
+    assert_mixed_have_body_simp_expands(&click_source, &[("count_up.c", COUNT_UP_C)], 16, 17);
+}
+
+/// A smart tactic in a proof `if` arm, or a `cases` arm, written inside a
+/// `have` body expands on its own: the arm is part of its source path, so no
+/// other tactic's checked delta is recorded for it.
+#[test]
+fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    let sources = [("identity.c", c_source)];
+    let if_source = "verifying \"identity.c\";\n\
+        int32 identity(int32 x) {\n\
+        \x20   ensures result == x;\n\
+        } by {\n\
+        \x20   have x <= x by {\n\
+        \x20       have x == x by simp;\n\
+        \x20       if x > 0 {\n\
+        \x20           have x > 0 by simp;\n\
+        \x20           simp();\n\
+        \x20       } else {\n\
+        \x20           have x == x by simp;\n\
         \x20           simp();\n\
         \x20       }\n\
-        \x20       preserve by {\n\
-        \x20           step();\n\
-        \x20           close_invariants();\n\
-        \x20       }\n\
         \x20   }\n\
-        \x20   step();\n\
+        \x20   execute();\n\
         \x20   simp();\n\
         }\n";
-    let sources = [("count_up.c", c_source)];
-    verify_c0_sources(click_source, &sources).expect("fixture verifies");
-    let error = expand_c0_tactic_source_at(click_source, &sources, 15, 17)
-        .expect_err("an initialize-phase helper body tactic cannot be isolated yet");
-    assert!(
-        error
-            .message()
-            .contains("by a driver that does not address the tactics written in its body"),
-        "{}",
-        error.message()
+    for (line, column) in [(9, 13), (12, 13)] {
+        assert_mixed_have_body_simp_expands(if_source, &sources, line, column);
+    }
+    let cases_source = "verifying \"identity.c\";\n\
+        int32 identity(int32 x) {\n\
+        \x20   ensures result == x;\n\
+        } by {\n\
+        \x20   have x <= x by {\n\
+        \x20       have x > 0 or not (x > 0) by {\n\
+        \x20           if x > 0 {\n\
+        \x20               left();\n\
+        \x20           } else {\n\
+        \x20               right();\n\
+        \x20           }\n\
+        \x20       }\n\
+        \x20       cases (x > 0 or not (x > 0)) {\n\
+        \x20           have x > 0 by simp;\n\
+        \x20           simp();\n\
+        \x20       } {\n\
+        \x20           simp();\n\
+        \x20       }\n\
+        \x20   }\n\
+        \x20   execute();\n\
+        \x20   simp();\n\
+        }\n";
+    for (line, column) in [(15, 13), (17, 13)] {
+        assert_mixed_have_body_simp_expands(cases_source, &sources, line, column);
+    }
+}
+
+/// A tactic after a proof `if` in a `have` body is checked once per arm and
+/// keeps its own position in the body. Before arms were part of the source
+/// path, the second tactic of an arm reported the same path as the tactic
+/// after the `if`, so selecting that tactic recorded the arm tactic's delta.
+#[test]
+fn source_expander_rewrites_the_continuation_after_an_if_in_a_have_body() {
+    let c_source = "int32 identity(int32 x) { return x; }";
+    let click_source = "verifying \"identity.c\";\n\
+        int32 identity(int32 x) {\n\
+        \x20   ensures result == x;\n\
+        } by {\n\
+        \x20   have x <= x by {\n\
+        \x20       if x > 0 {\n\
+        \x20           have x == x by simp;\n\
+        \x20           have x > 0 by simp;\n\
+        \x20       } else {\n\
+        \x20           have x == x by simp;\n\
+        \x20       }\n\
+        \x20       simp();\n\
+        \x20   }\n\
+        \x20   execute();\n\
+        \x20   simp();\n\
+        }\n";
+    let expanded =
+        assert_mixed_have_body_simp_expands(click_source, &[("identity.c", c_source)], 12, 9);
+    // The arm's `have x > 0` is not the continuation's expansion.
+    assert_eq!(
+        expanded.matches("x > 0").count(),
+        click_source.matches("x > 0").count(),
+        "{expanded}"
     );
-    assert!(error.message().contains("--claim"), "{}", error.message());
 }
 
 /// A line without a column selects the one smart tactic starting on it and

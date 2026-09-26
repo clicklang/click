@@ -27,6 +27,7 @@ pub(in crate::surface::proof) struct PureProofContext<'a> {
         Option<PureStructuralInductionBranchSetup>,
 }
 
+#[derive(Clone)]
 pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) claim_label: &'a str,
     pub(in crate::surface::proof) tactic_index: usize,
@@ -47,6 +48,11 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) original_requirements: &'a [Requirement],
     pub(in crate::surface::proof) requirement_label_indices: Option<&'a BTreeMap<String, usize>>,
     pub(in crate::surface::proof) requirement_facts: &'a [Proposition],
+    /// The recorder for a selected expansion target written inside a `have`
+    /// body this phase checks, as for an execution proof's constants.
+    /// Presentation metadata only; it grants no authority and changes no
+    /// check.
+    pub(in crate::surface::proof) nested_tactic_capture: Option<Arc<NestedTacticCapture>>,
 }
 
 /// The exact loop context whose back-edge obligations an explicit closure

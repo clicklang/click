@@ -2301,7 +2301,8 @@ pub(super) struct ExpansionCapture {
     /// that also runs on a feasible path fills in `result` and that wins.
     pub(super) dropped_path_occurrence: bool,
     /// A selected tactic written inside the body of the `have` at
-    /// `source_index`, which the flat source numbering does not reach.
+    /// `source_index` (possibly in an `if` or `cases` arm there), which the
+    /// flat source numbering does not reach.
     /// `source_index` still names that enclosing `have`, so the ordinary
     /// occurrence bookkeeping runs unchanged; the answer is the nested
     /// tactic's own checked delta recorded here.
@@ -2321,8 +2322,10 @@ impl ExpansionCapture {
     }
 
     /// Selects the tactic at `nested_path` below the claim-level tactic at
-    /// `source_index`: each entry is a written position inside the next
-    /// `have` body. An empty path selects the claim-level tactic itself.
+    /// `source_index`, spelled as a proof step's source path continues: one
+    /// written position inside each `have` body, and an arm then a written
+    /// position inside each `if` or `cases` arm. An empty path selects the
+    /// claim-level tactic itself.
     pub(super) fn for_nested_tactic(
         site: ProofSite,
         source_index: usize,
@@ -2371,8 +2374,10 @@ impl ExpansionCapture {
 #[derive(Debug)]
 pub(in crate::surface) struct NestedTacticCapture {
     pub(in crate::surface) site: ProofSite,
-    /// The claim-level source index of the outermost enclosing `have`, then
-    /// the written position inside each nested `have` body.
+    /// The selected tactic's source path: the claim-level source index of
+    /// the outermost enclosing `have`, then the written position inside each
+    /// nested `have` body, or the arm and the written position inside each
+    /// `if` or `cases` arm.
     pub(in crate::surface) path: Vec<usize>,
     state: std::sync::Mutex<NestedTacticCaptureState>,
 }
@@ -2490,8 +2495,10 @@ struct LocatedSourceTactic {
     /// The claim-level source index: the selected tactic's own, or that of
     /// the outermost `have` whose body contains it.
     source_index: usize,
-    /// The written position inside each nested `have` body, outermost first;
-    /// empty for a claim-level tactic.
+    /// The rest of the source path, outermost first: the written position
+    /// inside each nested `have` body, or the arm and then the written
+    /// position inside each `if` or `cases` arm; empty for a claim-level
+    /// tactic.
     nested: Vec<usize>,
     edit: TacticSourceEdit,
 }
@@ -3145,17 +3152,48 @@ fn have_body_tactic_entries(
         ));
     }
     let close = matching_delimiter(tokens, open, "{", "}")?;
-    let direct = direct_tactic_token_ranges(tokens, open, close)?;
-    if direct.len() != body.len() {
+    let block = WrittenBlock {
+        open,
+        close,
+        tactics: body,
+        prefix,
+    };
+    block_tactic_entries(tokens, &block, site, claim_label, source_index, entries)
+}
+
+/// One written block of tactics below a claim-level tactic: a `have` body
+/// or an arm of a structured tactic, with the source path prefix its
+/// tactics' positions extend.
+struct WrittenBlock<'b> {
+    open: usize,
+    close: usize,
+    tactics: &'b [ProofTactic],
+    prefix: &'b [usize],
+}
+
+/// Records each tactic written directly in `block` at its source path, the
+/// same path the proof step that checks it reports, and descends into the
+/// blocks it writes: a non-smart `have` body, and each arm of a proof `if`
+/// or `cases`.
+fn block_tactic_entries(
+    tokens: &[SourceToken],
+    block: &WrittenBlock<'_>,
+    site: &ProofSite,
+    claim_label: &str,
+    source_index: usize,
+    entries: &mut Vec<SourceTacticEntry>,
+) -> Result<(), ClickError> {
+    let direct = direct_tactic_token_ranges(tokens, block.open, block.close)?;
+    if direct.len() != block.tactics.len() {
         return Err(ClickError::new(format!(
-            "source `have` body has {} direct tactic(s), but the parsed body has {}",
+            "source block has {} direct tactic(s), but the parsed block has {}",
             direct.len(),
-            body.len()
+            block.tactics.len()
         )));
     }
-    for (position, (tactic, token_range)) in body.iter().zip(direct).enumerate() {
+    for (position, (tactic, token_range)) in block.tactics.iter().zip(direct).enumerate() {
         let span = tokens[token_range.start].span.start..tokens[token_range.end - 1].span.end;
-        let mut path = prefix.to_vec();
+        let mut path = block.prefix.to_vec();
         path.push(position);
         let smart = source_site_kind(tactic) == SourceSiteKind::ExpandableAutomation;
         let entry = SourceTacticEntry {
@@ -3174,9 +3212,15 @@ fn have_body_tactic_entries(
         entries.push(entry.clone());
         if smart {
             smart_container_alias_entries(tokens, token_range.clone(), tactic, &entry, entries);
+            continue;
         }
-        match tactic {
-            ProofTactic::Have(have) if !smart => have_body_tactic_entries(
+        let arms: Option<[&[ProofTactic]; 2]> = match tactic {
+            ProofTactic::If(proof_if) => Some([&proof_if.then_tactics, &proof_if.else_tactics]),
+            ProofTactic::Cases(cases) => Some([&cases.left_tactics, &cases.right_tactics]),
+            _ => None,
+        };
+        match (tactic, arms) {
+            (ProofTactic::Have(have), _) => have_body_tactic_entries(
                 tokens,
                 token_range,
                 have,
@@ -3186,11 +3230,35 @@ fn have_body_tactic_entries(
                 &path,
                 entries,
             )?,
-            // A smart tactic written in an arm of a structured tactic inside
-            // a `have` body is checked on an arm path whose written positions
-            // the body runner does not address, so its own checked delta
-            // cannot be isolated. Say so rather than selecting a neighbor.
-            _ if !smart && tactic_contains_smart_tactic(tactic) => {
+            // An arm tactic's path names the arm, then its position there.
+            (_, Some(arms)) => {
+                let blocks =
+                    structured_tactic_arm_blocks(tokens, token_range.start)?.ok_or_else(|| {
+                        ClickError::new("could not locate the arms of a source structured tactic")
+                    })?;
+                for (arm, ((open, close), tactics)) in blocks.into_iter().zip(arms).enumerate() {
+                    let mut prefix = path.clone();
+                    prefix.push(arm);
+                    let arm_block = WrittenBlock {
+                        open,
+                        close,
+                        tactics,
+                        prefix: &prefix,
+                    };
+                    block_tactic_entries(
+                        tokens,
+                        &arm_block,
+                        site,
+                        claim_label,
+                        source_index,
+                        entries,
+                    )?;
+                }
+            }
+            // The linear body runner checks no other structured tactic, so a
+            // smart tactic written inside one has no checked occurrence of
+            // its own. Say so rather than selecting a neighbor.
+            _ if tactic_contains_smart_tactic(tactic) => {
                 entries.push(SourceTacticEntry {
                     span: span.clone(),
                     anchor: span.start,
@@ -3198,7 +3266,7 @@ fn have_body_tactic_entries(
                     tactic_name: tactic_name(tactic).to_string(),
                     smart: true,
                     selection: EntrySelection::Unaddressable(format!(
-                        "the location is inside a proof `{}` written in a `have` body, and a smart tactic in one of its arms cannot be expanded on its own yet; expand the enclosing claim with `--claim {claim_label}`",
+                        "the location is inside a proof `{}` written in a `have` body, which the `have` body checker does not run, so a smart tactic there has no checked occurrence of its own; expand the enclosing claim with `--claim {claim_label}`",
                         tactic_name(tactic)
                     )),
                 });
@@ -3855,9 +3923,49 @@ fn offset_at_position(source: &str, line: usize, column: usize) -> Result<usize,
     Ok(line_start + byte_in_line)
 }
 
-/// Resolve positions inside written `have` and `open` bodies. The first
-/// position is the enclosing tactic, as reported by the usual claim mapper;
-/// each index then selects a direct tactic in that body's source block.
+/// The two written arm blocks, as `(open, close)` token pairs, of a proof
+/// `if`, `cases`, or `both` tactic starting at token `start`; `None` for any
+/// other tactic.
+fn structured_tactic_arm_blocks(
+    tokens: &[SourceToken],
+    start: usize,
+) -> Result<Option<[(usize, usize); 2]>, ClickError> {
+    let kind = tokens[start].text.as_str();
+    if !matches!(kind, "if" | "cases" | "both") {
+        return Ok(None);
+    }
+    let end = tactic_end_token(tokens, start, tokens.len())?;
+    let range = start..end + 1;
+    let (first_open, first_close, second_open, second_close) = match kind {
+        "if" => find_if_branch_blocks(tokens, &range)?,
+        "cases" => find_cases_arm_blocks(tokens, &range)?,
+        _ => {
+            let left_open = (start + 1..range.end)
+                .find(|&index| tokens[index].text == "{")
+                .ok_or_else(|| ClickError::new("source `both` tactic has no left arm"))?;
+            let left_close = matching_delimiter(tokens, left_open, "{", "}")?;
+            let right_open = left_close + 2;
+            if tokens.get(left_close + 1).map(|token| token.text.as_str()) != Some("and")
+                || tokens.get(right_open).map(|token| token.text.as_str()) != Some("{")
+            {
+                return Err(ClickError::new("source `both` tactic has no right arm"));
+            }
+            let right_close = matching_delimiter(tokens, right_open, "{", "}")?;
+            (left_open, left_close, right_open, right_close)
+        }
+    };
+    Ok(Some([
+        (first_open, first_close),
+        (second_open, second_close),
+    ]))
+}
+
+/// Resolve positions inside written `have` and `open` bodies and structured
+/// tactic arms. The first position is the enclosing tactic, as reported by
+/// the usual claim mapper; the indices then descend as a proof step's source
+/// path does: below a `have` or `open`, one index selects a direct tactic in
+/// its body; below an `if`, `cases`, or `both`, two indices select an arm
+/// and then a direct tactic in it.
 pub fn nested_tactic_source_position(
     source: &str,
     outer: &SourcePosition,
@@ -3869,8 +3977,27 @@ pub fn nested_tactic_source_position(
         .iter()
         .position(|token| token.span.start == offset)
         .ok_or_else(|| ClickError::new("could not locate enclosing source tactic"))?;
-    for &index in nested_indices {
+    let mut indices = nested_indices.iter().copied();
+    while let Some(index) = indices.next() {
         let kind = tokens[current].text.as_str();
+        if let Some(arms) = structured_tactic_arm_blocks(&tokens, current)? {
+            let (open, close) = *arms
+                .get(index)
+                .ok_or_else(|| ClickError::new(format!("source `{kind}` has no arm {index}")))?;
+            let position = indices.next().ok_or_else(|| {
+                ClickError::new(format!(
+                    "source path names arm {index} of `{kind}` without a tactic in it"
+                ))
+            })?;
+            let ranges = direct_tactic_token_ranges(&tokens, open, close)?;
+            current = ranges
+                .get(position)
+                .ok_or_else(|| {
+                    ClickError::new(format!("source `{kind}` arm tactic {position} is missing"))
+                })?
+                .start;
+            continue;
+        }
         if !matches!(kind, "have" | "open") {
             return Err(ClickError::new(format!(
                 "source `{kind}` has no nested `have` or `open` tactic body"

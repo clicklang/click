@@ -27,14 +27,19 @@ pub(super) enum ProofStepBlock {
     Have,
     /// The body of an `open`.
     Open,
+    /// One arm of a structured proof tactic (`if`, `cases`, or `both`)
+    /// written in a block. `index` is the arm's written position (0 for the
+    /// first arm) and `name` is how the source spells it.
+    Arm { index: usize, name: &'static str },
 }
 
 impl ProofStepBlock {
-    fn name(self) -> &'static str {
+    fn name(self) -> String {
         match self {
-            Self::Claim => "proof",
-            Self::Have => "have body",
-            Self::Open => "open body",
+            Self::Claim => "proof".to_string(),
+            Self::Have => "have body".to_string(),
+            Self::Open => "open body".to_string(),
+            Self::Arm { name, .. } => format!("{name} arm"),
         }
     }
 }
@@ -75,14 +80,32 @@ pub(in crate::surface::proof) struct ProofStepSite {
 impl ProofStepSite {
     /// The same site addressing the claim's `index`th source tactic
     /// occurrence.
-    pub(super) fn at_source_tactic(&self, index: usize) -> Self {
+    pub(in crate::surface::proof) fn at_source_tactic(&self, index: usize) -> Self {
         self.with_position(ProofStepPosition::SourceTactic(index))
     }
 
     /// The same site addressing the `index`th tactic written in the innermost
     /// block.
-    pub(super) fn at_block_position(&self, index: usize) -> Self {
+    pub(in crate::surface::proof) fn at_block_position(&self, index: usize) -> Self {
         self.with_position(ProofStepPosition::InBlock(index))
+    }
+
+    /// The site of the `index`th tactic written in the body of the `have`
+    /// this site addresses.
+    pub(in crate::surface::proof) fn in_have_body(&self, index: usize) -> Self {
+        self.nested(ProofStepBlock::Have).at_block_position(index)
+    }
+
+    /// The site of the `index`th tactic written in arm `arm` (spelled
+    /// `name`) of the structured tactic this site addresses.
+    pub(in crate::surface::proof) fn in_arm(
+        &self,
+        arm: usize,
+        name: &'static str,
+        index: usize,
+    ) -> Self {
+        self.nested(ProofStepBlock::Arm { index: arm, name })
+            .at_block_position(index)
     }
 
     fn with_position(&self, position: ProofStepPosition) -> Self {
@@ -93,8 +116,8 @@ impl ProofStepSite {
         }
     }
 
-    /// The site of a step inside a nested `have` or `open` block opened at
-    /// this site.
+    /// The site of a step inside a nested `have` or `open` block, or an arm
+    /// of a structured tactic, opened at this site.
     pub(super) fn nested(&self, block: ProofStepBlock) -> Self {
         Self {
             enclosing: Some(Arc::new(self.clone())),
@@ -106,12 +129,6 @@ impl ProofStepSite {
     /// Whether the innermost block already addresses source tactic `index`.
     pub(super) fn addresses_source_tactic(&self, index: usize) -> bool {
         self.position == Some(ProofStepPosition::SourceTactic(index))
-    }
-
-    /// Whether the innermost block already addresses its `index`th written
-    /// tactic.
-    pub(super) fn addresses_block_position(&self, index: usize) -> bool {
-        self.position == Some(ProofStepPosition::InBlock(index))
     }
 
     fn segments(&self, into: &mut Vec<String>) {
@@ -131,6 +148,13 @@ impl ProofStepSite {
         (!segments.is_empty()).then(|| segments.join(" > "))
     }
 
+    /// The source path of the step being checked: the claim-level source
+    /// index of its outermost tactic, then, for each block it descends into,
+    /// the written position there. A `have` or `open` body contributes one
+    /// entry (the position in the body); an arm of a structured tactic
+    /// contributes two (the arm's written position, then the position in the
+    /// arm). Every written tactic therefore has its own path, and the source
+    /// mapper decodes it by reading which tactic each prefix names.
     pub(super) fn source_tactic_path(&self) -> Option<Vec<usize>> {
         let mut path = if let Some(enclosing) = &self.enclosing {
             enclosing.source_tactic_path()?
@@ -142,7 +166,12 @@ impl ProofStepSite {
         };
         match position {
             ProofStepPosition::SourceTactic(index) if path.is_empty() => path.push(index),
-            ProofStepPosition::InBlock(index) if !path.is_empty() => path.push(index),
+            ProofStepPosition::InBlock(index) if !path.is_empty() => {
+                if let ProofStepBlock::Arm { index: arm, .. } = self.block {
+                    path.push(arm);
+                }
+                path.push(index);
+            }
             _ => return None,
         }
         Some(path)

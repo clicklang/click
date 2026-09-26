@@ -140,6 +140,9 @@ struct InitializeScriptLayout<'a> {
     /// The proof every invariant runs when the script does not name them
     /// individually.
     shared: SourceProof,
+    /// The absolute source index of each tactic of `shared`, when it is a
+    /// written script.
+    shared_source_indices: Vec<usize>,
     /// Absolute source indices of the trailing `simp()` closers: a smart
     /// tactic that stands for the whole remaining phase rather than for one
     /// invariant.
@@ -152,6 +155,7 @@ impl InitializeScriptLayout<'_> {
             helpers: Vec::new(),
             invariant_bodies: None,
             shared: proof.clone(),
+            shared_source_indices: Vec::new(),
             closers: Vec::new(),
         }
     }
@@ -243,6 +247,7 @@ fn initialize_script_layout<'a>(
         } else {
             SourceProof::Script(rest.to_vec())
         },
+        shared_source_indices: source_indices[helper_end..].to_vec(),
         closers,
     }
 }
@@ -402,8 +407,17 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         &[],
         &[],
     )
-    .with_surface_local_scope(&phase_proof_scope(environment));
+    .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_nested_tactic_capture(
+        expansion_capture
+            .as_deref()
+            .and_then(|capture| capture.nested_for_site(Some(&initialize_site))),
+    );
+    let phase_site = phase.site().clone();
     for (source_index, helper) in &layout.helpers {
+        // Address the helper, and so every tactic written in its body, by
+        // its source position, as the other phases address theirs.
+        phase = phase.at_source_tactic(*source_index);
         let checkpoint = phase.checkpoint();
         phase = match helper {
             ProofTactic::UnfoldPredicate(name) => {
@@ -411,7 +425,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             }
             ProofTactic::Have(have) => {
                 let scope = phase.begin_have(have.proposition.clone())?;
-                check_initialization_body(&scope, &have.proof)?.join()?
+                check_initialization_body(&scope, &have.proof, None)?.join()?
             }
             _ => unreachable!("only unfold and have steps are phase helpers"),
         };
@@ -424,6 +438,8 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             );
         }
     }
+    // The invariant bodies are not the last helper's.
+    phase = phase.at_site(&phase_site);
     let mut completions = Vec::new();
     for (invariant_index, (item, goals)) in invariant_items
         .iter()
@@ -436,6 +452,22 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             .and_then(|bodies| bodies.get(invariant_index))
             .copied();
         let invariant_proof = own_body.map_or(&layout.shared, |(_, body)| body);
+        // Where each written tactic of this invariant's proof sits: in the
+        // body of its own `have`, or at its own source index in the shared
+        // script.
+        let body_sites = invariant_proof.tactics().map(|tactics| match own_body {
+            Some((index, _)) => {
+                let have_site = phase_site.at_source_tactic(index);
+                (0..tactics.len())
+                    .map(|position| have_site.in_have_body(position))
+                    .collect::<Vec<_>>()
+            }
+            None => layout
+                .shared_source_indices
+                .iter()
+                .map(|&index| phase_site.at_source_tactic(index))
+                .collect(),
+        });
         let planned_step = timings_enabled.then(|| {
             ProofTactic::Have(ProofHave {
                 proposition: item.proposition().clone(),
@@ -456,36 +488,37 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
             let checkpoint = phase.checkpoint();
             let scope = phase.begin_loop_entry_goal(item.proposition().clone(), obligation)?;
             let body_checkpoint = scope.checkpoint();
-            let checked = check_initialization_body(&scope, invariant_proof).map_err(|error| {
-                // The kernel already refused this declaration and says why.
-                if obligation.is_impossible_goal()
-                    && let Some(reason) = obligation.context()
-                {
-                    return ClickError::new(reason);
-                }
-                // Name the judgment that was compared: a declaration owes its
-                // side conditions as goals of their own beside its body, so
-                // "invariant N" alone does not say which one failed.
-                let owed =
-                    crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
-                        obligation.proposition(),
-                        environment.parsed_function.parameters(),
-                        environment.arguments,
-                        &context.state,
-                    )
-                    .map(|surface| crate::surface::printing::source_click_proposition(&surface))
-                    .unwrap_or_else(|| {
-                        let (parameters, arguments) = phase.diagnostic_naming_tables();
-                        crate::surface::diagnostics::describe_stated_fact(
+            let checked = check_initialization_body(&scope, invariant_proof, body_sites.as_deref())
+                .map_err(|error| {
+                    // The kernel already refused this declaration and says why.
+                    if obligation.is_impossible_goal()
+                        && let Some(reason) = obligation.context()
+                    {
+                        return ClickError::new(reason);
+                    }
+                    // Name the judgment that was compared: a declaration owes its
+                    // side conditions as goals of their own beside its body, so
+                    // "invariant N" alone does not say which one failed.
+                    let owed =
+                        crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
                             obligation.proposition(),
-                            &parameters,
-                            &arguments,
+                            environment.parsed_function.parameters(),
+                            environment.arguments,
+                            &context.state,
                         )
-                    });
-                error.with_context(format!(
-                    "loop {loop_index} invariant {invariant_index} entry, owing `{owed}`"
-                ))
-            })?;
+                        .map(|surface| crate::surface::printing::source_click_proposition(&surface))
+                        .unwrap_or_else(|| {
+                            let (parameters, arguments) = phase.diagnostic_naming_tables();
+                            crate::surface::diagnostics::describe_stated_fact(
+                                obligation.proposition(),
+                                &parameters,
+                                &arguments,
+                            )
+                        });
+                    error.with_context(format!(
+                        "loop {loop_index} invariant {invariant_index} entry, owing `{owed}`"
+                    ))
+                })?;
             let body_certificate = checked.certificate_since(&body_checkpoint)?;
             completions.push(checked.completed_loop_entry_goal()?);
             phase = checked.join()?;
@@ -526,15 +559,20 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
 
 /// Source execution and smart planning share the checked scope. An explicit
 /// failure is final; no other phase body or certificate checker is tried.
+/// `sites`, when given, addresses each tactic of a written script.
 fn check_initialization_body<'a>(
     scope: &proof_object::ProofScope<'a>,
     source: &SourceProof,
+    sites: Option<&[ProofStepSite]>,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
     let checked = match source {
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
             scope.try_simp_closure()?
         }
-        SourceProof::Script(tactics) => scope.try_authoritative_linear_script(tactics)?,
+        SourceProof::Script(tactics) => match sites {
+            Some(sites) => scope.try_addressed_linear_script(tactics, sites)?,
+            None => scope.try_authoritative_linear_script(tactics)?,
+        },
     }
     .ok_or_else(|| ClickError::new("loop initialization body did not close its goal"))?;
     if !checked.is_complete() {

@@ -154,7 +154,12 @@ A failing proof step names where it was written:
 `click expand` and `click profile` address it, so the same number selects the
 tactic for expansion. Each further segment descends into a block the user
 wrote: `have body tactic 2` is the second tactic of that `have`'s `by { ... }`
-block, and `open body tactic 2` is the second tactic of an `open` body. A
+block, and `open body tactic 2` is the second tactic of an `open` body. Inside
+a block, the arms of a proof `if`, `cases`, or `both` are blocks of their own:
+`else arm tactic 1` is the first tactic of the `if`'s `else` arm (`then`,
+`else`, `left`, and `right` name the arms), so a tactic written after the
+`if` keeps its own position in the enclosing block even though each arm
+checks it. A
 failure whose driver attributed no source occurrence — a planner-generated or
 searched script — reports `checked step N` instead, counting the checked steps
 of the block it is proving. Do not bisect a long proof with sentinel steps

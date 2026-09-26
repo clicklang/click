@@ -308,6 +308,98 @@ mod tests {
         })
     }
 
+    /// A failing tactic written in a proof `if`, `cases`, or `both` arm
+    /// inside a `have` body, or in the body of a loop `initialize` phase
+    /// helper `have`, is reported at its own line. Arm tactics used to be
+    /// renumbered from the start of the `have` body and reported a sibling's
+    /// line, and initialize-phase bodies reported no line at all.
+    #[test]
+    fn verify_locates_failed_tactics_in_have_arms_and_initialize_helpers() {
+        let directory =
+            std::env::temp_dir().join(format!("click-arm-locations-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("identity.c"),
+            "int32 identity(int32 x) { return x; }\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.join("count_up.c"),
+            "int32 count_to_n(int32 n) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i++;\n    }\n    return i;\n}\n",
+        )
+        .unwrap();
+        let identity = |body: &str| {
+            format!(
+                "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    execute();\n    simp();\n}}\n"
+            )
+        };
+        let count_up = |phase: &str| {
+            format!(
+                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
+            )
+        };
+        let cases = [
+            (
+                "if_arm",
+                identity(
+                    "        have x == x by simp;\n        if x > 0 {\n            simp();\n        } else {\n            assumption();\n        }\n",
+                ),
+                10,
+            ),
+            (
+                "cases_arm",
+                identity(
+                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases (x > 0 or not (x > 0)) {\n            simp();\n        } {\n            assumption();\n        }\n",
+                ),
+                16,
+            ),
+            (
+                "if_continuation",
+                identity(
+                    "        if x > 0 {\n            have x == x by simp;\n            have x == x by simp;\n        } else {\n            have x == x by simp;\n        }\n        assumption();\n",
+                ),
+                12,
+            ),
+            (
+                "initialize_helper",
+                count_up(
+                    "            have 0 <= n by {\n                have n == n by simp;\n                assumption();\n            }\n            simp();\n",
+                ),
+                15,
+            ),
+            (
+                "initialize_invariant_body",
+                count_up(
+                    "            have i >= 0 by simp;\n            have i <= n by {\n                have n == n by simp;\n                assumption();\n            }\n",
+                ),
+                16,
+            ),
+            (
+                "initialize_shared_script",
+                count_up("            have n == n by simp;\n            assumption();\n"),
+                14,
+            ),
+        ];
+        for (name, source, line) in cases {
+            let sidecar = directory.join(format!("{name}.click"));
+            fs::write(&sidecar, &source).unwrap();
+            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert_eq!(
+                source.lines().nth(line - 1).map(str::trim),
+                Some("assumption();"),
+                "{name}"
+            );
+            assert!(
+                error.contains(&format!("\n\ntactic@{line}:\n  assumption();")),
+                "{name}: {error}"
+            );
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn trace_shows_the_whole_failed_multiline_tactic() {
         click::cli::with_work_budget_verdicts(|| {

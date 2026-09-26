@@ -2308,16 +2308,38 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The same proof, attributing its next step to the `index`th tactic
-    /// written in the block currently being checked (a `have` or `open` body,
-    /// or the claim's own script).
-    pub(in crate::surface::proof) fn at_block_position(&self, index: usize) -> Self {
-        if self.site.addresses_block_position(index) {
-            return self.clone();
-        }
+    /// The same proof, attributing its next step to `site`: a position a
+    /// linear script runner computed for the written tactic it is about to
+    /// check, or one a phase driver restores. Diagnostic addressing only,
+    /// like [`Self::at_source_tactic`].
+    pub(in crate::surface::proof) fn at_site(&self, site: &ProofStepSite) -> Self {
         Self {
-            site: self.site.at_block_position(index),
+            site: site.clone(),
             ..self.clone()
+        }
+    }
+
+    /// The same fixed-state proof carrying `capture`, the recorder for a
+    /// selected expansion target written inside a `have` body that this
+    /// phase checks. The caller installs it only for the recorder's own
+    /// proof site. Presentation metadata only: no check changes.
+    pub(in crate::surface::proof) fn with_nested_tactic_capture(
+        self,
+        capture: Option<Arc<NestedTacticCapture>>,
+    ) -> Self {
+        let Some(capture) = capture else {
+            return self;
+        };
+        let ProofContext::FixedState(context) = self.context.as_ref() else {
+            return self;
+        };
+        let context = FixedStateProofContext {
+            nested_tactic_capture: Some(capture),
+            ..context.clone()
+        };
+        Self {
+            context: Arc::new(ProofContext::FixedState(context)),
+            ..self
         }
     }
 
@@ -2328,12 +2350,21 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn begin_nested_tactic_capture(
         &self,
     ) -> Option<NestedTacticCaptureGuard<'a>> {
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return None;
+        let capture = match self.context.as_ref() {
+            ProofContext::Execution(context) => {
+                let capture = context.constants.nested_tactic_capture.as_ref()?;
+                if context.constants.proof_site.as_ref() != Some(&capture.site) {
+                    return None;
+                }
+                capture
+            }
+            // A fixed-state phase carries a recorder only when its driver
+            // matched the recorder's site (see
+            // `Self::with_nested_tactic_capture`).
+            ProofContext::FixedState(context) => context.nested_tactic_capture.as_ref()?,
+            ProofContext::Pure(_) => return None,
         };
-        let capture = context.constants.nested_tactic_capture.as_ref()?;
-        if context.constants.proof_site.as_ref() != Some(&capture.site)
-            || self.site.source_tactic_path().as_deref() != Some(capture.path.as_slice())
+        if self.site.source_tactic_path().as_deref() != Some(capture.path.as_slice())
             || !capture.try_begin()
         {
             return None;
