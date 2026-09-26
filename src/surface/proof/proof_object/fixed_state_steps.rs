@@ -3081,7 +3081,7 @@ impl<'a> Proof<'a> {
         let Some((goal_base, _, _)) = segment.surface_range() else {
             return lookup;
         };
-        for kernel in propositions.kernel_facts() {
+        for kernel in propositions.atomic_kernel_facts() {
             let Proposition::CMemoryLoadable { bytes, .. } = kernel else {
                 continue;
             };

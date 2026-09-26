@@ -83,7 +83,7 @@ fn checked_surface_fact_in_state_with_assumptions(
                     matches!((left, right), (Term::CMemory(_), Term::CMemory(_))) || left == right
                 })
         };
-        for recorded in view.surface_propositions.kernel_facts() {
+        for recorded in view.surface_propositions.atomic_kernel_facts() {
             let Proposition::Predicate {
                 name: recorded_name,
                 arguments,
@@ -1500,7 +1500,25 @@ pub(super) fn append_proof_step_for_operation(
                 {
                     base_surfaces.push(surface);
                 }
-                for recorded in construction.surface_propositions.kernel_facts() {
+                // Only an atom can match other than exactly: an erased
+                // comparison is a comparison. So a connective is matched by
+                // its own record alone, and an atom among the recorded atoms,
+                // in the order of the whole fact list.
+                let recorded_facts =
+                    if crate::surface::surface_propositions::is_kernel_connective(proposition) {
+                        construction
+                            .surface_propositions
+                            .has_kernel_fact(proposition)
+                            .then_some(proposition)
+                            .into_iter()
+                            .collect::<Vec<_>>()
+                    } else {
+                        construction
+                            .surface_propositions
+                            .atomic_kernel_facts()
+                            .collect::<Vec<_>>()
+                    };
+                for recorded in recorded_facts {
                     let matches = recorded == proposition
                         || (memory_erased_comparison(recorded).is_some()
                             && memory_erased_comparison(recorded)

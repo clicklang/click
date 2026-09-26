@@ -10086,9 +10086,13 @@ fn execution_transport_forks_without_copying_unrelated_state() {
                 .shares_storage_with(&successor_execution.core.effect_facts),
             "transport does not copy unrelated effect history"
         );
-        assert_eq!(
-            root_execution.presentation.surface_propositions,
-            successor_execution.presentation.surface_propositions,
+        assert!(
+            root_execution
+                .presentation
+                .surface_propositions
+                .shares_persistent_storage_with(
+                    &successor_execution.presentation.surface_propositions
+                ),
             "an identity transport does not change the recorded surface lowerings"
         );
     }

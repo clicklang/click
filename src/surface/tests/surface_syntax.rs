@@ -2808,12 +2808,6 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
     assert_eq!(spellings.surface(&kernel).unwrap(), &snapshot);
     assert_eq!(
         spellings
-            .current_c_variable_kernel_facts("x")
-            .collect::<Vec<_>>(),
-        vec![&kernel]
-    );
-    assert_eq!(
-        spellings
             .checked_surface(&kernel, |surface| {
                 Ok(if surface == &current {
                     kernel.clone()
@@ -2940,6 +2934,100 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
     );
 }
 
+/// A nested implication records every suffix of its chain, which a map that
+/// copied or rendered each recorded sub-proposition paid for as the sum of
+/// all suffix sizes: 0.17, 0.35, 0.80 and 3.36 seconds of debug `click
+/// verify` at depths 64 to 512 (`supported_implication_boundary_*` in
+/// `src/bin/click.rs` is the realistic case). Interning each node once makes
+/// recording linear in the chain, a repeat of a recorded chain a lookup, and
+/// every suffix still answers for its own surface.
+#[test]
+fn nested_implication_lowering_records_in_linear_work() {
+    fn chain(depth: u32) -> (ClickProposition, Proposition) {
+        let atom = |index: u32| {
+            (
+                ClickProposition::Comparison {
+                    left: current_var(&format!("x{}", index % 2)),
+                    operator: ComparisonOperator::Equal,
+                    right: current_int(index % 3),
+                },
+                Proposition::ConditionIs(
+                    ConditionTerm::Variable(Variable(u64::from(300_000 + index % 6))),
+                    true,
+                ),
+            )
+        };
+        let (mut surface, mut kernel) = atom(depth);
+        for index in (0..depth).rev() {
+            let (left_surface, left_kernel) = atom(index);
+            surface = ClickProposition::Implies(Box::new(left_surface), Box::new(surface));
+            kernel = Proposition::Implies(Box::new(left_kernel), Box::new(kernel));
+        }
+        (surface, kernel)
+    }
+    fn suffix(mut proposition: &Proposition, depth: u32) -> &Proposition {
+        for _ in 0..depth {
+            let Proposition::Implies(_, right) = proposition else {
+                unreachable!("a chain suffix is an implication or its last atom")
+            };
+            proposition = right;
+        }
+        proposition
+    }
+    fn surface_suffix(mut proposition: &ClickProposition, depth: u32) -> &ClickProposition {
+        for _ in 0..depth {
+            let ClickProposition::Implies(_, right) = proposition else {
+                unreachable!("a chain suffix is an implication or its last atom")
+            };
+            proposition = right;
+        }
+        proposition
+    }
+    let copied = || crate::surface::CLICK_PROPOSITION_NODES_COPIED.with(std::cell::Cell::get);
+    let mut samples = Vec::new();
+    for depth in [64u32, 128, 256, 512] {
+        let (surface, kernel) = chain(depth);
+        let mut spellings = SurfacePropositionMap::default();
+        let copies_before = copied();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            spellings.record_lowering(&surface, &kernel).unwrap();
+        });
+        let copies = copied() - copies_before;
+        let copies_before = copied();
+        let ((), repeat_work) = crate::instrumentation::measure_deterministic_work(|| {
+            spellings.record_lowering(&surface, &kernel).unwrap();
+        });
+        let repeat_copies = copied() - copies_before;
+        for position in [0, 1, depth / 2, depth - 1, depth] {
+            assert_eq!(
+                spellings.surface(suffix(&kernel, position)).unwrap(),
+                surface_suffix(&surface, position),
+                "depth {depth}: suffix {position} keeps its own surface"
+            );
+        }
+        assert_eq!(repeat_copies, 0, "depth {depth}: a repeat copies nothing");
+        samples.push((depth, work, copies, repeat_work));
+    }
+    for pair in samples.windows(2) {
+        let ((_, work, copies, repeat), (_, next_work, next_copies, next_repeat)) =
+            (pair[0], pair[1]);
+        assert!(
+            next_work <= 2 * work + 16 && next_copies <= 2 * copies + 16,
+            "recording should be linear in the chain: {samples:?}"
+        );
+        assert!(
+            next_repeat <= 2 * repeat + 16,
+            "a repeat should be linear in the chain: {samples:?}"
+        );
+    }
+    let (depth, work, copies, _) = samples[samples.len() - 1];
+    let nodes = 2 * depth as usize + 1;
+    assert!(
+        work >= nodes && work <= 8 * nodes && copies <= 2 * nodes,
+        "recording charges its nodes and copies the chain once: {samples:?}"
+    );
+}
+
 #[test]
 fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
     fn indexed_pair(index: u32) -> (ClickProposition, Proposition) {
@@ -3046,72 +3134,6 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
         assert!(
             work <= 4 * (size.ilog2() as usize + 1) + 4,
             "{size}: {work}"
-        );
-    }
-}
-
-#[test]
-fn current_c_variable_fact_selection_scales_by_index_height() {
-    for size in [16_u32, 64, 256, 1024, 4096] {
-        let mut spellings = SurfacePropositionMap::default();
-        let mut kernels = Vec::with_capacity(size as usize);
-        for index in 0..size {
-            let name = format!("local_{index}");
-            let surface = ClickProposition::Comparison {
-                left: current_var(&name),
-                operator: ComparisonOperator::Equal,
-                right: current_int(index),
-            };
-            let kernel = Proposition::ConditionIs(
-                ConditionTerm::Variable(Variable((100_000 + index).into())),
-                true,
-            );
-            spellings.record_lowering(&surface, &kernel).unwrap();
-            kernels.push(kernel);
-        }
-
-        let ancestor = spellings.clone();
-        let added_name = format!("local_{size}");
-        let added_surface = ClickProposition::Comparison {
-            left: current_var(&added_name),
-            operator: ComparisonOperator::Equal,
-            right: current_int(size),
-        };
-        let added_kernel = Proposition::ConditionIs(
-            ConditionTerm::Variable(Variable((100_000 + size).into())),
-            true,
-        );
-        let before = crate::persistent::persistent_node_allocations();
-        spellings
-            .record_lowering(&added_surface, &added_kernel)
-            .unwrap();
-        let allocations = crate::persistent::persistent_node_allocations() - before;
-        let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
-        let allocation_bound = 12 * logarithmic_height + 24;
-        assert!(
-            allocations <= allocation_bound,
-            "size {size} local-index update allocated {allocations} map nodes (bound {allocation_bound})"
-        );
-        assert_eq!(
-            ancestor
-                .current_c_variable_kernel_facts(&added_name)
-                .count(),
-            0,
-            "updating a fork must not mutate its ancestor"
-        );
-
-        let selected_index = size / 2;
-        let selected_name = format!("local_{selected_index}");
-        assert_eq!(
-            spellings
-                .current_c_variable_kernel_facts(&selected_name)
-                .collect::<Vec<_>>(),
-            vec![&kernels[selected_index as usize]]
-        );
-        let comparisons = spellings.current_c_variable_lookup_comparisons(&selected_name);
-        assert!(
-            comparisons <= 2 * logarithmic_height + 2,
-            "size {size} local dependency lookup used {comparisons} comparisons"
         );
     }
 }

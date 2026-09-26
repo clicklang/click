@@ -99,7 +99,9 @@ mod parser;
 pub(crate) mod planning;
 pub(crate) mod proof_diagnostics;
 mod source_registry;
+mod surface_propositions;
 use integer_conversions::*;
+pub use surface_propositions::SurfacePropositionMap;
 mod printing;
 mod proof;
 mod validation;
@@ -1500,6 +1502,14 @@ fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposit
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many nodes [`clone_click_proposition_iteratively`] has copied on
+    /// this thread: the scaling regressions' measure of copying.
+    pub(crate) static CLICK_PROPOSITION_NODES_COPIED: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
 pub(crate) fn clone_click_proposition_iteratively(
     proposition: &ClickProposition,
 ) -> ClickProposition {
@@ -1538,91 +1548,95 @@ pub(crate) fn clone_click_proposition_iteratively(
     let mut values = Vec::new();
     while let Some(frame) = frames.pop() {
         match frame {
-            Frame::Visit(proposition) => match proposition {
-                ClickProposition::At {
-                    selector,
-                    proposition,
-                } => {
-                    frames.push(Frame::BuildAt(selector.clone()));
-                    frames.push(Frame::Visit(proposition));
+            Frame::Visit(proposition) => {
+                #[cfg(test)]
+                CLICK_PROPOSITION_NODES_COPIED.with(|copied| copied.set(copied.get() + 1));
+                match proposition {
+                    ClickProposition::At {
+                        selector,
+                        proposition,
+                    } => {
+                        frames.push(Frame::BuildAt(selector.clone()));
+                        frames.push(Frame::Visit(proposition));
+                    }
+                    ClickProposition::And(left, right) => {
+                        frames.push(Frame::BuildAnd);
+                        frames.push(Frame::Visit(right));
+                        frames.push(Frame::Visit(left));
+                    }
+                    ClickProposition::Or(left, right) => {
+                        frames.push(Frame::BuildOr);
+                        frames.push(Frame::Visit(right));
+                        frames.push(Frame::Visit(left));
+                    }
+                    ClickProposition::Not(body) => {
+                        frames.push(Frame::BuildNot);
+                        frames.push(Frame::Visit(body));
+                    }
+                    ClickProposition::Implies(left, right) => {
+                        frames.push(Frame::BuildImplies);
+                        frames.push(Frame::Visit(right));
+                        frames.push(Frame::Visit(left));
+                    }
+                    ClickProposition::ForAll {
+                        click_type,
+                        name,
+                        written_name,
+                        body,
+                    } => {
+                        frames.push(Frame::BuildForAll {
+                            click_type: click_type.clone(),
+                            name: name.clone(),
+                            written_name: written_name.clone(),
+                        });
+                        frames.push(Frame::Visit(body));
+                    }
+                    ClickProposition::Exists {
+                        click_type,
+                        name,
+                        written_name,
+                        body,
+                    } => {
+                        frames.push(Frame::BuildExists {
+                            click_type: click_type.clone(),
+                            name: name.clone(),
+                            written_name: written_name.clone(),
+                        });
+                        frames.push(Frame::Visit(body));
+                    }
+                    ClickProposition::RangeAll {
+                        start,
+                        end,
+                        item,
+                        written_item,
+                        body,
+                    } => {
+                        frames.push(Frame::BuildRangeAll {
+                            start: start.clone(),
+                            end: end.clone(),
+                            item: item.clone(),
+                            written_item: written_item.clone(),
+                        });
+                        frames.push(Frame::Visit(body));
+                    }
+                    ClickProposition::RangeAny {
+                        start,
+                        end,
+                        item,
+                        written_item,
+                        body,
+                    } => {
+                        frames.push(Frame::BuildRangeAny {
+                            start: start.clone(),
+                            end: end.clone(),
+                            item: item.clone(),
+                            written_item: written_item.clone(),
+                        });
+                        frames.push(Frame::Visit(body));
+                    }
+                    atomic => values.push(clone_click_proposition_atom(atomic)),
                 }
-                ClickProposition::And(left, right) => {
-                    frames.push(Frame::BuildAnd);
-                    frames.push(Frame::Visit(right));
-                    frames.push(Frame::Visit(left));
-                }
-                ClickProposition::Or(left, right) => {
-                    frames.push(Frame::BuildOr);
-                    frames.push(Frame::Visit(right));
-                    frames.push(Frame::Visit(left));
-                }
-                ClickProposition::Not(body) => {
-                    frames.push(Frame::BuildNot);
-                    frames.push(Frame::Visit(body));
-                }
-                ClickProposition::Implies(left, right) => {
-                    frames.push(Frame::BuildImplies);
-                    frames.push(Frame::Visit(right));
-                    frames.push(Frame::Visit(left));
-                }
-                ClickProposition::ForAll {
-                    click_type,
-                    name,
-                    written_name,
-                    body,
-                } => {
-                    frames.push(Frame::BuildForAll {
-                        click_type: click_type.clone(),
-                        name: name.clone(),
-                        written_name: written_name.clone(),
-                    });
-                    frames.push(Frame::Visit(body));
-                }
-                ClickProposition::Exists {
-                    click_type,
-                    name,
-                    written_name,
-                    body,
-                } => {
-                    frames.push(Frame::BuildExists {
-                        click_type: click_type.clone(),
-                        name: name.clone(),
-                        written_name: written_name.clone(),
-                    });
-                    frames.push(Frame::Visit(body));
-                }
-                ClickProposition::RangeAll {
-                    start,
-                    end,
-                    item,
-                    written_item,
-                    body,
-                } => {
-                    frames.push(Frame::BuildRangeAll {
-                        start: start.clone(),
-                        end: end.clone(),
-                        item: item.clone(),
-                        written_item: written_item.clone(),
-                    });
-                    frames.push(Frame::Visit(body));
-                }
-                ClickProposition::RangeAny {
-                    start,
-                    end,
-                    item,
-                    written_item,
-                    body,
-                } => {
-                    frames.push(Frame::BuildRangeAny {
-                        start: start.clone(),
-                        end: end.clone(),
-                        item: item.clone(),
-                        written_item: written_item.clone(),
-                    });
-                    frames.push(Frame::Visit(body));
-                }
-                atomic => values.push(clone_click_proposition_atom(atomic)),
-            },
+            }
             Frame::BuildAt(selector) => {
                 let proposition = values.pop().expect("the anchored proposition is cloned");
                 values.push(ClickProposition::At {
@@ -1769,74 +1783,6 @@ impl ClickProposition {
                 written_item.as_deref()
             }
             _ => None,
-        }
-    }
-}
-
-/// surface forms paired with the exact kernel propositions they lowered
-/// to in one proof context.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct SurfacePropositionMap {
-    storage: std::sync::Arc<SurfacePropositionStorage>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct SurfacePropositionStorage {
-    /// Source names for qualified storage reads, independent of the heap
-    /// snapshot. These are synthesis hints, never evidence of a fact.
-    qualified_load_sources: PersistentMap<Pointer, ContractExpression>,
-    by_kernel: PersistentMap<Proposition, KernelSurfaceForms>,
-    /// Recorded kernel facts grouped by a structural key that forgets only
-    /// memory snapshot identities. Typed proof steps use this to recover a
-    /// check-equivalent surface form without scanning ambient facts.
-    by_snapshot_blind:
-        PersistentMap<proof::SnapshotBlindPropositionKey, PersistentSet<Proposition>>,
-    // The debug form is a deterministic structural bucket key. Exact
-    // equality inside the bucket preserves soundness even if two future
-    // syntax variants ever acquire the same debug rendering.
-    by_surface: PersistentMap<String, Vec<(ClickProposition, KernelLowerings)>>,
-    /// Kernel facts with a current surface form that reads one named C
-    /// local. Assignment-step search probes only the assigned local's bucket
-    /// instead of scanning every recorded fact.
-    by_current_c_variable: PersistentMap<String, PersistentSet<Proposition>>,
-    /// Kernel facts whose recorded surface form is one top-level
-    /// predicate call. Checked predicate unfolds use this narrow bucket to
-    /// recover an already-materialized body without scanning ambient facts.
-    by_predicate: PersistentMap<String, PersistentSet<Proposition>>,
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct KernelSurfaceForms {
-    ordered: Vec<ClickProposition>,
-    by_debug_key: BTreeMap<String, Vec<ClickProposition>>,
-}
-
-impl KernelSurfaceForms {
-    fn insert(&mut self, surface: &ClickProposition, debug_key: &str) {
-        let bucket = self.by_debug_key.entry(debug_key.to_string()).or_default();
-        if bucket.contains(surface) {
-            return;
-        }
-        bucket.push(clone_click_proposition_iteratively(surface));
-        self.ordered
-            .push(clone_click_proposition_iteratively(surface));
-    }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct KernelLowerings {
-    ordered: Vec<Proposition>,
-    exact: BTreeSet<Proposition>,
-}
-
-impl KernelLowerings {
-    fn insert(&mut self, kernel: &Proposition) {
-        if self
-            .exact
-            .insert(crate::kernel::clone_proposition_iteratively(kernel))
-        {
-            self.ordered
-                .push(crate::kernel::clone_proposition_iteratively(kernel));
         }
     }
 }
@@ -2133,402 +2079,6 @@ fn collect_current_proposition_variables(
                 }
             }
         }
-    }
-}
-
-impl SurfacePropositionMap {
-    #[cfg(test)]
-    pub(crate) fn shares_persistent_storage_with(&self, other: &Self) -> bool {
-        self.storage
-            .qualified_load_sources
-            .shares_root_with(&other.storage.qualified_load_sources)
-            && self
-                .storage
-                .by_kernel
-                .shares_root_with(&other.storage.by_kernel)
-            && self
-                .storage
-                .by_surface
-                .shares_root_with(&other.storage.by_surface)
-            && self
-                .storage
-                .by_snapshot_blind
-                .shares_root_with(&other.storage.by_snapshot_blind)
-            && self
-                .storage
-                .by_current_c_variable
-                .shares_root_with(&other.storage.by_current_c_variable)
-            && self
-                .storage
-                .by_predicate
-                .shares_root_with(&other.storage.by_predicate)
-    }
-
-    pub fn record_lowering(
-        &mut self,
-        surface: &ClickProposition,
-        kernel: &Proposition,
-    ) -> Result<(), ClickError> {
-        let mut pending = vec![(surface, kernel)];
-        while let Some((surface, kernel)) = pending.pop() {
-            self.record_lowering_one(surface, kernel, &mut pending)?;
-        }
-        Ok(())
-    }
-
-    fn record_lowering_one<'a>(
-        &mut self,
-        surface: &'a ClickProposition,
-        kernel: &'a Proposition,
-        pending: &mut Vec<(&'a ClickProposition, &'a Proposition)>,
-    ) -> Result<(), ClickError> {
-        let mut current_c_variables = BTreeSet::new();
-        collect_current_proposition_variables(surface, &mut current_c_variables);
-        let surface_key = format!("{surface:?}");
-        {
-            let storage = std::sync::Arc::make_mut(&mut self.storage);
-            if let ClickProposition::Comparison { left, right, .. } = surface {
-                let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
-                if let Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32Equal(a, b) | ConditionTerm::Bitvector64Equal(a, b),
-                    _,
-                ) = &resolved
-                {
-                    for (expression, term) in [(left, a), (right, b)] {
-                        let mut expression = expression;
-                        while let ContractExpression::At {
-                            expression: inner, ..
-                        }
-                        | ContractExpression::Old(inner) = expression
-                        {
-                            expression = inner;
-                        }
-                        // A qualified object reaches its cells through the
-                        // accessors the language writes on it: struct fields
-                        // and one index per array dimension. Strip both, so
-                        // `alpha::values[0]` and
-                        // `static_local::f::grid[0][1]` record their own cell
-                        // the same way a bare `alpha::value` does. The whole
-                        // accessor chain is what gets recorded, so the
-                        // spelling reads back the cell the pointer names.
-                        let mut base = expression;
-                        loop {
-                            base = match base {
-                                ContractExpression::Field { base: inner, .. } => inner,
-                                ContractExpression::Index(inner, _) => inner,
-                                ContractExpression::ArrayIndex { base: inner, .. } => inner,
-                                _ => break,
-                            };
-                        }
-                        if matches!(base, ContractExpression::QualifiedC { .. })
-                            && let Bitvector32Term::MemoryLoad(_, pointer) = term.as_ref()
-                            && !storage
-                                .qualified_load_sources
-                                .contains_key(pointer.as_ref())
-                        {
-                            storage.qualified_load_sources = storage
-                                .qualified_load_sources
-                                .with_inserted(pointer.as_ref().clone(), expression.clone());
-                        }
-                    }
-                }
-            }
-            if let ClickProposition::PredicateCall { name, .. } = surface {
-                let existing = storage.by_predicate.get(name);
-                if !existing.is_some_and(|facts| facts.contains(kernel)) {
-                    let facts = existing
-                        .cloned()
-                        .unwrap_or_default()
-                        .with_value(crate::kernel::clone_proposition_iteratively(kernel));
-                    storage.by_predicate = storage.by_predicate.with_inserted(name.clone(), facts);
-                }
-            }
-            for name in current_c_variables {
-                let existing = storage.by_current_c_variable.get(&name);
-                if existing.is_some_and(|facts| facts.contains(kernel)) {
-                    continue;
-                }
-                let facts = existing
-                    .cloned()
-                    .unwrap_or_default()
-                    .with_value(crate::kernel::clone_proposition_iteratively(kernel));
-                storage.by_current_c_variable =
-                    storage.by_current_c_variable.with_inserted(name, facts);
-            }
-            let mut forms = storage.by_kernel.get(kernel).cloned().unwrap_or_default();
-            forms.insert(surface, &surface_key);
-            storage.by_kernel = storage
-                .by_kernel
-                .with_inserted(crate::kernel::clone_proposition_iteratively(kernel), forms);
-            let snapshot_key = proof::snapshot_blind_proposition_key(kernel);
-            let snapshot_facts = storage
-                .by_snapshot_blind
-                .get(&snapshot_key)
-                .cloned()
-                .unwrap_or_default()
-                .with_value(crate::kernel::clone_proposition_iteratively(kernel));
-            storage.by_snapshot_blind = storage
-                .by_snapshot_blind
-                .with_inserted(snapshot_key, snapshot_facts);
-            let mut bucket = storage
-                .by_surface
-                .get(&surface_key)
-                .cloned()
-                .unwrap_or_default();
-            let lowerings = if let Some((_, lowerings)) =
-                bucket.iter_mut().find(|(recorded, _)| recorded == surface)
-            {
-                lowerings
-            } else {
-                bucket.push((
-                    clone_click_proposition_iteratively(surface),
-                    KernelLowerings::default(),
-                ));
-                &mut bucket
-                    .last_mut()
-                    .expect("surface lowering was just inserted")
-                    .1
-            };
-            lowerings.insert(kernel);
-            storage.by_surface = storage.by_surface.with_inserted(surface_key, bucket);
-        }
-        match (surface, kernel) {
-            (ClickProposition::And(surface_left, surface_right), Proposition::And(left, right))
-            | (ClickProposition::Or(surface_left, surface_right), Proposition::Or(left, right))
-            | (
-                ClickProposition::Implies(surface_left, surface_right),
-                Proposition::Implies(left, right),
-            ) => {
-                pending.push((surface_right, right));
-                pending.push((surface_left, left));
-                Ok(())
-            }
-            // Click comparison negation is lowered by flipping the comparison
-            // polarity, so either kernel boolean is possible (for example,
-            // `not (x != 0)` becomes equality with polarity `true`).
-            (ClickProposition::Not(_), Proposition::ConditionIs(_, _)) => Ok(()),
-            (ClickProposition::Not(surface_body), Proposition::Not(body)) => {
-                pending.push((surface_body, body));
-                Ok(())
-            }
-            (
-                ClickProposition::ForAll {
-                    body: surface_body, ..
-                },
-                Proposition::ForAll { body, .. },
-            ) => {
-                pending.push((surface_body, body));
-                Ok(())
-            }
-            (ClickProposition::Exists { .. }, Proposition::Exists { .. }) => {
-                // The existential's kernel body may include arithmetic
-                // obligations scoped to its witness. It is not a lowering of
-                // the written body alone, and that body is not usable outside
-                // the binder. Record instantiated children when the witness
-                // is opened, rather than assigning them incorrect spellings.
-                Ok(())
-            }
-            // A connective's kernel form may collapse when one leg resolves
-            // concretely (a materialized cell decides `i <= len` at a loop
-            // exit, and the simplifier keeps only the live leg). Record the
-            // whole kernel against whichever leg still matches its
-            // structure; a kernel matching neither leg is a real
-            // mislowering and still errors below.
-            (
-                ClickProposition::And(surface_left, surface_right)
-                | ClickProposition::Or(surface_left, surface_right)
-                | ClickProposition::Implies(surface_left, surface_right),
-                kernel,
-            ) if self.clone().record_lowering(surface_left, kernel).is_ok()
-                || self.clone().record_lowering(surface_right, kernel).is_ok() =>
-            {
-                if self.record_lowering(surface_left, kernel).is_err() {
-                    self.record_lowering(surface_right, kernel)?;
-                }
-                Ok(())
-            }
-            // A quantified body that reads memory lowers to its loadability
-            // premises implying the quantifier itself. The premises carry no
-            // surface form of their own; record the surface quantifier
-            // against the guarded conclusion.
-            (
-                ClickProposition::ForAll { .. } | ClickProposition::Exists { .. },
-                Proposition::Implies(_, conclusion),
-            ) if self.clone().record_lowering(surface, conclusion).is_ok() => {
-                self.record_lowering(surface, conclusion)
-            }
-            (ClickProposition::And(_, _), _)
-            | (ClickProposition::Or(_, _), _)
-            | (ClickProposition::Not(_), _)
-            | (ClickProposition::Implies(_, _), _)
-            | (ClickProposition::ForAll { .. }, _)
-            | (ClickProposition::Exists { .. }, _) => {
-                // The kernel form can embed whole memory snapshots; bound the
-                // rendering so the diagnostic stays a diagnostic.
-                let kernel = format!("{kernel:?}");
-                let kernel = if kernel.len() > 600 {
-                    format!("{}…", &kernel[..600])
-                } else {
-                    kernel
-                };
-                Err(ClickError::new(format!(
-                    "surface proposition did not lower to matching logical structure: {surface:?} -> {kernel}"
-                )))
-            }
-            _ => Ok(()),
-        }
-    }
-
-    pub(in crate::surface) fn kernels_written_by_predicate(
-        &self,
-        name: &String,
-    ) -> impl Iterator<Item = &Proposition> {
-        self.storage
-            .by_predicate
-            .get(name)
-            .into_iter()
-            .flat_map(PersistentSet::iter)
-    }
-
-    pub fn surface(&self, kernel: &Proposition) -> Result<&ClickProposition, ClickError> {
-        self.storage
-            .by_kernel
-            .get(kernel)
-            .and_then(|forms| forms.ordered.last())
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "kernel proposition has no recorded Click surface form: {kernel:?}"
-                ))
-            })
-    }
-
-    pub fn surfaces(&self, kernel: &Proposition) -> impl Iterator<Item = &ClickProposition> {
-        self.storage
-            .by_kernel
-            .get(kernel)
-            .into_iter()
-            .flat_map(|forms| forms.ordered.iter())
-    }
-
-    pub(in crate::surface) fn snapshot_blind_kernels(
-        &self,
-        kernel: &Proposition,
-    ) -> impl Iterator<Item = &Proposition> {
-        let key = proof::snapshot_blind_proposition_key(kernel);
-        self.storage
-            .by_snapshot_blind
-            .get(&key)
-            .into_iter()
-            .flat_map(PersistentSet::iter)
-    }
-
-    pub fn kernel_facts(&self) -> impl Iterator<Item = &Proposition> {
-        self.storage.by_kernel.keys()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn current_c_variable_kernel_facts(
-        &self,
-        name: &str,
-    ) -> impl Iterator<Item = &Proposition> {
-        self.storage
-            .by_current_c_variable
-            .get(&name.to_string())
-            .into_iter()
-            .flat_map(PersistentSet::iter)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn current_c_variable_lookup_comparisons(&self, name: &str) -> usize {
-        self.storage
-            .by_current_c_variable
-            .lookup_comparisons(&name.to_string())
-    }
-
-    pub fn available_kernel(
-        &self,
-        surface: &ClickProposition,
-        available: &[Proposition],
-    ) -> Option<&Proposition> {
-        self.available_kernel_matching(surface, |kernel| available.contains(kernel))
-    }
-
-    pub(crate) fn available_kernel_matching(
-        &self,
-        surface: &ClickProposition,
-        mut is_available: impl FnMut(&Proposition) -> bool,
-    ) -> Option<&Proposition> {
-        let surface_key = format!("{surface:?}");
-        let mut matches = self
-            .storage
-            .by_surface
-            .get(&surface_key)?
-            .iter()
-            .find_map(|(recorded, lowerings)| (recorded == surface).then_some(lowerings))?
-            .ordered
-            .iter()
-            .filter(|kernel| {
-                crate::instrumentation::record_deterministic_work(1);
-                is_available(kernel)
-            });
-        let kernel = matches.next()?;
-        matches.next().is_none().then_some(kernel)
-    }
-
-    pub fn unique_kernel(&self, surface: &ClickProposition) -> Option<&Proposition> {
-        let surface_key = format!("{surface:?}");
-        let mut lowerings = self
-            .storage
-            .by_surface
-            .get(&surface_key)?
-            .iter()
-            .find_map(|(recorded, lowerings)| (recorded == surface).then_some(lowerings))?
-            .ordered
-            .iter();
-        let kernel = lowerings.next()?;
-        lowerings.next().is_none().then_some(kernel)
-    }
-
-    pub fn has_distinct_lowering(&self, surface: &ClickProposition, kernel: &Proposition) -> bool {
-        let surface_key = format!("{surface:?}");
-        self.storage
-            .by_surface
-            .get(&surface_key)
-            .into_iter()
-            .flatten()
-            .find_map(|(recorded, lowerings)| (recorded == surface).then_some(lowerings))
-            .is_some_and(|lowerings| lowerings.ordered.iter().any(|lowered| lowered != kernel))
-    }
-
-    pub fn checked_surface<F>(
-        &self,
-        kernel: &Proposition,
-        mut lower_in_current_state: F,
-    ) -> Result<ClickProposition, ClickError>
-    where
-        F: FnMut(&ClickProposition) -> Result<Proposition, ClickError>,
-    {
-        let forms = self.storage.by_kernel.get(kernel).ok_or_else(|| {
-            ClickError::new(format!(
-                "kernel proposition has no recorded Click surface form: {kernel:?}"
-            ))
-        })?;
-        let mut last_mismatch = None;
-        for surface in forms.ordered.iter().rev() {
-            match lower_in_current_state(surface) {
-                Ok(lowered) if &lowered == kernel => {
-                    return Ok(clone_click_proposition_iteratively(surface));
-                }
-                Ok(lowered) => last_mismatch = Some(format!("{surface:?} -> {lowered:?}")),
-                Err(error) => last_mismatch = Some(format!("{surface:?} -> {}", error.message())),
-            }
-        }
-        Err(ClickError::new(format!(
-            "none of the recorded surface forms lower to the proposition at the current proof state{}; expected {kernel:?}",
-            last_mismatch
-                .map(|mismatch| format!(" (last mismatch: {mismatch})"))
-                .unwrap_or_default()
-        )))
     }
 }
 

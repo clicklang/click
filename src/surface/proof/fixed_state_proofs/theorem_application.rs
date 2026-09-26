@@ -419,7 +419,7 @@ pub(in crate::surface::proof) fn checked_surface_fact_at_outcome(
     if let Ok(surface) = view.surface_propositions.surface(kernel) {
         bases.push(surface.clone());
     }
-    for recorded in view.surface_propositions.kernel_facts() {
+    for recorded in view.surface_propositions.universal_kernel_facts() {
         check_verification_deadline()?;
         // Universal source forms are candidates, not proof authority. The
         // selected form must still pass `matches_kernel` and `check`.
