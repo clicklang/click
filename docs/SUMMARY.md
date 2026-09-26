@@ -69,6 +69,7 @@
   - [The resource tracker](internals/resource-tracker.md)
 - [Mathematical integers](internals/mathematical-integers.md)
 - [Canonicalization](internals/canonicalization.md)
+- [Equality closure (proposal)](internals/equality-closure.md)
 - [Verification efficiency](internals/verification-efficiency.md)
 - [Testing](internals/testing.md)
 - [Contributing](internals/contributing.md)
