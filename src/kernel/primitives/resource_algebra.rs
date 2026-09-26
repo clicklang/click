@@ -2437,7 +2437,7 @@ impl ResourceContext {
                 }
             }
         }
-        self.direct_match_candidate_positions(required)
+        self.owned_support_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
             .filter_map(|entry| {
@@ -2508,11 +2508,46 @@ impl ResourceContext {
         {
             return true;
         }
-        self.direct_match_candidate_positions(required)
+        self.owned_support_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
             .copied()
             .any(supports_other)
+    }
+
+    /// The candidates [`Self::directly_supporting_owned_entry`] and
+    /// [`Self::has_other_directly_supporting_owned_entry`] must ask, in the
+    /// order of [`Self::direct_match_candidate_positions`].
+    ///
+    /// Both answer from a candidate of two kinds only: an owned fact, or a
+    /// projection with a recorded owned support (`supported_by`). A
+    /// candidate of any other kind is asked for entailment and then
+    /// discarded whatever the answer. When this context records no
+    /// projection support at all, every candidate that can answer is owned,
+    /// and for a memory requirement the owned candidates are exactly the
+    /// owned bucket of its block: `owned_memory_by_block` files an entry
+    /// under its block if and only if `memory_by_block` does and the fact is
+    /// owned (`ResourceContextIndex::with_inserted` and `without_entry`).
+    /// That bucket is the block bucket with the discarded entries removed,
+    /// in the same (entry-id) order,
+    /// so the first answer and the existence of another answer are
+    /// unchanged. Without it, a contract with `N` views beside `M` owners
+    /// asked every view of the shared parameter block once per view: `N^2`
+    /// coverage queries at entry where `N * M` decide the same thing.
+    fn owned_support_candidate_positions(
+        &self,
+        required: &CResourceFact,
+    ) -> Option<&ResourceEntryIds> {
+        if self.storage.supported_by.is_empty()
+            && let CResource::Memory(range) = required.resource()
+        {
+            return self
+                .storage
+                .index
+                .owned_memory_by_block
+                .get(&range.base().block);
+        }
+        self.direct_match_candidate_positions(required)
     }
 
     pub(crate) fn owned_fact_for_occurrence(

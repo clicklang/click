@@ -3697,9 +3697,12 @@ fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
 /// now asks the range written against the fact's own base first, and the
 /// veto, which is now asked only of a pair another route covers. The total is
 /// held under a quadratic ceiling: installing borrowed inputs still asks
-/// every held range of the block once per view
+/// every held view of the block once per view
 /// (`ResourceContext::view_occurrences_for_fact`, which must see every
 /// candidate to refuse an ambiguous binding), so the total is not yet linear.
+/// Its owner check (`ResourceContext::directly_supporting_owned_entry`) asks
+/// only the block's owned ranges when no projection support is recorded, so
+/// it no longer adds a second `N^2` term.
 #[test]
 fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
     let samples = [4, 8, 16, 32]
