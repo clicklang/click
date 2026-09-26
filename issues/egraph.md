@@ -167,6 +167,23 @@ Each stage lands green with its regressions and scaling curves:
      what still stops the rbtree leaf: the child argument `yid->rb_left`
      evaluates to `yid.block + 4u`, while the unfold's reads gave
      `ugp.block + 4u`. The classes correctly refuse to call these equal.
+   - Load congruence is unsound under that encoding. If `b == c` were derived
+     for two loads of one cell through spellings whose bases differ by `d`,
+     the two representations of the one stored pointer would differ by `d`.
+   - Chosen direction: give every loaded pointer an opaque identity, the
+     symbolic pointer named by its load. Every construction now goes through
+     `Pointer::loaded` (landed, no behaviour change).
+   - Measured, then reverted: flipping `Pointer::loaded` to the opaque form
+     broke about 29 unit tests and 34 fixtures. The common cause is that the
+     kernel relates a pointer loaded at one snapshot to the same pointer
+     loaded at another through machinery that compares load terms inside
+     offsets across snapshots (frame reasoning over an unchanged cell). With
+     opaque identities those become two blocks compared exactly, and that
+     machinery no longer applies.
+   - So the opaque form needs a bridging rule first: two loaded pointers are
+     equal when memory reasoning proves their loads equal. Resource lookup
+     and pointer comparison must consult that rule, not only exact block
+     identity. That design is the next open step of stage 2.
 3. Bitvector terms.
 4. Algebraic terms and pure-function applications.
 5. Tactics modulo the closure, plus a kernel-checked equality rule for
