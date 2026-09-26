@@ -14,18 +14,35 @@
 //! *hole*, whose pointer the concrete map may or may not hold, and never with
 //! the run's own value. A store of the run's value into a hole refills the
 //! slot rather than caching a concrete copy, and holes are kept as disjoint,
-//! non-adjacent intervals. Runs are never removed or split, so every snapshot
-//! derived from one seeded state carries the same runs, and two snapshots
-//! with one logical cell map have one representation. Equality, hashing and
-//! ordering therefore read the representation, in O(1) for the runs.
-
+//! non-adjacent intervals. A pointer is a live slot of at most one run. A run
+//! with no live slot holds no cell and is retired: the store never keeps one,
+//! so it neither costs a later scan nor makes two stores with the same cells
+//! differ in representation. Runs are never split.
+//!
+//! **Index.** The runs are one persistent ordered map keyed by [`RunKey`]:
+//! the run's block, then where its slots are anchored in the block (a
+//! constant base offset, or one symbolic offset every slot shifts from), then
+//! the rest of what [`CellRun::same_slots_as`] compares. So the runs of one
+//! block are one key range ([`AliasCandidates`] walks runs exactly as it
+//! walks cells), the runs a pointer can be a slot of are found without
+//! visiting the others, two stores' runs pair up by key, and two stores that
+//! share their runs' persistent nodes are compared, hashed and diffed in the
+//! work of what they do not share. The key orders the run's source memory by
+//! its content hash before its structure, so no key comparison walks a
+//! memory unless two sources' hashes collide. Equality, hashing and ordering
+//! read only the concrete map and the run map, never the lookup bound
+//! `CellStore::run_span` or the cached counts, so a store's identity does
+//! not depend on the order its runs were added in.
+use super::alias_candidates::BlockKeyed;
 use super::{
-    AliasCandidates, CType, CValue, Pointer, PointerOffsetTerm, SharedCMemory, SnapshotMap,
-    SnapshotMapChange, SnapshotSet,
+    AliasCandidates, CType, CValue, Pointer, PointerBlock, PointerOffsetTerm, SharedCMemory,
+    SnapshotMap, SnapshotMapChange, SnapshotSet,
 };
 use crate::kernel::primitives::Bitvector32Term;
+use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, OnceLock};
+use std::ops::Bound;
+use std::sync::OnceLock;
 
 /// Disjoint, non-adjacent, ascending half-open index intervals.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -117,6 +134,27 @@ impl IndexIntervals {
         self.insert_range(index, index + 1);
     }
 
+    /// Every index of `[0, count)`.
+    pub(crate) fn full(count: u32) -> Self {
+        let mut all = Self::default();
+        all.insert_range(0, count);
+        all
+    }
+
+    /// The indexes in exactly one of the two.
+    pub(crate) fn symmetric_difference(&self, other: &Self) -> Self {
+        let mut result = self.difference(other);
+        for (low, high) in other.difference(self).intervals.iter() {
+            result.insert_range(*low, *high);
+        }
+        result
+    }
+
+    /// How many intervals there are.
+    pub(crate) fn interval_count(&self) -> usize {
+        self.intervals.len()
+    }
+
     /// Removes one index, splitting the interval that held it.
     pub(crate) fn remove(&mut self, index: u32) {
         let Some((low, high)) = self.interval_of(index) else {
@@ -142,19 +180,32 @@ impl IndexIntervals {
     /// The indexes of `[0, count)` outside every interval, ascending, as
     /// half-open intervals.
     pub(crate) fn gaps(&self, count: u32) -> Vec<(u32, u32)> {
-        let mut gaps = Vec::new();
-        let mut next = 0;
-        for (low, high) in self.intervals.iter() {
-            if next < *low {
-                gaps.push((next, (*low).min(count)));
+        self.gap_intervals(count).collect()
+    }
+
+    /// [`Self::gaps`], walked without collecting them.
+    pub(crate) fn gap_intervals(&self, count: u32) -> impl Iterator<Item = (u32, u32)> + '_ {
+        let mut intervals = self.intervals.iter();
+        let mut next = 0u32;
+        std::iter::from_fn(move || {
+            while next < count {
+                match intervals.next() {
+                    Some((low, high)) => {
+                        let gap = (next, (*low).min(count));
+                        next = next.max(*high);
+                        if gap.0 < gap.1 {
+                            return Some(gap);
+                        }
+                    }
+                    None => {
+                        let gap = (next, count);
+                        next = count;
+                        return Some(gap);
+                    }
+                }
             }
-            next = next.max(*high);
-        }
-        if next < count {
-            gaps.push((next, count));
-        }
-        gaps.retain(|(low, high)| low < high);
-        gaps
+            None
+        })
     }
 }
 
@@ -169,11 +220,18 @@ pub struct CellRun {
     count: u32,
     source: SharedCMemory,
     holes: IndexIntervals,
-    /// Every slot, holes included, materialized on first need. A function
-    /// of the fields above, so it is excluded from equality and hashing and
-    /// shared by every copy of the run.
-    slots: Arc<OnceLock<SnapshotMap<Pointer, CValue>>>,
+    /// Each slot's value, holes included, named on its first need, for a
+    /// run of at most [`CACHED_RUN_VALUES`] slots (empty for a longer one).
+    /// A function of the fields above but the holes, so it is shared by
+    /// every copy of the run, whatever its holes, and left out of equality,
+    /// hashing and ordering.
+    values: std::sync::Arc<[OnceLock<CValue>]>,
 }
+
+/// The longest run whose slot values [`CellRun::value`] names once and keeps.
+/// A longer run names a slot's value each time it is asked, through the load
+/// naming cache.
+const CACHED_RUN_VALUES: u32 = 64;
 
 impl CellRun {
     pub(crate) fn new(
@@ -191,8 +249,34 @@ impl CellRun {
             count,
             source,
             holes,
-            slots: Arc::new(OnceLock::new()),
+            values: (0..if count <= CACHED_RUN_VALUES { count } else { 0 })
+                .map(|_| OnceLock::new())
+                .collect(),
         }
+    }
+
+    /// The run's place in a store's index: see [`RunKey`].
+    pub(crate) fn key(&self) -> RunKey {
+        RunKey {
+            block: self.base.block.clone(),
+            anchor: RunAnchor::of(&self.base.offset),
+            shape: RunShape::Of {
+                element_width: self.element_width,
+                element_type: self.element_type,
+                count: self.count,
+                source: RunSource(self.source.clone()),
+            },
+        }
+    }
+
+    /// The largest byte distance of a slot from the base.
+    fn span(&self) -> u64 {
+        u64::from(self.count.saturating_sub(1)) * u64::from(self.element_width)
+    }
+
+    /// The live slots, as intervals.
+    pub(crate) fn live_intervals(&self) -> IndexIntervals {
+        IndexIntervals::full(self.count).difference(&self.holes)
     }
 
     pub(crate) fn base(&self) -> &Pointer {
@@ -263,7 +347,7 @@ impl CellRun {
         let width = i64::from(self.element_width);
         let shift = match (&self.base.offset, &pointer.offset) {
             (PointerOffsetTerm::Constant(base), PointerOffsetTerm::Constant(offset)) => {
-                offset - base
+                offset.checked_sub(*base)?
             }
             (base, offset) if base == offset => 0,
             (base, PointerOffsetTerm::Add(left, right)) if left.as_ref() == base => {
@@ -289,6 +373,15 @@ impl CellRun {
 
     /// The value every live slot `index` holds.
     pub(crate) fn value(&self, index: u32) -> CValue {
+        match self.values.get(index as usize) {
+            Some(value) => value.get_or_init(|| self.named_value(index)).clone(),
+            None => self.named_value(index),
+        }
+    }
+
+    /// The value slot `index` holds: the canonical load of its pointer in
+    /// the source, typed as the element.
+    fn named_value(&self, index: u32) -> CValue {
         let pointer = self.slot_pointer(index);
         let load = crate::kernel::canonical_form_of_load(self.source.clone(), pointer.clone());
         cell_run_value(&pointer, self.element_type, load)
@@ -296,16 +389,6 @@ impl CellRun {
 
     pub(crate) fn live_count(&self) -> u64 {
         u64::from(self.count) - self.holes.count().min(u64::from(self.count))
-    }
-
-    /// Every slot, holes included, in ascending pointer order.
-    fn all_slots(&self) -> &SnapshotMap<Pointer, CValue> {
-        self.slots.get_or_init(|| {
-            crate::instrumentation::record_deterministic_work(self.count as usize);
-            (0..self.count)
-                .map(|index| (self.slot_pointer(index), self.value(index)))
-                .collect()
-        })
     }
 
     /// The live slots, descending in element order: the order a walk meets
@@ -321,8 +404,7 @@ impl CellRun {
     /// The live slots, ascending in element order.
     pub(crate) fn live_indexes(&self) -> impl Iterator<Item = u32> + '_ {
         self.holes
-            .gaps(self.count)
-            .into_iter()
+            .gap_intervals(self.count)
             .flat_map(|(low, high)| low..high)
     }
 
@@ -382,8 +464,106 @@ impl PartialOrd for CellRun {
 }
 
 impl Ord for CellRun {
+    /// By [`RunKey`], then holes: a source memory is compared by structure
+    /// only when two sources' content hashes collide.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.descriptor().cmp(&other.descriptor())
+        self.key()
+            .cmp(&other.key())
+            .then_with(|| self.holes.cmp(&other.holes))
+    }
+}
+
+/// A run's source memory, ordered by content hash before structure. The
+/// order is a function of the memories' contents, so it is the same in every
+/// check, and it reaches the structural comparison only for two distinct
+/// memories whose hashes collide.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct RunSource(SharedCMemory);
+
+impl PartialOrd for RunSource {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for RunSource {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .content_hash
+            .cmp(&other.0.content_hash)
+            .then_with(|| {
+                if self.0 == other.0 {
+                    std::cmp::Ordering::Equal
+                } else {
+                    self.0.memory.cmp(&other.0.memory)
+                }
+            })
+    }
+}
+
+/// Where a run's slots sit in their block. A run based at a constant offset
+/// has every slot at a constant offset; any other run has every slot at its
+/// base offset plus a constant shift (see [`CellRun::slot_pointer`]). The
+/// first and last variants bound key ranges and are no run's anchor.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum RunAnchor {
+    Least,
+    Constant(i64),
+    Symbolic(PointerOffsetTerm),
+    Greatest,
+}
+
+impl RunAnchor {
+    fn of(offset: &PointerOffsetTerm) -> Self {
+        match offset {
+            PointerOffsetTerm::Constant(constant) => Self::Constant(*constant),
+            offset => Self::Symbolic(offset.clone()),
+        }
+    }
+}
+
+/// The rest of a run's identity: what [`CellRun::same_slots_as`] compares
+/// beyond the base. The first and last variants bound key ranges.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum RunShape {
+    Least,
+    Of {
+        element_width: u32,
+        element_type: CType,
+        count: u32,
+        source: RunSource,
+    },
+    Greatest,
+}
+
+/// A run's key in a store's run map: block first, so a block's runs are one
+/// key range, then anchor, then shape. Two runs have one key exactly when
+/// they have the same slots holding the same values
+/// ([`CellRun::same_slots_as`]).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct RunKey {
+    block: PointerBlock,
+    anchor: RunAnchor,
+    shape: RunShape,
+}
+
+impl RunKey {
+    fn bound(block: &PointerBlock, anchor: RunAnchor, shape: RunShape) -> Self {
+        Self {
+            block: block.clone(),
+            anchor,
+            shape,
+        }
+    }
+}
+
+impl BlockKeyed for RunKey {
+    fn key_block(&self) -> &PointerBlock {
+        &self.block
+    }
+
+    fn first_key_of(block: &PointerBlock) -> Self {
+        Self::bound(block, RunAnchor::Least, RunShape::Least)
     }
 }
 
@@ -608,14 +788,36 @@ impl CellRun {
 }
 
 /// A snapshot's cells: the concrete map and the seeded runs, in canonical
-/// form (see the module comment).
+/// form, the runs indexed by [`RunKey`] (see the module comment).
 #[derive(Clone, Default)]
 pub(crate) struct CellStore {
     concrete: SnapshotMap<Pointer, CValue>,
-    runs: Arc<Vec<CellRun>>,
-    /// The logical cell map, built on first need when there are runs. Reset
-    /// by every mutation; a function of the two fields above.
+    runs: SnapshotMap<RunKey, CellRun>,
+    /// An upper bound on every held run's [`CellRun::span`]: a constant
+    /// pointer can be a slot only of a run based at most this many bytes
+    /// below it. Lookup bookkeeping, not content: it only grows, and it is
+    /// left out of equality, hashing and ordering.
+    run_span: u64,
+    /// The live slots of every run together; a function of the runs.
+    run_cells: u64,
+    /// The logical cell map, built on first need when there are runs. A
+    /// single-cell mutation updates it in place; any other resets it. A
+    /// function of the two maps above.
     logical: OnceLock<SnapshotMap<Pointer, CValue>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many runs pointer lookups have visited on this thread: the
+    /// scaling regressions' measure of a lookup, which positions in the run
+    /// map without charging work.
+    static RUNS_VISITED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// One held run's slot at a pointer.
+struct SlotAt<'a> {
+    run: &'a CellRun,
+    index: u32,
 }
 
 impl CellStore {
@@ -630,33 +832,164 @@ impl CellStore {
         &self.concrete
     }
 
-    pub(crate) fn runs(&self) -> &[CellRun] {
-        &self.runs
+    /// Every run, in key order. Every run has a live slot.
+    pub(crate) fn runs(&self) -> impl Iterator<Item = &CellRun> + '_ {
+        self.runs.values()
+    }
+
+    /// How many runs the store holds.
+    #[cfg(test)]
+    pub(crate) fn run_count(&self) -> usize {
+        self.runs.len()
+    }
+
+    /// The runs of one block, in key order, without visiting another
+    /// block's.
+    pub(crate) fn runs_in_block<'a>(
+        &'a self,
+        block: &PointerBlock,
+    ) -> impl Iterator<Item = &'a CellRun> + 'a {
+        let lower = RunKey::first_key_of(block);
+        let upper = RunKey::bound(block, RunAnchor::Greatest, RunShape::Greatest);
+        self.runs
+            .range::<_, RunKey>((Bound::Included(lower), Bound::Included(upper)))
+            .map(|(_, run)| run)
+    }
+
+    /// The runs `candidates` admits, in key order, without visiting a run of
+    /// another block.
+    pub(crate) fn candidate_runs<'a>(
+        &'a self,
+        candidates: &'a AliasCandidates,
+    ) -> impl Iterator<Item = &'a CellRun> + 'a {
+        candidates.entries(&self.runs).map(|(_, run)| run)
+    }
+
+    /// The runs based exactly at `offset` in `block`, in key order, without
+    /// visiting another run.
+    pub(crate) fn runs_based_at<'a>(
+        &'a self,
+        block: &PointerBlock,
+        offset: &PointerOffsetTerm,
+    ) -> impl Iterator<Item = &'a CellRun> + 'a {
+        let anchor = RunAnchor::of(offset);
+        self.runs_anchored(block, anchor.clone(), anchor)
+    }
+
+    /// The runs of `block` anchored from `low` through `high`, in key order.
+    fn runs_anchored<'a>(
+        &'a self,
+        block: &PointerBlock,
+        low: RunAnchor,
+        high: RunAnchor,
+    ) -> impl Iterator<Item = &'a CellRun> + 'a {
+        let lower = RunKey::bound(block, low, RunShape::Least);
+        let upper = RunKey::bound(block, high, RunShape::Greatest);
+        self.runs
+            .range::<_, RunKey>((Bound::Included(lower), Bound::Included(upper)))
+            .map(|(_, run)| run)
+    }
+
+    /// Every held run that has a slot, live or not, spelled exactly
+    /// `pointer`, in key order. Only runs anchored where such a slot can be
+    /// are visited: a constant pointer is a slot only of a run based at a
+    /// constant at most `run_span` bytes below it, and any other
+    /// pointer only of a run based at the pointer's own offset or at the
+    /// offset it adds a constant to.
+    fn slots_at<'a>(&'a self, pointer: &'a Pointer) -> impl Iterator<Item = SlotAt<'a>> + 'a {
+        let block = &pointer.block;
+        let (first, second) = match &pointer.offset {
+            PointerOffsetTerm::Constant(offset) => {
+                let low = offset.saturating_sub(i64::try_from(self.run_span).unwrap_or(i64::MAX));
+                (
+                    Some((RunAnchor::Constant(low), RunAnchor::Constant(*offset))),
+                    None,
+                )
+            }
+            offset => {
+                let own = RunAnchor::Symbolic(offset.clone());
+                let shifted = match offset {
+                    PointerOffsetTerm::Add(left, right) if matches!(right.as_ref(), PointerOffsetTerm::Constant(shift) if *shift != 0) => {
+                        Some(RunAnchor::of(left))
+                            .filter(|anchor| matches!(anchor, RunAnchor::Symbolic(_)))
+                    }
+                    _ => None,
+                };
+                (
+                    Some((own.clone(), own)),
+                    shifted.map(|anchor| (anchor.clone(), anchor)),
+                )
+            }
+        };
+        first
+            .into_iter()
+            .chain(second)
+            .flat_map(move |(low, high)| self.runs_anchored(block, low, high))
+            .filter_map(move |run| {
+                // Positioning in the run map is a persistent-map lookup, as a
+                // concrete cell's is, and is not charged; a visited run that
+                // does not hold the slot is.
+                #[cfg(test)]
+                RUNS_VISITED.with(|visited| visited.set(visited.get() + 1));
+                let index = run.slot_index(pointer);
+                if index.is_none() {
+                    crate::instrumentation::record_deterministic_work(1);
+                }
+                index.map(|index| SlotAt { run, index })
+            })
+    }
+
+    /// The run holding a live slot at `pointer`, and the slot's element.
+    fn live_run_slot<'a>(&'a self, pointer: &'a Pointer) -> Option<SlotAt<'a>> {
+        if self.runs.is_empty() {
+            return None;
+        }
+        self.slots_at(pointer)
+            .find(|slot| !slot.run.holes.contains(slot.index))
+    }
+
+    /// Replaces the run at `key` with `run`, or removes it: a run with no
+    /// live slot is retired rather than held.
+    fn set_run(&mut self, key: &RunKey, run: Option<CellRun>) {
+        if let Some(old) = self.runs.remove(key) {
+            self.run_cells -= old.live_count();
+        }
+        if let Some(run) = run.filter(|run| run.live_count() > 0) {
+            self.run_span = self.run_span.max(run.span());
+            self.run_cells += run.live_count();
+            self.runs.insert(key.clone(), run);
+        }
+    }
+
+    /// Applies each `(key, run)` replacement, after a walk that collected
+    /// them.
+    fn apply_run_updates(&mut self, updates: Vec<(RunKey, CellRun)>) {
+        for (key, run) in updates {
+            self.set_run(&key, Some(run));
+        }
     }
 
     /// The whole cell map, exactly as per-cell seeding would have stored it.
-    /// O(1) without runs; with runs it is built once per mutated store, at a
-    /// cost of the concrete cells and holes plus each run after the first.
+    /// O(1) without runs; with runs it is built once per store, at a cost of
+    /// every live slot, and kept up to date through single-cell mutations.
     pub(crate) fn logical(&self) -> &SnapshotMap<Pointer, CValue> {
         if self.runs.is_empty() {
             return &self.concrete;
         }
         self.logical.get_or_init(|| {
-            let mut runs = self.runs.iter();
-            let first = runs.next().expect("nonempty runs");
-            let mut map = first.all_slots().clone();
-            for (low, high) in first.holes.intervals.iter() {
-                for index in *low..*high {
-                    map.remove(&first.slot_pointer(index));
-                }
-            }
-            for run in runs {
+            let _timing = crate::instrumentation::OperationTiming::new(
+                "kernel",
+                "cell store",
+                "cell store: logical map",
+            );
+            let mut map = self.concrete.clone();
+            crate::instrumentation::record_deterministic_work(
+                usize::try_from(self.run_cells).unwrap_or(usize::MAX),
+            );
+            for run in self.runs.values() {
                 for index in run.live_indexes() {
                     map.insert(run.slot_pointer(index), run.value(index));
                 }
-            }
-            for (pointer, value) in self.concrete.iter() {
-                map.insert(pointer.clone(), value.clone());
             }
             map
         })
@@ -666,14 +999,6 @@ impl CellStore {
         self.logical = OnceLock::new();
     }
 
-    /// The run holding a live slot at `pointer`, and the slot's element.
-    fn live_run_slot(&self, pointer: &Pointer) -> Option<(usize, u32)> {
-        self.runs
-            .iter()
-            .enumerate()
-            .find_map(|(position, run)| run.live_slot_index(pointer).map(|index| (position, index)))
-    }
-
     /// The cell at `pointer`, read from a run slot without building the
     /// logical map.
     pub(crate) fn get(&self, pointer: &Pointer) -> Option<CValue> {
@@ -681,7 +1006,7 @@ impl CellStore {
             return Some(value.clone());
         }
         self.live_run_slot(pointer)
-            .map(|(position, index)| self.runs[position].value(index))
+            .map(|slot| slot.run.value(slot.index))
     }
 
     pub(crate) fn contains_key(&self, pointer: &Pointer) -> bool {
@@ -694,44 +1019,39 @@ impl CellStore {
     /// `Some(false)` when they cannot agree. `None` when the runs do not pair
     /// up and only the logical maps can tell.
     ///
-    /// Runs with no live slot hold no cell and are passed over. The rest pair
-    /// up in order when each pair is one run with possibly other holes. A slot
-    /// live on one side and a hole on the other then makes the logical maps
-    /// differ there: the hole holds either no cell or a concrete one, and the
-    /// canonical form keeps a concrete cell at a hole only when it holds
-    /// something other than the run's value.
+    /// The runs pair up by key, and only the keys the two run maps differ
+    /// on are visited. An observable run held by one store alone leaves the
+    /// answer to the logical maps. One held by both with other holes has a
+    /// slot live on one side and a hole on the other, and the canonical form
+    /// keeps a concrete cell at a hole only when it holds something other
+    /// than the run's value.
     pub(crate) fn observable_runs_match(
         &self,
         other: &Self,
         mut observable: impl FnMut(&CellRun) -> bool,
     ) -> Option<bool> {
-        if Arc::ptr_eq(&self.runs, &other.runs) {
+        if self.runs.ptr_eq(&other.runs) {
             return Some(true);
         }
-        let left = self
-            .runs
-            .iter()
-            .filter(|run| run.live_count() > 0 && observable(run))
-            .collect::<Vec<_>>();
-        let right = other
-            .runs
-            .iter()
-            .filter(|run| run.live_count() > 0 && observable(run))
-            .collect::<Vec<_>>();
-        crate::instrumentation::record_deterministic_work(left.len() + right.len());
-        if left.len() != right.len()
-            || left
-                .iter()
-                .zip(&right)
-                .any(|(left, right)| !left.same_slots_as(right))
-        {
-            return None;
+        let mut holes_differ = false;
+        for change in self.runs.diff(&other.runs) {
+            match change {
+                SnapshotMapChange::Removed(key) => {
+                    if observable(self.runs.get(key).expect("a removed key is held")) {
+                        return None;
+                    }
+                }
+                SnapshotMapChange::Added(key) => {
+                    if observable(other.runs.get(key).expect("an added key is held")) {
+                        return None;
+                    }
+                }
+                SnapshotMapChange::Changed(key) => {
+                    holes_differ |= observable(self.runs.get(key).expect("a changed key is held"));
+                }
+            }
         }
-        Some(
-            left.iter()
-                .zip(&right)
-                .all(|(left, right)| left.holes == right.holes),
-        )
+        Some(!holes_differ)
     }
 
     /// The logical cells `candidates` admits, ascending, as
@@ -739,7 +1059,8 @@ impl CellStore {
     /// a run: each admitted run's live slots are spelled and valued only as
     /// the walk reaches them. The concrete candidates and each run's slots
     /// are ascending, so a merge of them is the logical walk. A caller that
-    /// stops early pays only for what it visited.
+    /// stops early pays only for what it visited, plus a logarithmic step
+    /// per cell in the number of admitted runs.
     pub(crate) fn candidate_logical_entries<'a>(
         &'a self,
         candidates: &'a AliasCandidates,
@@ -750,10 +1071,7 @@ impl CellStore {
                 .entries(&self.concrete)
                 .map(|(pointer, value)| (pointer.clone(), value.clone())),
         )];
-        for run in self.runs.iter() {
-            if run.live_count() == 0 || !candidates.admits_block(&run.base.block) {
-                continue;
-            }
+        for run in self.candidate_runs(candidates) {
             // Element 0 is spelled as the base itself and every later element
             // as the base plus its shift, so the two are ascending apart.
             sequences.push(Box::new(
@@ -769,21 +1087,25 @@ impl CellStore {
                     .map(move |index| (run.slot_pointer(index), run.value(index))),
             ));
         }
-        let mut heads = sequences
-            .iter_mut()
-            .map(|sequence| sequence.next())
-            .collect::<Vec<_>>();
+        let mut values = Vec::with_capacity(sequences.len());
+        let mut heads = std::collections::BinaryHeap::new();
+        for (position, sequence) in sequences.iter_mut().enumerate() {
+            match sequence.next() {
+                Some((pointer, value)) => {
+                    heads.push(std::cmp::Reverse((pointer, position)));
+                    values.push(Some(value));
+                }
+                None => values.push(None),
+            }
+        }
         std::iter::from_fn(move || {
-            let least = heads
-                .iter()
-                .enumerate()
-                .filter_map(|(position, head)| {
-                    head.as_ref().map(|(pointer, _)| (position, pointer))
-                })
-                .min_by(|(_, left), (_, right)| left.cmp(right))
-                .map(|(position, _)| position)?;
-            let next = sequences[least].next();
-            std::mem::replace(&mut heads[least], next)
+            let std::cmp::Reverse((pointer, position)) = heads.pop()?;
+            let value = values[position].take().expect("a queued head has a value");
+            if let Some((next_pointer, next_value)) = sequences[position].next() {
+                heads.push(std::cmp::Reverse((next_pointer, position)));
+                values[position] = Some(next_value);
+            }
+            Some((pointer, value))
         })
     }
 
@@ -795,12 +1117,7 @@ impl CellStore {
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.concrete.len()
-            + self
-                .runs
-                .iter()
-                .map(|run| run.live_count() as usize)
-                .sum::<usize>()
+        self.concrete.len() + usize::try_from(self.run_cells).unwrap_or(usize::MAX)
     }
 
     pub(crate) fn iter(
@@ -840,16 +1157,8 @@ impl CellStore {
     }
 
     /// The pointers at which the two stores' logical maps differ, ascending,
-    /// without laying out a run whose slots the other store's run shares.
-    ///
-    /// Runs pair up when each run with a live slot on either side has one on
-    /// the other with the same slots ([`CellRun::same_slots_as`]). Then a slot
-    /// live on both sides holds the same value on both, with no concrete cell
-    /// beside it, and a slot live on one side only differs: the other side
-    /// holds either nothing there or a concrete cell, which the canonical form
-    /// keeps only when it holds something other than the run's value. Every
-    /// other difference is a concrete one. Runs that do not pair up compare
-    /// the logical maps.
+    /// without laying out a run the other store shares; see
+    /// [`Self::differing_cells`].
     pub(crate) fn differing_pointers(&self, other: &Self) -> Vec<Pointer> {
         let differing = self.differing_cells(other);
         let mut pointers = differing
@@ -865,103 +1174,97 @@ impl CellStore {
         pointers.into_iter().collect()
     }
 
-    /// [`Self::differing_pointers`] with each run's differing slots left as
-    /// intervals, for a caller that can pass over slots it proves irrelevant
-    /// without spelling their pointers.
+    /// Exactly the pointers at which the two stores' logical maps differ,
+    /// with each run's differing slots left as intervals where every slot in
+    /// them differs, for a caller that can pass over slots it proves
+    /// irrelevant without spelling their pointers.
+    ///
+    /// Only what the two stores do not share is visited: the concrete maps'
+    /// diff and the run maps' diff, both walked by persistent-node identity.
+    /// A run held by both with other holes differs at the slots live on one
+    /// side only; a run held by one differs at its live slots. Such a slot
+    /// agrees with the other side only where that side holds the same value
+    /// there, and the other side can hold a value at a live slot of this
+    /// store's run only in a concrete cell — which the concrete diff visits,
+    /// since the live side holds no concrete cell there — or in a live slot
+    /// of another run that differs between the stores in the same block: a
+    /// run both stores hold alike is live at that slot on both sides, and
+    /// two runs are never live at one slot. So the concrete diff's pointers
+    /// are checked one by one, and a run's slots are checked one by one only
+    /// when another differing run shares its block.
     pub(crate) fn differing_cells(&self, other: &Self) -> DifferingCells {
-        if Arc::ptr_eq(&self.runs, &other.runs) || self.runs == other.runs {
-            return DifferingCells {
-                pointers: self
-                    .concrete
-                    .diff(&other.concrete)
-                    .map(|change| change.key().clone())
-                    .collect(),
-                run_slots: Vec::new(),
-            };
-        }
-        let logical = || DifferingCells {
-            pointers: self.logical_differing_pointers(other),
-            run_slots: Vec::new(),
-        };
-        let live = |store: &Self| {
-            store
-                .runs
-                .iter()
-                .filter(|run| run.live_count() > 0)
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-        let left = live(self);
-        let right = live(other);
-        crate::instrumentation::record_deterministic_work(left.len() + right.len());
-        let partner = |run: &CellRun, store: &Self| {
-            store
-                .runs
-                .iter()
-                .find(|candidate| candidate.same_slots_as(run))
-                .cloned()
-        };
-        // A run with no partner is still read whole when the other store has
-        // no run with a live slot over its block: each of its live slots then
-        // differs unless the other store holds that very value concretely.
-        let alone = |run: &CellRun, among: &[CellRun]| {
-            among
-                .iter()
-                .all(|candidate| candidate.base.block != run.base.block)
-        };
-        let mut pairs: Vec<(CellRun, CellRun)> = Vec::new();
-        let mut unpaired = Vec::new();
-        for run in &left {
-            match partner(run, other) {
-                Some(other_run) => pairs.push((run.clone(), other_run)),
-                None if alone(run, &right) => unpaired.push((run.clone(), other)),
-                None => return logical(),
-            }
-        }
-        for run in &right {
-            if pairs.iter().any(|(_, paired)| paired.same_slots_as(run)) {
-                continue;
-            }
-            match partner(run, self) {
-                Some(other_run) => pairs.push((other_run, run.clone())),
-                None if alone(run, &left) => unpaired.push((run.clone(), self)),
-                None => return logical(),
-            }
-        }
-        let mut pointers = self
+        let concrete_changes = self
             .concrete
             .diff(&other.concrete)
             .map(|change| change.key().clone())
             .collect::<Vec<_>>();
-        let mut run_slots = Vec::new();
-        for (run, other_store) in unpaired {
-            // The other store's concrete cells at this run's live slots that
-            // hold the run's value are the only slots that agree.
-            let mut differing = IndexIntervals::default();
-            for (low, high) in run.holes.gaps(run.count) {
-                differing.insert_range(low, high);
-            }
-            let agreeing = other_store
-                .concrete
-                .iter()
-                .filter_map(|(pointer, value)| {
-                    crate::instrumentation::record_deterministic_work(1);
-                    run.live_slot_index(pointer)
-                        .filter(|index| run.value(*index) == *value)
-                })
-                .collect::<Vec<_>>();
-            for index in agreeing {
-                differing.remove(index);
-            }
-            run_slots.push((run, differing));
+        if self.runs.ptr_eq(&other.runs) || self.runs == other.runs {
+            return DifferingCells {
+                pointers: concrete_changes,
+                run_slots: Vec::new(),
+            };
         }
-        for (left_run, right_run) in pairs {
-            let mut differing = left_run.holes.difference(&right_run.holes);
-            for (low, high) in right_run.holes.difference(&left_run.holes).intervals() {
-                differing.insert_range(low, high);
+        let mut differing_runs: Vec<(CellRun, IndexIntervals)> = Vec::new();
+        let mut differing_runs_per_block =
+            std::collections::BTreeMap::<&PointerBlock, usize>::new();
+        for change in self.runs.diff(&other.runs) {
+            let (run, slots) = match change {
+                SnapshotMapChange::Removed(key) => {
+                    let run = self.runs.get(key).expect("a removed key is held");
+                    (run, run.live_intervals())
+                }
+                SnapshotMapChange::Added(key) => {
+                    let run = other.runs.get(key).expect("an added key is held");
+                    (run, run.live_intervals())
+                }
+                SnapshotMapChange::Changed(key) => {
+                    let left = self.runs.get(key).expect("a changed key is held");
+                    let right = other.runs.get(key).expect("a changed key is held");
+                    let slots = left
+                        .holes
+                        .symmetric_difference(&right.holes)
+                        .intersection(&IndexIntervals::full(left.count));
+                    (left, slots)
+                }
+            };
+            *differing_runs_per_block.entry(&run.base.block).or_default() += 1;
+            differing_runs.push((run.clone(), slots));
+        }
+        crate::instrumentation::record_deterministic_work(differing_runs.len());
+        let mut pointers = Vec::new();
+        let concrete_changes = concrete_changes.into_iter().collect::<BTreeSet<_>>();
+        for pointer in &concrete_changes {
+            crate::instrumentation::record_deterministic_work(1);
+            if self.get(pointer) != other.get(pointer) {
+                pointers.push(pointer.clone());
             }
-            if differing.count() > 0 {
-                run_slots.push((left_run, differing));
+        }
+        let mut run_slots = Vec::new();
+        for (run, mut slots) in differing_runs {
+            if differing_runs_per_block[&run.base.block] > 1 {
+                crate::instrumentation::record_deterministic_work(
+                    usize::try_from(slots.count()).unwrap_or(usize::MAX),
+                );
+                for index in slots.indexes() {
+                    let pointer = run.slot_pointer(index);
+                    if !concrete_changes.contains(&pointer)
+                        && self.get(&pointer) != other.get(&pointer)
+                    {
+                        pointers.push(pointer);
+                    }
+                }
+                continue;
+            }
+            for pointer in run_slot_candidates_in(&run, |low, high| {
+                concrete_changes.range::<Pointer, _>((low, high))
+            }) {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some(index) = run.slot_index(pointer) {
+                    slots.remove(index);
+                }
+            }
+            if slots.count() > 0 {
+                run_slots.push((run, slots));
             }
         }
         pointers.sort();
@@ -972,53 +1275,60 @@ impl CellStore {
         }
     }
 
-    fn logical_differing_pointers(&self, other: &Self) -> Vec<Pointer> {
-        self.logical()
-            .diff(other.logical())
-            .map(|change| change.key().clone())
-            .collect()
-    }
-
     /// See [`SnapshotMap::eq_relative_to`].
     pub(crate) fn eq_relative_to(&self, other: &Self, base: &Self) -> bool {
-        self.runs == other.runs
+        self.runs.eq_relative_to(&other.runs, &base.runs)
             && self
                 .concrete
                 .eq_relative_to(&other.concrete, &base.concrete)
     }
 
-    /// See [`SnapshotMap::is_without`], over the logical maps.
+    /// See [`SnapshotMap::is_without`], over the logical maps: `self` is
+    /// `before` with exactly the cells at `removed` gone, which is what the
+    /// two stores' differing pointers say when each of them is absent here.
     pub(crate) fn is_without(&self, before: &Self, removed: &[&Pointer]) -> bool {
         if self.runs.is_empty() && before.runs.is_empty() {
             return self.concrete.is_without(&before.concrete, removed);
         }
-        self.logical().is_without(before.logical(), removed)
+        if self.len() + removed.len() != before.len() {
+            return false;
+        }
+        let differing = before.differing_pointers(self);
+        differing.len() == removed.len()
+            && differing
+                .iter()
+                .zip(removed)
+                .all(|(differing, removed)| differing == *removed && !self.contains_key(differing))
     }
 
     /// Stores `value` at `pointer`, in canonical form.
     pub(crate) fn insert(&mut self, pointer: Pointer, value: CValue) {
-        self.reset();
+        if let Some(logical) = self.logical.get_mut() {
+            logical.insert(pointer.clone(), value.clone());
+        }
         if self.runs.is_empty() {
             self.concrete.insert(pointer, value);
             return;
         }
-        if let Some((position, index)) = self.live_run_slot(&pointer) {
-            if self.runs[position].value(index) == value {
+        let live = self
+            .live_run_slot(&pointer)
+            .map(|slot| (slot.run.clone(), slot.index));
+        if let Some((mut run, index)) = live {
+            if run.value(index) == value {
                 return;
             }
-            Arc::make_mut(&mut self.runs)[position].holes.insert(index);
+            run.holes.insert(index);
+            self.set_run(&run.key(), Some(run));
             self.concrete.insert(pointer, value);
             return;
         }
-        let refilled = self.runs.iter().position(|run| {
-            run.slot_index(&pointer)
-                .is_some_and(|index| run.value(index) == value)
-        });
-        if let Some(position) = refilled {
-            let index = self.runs[position]
-                .slot_index(&pointer)
-                .expect("the refilled run holds the slot");
-            Arc::make_mut(&mut self.runs)[position].holes.remove(index);
+        let refilled = self
+            .slots_at(&pointer)
+            .find(|slot| slot.run.value(slot.index) == value)
+            .map(|slot| (slot.run.clone(), slot.index));
+        if let Some((mut run, index)) = refilled {
+            run.holes.remove(index);
+            self.set_run(&run.key(), Some(run));
             self.concrete.remove(&pointer);
             return;
         }
@@ -1027,10 +1337,16 @@ impl CellStore {
 
     /// Removes the cell at `pointer`, returning what it held.
     pub(crate) fn remove(&mut self, pointer: &Pointer) -> Option<CValue> {
-        self.reset();
-        if let Some((position, index)) = self.live_run_slot(pointer) {
-            let value = self.runs[position].value(index);
-            Arc::make_mut(&mut self.runs)[position].holes.insert(index);
+        if let Some(logical) = self.logical.get_mut() {
+            logical.remove(pointer);
+        }
+        let held = self
+            .live_run_slot(pointer)
+            .map(|slot| (slot.run.clone(), slot.index));
+        if let Some((mut run, index)) = held {
+            let value = run.value(index);
+            run.holes.insert(index);
+            self.set_run(&run.key(), Some(run));
             return Some(value);
         }
         self.concrete.remove(pointer)
@@ -1040,7 +1356,7 @@ impl CellStore {
     pub(crate) fn retain(&mut self, mut keep: impl FnMut(&Pointer, &CValue) -> bool) {
         self.reset();
         self.concrete.retain(&mut keep);
-        self.retain_run_slots(|_| true, keep);
+        self.retain_run_slots(false, None, keep);
     }
 
     /// [`Self::retain`] with a whole-run answer from `run_rule`, as for
@@ -1052,7 +1368,7 @@ impl CellStore {
     ) {
         self.reset();
         self.concrete.retain(&mut keep);
-        self.retain_runs_by(|_| true, keep, &mut run_rule);
+        self.retain_runs_by(None, keep, &mut run_rule);
     }
 
     /// [`Self::retain_candidates`] with a whole-run answer from `run_rule`,
@@ -1065,16 +1381,27 @@ impl CellStore {
     ) {
         self.reset();
         candidates.retain_map(&mut self.concrete, &mut keep);
-        self.retain_runs_by(
-            |run| candidates.admits_block(&run.base.block),
-            keep,
-            &mut run_rule,
-        );
+        self.retain_runs_by(Some(candidates), keep, &mut run_rule);
+    }
+
+    /// The runs a retain visits: those `candidates` admits, or every run.
+    fn visited_runs(&self, candidates: Option<&AliasCandidates>) -> Vec<(RunKey, CellRun)> {
+        match candidates {
+            Some(candidates) => candidates
+                .entries(&self.runs)
+                .map(|(key, run)| (key.clone(), run.clone()))
+                .collect(),
+            None => self
+                .runs
+                .iter()
+                .map(|(key, run)| (key.clone(), run.clone()))
+                .collect(),
+        }
     }
 
     fn retain_runs_by(
         &mut self,
-        mut visits: impl FnMut(&CellRun) -> bool,
+        candidates: Option<&AliasCandidates>,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) {
@@ -1082,23 +1409,25 @@ impl CellStore {
             return;
         }
         let mut visited = 0usize;
-        let runs = Arc::make_mut(&mut self.runs);
-        for run in runs.iter_mut() {
-            if !visits(run) {
-                continue;
-            }
+        let mut updates = Vec::new();
+        for (key, mut run) in self.visited_runs(candidates) {
             visited += 1;
-            let (decision, answer) = run_rule(run);
+            let (decision, answer) = run_rule(&run);
             #[cfg(debug_assertions)]
             if answer == RuleAnswer::Exact {
                 crate::instrumentation::uncharged_debug_check(|| {
-                    decision.check_against(run, &mut keep);
+                    decision.check_against(&run, &mut keep);
                 });
             }
             let _ = answer;
+            let before = run.holes.clone();
             run.keep_only(decision, &mut keep, &mut visited);
+            if run.holes != before {
+                updates.push((key, run));
+            }
         }
         crate::instrumentation::record_deterministic_work(visited);
+        self.apply_run_updates(updates);
     }
 
     /// Keeps only the cells `keep` accepts among the candidates; every other
@@ -1110,7 +1439,7 @@ impl CellStore {
     ) {
         self.reset();
         candidates.retain_map(&mut self.concrete, &mut keep);
-        self.retain_run_slots(|run| candidates.admits_block(&run.base.block), keep);
+        self.retain_run_slots(true, Some(candidates), keep);
     }
 
     /// Keeps only the candidate cells `keep` accepts, and no cell outside the
@@ -1139,22 +1468,32 @@ impl CellStore {
         if kept.len() != self.concrete.len() {
             self.concrete = kept.into_iter().collect();
         }
-        let runs = Arc::make_mut(&mut self.runs);
-        for run in runs.iter_mut() {
-            if !candidates.admits_block(&run.base.block) {
-                run.holes.insert_range(0, run.count);
-                continue;
-            }
+        if self.runs.is_empty() {
+            return visited;
+        }
+        // Only the candidate runs survive, so the run map is rebuilt from
+        // them alone, as the concrete map is.
+        let candidate_runs = self.visited_runs(Some(candidates));
+        let mut kept_runs = Self {
+            run_span: self.run_span,
+            ..Self::default()
+        };
+        for (key, mut run) in candidate_runs {
             visited += 1;
-            let (decision, answer) = run_rule(run);
+            let (decision, answer) = run_rule(&run);
             #[cfg(debug_assertions)]
             if answer == RuleAnswer::Exact {
                 crate::instrumentation::uncharged_debug_check(|| {
-                    decision.check_against(run, &mut keep);
+                    decision.check_against(&run, &mut keep);
                 });
             }
             let _ = answer;
             run.keep_only(decision, &mut keep, &mut visited);
+            kept_runs.set_run(&key, Some(run));
+        }
+        if kept_runs.runs != self.runs {
+            self.runs = kept_runs.runs;
+            self.run_cells = kept_runs.run_cells;
         }
         visited
     }
@@ -1177,10 +1516,7 @@ impl CellStore {
                 found(pointer, value)
             })
             .map(|(pointer, value)| (pointer.clone(), value.clone()));
-        for run in self.runs.iter() {
-            if !candidates.admits_block(&run.base.block) {
-                continue;
-            }
+        for run in self.candidate_runs(candidates) {
             visited += 1;
             let (decision, answer) = run_rule(run);
             #[cfg(debug_assertions)]
@@ -1204,20 +1540,22 @@ impl CellStore {
         (best.map(|(_, value)| value), visited)
     }
 
+    /// Asks `keep` of every live slot of the visited runs (the candidate
+    /// runs when `only_candidates`, else every run) and makes a hole of each
+    /// slot it rejects.
     fn retain_run_slots(
         &mut self,
-        mut visits: impl FnMut(&CellRun) -> bool,
+        only_candidates: bool,
+        candidates: Option<&AliasCandidates>,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
     ) {
         if self.runs.is_empty() {
             return;
         }
         let mut visited = 0usize;
-        let runs = Arc::make_mut(&mut self.runs);
-        for run in runs.iter_mut() {
-            if !visits(run) {
-                continue;
-            }
+        let mut updates = Vec::new();
+        let visited_runs = self.visited_runs(candidates.filter(|_| only_candidates));
+        for (key, mut run) in visited_runs {
             let dropped = run
                 .live_indexes()
                 .filter(|index| {
@@ -1227,11 +1565,16 @@ impl CellStore {
                     !keep(&pointer, &value)
                 })
                 .collect::<Vec<_>>();
+            if dropped.is_empty() {
+                continue;
+            }
             for index in dropped {
                 run.holes.insert(index);
             }
+            updates.push((key, run));
         }
         crate::instrumentation::record_deterministic_work(visited);
+        self.apply_run_updates(updates);
     }
 
     /// Every cell rewritten by `map`, in canonical form. A run whose every
@@ -1250,12 +1593,11 @@ impl CellStore {
         mut singled_out: impl FnMut(&CellRun) -> Option<u32>,
     ) -> Self {
         let mut result = Self {
-            concrete: SnapshotMap::new(),
-            runs: Arc::new(Vec::new()),
-            logical: OnceLock::new(),
+            run_span: self.run_span,
+            ..Self::default()
         };
         let mut rewritten = Vec::new();
-        for run in self.runs.iter() {
+        for (key, run) in self.runs.iter() {
             // The singled-out slot is set aside before the rest is asked as a
             // whole: its change is the one the representatives cannot see.
             match singled_out(run).filter(|index| !run.holes.contains(*index)) {
@@ -1264,13 +1606,13 @@ impl CellStore {
                     rest.holes.insert(index);
                     if run_unchanged_by_uniform_map(&rest, &mut map) {
                         rewritten.push(map(&run.slot_pointer(index), &run.value(index)));
-                        Arc::make_mut(&mut result.runs).push(rest);
+                        result.set_run(key, Some(rest));
                         continue;
                     }
                 }
                 None => {
                     if run_unchanged_by_uniform_map(run, &mut map) {
-                        Arc::make_mut(&mut result.runs).push(run.clone());
+                        result.set_run(key, Some(run.clone()));
                         continue;
                     }
                 }
@@ -1285,7 +1627,7 @@ impl CellStore {
                 cells.push((mapped_pointer, mapped_value));
             }
             if unchanged {
-                Arc::make_mut(&mut result.runs).push(run.clone());
+                result.set_run(key, Some(run.clone()));
             } else {
                 rewritten.extend(cells);
             }
@@ -1309,62 +1651,80 @@ impl CellStore {
     /// its value. One that is a hole here becomes live again, and whatever
     /// concrete cell sat at it is replaced. With no such run here, `run` is
     /// added, holes and all, and the concrete cells at its live slots are
-    /// replaced the same way. Any other run over the block with a live slot
-    /// could hold one of these slots itself, which only slot by slot can
-    /// sort out.
+    /// replaced the same way. Any other run over the block could hold one of
+    /// these slots itself, which only slot by slot can sort out.
     pub(crate) fn install_run(&mut self, run: &CellRun) -> bool {
-        crate::instrumentation::record_deterministic_work(self.runs.len() + 1);
-        let same = self.runs.iter().position(|held| held.same_slots_as(run));
-        let other_live = self.runs.iter().enumerate().any(|(position, held)| {
-            Some(position) != same && held.base.block == run.base.block && held.live_count() > 0
+        let key = run.key();
+        let mut block_runs = 0usize;
+        let other_live = self.runs_in_block(&run.base.block).any(|held| {
+            block_runs += 1;
+            !held.same_slots_as(run)
         });
+        crate::instrumentation::record_deterministic_work(block_runs + 1);
         if other_live {
             return false;
         }
         self.reset();
-        let all_slots = {
-            let mut all = IndexIntervals::default();
-            all.insert_range(0, run.count);
-            all
-        };
-        let revived = match same {
-            Some(position) => {
-                let held = &self.runs[position];
+        let (revived, installed) = match self.runs.get(&key) {
+            Some(held) => {
                 let revived = held.holes.difference(&run.holes);
-                let holes = held.holes.intersection(&run.holes);
-                Arc::make_mut(&mut self.runs)[position].holes = holes;
-                revived
+                let mut installed = held.clone();
+                installed.holes = held.holes.intersection(&run.holes);
+                (revived, installed)
             }
-            None => {
-                Arc::make_mut(&mut self.runs).push(run.clone());
-                all_slots.difference(&run.holes)
-            }
+            None => (run.live_intervals(), run.clone()),
         };
+        self.set_run(&key, Some(installed));
+        // The concrete cells at revived slots are replaced: named slot by
+        // slot when there are fewer revived slots than concrete cells, and
+        // otherwise found among the concrete cells where the run's slots lie.
         let revived_count = revived.count();
-        crate::instrumentation::record_deterministic_work(
-            revived.intervals.len()
-                + usize::try_from(revived_count.min(self.concrete.len() as u64))
-                    .unwrap_or(usize::MAX),
-        );
-        if revived_count <= self.concrete.len() as u64 {
-            for index in revived.indexes() {
-                self.concrete.remove(&run.slot_pointer(index));
-            }
+        crate::instrumentation::record_deterministic_work(revived.interval_count());
+        let replaced = if revived_count <= self.concrete.len() as u64 {
+            crate::instrumentation::record_deterministic_work(
+                usize::try_from(revived_count).unwrap_or(usize::MAX),
+            );
+            revived
+                .indexes()
+                .map(|index| run.slot_pointer(index))
+                .collect::<Vec<_>>()
         } else {
-            self.concrete.retain(|pointer, _| {
+            run_slot_candidates_in(run, |low, high| {
+                self.concrete
+                    .range::<_, Pointer>((low, high))
+                    .map(|(pointer, _)| pointer)
+            })
+            .filter(|pointer| {
+                crate::instrumentation::record_deterministic_work(1);
                 run.slot_index(pointer)
-                    .is_none_or(|index| !revived.contains(index))
-            });
+                    .is_some_and(|index| revived.contains(index))
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+        };
+        for pointer in replaced {
+            self.concrete.remove(&pointer);
         }
         true
     }
 
     /// Adds a run. The caller makes every slot already holding a cell here a
     /// hole of the new run, so the cells it holds keep their values and the
-    /// canonical form holds.
+    /// canonical form holds. A run with the same slots already here is live
+    /// only at the new run's holes, so the two merge into one run live at
+    /// both's live slots.
     pub(crate) fn add_run(&mut self, run: CellRun) {
         self.reset();
-        Arc::make_mut(&mut self.runs).push(run);
+        let key = run.key();
+        let merged = match self.runs.get(&key) {
+            Some(held) => {
+                let mut merged = held.clone();
+                merged.holes = held.holes.intersection(&run.holes);
+                merged
+            }
+            None => run,
+        };
+        self.set_run(&key, Some(merged));
     }
 
     /// This store's runs over another concrete map, for a caller rebuilding
@@ -1374,9 +1734,57 @@ impl CellStore {
         Self {
             concrete,
             runs: self.runs.clone(),
+            run_span: self.run_span,
+            run_cells: self.run_cells,
             logical: OnceLock::new(),
         }
     }
+}
+
+/// The entries of an ordered pointer collection that can be slots of `run`,
+/// ascending, found by `range` over the few key intervals such slots occupy:
+/// the constant offsets from the base to the last slot for a constant base,
+/// and otherwise the base offset itself and the offsets that add a constant
+/// to it. Visits only entries in those intervals.
+fn run_slot_candidates_in<'a, I>(
+    run: &CellRun,
+    mut range: impl FnMut(Bound<Pointer>, Bound<Pointer>) -> I,
+) -> impl Iterator<Item = &'a Pointer> + 'a
+where
+    I: Iterator<Item = &'a Pointer> + 'a,
+{
+    let block = run.base.block.clone();
+    let at = |offset: PointerOffsetTerm| Pointer {
+        block: block.clone(),
+        offset,
+    };
+    let mut intervals = Vec::new();
+    match &run.base.offset {
+        PointerOffsetTerm::Constant(base) => {
+            let last = base.saturating_add(i64::try_from(run.span()).unwrap_or(i64::MAX));
+            intervals.push(range(
+                Bound::Included(at(PointerOffsetTerm::Constant(*base))),
+                Bound::Included(at(PointerOffsetTerm::Constant(last))),
+            ));
+        }
+        offset => {
+            intervals.push(range(
+                Bound::Included(at(offset.clone())),
+                Bound::Included(at(offset.clone())),
+            ));
+            let shifted = |shift: i64| {
+                at(PointerOffsetTerm::Add(
+                    Box::new(offset.clone()),
+                    Box::new(PointerOffsetTerm::Constant(shift)),
+                ))
+            };
+            intervals.push(range(
+                Bound::Included(shifted(i64::MIN)),
+                Bound::Included(shifted(i64::MAX)),
+            ));
+        }
+    }
+    intervals.into_iter().flatten()
 }
 
 /// Whether `map` leaves every live slot of `run` as it is, answered from the
@@ -1437,8 +1845,7 @@ impl FromIterator<(Pointer, CValue)> for CellStore {
     fn from_iter<I: IntoIterator<Item = (Pointer, CValue)>>(iter: I) -> Self {
         Self {
             concrete: iter.into_iter().collect(),
-            runs: Arc::new(Vec::new()),
-            logical: OnceLock::new(),
+            ..Self::default()
         }
     }
 }
@@ -1451,7 +1858,7 @@ impl std::fmt::Debug for CellStore {
         formatter
             .debug_struct("CellStore")
             .field("concrete", &self.concrete)
-            .field("runs", &self.runs)
+            .field("runs", &self.runs.values().collect::<Vec<_>>())
             .finish()
     }
 }
@@ -1493,5 +1900,478 @@ impl<'a> IntoIterator for &'a CellStore {
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The run index against a per-cell model, and its cost against the
+    //! number of runs.
+
+    use super::*;
+    use crate::kernel::primitives::{CMemory, Variable};
+    use std::collections::BTreeMap;
+
+    fn source(tag: u32) -> SharedCMemory {
+        crate::kernel::intern_c_memory(
+            CMemory::new().with_block(format!("cell-store-source-{tag}").as_str(), 4),
+        )
+    }
+
+    fn at(block: &PointerBlock, offset: PointerOffsetTerm) -> Pointer {
+        Pointer {
+            block: block.clone(),
+            offset,
+        }
+    }
+
+    fn constant(block: &PointerBlock, offset: i64) -> Pointer {
+        at(block, PointerOffsetTerm::Constant(offset))
+    }
+
+    fn run(base: Pointer, element_width: u32, count: u32, source: &SharedCMemory) -> CellRun {
+        let element_type = if element_width == 1 {
+            CType::UInt8
+        } else {
+            CType::Int32
+        };
+        CellRun::new(
+            base,
+            element_width,
+            element_type,
+            count,
+            source.clone(),
+            IndexIntervals::default(),
+        )
+    }
+
+    /// Seeds `run` as `CMemory::with_seeded_cells` does: every slot that
+    /// already holds a cell is a hole of the new run. The model stores each
+    /// seeded slot one by one.
+    fn seed(store: &mut CellStore, model: &mut BTreeMap<Pointer, CValue>, mut run: CellRun) {
+        for index in 0..run.count() {
+            let pointer = run.slot_pointer(index);
+            assert_eq!(store.contains_key(&pointer), model.contains_key(&pointer));
+            match model.entry(pointer) {
+                std::collections::btree_map::Entry::Occupied(_) => run.holes.insert(index),
+                std::collections::btree_map::Entry::Vacant(slot) => {
+                    slot.insert(run.value(index));
+                }
+            }
+        }
+        store.add_run(run);
+    }
+
+    fn logical_model(store: &CellStore) -> BTreeMap<Pointer, CValue> {
+        store
+            .logical()
+            .iter()
+            .map(|(pointer, value)| (pointer.clone(), value.clone()))
+            .collect()
+    }
+
+    fn model_diff(
+        left: &BTreeMap<Pointer, CValue>,
+        right: &BTreeMap<Pointer, CValue>,
+    ) -> Vec<Pointer> {
+        left.keys()
+            .chain(right.keys())
+            .filter(|pointer| left.get(*pointer) != right.get(*pointer))
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    /// A deterministic stream of small numbers.
+    struct Stream(u64);
+
+    impl Stream {
+        fn next(&mut self, bound: u64) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 33) % bound
+        }
+    }
+
+    /// Random seeds, stores, removals and retains over runs in one block at
+    /// overlapping and adjacent ranges of both strides, in a block whose
+    /// runs are anchored at symbolic offsets, and in a second block; after
+    /// every step each store's cells, lookups, diffs against every earlier
+    /// store, equality and relative equality agree with a per-cell model.
+    #[test]
+    fn the_run_index_agrees_with_a_per_cell_model() {
+        let global = PointerBlock::Concrete("cell-store-global".to_string());
+        let other = PointerBlock::Concrete("cell-store-other".to_string());
+        let symbolic = PointerBlock::Symbolic(Variable(9_310_001));
+        let anchor = PointerOffsetTerm::Variable(Variable(9_310_002));
+        let shifted_anchor = PointerOffsetTerm::Add(
+            Box::new(anchor.clone()),
+            Box::new(PointerOffsetTerm::Constant(8)),
+        );
+        let sources = [source(1), source(2)];
+        for seed_value in 1..=24u64 {
+            let mut stream = Stream(seed_value);
+            let mut store = CellStore::new();
+            let mut model = BTreeMap::new();
+            let mut history: Vec<(CellStore, BTreeMap<Pointer, CValue>)> = Vec::new();
+            let mut pointers = Vec::new();
+            for offset in 0..48 {
+                pointers.push(constant(&global, offset));
+            }
+            for offset in (0..16).step_by(4) {
+                pointers.push(constant(&other, offset));
+            }
+            for base in [&anchor, &shifted_anchor] {
+                pointers.push(at(&symbolic, base.clone()));
+                for shift in (4..24).step_by(4) {
+                    pointers.push(at(
+                        &symbolic,
+                        PointerOffsetTerm::Add(
+                            Box::new(base.clone()),
+                            Box::new(PointerOffsetTerm::Constant(shift)),
+                        ),
+                    ));
+                }
+            }
+            let mut runs_seen = Vec::<CellRun>::new();
+            for _ in 0..60 {
+                match stream.next(10) {
+                    0..=2 => {
+                        let width = if stream.next(3) == 0 { 1 } else { 4 };
+                        let count = 1 + stream.next(6) as u32;
+                        let source = &sources[stream.next(2) as usize];
+                        let base = match stream.next(4) {
+                            0 | 1 => constant(&global, (stream.next(9) * 4) as i64),
+                            2 => constant(&other, (stream.next(3) * 4) as i64),
+                            _ => at(
+                                &symbolic,
+                                if stream.next(2) == 0 {
+                                    anchor.clone()
+                                } else {
+                                    shifted_anchor.clone()
+                                },
+                            ),
+                        };
+                        let seeded = run(base, width, count, source);
+                        runs_seen.push(seeded.clone());
+                        seed(&mut store, &mut model, seeded);
+                    }
+                    3..=5 => {
+                        let pointer = pointers[stream.next(pointers.len() as u64) as usize].clone();
+                        // Half the stores write back a value some run holds
+                        // at that pointer, so holes are refilled.
+                        let run_value = runs_seen
+                            .iter()
+                            .filter_map(|run| {
+                                run.slot_index(&pointer).map(|index| run.value(index))
+                            })
+                            .next();
+                        let value = match (stream.next(2), run_value) {
+                            (0, Some(value)) => value,
+                            _ => CValue::Int32(Bitvector32Term::Constant(stream.next(3) as u32)),
+                        };
+                        store.insert(pointer.clone(), value.clone());
+                        model.insert(pointer, value);
+                    }
+                    6 | 7 => {
+                        let pointer = pointers[stream.next(pointers.len() as u64) as usize].clone();
+                        assert_eq!(store.remove(&pointer), model.remove(&pointer));
+                    }
+                    8 => {
+                        let modulus = 2 + stream.next(3) as i64;
+                        let keep = |pointer: &Pointer, _: &CValue| !matches!(pointer.offset, PointerOffsetTerm::Constant(offset) if offset % (4 * modulus) == 0);
+                        store.retain(keep);
+                        model.retain(|pointer, value| keep(pointer, value));
+                    }
+                    _ => {
+                        let only = AliasCandidates::only_block(&global);
+                        let keep = |pointer: &Pointer, _: &CValue| !matches!(pointer.offset, PointerOffsetTerm::Constant(offset) if offset % 8 == 4);
+                        store.retain_candidates(&only, keep);
+                        model.retain(|pointer, value| {
+                            pointer.block != global || keep(pointer, value)
+                        });
+                    }
+                }
+                assert_eq!(logical_model(&store), model, "seed {seed_value}");
+                assert_eq!(store.len(), model.len());
+                assert!(store.runs().all(|run| run.live_count() > 0));
+                for pointer in &pointers {
+                    assert_eq!(store.get(pointer), model.get(pointer).cloned());
+                }
+                for (earlier, earlier_model) in &history {
+                    assert_eq!(
+                        store.differing_pointers(earlier),
+                        model_diff(&model, earlier_model),
+                        "seed {seed_value}"
+                    );
+                    assert_eq!(
+                        earlier.differing_pointers(&store),
+                        model_diff(earlier_model, &model),
+                    );
+                    if store == *earlier {
+                        assert_eq!(&model, earlier_model, "equal stores hold one cell map");
+                    }
+                    if store.eq_relative_to(earlier, earlier) {
+                        assert_eq!(&model, earlier_model);
+                    }
+                    let differing = earlier.differing_pointers(&store);
+                    let removed = differing.iter().collect::<Vec<_>>();
+                    assert_eq!(
+                        store.is_without(earlier, &removed),
+                        removed.iter().all(|pointer| !model.contains_key(*pointer))
+                            && differing == model_diff(earlier_model, &model),
+                    );
+                }
+                history.push((store.clone(), model.clone()));
+            }
+        }
+    }
+
+    /// A store's identity does not depend on the order its runs were added
+    /// in: the same disjoint runs seeded in two orders give equal stores
+    /// with equal hashes, and one more store into a slot makes both differ
+    /// alike.
+    #[test]
+    fn runs_added_in_different_orders_make_one_store() {
+        let global = PointerBlock::Concrete("cell-store-order".to_string());
+        let sources = [source(3), source(4)];
+        let runs = (0..12)
+            .map(|index| {
+                run(
+                    constant(&global, 16 * index),
+                    4,
+                    2 + (index as u32 % 2),
+                    &sources[index as usize % 2],
+                )
+            })
+            .collect::<Vec<_>>();
+        let build = |order: &mut dyn Iterator<Item = &CellRun>| {
+            let mut store = CellStore::new();
+            let mut model = BTreeMap::new();
+            for run in order {
+                seed(&mut store, &mut model, run.clone());
+            }
+            store
+        };
+        let forward = build(&mut runs.iter());
+        let backward = build(&mut runs.iter().rev());
+        let hash = |store: &CellStore| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            store.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert!(forward == backward);
+        assert_eq!(hash(&forward), hash(&backward));
+        assert_eq!(forward.cmp(&backward), std::cmp::Ordering::Equal);
+        let mut forward_stored = forward.clone();
+        let mut backward_stored = backward.clone();
+        let written = constant(&global, 20);
+        forward_stored.insert(written.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+        backward_stored.insert(written.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+        assert!(forward_stored == backward_stored);
+        assert!(forward_stored != forward);
+        assert_eq!(forward_stored.differing_pointers(&backward), vec![written]);
+    }
+
+    /// A run whose every slot is written is retired, and a store holding a
+    /// retired run's cells concretely has the cells of one that holds them
+    /// in the run: equal cell maps, and no difference between the two.
+    #[test]
+    fn a_run_whose_every_slot_is_written_is_retired() {
+        let global = PointerBlock::Concrete("cell-store-retire".to_string());
+        let seeded = run(constant(&global, 0), 4, 3, &source(5));
+        let mut store = CellStore::new();
+        let mut model = BTreeMap::new();
+        seed(&mut store, &mut model, seeded.clone());
+        let mut written = store.clone();
+        for index in 0..3 {
+            written.insert(
+                seeded.slot_pointer(index),
+                CValue::Int32(Bitvector32Term::Constant(index)),
+            );
+        }
+        assert_eq!(written.run_count(), 0);
+        assert_eq!(written.len(), 3);
+        // Writing the run's own values back leaves concrete cells with the
+        // run's values: the same cells as the seeded store, which the diff
+        // sees even though one side holds them in a run and the other not.
+        let mut restored = written.clone();
+        for index in 0..3 {
+            restored.insert(seeded.slot_pointer(index), seeded.value(index));
+        }
+        assert_eq!(logical_model(&restored), logical_model(&store));
+        assert!(restored.differing_pointers(&store).is_empty());
+        assert!(store.differing_pointers(&restored).is_empty());
+        // A hole left by a removal keeps the run, whose other slots stay.
+        let mut removed = store.clone();
+        assert_eq!(
+            removed.remove(&seeded.slot_pointer(1)),
+            Some(seeded.value(1))
+        );
+        assert_eq!(removed.run_count(), 1);
+        assert_eq!(
+            removed.differing_pointers(&store),
+            vec![seeded.slot_pointer(1)]
+        );
+    }
+
+    /// Two runs of one block with other strides, both live at slots the
+    /// other covers, and a store whose other run holds the same value at a
+    /// slot: the index still finds each live slot's one run, and a slot
+    /// held alike by different runs on the two sides is no difference.
+    #[test]
+    fn runs_covering_one_slot_differ_only_where_their_values_do() {
+        let global = PointerBlock::Concrete("cell-store-cover".to_string());
+        let source = source(6);
+        let words = run(constant(&global, 0), 4, 4, &source);
+        let bytes = run(constant(&global, 0), 1, 16, &source);
+        // One store holds the word run whole; the other the byte run.
+        let mut left = CellStore::new();
+        let mut left_model = BTreeMap::new();
+        seed(&mut left, &mut left_model, words.clone());
+        let mut right = CellStore::new();
+        let mut right_model = BTreeMap::new();
+        seed(&mut right, &mut right_model, bytes.clone());
+        // Each store also gets the other run over the slots its own run left.
+        seed(&mut left, &mut left_model, bytes.clone());
+        seed(&mut right, &mut right_model, words.clone());
+        assert_eq!(logical_model(&left), left_model);
+        assert_eq!(logical_model(&right), right_model);
+        assert_eq!(
+            left.differing_pointers(&right),
+            model_diff(&left_model, &right_model)
+        );
+        // A store that spans both runs' slots.
+        for pointer in [constant(&global, 4), constant(&global, 5)] {
+            left.insert(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+            left_model.insert(pointer, CValue::Int32(Bitvector32Term::Constant(1)));
+        }
+        assert_eq!(logical_model(&left), left_model);
+        assert_eq!(
+            left.differing_pointers(&right),
+            model_diff(&left_model, &right_model)
+        );
+    }
+
+    /// How much deterministic work `operation` charges, plus how many runs
+    /// its pointer lookups visit.
+    fn work(operation: impl FnOnce()) -> usize {
+        let before = RUNS_VISITED.with(std::cell::Cell::get);
+        let work = crate::instrumentation::measure_deterministic_work(operation).1;
+        work + RUNS_VISITED.with(std::cell::Cell::get) - before
+    }
+
+    /// A store of `runs` one-slot runs laid out by `layout`, each in canonical
+    /// form, and the pointers of its slots.
+    fn many_runs(runs: usize, layout: &dyn Fn(usize) -> Pointer) -> (CellStore, Vec<Pointer>) {
+        let source = source(7);
+        let mut store = CellStore::new();
+        let mut model = BTreeMap::new();
+        let mut pointers = Vec::new();
+        for index in 0..runs {
+            let base = layout(index);
+            pointers.push(base.clone());
+            seed(&mut store, &mut model, run(base, 4, 1, &source));
+        }
+        (store, pointers)
+    }
+
+    /// Loads, stores, diffs and comparisons against a store of 1 to 1000
+    /// small runs cost work that does not grow with the number of runs, in
+    /// one block at adjacent constant offsets, one block per run, and one
+    /// block with every run at its own symbolic anchor. Before the index a
+    /// load and a store scanned every run, and two stores whose runs did not
+    /// pair up were compared by laying out both logical maps.
+    #[test]
+    fn run_operations_cost_the_same_whatever_the_number_of_runs() {
+        let one_block = PointerBlock::Concrete("cell-store-scaling".to_string());
+        let symbolic = PointerBlock::Symbolic(Variable(9_320_000));
+        let layouts: [(&str, Box<dyn Fn(usize) -> Pointer>); 3] = [
+            (
+                "adjacent constant ranges of one block",
+                Box::new(|index| constant(&one_block, 4 * index as i64)),
+            ),
+            (
+                "one block per run",
+                Box::new(|index| {
+                    constant(
+                        &PointerBlock::Symbolic(Variable(9_330_000 + index as u64)),
+                        0,
+                    )
+                }),
+            ),
+            (
+                "symbolic anchors of one block",
+                Box::new(|index| {
+                    at(
+                        &symbolic,
+                        PointerOffsetTerm::Variable(Variable(9_340_000 + index as u64)),
+                    )
+                }),
+            ),
+        ];
+        for (name, layout) in &layouts {
+            let samples = [1usize, 10, 100, 1000].map(|runs| {
+                let (store, pointers) = many_runs(runs, layout.as_ref());
+                let probe = pointers[runs / 2].clone();
+                let value = CValue::Int32(Bitvector32Term::Constant(3));
+                // Loads of a run slot and of a pointer no run holds.
+                let loads = work(|| {
+                    for _ in 0..16 {
+                        assert!(store.get(&probe).is_some());
+                        assert!(store.get(&constant(&one_block, -8)).is_none());
+                    }
+                });
+                // A store into a slot, and the diff and comparisons of the
+                // store before and after it, both ways.
+                let mut stored = store.clone();
+                let stores = work(|| stored.insert(probe.clone(), value.clone()));
+                let diffs = work(|| {
+                    assert_eq!(stored.differing_pointers(&store), vec![probe.clone()]);
+                    assert_eq!(store.differing_pointers(&stored), vec![probe.clone()]);
+                });
+                let compares = work(|| {
+                    assert!(stored != store);
+                    assert!(!stored.eq_relative_to(&store, &store));
+                    assert_eq!(stored.observable_runs_match(&store, |_| true), None);
+                    assert!(!stored.is_without(&store, &[]));
+                });
+                // Two stores whose runs do not pair up: removing the probe's
+                // cell retires its one-slot run.
+                let mut reseeded = store.clone();
+                reseeded.remove(&probe);
+                let unpaired = work(|| {
+                    assert_eq!(reseeded.differing_pointers(&store), vec![probe.clone()]);
+                });
+                (runs, loads, stores, diffs, compares, unpaired)
+            });
+            let (_, loads, stores, diffs, compares, unpaired) = samples[0];
+            // Each of the 16 slot loads visits the one run holding the slot;
+            // the load no run holds visits none.
+            assert_eq!(loads, 16, "{name}: {samples:?}");
+            for (
+                runs,
+                sample_loads,
+                sample_stores,
+                sample_diffs,
+                sample_compares,
+                sample_unpaired,
+            ) in samples
+            {
+                // Flat: every sample costs what one run costs. Positioning in
+                // the persistent maps is logarithmic and charges nothing.
+                assert!(
+                    sample_loads <= loads
+                        && sample_stores <= stores + 2
+                        && sample_diffs <= diffs + 4
+                        && sample_compares <= compares + 4
+                        && sample_unpaired <= unpaired + 4,
+                    "{name}: work grows with {runs} runs: {samples:?}"
+                );
+            }
+        }
     }
 }

@@ -261,7 +261,11 @@ impl PureFactContext {
             }
             true
         };
-        for run in memory.cells.runs() {
+        // A run outside the load's alias candidates is in a block proven
+        // distinct from it, which `run_slots_resolving_load` answers with no
+        // slot, so only the candidate runs are asked.
+        let run_candidates = crate::kernel::primitives::AliasCandidates::of_block(&pointer.block);
+        for run in memory.cells.candidate_runs(&run_candidates) {
             match crate::kernel::reasoning::memory_resolution::run_slots_resolving_load(
                 run, pointer,
             ) {

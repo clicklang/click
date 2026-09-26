@@ -116,6 +116,10 @@ thread_local! {
     static CANONICAL_MEMORY_CACHE: std::cell::RefCell<
         std::collections::HashMap<(super::SharedCMemory, Pointer), CMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// [`source_holds_cells_observable_by`], by interned snapshot and block.
+    static SOURCE_OBSERVABLE_BY_BLOCK: std::cell::RefCell<
+        std::collections::HashMap<(super::SharedCMemory, crate::kernel::primitives::PointerBlock), bool>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// The producer-known source of one canonical load projection. The
     /// projected snapshot is intentionally not given an ordinary memory-DAG
     /// derivation: one interned projection can be shared by several sources.
@@ -205,6 +209,7 @@ pub(in crate::kernel) fn kept_range_bases_proven_equal(
 
 pub(crate) fn clear_canonical_memory_cache() {
     CANONICAL_MEMORY_CACHE.with(|cache| cache.borrow_mut().clear());
+    SOURCE_OBSERVABLE_BY_BLOCK.with(|memo| memo.borrow_mut().clear());
     CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| sources.borrow_mut().clear());
     CANONICAL_LOAD_PROJECTIONS.with(|projections| projections.borrow_mut().clear());
 }
@@ -1215,9 +1220,12 @@ fn stored_value_at_equal_pointer(
                         .then(|| value.clone())
                 })
                 .or_else(|| {
-                    memory.cells.runs().iter().find_map(|run| {
-                        run_value_at_equal_displaced_pointer(run, pointer, root, assumptions)
-                    })
+                    memory
+                        .cells
+                        .runs_based_at(&pointer.block, root)
+                        .find_map(|run| {
+                            run_value_at_equal_displaced_pointer(run, pointer, root, assumptions)
+                        })
                 })
         })
 }
@@ -2149,7 +2157,6 @@ fn observable_cells_match(
     if left
         .cells
         .runs()
-        .iter()
         .chain(right.cells.runs())
         .all(|run| run.count() <= crate::kernel::primitives::CHECKED_RUN_SLOTS)
     {
@@ -2475,20 +2482,7 @@ pub(in crate::kernel) fn run_shape_representatives(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<Vec<u32>> {
     let first = run.live_indexes().next()?;
-    let source = run.source().memory();
-    let block = &run.base().block;
-    let observable_candidates = AliasCandidates::of_block(block);
-    let source_observable_by_run =
-        observable_candidates.any_entry(source.cells.concrete(), |cell, _| {
-            cell.block.observable_by_load(block)
-        }) || observable_candidates.any_entry(&source.union_cells, |(cell, _), _| {
-            cell.block.observable_by_load(block)
-        }) || source.cells.runs().iter().any(|other| {
-            other.live_count() > 0
-                && observable_candidates.admits_block(&other.base().block)
-                && other.base().block.observable_by_load(block)
-        });
-    if source_observable_by_run {
+    if source_holds_cells_observable_by(run.source(), &run.base().block) {
         return None;
     }
     let first_later = run.live_indexes().find(|later| *later > 0);
@@ -2505,6 +2499,39 @@ pub(in crate::kernel) fn run_shape_representatives(
         }
     }
     Some(representatives)
+}
+
+/// Whether `source` holds a cell, a typed view or a live run slot that a
+/// load in `block` could observe. A function of the snapshot and the block
+/// alone, asked of a run's source by every walk that visits the run, so it
+/// is memoized by interned snapshot identity; a miss visits the source's
+/// candidate entries up to the first observable one.
+fn source_holds_cells_observable_by(
+    source: &crate::kernel::primitives::SharedCMemory,
+    block: &crate::kernel::primitives::PointerBlock,
+) -> bool {
+    let key = (source.clone(), block.clone());
+    if let Some(known) = SOURCE_OBSERVABLE_BY_BLOCK.with(|memo| memo.borrow().get(&key).copied()) {
+        return known;
+    }
+    let memory = source.memory();
+    let candidates = AliasCandidates::of_block(block);
+    let observable = candidates.any_entry(memory.cells.concrete(), |cell, _| {
+        cell.block.observable_by_load(block)
+    }) || candidates.any_entry(&memory.union_cells, |(cell, _), _| {
+        cell.block.observable_by_load(block)
+    }) || memory
+        .cells
+        .candidate_runs(&candidates)
+        .any(|other| other.base().block.observable_by_load(block));
+    SOURCE_OBSERVABLE_BY_BLOCK.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.len() >= RESOLUTION_QUERY_MEMO_LIMIT {
+            memo.clear();
+        }
+        memo.insert(key, observable);
+    });
+    observable
 }
 
 /// The representative of element `index` among `representatives`
@@ -2584,13 +2611,8 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
         .chain(
             memory
                 .cells
-                .runs()
-                .iter()
-                .filter(|run| {
-                    candidates.admits_block(&run.base().block)
-                        && run.base().block.observable_by_load(&pointer.block)
-                        && run.live_count() > 0
-                })
+                .candidate_runs(&candidates)
+                .filter(|run| run.base().block.observable_by_load(&pointer.block))
                 .flat_map(run_materialization_sources),
         )
         .collect::<Option<Vec<_>>>();
@@ -2794,7 +2816,8 @@ pub(in crate::kernel) fn run_slots_resolving_load(
     run: &CellRun,
     pointer: &Pointer,
 ) -> Option<(Option<u32>, bool)> {
-    crate::instrumentation::record_deterministic_work(1);
+    // One step of the caller's scan, charged as the scan charges a concrete
+    // cell: by what asking about it costs, not by the visit.
     match run_access(run, pointer) {
         RunAccess::DistinctBlock => Some((None, false)),
         RunAccess::Shift(shift) => {

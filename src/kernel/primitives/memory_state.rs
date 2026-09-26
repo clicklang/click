@@ -2965,9 +2965,9 @@ impl CMemory {
         let mut visited = 0usize;
         let mut flat_hits = Vec::new();
         let mut dropped_cells = Vec::new();
-        for (pointer, value) in candidates.entries(before.cells.logical()) {
+        for (pointer, value) in before.cells.candidate_logical_entries(&candidates) {
             visited += 1;
-            match call_havoc_keeps_cell(pointer, value, mutable_ranges, assumptions, kept) {
+            match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept) {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
@@ -2976,6 +2976,7 @@ impl CMemory {
                 CallHavocCellRule::Dropped => dropped_cells.push(pointer),
             }
         }
+        let dropped_cells = dropped_cells.iter().collect::<Vec<_>>();
         let mut dropped_union_cells = Vec::new();
         for (key, value) in candidates.entries(&before.union_cells) {
             visited += 1;
@@ -3066,10 +3067,7 @@ impl CMemory {
                 holes.insert(index);
             }
         }
-        for run in self.cells.runs() {
-            if run.base().block != base.block {
-                continue;
-            }
+        for run in self.cells.runs_in_block(&base.block) {
             if run.base() == &base && run.element_width() == element_width {
                 // One spelling, one stride: the live slots of the older run
                 // are the elements it has in common with this one.
@@ -3205,7 +3203,6 @@ impl CMemory {
         if self
             .cells
             .runs()
-            .iter()
             .chain(other.cells.runs())
             .all(|run| run.count() <= crate::kernel::primitives::CHECKED_RUN_SLOTS)
         {
@@ -4312,7 +4309,7 @@ impl CState {
     pub fn local_cell_values(&self) -> impl Iterator<Item = (&str, CValue)> + '_ {
         // A local's slot is at offset zero of its block, so a run holds one
         // only at the slot spelled that way, looked up rather than visited.
-        let run_slots = self.memory.cells.runs().iter().filter_map(|run| {
+        let run_slots = self.memory.cells.runs().filter_map(|run| {
             let pointer = Pointer {
                 block: run.base().block.clone(),
                 offset: PointerOffsetTerm::Constant(0),
