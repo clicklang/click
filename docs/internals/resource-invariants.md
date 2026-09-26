@@ -282,8 +282,15 @@ allocation continuity is unknown. Lookup visits only footprints in the affected
 symbolic block; unrelated concrete blocks incur no scan. Ambiguous same-block
 overlap requires checked separation. Abstract preserving helpers cannot yet
 retire allocations, since their lifetime dependencies lack checked inputs.
-This does not yet reserve mutex bytes against writes, validate their initial
-storage, or handle automatic-storage expiry.
+Automatic-storage expiry now checks the same initialization dependency, by
+whole object rather than by a byte-range calculation. Every scope-leaving
+outcome and the retained `AutomaticLifetimeEnd` event recheck the dependency.
+A separate persistent index tracks symbolic initializations that might alias
+any local, so absence from the concrete block's index cannot imply separation.
+Those ambiguous cases are conservatively refused; unrelated concrete mutexes
+are never scanned. Destruction removes the dependency, even when the object
+contains several mutexes. This does not yet reserve mutex bytes against writes
+or validate their storage at initialization.
 
 The lifecycle owner now lives in the same resource context as guards, as
 `CResource::MutexLive`. Initialization mints exactly one owned atom; destruction

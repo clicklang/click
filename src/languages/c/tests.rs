@@ -5391,6 +5391,29 @@ fn c0_compound_union_access_and_by_value_copy_refuse_until_modeled() {
 }
 
 #[test]
+fn c0_uninitialized_compound_union_storage_does_not_authorize_typed_copy() {
+    let declarations = r#"
+        union payload { int word; struct { int low; int high; } halves; };
+        struct holder { union payload value; };
+    "#;
+    let storage = format!("{declarations} int local(void) {{ struct holder h; return 0; }}");
+    let function = syntax::parse_function(&storage).unwrap();
+    // Lowering must also accept the storage layout without reading a member.
+    let _ = function.to_kernel_function();
+    for body in [
+        "struct holder a; struct holder b; a = b;",
+        "struct holder a; struct holder b = a;",
+        "*p = *q;",
+    ] {
+        let source = format!(
+            "{declarations} int copy(struct holder *p, struct holder *q) {{ {body} return 0; }}"
+        );
+        let error = syntax::parse_function(&source).unwrap_err().to_string();
+        assert!(error.contains("typed copy is not yet supported"), "{error}");
+    }
+}
+
+#[test]
 fn c0_union_pointer_parameters_keep_nominal_declaration_identity() {
     let declarations = r#"
         typedef union { int value; char bytes[4]; } first;

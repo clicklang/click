@@ -55,9 +55,14 @@ it. Preserving helpers retain the entry initialization and cannot change mutex
 protocols. Missing authority is reported as `Requires owns mutex_live(mu)`.
 
 This is the lifecycle ownership layer, not a complete storage-lifetime proof.
-Initialization storage checks, protection against ordinary writes and scope
-exit, `mutex_use` loans, worker transfer, named primitive binders, and lifecycle
+Initialization storage checks, protection against ordinary writes,
+`mutex_use` loans, worker transfer, named primitive binders, and lifecycle
 `consumes`/`produces` contracts remain unsupported.
+
+Automatic objects containing initialized mutexes cannot leave scope until
+those mutexes are destroyed, even when their authority is folded away. This
+covers normal and abrupt scope exits. Ambiguous symbolic mutex pointers are
+refused conservatively rather than assumed separate from local storage.
 
 **Verified use:** [`mdtests/mutex_live_wrapper.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_live_wrapper.md)
 and [`mdtests/mutex_live_contract.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_live_contract.md).

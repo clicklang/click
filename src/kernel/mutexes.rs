@@ -110,6 +110,9 @@ struct MutexLedgerStorage {
     identity: u64,
     entries: PersistentMap<Pointer, MutexEntry>,
     by_block: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
+    /// Initializations whose symbolic provenance may name any automatic object.
+    /// Kept separately so a scope exit never scans unrelated concrete mutexes.
+    ambiguous_automatic_storage: PersistentMap<Pointer, ()>,
     locked_count: usize,
     return_obligation_count: usize,
     /// A loop join need only revisit mutexes changed since its head. Keeping
@@ -135,9 +138,6 @@ impl MutexGuard {
     }
 }
 
-/// Describe the acquisition selected by a resource clause. This does not insert
-/// ownership. Abstract entry construction may assume this atom just as it assumes
-/// other declared input resources; execution must consume checked ownership.
 /// Describe the lifecycle resource for the current initialization. This does
 /// not establish ownership; callers must check the ordinary resource context.
 pub(super) fn live_resource(
@@ -159,6 +159,8 @@ pub(super) fn live_resource(
     }
 }
 
+/// Describe an acquisition without establishing ownership. Abstract entry
+/// assumptions are inputs; execution still requires checked resource transfer.
 pub(super) fn guard_resource(
     state: &CState,
     mutex: &Pointer,
@@ -190,6 +192,58 @@ pub(super) fn storage_retirement_refusal(
         .mutex_ledger
         .as_ref()?
         .storage_retirement_refusal(allocation, assumptions)
+}
+
+/// A concrete automatic object is fresh relative to input object provenance.
+/// A symbolic pointer, however, can be constrained to a local address by a
+/// later equality. Treat all other non-object provenances conservatively too;
+/// initialization storage validity is a separate precondition still to check.
+fn may_alias_automatic_storage(block: &super::PointerBlock) -> bool {
+    use super::PointerBlock;
+    match block {
+        PointerBlock::Concrete(_)
+        | PointerBlock::ExternalArgument
+        | PointerBlock::ExternalObject(_)
+        | PointerBlock::Heap(_)
+        | PointerBlock::Temporary(_) => false,
+        PointerBlock::Symbolic(_)
+        | PointerBlock::FunctionSymbolic(_)
+        | PointerBlock::Function(_)
+        | PointerBlock::StringLiteral { .. } => true,
+    }
+}
+
+/// Ending the entire automatic object requires every mutex in it to have
+/// been destroyed. No address arithmetic can discharge that obligation.
+/// This remains true when the owner/guard has been folded or removed from the
+/// ordinary resource context. An abstract preserving input predates locals
+/// created by its helper and cannot initialize another mutex there.
+pub(super) fn automatic_storage_refusal(
+    state: &CState,
+    local: &str,
+    block: &super::PointerBlock,
+) -> Option<super::CRuntimeError> {
+    let ledger = state.mutex_ledger.as_ref()?;
+    let direct = ledger
+        .storage
+        .by_block
+        .get(block)
+        .and_then(|entries| entries.iter().next())
+        .map(|(mutex, _)| mutex);
+    let (mutex, may_alias) = if let Some(mutex) = direct {
+        (mutex, false)
+    } else {
+        (
+            ledger.storage.ambiguous_automatic_storage.iter().next()?.0,
+            true,
+        )
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    Some(super::CRuntimeError::MutexStorageScopeEnd {
+        local: local.to_string(),
+        mutex: mutex.clone(),
+        may_alias,
+    })
 }
 
 impl MutexContext {
@@ -564,6 +618,7 @@ impl MutexLedger {
                 identity: Self::fresh_identity(),
                 entries: PersistentMap::default(),
                 by_block: PersistentMap::default(),
+                ambiguous_automatic_storage: PersistentMap::default(),
                 locked_count: 0,
                 return_obligation_count: 0,
                 predecessor: None,
@@ -670,6 +725,13 @@ impl MutexLedger {
                 } else {
                     self.storage.by_block.clone()
                 },
+                ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.block) {
+                    self.storage
+                        .ambiguous_automatic_storage
+                        .with_inserted(mutex.clone(), ())
+                } else {
+                    self.storage.ambiguous_automatic_storage.clone()
+                },
                 entries: self.storage.entries.with_inserted(mutex.clone(), entry),
                 locked_count: self.storage.locked_count + usize::from(now_locked)
                     - usize::from(was_locked),
@@ -691,6 +753,11 @@ impl MutexLedger {
             storage: Arc::new(MutexLedgerStorage {
                 identity: Self::fresh_identity(),
                 entries: self.storage.entries.without_key(mutex),
+                ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.block) {
+                    self.storage.ambiguous_automatic_storage.without_key(mutex)
+                } else {
+                    self.storage.ambiguous_automatic_storage.clone()
+                },
                 by_block: {
                     let entries = self
                         .storage
@@ -1503,6 +1570,194 @@ mod tests {
         assert_eq!(unlocked.state().resources.facts().len(), 1);
         let destroyed = unlocked.destroy(&mutex, &assumptions).unwrap();
         assert!(destroyed.state().mutex_ledger.is_none());
+    }
+
+    fn automatic_holder() -> (CState, Pointer) {
+        let state = CState::new().with_local("holder", super::super::int32(0));
+        let slot = state.locals().slot("holder").unwrap().clone();
+        let state =
+            state.with_memory(super::super::CMemory::new().with_block(slot.block.clone(), 88));
+        (state, slot.offset_by_bytes(8))
+    }
+
+    #[test]
+    fn automatic_storage_requires_destroy_even_without_visible_authority() {
+        let assumptions = PureFactContext::new();
+        let (state, address) = automatic_holder();
+        let initialized = MutexContext::new(state)
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let names = vec!["holder".to_string()];
+        let expected = super::super::CRuntimeError::MutexStorageScopeEnd {
+            local: "holder".into(),
+            mutex: address.clone(),
+            may_alias: false,
+        };
+        for held in [false, true] {
+            let mut context = if held {
+                initialized.acquire_current(&address, &assumptions).unwrap()
+            } else {
+                initialized.clone()
+            };
+            // Folding or otherwise hiding the atoms cannot erase a storage dependency.
+            context.state.resources = super::super::ResourceContext::new();
+            let before = context.state().clone();
+            assert_eq!(
+                super::super::eval::end_scope_automatic_lifetimes(context.state(), &names),
+                Err(expected.clone())
+            );
+            assert_eq!(context.state(), &before);
+        }
+        let destroyed = initialized.destroy(&address, &assumptions).unwrap();
+        let expired =
+            super::super::eval::end_scope_automatic_lifetimes(destroyed.state(), &names).unwrap();
+        assert!(!expired.memory().has_block(&address.block));
+        assert!(expired.locals().get("holder").is_none());
+    }
+
+    #[test]
+    fn every_scope_exit_outcome_checks_initialized_mutexes() {
+        use super::super::*;
+        let (state, address) = automatic_holder();
+        let state = MutexContext::new(state)
+            .initialize_empty(address, 40)
+            .unwrap()
+            .into_state();
+        let outcomes = [
+            CStatementOutcome::Normal(state.clone()),
+            CStatementOutcome::Break(state.clone()),
+            CStatementOutcome::Continue(state.clone()),
+            CStatementOutcome::Return {
+                value: int32(0),
+                state: state.clone(),
+            },
+            CStatementOutcome::Throw {
+                value: int32(0),
+                state: state.clone(),
+            },
+            CStatementOutcome::Jump {
+                target: CControlTargetId(1),
+                state: state.clone(),
+            },
+        ];
+        for outcome in outcomes {
+            let paths = eval::paths_after_scope_exit(
+                vec![CStatementExecutionPath {
+                    outcome,
+                    facts: vec![],
+                    obligations: vec![],
+                    loop_invariant_correspondence: Default::default(),
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                }],
+                &["holder".into()],
+            );
+            assert!(matches!(
+                paths[0].outcome,
+                CStatementOutcome::RuntimeError(CRuntimeError::MutexStorageScopeEnd { .. })
+            ));
+        }
+        for continue_after in [false, true] {
+            let paths = eval::execute_c_statement_paths(
+                &state,
+                &CStatement::ForStep {
+                    step: Box::new(CStatement::Skip),
+                    exited_locals: vec!["holder".into()],
+                    continue_after,
+                },
+                &PureFactContext::new(),
+                &CExecutionEnvironment::new(),
+                CExecutionSemantics::EXECUTE_BODIES,
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap();
+            assert!(matches!(
+                paths[0].outcome,
+                CStatementOutcome::RuntimeError(CRuntimeError::MutexStorageScopeEnd { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn automatic_storage_index_preserves_other_mutexes_in_the_same_object() {
+        let assumptions = PureFactContext::new();
+        let (state, first) = automatic_holder();
+        let second = first.offset_by_bytes(40);
+        let context = MutexContext::new(state)
+            .initialize_empty(first.clone(), 40)
+            .unwrap()
+            .initialize_empty(second.clone(), 40)
+            .unwrap()
+            .destroy(&first, &assumptions)
+            .unwrap();
+        assert_eq!(
+            automatic_storage_refusal(context.state(), "holder", &first.block),
+            Some(super::super::CRuntimeError::MutexStorageScopeEnd {
+                local: "holder".into(),
+                mutex: second.clone(),
+                may_alias: false,
+            })
+        );
+        let context = context.destroy(&second, &assumptions).unwrap();
+        assert!(automatic_storage_refusal(context.state(), "holder", &first.block).is_none());
+    }
+
+    #[test]
+    fn automatic_storage_cannot_ignore_a_symbolic_mutex_alias() {
+        let assumptions = PureFactContext::new();
+        let (state, address) = automatic_holder();
+        let symbolic = Pointer::symbolic(super::super::Variable(72_000));
+        assert!(!symbolic.block.proven_distinct(&address.block));
+        let context = MutexContext::new(state)
+            .initialize_empty(symbolic.clone(), 40)
+            .unwrap();
+        assert_eq!(
+            automatic_storage_refusal(context.state(), "holder", &address.block),
+            Some(super::super::CRuntimeError::MutexStorageScopeEnd {
+                local: "holder".into(),
+                mutex: symbolic.clone(),
+                may_alias: true,
+            })
+        );
+        let held = context.acquire_current(&symbolic, &assumptions).unwrap();
+        assert!(automatic_storage_refusal(held.state(), "holder", &address.block).is_some());
+        let destroyed = held
+            .release_current(&symbolic, &assumptions)
+            .unwrap()
+            .destroy(&symbolic, &assumptions)
+            .unwrap();
+        assert!(automatic_storage_refusal(destroyed.state(), "holder", &address.block).is_none());
+    }
+
+    #[test]
+    fn automatic_storage_query_does_not_scan_unrelated_initializations() {
+        let mut samples = Vec::new();
+        for size in [16usize, 64, 256, 1024] {
+            let (state, address) = automatic_holder();
+            let mut context = MutexContext::new(state);
+            for index in 0..size {
+                context = context.initialize_empty(mutex(index), 40).unwrap();
+            }
+            let (result, unrelated_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    automatic_storage_refusal(context.state(), "holder", &address.block)
+                });
+            assert!(result.is_none());
+            context = context.initialize_empty(address.clone(), 40).unwrap();
+            let (result, overlapping_work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    automatic_storage_refusal(context.state(), "holder", &address.block)
+                });
+            assert!(result.is_some());
+            samples.push((size, unrelated_work, overlapping_work));
+        }
+        let (_, absent, present) = samples[0];
+        for (size, unrelated, overlapping) in &samples {
+            let allowance = 32 * (size.ilog2() as usize - 4);
+            assert!(
+                *unrelated <= absent + allowance && *overlapping <= present + allowance,
+                "scope query work must be logarithmic: {samples:?}"
+            );
+        }
     }
 
     fn allocation_range(base: Pointer, bytes: u32) -> super::super::CMemoryRange {

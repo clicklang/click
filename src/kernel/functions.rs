@@ -22730,7 +22730,7 @@ fn active_counted_population_supports_allocation(
 /// namespace and owns no block.
 ///
 /// Bounded by this frame's own bindings; it reads no caller state.
-fn end_inline_frame_automatic_lifetimes(state: &CState) -> CMemory {
+fn end_inline_frame_automatic_lifetimes(state: &CState) -> Result<CMemory, CRuntimeError> {
     let mut memory = state.memory.clone();
     for slot in state.locals.slots() {
         if !block_is_frame_scoped_automatic_object(&slot.block) {
@@ -22739,9 +22739,19 @@ fn end_inline_frame_automatic_lifetimes(state: &CState) -> CMemory {
         if !memory.has_block(&slot.block) {
             continue;
         }
+        if let Some(error) = super::mutexes::automatic_storage_refusal(
+            state,
+            state
+                .locals
+                .name_for_slot(slot)
+                .expect("indexed local slot"),
+            &slot.block,
+        ) {
+            return Err(error);
+        }
         memory = memory.without_local_block(&slot.block);
     }
-    memory
+    Ok(memory)
 }
 
 /// A non-inline body's declared locals have ended before its postconditions
@@ -22754,7 +22764,7 @@ fn end_function_body_automatic_lifetimes(
     function: &CFunction,
     caller: &CMemory,
     returned: Option<&CValue>,
-) -> CMemory {
+) -> Result<CMemory, CRuntimeError> {
     let mut memory = state.memory.clone();
     for slot in state.locals.slots() {
         if slot.block.starts_with("local:")
@@ -22763,10 +22773,20 @@ fn end_function_body_automatic_lifetimes(
             && !caller.has_block(&slot.block)
             && memory.has_block(&slot.block)
         {
+            if let Some(error) = super::mutexes::automatic_storage_refusal(
+                state,
+                state
+                    .locals
+                    .name_for_slot(slot)
+                    .expect("indexed local slot"),
+                &slot.block,
+            ) {
+                return Err(error);
+            }
             memory = memory.without_local_block(&slot.block);
         }
     }
-    memory
+    Ok(memory)
 }
 
 /// Whether this block is an automatic object a call frame minted for itself,
@@ -23133,12 +23153,16 @@ fn function_outcome_from_body_with_resource_transfer(
     if function.return_type() != CType::Void {
         set_function_result(&mut state, function, value.clone());
     }
-    state.set_memory(end_function_body_automatic_lifetimes(
+    let retired_memory = match end_function_body_automatic_lifetimes(
         &state,
         function,
         caller_state.memory(),
         Some(&value),
-    ));
+    ) {
+        Ok(memory) => memory,
+        Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
+    };
+    state.set_memory(retired_memory);
     let population_transition = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -23658,7 +23682,7 @@ pub(super) fn function_outcome_from_body(
             };
 
             let mut caller_state = caller_state.clone();
-            caller_state.set_memory(if function.has_inline_body() {
+            let retired_memory = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(
@@ -23667,7 +23691,11 @@ pub(super) fn function_outcome_from_body(
                     caller_state.memory(),
                     Some(&value),
                 )
-            });
+            };
+            match retired_memory {
+                Ok(memory) => caller_state.set_memory(memory),
+                Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+            }
             if function.has_inline_body() {
                 // Inline bodies execute with a parameter-only local
                 // environment, so pointer stores into caller locals cannot
@@ -23714,11 +23742,15 @@ pub(super) fn function_outcome_from_body(
                 );
             }
             let mut caller_state = caller_state.clone();
-            caller_state.set_memory(if function.has_inline_body() {
+            let retired_memory = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
             } else {
                 end_function_body_automatic_lifetimes(&state, function, caller_state.memory(), None)
-            });
+            };
+            match retired_memory {
+                Ok(memory) => caller_state.set_memory(memory),
+                Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+            }
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             if function.has_inline_body() {
@@ -23792,6 +23824,70 @@ impl From<u32> for Bitvector32Term {
 impl From<bool> for ConditionTerm {
     fn from(value: bool) -> Self {
         Self::Constant(value)
+    }
+}
+
+#[cfg(test)]
+mod mutex_automatic_frame_tests {
+    use super::*;
+
+    #[test]
+    fn mutex_automatic_frame_retirement_requires_destruction() {
+        let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
+        for name in ["holder", "frame:holder", "lifetime:holder"] {
+            let state = CState::new().with_local(name, int32(0));
+            let address = state.locals.slot(name).unwrap().clone();
+            let memory = CMemory::new().with_block(address.block.clone(), 40);
+            let initialized =
+                crate::kernel::mutexes::MutexContext::new(state.with_memory(memory.clone()))
+                    .initialize_empty(address.clone(), 40)
+                    .unwrap();
+            assert!(matches!(
+                end_function_body_automatic_lifetimes(
+                    initialized.state(),
+                    &function,
+                    &CMemory::new(),
+                    None
+                ),
+                Err(CRuntimeError::MutexStorageScopeEnd { .. })
+            ));
+            // The caller's object remains live across a callee return.
+            assert_eq!(
+                end_function_body_automatic_lifetimes(
+                    initialized.state(),
+                    &function,
+                    &memory,
+                    None
+                ),
+                Ok(memory.clone())
+            );
+            if name != "holder" {
+                assert!(matches!(
+                    end_inline_frame_automatic_lifetimes(initialized.state()),
+                    Err(CRuntimeError::MutexStorageScopeEnd { .. })
+                ));
+            }
+            let destroyed = initialized
+                .destroy(&address, &PureFactContext::new())
+                .unwrap();
+            assert!(
+                !end_function_body_automatic_lifetimes(
+                    destroyed.state(),
+                    &function,
+                    &CMemory::new(),
+                    None
+                )
+                .unwrap()
+                .has_block(&address.block)
+            );
+            if name != "holder" {
+                assert!(
+                    !end_inline_frame_automatic_lifetimes(destroyed.state())
+                        .unwrap()
+                        .has_block(&address.block)
+                );
+            }
+        }
     }
 }
 

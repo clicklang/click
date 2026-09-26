@@ -816,6 +816,14 @@ pub(super) fn describe_runtime_error(
             format!("wrong argument count: expected {expected}, got {actual}")
         }
         crate::kernel::CRuntimeError::MissingReturn => "missing return".to_string(),
+        crate::kernel::CRuntimeError::MutexStorageScopeEnd { local, mutex, may_alias } => {
+            let live = format!("mutex_live({})", describe_mutex_pointer(mutex, parameters, arguments));
+            if *may_alias {
+                format!("Click cannot yet prove that {live} lies outside local storage `{local}`; its storage must outlive this scope")
+            } else {
+                format!("Cannot end local storage `{local}` while {live} remains initialized; call pthread_mutex_destroy before leaving its scope")
+            }
+        }
         crate::kernel::CRuntimeError::MutexStorageInUse { mutex, .. } => {
             let subject = if matches!(mutex.block, crate::kernel::PointerBlock::Heap(_)) {
                 "a mutex in this allocation".to_string()
@@ -952,9 +960,10 @@ pub(super) fn describe_runtime_error(
 pub(super) fn runtime_refusal_kind(error: &crate::kernel::CRuntimeError) -> ClickErrorKind {
     match error {
         crate::kernel::CRuntimeError::UnsupportedConcurrentMutex
-        | crate::kernel::CRuntimeError::UnsupportedMutexStorageRetirement => {
-            ClickErrorKind::Internal
-        }
+        | crate::kernel::CRuntimeError::UnsupportedMutexStorageRetirement
+        | crate::kernel::CRuntimeError::MutexStorageScopeEnd {
+            may_alias: true, ..
+        } => ClickErrorKind::Internal,
         _ => ClickErrorKind::Proof,
     }
 }

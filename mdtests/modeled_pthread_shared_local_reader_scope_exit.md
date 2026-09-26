@@ -52,5 +52,5 @@ int32 run() {
 ```
 
 ```expect
-fail: automatic storage cannot end while a stable loan is active
+fail: stable-view memory access conflicts with an active loan
 ```

@@ -3434,6 +3434,13 @@ pub enum CRuntimeError {
         allocation: Pointer,
     },
     UnsupportedMutexStorageRetirement,
+    /// The automatic object cannot expire while initialized mutex storage
+    /// is known (or may be constrained) to lie in it.
+    MutexStorageScopeEnd {
+        local: String,
+        mutex: Pointer,
+        may_alias: bool,
+    },
     InvalidFree(CInvalidFree),
     UnresolvedAllocationOutcome,
     LiveAllocationLeak {

@@ -2465,7 +2465,7 @@ pub(in crate::kernel) fn scope_declared_names(statement: &CStatement) -> Vec<Str
 pub(in crate::kernel) fn end_scope_automatic_lifetimes(
     state: &CState,
     declared: &[String],
-) -> Result<CState, crate::kernel::LoanRefusalDiagnostic> {
+) -> Result<CState, CRuntimeError> {
     let mut state = state.clone();
     let mut memory = state.memory.clone();
     let mut retired = false;
@@ -2475,6 +2475,11 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
             continue;
         };
         if slot.block.starts_with("local:") && memory.has_block(&slot.block) {
+            if let Some(error) =
+                super::super::mutexes::automatic_storage_refusal(&state, name, &slot.block)
+            {
+                return Err(error);
+            }
             let range = CMemoryRange::new_with_element_width(
                 slot.clone(),
                 0.into(),
@@ -2489,7 +2494,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                 &PureFactContext::default(),
                 crate::kernel::LoanRefusalOperation::MemoryAccess,
             ) {
-                return Err(refusal);
+                return Err(CRuntimeError::LoanRefusal(refusal));
             }
             memory = memory.without_local_block(&slot.block);
             retired = true;
@@ -2543,9 +2548,7 @@ pub(in crate::kernel) fn paths_after_scope_exit(
                 | CStatementOutcome::UndefinedBehavior(_)
                 | CStatementOutcome::RuntimeError(_)) => Ok(outcome),
             }
-            .unwrap_or_else(|refusal| {
-                CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(refusal))
-            });
+            .unwrap_or_else(CStatementOutcome::RuntimeError);
             CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
                 outcome,
@@ -2732,9 +2735,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                 Err(refusal) => {
                     return Ok(vec![CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
-                        outcome: CStatementOutcome::RuntimeError(CRuntimeError::LoanRefusal(
-                            refusal,
-                        )),
+                        outcome: CStatementOutcome::RuntimeError(refusal),
                         facts: Vec::new(),
                         obligations: Vec::new(),
                         loan_evidence: empty_checked_loan_evidence_sequence(),

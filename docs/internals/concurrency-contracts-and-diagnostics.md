@@ -36,7 +36,8 @@ an overlapping initialized mutex. Destruction removes this dependency; unlocking
 does not. Abstract preserving-guard contracts conservatively refuse allocation
 retirement until checked lifecycle inputs can describe their dependencies.
 This adds no surface syntax. Initialization validity, writes to mutex bytes,
-automatic-storage lifetime, and use loans remain unimplemented.
+and use loans remain unimplemented. Automatic-storage expiry is now checked
+as described below.
 
 The first lifecycle ownership layer now implements `owns mutex_live(mu)` in
 preserving contracts and declared resource bodies. Initialization creates one
@@ -48,11 +49,28 @@ generation's resource cannot substitute for the owner. Missing ownership reports
 memory access. It cannot be viewed, counted, or transferred to workers yet.
 
 This is an ownership checkpoint, **not a complete lifetime proof**. It does not
-yet check storage validity on initialization, reserve bytes against ordinary
-writes, or prevent automatic-storage expiry. `mutex_use` loans and their guard
-and worker dependencies are not implemented. Preserving lifecycle contracts
+yet check storage validity on initialization or reserve bytes against ordinary
+writes. `mutex_use` loans and their guard and worker dependencies are not
+implemented. Preserving lifecycle contracts
 retain the same conservative transition freeze as preserving guard contracts;
 `consumes`/`produces` and named primitive lifecycle binders remain unsupported.
+
+Automatic storage now cannot end while it contains an initialized mutex.
+The check covers normal block exit, `break`, `continue`, `goto`, return, and
+exceptional outcomes, including the retained certificate for scope retirement.
+It consults the initialization index, so folding `mutex_live` or a guard cannot
+hide the dependency. Destroying all mutexes in the object permits its lifetime
+to end; unrelated concrete objects can end independently. A symbolic mutex
+pointer that might designate local storage is refused conservatively with an
+explicit limitation diagnostic. No new surface syntax is needed.
+
+C fixtures cover return, loop exits, folded ownership, and loop reentry. The
+small C frontend still rejects standalone compound statements; unchanged
+nested-block fixtures record that limitation rather than presenting a rewritten
+C program as coverage. Kernel tests exercise all scope-leaving outcomes.
+Uninitialized stack structs now need only their storage layout, so containing
+an opaque pthread union does not require typed-copy support; unsupported
+aggregate copies remain rejected.
 
 The surface status is:
 
@@ -487,8 +505,9 @@ hostile certificate tests:
 1. **Storage and lifetime authority.** The exclusive `mutex_live` owner is implemented,
    including generative identity, fold/unfold, and preserving call transport.
    Initialization must still establish live,
-   exclusive storage; initialized bytes must resist ordinary writes and scope
-   exit. `mutex_use` needs checked lending from `mutex_live`, reborrowing, worker join
+   exclusive storage, and initialized bytes must resist ordinary writes.
+   Scope exit now checks concrete initializations and conservatively refuses
+   ambiguous symbolic ones. `mutex_use` needs checked lending from `mutex_live`, reborrowing, worker join
    recovery, and returned guards that keep their lender alive. The current heap
    refusal is a conservative dependency check, not this resource protocol.
 2. **Abstract guard transitions.** Contracts need generative initialization and

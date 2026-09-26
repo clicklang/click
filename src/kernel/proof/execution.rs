@@ -8,8 +8,8 @@ use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, S
 use crate::kernel::{
     Bitvector32Term, CCompositeResourceDefinition, CConditionOutcome, CExecutionEnvironment,
     CExecutionSemantics, CExpression, CFunction, CFunctionExecutionCandidates, CFunctionOutcome,
-    CMemory, CMemoryRange, CResource, CResourceFact, CResourceSpec, CState, CStatement,
-    CStatementOutcome, CValue, CVerifiedLoopRule, ExecutionBudget, ExecutionLimit,
+    CMemory, CMemoryRange, CResource, CResourceFact, CResourceSpec, CRuntimeError, CState,
+    CStatement, CStatementOutcome, CValue, CVerifiedLoopRule, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, Pointer, Proposition, PureFactContext, ResourceContext, SpecProposition,
     Theorem, Variable,
 };
@@ -6260,17 +6260,18 @@ impl ExecutionProofCore {
         &mut self,
         state: &CState,
         names: &[String],
-    ) -> Result<CState, &'static str> {
+    ) -> Result<CState, CRuntimeError> {
         if names.is_empty() {
             return Ok(state.clone());
         }
-        let after_state = crate::kernel::eval::end_scope_automatic_lifetimes(state, names)
-            .map_err(|_| "automatic storage cannot end while a stable loan is active")?;
+        let after_state = crate::kernel::eval::end_scope_automatic_lifetimes(state, names)?;
         if after_state == *state {
             return Ok(after_state);
         }
         if self.reached_state() != state {
-            return Err("automatic lifetime end does not start from the running state");
+            return Err(CRuntimeError::FunctionContract(
+                "automatic lifetime end does not start from the running state".into(),
+            ));
         }
         let end = CheckedAutomaticLifetimeEnd {
             before_state: state.clone(),
@@ -10214,6 +10215,47 @@ mod automatic_lifetime_tests {
                 .with_memory(state.memory().clone().without_local_block(&pointer.block)),
         };
         assert!(forged.advance_checked(&state).is_none());
+    }
+
+    #[test]
+    fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
+        let state = CState::new()
+            .with_local("holder", int32(0))
+            .with_memory(CMemory::new().with_block("local:holder", 48));
+        let address = state.locals().slot("holder").unwrap().offset_by_bytes(8);
+        let context = crate::kernel::mutexes::MutexContext::new(state)
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let state = context.state();
+        let names = vec!["holder".to_string()];
+        let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
+        assert!(matches!(
+            core.record_automatic_lifetime_end(state, &names),
+            Err(CRuntimeError::MutexStorageScopeEnd { .. })
+        ));
+        let forged = CheckedAutomaticLifetimeEnd {
+            before_state: state.clone(),
+            names: names.clone(),
+            after_state: state
+                .clone()
+                .with_memory(state.memory().clone().without_local_block(&address.block)),
+        };
+        assert!(forged.advance_checked(state).is_none());
+        assert_eq!(core.reached_state(), state);
+        let destroyed = context
+            .destroy(&address, &PureFactContext::new())
+            .unwrap()
+            .into_state();
+        let mut core =
+            ExecutionProofCore::at_entry(destroyed.clone(), ExecutionFrontier::default());
+        let after = core
+            .record_automatic_lifetime_end(&destroyed, &names)
+            .unwrap();
+        let events = core.execution_evidence[0].to_vec();
+        let CheckedExecutionEvent::AutomaticLifetimeEnd(event) = &events[0] else {
+            panic!("missing scope event")
+        };
+        assert_eq!(event.advance_checked(&destroyed), Some(after));
     }
 
     #[test]

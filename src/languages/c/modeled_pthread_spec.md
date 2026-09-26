@@ -47,9 +47,13 @@ lifetime dependencies are not represented by checked lifecycle inputs.
 
 Functions cannot return with held guards or escrowed protected resources unless
 a preserving guard contract carries them. An unlocked empty mutex currently
-has no return obligation. Storage validity at initialization, ordinary writes
-to the mutex representation, and automatic-storage lifetime checks are still
-separate implementation gaps; the heap-retirement check does not establish them.
+has no general return obligation. Automatic storage, however, cannot expire
+while it contains any initialized mutex: the mutex must be destroyed before
+normal or abrupt scope exit, including function return. Folding its owner into
+a resource does not remove this storage dependency. Unresolved symbolic mutex
+storage conservatively blocks expiry when it might alias the local object.
+Storage validity at initialization and ordinary writes to the mutex
+representation remain separate implementation gaps.
 
 The C client still owes its worker proof, creation failure paths, ownership
 separation, parent access checks, and every source-level continuation. The

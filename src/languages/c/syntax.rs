@@ -12530,14 +12530,20 @@ impl Parser {
             let name = self.declare_name(&source_name)?;
             let struct_value_layout =
                 if struct_value_candidate && self.peek() != Some(&Token::LBracket) {
-                    Some(
-                        self.scalar_struct_value_layout(
-                            parsed_type
-                                .struct_name
-                                .as_deref()
-                                .expect("plain struct local carries its name"),
-                        )?,
-                    )
+                    let struct_name = parsed_type
+                        .struct_name
+                        .as_deref()
+                        .expect("plain struct local carries its name");
+                    // An uninitialized object needs storage, not a typed copy.
+                    // Keep copy/initializer validation at the operations that
+                    // actually read or construct aggregate values.
+                    Some(if self.peek() == Some(&Token::Equal) {
+                        self.scalar_struct_value_layout(struct_name)?
+                    } else {
+                        self.structs.get(struct_name).cloned().ok_or_else(|| {
+                            self.error_here(format!("unknown struct declaration `{struct_name}`"))
+                        })?
+                    })
                 } else {
                     None
                 };
@@ -13075,6 +13081,7 @@ impl Parser {
         target_struct: &str,
         expression: C0Expression,
     ) -> Result<C0Statement, C0SyntaxError> {
+        self.scalar_struct_value_layout(target_struct)?;
         let (source_pointer, source_struct) = match expression {
             C0Expression::Variable(name) => {
                 let source_struct =

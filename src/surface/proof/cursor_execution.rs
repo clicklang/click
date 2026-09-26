@@ -704,7 +704,12 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     .source_layout
                     .automatic_exits(skip_index, false),
             )
-            .map_err(ClickError::new)?;
+            .map_err(|error| {
+                ClickError::new(
+                    crate::surface::diagnostics::describe_runtime_error_over_locals(&error, &state),
+                )
+                .with_kind(runtime_refusal_kind(&error))
+            })?;
         execution.core.state = state.clone().into();
         for exited in proof_context
             .constants
@@ -1021,7 +1026,15 @@ fn execute_concrete_loop_head_step(
                 .source_layout
                 .automatic_exits(statement_index, false),
         )
-        .map_err(ClickError::new)?;
+        .map_err(|error| {
+            ClickError::new(
+                crate::surface::diagnostics::describe_runtime_error_over_locals(
+                    &error,
+                    &current_state,
+                ),
+            )
+            .with_kind(runtime_refusal_kind(&error))
+        })?;
     execution.core.state = current_state.clone().into();
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
@@ -3102,7 +3115,14 @@ fn execute_step_from_frontier_position_selecting_path(
             *state = execution
                 .core
                 .record_automatic_lifetime_end(state, ended)
-                .map_err(ClickError::new)?;
+                .map_err(|error| {
+                    ClickError::new(
+                        crate::surface::diagnostics::describe_runtime_error_over_locals(
+                            &error, state,
+                        ),
+                    )
+                    .with_kind(runtime_refusal_kind(&error))
+                })?;
         }
         _ => {}
     }

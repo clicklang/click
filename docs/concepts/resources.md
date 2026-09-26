@@ -640,7 +640,10 @@ Folded lifecycle ownership must be unfolded before lock or destroy. A direct
 `owns mutex_live(mu)` contract preserves the entry initialization. The resource
 implies neither `held(mu)` nor payload access and cannot be viewed or counted.
 Borrowed `mutex_use` permissions, lifecycle-changing contracts, initialization
-storage validity, and write/scope protection are not implemented yet. See the
+storage validity, and protection against ordinary writes are not implemented
+yet. Automatic objects containing initialized mutexes must have them destroyed
+before scope exit, including abrupt exits; folded authority does not bypass
+this check. See the
 [library reference](../reference/library/index.md#mutex_live) for this boundary.
 
 A contract clause speaks about parameters, so `consumes t: tree_at(root);`

@@ -212,7 +212,7 @@ full modeled ABI footprint, including direct free/realloc and retiring helper
 contracts. The index drops a footprint only on destruction, and unrelated
 allocation blocks remain independently releasable. Abstract guard contracts
 cannot yet retire allocations without checked lifecycle inputs. Initialization
-storage validity, ordinary-write exclusion, automatic-storage lifetimes, and
+storage validity, ordinary-write exclusion, and
 use loans remain open; this is not full `mutex_live`/`mutex_use` support.
 
 `owns mutex_live(mu)` now carries the initialization's exclusive owner in the
@@ -221,8 +221,16 @@ helper contracts. Lock requires available ownership; destroy consumes it.
 Folding, duplication attempts, missing call inputs, and same-address stale
 owners are covered by regressions, as is indexed lifecycle-transition work.
 Missing authority reports `Requires owns mutex_live(...)`. This checkpoint does
-not implement `mutex_use`, storage validity at init, write/scope protection,
+not implement `mutex_use`, storage validity at init, write protection,
 named primitive binders, or lifecycle-changing helper contracts.
+
+Automatic-storage expiry now refuses an initialized mutex on every scope exit,
+including abrupt control flow and validation of scope-retirement certificates.
+The check uses initialization metadata even when ownership is folded away.
+Destroying one mutex does not clear another in the same object. A separate
+index conservatively handles symbolic pointers that might designate local
+storage, without scanning unrelated concrete initializations. Kernel hostile
+certificate tests and C scope/reentry fixtures cover the boundary.
 
 Direct named guard clauses and consumed/produced guards still require the
 full abstract acquisition binding and transition model. The current symbolic
