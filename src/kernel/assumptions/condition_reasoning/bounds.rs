@@ -357,6 +357,131 @@ impl PureFactContext {
             })
     }
 
+    /// `base - c <= right` (or `<` when `strict_goal`) from a recorded
+    /// constant upper bound `base <= upper` (or `base < upper`) with
+    /// `upper - c <= right` (resp. `<`), when `base - c` does not signed
+    /// underflow. The subtraction twin of `has_add_const_upper_bound_*`: an
+    /// upper bound on `n` bounds `n - 1` only once `n - 1` is known not to
+    /// wrap (at `n = INT_MIN` it is `INT_MAX`).
+    ///
+    /// The upper bounds of `base` are read from `signed_order_bounds` at
+    /// `base` (and its canonical form), so the cost is the bounds recorded at
+    /// that one term, not the ambient fact count.
+    pub(in crate::kernel) fn has_subtract_const_upper_bound(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+        strict_goal: bool,
+    ) -> bool {
+        let Some((base, subtrahend)) = left.subtract_const_parts() else {
+            return false;
+        };
+        let Ok(subtrahend_value) = i32::try_from(subtrahend) else {
+            return false;
+        };
+        if subtrahend_value <= 0 {
+            return false;
+        }
+        let canonical = crate::kernel::eval::canonical_term(&base);
+        let keys = if canonical == base {
+            vec![base.clone()]
+        } else {
+            vec![base.clone(), canonical]
+        };
+        let mut upper_bounds = Vec::new();
+        for key in keys {
+            let Some(entries) = self.signed_order_bounds.get(&key) else {
+                continue;
+            };
+            for (_, other, strict, own_is_lower) in entries.keys() {
+                if *own_is_lower
+                    && let Some(upper) = other.as_const()
+                    && !upper_bounds.contains(&(upper, *strict))
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    upper_bounds.push((upper, *strict));
+                }
+            }
+        }
+        if upper_bounds.is_empty()
+            || self.decide(&ConditionTerm::signed_subtract_overflows(
+                base.clone(),
+                Bitvector32Term::Constant(subtrahend),
+            )) != Some(false)
+        {
+            return false;
+        }
+        upper_bounds.into_iter().any(|(upper, strict_fact)| {
+            let Some(shifted) = (upper as i32).checked_sub(subtrahend_value) else {
+                return false;
+            };
+            let shifted = Bitvector32Term::Constant(shifted as u32);
+            // `base < upper` gives `base - c < upper - c`; `base <= upper`
+            // gives `base - c <= upper - c`.
+            let goal = if strict_goal && !strict_fact {
+                ConditionTerm::signed_less_than(shifted, right.clone())
+            } else {
+                ConditionTerm::signed_less_equal(shifted, right.clone())
+            };
+            self.decide(&goal) == Some(true)
+        })
+    }
+
+    /// `bound <= base - c` (or `<` when `strict_goal`) from a recorded
+    /// constant lower bound `lower <= base` (or `lower < base`) with
+    /// `bound <= lower - c` (resp. `<`). `lower - c` is computed without
+    /// wrapping, and `base >= lower` then keeps `base - c` from wrapping, so
+    /// no separate underflow decision is needed.
+    pub(in crate::kernel) fn has_subtract_const_lower_bound(
+        &self,
+        term: &Bitvector32Term,
+        bound: &Bitvector32Term,
+        strict_goal: bool,
+    ) -> bool {
+        let Some((base, subtrahend)) = term.subtract_const_parts() else {
+            return false;
+        };
+        let Ok(subtrahend_value) = i32::try_from(subtrahend) else {
+            return false;
+        };
+        if subtrahend_value <= 0 {
+            return false;
+        }
+        let canonical = crate::kernel::eval::canonical_term(&base);
+        let keys = if canonical == base {
+            vec![base.clone()]
+        } else {
+            vec![base.clone(), canonical]
+        };
+        let mut lower_bounds = Vec::new();
+        for key in keys {
+            let Some(entries) = self.signed_order_bounds.get(&key) else {
+                continue;
+            };
+            for (_, other, strict, own_is_lower) in entries.keys() {
+                if !*own_is_lower
+                    && let Some(lower) = other.as_const()
+                    && !lower_bounds.contains(&(lower, *strict))
+                {
+                    crate::instrumentation::record_deterministic_work(1);
+                    lower_bounds.push((lower, *strict));
+                }
+            }
+        }
+        lower_bounds.into_iter().any(|(lower, strict_fact)| {
+            let Some(shifted) = (lower as i32).checked_sub(subtrahend_value) else {
+                return false;
+            };
+            let shifted = Bitvector32Term::Constant(shifted as u32);
+            let goal = if strict_goal && !strict_fact {
+                ConditionTerm::signed_less_than(bound.clone(), shifted)
+            } else {
+                ConditionTerm::signed_less_equal(bound.clone(), shifted)
+            };
+            self.decide(&goal) == Some(true)
+        })
+    }
+
     pub(in crate::kernel) fn subtract_same_const_order_fact(
         &self,
         left: &Bitvector32Term,

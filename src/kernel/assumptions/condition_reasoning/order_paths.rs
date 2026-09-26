@@ -273,6 +273,9 @@ impl PureFactContext {
                     || self.has_add_const_lower_bound_above(&right, &left)
                     || self.positive_offset_is_proven_above(&left, &right)
                     || self.positive_subtraction_is_proven_below(&left, &right)
+                    // Consulted last: every earlier rule keeps its cost.
+                    || self.has_subtract_const_upper_bound(&left, &right, true)
+                    || self.has_subtract_const_lower_bound(&right, &left, true)
                 {
                     Some(true)
                 } else if self.has_condition_fact(
@@ -356,6 +359,9 @@ impl PureFactContext {
                     || self.has_add_const_lower_bound_at_or_above(&right, &left)
                     || self.nonnegative_offset_is_proven_at_or_above(&left, &right)
                     || self.order_facts_force_equal(&left, &right)
+                    // Consulted last: every earlier rule keeps its cost.
+                    || self.has_subtract_const_upper_bound(&left, &right, false)
+                    || self.has_subtract_const_lower_bound(&right, &left, false)
                 {
                     Some(true)
                 } else if self.has_condition_fact(

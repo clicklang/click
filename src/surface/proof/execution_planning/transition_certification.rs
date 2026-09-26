@@ -988,6 +988,15 @@ fn certified_transitions_from_execution(
                     }
                     StatementPrerequisitePolicy::Contextual
                     | StatementPrerequisitePolicy::Retained => {
+                        // A refusal lists the facts this check consulted.
+                        // Over a proof context `pure_facts` is only the
+                        // statement-local delta, and the context itself
+                        // (the contract's requirements, earlier path facts)
+                        // is what was searched.
+                        let consulted_facts = || match context {
+                            Some(_) => prerequisite_assumptions.pure_facts(),
+                            None => pure_facts.to_vec(),
+                        };
                         // A retained checked derivation over the context, or
                         // the exact structural rules the explicit law used (a
                         // listed premise covering a loadability, a matching
@@ -1027,7 +1036,7 @@ fn certified_transitions_from_execution(
                                         .unwrap_or_default(),
                                     describe_derivation_failure(
                                         proposition,
-                                        pure_facts,
+                                        &consulted_facts(),
                                         state,
                                         environment,
                                         predicate_environment,
@@ -1076,7 +1085,7 @@ fn certified_transitions_from_execution(
                                         .unwrap_or_default(),
                                     describe_derivation_failure(
                                 proposition,
-                                pure_facts,
+                                &consulted_facts(),
                                 state,
                                 environment,
                                 predicate_environment,
