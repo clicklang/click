@@ -1053,7 +1053,96 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        self.affine_pair_through_equality(target)
+    }
+
+    /// A two-premise sum where one addend is a direction of an equality
+    /// premise: `y == x` and `0 <= x` give `0 <= y` as `(x - y <= 0) +
+    /// (-x <= 0)`, the equality weakened to the needed direction by the
+    /// checked `EqualityToLessEqual` step. This is substitution of an equal
+    /// atom, spelled as the linear step the kernel already checks.
+    ///
+    /// It runs only after the inequality-only pair search found nothing, so
+    /// every certificate that search chose is unchanged. Both directions of
+    /// each equality are indexed by fingerprint beside the inequalities;
+    /// the complement of each left addend is looked up, never pair-scanned.
+    fn affine_pair_through_equality(&mut self, target: &SignedArithmeticClaim) -> Option<usize> {
+        if target.relation != SignedArithmeticRelation::LessEqual
+            || !self
+                .claims
+                .iter()
+                .any(|(_, claim)| claim.relation == SignedArithmeticRelation::Equal)
+        {
+            return None;
+        }
+        // (claim position, equality direction or `None` for an inequality,
+        // the `<=` claim it contributes)
+        let mut sources: Vec<(usize, Option<bool>, SignedArithmeticClaim)> = Vec::new();
+        for (position, (_, claim)) in self.claims.iter().enumerate() {
+            charge_work(1)?;
+            match claim.relation {
+                SignedArithmeticRelation::LessEqual => {
+                    sources.push((position, None, claim.clone()))
+                }
+                SignedArithmeticRelation::Equal => {
+                    for reverse in [false, true] {
+                        sources.push((position, Some(reverse), equality_direction(claim, reverse)));
+                    }
+                }
+                SignedArithmeticRelation::Disequal => {}
+            }
+        }
+        let mut index: HashMap<u64, Vec<usize>> = HashMap::new();
+        for (source_position, (_, _, claim)) in sources.iter().enumerate() {
+            charge_work(1)?;
+            index
+                .entry(claim_fingerprint(claim))
+                .or_default()
+                .push(source_position);
+        }
+        for left_position in 0..sources.len() {
+            let (left_claim_position, left_direction, left) = sources[left_position].clone();
+            let complement = subtract_affine_claims(target, &left)?;
+            let Some(right_positions) = index.get(&claim_fingerprint(&complement)).cloned() else {
+                continue;
+            };
+            for right_position in right_positions {
+                charge_work(1)?;
+                let (right_claim_position, right_direction, right) =
+                    sources[right_position].clone();
+                // At least one addend is an equality direction; a pair of
+                // inequalities was the search above.
+                if right_claim_position == left_claim_position
+                    || (left_direction.is_none() && right_direction.is_none())
+                    || add_affine_claims(&left, &right)? != *target
+                {
+                    continue;
+                }
+                let left_node = self.less_equal_source(left_claim_position, left_direction)?;
+                let right_node = self.less_equal_source(right_claim_position, right_direction)?;
+                return self.push(SignedArithmeticNode::Add {
+                    left: left_node,
+                    right: right_node,
+                    result: target.clone(),
+                });
+            }
+        }
         None
+    }
+
+    /// The `<=` node for one premise: the premise itself, or for an equality
+    /// its checked weakening to the requested direction.
+    fn less_equal_source(&mut self, position: usize, direction: Option<bool>) -> Option<usize> {
+        let (index, claim) = self.claims[position].clone();
+        let premise = self.premise(index, &claim)?;
+        let Some(reverse) = direction else {
+            return Some(premise);
+        };
+        self.push(SignedArithmeticNode::EqualityToLessEqual {
+            source: premise,
+            reverse,
+            result: equality_direction(&claim, reverse),
+        })
     }
 
     /// A non-strict bound one unit short of the target closes it together
