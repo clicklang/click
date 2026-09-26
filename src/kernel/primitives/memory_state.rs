@@ -4050,16 +4050,14 @@ impl CMemory {
         value_type: CType,
     ) -> CValue {
         CValue::typed_pointer(
-            Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::MemoryLoad(
-                        crate::kernel::intern_c_memory(self.clone()),
-                        Box::new(pointer.clone()),
-                    ),
-                    i64::from(pointee_byte_width),
+            Pointer::loaded(
+                pointer.block.clone(),
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory(self.clone()),
+                    Box::new(pointer.clone()),
                 ),
-            },
+                i64::from(pointee_byte_width),
+            ),
             value_type,
         )
     }

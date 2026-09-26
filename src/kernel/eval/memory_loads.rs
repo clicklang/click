@@ -992,13 +992,11 @@ pub(in crate::kernel) fn canonicalized_pointer_value_from_int_cell(
     ) {
         Pointer::symbolic(fresh)
     } else {
-        Pointer {
-            block: pointer.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(
-                Bitvector32Term::Variable(fresh),
-                i64::from(pointee_byte_width),
-            ),
-        }
+        Pointer::loaded(
+            pointer.block.clone(),
+            Bitvector32Term::Variable(fresh),
+            i64::from(pointee_byte_width),
+        )
     };
     Some(CValue::typed_pointer(loaded, value_type))
 }
@@ -1108,10 +1106,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     let pointer = if use_symbolic_identity {
         Pointer::symbolic(fresh)
     } else {
-        Pointer {
-            block: block.clone(),
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(fresh), *byte_width),
-        }
+        Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), *byte_width)
     };
     Some(CValue::typed_pointer(pointer, pointer_value.c_type()))
 }

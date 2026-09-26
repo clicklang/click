@@ -3035,6 +3035,19 @@ impl Pointer {
         }
     }
 
+    /// The pointer value a load of a pointer-typed cell denotes, where
+    /// `bits` names what the cell holds: a raw `MemoryLoad` or the load
+    /// variable minted for it. Every construction of a loaded pointer goes
+    /// through here, so the encoding is decided in one place: today, the
+    /// block of the storage it was read from, displaced by the loaded bits
+    /// times the pointee's width.
+    pub(crate) fn loaded(block: PointerBlock, bits: Bitvector32Term, pointee_width: i64) -> Self {
+        Self {
+            block,
+            offset: PointerOffsetTerm::scale_int32(bits, pointee_width),
+        }
+    }
+
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
             block: PointerBlock::FunctionSymbolic(variable),

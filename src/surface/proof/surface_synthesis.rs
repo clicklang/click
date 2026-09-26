@@ -222,10 +222,11 @@ fn field_pointer_bases(
                 // scalar offset inside the owner's block.
                 CExpressionOutcome::Value(CValue::Int32(value)) => {
                     let CValue::Pointer(loaded) = CValue::typed_pointer(
-                        Pointer {
-                            block: owner.pointer.pointer().block.clone(),
-                            offset: PointerOffsetTerm::scale_int32(value, i64::from(width)),
-                        },
+                        Pointer::loaded(
+                            owner.pointer.pointer().block.clone(),
+                            value,
+                            i64::from(width),
+                        ),
                         value_type,
                     ) else {
                         continue;

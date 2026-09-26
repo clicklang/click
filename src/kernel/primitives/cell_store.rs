@@ -612,18 +612,16 @@ pub(crate) fn cell_run_value(
             CValue::typed_pointer(Pointer::symbolic_function(variable), element_type)
         }
         c_type if c_type.is_pointer() => CValue::typed_pointer(
-            Pointer {
-                block: pointer.block.clone(),
-                offset: PointerOffsetTerm::scale_int32(
-                    load,
-                    i64::from(
-                        c_type
-                            .pointee_type()
-                            .expect("pointer element type has a pointee")
-                            .byte_width(),
-                    ),
+            Pointer::loaded(
+                pointer.block.clone(),
+                load,
+                i64::from(
+                    c_type
+                        .pointee_type()
+                        .expect("pointer element type has a pointee")
+                        .byte_width(),
                 ),
-            },
+            ),
             c_type,
         ),
         _ => unreachable!("memory ranges cannot contain aggregate elements"),
