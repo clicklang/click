@@ -202,6 +202,39 @@ Each stage lands green with its regressions and scaling curves:
 - **Failure diagnostics.** When a goal fails modulo the closure, show the two
   classes that did not meet, each with a representative member.
 
+## Handoff from the DFS session (2026-09-26)
+
+Two consumers and one soundness question for this work, found while scaling
+contract entry. Nothing here changes the design constraints above.
+
+- **Contract-entry view binding is quadratic until the closure exists.**
+  `ResourceContext::view_occurrences_for_fact` (`src/kernel/primitives/resource_algebra.rs`),
+  called once per view from `install_borrowed_contract_inputs`
+  (`src/kernel/api.rs`), scans every candidate in the block bucket and runs a
+  full `memory_range_covers` per pair, because it must refuse ambiguous
+  bindings. All pointer parameters share the `ExternalArgument` block, so the
+  bucket is every range. No existing key is complete for the five positive
+  routes of `memory_range_covers`: constant base delta,
+  `pointers_proven_equal_for_memory_resolution` (offset-equal facts, pointer
+  equality paths, constant pinning), load bridging, order-derived
+  containment, and `range_covered_by_fact_range`. Once pointer classes are the
+  one equality method, the candidates for a requirement can be restricted to
+  its class, with the full scan kept wherever a route reads something the
+  closure does not. The scaling test
+  `contract_entry_with_many_views_beside_an_owner_is_not_cubic`
+  (`src/surface/tests/scaling_tests.rs`) has a quadratic ceiling that should
+  become near-linear then.
+- **Order facts relate pointer bases inconsistently.** Under
+  `requires p <= q; requires q <= p;`, the contract
+  `owns p[0..1]; owns q[0..1];` is accepted at entry, while the same contract
+  with `requires p == q` is refused as ambiguous. Some coverage routes read
+  order facts and the partition check does not. Ordering is out of scope for
+  the closure, so either antisymmetry must be excluded from equality routes
+  consistently, or a proved `p <= q and q <= p` must merge `p` and `q` like any
+  other proved equality. A separate agent in the DFS session is checking
+  whether this yields a false theorem and fixing the partition check; its
+  result will be recorded here.
+
 ## Acceptance criteria
 
 - Regressions 1 through 6 pass under `scripts/check.sh`, and `click audit`
