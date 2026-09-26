@@ -1068,25 +1068,38 @@ fn expanded_read_step_uses_contextual_range_separation() {
     });
     let expanded = expanded.expect("the read step's generated surface certificate should check");
 
-    let strict_limits = crate::instrumentation::TacticLimits {
-        simple: std::time::Duration::from_secs(30),
-        smart: std::time::Duration::from_millis(100),
-        control: std::time::Duration::from_secs(30),
+    // Whether the certificate defers a smart tactic is read from the checked
+    // runs' events, not inferred from a tight smart-tactic clock: the
+    // expanded proof runs exactly the original's smart tactics less the
+    // expanded `execute()`.
+    let smart_tactics = |source: &str| {
+        let (verified, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(source, &[("owned_string_pop.c", c_source)])
+        });
+        verified.expect("the read proof should verify as a complete proof");
+        events
+            .iter()
+            .filter_map(|event| match event {
+                crate::instrumentation::VerificationEvent::TacticStarted(tactic)
+                    if tactic.class == "smart" =>
+                {
+                    Some(tactic.tactic_name.clone())
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>()
     };
-    crate::instrumentation::with_tactic_limits(strict_limits, || {
-        verify_c0_sources(&expanded, &[("owned_string_pop.c", c_source)])
-    })
-    .expect("the expanded certificate should contain no deferred smart tactic");
-
-    let generous_limits = crate::instrumentation::TacticLimits {
-        simple: std::time::Duration::from_secs(30),
-        smart: std::time::Duration::from_secs(30),
-        control: std::time::Duration::from_secs(30),
-    };
-    crate::instrumentation::with_tactic_limits(generous_limits, || {
-        verify_c0_sources(&expanded, &[("owned_string_pop.c", c_source)])
-    })
-    .expect("the expanded read certificate should verify as a complete proof");
+    let mut remaining = smart_tactics(click_source);
+    assert!(
+        remaining.iter().any(|name| name == "execute"),
+        "the original proof runs its smart `execute()`: {remaining:?}"
+    );
+    remaining.retain(|name| name != "execute");
+    assert_eq!(
+        smart_tactics(&expanded),
+        remaining,
+        "the expanded certificate should contain no deferred smart tactic"
+    );
 }
 
 #[test]

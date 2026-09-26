@@ -251,8 +251,13 @@ cargo nextest run
 ```
 
 `.config/nextest.toml` reports any test slower than 10 seconds as slow and
-kills any test still running after 60 seconds. Treat a test that trips either
-threshold as a bug: split it, or fix the prover slowdown it is exposing. The
+kills any test still running after 15 minutes. No test's verdict depends on
+wall clock, so the kill is crash containment for a hung process, set far
+above what a loaded machine produces: a 60-second per-test kill once failed
+the 512-deep command-line boundary tests at random whenever other builds
+loaded the machine. Treat a slow report as a finding: split the test, or fix
+the prover slowdown it is exposing, and pin superlinear work with a
+deterministic scaling regression. The
 mdtest and example-project harnesses are aggregate tests covering many directly
 verified fixtures, so their outer test-process allowance is not a per-project
 verification budget.
@@ -336,8 +341,8 @@ entry points install production's two-second smart and other real-time
 tactic limits unless the calling thread has turned them off, and a harness
 that forgets to do so turns machine load into a false red: a C++-import
 fixture that passed alone once failed a loaded gate run at 2.006 seconds
-against the smart limit. The CLI keeps its real-time backstops; only the
-harnesses drop them.
+against the smart limit. The shipped CLI keeps its real-time backstops; the
+harnesses, and the command-line tests below, drop them.
 
 `tests/support/limits.rs` is the one route. A new harness declares it with
 `#[path = "support/limits.rs"] mod limits;` and then:
@@ -357,6 +362,28 @@ A file that never reaches tactic checking goes on its short exemption list
 with a reason instead, and the test rejects an exempt file that names a
 verification or expansion entry point. Add the new harness to the fixture
 phase of `scripts/check.sh` as well.
+
+### Command-line tests
+
+The tests under `src/bin/` drive `click verify`, `expand`, `profile`, and
+`audit` in-process, and the tools install real-time limits of their own: a
+whole-run deadline, `expand`'s and `profile`'s per-tactic clocks, `audit`'s
+phase limits and its expanded-versus-original timing comparison, and on
+every thread production's default tactic clocks. Under load the 512-deep
+expression-boundary tests once exhausted `verify`'s 30-second deadline in the
+environment phase and failed at random.
+
+Each such test runs its body in `click::cli::with_work_budget_verdicts(|| {
+... })`. Inside it the tools install no per-tactic clock, raise every
+whole-run and phase limit to `click::cli::CRASH_CONTAINMENT_TIME_LIMIT`, and
+report audit's timing comparison without failing on it; `click audit`
+carries the scope onto its session thread. Every tool routes its limits
+through `cli::tool_time_limit` and `cli::with_tool_tactic_limits` so the scope
+reaches them. A test about real-time interruption itself, such as an
+exhausted `--time-limit 1ms`, stays outside the scope and goes on the short
+exemption list of `every_command_line_test_judges_by_work_budgets_only` in
+`tests/documentation.rs`, which enforces the rule over every `#[test]` in
+`src/bin/`.
 
 ### Scaling regressions
 

@@ -268,6 +268,81 @@ pub const DEFAULT_EXPANSION_TIME_LIMIT: Duration = Duration::from_secs(60);
 /// sidecar, so one slow project cannot consume the following projects' time.
 pub const DEFAULT_VERIFY_TIME_LIMIT: Duration = Duration::from_secs(30);
 
+/// The only wall-clock bound a command-line tool keeps under
+/// [`with_work_budget_verdicts`]: containment for a genuinely hung run, far
+/// above what a loaded machine produces for a run that deterministic work
+/// budgets accept.
+pub const CRASH_CONTAINMENT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
+
+thread_local! {
+    static WORK_BUDGET_VERDICTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Runs `operation` with every command-line tool judging verification by its
+/// deterministic tactic-work budgets alone, the way the fixture harnesses and
+/// library tests do, so machine load cannot change a verdict.
+///
+/// Inside this scope the tools install no per-tactic real-time limit (neither
+/// production's defaults nor the ones `click expand` and `click profile`
+/// install themselves), raise every whole-run and phase wall-clock limit to
+/// [`CRASH_CONTAINMENT_TIME_LIMIT`], and report `click audit`'s timing
+/// comparisons without failing on them. The scope is thread-local; a tool
+/// that verifies on a thread of its own re-enters it there.
+///
+/// Tests that drive a tool in-process use this. Tests about real-time
+/// interruption itself stay outside it.
+pub fn with_work_budget_verdicts<R>(operation: impl FnOnce() -> R) -> R {
+    struct Guard;
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            WORK_BUDGET_VERDICTS.with(|depth| depth.set(depth.get() - 1));
+        }
+    }
+    WORK_BUDGET_VERDICTS.with(|depth| depth.set(depth.get() + 1));
+    let _guard = Guard;
+    crate::instrumentation::without_tactic_time_limits(operation)
+}
+
+/// Whether the current thread is inside [`with_work_budget_verdicts`].
+pub fn work_budget_verdicts() -> bool {
+    WORK_BUDGET_VERDICTS.with(|depth| depth.get() > 0)
+}
+
+/// Re-enters [`with_work_budget_verdicts`] around `operation` when `inherited`
+/// is set: how a tool carries the caller's policy onto a thread it starts.
+pub fn with_inherited_work_budget_verdicts<R>(inherited: bool, operation: impl FnOnce() -> R) -> R {
+    if inherited {
+        with_work_budget_verdicts(operation)
+    } else {
+        operation()
+    }
+}
+
+/// The wall-clock limit a tool enforces for a `configured` whole-run or phase
+/// limit: the configured value, or at least [`CRASH_CONTAINMENT_TIME_LIMIT`]
+/// under [`with_work_budget_verdicts`].
+pub fn tool_time_limit(configured: Duration) -> Duration {
+    if work_budget_verdicts() {
+        configured.max(CRASH_CONTAINMENT_TIME_LIMIT)
+    } else {
+        configured
+    }
+}
+
+/// Runs `operation` under per-tactic real-time `limits` a tool installs
+/// itself, except under [`with_work_budget_verdicts`], where no per-tactic
+/// clock applies.
+pub fn with_tool_tactic_limits<R>(
+    limits: crate::instrumentation::TacticLimits,
+    operation: impl FnOnce() -> R,
+) -> R {
+    if work_budget_verdicts() {
+        operation()
+    } else {
+        crate::instrumentation::with_tactic_limits(limits, operation)
+    }
+}
+
 /// Disables tactic budget enforcement in the fixture harnesses, for A/B runs
 /// and archaeology on old trees.
 pub const DISABLE_TACTIC_BUDGETS: &str = "CLICK_DISABLE_TACTIC_BUDGETS";

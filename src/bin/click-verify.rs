@@ -428,16 +428,17 @@ fn verify_changed(
         }
         let dependencies =
             c0_project_external_dependencies(&project, &refs).map_err(click_message)?;
-        let verified_theorems = click::instrumentation::with_deadline(time_limit, || {
-            if full_rebuild {
-                verify_c0_project(&project, &refs)
-            } else {
-                verify_c0_project_functions(&project, &refs, selected.clone())
-            }
-            .map_err(|error| {
-                proof_error_report(&error, &sidecar, false, &project, &inputs, 0, None)
-            })
-        })?;
+        let verified_theorems =
+            click::instrumentation::with_deadline(click::cli::tool_time_limit(time_limit), || {
+                if full_rebuild {
+                    verify_c0_project(&project, &refs)
+                } else {
+                    verify_c0_project_functions(&project, &refs, selected.clone())
+                }
+                .map_err(|error| {
+                    proof_error_report(&error, &sidecar, false, &project, &inputs, 0, None)
+                })
+            })?;
         print_external_dependencies(&dependencies, &verified_theorems);
         if full_rebuild
             && project.modules().len() == 1
@@ -1158,84 +1159,97 @@ fn verify_file(
             cpp_prepared_project_external_dependencies(&project, import).map_err(click_message)?
         }
     };
-    let (verified, successful_trace) = click::instrumentation::with_deadline(time_limit, || {
-        let run_selected = || match (&inputs, trace_proof) {
-            (CInput::Bundle(sources), Some(function)) => {
-                verify_c0_project_functions(&project, &source_refs(sources), [function.to_owned()])
-            }
-            (CInput::Prepared(imports), Some(function)) => {
-                verify_c0_prepared_project_functions(&project, imports, [function.to_owned()])
-            }
-            (CInput::PreparedCpp(_), Some(_)) => unreachable!(),
-            (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
-            (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
-            (CInput::PreparedCpp(import), None) => verify_cpp_prepared_project(&project, import),
-        };
-        let report = |error: ClickError| {
-            proof_error_report(
-                &error,
-                click_path,
-                trace_proof.is_some(),
-                &project,
-                &inputs,
-                line_offset,
-                trace_target.as_ref(),
-            )
-        };
-        match trace_proof {
-            Some(function) => with_proof_trace(function, || {
-                let verified = run_selected().map_err(report)?;
-                let locate = |claim: &str, path: &[usize]| {
-                    let source = project.entry_source()?;
-                    let position =
-                        proof_source_position_for_path(claim, path, &project, &inputs, source)?;
-                    let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
-                    let line = position.line + line_offset;
-                    let label = if multiple {
-                        format!("tactic@{line}:{}", position.column)
-                    } else {
-                        format!("tactic@{line}")
-                    };
-                    Some((label, position))
-                };
-                let arm = |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
-                    let source = project.entry_source()?;
-                    let branch =
-                        proof_source_position_for_path(claim, path, &project, &inputs, source)?;
-                    tactic_arm_containing_position(source, &branch, target)
-                        .ok()
-                        .flatten()
-                };
-                let body =
-                    |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
-                        let Some(source) = project.entry_source() else {
-                            return false;
+    let (verified, successful_trace) =
+        click::instrumentation::with_deadline(click::cli::tool_time_limit(time_limit), || {
+            let run_selected = || match (&inputs, trace_proof) {
+                (CInput::Bundle(sources), Some(function)) => verify_c0_project_functions(
+                    &project,
+                    &source_refs(sources),
+                    [function.to_owned()],
+                ),
+                (CInput::Prepared(imports), Some(function)) => {
+                    verify_c0_prepared_project_functions(&project, imports, [function.to_owned()])
+                }
+                (CInput::PreparedCpp(_), Some(_)) => unreachable!(),
+                (CInput::Bundle(sources), None) => {
+                    verify_c0_project(&project, &source_refs(sources))
+                }
+                (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
+                (CInput::PreparedCpp(import), None) => {
+                    verify_cpp_prepared_project(&project, import)
+                }
+            };
+            let report = |error: ClickError| {
+                proof_error_report(
+                    &error,
+                    click_path,
+                    trace_proof.is_some(),
+                    &project,
+                    &inputs,
+                    line_offset,
+                    trace_target.as_ref(),
+                )
+            };
+            match trace_proof {
+                Some(function) => with_proof_trace(function, || {
+                    let verified = run_selected().map_err(report)?;
+                    let locate = |claim: &str, path: &[usize]| {
+                        let source = project.entry_source()?;
+                        let position =
+                            proof_source_position_for_path(claim, path, &project, &inputs, source)?;
+                        let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
+                        let line = position.line + line_offset;
+                        let label = if multiple {
+                            format!("tactic@{line}:{}", position.column)
+                        } else {
+                            format!("tactic@{line}")
                         };
-                        let Some(have) =
-                            proof_source_position_for_path(claim, path, &project, &inputs, source)
-                        else {
-                            return false;
-                        };
-                        tactic_have_body_contains_position(source, &have, target).unwrap_or(false)
+                        Some((label, position))
                     };
-                let trace = accepted_proof_trace(&locate, &arm, &body, trace_target.as_ref()).map(
-                    |mut trace| {
-                        if let Some(formatted) = trace_target.as_ref().and_then(|position| {
-                            format_source_tactic_at_position(&click_source, position, line_offset)
-                        }) {
-                            trace.push_str("\n\n");
-                            trace.push_str(&formatted);
-                        }
-                        trace
-                    },
-                );
-                Ok((verified, trace))
-            }),
-            None => run_selected()
-                .map(|verified| (verified, None))
-                .map_err(report),
-        }
-    })?;
+                    let arm =
+                        |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
+                            let source = project.entry_source()?;
+                            let branch = proof_source_position_for_path(
+                                claim, path, &project, &inputs, source,
+                            )?;
+                            tactic_arm_containing_position(source, &branch, target)
+                                .ok()
+                                .flatten()
+                        };
+                    let body =
+                        |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
+                            let Some(source) = project.entry_source() else {
+                                return false;
+                            };
+                            let Some(have) = proof_source_position_for_path(
+                                claim, path, &project, &inputs, source,
+                            ) else {
+                                return false;
+                            };
+                            tactic_have_body_contains_position(source, &have, target)
+                                .unwrap_or(false)
+                        };
+                    let trace = accepted_proof_trace(&locate, &arm, &body, trace_target.as_ref())
+                        .map(|mut trace| {
+                            if let Some(formatted) = trace_target.as_ref().and_then(|position| {
+                                format_source_tactic_at_position(
+                                    &click_source,
+                                    position,
+                                    line_offset,
+                                )
+                            }) {
+                                trace.push_str("\n\n");
+                                trace.push_str(&formatted);
+                            }
+                            trace
+                        });
+                    Ok((verified, trace))
+                }),
+                None => run_selected()
+                    .map(|verified| (verified, None))
+                    .map_err(report),
+            }
+        })?;
     if trace_proof.is_some() {
         let trace = successful_trace.ok_or_else(|| {
             trace_to.map_or_else(
@@ -1331,30 +1345,31 @@ fn verify_location(
             cpp_prepared_project_external_dependencies(&project, import).map_err(click_message)?
         }
     };
-    let verified = click::instrumentation::with_deadline(time_limit, || {
-        let result = match &inputs {
-            CInput::Bundle(sources) => {
-                verify_c0_project_at(&project, &source_refs(sources), line, column)
-            }
-            CInput::Prepared(imports) => {
-                verify_c0_prepared_project_at(&project, imports, line, column)
-            }
-            CInput::PreparedCpp(import) => {
-                verify_cpp_prepared_project_at(&project, import, line, column)
-            }
-        };
-        result.map_err(|error| {
-            proof_error_report(
-                &error,
-                click_path,
-                false,
-                &project,
-                &inputs,
-                line_offset,
-                None,
-            )
-        })
-    })?;
+    let verified =
+        click::instrumentation::with_deadline(click::cli::tool_time_limit(time_limit), || {
+            let result = match &inputs {
+                CInput::Bundle(sources) => {
+                    verify_c0_project_at(&project, &source_refs(sources), line, column)
+                }
+                CInput::Prepared(imports) => {
+                    verify_c0_prepared_project_at(&project, imports, line, column)
+                }
+                CInput::PreparedCpp(import) => {
+                    verify_cpp_prepared_project_at(&project, import, line, column)
+                }
+            };
+            result.map_err(|error| {
+                proof_error_report(
+                    &error,
+                    click_path,
+                    false,
+                    &project,
+                    &inputs,
+                    line_offset,
+                    None,
+                )
+            })
+        })?;
     print_external_dependencies(&dependencies, &verified);
     println!("1 selected proof verified");
     Ok(())
@@ -1396,299 +1411,323 @@ mod tests {
 
     #[test]
     fn trace_target_uses_a_unique_line_or_an_explicit_column() {
-        let source = "by { step(); step(); }\nby {\n  step();\n}\n";
-        assert_eq!(
-            resolve_trace_target(
-                source,
-                8,
-                &TraceTo {
-                    line: 11,
-                    column: None
-                }
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(3, 3),
-        );
-        assert!(
-            resolve_trace_target(
-                source,
-                8,
-                &TraceTo {
-                    line: 9,
-                    column: None
-                }
-            )
-            .unwrap_err()
-            .contains("several tactics")
-        );
-        assert_eq!(
-            resolve_trace_target(
-                source,
-                8,
-                &TraceTo {
-                    line: 9,
-                    column: Some(6)
-                }
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(1, 6),
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            let source = "by { step(); step(); }\nby {\n  step();\n}\n";
+            assert_eq!(
+                resolve_trace_target(
+                    source,
+                    8,
+                    &TraceTo {
+                        line: 11,
+                        column: None
+                    }
+                )
+                .unwrap(),
+                click::surface::SourcePosition::new(3, 3),
+            );
+            assert!(
+                resolve_trace_target(
+                    source,
+                    8,
+                    &TraceTo {
+                        line: 9,
+                        column: None
+                    }
+                )
+                .unwrap_err()
+                .contains("several tactics")
+            );
+            assert_eq!(
+                resolve_trace_target(
+                    source,
+                    8,
+                    &TraceTo {
+                        line: 9,
+                        column: Some(6)
+                    }
+                )
+                .unwrap(),
+                click::surface::SourcePosition::new(1, 6),
+            );
 
-        // A proof `match` arm's block follows `=>`, which the source scanner
-        // reads as two punctuation tokens; its tactics are targets too.
-        let arm =
-            "by {\n    match m {\n        K::A => {\n            step();\n        },\n    }\n}\n";
-        assert_eq!(
-            resolve_trace_target(
-                arm,
-                0,
-                &TraceTo {
-                    line: 4,
-                    column: None
-                }
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(4, 13),
-        );
+            // A proof `match` arm's block follows `=>`, which the source scanner
+            // reads as two punctuation tokens; its tactics are targets too.
+            let arm = "by {\n    match m {\n        K::A => {\n            step();\n        },\n    }\n}\n";
+            assert_eq!(
+                resolve_trace_target(
+                    arm,
+                    0,
+                    &TraceTo {
+                        line: 4,
+                        column: None
+                    }
+                )
+                .unwrap(),
+                click::surface::SourcePosition::new(4, 13),
+            );
 
-        let nested = "by {\n    have n <= n by { simp(); }\n}\n";
-        assert_eq!(
-            resolve_trace_target(
-                nested,
-                8,
-                &TraceTo {
-                    line: 10,
-                    column: None,
-                },
-            )
-            .unwrap(),
-            click::surface::SourcePosition::new(2, 5),
-        );
+            let nested = "by {\n    have n <= n by { simp(); }\n}\n";
+            assert_eq!(
+                resolve_trace_target(
+                    nested,
+                    8,
+                    &TraceTo {
+                        line: 10,
+                        column: None,
+                    },
+                )
+                .unwrap(),
+                click::surface::SourcePosition::new(2, 5),
+            );
+        })
     }
 
     #[test]
     fn location_suffixes_win_over_paths_that_could_be_directories() {
-        assert!(looks_like_source_location("examples/tiny/tiny.click:12:5"));
-        assert!(!looks_like_source_location("examples/tiny"));
-        assert!(!looks_like_source_location("examples"));
+        click::cli::with_work_budget_verdicts(|| {
+            assert!(looks_like_source_location("examples/tiny/tiny.click:12:5"));
+            assert!(!looks_like_source_location("examples/tiny"));
+            assert!(!looks_like_source_location("examples"));
+        })
     }
 
     #[test]
     fn parses_allow_sorry_and_rejects_it_with_changed_since() {
-        assert_eq!(
-            parse_arguments(["--allow-sorry".to_string(), "example.click".to_string()]),
-            Ok(Arguments {
-                target: "example.click".to_string(),
-                time_limit: DEFAULT_VERIFY_TIME_LIMIT,
-                changed_since: None,
-                explain: false,
-                allow_sorry: true,
-                trace_proof: None,
-                trace_to: None,
-            })
-        );
-        assert_eq!(
-            entry_with([
-                "--allow-sorry".to_string(),
-                "--changed-since".to_string(),
-                "HEAD".to_string(),
-                "example.click".to_string(),
-            ]),
-            Err("`--allow-sorry` cannot be combined with `--changed-since`".to_string())
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            assert_eq!(
+                parse_arguments(["--allow-sorry".to_string(), "example.click".to_string()]),
+                Ok(Arguments {
+                    target: "example.click".to_string(),
+                    time_limit: DEFAULT_VERIFY_TIME_LIMIT,
+                    changed_since: None,
+                    explain: false,
+                    allow_sorry: true,
+                    trace_proof: None,
+                    trace_to: None,
+                })
+            );
+            assert_eq!(
+                entry_with([
+                    "--allow-sorry".to_string(),
+                    "--changed-since".to_string(),
+                    "HEAD".to_string(),
+                    "example.click".to_string(),
+                ]),
+                Err("`--allow-sorry` cannot be combined with `--changed-since`".to_string())
+            );
+        })
     }
 
     #[test]
     fn parses_default_and_overridden_time_limits() {
-        assert_eq!(
-            parse_arguments(["example.click".to_string()]),
-            Ok(Arguments {
-                target: "example.click".to_string(),
-                time_limit: DEFAULT_VERIFY_TIME_LIMIT,
-                changed_since: None,
-                explain: false,
-                allow_sorry: false,
-                trace_proof: None,
-                trace_to: None,
-            })
-        );
-        assert_eq!(
-            parse_arguments([
-                "--time-limit".to_string(),
-                "250ms".to_string(),
-                "example.click".to_string(),
-            ]),
-            Ok(Arguments {
-                target: "example.click".to_string(),
-                time_limit: Duration::from_millis(250),
-                changed_since: None,
-                explain: false,
-                allow_sorry: false,
-                trace_proof: None,
-                trace_to: None,
-            })
-        );
-        assert_eq!(
-            parse_arguments([
-                "--changed-since".to_string(),
-                "HEAD~1".to_string(),
-                "--explain".to_string(),
-                "examples".to_string(),
-            ]),
-            Ok(Arguments {
-                target: "examples".to_string(),
-                time_limit: DEFAULT_VERIFY_TIME_LIMIT,
-                changed_since: Some("HEAD~1".to_string()),
-                explain: true,
-                allow_sorry: false,
-                trace_proof: None,
-                trace_to: None,
-            })
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            assert_eq!(
+                parse_arguments(["example.click".to_string()]),
+                Ok(Arguments {
+                    target: "example.click".to_string(),
+                    time_limit: DEFAULT_VERIFY_TIME_LIMIT,
+                    changed_since: None,
+                    explain: false,
+                    allow_sorry: false,
+                    trace_proof: None,
+                    trace_to: None,
+                })
+            );
+            assert_eq!(
+                parse_arguments([
+                    "--time-limit".to_string(),
+                    "250ms".to_string(),
+                    "example.click".to_string(),
+                ]),
+                Ok(Arguments {
+                    target: "example.click".to_string(),
+                    time_limit: Duration::from_millis(250),
+                    changed_since: None,
+                    explain: false,
+                    allow_sorry: false,
+                    trace_proof: None,
+                    trace_to: None,
+                })
+            );
+            assert_eq!(
+                parse_arguments([
+                    "--changed-since".to_string(),
+                    "HEAD~1".to_string(),
+                    "--explain".to_string(),
+                    "examples".to_string(),
+                ]),
+                Ok(Arguments {
+                    target: "examples".to_string(),
+                    time_limit: DEFAULT_VERIFY_TIME_LIMIT,
+                    changed_since: Some("HEAD~1".to_string()),
+                    explain: true,
+                    allow_sorry: false,
+                    trace_proof: None,
+                    trace_to: None,
+                })
+            );
+        })
     }
 
     #[test]
     fn imported_projects_force_the_documented_selected_scope_rebuild() {
-        let project = ClickProject::new(
-            "entry.click",
-            [
-                click::surface::ClickModuleSource::new("library.click", "", []),
-                click::surface::ClickModuleSource::new(
-                    "entry.click",
-                    "import \"library.click\";",
-                    ["library.click".to_string()],
-                ),
-            ],
-        );
-        assert!(
-            imported_project_rebuild_reason(&project)
-                .unwrap()
-                .contains("selected entry scope")
-        );
-        assert!(
-            imported_project_rebuild_reason(&ClickProject::new(
+        click::cli::with_work_budget_verdicts(|| {
+            let project = ClickProject::new(
                 "entry.click",
-                [click::surface::ClickModuleSource::new(
+                [
+                    click::surface::ClickModuleSource::new("library.click", "", []),
+                    click::surface::ClickModuleSource::new(
+                        "entry.click",
+                        "import \"library.click\";",
+                        ["library.click".to_string()],
+                    ),
+                ],
+            );
+            assert!(
+                imported_project_rebuild_reason(&project)
+                    .unwrap()
+                    .contains("selected entry scope")
+            );
+            assert!(
+                imported_project_rebuild_reason(&ClickProject::new(
                     "entry.click",
-                    "",
-                    []
-                )]
-            ))
-            .is_none()
-        );
+                    [click::surface::ClickModuleSource::new(
+                        "entry.click",
+                        "",
+                        []
+                    )]
+                ))
+                .is_none()
+            );
+        })
     }
 
     #[test]
     fn marker_contents_include_environment_switches() {
-        let relative = Path::new("examples/tiny/tiny.click");
-        let plain = marker_contents("abc", relative, "fp", "", CTarget::SUPPORTED);
-        assert!(plain.contains("\ntarget=x86_64-linux-kernel\n"));
-        let switches = environment_switches_from([(
-            "CLICK_DISABLE_TACTIC_BUDGETS".to_string(),
-            "1".to_string(),
-        )]);
-        let budgets_off = marker_contents("abc", relative, "fp", &switches, CTarget::SUPPORTED);
-        assert_ne!(plain, budgets_off);
-        assert!(budgets_off.ends_with("env=CLICK_DISABLE_TACTIC_BUDGETS=1\n"));
+        click::cli::with_work_budget_verdicts(|| {
+            let relative = Path::new("examples/tiny/tiny.click");
+            let plain = marker_contents("abc", relative, "fp", "", CTarget::SUPPORTED);
+            assert!(plain.contains("\ntarget=x86_64-linux-kernel\n"));
+            let switches = environment_switches_from([(
+                "CLICK_DISABLE_TACTIC_BUDGETS".to_string(),
+                "1".to_string(),
+            )]);
+            let budgets_off = marker_contents("abc", relative, "fp", &switches, CTarget::SUPPORTED);
+            assert_ne!(plain, budgets_off);
+            assert!(budgets_off.ends_with("env=CLICK_DISABLE_TACTIC_BUDGETS=1\n"));
+        })
     }
 
     #[test]
     fn environment_switches_are_sorted_and_limited_to_click_variables() {
-        let switches = environment_switches_from([
-            ("PATH".to_string(), "x".to_string()),
-            ("CLICK_TIMINGS".to_string(), "1".to_string()),
-            ("CLICK_DISABLE_TACTIC_BUDGETS".to_string(), "1".to_string()),
-        ]);
-        assert_eq!(
-            switches,
-            "env=CLICK_DISABLE_TACTIC_BUDGETS=1\nenv=CLICK_TIMINGS=1\n"
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            let switches = environment_switches_from([
+                ("PATH".to_string(), "x".to_string()),
+                ("CLICK_TIMINGS".to_string(), "1".to_string()),
+                ("CLICK_DISABLE_TACTIC_BUDGETS".to_string(), "1".to_string()),
+            ]);
+            assert_eq!(
+                switches,
+                "env=CLICK_DISABLE_TACTIC_BUDGETS=1\nenv=CLICK_TIMINGS=1\n"
+            );
+        })
     }
 
     #[test]
     fn a_baseline_is_attested_only_when_its_sources_match_the_current_ones() {
-        let current: LoadedSidecar = (
-            "verifying \"a.c\";".to_string(),
-            vec![("a.c".to_string(), "int32 f() { return 0; }".to_string())],
-        );
-        assert!(baseline_matches_verified(&current, &current.0, &current.1));
-        let edited: LoadedSidecar = (
-            current.0.clone(),
-            vec![("a.c".to_string(), "int32 f() { return 1; }".to_string())],
-        );
-        assert!(!baseline_matches_verified(&edited, &current.0, &current.1));
+        click::cli::with_work_budget_verdicts(|| {
+            let current: LoadedSidecar = (
+                "verifying \"a.c\";".to_string(),
+                vec![("a.c".to_string(), "int32 f() { return 0; }".to_string())],
+            );
+            assert!(baseline_matches_verified(&current, &current.0, &current.1));
+            let edited: LoadedSidecar = (
+                current.0.clone(),
+                vec![("a.c".to_string(), "int32 f() { return 1; }".to_string())],
+            );
+            assert!(!baseline_matches_verified(&edited, &current.0, &current.1));
+        })
     }
 
     #[test]
     fn baseline_sources_include_transitive_local_headers() {
-        let files = BTreeMap::from([
-            (
-                PathBuf::from("project/m.c"),
-                "#include \"cap.h\"\nint32 m() { return 0; }".to_string(),
-            ),
-            (
-                PathBuf::from("project/cap.h"),
-                "#include \"limits.h\"\ntypedef int32 cap_t;".to_string(),
-            ),
-            (
-                PathBuf::from("project/limits.h"),
-                "#define CAP_LIMIT 4".to_string(),
-            ),
-        ]);
-        let loaded = load_baseline_sources(Path::new("project"), "verifying \"m.c\";", |path| {
-            Ok(files.get(path).cloned())
+        click::cli::with_work_budget_verdicts(|| {
+            let files = BTreeMap::from([
+                (
+                    PathBuf::from("project/m.c"),
+                    "#include \"cap.h\"\nint32 m() { return 0; }".to_string(),
+                ),
+                (
+                    PathBuf::from("project/cap.h"),
+                    "#include \"limits.h\"\ntypedef int32 cap_t;".to_string(),
+                ),
+                (
+                    PathBuf::from("project/limits.h"),
+                    "#define CAP_LIMIT 4".to_string(),
+                ),
+            ]);
+            let loaded =
+                load_baseline_sources(Path::new("project"), "verifying \"m.c\";", |path| {
+                    Ok(files.get(path).cloned())
+                })
+                .expect("baseline sources should load")
+                .expect("all baseline sources should be present");
+            assert_eq!(
+                loaded,
+                vec![
+                    (
+                        "m.c".to_string(),
+                        "#include \"cap.h\"\nint32 m() { return 0; }".to_string()
+                    ),
+                    (
+                        "cap.h".to_string(),
+                        "#include \"limits.h\"\ntypedef int32 cap_t;".to_string()
+                    ),
+                    ("limits.h".to_string(), "#define CAP_LIMIT 4".to_string()),
+                ]
+            );
         })
-        .expect("baseline sources should load")
-        .expect("all baseline sources should be present");
-        assert_eq!(
-            loaded,
-            vec![
-                (
-                    "m.c".to_string(),
-                    "#include \"cap.h\"\nint32 m() { return 0; }".to_string()
-                ),
-                (
-                    "cap.h".to_string(),
-                    "#include \"limits.h\"\ntypedef int32 cap_t;".to_string()
-                ),
-                ("limits.h".to_string(), "#define CAP_LIMIT 4".to_string()),
-            ]
-        );
     }
 
     #[test]
     fn discovered_sidecars_display_under_the_named_directory() {
-        let root = fs::canonicalize("examples").expect("the examples directory should exist");
-        let sidecar = root.join("input-cursor").join("input_cursor.click");
-        assert_eq!(
-            display_path(&sidecar, Path::new("examples")),
-            "examples/input-cursor/input_cursor.click"
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            let root = fs::canonicalize("examples").expect("the examples directory should exist");
+            let sidecar = root.join("input-cursor").join("input_cursor.click");
+            assert_eq!(
+                display_path(&sidecar, Path::new("examples")),
+                "examples/input-cursor/input_cursor.click"
+            );
+        })
     }
 
     #[test]
     fn directory_mode_finds_every_sidecar_in_a_single_project() {
-        let selection = select_sidecars(Path::new("examples/input-cursor"))
-            .expect("the project should resolve");
-        assert_eq!(selection.projects.len(), 1);
-        assert!(!selection.projects[0].sidecars.is_empty());
-        assert_eq!(selection.project_root, Path::new("examples"));
+        click::cli::with_work_budget_verdicts(|| {
+            let selection = select_sidecars(Path::new("examples/input-cursor"))
+                .expect("the project should resolve");
+            assert_eq!(selection.projects.len(), 1);
+            assert!(!selection.projects[0].sidecars.is_empty());
+            assert_eq!(selection.project_root, Path::new("examples"));
+        })
     }
 
     #[test]
     fn verify_accepts_realloc_as_a_builtin() {
-        let unique = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock should be after the Unix epoch")
-            .as_nanos();
-        let root = env::temp_dir().join(format!(
-            "click-verify-realloc-{}-{unique}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&root).expect("temporary verification directory should be creatable");
-        fs::write(
-            root.join("realloc.c"),
-            "int32 realloc_preserves_calloc_prefix() {\n\
+        click::cli::with_work_budget_verdicts(|| {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock should be after the Unix epoch")
+                .as_nanos();
+            let root = env::temp_dir().join(format!(
+                "click-verify-realloc-{}-{unique}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&root)
+                .expect("temporary verification directory should be creatable");
+            fs::write(
+                root.join("realloc.c"),
+                "int32 realloc_preserves_calloc_prefix() {\n\
                 int32* p = calloc(2, sizeof(int32));\n\
                 if (p == 0) { return -1; }\n\
                 int32* q = realloc(p, 3 * sizeof(int32));\n\
@@ -1697,106 +1736,110 @@ mod tests {
                 free(q);\n\
                 return result;\n\
             }\n",
-        )
-        .expect("C source should be writable");
-        let click_path = root.join("realloc.click");
-        fs::write(
-            &click_path,
-            "verifying \"realloc.c\";\n\
+            )
+            .expect("C source should be writable");
+            let click_path = root.join("realloc.click");
+            fs::write(
+                &click_path,
+                "verifying \"realloc.c\";\n\
                 int32 realloc_preserves_calloc_prefix() {\n\
                     ensures result == 0 or result == -1 by auto;\n\
                 }\n",
-        )
-        .expect("Click sidecar should be writable");
+            )
+            .expect("Click sidecar should be writable");
 
-        let result = entry_with([click_path.display().to_string()]);
-        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
-        assert!(
-            result.is_ok(),
-            "click verify should accept realloc: {result:?}"
-        );
+            let result = entry_with([click_path.display().to_string()]);
+            fs::remove_dir_all(&root)
+                .expect("temporary verification directory should be removable");
+            assert!(
+                result.is_ok(),
+                "click verify should accept realloc: {result:?}"
+            );
+        })
     }
 
     #[test]
     fn corrupted_or_mismatched_incremental_markers_are_cache_misses() {
-        let path = Path::new("examples/sample.click");
-        let valid = marker_contents(
-            "abc123",
-            path,
-            "verifier-a",
-            &environment_switches(),
-            CTarget::SUPPORTED,
-        );
-        assert!(valid_marker(
-            &valid,
-            "abc123",
-            path,
-            "verifier-a",
-            CTarget::SUPPORTED
-        ));
-        let other_target = valid.replace("target=x86_64-linux-kernel", "target=another-target");
-        assert!(!valid_marker(
-            &other_target,
-            "abc123",
-            path,
-            "verifier-a",
-            CTarget::SUPPORTED
-        ));
-        // The same sources under another selected target are a cache miss.
-        assert!(!valid_marker(
-            &valid,
-            "abc123",
-            path,
-            "verifier-a",
-            CTarget::X86_64LinuxUserspace
-        ));
-        assert!(!valid_marker(
-            "truncated",
-            "abc123",
-            path,
-            "verifier-a",
-            CTarget::SUPPORTED
-        ));
-        assert!(!valid_marker(
-            &valid,
-            "different",
-            path,
-            "verifier-a",
-            CTarget::SUPPORTED
-        ));
-        assert!(!valid_marker(
-            &valid,
-            "abc123",
-            path,
-            "verifier-b",
-            CTarget::SUPPORTED
-        ));
-        assert!(!valid_marker(
-            &valid,
-            "abc123",
-            Path::new("examples/other.click"),
-            "verifier-a",
-            CTarget::SUPPORTED
-        ));
-        // A marker written under a verifier switch this process does not have
-        // set is a cache miss as well.
-        let other_switches = format!(
-            "{}env=CLICK_DISABLE_TACTIC_BUDGETS=1\n",
-            environment_switches()
-        );
-        let attested_elsewhere = marker_contents(
-            "abc123",
-            path,
-            "verifier-a",
-            &other_switches,
-            CTarget::SUPPORTED,
-        );
-        assert!(!valid_marker(
-            &attested_elsewhere,
-            "abc123",
-            path,
-            "verifier-a",
-            CTarget::SUPPORTED
-        ));
+        click::cli::with_work_budget_verdicts(|| {
+            let path = Path::new("examples/sample.click");
+            let valid = marker_contents(
+                "abc123",
+                path,
+                "verifier-a",
+                &environment_switches(),
+                CTarget::SUPPORTED,
+            );
+            assert!(valid_marker(
+                &valid,
+                "abc123",
+                path,
+                "verifier-a",
+                CTarget::SUPPORTED
+            ));
+            let other_target = valid.replace("target=x86_64-linux-kernel", "target=another-target");
+            assert!(!valid_marker(
+                &other_target,
+                "abc123",
+                path,
+                "verifier-a",
+                CTarget::SUPPORTED
+            ));
+            // The same sources under another selected target are a cache miss.
+            assert!(!valid_marker(
+                &valid,
+                "abc123",
+                path,
+                "verifier-a",
+                CTarget::X86_64LinuxUserspace
+            ));
+            assert!(!valid_marker(
+                "truncated",
+                "abc123",
+                path,
+                "verifier-a",
+                CTarget::SUPPORTED
+            ));
+            assert!(!valid_marker(
+                &valid,
+                "different",
+                path,
+                "verifier-a",
+                CTarget::SUPPORTED
+            ));
+            assert!(!valid_marker(
+                &valid,
+                "abc123",
+                path,
+                "verifier-b",
+                CTarget::SUPPORTED
+            ));
+            assert!(!valid_marker(
+                &valid,
+                "abc123",
+                Path::new("examples/other.click"),
+                "verifier-a",
+                CTarget::SUPPORTED
+            ));
+            // A marker written under a verifier switch this process does not have
+            // set is a cache miss as well.
+            let other_switches = format!(
+                "{}env=CLICK_DISABLE_TACTIC_BUDGETS=1\n",
+                environment_switches()
+            );
+            let attested_elsewhere = marker_contents(
+                "abc123",
+                path,
+                "verifier-a",
+                &other_switches,
+                CTarget::SUPPORTED,
+            );
+            assert!(!valid_marker(
+                &attested_elsewhere,
+                "abc123",
+                path,
+                "verifier-a",
+                CTarget::SUPPORTED
+            ));
+        })
     }
 }

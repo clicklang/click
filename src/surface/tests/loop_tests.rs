@@ -1601,7 +1601,9 @@ fn frontier_local_loop_preserves_a_perpetual_partial_contract() {
             }
         "#;
 
-    crate::instrumentation::with_deadline(std::time::Duration::from_secs(3), || {
+    // The work budgets decide the verdict; the deadline only contains a
+    // genuine hang in executing the perpetual loop.
+    crate::instrumentation::with_deadline(crate::cli::CRASH_CONTAINMENT_TIME_LIMIT, || {
         verify_c0_sources(click_source, &[("spin.c", c_source)])
     })
     .expect("a frontier-local loop without `decreases` should prove partial correctness");

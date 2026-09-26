@@ -56,19 +56,23 @@ mod tests {
 
     #[test]
     fn derives_fixed_import_config_name() {
-        assert_eq!(
-            import_config_path(Path::new("demo/sidecar.click")),
-            PathBuf::from("demo/sidecar.click.import.json")
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            assert_eq!(
+                import_config_path(Path::new("demo/sidecar.click")),
+                PathBuf::from("demo/sidecar.click.import.json")
+            );
+        })
     }
 
     #[test]
     fn requires_lock_command_and_sidecar() {
-        assert!(parse_arguments(Vec::<String>::new()).is_err());
-        assert!(parse_arguments(["refresh".into(), "demo.click".into()]).is_err());
-        assert_eq!(
-            parse_arguments(["lock".into(), "demo.click".into()]).unwrap(),
-            PathBuf::from("demo.click.import.json")
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            assert!(parse_arguments(Vec::<String>::new()).is_err());
+            assert!(parse_arguments(["refresh".into(), "demo.click".into()]).is_err());
+            assert_eq!(
+                parse_arguments(["lock".into(), "demo.click".into()]).unwrap(),
+                PathBuf::from("demo.click.import.json")
+            );
+        })
     }
 }

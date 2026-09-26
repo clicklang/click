@@ -6,9 +6,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use click::cli::{
-    CInput, DEFAULT_EXPANSION_TIME_LIMIT, containing_directory, looks_like_mdtest, parse_duration,
-    parse_source_line_location, prepare_mdtest_inputs, read_c_inputs, read_click_project,
-    read_mdtest, source_refs,
+    self, CInput, DEFAULT_EXPANSION_TIME_LIMIT, containing_directory, looks_like_mdtest,
+    parse_duration, parse_source_line_location, prepare_mdtest_inputs, read_c_inputs,
+    read_click_project, read_mdtest, source_refs,
 };
 use click::surface::{
     ClickProject, SmartTacticCandidate, SmartTacticSelectionError,
@@ -69,7 +69,7 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
         return Ok(());
     }
     let arguments = parse_arguments(raw)?;
-    click::instrumentation::with_deadline(arguments.time_limit, || {
+    click::instrumentation::with_deadline(cli::tool_time_limit(arguments.time_limit), || {
         let artifact = run_bounded(&arguments)?;
         check_expansion_deadline("writing the verified expansion")?;
         if arguments.in_place {
@@ -151,7 +151,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
 
 #[cfg(test)]
 fn run(arguments: &Arguments) -> Result<String, String> {
-    click::instrumentation::with_deadline(arguments.time_limit, || {
+    click::instrumentation::with_deadline(cli::tool_time_limit(arguments.time_limit), || {
         run_bounded(arguments).map(|artifact| artifact.source)
     })
 }
@@ -548,7 +548,7 @@ fn generate_expansion<R>(
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<R, String> {
     let (result, events) = click::instrumentation::collect(|| {
-        click::instrumentation::with_tactic_limits(
+        cli::with_tool_tactic_limits(
             click::instrumentation::TacticLimits {
                 smart: time_limit,
                 ..click::instrumentation::TacticLimits::default()
@@ -642,7 +642,7 @@ fn verify_expansion(
     smart_limit: Duration,
 ) -> Result<(), String> {
     let (result, events) = click::instrumentation::collect(|| {
-        click::instrumentation::with_tactic_limits(
+        cli::with_tool_tactic_limits(
             click::instrumentation::TacticLimits {
                 smart: smart_limit,
                 ..click::instrumentation::TacticLimits::default()
@@ -784,73 +784,82 @@ mod tests {
 
     #[test]
     fn cpp_mdtest_expansion_rechecks_the_imported_source() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
-        let arguments = parse_arguments(
-            ["--claim", "caller.ensures_0", path.to_str().unwrap()].map(str::to_string),
-        )
-        .unwrap();
-        let expanded = run(&arguments).expect("expand and reverify C++ mdtest");
-        assert!(expanded.contains("outcomes {"));
-        let parsed = click::cli::parse_mdtest(&path, &expanded).unwrap();
-        assert_eq!(parsed.cpp_source.unwrap().filename, "caller.cpp");
+        click::cli::with_work_budget_verdicts(|| {
+            let path =
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
+            let arguments = parse_arguments(
+                ["--claim", "caller.ensures_0", path.to_str().unwrap()].map(str::to_string),
+            )
+            .unwrap();
+            let expanded = run(&arguments).expect("expand and reverify C++ mdtest");
+            assert!(expanded.contains("outcomes {"));
+            let parsed = click::cli::parse_mdtest(&path, &expanded).unwrap();
+            assert_eq!(parsed.cpp_source.unwrap().filename, "caller.cpp");
+        })
     }
 
     #[test]
     fn c_mdtest_expansion_sees_an_imported_local_module() {
-        // `unmarked` is declared only in the imported `unmarked_count_lemmas.click`.
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md");
-        let arguments = parse_arguments(
-            ["--claim", "sweep.contract", path.to_str().unwrap()].map(str::to_string),
-        )
-        .unwrap();
-        let expanded = run(&arguments).expect("expand and reverify an importing C mdtest");
-        assert!(expanded.contains("transport("), "{expanded}");
+        click::cli::with_work_budget_verdicts(|| {
+            // `unmarked` is declared only in the imported `unmarked_count_lemmas.click`.
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("mdtests/sweep_prefix_survives_its_endpoint_store_by_simp.md");
+            let arguments = parse_arguments(
+                ["--claim", "sweep.contract", path.to_str().unwrap()].map(str::to_string),
+            )
+            .unwrap();
+            let expanded = run(&arguments).expect("expand and reverify an importing C mdtest");
+            assert!(expanded.contains("transport("), "{expanded}");
+        })
     }
 
     #[test]
     fn resource_pattern_exit_simp_expansion_checks() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/resource_pattern_counts_cross_contracts.md");
-        let mdtest = read_mdtest(&path).expect("fixture should parse");
-        let click_source = mdtest
-            .click_source
-            .as_deref()
-            .expect("fixture should have Click");
-        let (line_index, line) = click_source
-            .lines()
-            .enumerate()
-            .find(|(_, line)| *line == "    simp();")
-            .expect("fixture should contain an exit simp");
-        let click_line = line_index + 1;
-        let column = line.find("simp()").unwrap() + 1;
-        let sources = source_refs(&mdtest.c_sources);
-        let expanded = expand_c0_tactic_source_at(click_source, &sources, click_line, column)
-            .expect("exit simp should generate a certificate");
-        click::surface::verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
-            panic!(
-                "resource-pattern exit simp expansion should check: {}\n{expanded}",
-                error.message()
-            )
-        });
+        click::cli::with_work_budget_verdicts(|| {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("mdtests/resource_pattern_counts_cross_contracts.md");
+            let mdtest = read_mdtest(&path).expect("fixture should parse");
+            let click_source = mdtest
+                .click_source
+                .as_deref()
+                .expect("fixture should have Click");
+            let (line_index, line) = click_source
+                .lines()
+                .enumerate()
+                .find(|(_, line)| *line == "    simp();")
+                .expect("fixture should contain an exit simp");
+            let click_line = line_index + 1;
+            let column = line.find("simp()").unwrap() + 1;
+            let sources = source_refs(&mdtest.c_sources);
+            let expanded = expand_c0_tactic_source_at(click_source, &sources, click_line, column)
+                .expect("exit simp should generate a certificate");
+            click::surface::verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
+                panic!(
+                    "resource-pattern exit simp expansion should check: {}\n{expanded}",
+                    error.message()
+                )
+            });
+        })
     }
 
     #[test]
     fn parses_time_limit_before_or_after_positionals() {
-        let before =
-            parse_arguments(["--time-limit", "30s", "example.click:12:5"].map(str::to_string))
-                .expect("leading time limit should parse");
-        let after =
-            parse_arguments(["example.click:12:5", "--time-limit", "30s"].map(str::to_string))
-                .expect("trailing time limit should parse");
+        click::cli::with_work_budget_verdicts(|| {
+            let before =
+                parse_arguments(["--time-limit", "30s", "example.click:12:5"].map(str::to_string))
+                    .expect("leading time limit should parse");
+            let after =
+                parse_arguments(["example.click:12:5", "--time-limit", "30s"].map(str::to_string))
+                    .expect("trailing time limit should parse");
 
-        assert_eq!(before, after);
-        assert_eq!(before.time_limit, Duration::from_secs(30));
-        assert_eq!(before.output, None);
-        assert!(!before.in_place);
-        let default = parse_arguments(["example.click:12:5".to_string()])
-            .expect("the default expansion should be bounded");
-        assert_eq!(default.time_limit, DEFAULT_EXPANSION_TIME_LIMIT);
+            assert_eq!(before, after);
+            assert_eq!(before.time_limit, Duration::from_secs(30));
+            assert_eq!(before.output, None);
+            assert!(!before.in_place);
+            let default = parse_arguments(["example.click:12:5".to_string()])
+                .expect("the default expansion should be bounded");
+            assert_eq!(default.time_limit, DEFAULT_EXPANSION_TIME_LIMIT);
+        })
     }
 
     #[test]
@@ -920,80 +929,93 @@ int32 identity(int32 x) {
 
     #[test]
     fn translates_md_lines_into_the_click_block_and_rejects_outsiders() {
-        let markdown = "# title\n\n```click\nproof p {\n  step;\n}\n```\n\ndone\n";
-        let mdtest = click::cli::parse_mdtest(std::path::Path::new("t.md"), markdown)
-            .expect("mdtest should parse");
-        // Block body is md lines 4..6.
-        assert_eq!(mdtest.click_line(4), Ok(1));
-        assert_eq!(mdtest.click_line(5), Ok(2));
-        assert_eq!(mdtest.click_line(6), Ok(3));
-        assert!(mdtest.click_line(3).is_err());
-        assert!(mdtest.click_line(7).is_err());
+        click::cli::with_work_budget_verdicts(|| {
+            let markdown = "# title\n\n```click\nproof p {\n  step;\n}\n```\n\ndone\n";
+            let mdtest = click::cli::parse_mdtest(std::path::Path::new("t.md"), markdown)
+                .expect("mdtest should parse");
+            // Block body is md lines 4..6.
+            assert_eq!(mdtest.click_line(4), Ok(1));
+            assert_eq!(mdtest.click_line(5), Ok(2));
+            assert_eq!(mdtest.click_line(6), Ok(3));
+            assert!(mdtest.click_line(3).is_err());
+            assert!(mdtest.click_line(7).is_err());
+        })
     }
 
     #[test]
     fn splices_the_expanded_block_back_into_the_markdown() {
-        let markdown = "# title\n\n```click\nproof p {\n  step;\n}\n```\n\ndone\n";
-        let mdtest = click::cli::parse_mdtest(std::path::Path::new("t.md"), markdown)
-            .expect("mdtest should parse");
-        let expanded = "proof p {\n  step one;\n  step two;\n}\n";
-        assert_eq!(
-            mdtest.replace_click_source(markdown, expanded).unwrap(),
-            "# title\n\n```click\nproof p {\n  step one;\n  step two;\n}\n```\n\ndone\n"
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            let markdown = "# title\n\n```click\nproof p {\n  step;\n}\n```\n\ndone\n";
+            let mdtest = click::cli::parse_mdtest(std::path::Path::new("t.md"), markdown)
+                .expect("mdtest should parse");
+            let expanded = "proof p {\n  step one;\n  step two;\n}\n";
+            assert_eq!(
+                mdtest.replace_click_source(markdown, expanded).unwrap(),
+                "# title\n\n```click\nproof p {\n  step one;\n  step two;\n}\n```\n\ndone\n"
+            );
+        })
     }
 
     #[test]
     fn parses_source_location_with_colons_in_path() {
-        let arguments = parse_arguments(
-            ["volume:name/example.click:12:7", "--time-limit", "30s"].map(str::to_string),
-        )
-        .expect("source location should parse");
+        click::cli::with_work_budget_verdicts(|| {
+            let arguments = parse_arguments(
+                ["volume:name/example.click:12:7", "--time-limit", "30s"].map(str::to_string),
+            )
+            .expect("source location should parse");
 
-        assert_eq!(
-            arguments.click_path,
-            PathBuf::from("volume:name/example.click")
-        );
-        assert_eq!(
-            arguments.selection,
-            Selection::Tactic {
-                line: 12,
-                column: Some(7)
-            }
-        );
-        assert_eq!(arguments.time_limit, Duration::from_secs(30));
+            assert_eq!(
+                arguments.click_path,
+                PathBuf::from("volume:name/example.click")
+            );
+            assert_eq!(
+                arguments.selection,
+                Selection::Tactic {
+                    line: 12,
+                    column: Some(7)
+                }
+            );
+            assert_eq!(arguments.time_limit, Duration::from_secs(30));
+        })
     }
 
     #[test]
     fn parses_claim_selection_with_a_plain_path() {
-        let arguments =
-            parse_arguments(["--claim", "identity.contract", "example.click"].map(str::to_string))
-                .expect("claim selection should parse");
+        click::cli::with_work_budget_verdicts(|| {
+            let arguments = parse_arguments(
+                ["--claim", "identity.contract", "example.click"].map(str::to_string),
+            )
+            .expect("claim selection should parse");
 
-        assert_eq!(arguments.click_path, PathBuf::from("example.click"));
-        assert_eq!(
-            arguments.selection,
-            Selection::Claim("identity.contract".to_string())
-        );
+            assert_eq!(arguments.click_path, PathBuf::from("example.click"));
+            assert_eq!(
+                arguments.selection,
+                Selection::Claim("identity.contract".to_string())
+            );
+        })
     }
 
     #[test]
     fn end_of_options_accepts_a_dash_prefixed_location() {
-        let arguments = parse_arguments(["--", "-example.click:2:3"].map(str::to_string)).unwrap();
-        assert_eq!(arguments.click_path, PathBuf::from("-example.click"));
+        click::cli::with_work_budget_verdicts(|| {
+            let arguments =
+                parse_arguments(["--", "-example.click:2:3"].map(str::to_string)).unwrap();
+            assert_eq!(arguments.click_path, PathBuf::from("-example.click"));
+        })
     }
 
     #[test]
     fn run_expands_selected_unit_despite_unrelated_broken_proof() {
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let directory = env::temp_dir().join(format!(
-            "click-expand-isolation-{}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir(&directory).unwrap();
-        let good_c = "int32 good(int32 x) { return x; }";
-        let bad_c = "int32 bad(int32 x) { return x; }";
-        let click_source = r#"verifying "good.c";
+        click::cli::with_work_budget_verdicts(|| {
+            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let directory = env::temp_dir().join(format!(
+                "click-expand-isolation-{}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir(&directory).unwrap();
+            let good_c = "int32 good(int32 x) { return x; }";
+            let bad_c = "int32 bad(int32 x) { return x; }";
+            let click_source = r#"verifying "good.c";
 verifying "bad.c";
 int32 good(int32 x) {
     ensures result == x by { execute(); simp(); }
@@ -1002,32 +1024,34 @@ int32 bad(int32 x) {
     ensures result == x + 1 by simp;
 }
 "#;
-        let click_path = directory.join("project.click");
-        fs::write(directory.join("good.c"), good_c).unwrap();
-        fs::write(directory.join("bad.c"), bad_c).unwrap();
-        fs::write(&click_path, click_source).unwrap();
-        let sources = [("good.c", good_c), ("bad.c", bad_c)];
-        let position = c0_tactic_source_position(click_source, &sources, "good.ensures_0", 0)
-            .expect("selected tactic should have a source position");
-        let arguments = Arguments {
-            click_path,
-            selection: Selection::Tactic {
-                line: position.line,
-                column: Some(position.column),
-            },
-            time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
-            output: None,
-            in_place: false,
-        };
+            let click_path = directory.join("project.click");
+            fs::write(directory.join("good.c"), good_c).unwrap();
+            fs::write(directory.join("bad.c"), bad_c).unwrap();
+            fs::write(&click_path, click_source).unwrap();
+            let sources = [("good.c", good_c), ("bad.c", bad_c)];
+            let position = c0_tactic_source_position(click_source, &sources, "good.ensures_0", 0)
+                .expect("selected tactic should have a source position");
+            let arguments = Arguments {
+                click_path,
+                selection: Selection::Tactic {
+                    line: position.line,
+                    column: Some(position.column),
+                },
+                time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
+                output: None,
+                in_place: false,
+            };
 
-        let expanded = run(&arguments)
-            .expect("the command should ignore an unrelated broken proof during expansion");
+            let expanded = run(&arguments)
+                .expect("the command should ignore an unrelated broken proof during expansion");
 
-        assert_ne!(expanded, click_source);
-        assert!(
-            expanded.ends_with("int32 bad(int32 x) {\n    ensures result == x + 1 by simp;\n}\n")
-        );
-        fs::remove_dir_all(directory).unwrap();
+            assert_ne!(expanded, click_source);
+            assert!(
+                expanded
+                    .ends_with("int32 bad(int32 x) {\n    ensures result == x + 1 by simp;\n}\n")
+            );
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 
     /// A smart `have` nested in a proof `branch` arm is one site, selected by
@@ -1035,42 +1059,44 @@ int32 bad(int32 x) {
     /// the same checked expansion.
     #[test]
     fn a_smart_tactic_inside_a_nested_have_body_selects_the_have() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/guarded_postcondition_closes_after_call.md");
-        let markdown = fs::read_to_string(&path).unwrap();
-        let have_line = markdown
-            .lines()
-            .position(|line| line == "            have st.live == 1 by {")
-            .expect("fixture should contain the nested smart have")
-            + 1;
-        let simp = markdown.lines().nth(have_line).unwrap();
-        assert_eq!(simp.trim(), "simp() using {", "{simp}");
-        let run_at = |line: usize, column: usize| {
-            run(&Arguments {
-                click_path: path.clone(),
-                selection: Selection::Tactic {
-                    line,
-                    column: Some(column),
-                },
-                time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
-                output: None,
-                in_place: false,
-            })
-        };
+        click::cli::with_work_budget_verdicts(|| {
+            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("mdtests/guarded_postcondition_closes_after_call.md");
+            let markdown = fs::read_to_string(&path).unwrap();
+            let have_line = markdown
+                .lines()
+                .position(|line| line == "            have st.live == 1 by {")
+                .expect("fixture should contain the nested smart have")
+                + 1;
+            let simp = markdown.lines().nth(have_line).unwrap();
+            assert_eq!(simp.trim(), "simp() using {", "{simp}");
+            let run_at = |line: usize, column: usize| {
+                run(&Arguments {
+                    click_path: path.clone(),
+                    selection: Selection::Tactic {
+                        line,
+                        column: Some(column),
+                    },
+                    time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
+                    output: None,
+                    in_place: false,
+                })
+            };
 
-        let from_simp = run_at(have_line + 1, simp.find("simp").unwrap() + 1)
-            .expect("the nested simp should select its smart have");
-        let from_have = run_at(have_line, 13).expect("the have keyword should select it");
+            let from_simp = run_at(have_line + 1, simp.find("simp").unwrap() + 1)
+                .expect("the nested simp should select its smart have");
+            let from_have = run_at(have_line, 13).expect("the have keyword should select it");
 
-        assert_eq!(from_simp, from_have);
-        assert!(
-            from_simp.contains("extract(st.live == (at(m, st.live) + got));"),
-            "{from_simp}"
-        );
-        assert!(
-            !from_simp.contains("simp() using {\n                    defined(1 + got)"),
-            "{from_simp}"
-        );
+            assert_eq!(from_simp, from_have);
+            assert!(
+                from_simp.contains("extract(st.live == (at(m, st.live) + got));"),
+                "{from_simp}"
+            );
+            assert!(
+                !from_simp.contains("simp() using {\n                    defined(1 + got)"),
+                "{from_simp}"
+            );
+        })
     }
 
     fn mdtest_path(name: &str) -> PathBuf {
@@ -1097,21 +1123,23 @@ int32 bad(int32 x) {
 
     #[test]
     fn parses_a_location_without_a_column() {
-        let arguments = parse_arguments(["volume:name/example.click:12".to_string()])
-            .expect("a line-only location should parse");
-        assert_eq!(
-            arguments.click_path,
-            PathBuf::from("volume:name/example.click")
-        );
-        assert_eq!(
-            arguments.selection,
-            Selection::Tactic {
-                line: 12,
-                column: None
-            }
-        );
-        assert!(parse_arguments(["example.click".to_string()]).is_err());
-        assert!(parse_arguments(["example.click:0".to_string()]).is_err());
+        click::cli::with_work_budget_verdicts(|| {
+            let arguments = parse_arguments(["volume:name/example.click:12".to_string()])
+                .expect("a line-only location should parse");
+            assert_eq!(
+                arguments.click_path,
+                PathBuf::from("volume:name/example.click")
+            );
+            assert_eq!(
+                arguments.selection,
+                Selection::Tactic {
+                    line: 12,
+                    column: None
+                }
+            );
+            assert!(parse_arguments(["example.click".to_string()]).is_err());
+            assert!(parse_arguments(["example.click:0".to_string()]).is_err());
+        })
     }
 
     /// Inside a proof `branch` arm: the line of the `simp` in a smart
@@ -1119,33 +1147,35 @@ int32 bad(int32 x) {
     /// inside it do; a line that starts no smart tactic selects nothing.
     #[test]
     fn a_line_inside_a_branch_arm_selects_its_one_smart_tactic() {
-        let path = mdtest_path("guarded_postcondition_closes_after_call.md");
-        let markdown = fs::read_to_string(&path).unwrap();
-        let have_line = markdown
-            .lines()
-            .position(|line| line == "            have st.live == 1 by {")
-            .unwrap()
-            + 1;
-        let from_have = run_location(&path, &format!("{have_line}:13")).unwrap();
-        assert_eq!(
-            run_location(&path, &format!("{}", have_line + 1)).unwrap(),
-            from_have
-        );
-        let premise_line = have_line + 2;
-        assert!(markdown_line(&path, premise_line).contains("defined(1 + got)"));
-        assert_eq!(
-            run_location(&path, &format!("{premise_line}:24")).unwrap(),
-            from_have
-        );
-        let error = run_location(&path, &format!("{premise_line}"))
-            .expect_err("a premise line starts no smart tactic");
-        assert!(
-            error.contains(&format!(
-                "{}:{premise_line}: no smart tactic starts on this line",
-                path.display()
-            )),
-            "{error}"
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            let path = mdtest_path("guarded_postcondition_closes_after_call.md");
+            let markdown = fs::read_to_string(&path).unwrap();
+            let have_line = markdown
+                .lines()
+                .position(|line| line == "            have st.live == 1 by {")
+                .unwrap()
+                + 1;
+            let from_have = run_location(&path, &format!("{have_line}:13")).unwrap();
+            assert_eq!(
+                run_location(&path, &format!("{}", have_line + 1)).unwrap(),
+                from_have
+            );
+            let premise_line = have_line + 2;
+            assert!(markdown_line(&path, premise_line).contains("defined(1 + got)"));
+            assert_eq!(
+                run_location(&path, &format!("{premise_line}:24")).unwrap(),
+                from_have
+            );
+            let error = run_location(&path, &format!("{premise_line}"))
+                .expect_err("a premise line starts no smart tactic");
+            assert!(
+                error.contains(&format!(
+                    "{}:{premise_line}: no smart tactic starts on this line",
+                    path.display()
+                )),
+                "{error}"
+            );
+        })
     }
 
     /// A proof `if` arm and the continuation after a `have` are addressed by
@@ -1153,70 +1183,80 @@ int32 bad(int32 x) {
     /// refused with the reason instead of selecting a neighbor.
     #[test]
     fn lines_in_proof_if_arms_select_and_a_cases_arm_in_a_have_body_is_refused() {
-        let path = mdtest_path("proof_cases_after_c_branch_expands.md");
-        for line in [53, 65] {
-            assert_eq!(markdown_line(&path, line).trim(), "simp();");
-            let expanded = run_location(&path, &line.to_string())
-                .unwrap_or_else(|error| panic!("line {line}: {error}"));
-            let original = fs::read_to_string(&path).unwrap();
-            assert_ne!(expanded, original);
-            // Every other line of the proof is kept as written.
-            assert_eq!(
-                expanded.lines().take(line - 1).collect::<Vec<_>>(),
-                original.lines().take(line - 1).collect::<Vec<_>>()
-            );
-        }
-        for line in [57, 60] {
-            let error = run_location(&path, &line.to_string())
-                .expect_err("a smart tactic in a cases arm inside a have body is refused");
-            assert!(
-                error.contains("inside a proof `cases` written in a `have` body"),
-                "{error}"
-            );
-            assert!(error.contains("--claim use_pick.contract"), "{error}");
-        }
+        click::cli::with_work_budget_verdicts(|| {
+            let path = mdtest_path("proof_cases_after_c_branch_expands.md");
+            for line in [53, 65] {
+                assert_eq!(markdown_line(&path, line).trim(), "simp();");
+                let expanded = run_location(&path, &line.to_string())
+                    .unwrap_or_else(|error| panic!("line {line}: {error}"));
+                let original = fs::read_to_string(&path).unwrap();
+                assert_ne!(expanded, original);
+                // Every other line of the proof is kept as written.
+                assert_eq!(
+                    expanded.lines().take(line - 1).collect::<Vec<_>>(),
+                    original.lines().take(line - 1).collect::<Vec<_>>()
+                );
+            }
+            for line in [57, 60] {
+                let error = run_location(&path, &line.to_string())
+                    .expect_err("a smart tactic in a cases arm inside a have body is refused");
+                assert!(
+                    error.contains("inside a proof `cases` written in a `have` body"),
+                    "{error}"
+                );
+                assert!(error.contains("--claim use_pick.contract"), "{error}");
+            }
+        })
     }
 
     /// Loop phases: the smart `initialize by simp` and the smart
     /// `close_invariants()` of a frontier-local loop are selected by line.
     #[test]
     fn lines_in_loop_phases_select_their_smart_tactics() {
-        let path = mdtest_path("c_decreases_count_up.md");
-        for (line, text) in [(27, "initialize by simp;"), (30, "close_invariants();")] {
-            assert_eq!(markdown_line(&path, line).trim(), text);
-            let expanded = run_location(&path, &line.to_string())
-                .unwrap_or_else(|error| panic!("line {line}: {error}"));
-            assert!(!expanded.contains(text), "{expanded}");
-        }
+        click::cli::with_work_budget_verdicts(|| {
+            let path = mdtest_path("c_decreases_count_up.md");
+            for (line, text) in [(27, "initialize by simp;"), (30, "close_invariants();")] {
+                assert_eq!(markdown_line(&path, line).trim(), text);
+                let expanded = run_location(&path, &line.to_string())
+                    .unwrap_or_else(|error| panic!("line {line}: {error}"));
+                assert!(!expanded.contains(text), "{expanded}");
+            }
+        })
     }
 
     /// A close bundle is one smart site: a column on the `simp` written in
     /// one of its `both` arms selects the whole bundle.
     #[test]
     fn a_column_inside_a_close_bundle_selects_the_bundle() {
-        let path = mdtest_path("loop_invariant_body.md");
-        assert_eq!(markdown_line(&path, 35).trim(), "both { simp(); }");
-        let from_simp = run_location(&path, "35:24").unwrap();
-        let from_bundle = run_location(&path, "34:13").unwrap();
-        assert_eq!(from_simp, from_bundle);
-        assert!(!from_simp.contains("both { simp(); }"), "{from_simp}");
+        click::cli::with_work_budget_verdicts(|| {
+            let path = mdtest_path("loop_invariant_body.md");
+            assert_eq!(markdown_line(&path, 35).trim(), "both { simp(); }");
+            let from_simp = run_location(&path, "35:24").unwrap();
+            let from_bundle = run_location(&path, "34:13").unwrap();
+            assert_eq!(from_simp, from_bundle);
+            assert!(!from_simp.contains("both { simp(); }"), "{from_simp}");
+        })
     }
 
     /// Call outcomes: the `simp` closing the `returned` arm is selected by
     /// its line, and only that arm is rewritten.
     #[test]
     fn a_line_in_a_call_outcome_arm_selects_its_smart_tactic() {
-        let path = mdtest_path("cpp_single_guard_throw_step.md");
-        assert_eq!(markdown_line(&path, 81).trim(), "simp();");
-        let expanded = run_location(&path, "81").unwrap();
-        let tail = expanded
-            .split_once("        threw {\n")
-            .expect("the threw arm is kept")
-            .1;
-        assert!(
-            tail.starts_with("            step();\n            execute();\n            simp();\n"),
-            "{expanded}"
-        );
+        click::cli::with_work_budget_verdicts(|| {
+            let path = mdtest_path("cpp_single_guard_throw_step.md");
+            assert_eq!(markdown_line(&path, 81).trim(), "simp();");
+            let expanded = run_location(&path, "81").unwrap();
+            let tail = expanded
+                .split_once("        threw {\n")
+                .expect("the threw arm is kept")
+                .1;
+            assert!(
+                tail.starts_with(
+                    "            step();\n            execute();\n            simp();\n"
+                ),
+                "{expanded}"
+            );
+        })
     }
 
     /// Through the CLI on a sidecar: a smart tactic in a mixed `have` body
@@ -1224,19 +1264,20 @@ int32 bad(int32 x) {
     /// copy-pasteable locations, and a location between tactics is refused.
     #[test]
     fn line_selection_on_a_sidecar_lists_ambiguous_candidates() {
-        let directory = env::temp_dir().join(format!(
-            "click-expand-lines-{}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&directory).unwrap();
-        fs::write(
-            directory.join("identity.c"),
-            "int32 identity(int32 x) { return x; }",
-        )
-        .unwrap();
-        let click_path = directory.join("identity.click");
-        let click_source = "verifying \"identity.c\";\n\
+        click::cli::with_work_budget_verdicts(|| {
+            let directory = env::temp_dir().join(format!(
+                "click-expand-lines-{}-{}",
+                std::process::id(),
+                TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&directory).unwrap();
+            fs::write(
+                directory.join("identity.c"),
+                "int32 identity(int32 x) { return x; }",
+            )
+            .unwrap();
+            let click_path = directory.join("identity.click");
+            let click_source = "verifying \"identity.c\";\n\
             int32 identity(int32 x) {\n\
             \x20   ensures result == x;\n\
             } by {\n\
@@ -1248,47 +1289,50 @@ int32 bad(int32 x) {
             \x20   execute();\n\
             \x20   simp();\n\
             }\n";
-        fs::write(&click_path, click_source).unwrap();
+            fs::write(&click_path, click_source).unwrap();
 
-        let expanded = run_location(&click_path, "7").unwrap();
-        assert!(
-            expanded.contains("        have x == x by { simp(); }\n        normalize();\n    }\n"),
-            "{expanded}"
-        );
-        let ambiguous = run_location(&click_path, "9").expect_err("line 9 is ambiguous");
-        let path = click_path.display();
-        assert!(
+            let expanded = run_location(&click_path, "7").unwrap();
+            assert!(
+                expanded
+                    .contains("        have x == x by { simp(); }\n        normalize();\n    }\n"),
+                "{expanded}"
+            );
+            let ambiguous = run_location(&click_path, "9").expect_err("line 9 is ambiguous");
+            let path = click_path.display();
+            assert!(
             ambiguous.contains(&format!(
                 "{path}:9: 2 smart tactics start on this line; add the column of one of them:\n  {path}:9:22 `have` in `identity.contract`\n  {path}:9:43 `simp` in `identity.contract`"
             )),
             "{ambiguous}"
         );
-        let expanded = run_location(&click_path, "9:43").unwrap();
-        assert!(
-            expanded.contains("    have x >= x by { have x == x by simp; normalize(); }\n"),
-            "{expanded}"
-        );
-        let between =
-            run_location(&click_path, "8:5").expect_err("a closing brace selects nothing");
-        assert!(
-            between.contains(&format!(
-                "{path}:8:5: no smart tactic's source contains this location"
-            )),
-            "{between}"
-        );
-        fs::remove_dir_all(directory).unwrap();
+            let expanded = run_location(&click_path, "9:43").unwrap();
+            assert!(
+                expanded.contains("    have x >= x by { have x == x by simp; normalize(); }\n"),
+                "{expanded}"
+            );
+            let between =
+                run_location(&click_path, "8:5").expect_err("a closing brace selects nothing");
+            assert!(
+                between.contains(&format!(
+                    "{path}:8:5: no smart tactic's source contains this location"
+                )),
+                "{between}"
+            );
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 
     #[test]
     fn run_expands_an_entire_claim_by_label() {
-        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let directory = env::temp_dir().join(format!(
-            "click-expand-claim-{}-{sequence}",
-            std::process::id()
-        ));
-        fs::create_dir(&directory).unwrap();
-        let c_source = "int32 identity(int32 x) { return x; }";
-        let click_source = r#"verifying "identity.c";
+        click::cli::with_work_budget_verdicts(|| {
+            let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let directory = env::temp_dir().join(format!(
+                "click-expand-claim-{}-{sequence}",
+                std::process::id()
+            ));
+            fs::create_dir(&directory).unwrap();
+            let c_source = "int32 identity(int32 x) { return x; }";
+            let click_source = r#"verifying "identity.c";
 int32 identity(int32 x) {
     ensures result == x;
 } by {
@@ -1296,64 +1340,68 @@ int32 identity(int32 x) {
     simp();
 }
 "#;
-        let click_path = directory.join("project.click");
-        fs::write(directory.join("identity.c"), c_source).unwrap();
-        fs::write(&click_path, click_source).unwrap();
-        let arguments = Arguments {
-            click_path,
-            selection: Selection::Claim("identity.contract".to_string()),
-            time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
-            output: None,
-            in_place: false,
-        };
+            let click_path = directory.join("project.click");
+            fs::write(directory.join("identity.c"), c_source).unwrap();
+            fs::write(&click_path, click_source).unwrap();
+            let arguments = Arguments {
+                click_path,
+                selection: Selection::Claim("identity.contract".to_string()),
+                time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
+                output: None,
+                in_place: false,
+            };
 
-        let expanded = run(&arguments).expect("the whole claim should expand and check");
+            let expanded = run(&arguments).expect("the whole claim should expand and check");
 
-        assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("execute();"));
-        assert!(!expanded.contains("simp();"));
-        fs::remove_dir_all(directory).unwrap();
+            assert_ne!(expanded, click_source);
+            assert!(!expanded.contains("execute();"));
+            assert!(!expanded.contains("simp();"));
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 
     #[test]
     fn run_expands_a_pure_theorem_claim_by_label() {
-        let directory = env::temp_dir().join(format!(
-            "click-expand-pure-claim-{}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&directory).unwrap();
-        let click_path = directory.join("project.click");
-        let click_source = r#"theorem successor(x: int32) {
+        click::cli::with_work_budget_verdicts(|| {
+            let directory = env::temp_dir().join(format!(
+                "click-expand-pure-claim-{}-{}",
+                std::process::id(),
+                TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&directory).unwrap();
+            let click_path = directory.join("project.click");
+            let click_source = r#"theorem successor(x: int32) {
     ensures x == x by { simp(); }
 }
 "#;
-        fs::write(&click_path, click_source).unwrap();
-        let arguments = Arguments {
-            click_path,
-            selection: Selection::Claim("successor.ensures_0".to_string()),
-            time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
-            output: None,
-            in_place: false,
-        };
+            fs::write(&click_path, click_source).unwrap();
+            let arguments = Arguments {
+                click_path,
+                selection: Selection::Claim("successor.ensures_0".to_string()),
+                time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
+                output: None,
+                in_place: false,
+            };
 
-        let expanded = run(&arguments).expect("pure theorem claims should expand by label");
+            let expanded = run(&arguments).expect("pure theorem claims should expand by label");
 
-        assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("simp();"));
-        fs::remove_dir_all(directory).unwrap();
+            assert_ne!(expanded, click_source);
+            assert!(!expanded.contains("simp();"));
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 
     #[test]
     fn run_expands_and_rechecks_an_integer_theorem_application_by_label() {
-        let directory = env::temp_dir().join(format!(
-            "click-expand-integer-claim-{}-{}",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        fs::create_dir(&directory).unwrap();
-        let click_path = directory.join("project.click");
-        let click_source = r#"theorem add_one(x: Integer) {
+        click::cli::with_work_budget_verdicts(|| {
+            let directory = env::temp_dir().join(format!(
+                "click-expand-integer-claim-{}-{}",
+                std::process::id(),
+                TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&directory).unwrap();
+            let click_path = directory.join("project.click");
+            let click_source = r#"theorem add_one(x: Integer) {
     requires x == x;
     ensures x + 1 > x by { simp(); }
 }
@@ -1363,21 +1411,22 @@ theorem use_add_one(x: Integer) {
     ensures x + 1 > x by { apply(add_one(x)); }
 }
 "#;
-        fs::write(&click_path, click_source).unwrap();
-        let arguments = Arguments {
-            click_path,
-            selection: Selection::Claim("use_add_one.ensures_0".to_string()),
-            time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
-            output: None,
-            in_place: false,
-        };
+            fs::write(&click_path, click_source).unwrap();
+            let arguments = Arguments {
+                click_path,
+                selection: Selection::Claim("use_add_one.ensures_0".to_string()),
+                time_limit: DEFAULT_EXPANSION_TIME_LIMIT,
+                output: None,
+                in_place: false,
+            };
 
-        let expanded = run(&arguments)
-            .expect("Integer theorem applications should expand and independently recheck");
+            let expanded = run(&arguments)
+                .expect("Integer theorem applications should expand and independently recheck");
 
-        assert_ne!(expanded, click_source);
-        assert!(!expanded.contains("apply(add_one(x));"));
-        fs::remove_dir_all(directory).unwrap();
+            assert_ne!(expanded, click_source);
+            assert!(!expanded.contains("apply(add_one(x));"));
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 
     #[test]
@@ -1453,57 +1502,61 @@ int32 identity(int32 x) {
 
     #[test]
     fn output_in_another_directory_rebases_declared_sources_and_verifies_there() {
-        let (directory, click_path, _) =
-            setup_source_bundle(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        // An unrelated C file with the same name in the output directory must
-        // not silently become the selected input.
-        fs::write(
-            directory.join("out/identity.c"),
-            "int32 decoy() { return 7; }",
-        )
-        .unwrap();
-        let output = directory.join("out/identity.click");
+        click::cli::with_work_budget_verdicts(|| {
+            let (directory, click_path, _) =
+                setup_source_bundle(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
+            // An unrelated C file with the same name in the output directory must
+            // not silently become the selected input.
+            fs::write(
+                directory.join("out/identity.c"),
+                "int32 decoy() { return 7; }",
+            )
+            .unwrap();
+            let output = directory.join("out/identity.click");
 
-        entry_with([
-            "--claim".to_string(),
-            "identity.ensures_0".to_string(),
-            "--output".to_string(),
-            output.display().to_string(),
-            click_path.display().to_string(),
-        ])
-        .expect("expansion into another directory rebases and verifies the artifact");
+            entry_with([
+                "--claim".to_string(),
+                "identity.ensures_0".to_string(),
+                "--output".to_string(),
+                output.display().to_string(),
+                click_path.display().to_string(),
+            ])
+            .expect("expansion into another directory rebases and verifies the artifact");
 
-        let emitted = fs::read_to_string(&output).unwrap();
-        assert!(
-            emitted.starts_with("verifying \"../source/identity.c\";\n"),
-            "relocated declarations must select the original source: {emitted}"
-        );
-        assert_emitted_verifies(&output);
-        fs::remove_dir_all(directory).unwrap();
+            let emitted = fs::read_to_string(&output).unwrap();
+            assert!(
+                emitted.starts_with("verifying \"../source/identity.c\";\n"),
+                "relocated declarations must select the original source: {emitted}"
+            );
+            assert_emitted_verifies(&output);
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 
     #[test]
     fn output_in_the_same_directory_keeps_declared_sources_unrebased() {
-        let (directory, click_path, _) =
-            setup_source_bundle(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        let output = directory.join("source/expanded.click");
+        click::cli::with_work_budget_verdicts(|| {
+            let (directory, click_path, _) =
+                setup_source_bundle(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
+            let output = directory.join("source/expanded.click");
 
-        entry_with([
-            "--claim".to_string(),
-            "identity.ensures_0".to_string(),
-            "--output".to_string(),
-            output.display().to_string(),
-            click_path.display().to_string(),
-        ])
-        .expect("expansion within the source directory needs no rebasing");
+            entry_with([
+                "--claim".to_string(),
+                "identity.ensures_0".to_string(),
+                "--output".to_string(),
+                output.display().to_string(),
+                click_path.display().to_string(),
+            ])
+            .expect("expansion within the source directory needs no rebasing");
 
-        let emitted = fs::read_to_string(&output).unwrap();
-        assert!(
-            emitted.starts_with("verifying \"identity.c\";\n"),
-            "{emitted}"
-        );
-        assert_emitted_verifies(&output);
-        fs::remove_dir_all(directory).unwrap();
+            let emitted = fs::read_to_string(&output).unwrap();
+            assert!(
+                emitted.starts_with("verifying \"identity.c\";\n"),
+                "{emitted}"
+            );
+            assert_emitted_verifies(&output);
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 }
 
@@ -1568,55 +1621,59 @@ mod prepared_output_tests {
 
     #[test]
     fn a_relocated_prepared_import_sidecar_refuses_output_and_writes_nothing() {
-        let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        let output_directory = directory.join("out");
-        fs::create_dir(&output_directory).unwrap();
-        let output = output_directory.join("main.click");
+        click::cli::with_work_budget_verdicts(|| {
+            let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
+            let output_directory = directory.join("out");
+            fs::create_dir(&output_directory).unwrap();
+            let output = output_directory.join("main.click");
 
-        let error = entry_with([
-            "--claim".to_string(),
-            "from_header.ensures_0".to_string(),
-            "--output".to_string(),
-            output.display().to_string(),
-            directory.join("main.click").display().to_string(),
-        ])
-        .expect_err("a relocated prepared sidecar cannot preserve its context");
+            let error = entry_with([
+                "--claim".to_string(),
+                "from_header.ensures_0".to_string(),
+                "--output".to_string(),
+                output.display().to_string(),
+                directory.join("main.click").display().to_string(),
+            ])
+            .expect_err("a relocated prepared sidecar cannot preserve its context");
 
-        assert!(error.contains("prepared import"), "{error}");
-        assert!(
-            !output.exists(),
-            "a rejected relocation must not write the artifact"
-        );
-        assert!(
-            fs::read_dir(&output_directory).unwrap().count() == 0,
-            "a rejected relocation must not leave staged artifacts"
-        );
-        // A renamed sidecar beside its manifest loses manifest identity too.
-        let renamed = directory.join("renamed.click");
-        let rename_error = entry_with([
-            "--claim".to_string(),
-            "from_header.ensures_0".to_string(),
-            "--output".to_string(),
-            renamed.display().to_string(),
-            directory.join("main.click").display().to_string(),
-        ])
-        .expect_err("renaming a prepared sidecar cannot preserve its manifest identity");
-        assert!(rename_error.contains("prepared import"), "{rename_error}");
-        assert!(
-            !renamed.exists(),
-            "a rejected rename must not write the artifact"
-        );
-        fs::remove_dir_all(directory).unwrap();
+            assert!(error.contains("prepared import"), "{error}");
+            assert!(
+                !output.exists(),
+                "a rejected relocation must not write the artifact"
+            );
+            assert!(
+                fs::read_dir(&output_directory).unwrap().count() == 0,
+                "a rejected relocation must not leave staged artifacts"
+            );
+            // A renamed sidecar beside its manifest loses manifest identity too.
+            let renamed = directory.join("renamed.click");
+            let rename_error = entry_with([
+                "--claim".to_string(),
+                "from_header.ensures_0".to_string(),
+                "--output".to_string(),
+                renamed.display().to_string(),
+                directory.join("main.click").display().to_string(),
+            ])
+            .expect_err("renaming a prepared sidecar cannot preserve its manifest identity");
+            assert!(rename_error.contains("prepared import"), "{rename_error}");
+            assert!(
+                !renamed.exists(),
+                "a rejected rename must not write the artifact"
+            );
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
     /// Confirms the fixture drives the exact prepared-input path the reject
     /// protects: loading the manifest yields one prepared C import.
     #[test]
     fn the_prepared_fixture_selects_the_prepared_input_route() {
-        let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-        let click_path = directory.join("main.click");
-        let inputs = read_c_inputs(&click_path, &fs::read_to_string(&click_path).unwrap())
-            .expect("a locked manifest must select the prepared route");
-        assert!(inputs.is_prepared(), "the fixture must be prepared");
-        fs::remove_dir_all(directory).unwrap();
+        click::cli::with_work_budget_verdicts(|| {
+            let directory = setup_prepared(TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed));
+            let click_path = directory.join("main.click");
+            let inputs = read_c_inputs(&click_path, &fs::read_to_string(&click_path).unwrap())
+                .expect("a locked manifest must select the prepared route");
+            assert!(inputs.is_prepared(), "the fixture must be prepared");
+            fs::remove_dir_all(directory).unwrap();
+        })
     }
 }

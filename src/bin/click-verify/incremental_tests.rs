@@ -99,70 +99,76 @@ fn entered_verification(events: &[VerificationEvent]) -> bool {
 
 #[test]
 fn incremental_rejects_unattested_false_theorem_only_sidecars() {
-    let project = Project::new();
-    project.write("project.click", FALSE_THEOREM);
-    project.commit();
+    click::cli::with_work_budget_verdicts(|| {
+        let project = Project::new();
+        project.write("project.click", FALSE_THEOREM);
+        project.commit();
 
-    assert!(project.verify().unwrap_err().contains("normalize"));
-    let (explained, events) = collect(|| project.incremental("HEAD", true));
-    explained.unwrap();
-    assert!(
-        !entered_verification(&events),
-        "explanation must remain a dry run"
-    );
-    assert!(!project.attested("HEAD"));
-    assert!(
-        project
-            .incremental("HEAD", false)
-            .unwrap_err()
-            .contains("normalize")
-    );
-    assert!(!project.attested("HEAD"));
+        assert!(project.verify().unwrap_err().contains("normalize"));
+        let (explained, events) = collect(|| project.incremental("HEAD", true));
+        explained.unwrap();
+        assert!(
+            !entered_verification(&events),
+            "explanation must remain a dry run"
+        );
+        assert!(!project.attested("HEAD"));
+        assert!(
+            project
+                .incremental("HEAD", false)
+                .unwrap_err()
+                .contains("normalize")
+        );
+        assert!(!project.attested("HEAD"));
+    })
 }
 
 #[test]
 fn incremental_verifies_reuses_and_rechecks_theorem_only_sidecars() {
-    let project = Project::new();
-    project.write("project.click", TRUE_THEOREM);
-    project.commit();
+    click::cli::with_work_budget_verdicts(|| {
+        let project = Project::new();
+        project.write("project.click", TRUE_THEOREM);
+        project.commit();
 
-    let (rebuilt, events) = collect(|| project.incremental("HEAD", false));
-    rebuilt.unwrap();
-    assert!(
-        entered_verification(&events),
-        "an unattested theorem must be proved"
-    );
-    assert!(project.attested("HEAD"));
+        let (rebuilt, events) = collect(|| project.incremental("HEAD", false));
+        rebuilt.unwrap();
+        assert!(
+            entered_verification(&events),
+            "an unattested theorem must be proved"
+        );
+        assert!(project.attested("HEAD"));
 
-    let (reused, events) = collect(|| project.incremental("HEAD", false));
-    reused.unwrap();
-    assert!(
-        !entered_verification(&events),
-        "unchanged attested proofs are reused"
-    );
+        let (reused, events) = collect(|| project.incremental("HEAD", false));
+        reused.unwrap();
+        assert!(
+            !entered_verification(&events),
+            "unchanged attested proofs are reused"
+        );
 
-    project.write("project.click", FALSE_THEOREM);
-    assert!(
-        project
-            .incremental("HEAD", false)
-            .unwrap_err()
-            .contains("normalize")
-    );
+        project.write("project.click", FALSE_THEOREM);
+        assert!(
+            project
+                .incremental("HEAD", false)
+                .unwrap_err()
+                .contains("normalize")
+        );
+    })
 }
 
 #[test]
 fn incremental_full_rebuild_attests_matching_requested_theorem_baseline() {
-    let project = Project::new();
-    project.write("project.click", TRUE_THEOREM);
-    let baseline = project.commit();
-    project.git(&["commit", "--allow-empty", "-qm", "unrelated commit"]);
+    click::cli::with_work_budget_verdicts(|| {
+        let project = Project::new();
+        project.write("project.click", TRUE_THEOREM);
+        let baseline = project.commit();
+        project.git(&["commit", "--allow-empty", "-qm", "unrelated commit"]);
 
-    project.incremental(&baseline, false).unwrap();
-    assert!(project.attested(&baseline));
-    assert!(project.attested("HEAD"));
-    let (reused, events) = collect(|| project.incremental(&baseline, false));
-    reused.unwrap();
-    assert!(!entered_verification(&events));
+        project.incremental(&baseline, false).unwrap();
+        assert!(project.attested(&baseline));
+        assert!(project.attested("HEAD"));
+        let (reused, events) = collect(|| project.incremental(&baseline, false));
+        reused.unwrap();
+        assert!(!entered_verification(&events));
+    })
 }
 
 fn header_project(transitive: bool) -> Project {
@@ -210,66 +216,80 @@ fn check_dirty_header_attestation(transitive: bool, staged: bool) {
 
 #[test]
 fn uncommitted_direct_headers_cannot_attest_false_baselines() {
-    check_dirty_header_attestation(false, false);
+    click::cli::with_work_budget_verdicts(|| {
+        check_dirty_header_attestation(false, false);
+    })
 }
 
 #[test]
 fn staged_direct_headers_cannot_attest_false_baselines() {
-    check_dirty_header_attestation(false, true);
+    click::cli::with_work_budget_verdicts(|| {
+        check_dirty_header_attestation(false, true);
+    })
 }
 
 #[test]
 fn uncommitted_transitive_headers_cannot_attest_false_baselines() {
-    check_dirty_header_attestation(true, false);
+    click::cli::with_work_budget_verdicts(|| {
+        check_dirty_header_attestation(true, false);
+    })
 }
 
 #[test]
 fn staged_transitive_headers_cannot_attest_false_baselines() {
-    check_dirty_header_attestation(true, true);
+    click::cli::with_work_budget_verdicts(|| {
+        check_dirty_header_attestation(true, true);
+    })
 }
 
 #[test]
 fn untracked_headers_cannot_attest_incomplete_baselines() {
-    let project = header_project(false);
-    project.write("cap.h", "#define CAP 1\n");
-    project.git(&["add", "project.click", "probe.c"]);
-    project.git(&["commit", "-qm", "header absent from baseline"]);
-    project.verify().unwrap();
-    assert!(!project.attested("HEAD"));
+    click::cli::with_work_budget_verdicts(|| {
+        let project = header_project(false);
+        project.write("cap.h", "#define CAP 1\n");
+        project.git(&["add", "project.click", "probe.c"]);
+        project.git(&["commit", "-qm", "header absent from baseline"]);
+        project.verify().unwrap();
+        assert!(!project.attested("HEAD"));
+    })
 }
 
 #[test]
 fn attestation_uses_verified_header_snapshot_after_files_change() {
-    let project = header_project(true);
-    project.commit();
-    project.write("cap.h", "#define CAP 1\n");
-    let sidecar = project.sidecar();
-    let (click_source, _, inputs) = load_sidecar_inputs(&sidecar, sidecar.parent()).unwrap();
-    let CInput::Bundle(sources) = inputs else {
-        panic!("test uses ordinary C inputs")
-    };
-    verify_c0_sources(&click_source, &source_refs(&sources)).unwrap();
+    click::cli::with_work_budget_verdicts(|| {
+        let project = header_project(true);
+        project.commit();
+        project.write("cap.h", "#define CAP 1\n");
+        let sidecar = project.sidecar();
+        let (click_source, _, inputs) = load_sidecar_inputs(&sidecar, sidecar.parent()).unwrap();
+        let CInput::Bundle(sources) = inputs else {
+            panic!("test uses ordinary C inputs")
+        };
+        verify_c0_sources(&click_source, &source_refs(&sources)).unwrap();
 
-    project.git(&["restore", "cap.h"]);
-    record_full_verification(&project.sidecar(), &click_source, &sources, &[]).unwrap();
-    assert!(
-        !project.attested("HEAD"),
-        "restoring files after verification cannot change what was proved"
-    );
-    assert!(project.incremental("HEAD", false).is_err());
+        project.git(&["restore", "cap.h"]);
+        record_full_verification(&project.sidecar(), &click_source, &sources, &[]).unwrap();
+        assert!(
+            !project.attested("HEAD"),
+            "restoring files after verification cannot change what was proved"
+        );
+        assert!(project.incremental("HEAD", false).is_err());
+    })
 }
 
 #[test]
 fn clean_header_baselines_are_attested_and_reused() {
-    let project = header_project(true);
-    project.write("cap.h", "#define CAP 1\n");
-    project.commit();
-    project.verify().unwrap();
-    assert!(project.attested("HEAD"));
-    let (reused, events) = collect(|| project.incremental("HEAD", false));
-    reused.unwrap();
-    assert!(!entered_verification(&events));
+    click::cli::with_work_budget_verdicts(|| {
+        let project = header_project(true);
+        project.write("cap.h", "#define CAP 1\n");
+        project.commit();
+        project.verify().unwrap();
+        assert!(project.attested("HEAD"));
+        let (reused, events) = collect(|| project.incremental("HEAD", false));
+        reused.unwrap();
+        assert!(!entered_verification(&events));
 
-    project.write("cap.h", "#define CAP 2\n");
-    assert!(project.incremental("HEAD", false).is_err());
+        project.write("cap.h", "#define CAP 2\n");
+        assert!(project.incremental("HEAD", false).is_err());
+    })
 }

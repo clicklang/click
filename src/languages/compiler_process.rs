@@ -210,9 +210,11 @@ fn run_compiler_cancellable(
 mod tests {
     use super::*;
 
+    /// Tests that expect a script to finish get a timeout far above what a
+    /// loaded machine needs for it; tests of the timeout install their own.
     fn limits() -> CompilerLimits {
         CompilerLimits {
-            timeout: Duration::from_secs(2),
+            timeout: Duration::from_secs(20),
             max_stdout_bytes: 100_000,
             max_stderr_bytes: 100_000,
         }
@@ -279,8 +281,12 @@ mod tests {
         }
     }
 
+    /// This test is about real-time containment itself, so it measures wall
+    /// time, but only against the 30-second descendant it must not wait for:
+    /// a loaded machine may be slow to reap, never that slow.
     #[test]
     fn compiler_process_bounds_descendants_holding_pipes_and_cancellation() {
+        const WELL_BEFORE_THE_DESCENDANT_EXITS: Duration = Duration::from_secs(15);
         let started = Instant::now();
         let result = shell(
             "sleep 30 & wait",
@@ -290,7 +296,7 @@ mod tests {
             },
         );
         assert!(result.unwrap_err().contains("deadline"));
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < WELL_BEFORE_THE_DESCENDANT_EXITS);
         // Even a successful parent may leave a pipe-owning child behind.
         assert!(shell("sleep 30 & exit 0", limits()).is_ok());
         let started = Instant::now();
@@ -304,7 +310,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("cancelled"));
-        assert!(started.elapsed() < Duration::from_secs(2));
+        assert!(started.elapsed() < WELL_BEFORE_THE_DESCENDANT_EXITS);
     }
 
     #[cfg(target_os = "linux")]
@@ -328,7 +334,7 @@ mod tests {
             Path::new("/tmp"),
             &BTreeMap::new(),
             CompilerLimits {
-                timeout: Duration::from_millis(150),
+                timeout: Duration::from_secs(1),
                 ..limits()
             },
         )
@@ -350,7 +356,7 @@ mod tests {
                     return;
                 }
                 state if attempt == 49 => panic!("compiler worker {pid} still running: {state:?}"),
-                _ => std::thread::sleep(Duration::from_millis(2)),
+                _ => std::thread::sleep(Duration::from_millis(20)),
             }
         }
     }

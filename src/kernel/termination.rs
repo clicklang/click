@@ -5558,18 +5558,27 @@ mod local_descent_tests {
             recursive_measure: Some(CFunctionTerminationMeasure::NumericParameter(0)),
             loop_measures: BTreeMap::new(),
         };
+        // Judged by the checker's deterministic work, not the host clock:
+        // each 8x step in branches may cost at most 16x the work, which a
+        // linear checker meets and a doubling path list cannot.
+        let mut previous: Option<(usize, usize)> = None;
         for branches in [8, 64, 512] {
             let rules = build(branches, true);
             let heights = c_termination_height_plan(&rules, &[]);
-            let started = std::time::Instant::now();
-            let verdicts = check(&rules, std::slice::from_ref(&plan), &heights, &[])
-                .expect("a descending call checks");
+            let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
+                check(&rules, std::slice::from_ref(&plan), &heights, &[])
+                    .expect("a descending call checks")
+            });
             assert_eq!(terminating(&verdicts), BTreeSet::from(["countdown"]));
-            assert!(
-                started.elapsed() < std::time::Duration::from_secs(5),
-                "{branches} sequential branches must not take {:?}",
-                started.elapsed()
-            );
+            assert!(work >= branches, "the check charges each branch it walks");
+            if let Some((smaller, smaller_work)) = previous {
+                assert!(
+                    work <= smaller_work * 16,
+                    "{branches} sequential branches took {work} work units, \
+                     over 16x the {smaller_work} units of {smaller}"
+                );
+            }
+            previous = Some((branches, work));
         }
         let rules = build(64, false);
         let heights = c_termination_height_plan(&rules, &[]);

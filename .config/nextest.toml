@@ -1,10 +1,21 @@
-# Hard per-test time budget for `cargo nextest run`: any test slower than 10
-# seconds is reported as slow, and a test still running after 60 seconds is
-# killed and fails. Treat a test that trips either threshold as a bug: split
-# it, or fix the prover slowdown it is exposing. Prover regressions tend to
-# manifest as hangs, so they must fail fast instead of stalling the suite.
+# Per-test wall-clock policy for `cargo nextest run`. Every test's verdict
+# comes from deterministic work: library tests and every fixture harness run
+# without production's real-time tactic limits, and the command-line tests
+# drive the tools under `click::cli::with_work_budget_verdicts`. Wall clock
+# therefore decides nothing here; it only reports and contains.
+#
+# A test still running after 10 seconds is reported as slow on every 10-second
+# period. Treat a slow report as a finding: split the test, or fix the prover
+# slowdown it exposes, and pin superlinear work with a deterministic scaling
+# regression. A test still running after 15 minutes is killed as hung. That
+# bound is process-level crash containment, far above what a loaded machine
+# produces: measured 2026-09-26, the slowest unit test (a 512-deep `click
+# audit` boundary) took 60 seconds at load average 30 and about 8 alone. It
+# sits above the tools' own 10-minute in-process containment
+# (`click::cli::CRASH_CONTAINMENT_TIME_LIMIT`), so a cooperative hang is named
+# by the verifier before nextest kills the process.
 [profile.default]
-slow-timeout = { period = "10s", terminate-after = 6 }
+slow-timeout = { period = "10s", terminate-after = 90 }
 
 # The mdtest and example-project harnesses are single test functions that each
 # run a whole fixture suite. Their proof verdicts are deterministic; this

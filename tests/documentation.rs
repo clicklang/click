@@ -179,6 +179,86 @@ fn every_fixture_harness_judges_tactics_by_work_budgets_only() {
     assert!(helper.contains("instrumentation::without_tactic_time_limits(operation)"));
 }
 
+/// The command-line tools install real-time limits of their own, so every
+/// test that drives one in-process runs under
+/// `click::cli::with_work_budget_verdicts`; only a test about real-time
+/// interruption itself stays outside it.
+#[test]
+fn every_command_line_test_judges_by_work_budgets_only() {
+    const REAL_TIME: &[(&str, &str, &str)] = &[
+        (
+            "click-expand.rs",
+            "reports_an_expired_expansion_deadline_directly",
+            "checks the diagnostic of an already-expired deadline",
+        ),
+        (
+            "click-expand.rs",
+            "exhausted_command_deadline_writes_no_artifact",
+            "checks that an exhausted `--time-limit 1ms` writes no artifact",
+        ),
+        (
+            "click-expand.rs",
+            "generated_proof_check_uses_the_command_limit_for_remaining_smart_tactics",
+            "checks that the command installs its own smart-tactic clock",
+        ),
+    ];
+    const SCOPE: &str = "click::cli::with_work_budget_verdicts(|| {";
+    let mut files = Vec::new();
+    files_with_extension(&root().join("src/bin"), "rs", &mut files);
+    files.sort();
+    let mut checked = 0;
+    let mut exempted = BTreeSet::new();
+    for path in files {
+        let name = path.file_name().unwrap().to_str().unwrap().to_string();
+        let display = path.strip_prefix(root()).unwrap().display().to_string();
+        let source = fs::read_to_string(&path).expect("read command-line source");
+        let lines: Vec<&str> = source.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            if line.trim() != "#[test]" {
+                continue;
+            }
+            let signature = lines[index + 1..]
+                .iter()
+                .position(|line| line.trim_start().starts_with("fn "))
+                .map(|offset| index + 1 + offset)
+                .unwrap_or_else(|| panic!("{display}:{} has no test function", index + 1));
+            let test = lines[signature]
+                .trim_start()
+                .trim_start_matches("fn ")
+                .split('(')
+                .next()
+                .unwrap();
+            if REAL_TIME
+                .iter()
+                .any(|(file, exempt, _)| *file == name && *exempt == test)
+            {
+                exempted.insert((name.clone(), test.to_string()));
+                continue;
+            }
+            checked += 1;
+            let body = lines
+                .get(signature + 1)
+                .map_or("", |line| line.trim_start());
+            assert!(
+                lines[signature].trim_end().ends_with('{') && body.starts_with(SCOPE),
+                "{display}:{} `{test}` must run its body in `{SCOPE} ... }})` so no \
+                 wall-clock limit of the tool it drives can decide it",
+                signature + 1,
+            );
+        }
+    }
+    assert!(
+        checked >= 100,
+        "expected the command-line tests under src/bin/"
+    );
+    for (file, test, _) in REAL_TIME {
+        assert!(
+            exempted.contains(&(file.to_string(), test.to_string())),
+            "exempt real-time test `{test}` is no longer in src/bin/{file}; remove it"
+        );
+    }
+}
+
 fn files_with_extension(directory: &Path, extension: &str, files: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(directory).expect("read directory") {
         let path = entry.expect("read directory entry").path();

@@ -155,28 +155,33 @@ impl AuditSessionWorker {
         let session_source = source.clone();
         let (request_sender, request_receiver) = mpsc::channel::<SessionRequest>();
         let (response_sender, response_receiver) = mpsc::channel();
+        // The caller's verdict policy is thread-local; carry it onto the
+        // session thread.
+        let work_budget_verdicts = cli::work_budget_verdicts();
         let thread = thread::Builder::new()
             .name("click-audit-session".to_string())
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn(move || {
-                let session = match start_session(&session_source, limit) {
-                    Ok(session) => {
-                        if response_sender.send(Ok(Duration::ZERO)).is_err() {
+                cli::with_inherited_work_budget_verdicts(work_budget_verdicts, || {
+                    let session = match start_session(&session_source, limit) {
+                        Ok(session) => {
+                            if response_sender.send(Ok(Duration::ZERO)).is_err() {
+                                return;
+                            }
+                            session
+                        }
+                        Err(message) => {
+                            let _ = response_sender.send(Err(message));
                             return;
                         }
-                        session
+                    };
+                    for request in request_receiver {
+                        let result = verify_in_session(&session, &session_source, &request);
+                        if response_sender.send(result).is_err() {
+                            return;
+                        }
                     }
-                    Err(message) => {
-                        let _ = response_sender.send(Err(message));
-                        return;
-                    }
-                };
-                for request in request_receiver {
-                    let result = verify_in_session(&session, &session_source, &request);
-                    if response_sender.send(result).is_err() {
-                        return;
-                    }
-                }
+                })
             })
             .map_err(|error| format!("failed to start the verification-session thread: {error}"))?;
         let mut worker = Self {
@@ -239,19 +244,21 @@ impl Drop for AuditSessionWorker {
 }
 
 fn start_session(source: &AuditSource, limit: Duration) -> Result<C0VerificationSession, String> {
-    let (session, _) = click::instrumentation::with_deadline(limit, || match &source.inputs {
-        CInput::Bundle(sources) => match &source.project {
-            Some(project) => C0VerificationSession::new_project(project, &source_refs(sources)),
-            None => C0VerificationSession::new(&source.click_source, &source_refs(sources)),
-        },
-        CInput::Prepared(imports) => match &source.project {
-            Some(project) => C0VerificationSession::new_prepared_project(project, imports),
-            None => C0VerificationSession::new_prepared(&source.click_source, imports),
-        },
-        CInput::PreparedCpp(import) => match &source.project {
-            Some(project) => C0VerificationSession::new_cpp_prepared_project(project, import),
-            None => C0VerificationSession::new_cpp_prepared(&source.click_source, import),
-        },
+    let (session, _) = click::instrumentation::with_deadline(cli::tool_time_limit(limit), || {
+        match &source.inputs {
+            CInput::Bundle(sources) => match &source.project {
+                Some(project) => C0VerificationSession::new_project(project, &source_refs(sources)),
+                None => C0VerificationSession::new(&source.click_source, &source_refs(sources)),
+            },
+            CInput::Prepared(imports) => match &source.project {
+                Some(project) => C0VerificationSession::new_prepared_project(project, imports),
+                None => C0VerificationSession::new_prepared(&source.click_source, imports),
+            },
+            CInput::PreparedCpp(import) => match &source.project {
+                Some(project) => C0VerificationSession::new_cpp_prepared_project(project, import),
+                None => C0VerificationSession::new_cpp_prepared(&source.click_source, import),
+            },
+        }
     })
     .map_err(|error| error.report())?;
     Ok(session)
@@ -268,7 +275,7 @@ fn verify_in_session(
         position,
         limit,
     } = request;
-    click::instrumentation::with_deadline(*limit, || match &source.inputs {
+    click::instrumentation::with_deadline(cli::tool_time_limit(*limit), || match &source.inputs {
         CInput::Bundle(_) => match &source.project {
             Some(_) => session.verify_at_project(click_source, position.line, position.column),
             None => session.verify_at(click_source, position.line, position.column),
@@ -507,7 +514,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let mut cold_reverified_claims = std::collections::BTreeSet::new();
     let mut concise_progress: Option<ConciseClaimProgress> = None;
     let started = Instant::now();
-    let deadline = started + arguments.time_limit;
+    let deadline = started + cli::tool_time_limit(arguments.time_limit);
 
     println!(
         "\nClick expansion audit (session {}, expansion {}, verification {}, \
@@ -1331,6 +1338,7 @@ fn remaining_phase_limit(deadline: Instant, configured: Duration) -> Result<Dura
 }
 
 fn ensure_phase_limit(elapsed: Duration, limit: Duration, label: &str) -> Result<(), String> {
+    let limit = cli::tool_time_limit(limit);
     if elapsed > limit {
         Err(format!(
             "{label} exceeded {} after {}",
@@ -1359,9 +1367,10 @@ fn audit_site(
     );
     let phase_limit = remaining_phase_limit(deadline, expansion_limit)?;
     let expansion_started = Instant::now();
-    let expanded = click::instrumentation::with_deadline(phase_limit, || {
-        expand_location_with_source(&location, &worker.source)
-    })?;
+    let expanded =
+        click::instrumentation::with_deadline(cli::tool_time_limit(phase_limit), || {
+            expand_location_with_source(&location, &worker.source)
+        })?;
     let expansion_elapsed = expansion_started.elapsed();
     ensure_phase_limit(expansion_elapsed, phase_limit, "expansion")?;
     let original = worker.source.container_source.clone();
@@ -1407,7 +1416,11 @@ fn audit_site(
             remaining_phase_limit(deadline, verification_limit)?,
             "expanded proof-unit verification",
         )?;
-        if verification_regressed(original_elapsed, expanded_elapsed, performance_slack) {
+        // A timing comparison is a finding, not a verdict, when the caller
+        // judges by deterministic work budgets.
+        if !cli::work_budget_verdicts()
+            && verification_regressed(original_elapsed, expanded_elapsed, performance_slack)
+        {
             // Timing-only findings get one fresh serial confirmation, matching
             // the ordinary tactic-budget gate's noise policy.
             let confirmed_original = cold_verify(
@@ -1493,7 +1506,7 @@ fn cold_verify(
 ) -> Result<Duration, String> {
     let started = Instant::now();
     let rewritten_click_source = rewritten_click_source(original, source)?;
-    click::instrumentation::with_deadline(verification_limit, || {
+    click::instrumentation::with_deadline(cli::tool_time_limit(verification_limit), || {
         verify_rewritten_with_inputs(original, claim_label, &rewritten_click_source)
     })?;
     let elapsed = started.elapsed();

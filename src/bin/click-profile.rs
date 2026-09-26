@@ -507,6 +507,7 @@ fn profile_target(
     time_limit: Duration,
 ) -> Result<ProjectProfile, String> {
     let project = target.path();
+    let time_limit = click::cli::tool_time_limit(time_limit);
     let started = Instant::now();
     let diagnostic_limits = instrumentation::TacticLimits {
         simple: time_limit,
@@ -514,7 +515,7 @@ fn profile_target(
         control: time_limit,
     };
     let (verification, events) = instrumentation::with_deadline(time_limit, || {
-        instrumentation::with_tactic_limits(diagnostic_limits, || {
+        click::cli::with_tool_tactic_limits(diagnostic_limits, || {
             instrumentation::collect(|| match target {
                 ProfileTarget::Mdtest(path) => verify_mdtest(path),
                 ProfileTarget::Sidecars {
