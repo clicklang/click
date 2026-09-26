@@ -24,7 +24,7 @@ the complexity contract and scaling-regression policy. Proposals without a
 failing deterministic curve are not open roadmap items; when the user requests
 an issue, scope it narrowly to the evidence.
 
-## P1: before launch (4)
+## P1: before launch (5)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -62,6 +62,7 @@ graph coverage remain P2.
 Soundness and kernel shape:
 
 - [Design resource invariants for sequential and concurrent shared heaps](shared-heap-graph-demo.md)
+- [Decide equality with one e-graph in the kernel](egraph.md)
 
 Program import and execution:
 
