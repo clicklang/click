@@ -274,6 +274,47 @@ fn rewrite_through_load_variable(
     )))
 }
 
+/// `rewrite` looks through a loaded pointer the same way: a pointer whose
+/// block is the identity of a load (`Pointer::loaded`) is the value of that
+/// load, so a rewrite of the load's address gives the rewritten load, and
+/// the pointer becomes that load's identity. Nested loads are rewritten
+/// through at most `depth` levels.
+fn rewrite_through_loaded_pointer_block(
+    pointer: &Pointer,
+    rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
+    depth: usize,
+) -> Option<Pointer> {
+    let PointerBlock::Symbolic(variable) = &pointer.block else {
+        return None;
+    };
+    if depth == 0 || !crate::kernel::is_load_variable(variable) {
+        return None;
+    }
+    let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
+        .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+    let rewritten_address = {
+        let direct = rewrite_pointer(&address);
+        if direct != address {
+            direct
+        } else {
+            rewrite_through_loaded_pointer_block(&address, rewrite_pointer, depth - 1)?
+        }
+    };
+    let load = crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
+        memory,
+        Box::new(rewritten_address),
+    ));
+    let named = match load {
+        Bitvector32Term::Variable(variable) => variable,
+        load @ Bitvector32Term::MemoryLoad(_, _) => crate::kernel::load_variable_for_term(&load)?.0,
+        _ => return None,
+    };
+    Some(Pointer {
+        block: PointerBlock::Symbolic(named),
+        offset: pointer.offset.clone(),
+    })
+}
+
 /// Rewrites every occurrence of a symbolic pointer by its proven-equal
 /// form in a goal the structural pointer rewrite does not handle, such as a
 /// 64-bit comparison over an address (`(uint64)p`). Only an equality whose left side is a whole
@@ -968,7 +1009,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 (left, right) => Some(Add(Box::new(left), Box::new(right))),
             }
         }
-        let rewrite_pointer = |pointer: &Pointer| {
+        let rewrite_pointer_directly = |pointer: &Pointer| {
             if pointer == left.as_ref() {
                 return right.as_ref().clone();
             }
@@ -985,6 +1026,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 block: right.block.clone(),
                 offset,
             }
+        };
+        let rewrite_pointer = |pointer: &Pointer| {
+            let rewritten = rewrite_pointer_directly(pointer);
+            if &rewritten != pointer {
+                return rewritten;
+            }
+            rewrite_through_loaded_pointer_block(pointer, &rewrite_pointer_directly, 8)
+                .unwrap_or(rewritten)
         };
         // A pointer equality also rewrites the subject of a load: replacing
         // the loaded pointer with its proven-equal form is exact term
@@ -2742,6 +2791,60 @@ mod tests {
                 )
             );
         }
+    }
+
+    #[test]
+    fn pointer_rewrite_reaches_through_a_loaded_pointer() {
+        // `w` is the pointer read from `source`. Rewriting `source` to
+        // `target` rewrites the load `w` names, so a read through `w`
+        // becomes a read through the pointer read from `target`.
+        let source = Pointer::symbolic(Variable(930_000));
+        let target = Pointer {
+            block: PointerBlock::Heap(930_001),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = crate::kernel::intern_c_memory(
+            CMemory::new().with_block(PointerBlock::Heap(930_001), 16),
+        );
+        let loaded =
+            crate::kernel::load_variable_for_cell_with_origin(&memory, &source, 8, &memory);
+        let (target_loaded, _) = crate::kernel::load_variable_for_term(
+            &Bitvector32Term::MemoryLoad(memory.clone(), Box::new(target.clone())),
+        )
+        .expect("the target read has a name");
+        let read_through = |variable| {
+            Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer {
+                    block: PointerBlock::Symbolic(variable),
+                    offset: PointerOffsetTerm::Constant(8),
+                }),
+            )
+        };
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(read_through(loaded)),
+                Box::new(Bitvector32Term::Constant(5)),
+            ),
+            true,
+        );
+        let equality = Proposition::ConditionIs(ConditionTerm::pointer_equal(source, target), true);
+        let rewritten = rewrite_proposition_by_exact_equality(
+            &goal,
+            &equality,
+            std::slice::from_ref(&equality),
+        )
+        .expect("rewrite through the loaded pointer");
+        assert_eq!(
+            rewritten,
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(read_through(target_loaded)),
+                    Box::new(Bitvector32Term::Constant(5)),
+                ),
+                true,
+            )
+        );
     }
 
     #[test]
