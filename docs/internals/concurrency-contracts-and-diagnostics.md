@@ -669,6 +669,33 @@ explicitly rejects use resources until moving an occurrence also checks share
 custody and guard dependencies. The next boundary is abstract use bindings and
 checked contract transport, followed by worker return and escaping guards.
 
+## Caller-supplied use-authority kernel checkpoint
+
+The loan kernel can now establish the lifetime promise of a modular
+`owns mutex_use(mu)` input without manufacturing a `mutex_live` owner. This
+proof-entry root stores an abstract initialization description separately from
+escrow. It has no close or recovery right, no stable view, and no memory access.
+Only the original caller, outside the modular proof, owns the supplying lifetime.
+Ordinary call sites must still use lending or reborrowing; they must never invoke
+this assumption rule to satisfy a missing requirement.
+
+A receipt retains the exact input root and entry participant. The preserving
+return check requires its owned unit resource, the complete root share, and no
+outstanding child scope or guard hold. Another root at the same printed address,
+a split share, a child permission, or a resource held by another participant
+cannot replace it. Returning an input does not close it or recover ownership.
+Nested reborrowing uses the existing checked pin, transfer, hold, release, and
+end transitions; closing a child restores the exact abstract parent permission.
+
+Tests cover absent and duplicate resources, invalid quantities and views,
+wrong participants, split shares, stale evidence, forbidden recovery, outstanding
+guards, nested helper return, and deterministic scaling with unrelated roots.
+This is a checked kernel boundary, not yet accepted surface syntax or automatic
+contract transport. The proof-entry builder and call-site resource planner still
+need to connect contract clauses to these roots, with precise missing-resource
+diagnostics. Abstract acquire/release protocols and escaping output guards remain
+separate work; the existing transition freeze stays in place.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.
@@ -682,8 +709,8 @@ hostile certificate tests:
    Scope exit now checks concrete initializations and conservatively refuses
    ambiguous symbolic ones. Concrete kernel use lending, reborrowing, and guard holds are
    implemented, including owned use-resource occurrences. `mutex_use` still needs
-   contract transport,
-   worker-join recovery, and escaping guards that retain the loan.
+   contract transport (caller-supplied input roots and preserving return checks
+   are implemented in the kernel), worker-join recovery, and escaping guards that retain the loan.
    The current heap refusal is a conservative dependency check, not this
    resource protocol.
 2. **Abstract guard transitions.** Contracts need generative initialization and
