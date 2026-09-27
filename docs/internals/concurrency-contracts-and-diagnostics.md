@@ -872,6 +872,27 @@ particular initialization. Abstract helper acquisition still needs that
 association, fresh observations, and checked call effects before it can expose
 protected state.
 
+## Protected interfaces retain initialization identity
+
+Successful declared publication now retains its checked interface in the mutex
+ledger, bound to the fresh initialization identity. Lock and unlock preserve
+the same sealed binding; neither rechecks a declaration against an old observed
+value nor creates a replacement interface. Destroy removes it, and publishing
+again at the same address creates a different initialization binding even when
+the resource declaration is unchanged. Both empty initialization and declared
+publication also accept the empty ledger left by destroying the last mutex.
+
+Loop protocol continuity now checks this binding as well as initialization and
+heldness. The check compares shared binding identity in constant time rather
+than traversing the declaration or unrelated resources. Regressions cover
+balanced exchange, same-address reinitialization, replaced or removed bindings,
+and deterministic scaling over unrelated resource frames.
+
+This establishes the concrete association. Transporting it through abstract
+contracts, constructing fresh protected observations, and checking acquisition
+effects remain separate boundaries. No surface syntax changes here, and abstract
+helper transitions remain restricted.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

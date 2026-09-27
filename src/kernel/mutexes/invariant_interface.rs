@@ -210,4 +210,143 @@ mod tests {
         let (held, _) = published.acquire(&address(), &assumptions).unwrap();
         assert!(held.state.resources.contains_exact_representation(&fact));
     }
+    fn published() -> (MutexContext, CResourceFact) {
+        let resource = instance(1, 10);
+        let fact = CResourceFact::own(CResource::Instance(resource.clone()));
+        let context = MutexContext::new(
+            CState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone())),
+        );
+        (
+            context
+                .publish_declared(
+                    &address(),
+                    resource.identity(),
+                    &declarations(),
+                    &PureFactContext::new(),
+                    40,
+                )
+                .unwrap(),
+            fact,
+        )
+    }
+
+    fn binding(context: &MutexContext) -> Arc<InitializedMutexInterface> {
+        context
+            .state
+            .mutex_ledger
+            .as_ref()
+            .unwrap()
+            .get(&address())
+            .unwrap()
+            .interface()
+            .unwrap()
+            .clone()
+    }
+
+    #[test]
+    fn initialized_interface_survives_exchange_but_not_reinitialization() {
+        let assumptions = PureFactContext::new();
+        let (published, fact) = published();
+        let original = binding(&published);
+        let ledger = published.state.mutex_ledger.as_ref().unwrap();
+        assert_eq!(
+            original.initialization,
+            ledger.get(&address()).unwrap().initialization().0
+        );
+        let (held, guard) = published.acquire(&address(), &assumptions).unwrap();
+        assert!(Arc::ptr_eq(&original, &binding(&held)));
+        let released = held.release(guard, fact, &assumptions).unwrap();
+        assert!(Arc::ptr_eq(&original, &binding(&released)));
+        ledger
+            .check_protocol_state_since(released.state.mutex_ledger.as_ref().unwrap())
+            .unwrap();
+        let destroyed = released.destroy(&address(), &assumptions).unwrap();
+        assert!(destroyed.state.mutex_ledger.is_none());
+        // Both initialization paths must accept the state after the last
+        // initialization was destroyed, without rebuilding the context.
+        let empty = destroyed.initialize_empty(address(), 40).unwrap();
+        assert!(
+            empty
+                .state
+                .mutex_ledger
+                .as_ref()
+                .unwrap()
+                .get(&address())
+                .unwrap()
+                .interface()
+                .is_none()
+        );
+
+        let republished = destroyed
+            .publish_declared(
+                &address(),
+                crate::kernel::Variable(1),
+                &declarations(),
+                &assumptions,
+                40,
+            )
+            .unwrap();
+        let replacement = binding(&republished);
+        assert_eq!(original.declaration, replacement.declaration);
+        assert_ne!(original.initialization, replacement.initialization);
+        assert!(!Arc::ptr_eq(&original, &replacement));
+    }
+
+    #[test]
+    fn loop_continuity_rejects_replaced_or_removed_interface_binding() {
+        let (published, _) = published();
+        let before = published.state.mutex_ledger.as_ref().unwrap();
+        for replacement in [None, Some(Arc::new((*binding(&published)).clone()))] {
+            let mut entry = before.get(&address()).unwrap().clone();
+            let MutexEntry::Unlocked { interface, .. } = &mut entry else {
+                unreachable!()
+            };
+            *interface = replacement;
+            let next = before.with_inserted(address(), entry);
+            assert_eq!(
+                before.check_protocol_state_since(&next),
+                Err(MutexProtocolMismatch::State)
+            );
+        }
+    }
+
+    #[test]
+    fn initialized_interface_exchange_scales_independently_of_resource_frame() {
+        let assumptions = PureFactContext::new();
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let (mut published, fact) = published();
+            for index in 0..size {
+                published.state.resources =
+                    published
+                        .state
+                        .resources
+                        .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                            name: format!("frame{index}"),
+                            arguments: vec![].into(),
+                        }));
+            }
+            let before = published.state.mutex_ledger.as_ref().unwrap();
+            let ((returned, work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let (held, guard) = published.acquire(&address(), &assumptions).unwrap();
+                    let released = held.release(guard, fact, &assumptions).unwrap();
+                    before
+                        .check_protocol_state_since(released.state.mutex_ledger.as_ref().unwrap())
+                        .unwrap();
+                    released
+                })
+            });
+            assert!(Arc::ptr_eq(&binding(&published), &binding(&returned)));
+            assert_eq!(returned.state.resources.facts().len(), size + 1);
+            samples.push((work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].0 <= pair[0].0 * 2 + 1 && pair[1].1 <= pair[0].1 * 2 + 1,
+                "interface transport scans unrelated resources: {samples:?}"
+            );
+        }
+    }
 }

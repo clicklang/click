@@ -62,13 +62,23 @@ enum MutexEntry {
     Unlocked {
         initialization: MutexInitialization,
         invariant: Option<CResourceFact>,
+        interface: Option<Arc<InitializedMutexInterface>>,
     },
     Locked {
         initialization: MutexInitialization,
         invariant: Option<CResourceFact>,
+        interface: Option<Arc<InitializedMutexInterface>>,
         epoch: u64,
         lifetime_hold: Option<(LoanHoldId, LoanParticipantId)>,
     },
+}
+
+/// A declaration checked at publication, bound to exactly one initialization.
+/// Sharing this description conveys no ownership or observed payload value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InitializedMutexInterface {
+    initialization: MutexInitializationId,
+    declaration: invariant_interface::MutexInvariantInterface,
 }
 
 /// Identity of one successful initialization, independent of its address and
@@ -444,6 +454,7 @@ impl MutexInputReservations {
                         initialization: MutexInitialization::fresh(bytes)
                             .expect("nonempty modeled mutex storage"),
                         invariant: None,
+                        interface: None,
                     },
                 );
             }
@@ -834,7 +845,11 @@ impl MutexContext {
         if self.state.preserves_mutex_protocols {
             return Err("preserving mutex contracts cannot change mutex protocols");
         }
-        let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
+        let ledger = self
+            .state
+            .mutex_ledger
+            .clone()
+            .unwrap_or_else(MutexLedger::new);
         if ledger.get(&mutex).is_some() {
             return Err("mutex is already initialized");
         }
@@ -852,6 +867,7 @@ impl MutexContext {
             MutexEntry::Unlocked {
                 initialization,
                 invariant: None,
+                interface: None,
             },
         ));
         Ok(Self {
@@ -881,17 +897,17 @@ impl MutexContext {
             declarations,
             assumptions,
         )?;
-        self.publish(
+        self.publish_with_interface(
             interface.mutex().clone(),
             CResourceFact::own(CResource::Instance(instance.clone())),
             assumptions,
             storage_bytes,
+            Some(interface),
         )
     }
 
-    /// Deposit one folded, exclusive instance into an initialized mutex.
-    /// The C binder will check that `mutex` is the field declared by this
-    /// resource's `guarded_by` clause.
+    // Low-level fixtures exercise escrow without a source declaration.
+    #[cfg(test)]
     fn publish(
         &self,
         mutex: Pointer,
@@ -899,10 +915,25 @@ impl MutexContext {
         assumptions: &PureFactContext,
         storage_bytes: u32,
     ) -> Result<Self, &'static str> {
+        self.publish_with_interface(mutex, invariant, assumptions, storage_bytes, None)
+    }
+
+    fn publish_with_interface(
+        &self,
+        mutex: Pointer,
+        invariant: CResourceFact,
+        assumptions: &PureFactContext,
+        storage_bytes: u32,
+        interface: Option<invariant_interface::MutexInvariantInterface>,
+    ) -> Result<Self, &'static str> {
         if self.state.preserves_mutex_protocols {
             return Err("preserving mutex contracts cannot change mutex protocols");
         }
-        let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
+        let ledger = self
+            .state
+            .mutex_ledger
+            .clone()
+            .unwrap_or_else(MutexLedger::new);
         if ledger.get(&mutex).is_some() {
             return Err("mutex is already initialized");
         }
@@ -950,6 +981,12 @@ impl MutexContext {
             MutexEntry::Unlocked {
                 initialization,
                 invariant: Some(invariant),
+                interface: interface.map(|declaration| {
+                    Arc::new(InitializedMutexInterface {
+                        initialization: initialization.0,
+                        declaration,
+                    })
+                }),
             },
         ));
         Ok(Self {
@@ -1217,11 +1254,12 @@ impl MutexContext {
             ));
         }
         let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
-        let (initialization, invariant) = match ledger.get(mutex) {
+        let (initialization, invariant, interface) = match ledger.get(mutex) {
             Some(MutexEntry::Unlocked {
                 initialization,
                 invariant,
-            }) => (*initialization, invariant.clone()),
+                interface,
+            }) => (*initialization, invariant.clone(), interface.clone()),
             Some(MutexEntry::Locked { .. }) => {
                 return Err(MutexTransitionError::Refusal("mutex is already guarded"));
             }
@@ -1291,6 +1329,7 @@ impl MutexContext {
             MutexEntry::Locked {
                 initialization,
                 invariant,
+                interface,
                 epoch,
                 lifetime_hold,
             },
@@ -1443,14 +1482,15 @@ impl MutexContext {
             return Err("preserving mutex contracts cannot change mutex protocols".into());
         }
         let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
-        let (previous, lifetime_hold) = match ledger.get(&guard.mutex) {
+        let (previous, lifetime_hold, interface) = match ledger.get(&guard.mutex) {
             Some(MutexEntry::Locked {
                 invariant,
                 initialization,
                 epoch,
                 lifetime_hold,
+                interface,
             }) if *initialization == guard.initialization && *epoch == guard.epoch => {
-                (invariant, *lifetime_hold)
+                (invariant, *lifetime_hold, interface.clone())
             }
             _ => return Err("mutex guard does not match the current holder".into()),
         };
@@ -1511,6 +1551,7 @@ impl MutexContext {
             MutexEntry::Unlocked {
                 initialization: guard.initialization,
                 invariant: restored,
+                interface,
             },
         ));
         Ok(Self {
@@ -1821,6 +1862,9 @@ impl MutexLedger {
                 (Some(left), Some(right)) if left.initialization() != right.initialization() => {
                     return Err(MutexProtocolMismatch::Initialization);
                 }
+                (Some(left), Some(right)) if !left.same_interface(right) => {
+                    return Err(MutexProtocolMismatch::State);
+                }
                 (
                     Some(MutexEntry::Unlocked {
                         invariant: left, ..
@@ -1852,6 +1896,20 @@ impl MutexLedger {
 }
 
 impl MutexEntry {
+    fn interface(&self) -> Option<&Arc<InitializedMutexInterface>> {
+        match self {
+            Self::Unlocked { interface, .. } | Self::Locked { interface, .. } => interface.as_ref(),
+        }
+    }
+
+    fn same_interface(&self, other: &Self) -> bool {
+        match (self.interface(), other.interface()) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
+    }
+
     fn initialization(&self) -> MutexInitialization {
         match self {
             Self::Unlocked { initialization, .. } | Self::Locked { initialization, .. } => {
