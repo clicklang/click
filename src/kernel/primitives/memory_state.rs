@@ -4028,9 +4028,10 @@ impl CMemory {
         if self.is_read_only_block(&pointer.block) {
             return self.access_in_bounds(pointer, byte_width);
         }
-        self.cells
-            .get(pointer)
-            .is_some_and(|value| value.byte_width() == byte_width)
+        // The width alone decides, so a run slot's value is not named: a
+        // question about a slot's presence costs the same whatever the
+        // run's length, and whether the value was named earlier.
+        self.cells.value_width_at(pointer) == Some(byte_width)
     }
 
     pub(in crate::kernel) fn string_literal_loadable_facts(&self) -> Vec<Proposition> {

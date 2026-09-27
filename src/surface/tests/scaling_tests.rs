@@ -3498,15 +3498,31 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
     // a cost of the range.
     verify_c0_sources(&click_source(8), &[("get.c", c_source)]).expect("warm-up verifies");
     let samples = [8u64, 1_000, 1_000_000, 1_000_000_000].map(|length| {
-        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
-            verify_c0_sources(&click_source(length), &[("get.c", c_source)])
-        });
-        verified.unwrap_or_else(|error| {
-            panic!(
-                "a view of {length} elements should verify: {}",
-                error.message()
-            )
-        });
+        let measure = || {
+            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&click_source(length), &[("get.c", c_source)])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "a view of {length} elements should verify: {}",
+                    error.message()
+                )
+            });
+            work
+        };
+        let work = measure();
+        // The work is the build profile's too: a debug build's self-checks
+        // (at most `CHECKED_RUN_SLOTS` slots, so only the short views) must
+        // not leave a later charged read cheaper than a release build finds
+        // it. A length-8 view once cost 1796 in release and 1718 in debug:
+        // contract entry named every element of a view of at most 64 to ask
+        // whether each was loadable, and in debug a check had already named
+        // them uncharged.
+        let release_work = crate::instrumentation::without_debug_checks(measure);
+        assert_eq!(
+            work, release_work,
+            "a view of {length} elements costs {work} with debug checks and {release_work} without"
+        );
         (length, work)
     });
     let least = samples

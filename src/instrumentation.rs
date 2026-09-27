@@ -563,12 +563,41 @@ thread_local! {
 /// recomputes an answer the release build takes on trust, so charging it
 /// would make a debug run's deterministic work and budgets differ from the
 /// release run's.
+///
+/// Not charging is not enough on its own: a check that names a value or
+/// fills a memo the checked code reads later leaves that later read cheaper
+/// in a debug build than in a release one. [`without_debug_checks`] runs an
+/// operation with every check skipped, as a release build runs it, so a
+/// test can compare the two.
 #[cfg(debug_assertions)]
-pub(crate) fn uncharged_debug_check<R>(check: impl FnOnce() -> R) -> R {
+pub(crate) fn uncharged_debug_check(check: impl FnOnce()) {
+    if DEBUG_CHECKS_SKIPPED.with(Cell::get) {
+        return;
+    }
     let previous = UNCHARGED_DEBUG_CHECK.with(|flag| flag.replace(true));
-    let result = check();
+    check();
     UNCHARGED_DEBUG_CHECK.with(|flag| flag.set(previous));
-    result
+}
+
+#[cfg(debug_assertions)]
+thread_local! {
+    static DEBUG_CHECKS_SKIPPED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Runs `operation` with every [`uncharged_debug_check`] skipped, so a
+/// debug build does exactly what a release build does. A release build has
+/// no such checks, and this is `operation` itself.
+#[cfg(test)]
+pub(crate) fn without_debug_checks<R>(operation: impl FnOnce() -> R) -> R {
+    #[cfg(debug_assertions)]
+    {
+        let previous = DEBUG_CHECKS_SKIPPED.with(|flag| flag.replace(true));
+        let result = operation();
+        DEBUG_CHECKS_SKIPPED.with(|flag| flag.set(previous));
+        result
+    }
+    #[cfg(not(debug_assertions))]
+    operation()
 }
 
 /// Charges `units` to every scaling counter, to the innermost active

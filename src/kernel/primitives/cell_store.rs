@@ -1309,6 +1309,17 @@ impl CellStore {
         self.concrete.contains_key(pointer) || self.live_run_slot(pointer).is_some()
     }
 
+    /// How many bytes the cell at `pointer` holds, read from a run slot's
+    /// element type without naming the slot's value: [`Self::get`]'s
+    /// `byte_width`, at the cost of the lookup alone.
+    pub(crate) fn value_width_at(&self, pointer: &Pointer) -> Option<u32> {
+        if let Some(value) = self.concrete.get(pointer) {
+            return Some(value.byte_width());
+        }
+        self.live_run_slot(pointer)
+            .map(|slot| slot.run.value_width())
+    }
+
     /// Whether the live run slots `observable` accepts are the same cells in
     /// both stores, answered from the runs alone: `Some(true)` when they are,
     /// so the observable cells agree exactly when the concrete ones do, and
@@ -2319,6 +2330,11 @@ mod tests {
         let mut store = CellStore::new();
         store.add_run(seeded.clone());
         assert_eq!(store.get(&shifted(24)), Some(seeded.value(2)));
+        assert_eq!(
+            store.value_width_at(&shifted(24)),
+            Some(seeded.value(2).byte_width())
+        );
+        assert_eq!(store.value_width_at(&shifted(28)), None);
         store.insert(shifted(20), CValue::Int32(Bitvector32Term::Constant(7)));
         assert_eq!(
             store.get(&shifted(20)),
