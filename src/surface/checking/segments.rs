@@ -11,7 +11,7 @@ pub(in crate::surface) fn prove_empty_write_footprint(
     claim_label: &str,
     path_index: usize,
     execution_pure_facts: &[crate::kernel::ExecutionPureFact],
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &PureFactList,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     pre_state: &CState,
@@ -38,7 +38,11 @@ pub(in crate::surface) fn prove_empty_write_footprint(
             .cloned()
             .map(ExecutionPureFact::new),
     );
-    let assumptions = assumptions_from_propositions(available_pure_facts);
+    // Built only when a write could reach preexisting storage: a path that
+    // writes only its own automatic, havoc, or fresh storage asks nothing of
+    // its facts.
+    let assumptions = std::cell::OnceCell::new();
+    let assumptions = || assumptions.get_or_init(|| available_pure_facts.context());
     let mut writes = memory_effect_write_pointers(&effect_facts);
     writes.retain(|pointer| is_preexisting_write_pointer(pointer, pre_state, &assumptions));
     if let Some(pointer) = writes.first() {
@@ -64,11 +68,11 @@ pub(in crate::surface) fn prove_empty_write_footprint(
                 && (!crate::kernel::c_memory_holds_live_heap_allocation_at(
                     before,
                     range.base(),
-                    &assumptions,
+                    assumptions(),
                 ) || crate::kernel::c_memory_holds_live_heap_allocation_at(
                     pre_state.memory(),
                     range.base(),
-                    &assumptions,
+                    assumptions(),
                 ))
         })
         .map(|(_, range)| range)
@@ -83,10 +87,10 @@ pub(in crate::surface) fn prove_empty_write_footprint(
     Ok(())
 }
 
-fn is_preexisting_write_pointer(
+fn is_preexisting_write_pointer<'a>(
     pointer: &Pointer,
     pre_state: &CState,
-    assumptions: &PureFactContext,
+    assumptions: &impl Fn() -> &'a PureFactContext,
 ) -> bool {
     if pointer.block.starts_with("local:") || pointer.block.starts_with("havoc:") {
         return false;
@@ -98,6 +102,13 @@ fn is_preexisting_write_pointer(
         return true;
     }
     let memory = pre_state.memory();
+    // Only a named block or a live allocation of the pre-state can be
+    // preexisting storage below; without one, no equality the facts state
+    // can lead to it, and the facts need not be consulted.
+    if !memory.has_nonlocal_storage() {
+        return false;
+    }
+    let assumptions = assumptions();
     if memory.is_live_heap_address(pointer, assumptions) {
         return true;
     }

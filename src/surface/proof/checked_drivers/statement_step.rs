@@ -188,7 +188,7 @@ pub(in crate::surface::proof) fn check_statement_step_with_policy(
     };
     Ok(CheckedStatementStep {
         execution: successor.execution,
-        facts: requirement_pure_facts.with_statement_facts(successor.pure_facts),
+        facts: requirement_pure_facts.with_statement_facts(successor.pure_facts.into_vec()),
         added_facts: successor.introduced_facts,
     })
 }

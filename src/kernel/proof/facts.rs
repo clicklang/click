@@ -317,6 +317,7 @@ impl ProofFacts {
     }
 
     pub(crate) fn from_ordered(facts: &[Proposition]) -> Self {
+        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(facts.len());
         let mut ordered = PersistentSequence::default();
         let mut reserved_variables = PersistentSet::default();
         let mut top_level_exact = PersistentSet::default();

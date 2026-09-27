@@ -1691,13 +1691,11 @@ impl<'a> Proof<'a> {
                 .clone(),
             ..ProofCertificateBuilder::default()
         };
-        let mut planning_facts = facts_vec;
-        let assumptions = assumptions_from_propositions(&planning_facts);
+        let mut planning_facts = PureFactList::from(facts_vec);
         execute_step_from_frontier_position(
             &mut planning,
             &tactic_context,
             &mut planning_facts,
-            &assumptions,
             "step",
             StatementPrerequisitePolicy::Planning,
             StatementFactTransportPolicy::Automatic,
@@ -1905,7 +1903,7 @@ impl<'a> Proof<'a> {
                     .clone(),
                 ..ProofCertificateBuilder::default()
             };
-            (planning, view.facts, sink)
+            (planning, PureFactList::from(view.facts), sink)
         };
         super::super::cursor_execution::execute_until_statement(
             &mut planning,
@@ -1963,6 +1961,8 @@ impl<'a> Proof<'a> {
         force_all_paths: bool,
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
+        #[cfg(test)]
+        let _planning_scope = crate::kernel::reasoning::path_facts::SmartPlanningScope::enter();
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("smart `execute` requires an execution-frontier proof"));
         };
@@ -1990,7 +1990,11 @@ impl<'a> Proof<'a> {
         planning.planned_statement_transitions.clear();
         planning.surface_record.certificate_facts = ProofFactStore::from_ordered(facts_vec.clone());
         let mut sink = planning_sink();
-        let mut planning_facts = facts_vec.clone();
+        // Both planners below start from these facts; building their context
+        // once here lets a retry reuse it.
+        let planning_start_facts = PureFactList::from(facts_vec.clone());
+        planning_start_facts.context();
+        let mut planning_facts = planning_start_facts.clone();
         let direct_result = (!force_all_paths).then(|| {
             execute_rest_from_frontier_position(
                 &mut planning,
@@ -2015,7 +2019,7 @@ impl<'a> Proof<'a> {
             planning.surface_record.certificate_facts =
                 ProofFactStore::from_ordered(facts_vec.clone());
             sink = planning_sink();
-            planning_facts = facts_vec.clone();
+            planning_facts = planning_start_facts.clone();
             bounded_execute_from_frontier_position(
                 &mut planning,
                 &tactic_context,
@@ -2149,7 +2153,7 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let mut facts = self.facts().to_vec();
+        let mut facts = PureFactList::from(self.facts().to_vec());
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),

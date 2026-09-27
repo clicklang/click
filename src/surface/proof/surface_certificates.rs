@@ -6204,7 +6204,7 @@ pub(super) fn comparison_snapshot_variants(
 pub(super) fn lower_surface_candidate_in_state(
     view: ExecutionView<'_>,
     candidate: &ClickProposition,
-    available: &[Proposition],
+    available: &(impl PropositionSource + ?Sized),
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,

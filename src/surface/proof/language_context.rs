@@ -151,7 +151,7 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     pub(in crate::surface::proof) invariant_body_context: Option<Arc<InvariantBodyContext>>,
     pub(in crate::surface::proof) proof_site: Option<ProofSite>,
     pub(in crate::surface::proof) source_layout: SourceExecutionLayout,
-    pub(in crate::surface::proof) execution_start_facts: Arc<Vec<Proposition>>,
+    pub(in crate::surface::proof) execution_start_facts: Arc<PureFactList>,
     /// Construction-time provenance aligned exactly with
     /// `execution_start_facts`. It is presentation metadata only.
     #[allow(dead_code)]
@@ -181,7 +181,7 @@ impl Default for ExecutionProofConstants {
             invariant_body_context: None,
             proof_site: None,
             source_layout: SourceExecutionLayout::default(),
-            execution_start_facts: Arc::new(Vec::new()),
+            execution_start_facts: Arc::new(PureFactList::default()),
             entry_fact_origins: Arc::new(Vec::new()),
             caller_requirement_index: Arc::new(CallerRequirementIndex::default()),
             caller_source_owner: None,

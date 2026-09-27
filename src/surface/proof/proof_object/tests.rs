@@ -4410,7 +4410,11 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
             SurfacePropositionMap::default(),
             PersistentSequence::default(),
         ),
-        [pure_facts, vec![requirement.clone(), actual_requirement]].concat(),
+        [
+            pure_facts.into_vec(),
+            vec![requirement.clone(), actual_requirement],
+        ]
+        .concat(),
         ExecutionProofConstants {
             source_layout: SourceExecutionLayout::new(parsed_function.body()),
             function_source_registry: registry,
@@ -9175,7 +9179,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         vec![source.clone()],
         ExecutionProofConstants {
             function_entry_state: Some(state.clone()),
-            execution_start_facts: vec![source].into(),
+            execution_start_facts: Arc::new(PureFactList::from(vec![source])),
             entry_fact_origins: entry_origins.into(),
             caller_requirement_index: caller_requirement_index.into(),
             caller_source_owner: Some(owner),
@@ -9385,7 +9389,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
             vec![source.clone()],
             ExecutionProofConstants {
                 function_entry_state: Some(state.clone()),
-                execution_start_facts: vec![source].into(),
+                execution_start_facts: Arc::new(PureFactList::from(vec![source])),
                 entry_fact_origins: entry_origins.into(),
                 caller_requirement_index: caller_requirement_index.into(),
                 caller_source_owner: Some(owner),
@@ -10390,7 +10394,7 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
                 surface_propositions,
                 PersistentSequence::default(),
             ),
-            pure_facts,
+            pure_facts.into_vec(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()

@@ -1568,7 +1568,6 @@ impl CallKeptRanges {
             self.premises
                 .iter()
                 .fold(assumptions.clone(), |facts, (condition, value)| {
-                    crate::instrumentation::record_deterministic_work(1);
                     facts.assume_proposition(Proposition::ConditionIs(condition.clone(), *value))
                 }),
         )
@@ -4004,6 +4003,17 @@ impl CMemory {
 
     pub(crate) fn has_block(&self, block: &PointerBlock) -> bool {
         self.blocks.contains_key(block)
+    }
+
+    /// Whether this memory holds any storage that is not an automatic
+    /// (`local:`) or havoc (`havoc:`) block: a named block or a live heap
+    /// allocation. Stops at the first one.
+    pub(crate) fn has_nonlocal_storage(&self) -> bool {
+        !self.heap.live_allocations.is_empty()
+            || self
+                .blocks
+                .keys()
+                .any(|block| !block.starts_with("local:") && !block.starts_with("havoc:"))
     }
 
     pub(in crate::kernel) fn is_ended_local_address(&self, pointer: &Pointer) -> bool {

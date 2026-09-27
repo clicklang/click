@@ -1528,24 +1528,73 @@ pub(in crate::kernel) fn decide_with_facts(
 #[cfg(test)]
 thread_local! {
     static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SMART_PLANNING_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SMART_PLANNING_CONTEXT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// Counts, in test builds, the entries a context rebuilt from a list
+/// Counts, in test builds, the entries a fact context built from a list
 /// assumes (`assumptions_with_path_context`, `assumptions_with_propositions`,
-/// and `PropositionSource::pure_context`). These rebuilds charge no
-/// deterministic work, so a caller that rebuilt a context from a growing
-/// list once per item was quadratic in wall time while its counted work
-/// stayed linear. Scaling regressions read this count to pin such a loop.
-/// Charging the rebuilds instead makes several existing scaling tests fail
-/// (see `docs/internals/verification-efficiency.md`).
+/// `PropositionSource::pure_context`, `ProofFacts::from_ordered`, and the
+/// contexts a `PureFactList` extends). The work itself is charged where
+/// every context is built, one unit per fact
+/// (`PureFactContext::assume_proposition`), so a caller that rebuilds a
+/// context from a growing list once per item shows as quadratic work; this
+/// count lets a scaling regression pin the builds alone.
 pub(crate) fn count_context_rebuild_entries(_entries: usize) {
     #[cfg(test)]
-    CONTEXT_REBUILD_ENTRIES.with(|count| count.set(count.get() + _entries));
+    record_context_entries_for_tests(_entries);
+}
+
+/// Counts, in test builds, the entries of a context build that is charged
+/// nothing (`PureFactContext::assume_proposition_uncharged`): a known
+/// violation of the complexity contract, listed in
+/// `docs/internals/verification-efficiency.md`, whose charge would fail a
+/// scaling regression until its representation changes.
+pub(crate) fn count_uncharged_context_entries(_entries: usize) {
+    #[cfg(test)]
+    record_context_entries_for_tests(_entries);
 }
 
 #[cfg(test)]
+fn record_context_entries_for_tests(entries: usize) {
+    CONTEXT_REBUILD_ENTRIES.with(|count| count.set(count.get() + entries));
+    if SMART_PLANNING_DEPTH.with(std::cell::Cell::get) > 0 {
+        SMART_PLANNING_CONTEXT_ENTRIES.with(|count| count.set(count.get() + entries));
+    }
+}
+
+/// The context entries built so far on this thread, charged or not.
+#[cfg(test)]
 pub(crate) fn context_rebuild_entries() -> usize {
     CONTEXT_REBUILD_ENTRIES.with(std::cell::Cell::get)
+}
+
+/// The context entries built so far on this thread inside a smart planning
+/// tactic ([`SmartPlanningScope`]).
+#[cfg(test)]
+pub(crate) fn smart_planning_context_entries() -> usize {
+    SMART_PLANNING_CONTEXT_ENTRIES.with(std::cell::Cell::get)
+}
+
+/// Marks, in test builds, the extent of one smart planning tactic, so a
+/// scaling regression can count the context entries planning builds apart
+/// from those of the checks around it.
+#[cfg(test)]
+pub(crate) struct SmartPlanningScope(());
+
+#[cfg(test)]
+impl SmartPlanningScope {
+    pub(crate) fn enter() -> Self {
+        SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        Self(())
+    }
+}
+
+#[cfg(test)]
+impl Drop for SmartPlanningScope {
+    fn drop(&mut self) {
+        SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    }
 }
 
 pub(in crate::kernel) fn assumptions_with_path_context(

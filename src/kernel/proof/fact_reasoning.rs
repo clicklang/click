@@ -336,6 +336,7 @@ pub(crate) fn check_forall_int32_instantiation(
 }
 
 fn assumptions_from_propositions(propositions: &[Proposition]) -> PureFactContext {
+    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(propositions.len());
     propositions
         .iter()
         .map(crate::kernel::clone_proposition_iteratively)
@@ -904,32 +905,28 @@ pub(crate) fn fact_conflicts_with_assumptions(
     }
 }
 
-pub(crate) fn assumptions_for_direct_fact_transport(
-    propositions: &[Proposition],
-) -> PureFactContext {
-    fn collect(proposition: &Proposition, facts: &mut Vec<Proposition>) {
-        match proposition {
-            Proposition::ConditionIs(_, _)
-            | Proposition::CMemoryEffectSummary { .. }
-            | Proposition::CHeapAllocationFreed { .. }
-            | Proposition::CResourceSeparate { .. }
-            // Owned ranges in one composition are pairwise separate; the
-            // effect-disjointness legs of direct transport need that
-            // separation when no explicit separate(...) fact writes it.
-            | Proposition::CResourceComposition(_) => facts.push(proposition.clone()),
-            Proposition::And(left, right) => {
-                collect(left, facts);
-                collect(right, facts);
-            }
-            _ => {}
+/// Appends the parts of `proposition` a direct fact transport reasons with:
+/// its conditions, effect summaries, frees, separations, and compositions,
+/// through conjunctions and in order.
+pub(crate) fn direct_fact_transport_premises(
+    proposition: &Proposition,
+    facts: &mut Vec<Proposition>,
+) {
+    match proposition {
+        Proposition::ConditionIs(_, _)
+        | Proposition::CMemoryEffectSummary { .. }
+        | Proposition::CHeapAllocationFreed { .. }
+        | Proposition::CResourceSeparate { .. }
+        // Owned ranges in one composition are pairwise separate; the
+        // effect-disjointness legs of direct transport need that
+        // separation when no explicit separate(...) fact writes it.
+        | Proposition::CResourceComposition(_) => facts.push(proposition.clone()),
+        Proposition::And(left, right) => {
+            direct_fact_transport_premises(left, facts);
+            direct_fact_transport_premises(right, facts);
         }
+        _ => {}
     }
-
-    let mut facts = Vec::new();
-    for proposition in propositions {
-        collect(proposition, &mut facts);
-    }
-    assumptions_from_propositions(&facts)
 }
 
 #[cfg(test)]

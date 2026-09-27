@@ -217,7 +217,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     ))
                 })?;
                 for preservation in preservation_contexts {
-                    let mut pure_facts = context.pure_facts.clone();
+                    let mut pure_facts = context.pure_facts.to_vec();
                     pure_facts.extend_from_slice(preservation.pure_facts());
                     pure_facts.sort();
                     pure_facts.dedup();
@@ -274,7 +274,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     }
                     iteration_contexts.push(PlanningExecutionContext {
                         state: preservation.state().clone(),
-                        pure_facts,
+                        pure_facts: pure_facts.into(),
                         surface_propositions: context.surface_propositions.clone(),
                         recorded_snapshots: context.recorded_snapshots.clone(),
                         case_path: context.case_path.clone(),

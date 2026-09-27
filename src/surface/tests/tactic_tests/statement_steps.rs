@@ -281,7 +281,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     let mut next_kernel_variable = 0;
     let (transitions, _) = certified_statement_transitions(
         &state,
-        std::slice::from_ref(&fact),
+        &crate::surface::PureFactList::from(vec![fact.clone()]),
         &statement,
         &CExecutionEnvironment::new(),
         None,

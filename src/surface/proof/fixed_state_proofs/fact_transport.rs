@@ -414,12 +414,20 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     })?;
     if !available.available_across_effects(&target, effect_facts) {
         let transition_facts = fact_transport_transition_facts(effect_facts, &source);
+        // Uncharged, a known violation: the path's effect facts and every
+        // available fact below are assumed afresh at each explicit
+        // transport, so a transport is linear in the path; charging these
+        // two builds grows `expanded_roundtrip_work_per_source_byte_is_logarithmic`
+        // faster than its bound (docs/internals/verification-efficiency.md).
+        crate::kernel::reasoning::path_facts::count_uncharged_context_entries(
+            transition_facts.len() + 1,
+        );
         let transport_assumptions = transition_facts
             .iter()
             .fold(selected_assumptions, |assumptions, fact| {
-                assumptions.assume_proposition(fact.proposition().clone())
+                assumptions.assume_proposition_uncharged(fact.proposition().clone())
             })
-            .assume_proposition(source.clone());
+            .assume_proposition_uncharged(source.clone());
         // Load-variable bridges decide search-free before the reachability
         // walk: a target equating two internal names for one unchanged cell
         // needs only the bounded origins proof, and the walk's general
@@ -472,7 +480,8 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
                 )
             })
             .fold(transport_assumptions.clone(), |assumptions, fact| {
-                assumptions.assume_proposition(fact.clone())
+                crate::kernel::reasoning::path_facts::count_uncharged_context_entries(1);
+                assumptions.assume_proposition_uncharged(fact.clone())
             });
         let bridge_propositions = std::iter::once(&target)
             .chain(chain_facts.iter())

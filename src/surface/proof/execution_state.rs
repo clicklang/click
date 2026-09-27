@@ -70,6 +70,9 @@ pub(super) struct ProofCertificateBuilder {
 pub(super) struct ProofFactStore {
     ordered: PersistentSequence<Proposition>,
     exact: PersistentSet<Proposition>,
+    /// The context of a prefix of `ordered`, which only grows at its end, so
+    /// a construction step's context extends the last one's.
+    built: crate::surface::pure_fact_list::BuiltContext,
 }
 
 impl ProofFactStore {
@@ -91,9 +94,13 @@ impl ProofFactStore {
     }
 
     pub(super) fn retain(&mut self, mut keep: impl FnMut(&Proposition) -> bool) {
+        let Some(first_removed) = self.ordered.iter().position(|fact| !keep(fact)) else {
+            // Nothing removed: the store, and the context it built, stand.
+            return;
+        };
         let mut retained = Self::default();
-        for fact in self.ordered.iter() {
-            if keep(fact) {
+        for (index, fact) in self.ordered.iter().enumerate() {
+            if index != first_removed && (index < first_removed || keep(fact)) {
                 retained.insert(fact.clone());
             }
         }
@@ -110,6 +117,17 @@ impl ProofFactStore {
 
     pub(super) fn to_vec(&self) -> Vec<Proposition> {
         self.iter().cloned().collect()
+    }
+
+    /// The facts in order, carrying the context this store built for them.
+    pub(super) fn to_list(&self) -> PureFactList {
+        PureFactList::with_built_context(self.to_vec(), self.built.clone())
+    }
+
+    /// Keeps the context `list` built, when `list` holds this store's facts
+    /// ([`Self::to_list`]) and built more of it than the store has.
+    pub(super) fn adopt_context_of(&mut self, list: &PureFactList) {
+        self.built.adopt_longer(list.built_context());
     }
 
     #[cfg(test)]

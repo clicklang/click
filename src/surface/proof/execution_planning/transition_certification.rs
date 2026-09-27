@@ -203,23 +203,23 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
 
 pub(in crate::surface::proof) fn certified_condition_transitions(
     state: &CState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     condition: &CExpression,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     filter_assumption_conflicts: bool,
     context: Option<&PureFactContext>,
 ) -> Result<Vec<CertifiedConditionTransition>, ClickError> {
-    let transition_pure_facts = pure_facts.to_vec();
+    // The list keeps its context, so consulting it here and on every path
+    // below builds it at most once, and extends the one the list carried in.
+    let pure_context = || pure_facts.context();
     let mut assumptions = match prerequisite_policy {
         StatementPrerequisitePolicy::Exact
         | StatementPrerequisitePolicy::Explicit
         | StatementPrerequisitePolicy::Contextual
-        | StatementPrerequisitePolicy::Retained => context
-            .cloned()
-            .unwrap_or_else(|| assumptions_from_propositions(pure_facts)),
+        | StatementPrerequisitePolicy::Retained => context.cloned().unwrap_or_else(pure_context),
         StatementPrerequisitePolicy::Planning => {
-            assumptions_from_propositions(pure_facts).defer_non_exact_loadability_obligations()
+            pure_context().defer_non_exact_loadability_obligations()
         }
     };
     if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
@@ -254,14 +254,13 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     exact_facts_directly_conflict(available, path_fact.proposition())
                 }) || filter_assumption_conflicts
                     && matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-                    && fact_conflicts_with_assumptions(
-                        path_fact.proposition(),
-                        &assumptions_from_propositions(pure_facts),
-                    )
+                    && fact_conflicts_with_assumptions(path_fact.proposition(), &pure_context())
             })
         })
         .map(|path| {
-            let mut successor_facts = transition_pure_facts.clone();
+            // Cloned after the context is consulted above, so every
+            // successor list starts from the built context.
+            let mut successor_facts = pure_facts.clone();
             successor_facts.extend(path.facts().iter().map(|fact| fact.proposition().clone()));
             let prerequisite_assumptions = match context {
                 Some(context) => successor_facts
@@ -270,7 +269,9 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     .fold(context.clone(), |assumptions, fact| {
                         assumptions.assume_proposition(fact.clone())
                     }),
-                None => assumptions_from_propositions(&successor_facts),
+                // The successor facts extend `pure_facts` by the path's
+                // facts, so their context extends the one it carried.
+                None => successor_facts.context(),
             };
             for obligation in path.obligations() {
                 match prerequisite_policy {
@@ -367,7 +368,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
 
 pub(in crate::surface) fn certified_statement_transitions(
     state: &CState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     statement: &CStatement,
     function_environment: &CExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
@@ -379,13 +380,12 @@ pub(in crate::surface) fn certified_statement_transitions(
     fact_transport_policy: StatementFactTransportPolicy,
     context: Option<&PureFactContext>,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
-    let transition_pure_facts = pure_facts.to_vec();
     // A statement executed in a proof context sees that context as the
     // kernel already keeps it: incrementally indexed, shared by clone. The
     // slice then carries only the statement-local delta bookkeeping.
-    let mut assumptions = context
-        .cloned()
-        .unwrap_or_else(|| assumptions_from_propositions(pure_facts));
+    // Without one, the list's own context is extended by the facts it
+    // gained since it was last consulted.
+    let mut assumptions = context.cloned().unwrap_or_else(|| pure_facts.context());
     if matches!(
         prerequisite_policy,
         StatementPrerequisitePolicy::Exact | StatementPrerequisitePolicy::Explicit
@@ -418,7 +418,7 @@ pub(in crate::surface) fn certified_statement_transitions(
         let planning_premises =
             if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
                 && (statement_consults_conditions(state, statement)
-                    || context_reasons_about_memory(state, &transition_pure_facts))
+                    || context_reasons_about_memory(state, pure_facts))
             {
                 ambient_condition_facts(pure_facts)
             } else {
@@ -465,7 +465,7 @@ pub(in crate::surface) fn certified_statement_transitions(
         execution,
         state,
         loop_rule,
-        &transition_pure_facts,
+        pure_facts,
         function_environment,
         predicate_environment,
         context_label,
@@ -554,7 +554,7 @@ fn statement_consults_conditions(state: &CState, statement: &CStatement) -> bool
 
 pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_phases(
     state: &CState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     statement: &CStatement,
     function_environment: &CExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
@@ -674,7 +674,7 @@ fn certified_transitions_from_execution(
     execution: SymbolicCExecution,
     state: &CState,
     loop_rule: Option<CVerifiedLoopRule>,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     environment: &CExecutionEnvironment,
     predicate_environment: Option<&PredicateEnvironment>,
     context_label: &str,
@@ -684,6 +684,15 @@ fn certified_transitions_from_execution(
     context: Option<&PureFactContext>,
     executed_under: &PureFactContext,
 ) -> Result<(Vec<CertifiedStatementTransition>, Option<CVerifiedLoopRule>), ClickError> {
+    // The list keeps its context, so every path below consulting it builds
+    // it at most once.
+    let pure_context = || pure_facts.context();
+    // Automatic transport asks for the facts' direct-transport context on
+    // most steps; building it before the successor lists are cloned from
+    // `pure_facts` lets each of them carry it to the next step.
+    if !matches!(fact_transport_policy, StatementFactTransportPolicy::None) {
+        pure_facts.direct_transport_context();
+    }
     if let Some(limit) = execution.limit() {
         if matches!(limit, crate::kernel::ExecutionLimit::Deadline) {
             return Err(ClickError::new(format!(
@@ -721,7 +730,7 @@ fn certified_transitions_from_execution(
             let mut loop_invariant_correspondence = loop_rule.as_ref()
                 .map(|rule| rule.loop_invariant_correspondence(path_index).to_vec())
                 .unwrap_or_default();
-            let mut successor_facts = pure_facts.to_vec();
+            let mut successor_facts = pure_facts.clone();
             let mut statement_facts = path
                 .facts()
                 .iter()
@@ -730,22 +739,47 @@ fn certified_transitions_from_execution(
             let mut statement_fact_sources = statement_facts.clone();
             successor_facts.extend(statement_facts.iter().cloned());
             let mut execution_facts = path.execution_facts();
-            let mut transport_facts = successor_facts.clone();
-            transport_facts.extend(
-                execution_facts
-                    .iter()
-                    .map(|fact| fact.proposition().clone()),
-            );
-            let transport_assumptions = assumptions_for_direct_fact_transport(&transport_facts);
+            // The direct-transport context of the successor facts followed by
+            // the execution facts, built when a transport first asks for it:
+            // the context `pure_facts` carries, extended by this path's
+            // statement and execution facts as they stand here.
+            let transport_sources = statement_facts
+                .iter()
+                .cloned()
+                .chain(execution_facts.iter().map(|fact| fact.proposition().clone()))
+                .collect::<Vec<_>>();
+            let transport_assumptions = std::cell::OnceCell::new();
+            let transport_assumptions = || {
+                transport_assumptions.get_or_init(|| {
+                    let mut premises = Vec::new();
+                    for fact in &transport_sources {
+                        crate::kernel::proof::fact_reasoning::direct_fact_transport_premises(
+                            fact,
+                            &mut premises,
+                        );
+                    }
+                    crate::kernel::reasoning::path_facts::count_uncharged_context_entries(
+                        premises.len(),
+                    );
+                    // Uncharged with the list's own transport context; see
+                    // `PureFactList::direct_transport_context`.
+                    premises.into_iter().fold(
+                        pure_facts.direct_transport_context(),
+                        |context, fact| context.assume_proposition_uncharged(fact),
+                    )
+                })
+            };
             let prerequisite_assumptions = match context {
                 Some(context) => statement_facts
                     .iter()
                     .fold(context.clone(), |assumptions, fact| {
                         assumptions.assume_proposition(fact.clone())
                     }),
-                None => assumptions_from_propositions(&successor_facts),
+                // `successor_facts` is `pure_facts` followed by the
+                // statement's facts, so its context extends the one
+                // `pure_facts` carried.
+                None => successor_facts.context(),
             };
-            let planning_assumptions = assumptions_from_propositions(pure_facts);
             let mut prerequisite_derivations = Vec::new();
             if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
                 let mut seen_prerequisites = BTreeSet::new();
@@ -846,7 +880,7 @@ fn certified_transitions_from_execution(
                             prerequisite_derivations.push(derivation);
                         }
                     } else if proposition_has_contextual_derivation_rules(proposition)
-                        && planning_assumptions.proves(proposition)
+                        && pure_context().proves(proposition)
                     {
                         return Err(ClickError::new(format!(
                             "{context_label} used an assumption-derived execution fact without a checkable derivation: {}",
@@ -911,8 +945,7 @@ fn certified_transitions_from_execution(
                                 // predicates like the no-overflow conditions
                                 // above; derive them atomically over the same
                                 // explicit set.
-                                assumptions_from_propositions(pure_facts)
-                                    .derive_atomic_proposition(proposition)
+                                pure_context().derive_atomic_proposition(proposition)
                             } else {
                                 None
                             };
@@ -1192,7 +1225,7 @@ fn certified_transitions_from_execution(
                         let (theorem, frame_premises) = direct_transport_with_frame_premises(
                             &fact,
                             post_state.memory(),
-                            &transport_assumptions,
+                            transport_assumptions(),
                         );
                         let Some(theorem) = theorem else {
                             continue;
@@ -1237,7 +1270,7 @@ fn certified_transitions_from_execution(
                     let automatic_sources = if normalize_statement_facts_to_exit {
                         pure_facts.to_vec()
                     } else {
-                        successor_facts.clone()
+                        successor_facts.to_vec()
                     };
                     for fact in automatic_sources {
                         if !c_condition_fact_has_memory(&fact)
@@ -1252,7 +1285,7 @@ fn certified_transitions_from_execution(
                                 direct_transport_with_frame_premises(
                                     &fact,
                                     post_state.memory(),
-                                    &transport_assumptions,
+                                    transport_assumptions(),
                                 )
                             }
                             StatementFactTransportPolicy::None => unreachable!(),
@@ -1287,8 +1320,7 @@ fn certified_transitions_from_execution(
                             successor_facts.push(transport.target.clone());
                         }
                     } else {
-                        replace_fact_in_place(
-                            &mut successor_facts,
+                        successor_facts.replace_fact_in_place(
                             &transport.source,
                             &transport.target,
                         );
@@ -1556,7 +1588,7 @@ mod condition_transition_tests {
 
         let error = match certified_condition_transitions(
             &state,
-            &[],
+            &PureFactList::default(),
             &condition,
             "condition obligation regression",
             StatementPrerequisitePolicy::Planning,
@@ -1648,7 +1680,7 @@ mod condition_transition_tests {
         let mut next_kernel_variable = 0;
         let (transitions, _) = certified_statement_transitions(
             &state,
-            &[],
+            &PureFactList::default(),
             &statement,
             &CExecutionEnvironment::new(),
             None,
@@ -1764,7 +1796,7 @@ mod condition_transition_tests {
         let mut next_kernel_variable = 0;
         let (transitions, _) = certified_statement_transitions(
             &state,
-            &[],
+            &PureFactList::default(),
             &statement,
             &CExecutionEnvironment::new(),
             None,
@@ -1820,7 +1852,7 @@ mod condition_transition_tests {
         let mut next_kernel_variable = 0;
         let (transitions, _) = certified_statement_transitions(
             &CState::new(),
-            &[],
+            &PureFactList::default(),
             &statement,
             &CExecutionEnvironment::new(),
             None,

@@ -349,7 +349,7 @@ pub(super) fn verify_execution_theorem(
             state,
             function.clone(),
             arguments,
-            facts,
+            facts.into_vec(),
             environment.clone(),
             CExecutionSemantics::APPLY_CALL_RULES_AND_VERIFY_LOOPS,
             CFunctionContractExecutionMode::VerifyLoops,

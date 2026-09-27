@@ -7,7 +7,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     proof_locals: &BTreeMap<String, ContractExpression>,
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     source_index: usize,
 ) -> Result<StructuralClause, ClickError> {
     let function_block = proof_context.function_block;
@@ -85,7 +85,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     // entry facts. Current frontier facts may include body/post observations;
     // those are never allowed to establish an inherited resource frame.
     let entry_assumptions =
-        assumptions_from_propositions(proof_context.constants.execution_start_facts.as_slice());
+        assumptions_from_propositions(&*proof_context.constants.execution_start_facts);
     // The frame comes from the contract's checked entry transition, so it is
     // evaluated at the checked function-entry state rather than at the
     // frontier's start state: a proof that unfolds a consumed instance before
@@ -283,12 +283,10 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         &annotated,
         &local_function_environment,
     );
-    let assumptions = assumptions_from_propositions(available_pure_facts);
     execute_step_from_frontier_position(
         execution,
         &loop_context,
         available_pure_facts,
-        &assumptions,
         "loop",
         StatementPrerequisitePolicy::Exact,
         StatementFactTransportPolicy::Automatic,

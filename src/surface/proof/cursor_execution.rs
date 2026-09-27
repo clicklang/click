@@ -397,7 +397,7 @@ fn listed_context_pure_facts(
 pub(super) fn execute_branch_step_from_frontier_position(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     tactic_name: &str,
     requested_branch: Option<bool>,
     prerequisite_policy: StatementPrerequisitePolicy,
@@ -780,7 +780,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
 fn execute_concrete_loop_head_step(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     statement_index: usize,
@@ -1550,7 +1550,7 @@ pub(super) fn surface_snapshot_selector(surface: &ClickProposition) -> Option<Sn
 pub(super) fn route_throw_to_handler(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     introduced_facts: &mut Vec<Proposition>,
     function: &CFunction,
     arguments: &[CExpression],
@@ -1588,7 +1588,7 @@ pub(super) fn route_throw_to_handler(
     // declare the handler binding, then assign the thrown value. The
     // handler binding is always `int32` by `TryCatchInt32` semantics.
     let mut state = thrown_state.clone();
-    let mut facts = throw_facts.to_vec();
+    let mut facts = PureFactList::from(throw_facts.to_vec());
     for statement in [
         c_declare(handler.binding.clone(), crate::kernel::CType::Int32),
         c_assign(
@@ -1740,8 +1740,7 @@ pub(super) fn collect_planning_statement_transitions<R>(
 pub(super) fn execute_step_from_frontier_position(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
-    _assumptions: &PureFactContext,
+    available_pure_facts: &mut PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
@@ -1752,7 +1751,6 @@ pub(super) fn execute_step_from_frontier_position(
         execution,
         proof_context,
         available_pure_facts,
-        _assumptions,
         tactic_name,
         prerequisite_policy,
         fact_transport_policy,
@@ -1765,7 +1763,7 @@ pub(super) fn execute_step_from_frontier_position(
 
 pub(super) struct ExecutionPointStepSuccessor {
     pub(super) execution: ExecutionProofState,
-    pub(super) pure_facts: Vec<Proposition>,
+    pub(super) pure_facts: PureFactList,
     pub(super) introduced_facts: Vec<Proposition>,
 }
 
@@ -1798,7 +1796,7 @@ pub(super) struct PreparedCallOutcomeSplit {
 pub(super) fn prepare_call_outcome_split(
     execution: &ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &PureFactList,
     tactic_name: &str,
 ) -> Result<Option<PreparedCallOutcomeSplit>, ClickError> {
     let mut prepared = execution.clone();
@@ -1960,7 +1958,7 @@ pub(super) fn prepare_call_outcome_split(
 pub(super) fn apply_prepared_call_outcome_transition(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     introduced_facts: &mut Vec<Proposition>,
     prepared: &PreparedCallOutcomeSplit,
     transition: &crate::surface::CertifiedStatementTransition,
@@ -2118,13 +2116,11 @@ pub(super) fn execute_step_successor_from_frontier_position(
     context: Option<&PureFactContext>,
 ) -> Result<ExecutionPointStepSuccessor, ClickError> {
     let mut successor = execution.clone();
-    let mut successor_facts = available_pure_facts.to_vec();
-    let assumptions = assumptions_from_propositions(&successor_facts);
+    let mut successor_facts = PureFactList::from(available_pure_facts.to_vec());
     let introduced_facts = execute_step_from_frontier_position_selecting_path(
         &mut successor,
         proof_context,
         &mut successor_facts,
-        &assumptions,
         tactic_name,
         prerequisite_policy,
         fact_transport_policy,
@@ -2144,8 +2140,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
 fn execute_step_from_frontier_position_selecting_path(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
-    _assumptions: &PureFactContext,
+    available_pure_facts: &mut PureFactList,
     tactic_name: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
     fact_transport_policy: StatementFactTransportPolicy,
@@ -3591,7 +3586,7 @@ pub(super) const BOUNDED_EXECUTE_STEP_LIMIT: usize = 10_000;
 #[derive(Clone)]
 pub(super) struct BoundedProofFrontier {
     pub(super) execution: ExecutionProofState,
-    pub(super) pure_facts: Vec<Proposition>,
+    pub(super) pure_facts: PureFactList,
     /// This path's construction sink while planning constructs steps.
     pub(super) sink: Option<ProofCertificateBuilder>,
 }
@@ -3885,7 +3880,7 @@ fn fork_throwing_call_in_try(
 pub(super) fn bounded_execute_from_frontier_position(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     prerequisite_policy: StatementPrerequisitePolicy,
     mut construction: Option<Construction<'_>>,
 ) -> Result<(), ClickError> {
@@ -4055,12 +4050,10 @@ pub(super) fn bounded_execute_from_frontier_position(
                         }
                         branch.execution.core.next_path_choice += choice_count;
                     }
-                    let assumptions = assumptions_from_propositions(&branch.pure_facts);
                     execute_step_from_frontier_position_selecting_path(
                         &mut branch.execution,
                         proof_context,
                         &mut branch.pure_facts,
-                        &assumptions,
                         "execute",
                         prerequisite_policy,
                         StatementFactTransportPolicy::Automatic,
@@ -4115,12 +4108,10 @@ pub(super) fn bounded_execute_from_frontier_position(
             continue;
         }
 
-        let assumptions = assumptions_from_propositions(&frontier.pure_facts);
         execute_step_from_frontier_position(
             &mut frontier.execution,
             proof_context,
             &mut frontier.pure_facts,
-            &assumptions,
             "execute",
             prerequisite_policy,
             StatementFactTransportPolicy::Automatic,
@@ -4217,7 +4208,7 @@ fn switch_surface_path_choices(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn merge_bounded_execution_frontiers(
     execution: &mut ExecutionProofState,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     function: &CFunction,
     arguments: &[CExpression],
     mut completed: Vec<BoundedProofFrontier>,
@@ -4310,7 +4301,7 @@ pub(super) fn merge_bounded_execution_frontiers(
 pub(super) fn execute_rest_from_frontier_position(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     mut construction: Option<Construction<'_>>,
 ) -> Result<(), ClickError> {
     let function = proof_context.function;
@@ -4329,12 +4320,10 @@ pub(super) fn execute_rest_from_frontier_position(
             break;
         }
 
-        let assumptions = assumptions_from_propositions(available_pure_facts);
         execute_step_from_frontier_position(
             execution,
             proof_context,
             available_pure_facts,
-            &assumptions,
             "execute",
             StatementPrerequisitePolicy::Planning,
             StatementFactTransportPolicy::Automatic,
@@ -4359,7 +4348,7 @@ pub(super) fn execute_rest_from_frontier_position(
 pub(super) fn execute_until_statement(
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
-    available_pure_facts: &mut Vec<Proposition>,
+    available_pure_facts: &mut PureFactList,
     statement_index: usize,
     prerequisite_policy: StatementPrerequisitePolicy,
     mut construction: Option<Construction<'_>>,
@@ -4393,12 +4382,10 @@ pub(super) fn execute_until_statement(
 
     while execution.core.frontier.next_statement_index != statement_index {
         let region_start = execution.core.frontier.next_statement_index;
-        let assumptions = assumptions_from_propositions(available_pure_facts);
         execute_step_from_frontier_position(
             execution,
             proof_context,
             available_pure_facts,
-            &assumptions,
             "execute_until",
             prerequisite_policy,
             StatementFactTransportPolicy::Automatic,

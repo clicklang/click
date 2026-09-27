@@ -4250,10 +4250,13 @@ pub(in crate::kernel) fn proof_evidence_assumptions(
 ) -> PureFactContext {
     let mut assumptions = base.clone();
     let mut proposition = theorem.proposition();
+    let mut premises = 0;
     while let Proposition::Implies(premise, body) = proposition {
         assumptions = assumptions.assume_proposition(premise.as_ref().clone());
+        premises += 1;
         proposition = body;
     }
+    crate::kernel::reasoning::path_facts::count_context_rebuild_entries(premises);
     assumptions
 }
 
@@ -4308,6 +4311,7 @@ pub(in crate::kernel) fn proof_evidence_unretained_premise(
                     }
                 }
                 set.extend(obligations.iter().map(ProofObligation::proposition));
+                crate::kernel::reasoning::path_facts::count_uncharged_context_entries(set.len());
                 set
             })
             .contains(premise)

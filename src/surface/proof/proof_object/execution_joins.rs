@@ -3100,7 +3100,7 @@ impl<'a> Proof<'a> {
         let Some(parent_execution) = self.execution().cloned() else {
             return Ok(None);
         };
-        let available_facts = self.facts().to_vec();
+        let available_facts = PureFactList::from(self.facts().to_vec());
         let Some(prepared) = crate::surface::proof::cursor_execution::prepare_call_outcome_split(
             &parent_execution,
             context,

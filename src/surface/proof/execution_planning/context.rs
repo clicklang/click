@@ -30,6 +30,9 @@ pub(in crate::surface) fn verify_loop_execution_proofs(
             click_function_environment,
             &label,
         )?;
+    // The requirement facts start every planned path, and the list keeps
+    // the context the entry checks below extend, for that path's first step
+    // to extend in turn.
     let function = annotated_function_with_assumptions(
         function_block,
         parsed_function,
@@ -259,7 +262,7 @@ impl FrontierLoopProofSource {
 #[derive(Clone)]
 pub(in crate::surface::proof) struct PlanningExecutionContext {
     pub(in crate::surface::proof) state: CState,
-    pub(in crate::surface::proof) pure_facts: Vec<Proposition>,
+    pub(in crate::surface::proof) pure_facts: PureFactList,
     pub(in crate::surface::proof) surface_propositions: SurfacePropositionMap,
     pub(in crate::surface::proof) recorded_snapshots: RecordedSnapshots,
     pub(in crate::surface::proof) case_path: Vec<ProofCaseChoice>,
@@ -648,7 +651,7 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
     pub(in crate::surface::proof) is_true: bool,
     /// The kernel fact context the theorem was proved under.
     pub(in crate::surface::proof) context: PureFactContext,
-    pub(in crate::surface::proof) pure_facts: Vec<Proposition>,
+    pub(in crate::surface::proof) pure_facts: PureFactList,
     pub(in crate::surface::proof) path_facts: Vec<Proposition>,
     pub(in crate::surface::proof) theorem: Theorem,
 }
@@ -747,7 +750,9 @@ pub(in crate::surface::proof) fn append_statement_transition_certificate(
             .filter(|transport| transport.statement_local)
             .map(|transport| &transport.source)
             .collect::<Vec<_>>();
-        certificate_facts.retain(|fact| !local_sources.contains(&fact));
+        if !local_sources.is_empty() {
+            certificate_facts.retain(|fact| !local_sources.contains(&fact));
+        }
         for transport in transition
             .fact_transports
             .iter()

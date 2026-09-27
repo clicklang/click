@@ -1928,7 +1928,9 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
 pub(super) struct InitialClaimContext {
     pub(super) state: CState,
     pub(super) arguments: Vec<CExpression>,
-    pub(super) pure_facts: Vec<Proposition>,
+    /// The entry facts, with the context the setup built from them kept
+    /// for the proof and certification to extend.
+    pub(super) pure_facts: PureFactList,
     pub(super) entry_fact_origins: Vec<EntryFactOrigin>,
     pub(super) surface_propositions: SurfacePropositionMap,
 }
@@ -1944,7 +1946,7 @@ pub(super) fn initial_claim_context(
     (
         CState,
         Vec<CExpression>,
-        Vec<Proposition>,
+        PureFactList,
         SurfacePropositionMap,
     ),
     ClickError,
@@ -2263,23 +2265,23 @@ pub(super) fn initial_claim_context_with_caller_owner(
             surface_propositions.record_lowering(&surface, kernel)?;
         }
     }
-    requirement_pure_facts = requirements_with_structural_unfolds(
+    let unfolded_requirement_facts = requirements_with_structural_unfolds(
         predicate_environment,
         click_function_environment,
         function_block,
-        &requirement_pure_facts,
+        &PureFactList::from(requirement_pure_facts),
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
     // Structural setup only appends checked unfoldings. They are useful entry
     // facts, but Phase 1 keeps the written requirement's unique principal
     // fact as the selection authority; an appended unfolding is derived.
-    entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
+    entry_fact_origins.resize(unfolded_requirement_facts.len(), EntryFactOrigin::Derived);
     state = project_initial_composite_resource_cores(
         resource_environment,
         parsed_function.parameters(),
         &arguments,
         state,
-        &requirement_pure_facts,
+        &unfolded_requirement_facts,
         claim_label,
         include_owned_composite_cores,
         predicate_environment,
@@ -2290,7 +2292,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         parsed_function.parameters(),
         &arguments,
         &state,
-        &requirement_pure_facts,
+        &unfolded_requirement_facts,
         predicate_environment,
         click_function_environment,
         claim_label,
@@ -2340,7 +2342,6 @@ pub(super) fn initial_claim_context_with_caller_owner(
             continue;
         }
         for fact in &requirement_pure_facts[definedness_context_facts..] {
-            crate::instrumentation::record_deterministic_work(1);
             definedness_context = definedness_context
                 .assume_proposition(crate::kernel::clone_proposition_iteratively(fact));
         }
@@ -2428,6 +2429,9 @@ pub(super) fn initial_claim_context_with_caller_owner(
             entry_pure_facts.push(fact);
         }
     }
+    // The entry evaluation reads these facts' context twice; the list keeps
+    // the first build for the second.
+    let entry_pure_facts = PureFactList::from(entry_pure_facts);
     // Resource terms are first built provisionally so dependent arguments can
     // retain their symbolic loads.  The kernel then evaluates the complete
     // clause section against its explicit supplies and the pure requirements;
@@ -2459,6 +2463,9 @@ pub(super) fn initial_claim_context_with_caller_owner(
             entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
+    // From here the entry facts only grow, so every context read of them
+    // below extends one built context.
+    let mut requirement_pure_facts = PureFactList::from(requirement_pure_facts);
     for requirement in function_block.requires() {
         let Requirement::Resource(resource) = requirement.inner() else {
             continue;
@@ -2498,7 +2505,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         state.resources(),
         &composite_definitions,
         &state,
-        &assumptions_from_propositions(&requirement_pure_facts),
+        &requirement_pure_facts.context(),
     );
     for fact in publication
         .model_facts
@@ -2674,7 +2681,7 @@ fn evaluate_entry_resource_context(
     click_function_environment: &ClickFunctionEnvironment,
     state: CState,
     arguments: &[CExpression],
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     include_owned_composite_cores: bool,
     claim_label: &str,
     entry_resources: &ResourceContext,
@@ -2772,7 +2779,7 @@ fn evaluate_entry_resource_context(
             evaluation_state = evaluation_state.with_local(parameter.name(), value.clone());
         }
     }
-    let assumptions = assumptions_from_propositions(pure_facts);
+    let assumptions = pure_facts.context();
     let definitions = crate::surface::verification::composite_resource_definitions(
         resource_environment,
         predicate_environment,
@@ -2990,7 +2997,7 @@ fn canonical_claim_caller_state(
     has_verified_loops: bool,
     function: &CFunction,
     arguments: &[CExpression],
-    pure_facts: &[Proposition],
+    pure_facts: &(impl PropositionSource + ?Sized),
     claim_label: &str,
 ) -> Result<CState, ClickError> {
     if !has_verified_loops {
@@ -3010,7 +3017,7 @@ fn install_borrowed_contract_inputs(
     state: CState,
     function: &CFunction,
     arguments: &[CExpression],
-    pure_facts: &[Proposition],
+    pure_facts: &(impl PropositionSource + ?Sized),
     parameters: &[syntax::C0Parameter],
     proof_label: &str,
 ) -> Result<CState, ClickError> {

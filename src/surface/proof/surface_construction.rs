@@ -827,8 +827,11 @@ pub(super) fn construct_proof_step_for_planned_operation(
     environments: ConstructionEnvironments<'_>,
     operation: &ConstructionEvidence,
 ) {
-    let available = std::mem::take(&mut execution.presentation.surface_record.certificate_facts);
-    let available_facts = available.to_vec();
+    let mut available =
+        std::mem::take(&mut execution.presentation.surface_record.certificate_facts);
+    // The construction reads the context of these facts; the store keeps
+    // the context it built for the next construction to extend.
+    let available_facts = available.to_list();
     {
         // Planner construction runs on a construction context that carries no typed
         // path state; the unfold set only refines a transport-planning
@@ -849,6 +852,7 @@ pub(super) fn construct_proof_step_for_planned_operation(
             None,
         );
     }
+    available.adopt_context_of(&available_facts);
     execution.presentation.surface_record.certificate_facts = available;
 }
 
@@ -856,7 +860,7 @@ pub(super) fn construct_proof_step_for_planned_operation(
 pub(super) fn append_proof_step_for_operation(
     construction: &mut ProofCertificateConstructionContext<'_>,
     state: &CState,
-    available: &[Proposition],
+    available: &PureFactList,
     function_block: &FunctionBlock,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],

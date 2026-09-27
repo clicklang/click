@@ -1002,7 +1002,7 @@ pub(super) fn project_initial_composite_resource_cores(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     mut state: CState,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &(impl PropositionSource + ?Sized),
     claim_label: &str,
     include_owned: bool,
     predicate_environment: &PredicateEnvironment,
@@ -2080,13 +2080,13 @@ pub(super) fn record_initial_composite_surface_facts(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
-    available_pure_facts: &[Proposition],
+    available_pure_facts: &PureFactList,
     surface_propositions: &mut SurfacePropositionMap,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     active_resources: &mut BTreeSet<String>,
 ) -> Result<(), String> {
-    let assumptions = assumptions_from_propositions(available_pure_facts);
+    let assumptions = available_pure_facts.context();
     let ResourceClause::Declared { name, .. } = resource else {
         return Ok(());
     };

@@ -3139,6 +3139,11 @@ fn verify_c0_sources_with_context(
                     if !matches!(outcome, CFunctionOutcome::Return { .. }) {
                         continue;
                     }
+                    // One unit per path read: the check builds the path's fact
+                    // context only when a write could reach preexisting
+                    // storage, and a path read once per theorem instead of
+                    // once must still show.
+                    crate::instrumentation::record_deterministic_work(1);
                     let mut available_pure_facts = certification_facts.clone();
                     available_pure_facts
                         .extend(path.facts().iter().map(|fact| fact.proposition().clone()));
@@ -3191,7 +3196,7 @@ fn verify_c0_sources_with_context(
                             certification_state.clone(),
                             contract_function.clone(),
                             certification_arguments.clone(),
-                            certification_facts,
+                            certification_facts.into_vec(),
                             certification_function_environment,
                             if has_frontier_loop_rules {
                                 CExecutionSemantics::APPLY_VERIFIED_RULES

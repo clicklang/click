@@ -193,25 +193,47 @@ charged to visible semantic output rather than hidden ambient state:
   removing them needs the cells indexed by the index terms the facts order,
   which no rule has yet. Heap `initialized_cells` and union views are still
   visited per candidate on every store.
-- Rebuilding a fact context from a list (`assumptions_with_path_context`,
-  `assumptions_with_propositions`, `PropositionSource::pure_context`) charges
-  no deterministic work, and many operations rebuild one from the path's
-  facts at each step, so each such step is linear in the path and a path is
-  quadratic in wall time while its counted work stays linear. This is a known
-  violation, not an exception. It was visible as quadratic wall time for a
-  call step over an external contract with `N` ensures or `N` requirements,
-  whose rebuild per clause is gone (`call_ensure_lowering_is_linear_in_the_ensure_count`,
-  `call_requirement_checking_is_linear_in_the_requirement_count`, which also
-  pin the rebuilt entries through the test-only `context_rebuild_entries`
-  count). Charging every rebuild one unit per entry makes four scaling
-  regressions fail today: the implicit empty-effect check over early-return
-  paths (37, 87, 235, 723 units at 4 to 32 paths), the expanded round trip's
-  work per source byte and its extra copy beside unrelated allocations, and
-  the plain round trip's extra copy. The same holds for the set of a path's
-  retained facts that evidence checking reads once per checked step
-  (`proof_evidence_unretained_premise`): charging it grows the expanded
-  extra copy one unit per unrelated allocation. Removing these needs each
-  step's context carried persistently instead of rebuilt from the path.
+- Every fact a context is built from is charged one unit of deterministic
+  work (`PureFactContext::assume_proposition` and `assume_condition`), so a
+  context rebuilt from a growing list at each step shows as quadratic work
+  instead of hiding in wall time. A path's facts carry the contexts they
+  build: planning keeps them in a `PureFactList`, and the certificate facts'
+  store keeps its own, each extended by the facts a step adds and rebuilt
+  only when a step removes or reorders a fact inside the built prefix. Claim
+  setup and whole-function finalization build the entry facts' context once
+  and extend it per path, and the implicit empty-effect check builds a
+  path's context only when a write could reach storage that predates the
+  call. `planning_a_path_builds_contexts_linear_in_its_length` pins the
+  planner's builds (`smart_planning_context_entries`), and
+  `call_ensure_lowering_is_linear_in_the_ensure_count` and
+  `call_requirement_checking_is_linear_in_the_requirement_count` pin the
+  builds of a call step (`context_rebuild_entries`).
+
+  Three builds remain charged nothing (`assume_proposition_uncharged`,
+  counted by `count_uncharged_context_entries`), each a known violation. A
+  step's direct-transport context covers its statement-local facts, and a
+  simple step's statement-local facts hold every observable resource fact
+  of its state, so the context is linear in the unrelated resources at each
+  call step: charging it grows
+  `expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations`
+  a unit per unrelated allocation. An explicit `transport` assumes the
+  path's memory-effect facts and every available fact afresh, so each transport is
+  linear in the path: charging it pushes
+  `expanded_roundtrip_work_per_source_byte_is_logarithmic` past its bound.
+  The set of a path's retained facts that evidence checking reads once per
+  checked step (`proof_evidence_unretained_premise`) is not a context, but
+  it is the same kind of rebuild: charging it grows the expanded extra copy
+  a unit per unrelated allocation. Removing them needs the resource facts'
+  and the path's memory-effect facts' contexts carried with the proof state.
+
+  Reading a checked path is still linear in that path's facts, and the
+  checked execution stores each path's facts whole. A function with `P`
+  early returns, each after the conditions of the returns before it, holds
+  about `P^2/2` path facts, so whatever reads every path's facts is
+  quadratic in `P`: post-execution `simp` and contract certification do
+  (`grouped_proof_finalization_reads_each_path_once` pins only the
+  finalization check that no longer needs them). Removing this needs path
+  facts shared across the paths that share a prefix.
 
 ## Execution capacity follows selected syntax
 

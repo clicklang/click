@@ -4463,7 +4463,16 @@ impl PureFactContext {
         }
     }
 
-    pub fn assume_condition(mut self, condition: ConditionTerm, value: bool) -> Self {
+    /// This context extended by `condition == value`, charged one unit of
+    /// deterministic work: every fact a context is built from is charged
+    /// once, so a caller that rebuilds a context from a growing list per
+    /// item shows as quadratic work rather than hiding in wall time.
+    pub fn assume_condition(self, condition: ConditionTerm, value: bool) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        self.assume_condition_uncharged(condition, value)
+    }
+
+    fn assume_condition_uncharged(mut self, condition: ConditionTerm, value: bool) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
@@ -4476,12 +4485,12 @@ impl PureFactContext {
         if let ConditionTerm::Bitvector32Equal(left, right) = &condition
             && let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right)
         {
-            self = self.assume_condition(ConditionTerm::equal(left, right), value);
+            self = self.assume_condition_uncharged(ConditionTerm::equal(left, right), value);
         }
         if let ConditionTerm::PointerEqual(left, right) = &condition
             && left.block == right.block
         {
-            self = self.assume_condition(
+            self = self.assume_condition_uncharged(
                 ConditionTerm::pointer_offset_equal(left.offset.clone(), right.offset.clone()),
                 value,
             );
@@ -4532,18 +4541,30 @@ impl PureFactContext {
         self
     }
 
-    pub fn assume_proposition(mut self, proposition: Proposition) -> Self {
+    /// This context extended by `proposition`, charged one unit of
+    /// deterministic work (see [`Self::assume_condition`]).
+    pub fn assume_proposition(self, proposition: Proposition) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        self.assume_proposition_uncharged(proposition)
+    }
+
+    /// [`Self::assume_proposition`] without its charge, for a context build
+    /// that is a known violation of the complexity contract
+    /// (`docs/internals/verification-efficiency.md`) and whose charge would
+    /// fail a scaling regression until its representation changes. Every
+    /// caller names the violation it carries.
+    pub(crate) fn assume_proposition_uncharged(mut self, proposition: Proposition) -> Self {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                self = self.assume_condition(condition, value);
+                self = self.assume_condition_uncharged(condition, value);
             }
             Proposition::And(left, right) => {
-                self = self.assume_proposition(*left);
-                self = self.assume_proposition(*right);
+                self = self.assume_proposition_uncharged(*left);
+                self = self.assume_proposition_uncharged(*right);
             }
             Proposition::Not(body) => match *body {
                 Proposition::ConditionIs(condition, value) => {
-                    self = self.assume_condition(condition, !value);
+                    self = self.assume_condition_uncharged(condition, !value);
                 }
                 body => {
                     self.insert_proposition_fact(Proposition::Not(Box::new(body)));

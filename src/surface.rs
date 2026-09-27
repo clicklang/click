@@ -104,6 +104,7 @@ use integer_conversions::*;
 pub use surface_propositions::SurfacePropositionMap;
 mod printing;
 mod proof;
+pub(crate) mod pure_fact_list;
 mod validation;
 mod verification;
 
@@ -149,6 +150,7 @@ pub fn click_source_is_declaration_module(source: &str) -> bool {
 use parser::ContractLetBinding;
 pub use printing::{format_proof_certificate, format_proof_tactics};
 use proof::*;
+pub(crate) use pure_fact_list::PureFactList;
 use source_registry::*;
 #[cfg(test)]
 use validation::combined_theorem_definitions;
@@ -2866,7 +2868,7 @@ pub struct CertifiedStatementTransition {
     pub(crate) execution_facts: Vec<ExecutionPureFact>,
     pub(crate) path_facts: Vec<Proposition>,
     pub(crate) obligations: Vec<ProofObligation>,
-    pub(crate) pure_facts: Vec<Proposition>,
+    pub(crate) pure_facts: PureFactList,
     /// Facts emitted by this statement transition itself, after applying the
     /// same snapshot transports reflected in `pure_facts`. This is an
     /// output-sized semantic delta; it deliberately excludes inherited

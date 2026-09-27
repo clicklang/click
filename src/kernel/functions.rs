@@ -19002,6 +19002,11 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions(
     let (expanded, composites) =
         expand_composite_resource_context(context, definitions, memory, assumptions)?;
     let mut propositions = Vec::new();
+    // `assumptions` extended by `propositions[..extended]`: each composite's
+    // facts are evaluated under every proposition before them, and the
+    // context grows by the new ones instead of being rebuilt per composite.
+    let mut fact_assumptions = assumptions.clone();
+    let mut extended = 0;
     for composite in composites {
         // Preserve the bounds of each declared leaf before adjacent resources
         // normalize into a larger range. The proof can cite either slice.
@@ -19017,7 +19022,9 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions(
             memory,
             assumptions,
         )?);
-        let fact_assumptions = assumptions_with_propositions(assumptions, &propositions);
+        fact_assumptions =
+            assumptions_with_propositions(&fact_assumptions, &propositions[extended..]);
+        extended = propositions.len();
         propositions.extend(evaluate_composite_resource_fact_propositions(
             &composite,
             definitions,

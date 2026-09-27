@@ -2620,6 +2620,13 @@ fn early_return_fan_out(returns: usize) -> String {
 /// returns: 5, 9, 17, and 33 units, one per composition carrier inserted into
 /// a path's fact context. Visiting the execution once per theorem measured
 /// 30, 90, 306, and 1122.
+///
+/// Every context build is now charged a unit per fact, and path `k` of this
+/// fan-out holds the `k` conditions before it, so building each path's
+/// context charged 37, 87, 235, and 723. The check now builds a path's
+/// context only when a write could reach storage that predates the call,
+/// which this function's heap cell cannot, and charges one unit per path it
+/// reads instead: 6, 10, 18, and 34 on 2026-09-27.
 #[test]
 fn grouped_proof_finalization_reads_each_path_once() {
     std::thread::Builder::new()
@@ -3416,6 +3423,76 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
     assert_near_linear_scaling("call requirement count", &samples);
 }
 
+/// Planning a path of `N` statements builds fact contexts in work linear in
+/// `N`.
+///
+/// The main path of an early-return fan-out learns one condition per `if`,
+/// so its facts grow with its length, and every planned step reasons under
+/// the context of the facts so far. The planner rebuilt that context from
+/// the path's fact list at each step (once for a context argument nothing
+/// read, and again per transition), and constructed each step's surface
+/// form under a context rebuilt from every certificate fact, so its context
+/// builds assumed a number of facts quadratic in the path while the counter,
+/// which did not charge them, reported linear work. The path's facts now
+/// carry the contexts they build (`PureFactList`, and the certificate
+/// facts' store), each step extends them by the facts it adds, and every
+/// context build is charged. Measured on 2026-09-27 at 4, 8, 16, and 32
+/// returns: 136, 248, 472, and 920 planning context entries, and 2884, 4776,
+/// 9136, and 20160 units of planning work; charging the rebuilds the planner
+/// made before measured 3962, 8154, 20858, and 63546.
+///
+/// The planning tactic's total work is only held to the general contract:
+/// each forked return path still copies and scans the facts its prefix
+/// learned, and finalization reads every path's facts, which the checked
+/// execution stores whole per path.
+#[test]
+fn planning_a_path_builds_contexts_linear_in_its_length() {
+    std::thread::Builder::new()
+        .name("path-planning".into())
+        .stack_size(64 << 20)
+        .spawn(|| {
+            let _ = roundtrip_sample(1, 0);
+            const PLANNER: &str = "smart tactic `execute`";
+            let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n} by {\n    execute();\n    simp();\n}\n";
+            let mut planning = Vec::new();
+            let mut entries = Vec::new();
+            for returns in [4, 8, 16, 32] {
+                let c = early_return_fan_out(returns);
+                let before = crate::kernel::reasoning::path_facts::smart_planning_context_entries();
+                let (verified, sample) = scaling_sample(returns, || {
+                    verify_c0_sources(click, &[("fan_out.c", c.as_str())])
+                });
+                entries.push(
+                    crate::kernel::reasoning::path_facts::smart_planning_context_entries() - before,
+                );
+                verified.unwrap_or_else(|error| {
+                    panic!("fan-out of {returns} returns failed: {}", error.message())
+                });
+                planning.push(ScalingSample {
+                    size: returns,
+                    work: *sample.named_work.get(PLANNER).unwrap_or_else(|| {
+                        panic!("the fan-out was not planned by `execute`: {sample:?}")
+                    }),
+                    named_work: BTreeMap::new(),
+                });
+            }
+            eprintln!("path planning context entries: {entries:?}; planning work: {planning:?}");
+            assert!(entries[0] > 0, "planning built no context: {entries:?}");
+            // Linear with a small allowance: each doubling of the path at
+            // most 2.2 times the entries (a per-step rebuild is 4 times).
+            for pair in entries.windows(2) {
+                assert!(
+                    pair[1] * 10 <= pair[0] * 22,
+                    "planning a path builds contexts faster than its length: {entries:?}"
+                );
+            }
+            assert_near_linear_scaling("planning a fan-out's paths", &planning);
+        })
+        .expect("spawn the path-planning thread")
+        .join()
+        .expect("path-planning thread");
+}
+
 /// A copy loop whose preservation `simp` reaches a fact transport the
 /// explicit-premise planner cannot view: the element just stored is named
 /// `dst[k]` under `k == i - 1`, so `old(src[k]) == old(src[k])` does not
@@ -4055,9 +4132,13 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     assert!(least > 0, "{samples:?}");
     // Flat across seven orders of magnitude of length: the samples differ
     // by a few dozen units of fixed work that read the length's constant
-    // (about 3.5k units in all), while one unit per element would be 10^9.
+    // (about 4k units in all), while one unit per element would be 10^9.
+    // At 10^9 pointer elements the range's byte count overflows, so that
+    // entry gains one fact, `false`; every fact context built from the entry
+    // facts is charged one unit per fact, which makes about 15 of the
+    // difference (measured on 2026-09-27: 4171, 4187, 4187, 4209).
     assert!(
-        most - least <= 32,
+        most - least <= 48,
         "deterministic work depends on the composite range's length: {samples:?}"
     );
 }

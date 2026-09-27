@@ -27,15 +27,21 @@ pub(super) fn requirements_with_structural_unfolds(
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
     function_block: &FunctionBlock,
-    requirement_pure_facts: &[Proposition],
-) -> Result<Vec<Proposition>, String> {
+    requirement_pure_facts: &PureFactList,
+) -> Result<PureFactList, String> {
     let unfolded_predicates = structural_unfold_tactic_names(function_block);
-    unfold_available_predicate_facts(
+    let unfolded = unfold_available_predicate_facts(
         predicate_environment,
         click_function_environment,
         &unfolded_predicates,
         requirement_pure_facts,
-    )
+    )?;
+    // Unfolding only appends, so the result extends the list and keeps the
+    // context it carried.
+    debug_assert!(unfolded.starts_with(requirement_pure_facts));
+    let mut facts = requirement_pure_facts.clone();
+    facts.extend(unfolded.into_iter().skip(requirement_pure_facts.len()));
+    Ok(facts)
 }
 
 pub(super) fn structural_unfold_tactic_names(function_block: &FunctionBlock) -> Vec<String> {
