@@ -76,6 +76,29 @@ fn missing_prerequisite_error(
     }
 }
 
+/// A condition's unmet prerequisite, spelled as a proof would state it over
+/// `state`'s locals rather than as the kernel's term.
+fn missing_condition_prerequisite_error(
+    context_label: &str,
+    obligation: &ProofObligation,
+    state: &CState,
+) -> ClickError {
+    missing_prerequisite_error(
+        format!(
+            "{context_label} is missing condition prerequisite{}: `{}`",
+            obligation
+                .context()
+                .map(|context| format!(" ({context})"))
+                .unwrap_or_default(),
+            crate::surface::diagnostics::describe_stated_fact_over_locals(
+                obligation.proposition(),
+                state
+            ),
+        ),
+        obligation,
+    )
+}
+
 #[derive(Clone)]
 pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
     pub(in crate::surface::proof) is_true: bool,
@@ -155,16 +178,10 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     .assumptions()
                     .proves(obligation.proposition())
                 {
-                    return Err(missing_prerequisite_error(
-                        format!(
-                            "{context_label} is missing condition prerequisite{}: {:?}",
-                            obligation
-                                .context()
-                                .map(|context| format!(" ({context})"))
-                                .unwrap_or_default(),
-                            obligation.proposition()
-                        ),
+                    return Err(missing_condition_prerequisite_error(
+                        context_label,
                         obligation,
+                        state,
                     ));
                 }
             }
@@ -265,17 +282,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                             )
                         {
                         } else {
-                            return Err(missing_prerequisite_error(
-                                format!(
-                                    "{context_label} is missing condition prerequisite{}: {:?}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    obligation.proposition()
-                                ),
-                                obligation,
-                            ));
+                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
                     }
                     StatementPrerequisitePolicy::Explicit
@@ -288,31 +295,11 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                             obligation,
                             state.memory(),
                         )? {
-                            return Err(missing_prerequisite_error(
-                                format!(
-                                    "{context_label} is missing condition prerequisite{}: {:?}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    obligation.proposition()
-                                ),
-                                obligation,
-                            ));
+                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
                         if prerequisite_assumptions.proves(obligation.proposition()) {
                         } else {
-                            return Err(missing_prerequisite_error(
-                                format!(
-                                    "{context_label} is missing condition prerequisite{}: {:?}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    obligation.proposition()
-                                ),
-                                obligation,
-                            ));
+                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
                     }
                     StatementPrerequisitePolicy::Planning => {
@@ -320,17 +307,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                             obligation,
                             state.memory(),
                         )? {
-                            return Err(missing_prerequisite_error(
-                                format!(
-                                    "{context_label} is missing condition prerequisite{}: {:?}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    obligation.proposition()
-                                ),
-                                obligation,
-                            ));
+                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
                         // The prover moved out of the kernel with package
                         // 15, so a derivation is now planning output rather
@@ -346,17 +323,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                                 derivation.check(&prerequisite_assumptions)
                             })
                             .ok_or_else(|| {
-                                missing_prerequisite_error(
-                                    format!(
-                                        "{context_label} is missing condition prerequisite{}: {:?}",
-                                        obligation
-                                            .context()
-                                            .map(|context| format!(" ({context})"))
-                                            .unwrap_or_default(),
-                                        obligation.proposition()
-                                    ),
-                                    obligation,
-                                )
+                                missing_condition_prerequisite_error(context_label, obligation, state)
                             })?;
                     }
                 }
@@ -1600,8 +1567,11 @@ mod condition_transition_tests {
             Err(error) => error,
         };
 
-        assert!(
-            error.message().contains("missing condition prerequisite"),
+        // Spelled over the locals, as the other refusals are, not as the
+        // kernel's proposition term.
+        assert_eq!(
+            error.message(),
+            "condition obligation regression is missing condition prerequisite: `viewable(base=p, bytes=4)`",
             "{error:?}"
         );
     }
