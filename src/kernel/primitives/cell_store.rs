@@ -1662,15 +1662,19 @@ impl CellStore {
     }
 
     /// [`Self::retain_candidates`] with a whole-run answer from `run_rule`,
-    /// as for [`Self::retain_only_candidates_by`].
-    pub(crate) fn retain_candidates_by(
+    /// as for [`Self::retain_only_candidates_by`], for a `keep` that the
+    /// caller has shown accepts every concrete cell inside the key ranges
+    /// `kept`: those cells are kept without being visited
+    /// ([`AliasCandidates::retain_map_outside`]). Runs are asked as before.
+    pub(crate) fn retain_candidates_outside_by(
         &mut self,
         candidates: &AliasCandidates,
+        kept: &[(Pointer, Pointer)],
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
     ) {
         self.reset();
-        candidates.retain_map(&mut self.concrete, &mut keep);
+        candidates.retain_map_outside(&mut self.concrete, kept, &mut keep);
         self.retain_runs_by(Some(candidates), keep, &mut run_rule);
     }
 

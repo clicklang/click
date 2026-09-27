@@ -3889,3 +3889,156 @@ fn stores_to_bounded_unordered_indices_are_near_linear() {
         named_growth_diagnostic(&samples)
     );
 }
+
+/// `N` stores `a[k] = k` to constant indices of one owned array, then a claim
+/// about the first, which every later store has to keep.
+fn constant_index_stores(stores: usize) -> (String, String) {
+    let signature = "void mark(int32 *a)";
+    let store_lines = (0..stores)
+        .map(|index| format!("    a[{index}] = {index};\n"))
+        .collect::<String>();
+    let c_source = format!("{signature} {{\n{store_lines}}}\n");
+    let steps = "    step();\n".repeat(stores);
+    let click_source = format!(
+        "verifying \"mark.c\";\n\n{signature} {{\n    owns a[0..{stores}];\n    \
+         ensures a[0] == 0;\n}} by {{\n{steps}    execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+/// `N` stores `a[ck] = k` to indices one chain of order facts separates,
+/// `0 <= c0 < c1 < … < n`, then a claim about the first.
+fn chain_ordered_index_stores(stores: usize) -> (String, String) {
+    chain_ordered_index_stores_in(stores, false)
+}
+
+/// [`chain_ordered_index_stores`] with the stores in the order `a[cN-1]`
+/// first, down to `a[c0]` last, which is the index the claim names.
+fn chain_ordered_index_stores_descending(stores: usize) -> (String, String) {
+    chain_ordered_index_stores_in(stores, true)
+}
+
+fn chain_ordered_index_stores_in(stores: usize, descending: bool) -> (String, String) {
+    let indices = (0..stores)
+        .map(|index| format!(", int32 c{index}"))
+        .collect::<String>();
+    let signature = format!("void mark(int32 *a, int32 n{indices})");
+    let mut order = (0..stores).collect::<Vec<_>>();
+    if descending {
+        order.reverse();
+    }
+    let store_lines = order
+        .into_iter()
+        .map(|index| format!("    a[c{index}] = {index};\n"))
+        .collect::<String>();
+    let c_source = format!("{signature} {{\n{store_lines}}}\n");
+    let mut bounds = "    requires 0 <= c0;\n".to_string();
+    for index in 1..stores {
+        bounds.push_str(&format!("    requires c{} < c{index};\n", index - 1));
+    }
+    bounds.push_str(&format!("    requires c{} < n;\n", stores - 1));
+    let steps = "    step();\n".repeat(stores);
+    let click_source = format!(
+        "verifying \"mark.c\";\n\n{signature} {{\n{bounds}    owns a[0..n];\n    \
+         ensures a[c0] == 0;\n}} by {{\n{steps}    execute();\n    simp();\n}}\n"
+    );
+    (c_source, click_source)
+}
+
+fn store_line_samples(
+    label: &str,
+    fixture: impl Fn(usize) -> (String, String),
+) -> Vec<ScalingSample> {
+    [4, 8, 16, 32, 64]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = fixture(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("mark.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("{size} {label} stores should verify: {}", error.message())
+            });
+            sample
+        })
+        .collect()
+}
+
+/// The store rule's work in each sample, which has to be nonzero.
+fn store_rule_work(samples: &[ScalingSample]) -> Vec<usize> {
+    samples
+        .iter()
+        .map(|sample| {
+            let work = sample
+                .named_work
+                .get("operation `verification statement: store`")
+                .copied()
+                .unwrap_or(0);
+            assert!(work > 0, "the stores did not run: {sample:?}");
+            work
+        })
+        .collect()
+}
+
+/// Whether every one of the three largest doublings of `work` grows by at
+/// most `numerator / denominator`.
+fn doublings_within(work: &[usize], numerator: usize, denominator: usize) -> bool {
+    work.windows(2)
+        .skip(1)
+        .all(|pair| pair[1].saturating_mul(denominator) <= pair[0].saturating_mul(numerator))
+}
+
+/// A straight line of `N` stores `a[k] = k` to constant indices. Each store
+/// keeps every earlier cell, and it used to ask each one whether it may
+/// alias: `N^2/2` questions, 445, 1,225, 3,761, 12,705 and 46,017 units of
+/// store work at 4 to 64 stores. A cell whose offset shares the store's
+/// anchor and whose constant byte gap clears both accesses is now kept
+/// without being asked (`reasoning::store_gap`), so a store visits only the
+/// cells within eight bytes of its own: 477, 1,155, 2,587, 5,483 and 11,339
+/// units in a debug build, whose check re-asks a few skipped cells per store
+/// (467 to 8,959 in release). The claim reads `a[0]`, so every store has to
+/// keep it.
+#[test]
+fn stores_to_constant_indices_are_near_linear() {
+    let samples = store_line_samples("constant-index", constant_index_stores);
+    let store_work = store_rule_work(&samples);
+    // Linear doubles per doubling; the old curve rose 3.1 to 3.6.
+    assert!(
+        doublings_within(&store_work, 9, 4),
+        "the store rule's work over constant indices is not near linear: {store_work:?}; named work: {}",
+        named_growth_diagnostic(&samples)
+    );
+}
+
+/// A straight line of `N` stores `a[ck] = k` whose indices one chain of
+/// order facts separates, `0 <= c0 < c1 < … < n`. Each store asks every
+/// earlier cell, and each question walks the order chain between its two
+/// indices, so the line cost `N^3`: 830, 3,582, 20,494, 139,342 and
+/// 1,032,462 units of store work at 4 to 64 stores. The walk now shares what
+/// it learns across the questions toward one index (`OrderReachMemo`), so a
+/// question costs a constant beyond the first, a store is linear in the
+/// cells it keeps, and the line is the `N^2/2` questions themselves: 738,
+/// 2,394, 8,506, 31,898 and 123,290 in order, and 900 to 149,372 with the
+/// stores in reverse order. A cubic curve multiplies by eight per doubling;
+/// the bound admits the quadratic four and rejects that.
+#[test]
+fn stores_to_chain_ordered_indices_are_quadratic_not_cubic() {
+    for (label, fixture) in [
+        (
+            "chain-ordered",
+            chain_ordered_index_stores as fn(usize) -> (String, String),
+        ),
+        (
+            "reverse chain-ordered",
+            chain_ordered_index_stores_descending,
+        ),
+    ] {
+        let samples = store_line_samples(label, fixture);
+        let store_work = store_rule_work(&samples);
+        assert!(
+            doublings_within(&store_work, 17, 4),
+            "the store rule's work over {label} indices grows faster than quadratically: {store_work:?}; named work: {}",
+            named_growth_diagnostic(&samples)
+        );
+    }
+}

@@ -3674,7 +3674,15 @@ impl CMemory {
             run_forgot |= forgot;
             (kept, crate::kernel::primitives::RuleAnswer::Sound)
         };
-        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates_by(&candidates, |cell_pointer, cell_value| {
+        // Cells of the written block whose constant byte gap from the store
+        // decides them are kept without being asked; the ladder below keeps
+        // every one of them, reading no fact (see `reasoning::store_gap`).
+        let gap_kept = crate::kernel::reasoning::store_gap::store_gap_kept_ranges(
+            &normalized_pointer,
+            bytes,
+            assumptions,
+        );
+        let mut keep_cell = |cell_pointer: &Pointer, cell_value: &CValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -3683,9 +3691,9 @@ impl CMemory {
                 ),
             };
             if normalized_cell_pointer.block == normalized_pointer.block
-                && written.as_ref().is_some_and(|written| {
-                    written.overwrites(&normalized_cell_pointer, cell_value)
-                })
+                && written
+                    .as_ref()
+                    .is_some_and(|written| written.overwrites(&normalized_cell_pointer, cell_value))
             {
                 // Only a cell the store writes *completely* is stale. One it
                 // writes part of leaves the untouched bytes unrecorded, so the
@@ -3709,7 +3717,8 @@ impl CMemory {
                 &normalized_pointer,
                 bytes,
                 assumptions,
-            ) == crate::kernel::reasoning::AccessByteOverlap::Separate;
+            )
+                == crate::kernel::reasoning::AccessByteOverlap::Separate;
             let kept = address_inequality_separates_bytes
                 && pointers_proven_distinct_for_memory_resolution(
                     &normalized_cell_pointer,
@@ -3748,7 +3757,24 @@ impl CMemory {
                 .is_some();
             forgot_live_knowledge |= !kept;
             kept
-        }, run_rule);
+        };
+        #[cfg(debug_assertions)]
+        if !gap_kept.is_empty() {
+            crate::instrumentation::uncharged_debug_check(|| {
+                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
+                    &memory.cells,
+                    &gap_kept,
+                    &normalized_pointer,
+                    &mut keep_cell,
+                );
+            });
+        }
+        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates_outside_by(
+            &candidates,
+            &gap_kept,
+            &mut keep_cell,
+            run_rule,
+        );
         forgot_live_knowledge |= run_forgot;
         candidates.retain_map(
             std::sync::Arc::make_mut(&mut memory.union_cells),

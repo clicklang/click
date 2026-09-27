@@ -8215,3 +8215,81 @@ fn memory_resolution_order_walk_agrees_with_the_full_scan_on_generated_facts() {
     }
     assert!(compared > 0);
 }
+
+/// The walk's reachability memo (`OrderReachMemo`) answers exactly what a
+/// fresh full-scan walk answers, whatever the earlier questions were.
+/// Generated fact sets over keyable terms only — so the memo is live — mix
+/// chains, cycles, strict and non-strict orders, equalities, and offset
+/// equalities; every pair is asked in one order and then in the reverse
+/// order, so each question meets a memo filled by different earlier walks,
+/// and each is compared with the full scan, which never reads the memo.
+#[test]
+fn memory_resolution_order_walk_memo_agrees_with_the_full_scan() {
+    let mut pool = (0..8)
+        .map(|id| Bitvector32Term::Variable(Variable(89_600 + id)))
+        .collect::<Vec<_>>();
+    pool.extend([0, 2, -3].map(|value: i32| Bitvector32Term::Constant(value as u32)));
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % bound as u64) as usize
+    };
+    let mut compared = 0;
+    let mut proved = 0;
+    for _ in 0..90 {
+        let mut facts = PureFactContext::new();
+        // A chain through a random order of the variables, then noise.
+        let mut chain = (0..8).collect::<Vec<_>>();
+        for index in (1..chain.len()).rev() {
+            chain.swap(index, next(index + 1));
+        }
+        for pair in chain.windows(2).take(2 + next(6)) {
+            let (low, high) = (pool[pair[0]].clone(), pool[pair[1]].clone());
+            facts = facts.assume_condition(
+                if next(3) == 0 {
+                    ConditionTerm::signed_less_equal(low, high)
+                } else {
+                    ConditionTerm::signed_less_than(low, high)
+                },
+                true,
+            );
+        }
+        for _ in 0..next(5) {
+            let left = pool[next(pool.len())].clone();
+            let right = pool[next(pool.len())].clone();
+            let condition = match next(5) {
+                0 | 1 => ConditionTerm::signed_less_than(left, right),
+                2 => ConditionTerm::signed_less_equal(left, right),
+                3 => ConditionTerm::equal(left, right),
+                _ => ConditionTerm::pointer_offset_equal(
+                    PointerOffsetTerm::scale_int32(left, 4),
+                    PointerOffsetTerm::scale_int32(right, 4),
+                ),
+            };
+            facts = facts.assume_condition(condition, true);
+        }
+        let questions = pool
+            .iter()
+            .flat_map(|left| pool.iter().map(move |right| (left, right)))
+            .flat_map(|(left, right)| [true, false].map(|strict| (left, right, strict)))
+            .collect::<Vec<_>>();
+        for (left, right, strict) in questions.iter().chain(questions.iter().rev()) {
+            let memoized = facts.has_order_path_for_memory_resolution(left, right, *strict);
+            let scanned = crate::kernel::assumptions::with_order_walk_full_scan(|| {
+                facts.has_order_path_for_memory_resolution(left, right, *strict)
+            });
+            assert_eq!(
+                memoized, scanned,
+                "the memoized walk and the full scan disagree on {left:?} -> {right:?} (strict {strict}) under {facts:?}"
+            );
+            compared += 1;
+            proved += usize::from(memoized);
+        }
+    }
+    assert!(
+        proved > compared / 10 && proved < compared * 9 / 10,
+        "the generated questions should mix answers: {proved} of {compared} proved"
+    );
+}

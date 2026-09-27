@@ -821,7 +821,11 @@ impl PureFactContext {
             })
             .map(|(index, _)| index)
             .collect();
+        let open_memory_free = open
+            .iter()
+            .all(|edge| order_reach_memory_free(&facts[*edge].0));
         let index = std::rc::Rc::new(OrderWalkIndex {
+            open_memory_free,
             facts,
             by_lower,
             by_exact_constant,
@@ -965,6 +969,13 @@ impl PureFactContext {
         // done as soon as it has the strictness it needs: `x < y` alone gives
         // `x < INT32_MAX`, as the condition checker also concludes.
         let right_is_int32_max = right == &Bitvector32Term::Constant(i32::MAX as u32);
+        // What earlier walks toward this target learned about the states they
+        // expanded (`OrderReachMemo`). Any walk reads it; only a walk that
+        // expanded no state reading memory adds to it.
+        let reach_key = self.order_reach_key(&walk_index, right, require_strict);
+        let mut memory_free_walk = reach_key.is_some();
+        let mut parents = BTreeMap::<OrderReachState, OrderReachState>::new();
+        let epoch_before = crate::kernel::assumptions::incomplete_reasoning_epoch();
         let mut stack = vec![(left.clone(), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {
@@ -974,7 +985,25 @@ impl PureFactContext {
             if !seen.insert((current.clone(), strict_so_far)) {
                 continue;
             }
+            memory_free_walk &= order_reach_memory_free(&current);
+            if let Some(key) = &reach_key {
+                match order_reach_lookup(key, &current, strict_so_far) {
+                    Some(true) => {
+                        if memory_free_walk {
+                            record_order_reach_path(key, &parents, (current, strict_so_far));
+                        }
+                        return true;
+                    }
+                    // Nothing this state reaches passes the target test, so
+                    // neither does anything the walk would find through it.
+                    Some(false) => continue,
+                    None => {}
+                }
+            }
             if right_is_int32_max && (!require_strict || strict_so_far) {
+                if let Some(key) = reach_key.as_ref().filter(|_| memory_free_walk) {
+                    record_order_reach_path(key, &parents, (current, strict_so_far));
+                }
                 return true;
             }
             let target_constant_connection = signed_bitvector_constant(&current)
@@ -990,8 +1019,19 @@ impl PureFactContext {
                     || target_positive_offset
                     || target_constant_connection == Some(true))
             {
+                if let Some(key) = reach_key.as_ref().filter(|_| memory_free_walk) {
+                    record_order_reach_path(key, &parents, (current, strict_so_far));
+                }
                 return true;
             }
+            // Each state this one pushes first is reached through it, for the
+            // path a success records.
+            let mut push = |stack: &mut Vec<OrderReachState>, next: OrderReachState| {
+                if reach_key.is_some() && !seen.contains(&next) && !parents.contains_key(&next) {
+                    parents.insert(next.clone(), (current.clone(), strict_so_far));
+                }
+                stack.push(next);
+            };
             // The edges and equalities this node can match, in fact order.
             // A node the filing covers reads its own entries; any other node
             // reads every fact, as the walk always did.
@@ -1014,10 +1054,13 @@ impl PureFactContext {
                 if bitvector_terms_proven_equal_for_memory_resolution(&current, edge_left, self)
                     || constant_connection.is_some()
                 {
-                    stack.push((
-                        edge_right.clone(),
-                        strict_so_far || *edge_strict || constant_connection == Some(true),
-                    ));
+                    push(
+                        &mut stack,
+                        (
+                            edge_right.clone(),
+                            strict_so_far || *edge_strict || constant_connection == Some(true),
+                        ),
+                    );
                 }
             }
             // `order_terms_match` is structural identity unless both sides
@@ -1038,14 +1081,48 @@ impl PureFactContext {
                     return false;
                 }
                 if order_terms_match(&current, left) {
-                    stack.push((right.clone(), strict_so_far));
+                    push(&mut stack, (right.clone(), strict_so_far));
                 }
                 if order_terms_match(&current, right) {
-                    stack.push((left.clone(), strict_so_far));
+                    push(&mut stack, (left.clone(), strict_so_far));
                 }
             }
         }
+        // A complete refusal: every state the walk reached was expanded, and
+        // none reaches a state that passes the target test.
+        if let Some(key) = reach_key.as_ref().filter(|_| memory_free_walk)
+            && crate::kernel::assumptions::incomplete_reasoning_epoch() == epoch_before
+            && !crate::kernel::assumptions::reasoning_interrupted()
+        {
+            record_order_reach_refusal(key, seen);
+        }
         false
+    }
+
+    /// The memo key for walks toward `right`, or `None` where the walk may
+    /// not share what it learns: a walk run as the full-scan reference, a
+    /// target that reads memory, or a fact set with an order edge whose
+    /// lower endpoint reads memory.
+    ///
+    /// Between terms that read no memory — integer arithmetic over constants
+    /// and variables that name no load — every test the walk applies (the
+    /// edge test, the equality match, the target test) is a question about
+    /// the fact set alone: no load view, no snapshot comparison, no memory
+    /// DAG. Every node a walk reaches is either the target, the source, an
+    /// edge's upper endpoint or an equality's side, and a walk that reaches
+    /// one that reads memory stops recording (`order_reach_memory_free`).
+    fn order_reach_key(
+        &self,
+        index: &OrderWalkIndex,
+        right: &Bitvector32Term,
+        require_strict: bool,
+    ) -> Option<OrderReachKey> {
+        (!order_walk_full_scan_forced() && index.open_memory_free && order_reach_memory_free(right))
+            .then(|| OrderReachKey {
+                facts: super::super::dag_memo_assumptions_id(self),
+                target: right.clone(),
+                require_strict,
+            })
     }
 
     fn positive_offset_is_proven_above_for_memory_resolution(
@@ -1796,6 +1873,114 @@ thread_local! {
 
 const ORDER_WALK_INDEX_MEMO_LIMIT: usize = 20_000;
 
+/// One state of the memory-resolution order walk: a term and whether the
+/// path to it was strict.
+type OrderReachState = (Bitvector32Term, bool);
+
+/// The walks one [`OrderReachMemo`] entry serves: those over one fact set
+/// toward one target, with one strictness requirement.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct OrderReachKey {
+    facts: u64,
+    target: Bitvector32Term,
+    require_strict: bool,
+}
+
+/// Whether a walk state reaches one that passes the target test.
+///
+/// The walk ([`PureFactContext::has_order_path_for_memory_resolution`])
+/// answers whether some state it can reach from its source passes the test,
+/// so the answer for a state is a property of that state, the fact set and
+/// the target, never of the source a walk started from. A store to `a[cj]`
+/// beside earlier cells `a[ci]` under a chain `c0 < c1 < … < n` asks
+/// `ci < cj` of every cell, and each walk used to climb the chain from `ci`
+/// to `cj` afresh, so the store cost the square of the chain and the line
+/// its cube. Filed here, the first walk leaves every state on its path, and
+/// the next one stops at its first step.
+///
+/// A success records the states on the path to the passing state; a
+/// refusal records every state it reached, and only when no cycle cut or
+/// limit touched it. Only walks that expanded no state reading memory record
+/// anything, and only toward a target that reads none, over a fact set none
+/// of whose unfiled order edges reads any ([`PureFactContext::order_reach_key`]):
+/// there every test the walk applies is a question about the fact set, so a
+/// recorded answer is the one exploring again would give. As for the
+/// resolution memo, a success is found evidence and is kept however the
+/// search was pruned, and a refusal only when no cycle cut or limit touched
+/// the walk. Strictness only
+/// ever grows along a path and a strict path passes every test a non-strict
+/// one passes, so a state known to succeed without strictness succeeds with
+/// it, and one known to fail with it fails without.
+struct OrderReachMemo {
+    entries:
+        std::collections::HashMap<OrderReachKey, std::collections::HashMap<OrderReachState, bool>>,
+    states: usize,
+}
+
+thread_local! {
+    static ORDER_REACH_MEMO: std::cell::RefCell<OrderReachMemo> = std::cell::RefCell::new(OrderReachMemo {
+        entries: std::collections::HashMap::new(),
+        states: 0,
+    });
+}
+
+const ORDER_REACH_MEMO_LIMIT: usize = 200_000;
+
+fn order_reach_lookup(key: &OrderReachKey, term: &Bitvector32Term, strict: bool) -> Option<bool> {
+    crate::instrumentation::record_deterministic_work(1);
+    ORDER_REACH_MEMO.with(|memo| {
+        let memo = memo.borrow();
+        let states = memo.entries.get(key)?;
+        let known = |strict: bool| states.get(&(term.clone(), strict)).copied();
+        match (known(strict), strict) {
+            (Some(answer), _) => Some(answer),
+            (None, true) => known(false).filter(|reaches| *reaches),
+            (None, false) => known(true).filter(|reaches| !*reaches),
+        }
+    })
+}
+
+fn record_order_reach_states(
+    key: &OrderReachKey,
+    states: impl IntoIterator<Item = OrderReachState>,
+    reaches: bool,
+) {
+    ORDER_REACH_MEMO.with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.states >= ORDER_REACH_MEMO_LIMIT {
+            memo.entries.clear();
+            memo.states = 0;
+        }
+        let entry = memo.entries.entry(key.clone()).or_default();
+        let before = entry.len();
+        for state in states {
+            entry.insert(state, reaches);
+        }
+        let added = entry.len() - before;
+        memo.states += added;
+    });
+}
+
+/// Records that `reached` and every state on the walk's path to it reach a
+/// state passing the target test.
+fn record_order_reach_path(
+    key: &OrderReachKey,
+    parents: &BTreeMap<OrderReachState, OrderReachState>,
+    reached: OrderReachState,
+) {
+    let mut path = vec![reached];
+    while let Some(parent) = parents.get(path.last().expect("the path is never empty")) {
+        path.push(parent.clone());
+    }
+    record_order_reach_states(key, path, true);
+}
+
+/// Records that no state a complete refusal reached reaches one passing
+/// the target test.
+fn record_order_reach_refusal(key: &OrderReachKey, seen: BTreeSet<OrderReachState>) {
+    record_order_reach_states(key, seen, false);
+}
+
 /// One fact set's order edges and true `int32` equalities, filed for the
 /// memory-resolution order walk
 /// ([`PureFactContext::has_order_path_for_memory_resolution`]).
@@ -1819,6 +2004,10 @@ pub(in crate::kernel) struct OrderWalkIndex {
     by_lower: BTreeMap<Bitvector32Term, Vec<usize>>,
     /// Every other edge, ascending: read at every node.
     open: Vec<usize>,
+    /// Whether no open edge's lower endpoint reads memory, so that the
+    /// walk's tests against those edges are questions about the fact set
+    /// alone (see `PureFactContext::order_reach_key`).
+    open_memory_free: bool,
     /// The keyable-lower edges by their lower endpoint's exact constant.
     by_exact_constant: BTreeMap<i64, Vec<usize>>,
     /// The edges whose lower endpoint is a written constant, by its signed
@@ -1842,6 +2031,73 @@ pub(in crate::kernel) struct OrderWalkIndex {
 fn order_walk_plain_variable(term: &Bitvector32Term) -> bool {
     matches!(term, Bitvector32Term::Variable(variable)
         if !crate::kernel::eval::is_load_variable(variable))
+}
+
+/// Whether a term is integer arithmetic over constants and variables the
+/// kernel never gives a load view: no load, no load variable, no pointer,
+/// no fold, no application, no conditional, no float. What the order walk
+/// learns about such terms depends on the fact set alone.
+fn order_reach_memory_free(term: &Bitvector32Term) -> bool {
+    let mut pending = vec![term];
+    while let Some(term) = pending.pop() {
+        match term {
+            Bitvector32Term::Constant(_)
+            | Bitvector32Term::Int64Constant(_)
+            | Bitvector32Term::UInt64Constant(_) => {}
+            Bitvector32Term::Variable(_) => {
+                if !order_walk_plain_variable(term) {
+                    return false;
+                }
+            }
+            Bitvector32Term::Add(left, right)
+            | Bitvector32Term::Subtract(left, right)
+            | Bitvector32Term::Multiply(left, right)
+            | Bitvector32Term::Divide(left, right)
+            | Bitvector32Term::UnsignedDivide(left, right)
+            | Bitvector32Term::Remainder(left, right)
+            | Bitvector32Term::UnsignedRemainder(left, right)
+            | Bitvector32Term::ShiftLeft(left, right)
+            | Bitvector32Term::ArithmeticShiftRight(left, right)
+            | Bitvector32Term::LogicalShiftRight(left, right)
+            | Bitvector32Term::BitwiseAnd(left, right)
+            | Bitvector32Term::BitwiseOr(left, right)
+            | Bitvector32Term::BitwiseXor(left, right)
+            | Bitvector32Term::Int64Add(left, right)
+            | Bitvector32Term::Int64Subtract(left, right)
+            | Bitvector32Term::Int64Multiply(left, right)
+            | Bitvector32Term::Int64Divide(left, right)
+            | Bitvector32Term::Int64Remainder(left, right)
+            | Bitvector32Term::Int64ShiftLeft(left, right)
+            | Bitvector32Term::Int64ArithmeticShiftRight(left, right)
+            | Bitvector32Term::Int64BitwiseAnd(left, right)
+            | Bitvector32Term::Int64BitwiseOr(left, right)
+            | Bitvector32Term::Int64BitwiseXor(left, right)
+            | Bitvector32Term::UInt64Add(left, right)
+            | Bitvector32Term::UInt64Subtract(left, right)
+            | Bitvector32Term::UInt64Multiply(left, right)
+            | Bitvector32Term::UInt64Divide(left, right)
+            | Bitvector32Term::UInt64Remainder(left, right)
+            | Bitvector32Term::UInt64ShiftLeft(left, right)
+            | Bitvector32Term::UInt64LogicalShiftRight(left, right)
+            | Bitvector32Term::UInt64BitwiseAnd(left, right)
+            | Bitvector32Term::UInt64BitwiseOr(left, right)
+            | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            Bitvector32Term::BitwiseNot(value)
+            | Bitvector32Term::Int64From32(value)
+            | Bitvector32Term::UInt64From32(value)
+            | Bitvector32Term::UInt32From64(value)
+            | Bitvector32Term::Int64FromUInt32(value)
+            | Bitvector32Term::UInt64FromInt32(value)
+            | Bitvector32Term::UInt64FromInt64(value)
+            | Bitvector32Term::Int64BitwiseNot(value)
+            | Bitvector32Term::UInt64BitwiseNot(value) => pending.push(value),
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// A lower endpoint the walk files by its own spelling: a constant, or a

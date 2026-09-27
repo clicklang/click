@@ -155,19 +155,44 @@ charged to visible semantic output rather than hidden ambient state:
   refusal to keep a cell it may alias reads only filed order facts (see
   [Indexed contradiction and premise search](#indexed-contradiction-and-premise-search)).
 - A store keeps every earlier cell of its block that it proves it misses,
-  and it decides each one: the cell map offers no way to keep a group of
-  cells without asking each. So a straight line of `N` stores to cells the
-  facts prove distinct asks `N^2/2` cell questions. This is a known
-  violation of the contract, not an exception. Each question is a few units
-  when the cells differ by a constant displacement (`a[0] = …; a[1] = …`:
-  448 to 46,020 units of store work for 4 to 64 stores), but when only a
-  chain of order facts separates them (`c0 < c1 < … `) each question walks
-  the chain between its two indices, and the line costs `N^3` (830 to
-  1,032,462). Neither is pinned by a test. Removing the first needs the
-  cells of one block indexed by their symbolic offset atoms, so a store at
-  `S + k` visits only the cells at `S` within its byte window and the
-  cells at other atoms; removing the second also needs the order walk's
-  reachability shared across the questions one store asks.
+  and outside one case it still decides each one: the cell map offers no way
+  to keep a group of cells without asking each, so a straight line of `N`
+  stores to cells the facts keep apart asks `N^2/2` cell questions. The one
+  case is the constant byte gap (`src/kernel/reasoning/store_gap.rs`). A
+  cell at `S + c` beside a store at `S + k`, for one symbolic anchor `S`
+  (or two constant offsets), is decided by `c - k` alone, and `Pointer`
+  orders every `S + c` of one anchor as one key range by `c`, so the store
+  keeps the cells whose windows its bytes clear without visiting them and
+  asks only the cells within eight bytes of its own and those at other
+  spellings. The ranges name only shapes whose ladder answer is "keep" by
+  structural cancellation and constant arithmetic, reading no fact, and
+  they are empty while implicit provenance is captured or after the
+  deadline; debug builds re-ask the ladder about the cells at each end of
+  every range, and `skipping_constant_gap_cells_leaves_every_store_unchanged`
+  compares generated store sequences both ways, forget marks included. A
+  line of constant-index stores (`a[0] = …; a[1] = …`) costs 477 to 11,339
+  units of store work at 4 to 64 stores in a debug build (467 to 8,959 in
+  release), where it cost 445 to 46,017
+  (`stores_to_constant_indices_are_near_linear`). Symbolic indices are
+  still asked cell by cell, so that line is still `N^2/2` questions, but a
+  question no longer walks its own order path: when only a chain of order
+  facts separates the cells (`c0 < c1 < …`), each walk used to climb the
+  chain between its two indices and the line cost `N^3` (830 to 1,032,462).
+  The order walk now shares reachability across walks toward one target
+  (`OrderReachMemo` in
+  `src/kernel/assumptions/condition_reasoning/order_paths.rs`): a success
+  files the states on its path, a complete refusal every state it reached,
+  and only over terms that read no memory, where each test the walk applies
+  is a question about the fact set alone. The line now costs 738 to 123,290
+  in order and 900 to 149,372 in reverse order
+  (`stores_to_chain_ordered_indices_are_quadratic_not_cubic`, pinned below
+  the cubic curve), and
+  `memory_resolution_order_walk_memo_agrees_with_the_full_scan` compares the
+  memoized walk with the full scan on generated fact sets. The `N^2/2`
+  questions for symbolic indices remain a known violation of the contract;
+  removing them needs the cells indexed by the index terms the facts order,
+  which no rule has yet. Heap `initialized_cells` and union views are still
+  visited per candidate on every store.
 
 ## Execution capacity follows selected syntax
 

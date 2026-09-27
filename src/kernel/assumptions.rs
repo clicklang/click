@@ -630,6 +630,13 @@ pub(crate) fn record_implicit_reasoning_provenance(
     }
 }
 
+/// Whether implicit reasoning provenance is being captured on this thread:
+/// a rule that would skip a question whose answer records provenance must
+/// ask it while this holds.
+pub(crate) fn implicit_reasoning_provenance_capturing() -> bool {
+    CAPTURING_IMPLICIT_REASONING_PROVENANCE.with(|depth| depth.get() != 0)
+}
+
 pub(crate) fn atomic_premise_minimization_disabled() -> bool {
     ATOMIC_PREMISE_MINIMIZATION_DEPTH.with(|depth| depth.get() != 0)
 }

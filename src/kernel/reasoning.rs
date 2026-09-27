@@ -14,6 +14,7 @@ pub(crate) use substitution::resolve_symbolic_pointer_alias;
 pub(in crate::kernel) use substitution::substitute_bitvector_variable_in_memory;
 pub(in crate::kernel) use substitution::substitute_bitvector_variable_in_spec_proposition;
 pub(in crate::kernel) mod memory_resolution;
+pub(in crate::kernel) mod store_gap;
 pub(in crate::kernel) mod variable_collection;
 pub(super) use memory_resolution::*;
 pub(super) use order_reasoning::*;

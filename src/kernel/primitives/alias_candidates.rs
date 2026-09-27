@@ -374,6 +374,80 @@ impl AliasCandidates {
         }
     }
 
+    /// The candidate entries of `map` outside the key ranges `kept`
+    /// (inclusive, ascending, disjoint), ascending. An entry inside a range
+    /// is never visited: meeting the first one re-positions past the range's
+    /// end, which costs one position and one entry per range met, so the
+    /// iteration costs the entries outside the ranges plus the ranges.
+    /// Returns the entries and the number of entries read.
+    pub(crate) fn entries_outside<'a, K: BlockKeyed, V>(
+        &'a self,
+        map: &'a SnapshotMap<K, V>,
+        kept: &[(K, K)],
+    ) -> (Vec<(&'a K, &'a V)>, usize) {
+        let inside = |key: &K| {
+            let position = kept.partition_point(|(low, _)| low <= key);
+            position > 0 && key <= &kept[position - 1].1
+        };
+        let mut entries = Vec::new();
+        let mut read = 0usize;
+        for interval in &self.intervals {
+            let mut lower = interval.start.as_ref().map_or(Bound::Unbounded, |start| {
+                Bound::Included(K::first_key_of(start))
+            });
+            let upper = match &interval.end {
+                Upper::Before(end) => Bound::Excluded(K::first_key_of(end)),
+                Upper::Through(_) | Upper::Unbounded => Bound::Unbounded,
+            };
+            'seek: loop {
+                // An empty or inverted window would make the range query
+                // panic; it holds no entry.
+                if let (Bound::Included(low) | Bound::Excluded(low), Bound::Excluded(high)) =
+                    (&lower, &upper)
+                    && low >= high
+                {
+                    break;
+                }
+                for (key, value) in map.range::<_, K>((lower.clone(), upper.clone())) {
+                    if !interval.end.admits(key.key_block()) {
+                        break 'seek;
+                    }
+                    read += 1;
+                    if inside(key) {
+                        let position = kept.partition_point(|(low, _)| low <= key);
+                        lower = Bound::Excluded(kept[position - 1].1.clone());
+                        continue 'seek;
+                    }
+                    entries.push((key, value));
+                }
+                break;
+            }
+        }
+        (entries, read)
+    }
+
+    /// [`Self::retain_map`] for a `keep` that the caller has shown accepts
+    /// every entry inside the key ranges `kept`: those entries are kept
+    /// without being visited ([`Self::entries_outside`]). Charges one work
+    /// unit per entry read.
+    pub(crate) fn retain_map_outside<K: BlockKeyed + Hash, V: Clone + Hash>(
+        &self,
+        map: &mut SnapshotMap<K, V>,
+        kept: &[(K, K)],
+        mut keep: impl FnMut(&K, &V) -> bool,
+    ) {
+        let (entries, read) = self.entries_outside(map, kept);
+        let dropped = entries
+            .into_iter()
+            .filter(|(key, value)| !keep(key, value))
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        crate::instrumentation::record_deterministic_work(read);
+        for key in dropped {
+            map.remove(&key);
+        }
+    }
+
     /// [`Self::retain_map`] for a set.
     pub(crate) fn retain_set<K: BlockKeyed + Hash>(
         &self,
