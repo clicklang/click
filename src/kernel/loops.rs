@@ -6206,6 +6206,12 @@ pub(super) fn evaluate_loop_effect_segment_value(
     .map(|(value, _)| value))
 }
 
+/// How a segment endpoint the facts do not keep defined is refused. A
+/// clause that fails this way needs a requirement, not another clause's
+/// cells, so the resource evaluator does not report it as a stall.
+pub(in crate::kernel) const UNRULED_OUT_UNDEFINED_BEHAVIOR: &str =
+    "may have undefined behavior the facts do not rule out";
+
 fn evaluate_loop_effect_segment_value_with_facts(
     state: &CState,
     expression: &CExpression,
@@ -6214,6 +6220,22 @@ fn evaluate_loop_effect_segment_value_with_facts(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(CValue, Vec<ExecutionPureFact>), String>> {
     let paths = evaluate_c_expression_paths(state, expression, assumptions, budget)?;
+    // An endpoint the facts do not keep defined splits into its defined value
+    // and the undefined behavior beside it: name that behavior, which a
+    // requirement can rule out, rather than the path count.
+    let undefined = paths
+        .iter()
+        .filter_map(|path| match &path.outcome {
+            CExpressionOutcome::UndefinedBehavior(undefined) => Some(undefined.description()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    if paths.len() > 1 && !undefined.is_empty() {
+        return Ok(Err(format!(
+            "{label} {UNRULED_OUT_UNDEFINED_BEHAVIOR}: {}",
+            undefined.into_iter().collect::<Vec<_>>().join("; ")
+        )));
+    }
     if paths.len() != 1 {
         return Ok(Err(format!(
             "{label} evaluated through {} paths, expected exactly one",

@@ -21777,6 +21777,11 @@ fn resource_clause_failure_awaits_supply(error: &CRuntimeError) -> bool {
     let CRuntimeError::FunctionContract(message) = error else {
         return false;
     };
+    // An endpoint the facts do not keep defined is the clause's own
+    // problem: no other clause's cells make `i + 1` stop overflowing.
+    if message.contains(crate::kernel::loops::UNRULED_OUT_UNDEFINED_BEHAVIOR) {
+        return false;
+    }
     message.starts_with("could not evaluate an owned memory resource segment")
         || message.starts_with("could not evaluate a viewed memory resource segment")
         || message.starts_with("could not evaluate `")
@@ -22164,14 +22169,15 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             let segment = match evaluate_loop_effect_segment(state, &segment, assumptions, budget)?
             {
                 Ok(segment) => segment,
-                Err(_) => {
-                    return Ok(Err(CRuntimeError::FunctionContract(
+                Err(reason) => {
+                    return Ok(Err(CRuntimeError::FunctionContract(format!(
+                        "could not evaluate {} memory resource segment: {reason}",
                         if resource.is_view() {
-                            "could not evaluate a viewed memory resource segment".to_string()
+                            "a viewed"
                         } else {
-                            "could not evaluate an owned memory resource segment".to_string()
+                            "an owned"
                         },
-                    )));
+                    ))));
                 }
             };
             let range = CMemoryRange::new_with_element_width(

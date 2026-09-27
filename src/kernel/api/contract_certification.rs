@@ -1224,6 +1224,52 @@ pub(super) fn c_function_contract_certification_assumptions(
     for fact in crate::kernel::contract_entry_partition_facts(&required_entry_clauses) {
         assumptions = assumptions.assume_proposition(fact);
     }
+    // Each clause states its own range, and the proof side holds each one as
+    // written: its byte-count guards and its loadability at entry. The
+    // required context below may have joined two clauses that abut, such as
+    // `x[0..(i + 1)]` and `x[j..(j + 1)]` under `i + 1 == j`, into one range
+    // whose guards no longer mention either clause's bounds; recovering
+    // `0 <= j` or `viewable(x[j..(j + 1)])` from `x[0..(j + 1)]` would need
+    // order reasoning through that equality. The joined range is exactly
+    // the union of the clauses, so each clause's own facts hold of it.
+    for clause in &required_entry_clauses {
+        let Some(range) = clause
+            .fact
+            .memory_view_range()
+            .or_else(|| clause.fact.memory_own_range())
+        else {
+            continue;
+        };
+        let mut well_formed = true;
+        for guard in crate::kernel::memory_range_extent_guard_spellings(range) {
+            let guard_is_false = match &guard {
+                Proposition::ConditionIs(condition, true) => {
+                    assumptions.decide(condition) == Some(false)
+                }
+                _ => false,
+            };
+            if guard_is_false {
+                well_formed = false;
+            } else {
+                assumptions = assumptions.assume_proposition(guard);
+            }
+        }
+        // A range its own guards refute states no memory to read.
+        if !well_formed {
+            continue;
+        }
+        let width = range.element_width();
+        assumptions = assumptions.assume_proposition(Proposition::CMemoryLoadable {
+            memory: entry_state.memory().clone(),
+            base: range
+                .base()
+                .offset_by_elements(range.start().clone(), width),
+            bytes: Bitvector32Term::multiply(
+                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
+                Bitvector32Term::Constant(width),
+            ),
+        });
+    }
     for fact in required_resources.facts() {
         // Owned ranges carry their byte-count guards exactly as viewed ranges
         // do: the clause states the same range, and the loadability rules read

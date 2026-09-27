@@ -3218,6 +3218,8 @@ fn verify_c0_sources_with_context(
             if contract_execution.path_count() == 0 {
                 let unauthorized_premise = describe_unauthorized_entry_premise(
                     contract_execution.reuse_unauthorized_premise(),
+                    contract_execution.reuse_entry_resources(),
+                    contract_execution.reuse_context_facts(),
                     parsed_function.parameters(),
                     &certification_arguments,
                     &certification_state,
@@ -4379,11 +4381,15 @@ pub(in crate::surface) fn c0_statement_calls(
 /// the same proposition rather than nothing.
 fn describe_unauthorized_entry_premise(
     premise: Option<&Proposition>,
+    entry_resources: &[CResourceFact],
+    context_facts: &[Proposition],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
     state: &CState,
 ) -> String {
-    use crate::surface::diagnostics::{describe_click_proposition, describe_pure_fact_spelled};
+    use crate::surface::diagnostics::{
+        describe_click_proposition, describe_pure_fact_spelled, describe_resource_facts,
+    };
     let Some(premise) = premise else {
         return String::new();
     };
@@ -4394,7 +4400,42 @@ fn describe_unauthorized_entry_premise(
         || describe_pure_fact_spelled(premise, parameters, arguments),
         |surface| describe_click_proposition(&surface),
     );
-    format!(": `{described}`")
+    // A loadability premise is a claim about the entry's memory resources;
+    // name them, so the reader sees what the refused range was compared to.
+    let held = if matches!(premise, Proposition::CMemoryLoadable { .. }) {
+        format!(
+            "; the contract entry holds {}",
+            describe_resource_facts(entry_resources, parameters, arguments)
+        )
+    } else {
+        String::new()
+    };
+    // The facts the certification prover had to derive the premise from,
+    // so the reader can tell a missing requirement from a missing rule.
+    const SHOWN_CONTEXT_FACTS: usize = 12;
+    let mut shown = context_facts
+        .iter()
+        .filter(|fact| !crate::kernel::is_load_variable_defining_fact(fact))
+        .map(|fact| {
+            format!(
+                "`{}`",
+                describe_pure_fact_spelled(fact, parameters, arguments)
+            )
+        })
+        .collect::<Vec<_>>();
+    let hidden = shown.len().saturating_sub(SHOWN_CONTEXT_FACTS);
+    shown.truncate(SHOWN_CONTEXT_FACTS);
+    let context = if shown.is_empty() {
+        "; the contract context holds no pure facts".to_string()
+    } else if hidden > 0 {
+        format!(
+            "; the contract context holds {} and {hidden} more",
+            shown.join(", ")
+        )
+    } else {
+        format!("; the contract context holds {}", shown.join(", "))
+    };
+    format!(": `{described}`{held}{context}")
 }
 
 /// Words one termination refusal for the function `name`. A refused callee

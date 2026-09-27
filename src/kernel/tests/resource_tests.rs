@@ -5020,14 +5020,16 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
     };
     assert_eq!(
         evaluate(&[unowned(100), unowned(101)]),
-        "could not evaluate an owned memory resource segment (resource clauses 1 and 2 cannot \
+        "could not evaluate an owned memory resource segment: segment base produced runtime \
+         error: a pointer operation has no known pointee type (resource clauses 1 and 2 cannot \
          be evaluated in any order: each needs a cell no clause evaluated before it supplies)"
     );
     // One stalled clause is still reported at its own position: there is no
     // second clause whose authority it could have been waiting for.
     assert_eq!(
         evaluate(&[unowned(100)]),
-        "could not evaluate an owned memory resource segment (resource clause 1 of 1)"
+        "could not evaluate an owned memory resource segment: segment base produced runtime \
+         error: a pointer operation has no known pointee type (resource clause 1 of 1)"
     );
 }
 

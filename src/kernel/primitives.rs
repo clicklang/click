@@ -7880,6 +7880,13 @@ pub struct CFunctionContractExecution {
     /// It carries no authority either — it is the refused premise, not a
     /// granted one.
     pub(super) reuse_unauthorized_premise: Option<Proposition>,
+    /// The resources the contract entry held where that premise was refused.
+    /// A refused loadability premise is a claim about these, so a reader
+    /// needs them beside it to see which range the premise fell outside.
+    pub(super) reuse_entry_resources: Vec<CResourceFact>,
+    /// The pure facts of the contract context that premise was refused in:
+    /// what the certification prover had to derive it from.
+    pub(super) reuse_context_facts: Vec<Proposition>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
     /// How this certification ran the function's loops. Under
     /// `ApplyVerifiedRules` a loop is either run concretely to its exit or
@@ -7943,6 +7950,8 @@ impl CFunctionContractExecution {
             cases: Vec::new(),
             reuse_diagnostic: Some(diagnostic),
             reuse_unauthorized_premise: None,
+            reuse_entry_resources: Vec::new(),
+            reuse_context_facts: Vec::new(),
             checked_call_events: Default::default(),
             loop_semantics: CLoopSemantics::Verify,
         }
@@ -7978,6 +7987,18 @@ impl CFunctionContractExecution {
     /// can print it in the names the user wrote.
     pub fn reuse_unauthorized_premise(&self) -> Option<&Proposition> {
         self.reuse_unauthorized_premise.as_ref()
+    }
+
+    /// The contract entry resources [`Self::reuse_unauthorized_premise`] was
+    /// refused against.
+    pub fn reuse_entry_resources(&self) -> &[CResourceFact] {
+        &self.reuse_entry_resources
+    }
+
+    /// The contract context's pure facts [`Self::reuse_unauthorized_premise`]
+    /// was refused against.
+    pub fn reuse_context_facts(&self) -> &[Proposition] {
+        &self.reuse_context_facts
     }
 }
 

@@ -5384,6 +5384,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     let mut cases = Vec::new();
     let mut reuse_diagnostic = None;
     let mut reuse_unauthorized_premise = None;
+    let mut reuse_entry_resources = Vec::new();
+    let mut reuse_context_facts = Vec::new();
     for case_facts in resource_condition_cases {
         let case_seed = assumptions_with_propositions(&PureFactContext::new(), &case_facts);
         let mut assumptions = match crate::instrumentation::measure_operation(
@@ -5959,6 +5961,10 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         function.name()
                     ),
                 };
+                if unauthorized.is_some() {
+                    reuse_entry_resources = entry_state.resources().facts().to_vec();
+                    reuse_context_facts = reuse_assumptions.pure_facts();
+                }
                 reuse_unauthorized_premise = unauthorized;
                 break;
             }
@@ -6022,6 +6028,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         cases,
         reuse_diagnostic,
         reuse_unauthorized_premise,
+        reuse_entry_resources,
+        reuse_context_facts,
         checked_call_events,
         loop_semantics: execution_semantics.loops,
     }
