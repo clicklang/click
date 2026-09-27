@@ -1036,7 +1036,26 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         if bitvector_terms_proven_equal_for_memory_resolution(&left, &right, assumptions) {
             return Some(true);
         }
-        return assumptions.decide_bitvector_equality_shallow(&left, &right);
+        if let Some(equal) = assumptions.decide_bitvector_equality_shallow(&left, &right) {
+            return Some(equal);
+        }
+        // An element index whose recorded constant bounds exclude a constant
+        // index is a different word, so the two offsets differ: `1 <= u`
+        // places `loc[u]` off `loc[0]` exactly as `u != 0` would. Only the
+        // disequality follows: distinct words are distinct residues, and so
+        // distinct exact offsets, whatever the rebuilt indices wrapped. The
+        // bounds are the ones filed under the index itself, one keyed lookup
+        // (`indexed_constant_interval`): this comparison runs for every pair
+        // of cells a store or load is placed against, so it may not search.
+        let excluded = |symbolic: &Bitvector32Term, constant: &Bitvector32Term| {
+            let Some(constant) = signed_bitvector_constant(constant) else {
+                return false;
+            };
+            assumptions
+                .indexed_constant_interval(symbolic)
+                .is_some_and(|(low, high)| constant < low || high < constant)
+        };
+        return (excluded(&left, &right) || excluded(&right, &left)).then_some(false);
     }
     match (left.as_const(), right.as_const()) {
         (Some(left), Some(right)) => Some(left == right),
@@ -1086,6 +1105,46 @@ fn indexed_field_offsets_use_exact_displacements() {
             &boundary
         ),
         Some(true)
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
+    let index = Bitvector32Term::Variable(Variable(851));
+    let scaled = PointerOffsetTerm::scale_int32(index.clone(), 4);
+    let at_least_one = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), index.clone()),
+        true,
+    );
+    for constant in [0, -4] {
+        let concrete = PointerOffsetTerm::Constant(constant);
+        assert_eq!(
+            pointer_offsets_equal_for_memory_resolution(&scaled, &concrete, &at_least_one),
+            Some(false)
+        );
+        assert_eq!(
+            pointer_offsets_equal_for_memory_resolution(&concrete, &scaled, &at_least_one),
+            Some(false)
+        );
+    }
+    // `1 <= u` leaves `u == 1` open: nothing is decided about `a[1]`.
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(
+            &scaled,
+            &PointerOffsetTerm::Constant(4),
+            &at_least_one
+        ),
+        None
+    );
+    let unbounded = PureFactContext::new();
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(
+            &scaled,
+            &PointerOffsetTerm::Constant(0),
+            &unbounded
+        ),
+        None
     );
 }
 

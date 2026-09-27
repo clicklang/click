@@ -46,6 +46,34 @@ impl PureFactContext {
         })
     }
 
+    /// The range of `term` that its own recorded constant order bounds give,
+    /// read from `signed_order_bounds` at the term's canonical form: one
+    /// keyed lookup, no chain, no scan of the fact set. `None` when no
+    /// constant bound is filed there. For a caller that runs per cell and
+    /// may not search; [`Self::signed_interval`] is the complete answer.
+    pub(in crate::kernel) fn indexed_constant_interval(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, i64)> {
+        let mut lower = i64::from(i32::MIN);
+        let mut upper = i64::from(i32::MAX);
+        let mut bounded = false;
+        for bound in self.exact_signed_order_bounds(term)? {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(value) = signed_bitvector_constant(&bound.other) else {
+                continue;
+            };
+            bounded = true;
+            match (bound.upper, bound.strict) {
+                (true, true) => upper = upper.min(value - 1),
+                (true, false) => upper = upper.min(value),
+                (false, true) => lower = lower.max(value + 1),
+                (false, false) => lower = lower.max(value),
+            }
+        }
+        bounded.then_some((lower, upper))
+    }
+
     /// The tightest constant bound on `term` that a chain of recorded int32
     /// order facts reaches: an upper bound (`upper`) from `term <= a < b <= c`
     /// ending at a constant, or a lower bound from a chain ending below
@@ -151,10 +179,17 @@ impl PureFactContext {
                         return Some(false);
                     }
                 }
-                // Reuse the bounded interval reconstruction already used for
-                // addition and multiplication, including compound operands.
-                self.signed_interval(&Bitvector32Term::Subtract(Box::new(left), Box::new(right)))
-                    .map(|_| false)
+                // The operands' intervals subtracted over the integers: the
+                // subtraction is defined exactly when that fits. Not the
+                // `signed_interval` of the difference, which reads the bounds
+                // recorded on the difference itself first; those bound its
+                // wrapped value, and a wrapped difference of `5` (from
+                // `INT_MIN - (INT_MAX - 4)`) says nothing about overflow.
+                self.signed_interval_from_operands(&Bitvector32Term::Subtract(
+                    Box::new(left),
+                    Box::new(right),
+                ))
+                .map(|_| false)
             }
             ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
                 if right.as_ref() == &Bitvector32Term::Constant(1) {
@@ -509,7 +544,9 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> Option<bool> {
-        self.signed_interval(&Bitvector32Term::Multiply(
+        // From the operands, as for subtraction: a bound recorded on the
+        // product bounds its wrapped value, not the integer product.
+        self.signed_interval_from_operands(&Bitvector32Term::Multiply(
             Box::new(left.clone()),
             Box::new(right.clone()),
         ))
@@ -556,11 +593,18 @@ impl PureFactContext {
         None
     }
 
-    /// Returns a conservative signed range for `term`. Unknown endpoints use
-    /// the full int32 range, so callers can still prove identities such as
-    /// `x + 0`. Compound arithmetic is ranged only when its own signed
-    /// evaluation is known not to overflow; this makes nested bounds safe to
-    /// reuse.
+    /// Returns a conservative signed range for `term`'s 32-bit value. Unknown
+    /// endpoints use the full int32 range, so callers can still prove
+    /// identities such as `x + 0`. A compound term with no recorded bounds of
+    /// its own is ranged from its operands only when that evaluation is known
+    /// not to overflow ([`Self::signed_interval_from_operands`]); this makes
+    /// nested bounds safe to reuse.
+    ///
+    /// A range is a range of the *value*, and a bound recorded on a compound
+    /// term bounds its wrapped value: `0 <= (a - b) <= 10` holds of the
+    /// wrapped difference of `INT_MIN` and `INT_MAX - 4`. So a range here is
+    /// never evidence that the term's own operation does not overflow; that
+    /// question is [`Self::signed_interval_from_operands`].
     pub(in crate::kernel) fn signed_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
         // A successfully reconstructed interval is a function of the fact set
         // and the term alone. Key by fact-set content and
@@ -680,41 +724,10 @@ impl PureFactContext {
             }
         }
         match term {
-            Bitvector32Term::Add(left, right) => {
-                let (left_lower, left_upper) = self.signed_interval(left)?;
-                let (right_lower, right_upper) = self.signed_interval(right)?;
-                let lower = left_lower.checked_add(right_lower)?;
-                let upper = left_upper.checked_add(right_upper)?;
-                if lower < i64::from(i32::MIN) || upper > i64::from(i32::MAX) {
-                    return None;
-                }
-                return Some((lower, upper));
-            }
-            Bitvector32Term::Subtract(left, right) => {
-                let (left_lower, left_upper) = self.signed_interval(left)?;
-                let (right_lower, right_upper) = self.signed_interval(right)?;
-                let lower = left_lower.checked_sub(right_upper)?;
-                let upper = left_upper.checked_sub(right_lower)?;
-                if lower < i64::from(i32::MIN) || upper > i64::from(i32::MAX) {
-                    return None;
-                }
-                return Some((lower, upper));
-            }
-            Bitvector32Term::Multiply(left, right) => {
-                let (left_lower, left_upper) = self.signed_interval(left)?;
-                let (right_lower, right_upper) = self.signed_interval(right)?;
-                let products = [
-                    i128::from(left_lower) * i128::from(right_lower),
-                    i128::from(left_lower) * i128::from(right_upper),
-                    i128::from(left_upper) * i128::from(right_lower),
-                    i128::from(left_upper) * i128::from(right_upper),
-                ];
-                let lower = *products.iter().min()?;
-                let upper = *products.iter().max()?;
-                if lower < i128::from(i32::MIN) || upper > i128::from(i32::MAX) {
-                    return None;
-                }
-                return Some((lower as i64, upper as i64));
+            Bitvector32Term::Add(_, _)
+            | Bitvector32Term::Subtract(_, _)
+            | Bitvector32Term::Multiply(_, _) => {
+                return self.signed_interval_from_operands(term);
             }
             Bitvector32Term::If {
                 then_term,
@@ -772,6 +785,57 @@ impl PureFactContext {
             }
         }
         (lower <= upper).then_some((lower, upper))
+    }
+
+    /// The range of a 32-bit addition, subtraction or multiplication computed
+    /// over the integers from its operands' ranges, when every value in it is
+    /// an int32; `None` for any other term or when the computed range leaves
+    /// int32. Where this answers, the operation does not overflow for any
+    /// operand values the facts admit, so its wrapped value is the integer
+    /// one and lies in the range. Unlike [`Self::signed_interval`], it never
+    /// reads bounds recorded on `term` itself, which bound only the wrapped
+    /// value, so this is the question an overflow decision asks.
+    pub(in crate::kernel) fn signed_interval_from_operands(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, i64)> {
+        let (lower, upper) = self.integer_interval_from_operands(term)?;
+        (i128::from(i32::MIN) <= lower && upper <= i128::from(i32::MAX))
+            .then_some((lower as i64, upper as i64))
+    }
+
+    /// The integer range of an addition, subtraction or multiplication of
+    /// two int32 operands, from the operands' value ranges, with nothing
+    /// wrapped. `None` for any other term or an operand with no range.
+    fn integer_interval_from_operands(&self, term: &Bitvector32Term) -> Option<(i128, i128)> {
+        let (left, right) = match term {
+            Bitvector32Term::Add(left, right)
+            | Bitvector32Term::Subtract(left, right)
+            | Bitvector32Term::Multiply(left, right) => (left, right),
+            _ => return None,
+        };
+        let (left_lower, left_upper) = self.signed_interval(left)?;
+        let (right_lower, right_upper) = self.signed_interval(right)?;
+        let (lower, upper) = match term {
+            Bitvector32Term::Add(_, _) => (
+                i128::from(left_lower) + i128::from(right_lower),
+                i128::from(left_upper) + i128::from(right_upper),
+            ),
+            Bitvector32Term::Subtract(_, _) => (
+                i128::from(left_lower) - i128::from(right_upper),
+                i128::from(left_upper) - i128::from(right_lower),
+            ),
+            _ => {
+                let products = [
+                    i128::from(left_lower) * i128::from(right_lower),
+                    i128::from(left_lower) * i128::from(right_upper),
+                    i128::from(left_upper) * i128::from(right_lower),
+                    i128::from(left_upper) * i128::from(right_upper),
+                ];
+                (*products.iter().min()?, *products.iter().max()?)
+            }
+        };
+        Some((lower, upper))
     }
 
     fn interval_endpoint_matches(
@@ -1177,6 +1241,42 @@ mod tests {
             )),
             Some(false)
         );
+    }
+
+    /// Bounds recorded on `a - b` or `a * b` bound the wrapped value of that
+    /// term, so they never decide that the operation itself does not
+    /// overflow: `INT_MIN - (INT_MAX - 4)` wraps to `5` and `65536 * 65536`
+    /// to `0`. The value is still ranged by them. Bounded operands still
+    /// decide it (`bounded_multiplication_uses_operand_intervals`).
+    #[test]
+    fn bounds_on_a_wrapped_result_do_not_rule_out_its_overflow() {
+        let a = Bitvector32Term::Variable(Variable(93_010));
+        let b = Bitvector32Term::Variable(Variable(93_011));
+        for result in [
+            Bitvector32Term::Subtract(Box::new(a.clone()), Box::new(b.clone())),
+            Bitvector32Term::Multiply(Box::new(a.clone()), Box::new(b.clone())),
+        ] {
+            let assumptions = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(
+                        result.clone(),
+                        Bitvector32Term::Constant(0),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(result.clone(), Bitvector32Term::Constant(10)),
+                    true,
+                );
+            let overflows = match &result {
+                Bitvector32Term::Subtract(..) => {
+                    ConditionTerm::signed_subtract_overflows(a.clone(), b.clone())
+                }
+                _ => ConditionTerm::signed_multiply_overflows(a.clone(), b.clone()),
+            };
+            assert_ne!(assumptions.decide(&overflows), Some(false), "{result:?}");
+            assert_eq!(assumptions.signed_interval(&result), Some((0, 10)));
+        }
     }
 
     fn indicator(variable: u64) -> Bitvector32Term {
