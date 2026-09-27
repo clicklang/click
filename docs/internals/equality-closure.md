@@ -1,7 +1,9 @@
 # Equality closure design
 
-Status: revised plan, 2026-09-27. Persistent affine pointer classes and several
-consumer repairs exist; the unified closure described here is not yet built.
+Status: partial implementation, 2026-09-27. Persistent affine pointer classes
+now maintain same-snapshot congruence for registered opaque pointer-load blocks.
+The complete pointer representation, resource indexing, and other theories
+described here remain planned work.
 The repository's `issues/egraph.md` owns milestones, regressions, the
 handoff checklist, and historical implementation anchors.
 
@@ -122,10 +124,29 @@ work is complete. Queries may register their explicit terms, but must observe
 a closed state before returning. Batching is allowed only if it preserves this
 boundary and charges the actual maintenance work.
 
-The current `PointerClasses::normal` is transitional: it recurses through loads
-with a depth cap, stops at an explicitly classed block, and scans loads in a
-snapshot. Replace that mechanism with maintained congruence. Merely increasing
-the depth or narrowing the scan to one snapshot does not meet the invariant.
+The initial `PointerClasses::normal` recursively normalized loads with a depth
+cap and a same-snapshot scan. It has been replaced. `PointerClassState` stores
+load applications, block use lists, application signatures, and reverse
+signature bindings. Registration walks only a query's unregistered load-address
+dependencies; merges reindex users of moved blocks and enqueue colliding load
+values for merging. Every registration/merge drains the worklist before return.
+Class weight counts blocks and application uses, so high-fanout classes remain
+on the heavy side of a merge. A context clone copies persistent roots into its
+own lock; query registration cannot mutate a sibling's closure.
+
+Signature keys contain snapshot arena identity, representative block identity,
+and an affine-offset ID. Offset sequences are interned with shallow prefix keys
+and retained machine-atom IDs. This removes deep snapshot/term comparison from
+signature lookup. Explicit affine syntax is normalized with an iterative walk;
+legacy spelling output sorts structurally rather than by interning order.
+The existing weighted affine payload operations still need broader scaling
+review for growing symbolic deltas. Same-block equations and equality between
+offset atoms are not yet incorporated into this closure.
+
+Only registered pointer-width loads in opaque symbolic-block form enter this
+application index. Ordinary C load construction still uses the old encoding in
+some producers. This is a preparatory fragment, not completion of the coherent
+representation change or the read/fold integration milestone.
 
 Resource lookup needs indexed equality-aware addresses, including displacement.
 Specify how resources registered before a merge remain discoverable after the
@@ -180,11 +201,17 @@ Where an explicit certificate needs equality evidence, provide a shareable
 explanation DAG or an equivalent checked derivation without repeatedly
 expanding a long chain.
 
-Resolve the existing `rewrite` trust question during the foundation: trace the
-current certificate path, identify the kernel substitution check, and add a
-checked equality rule if one is missing. The earlier inventory's uncertainty
-is not itself proof of a soundness defect. Do not postpone this investigation
-until every consumer already depends on the new equality API.
+The rewrite audit found that certificate checking calls the surface
+`finish_rewrite` checker, which constructs a new goal and publishes it through
+`refined_proposition`. The generic kernel publisher validates an open branch
+but does not independently check equality substitution. The surface rewrite
+checker is therefore part of this transition's trusted boundary today.
+Its outer quantifier walk now refuses binder collisions, using the bounded
+carrier-aware collector that treats snapshots as opaque and follows explicit
+function arguments. Direct regressions cover shadowing, capture, and ambient
+snapshot scaling, but source-level exploit reachability was not established. A kernel-checked equality transition/evidence API is still required
+before declaring the foundation complete. The binder guard alone is not that
+API.
 
 Soundness tests include unproved aliases, snapshot changes, incompatible load
 interpretations, branch leakage, restricted-premise leakage, offset wrapping,

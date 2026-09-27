@@ -81,6 +81,23 @@ pub(in crate::surface) fn normalize_proposition(proposition: &Proposition) -> Si
     }
 }
 
+// Equality substitution cares about lexical variables, not the contents of
+// immutable snapshots. The shared checked collector also sees variables in
+// pure-function arguments and registered load addresses.
+fn rewrite_equality_variables(equality: &Proposition) -> Result<BTreeSet<Variable>, String> {
+    let mut collector =
+        crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
+    collector.collect(equality);
+    if collector.exhausted() {
+        return Err(
+            "`rewrite` exhausted its work budget while checking binder capture".to_string(),
+        );
+    }
+    let mut variables = BTreeSet::new();
+    collector.extend_into(&mut variables);
+    Ok(variables)
+}
+
 pub(in crate::surface) fn rewrite_proposition_by_exact_equality(
     goal: &Proposition,
     equality: &Proposition,
@@ -108,6 +125,8 @@ pub(in crate::surface) fn rewrite_proposition_by_exact_equality(
 
     let mut tasks = vec![RewriteTask::Visit(goal)];
     let mut results: Vec<(Proposition, bool)> = Vec::new();
+    let equality_variables = std::cell::OnceCell::new();
+    let mut blocked_by_binder = false;
     while let Some(task) = tasks.pop() {
         match task {
             RewriteTask::Visit(proposition) => match proposition {
@@ -131,11 +150,23 @@ pub(in crate::surface) fn rewrite_proposition_by_exact_equality(
                     tasks.push(RewriteTask::Visit(antecedent));
                 }
                 Proposition::ForAll { var, sort, body } => {
-                    tasks.push(RewriteTask::BuildForAll {
-                        var: *var,
-                        sort: sort.clone(),
-                    });
-                    tasks.push(RewriteTask::Visit(body));
+                    if equality_variables
+                        .get_or_init(|| rewrite_equality_variables(equality))
+                        .as_ref()
+                        .map_err(Clone::clone)?
+                        .contains(var)
+                    {
+                        // Substitution below this binder could replace a bound
+                        // occurrence or capture a variable in the replacement.
+                        blocked_by_binder = true;
+                        results.push((proposition.clone(), false));
+                    } else {
+                        tasks.push(RewriteTask::BuildForAll {
+                            var: *var,
+                            sort: sort.clone(),
+                        });
+                        tasks.push(RewriteTask::Visit(body));
+                    }
                 }
                 Proposition::Exists {
                     name,
@@ -143,12 +174,22 @@ pub(in crate::surface) fn rewrite_proposition_by_exact_equality(
                     sort,
                     body,
                 } => {
-                    tasks.push(RewriteTask::BuildExists {
-                        name: name.clone(),
-                        var: *var,
-                        sort: sort.clone(),
-                    });
-                    tasks.push(RewriteTask::Visit(body));
+                    if equality_variables
+                        .get_or_init(|| rewrite_equality_variables(equality))
+                        .as_ref()
+                        .map_err(Clone::clone)?
+                        .contains(var)
+                    {
+                        blocked_by_binder = true;
+                        results.push((proposition.clone(), false));
+                    } else {
+                        tasks.push(RewriteTask::BuildExists {
+                            name: name.clone(),
+                            var: *var,
+                            sort: sort.clone(),
+                        });
+                        tasks.push(RewriteTask::Visit(body));
+                    }
                 }
                 atomic => {
                     match rewrite_atomic_proposition_by_exact_equality(atomic, equality, available)
@@ -207,7 +248,13 @@ pub(in crate::surface) fn rewrite_proposition_by_exact_equality(
     debug_assert!(results.is_empty());
     changed
         .then_some(rewritten)
-        .ok_or_else(|| "`rewrite` equality does not occur in the current goal".to_string())
+        .ok_or_else(|| {
+            if blocked_by_binder {
+                "`rewrite` cannot substitute an equality through a quantifier that binds one of its variables".to_string()
+            } else {
+                "`rewrite` equality does not occur in the current goal".to_string()
+            }
+        })
 }
 
 /// Whether rewriting by this equality cannot change any goal: it states
@@ -2675,6 +2722,126 @@ mod tests {
     use crate::kernel::{
         IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, SharedIntegerRangeEndpoint,
     };
+
+    #[test]
+    fn equality_rewrite_does_not_capture_or_replace_a_quantifier_binder() {
+        let bound = Variable(2_000_000);
+        let free = Variable(71);
+        let atom = |left, right| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                true,
+            )
+        };
+        let variable = |id| Bitvector32Term::Variable(id);
+        let quantified = |body| Proposition::ForAll {
+            var: bound,
+            sort: Sort::CInt32,
+            body: Box::new(body),
+        };
+
+        let shadowed = atom(variable(bound), Bitvector32Term::Constant(0));
+        let shadowed_goal = quantified(atom(variable(bound), Bitvector32Term::Constant(0)));
+        assert!(
+            rewrite_proposition_by_exact_equality(
+                &shadowed_goal,
+                &shadowed,
+                std::slice::from_ref(&shadowed),
+            )
+            .is_err(),
+            "an outer equality cannot replace the bound occurrence"
+        );
+
+        let capturing = atom(variable(free), variable(bound));
+        let capturing_goal = quantified(atom(variable(free), Bitvector32Term::Constant(0)));
+        assert!(
+            rewrite_proposition_by_exact_equality(
+                &capturing_goal,
+                &capturing,
+                std::slice::from_ref(&capturing),
+            )
+            .is_err(),
+            "the replacement's free variable cannot become bound"
+        );
+        let existential = Proposition::Exists {
+            name: "witness".to_string(),
+            var: bound,
+            sort: Sort::CInt32,
+            body: Box::new(atom(variable(free), Bitvector32Term::Constant(0))),
+        };
+        assert!(
+            rewrite_proposition_by_exact_equality(
+                &existential,
+                &capturing,
+                std::slice::from_ref(&capturing),
+            )
+            .is_err(),
+            "existential binders obey the same capture rule"
+        );
+
+        let hidden_capture = atom(
+            variable(free),
+            Bitvector32Term::ClickFunctionApplication {
+                name: "f".to_string(),
+                arguments: vec![PureFunctionArgument::Value(CValue::Int32(variable(bound)))],
+            },
+        );
+        assert!(
+            rewrite_proposition_by_exact_equality(
+                &capturing_goal,
+                &hidden_capture,
+                std::slice::from_ref(&hidden_capture),
+            )
+            .is_err(),
+            "a variable inside a pure-function argument must not become bound"
+        );
+
+        let safe = atom(variable(free), Bitvector32Term::Constant(0));
+        assert_eq!(
+            rewrite_proposition_by_exact_equality(
+                &capturing_goal,
+                &safe,
+                std::slice::from_ref(&safe),
+            )
+            .expect("an unrelated equality may still rewrite under the binder"),
+            quantified(atom(
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(0),
+            )),
+        );
+    }
+
+    #[test]
+    fn rewrite_capture_collection_does_not_visit_snapshot_contents() {
+        let free = Variable(41);
+        let address = Variable(42);
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut memory = CMemory::new();
+            for i in 0..size {
+                memory = memory.store(
+                    Pointer::symbolic(Variable(100_000 + i)),
+                    CValue::Int32(Bitvector32Term::Variable(Variable(200_000 + i))),
+                );
+            }
+            let equality = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Variable(free)),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        crate::kernel::intern_c_memory(memory),
+                        Box::new(Pointer::symbolic(address)),
+                    )),
+                ),
+                true,
+            );
+            let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
+                rewrite_equality_variables(&equality).unwrap()
+            });
+            assert_eq!(variables, BTreeSet::from([free, address]));
+            costs.push(work);
+        }
+        assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+    }
 
     /// The equality-rewrite search visits premise orders depth first, and a
     /// goal it cannot close makes it visit all of them. Under an exhausted

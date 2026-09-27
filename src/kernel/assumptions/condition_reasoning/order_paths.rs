@@ -479,7 +479,7 @@ impl PureFactContext {
     ) -> bool {
         // As in `has_indexed_pointer_equality_path`: the classes first, the
         // scan below only for what they do not hold.
-        if left.block != right.block && self.pointer_classes.proves_equal_in(left, right, self) {
+        if left.block != right.block && self.pointer_classes.proves_equal(left, right) {
             return true;
         }
         let canonical_pointer =

@@ -25,12 +25,54 @@
 //! normalized, and a fact about it is not filed.
 //!
 //! The index is persistent and append-only. A union relabels every member of
-//! the smaller class, so a member's lookup is one map access and the total
-//! relabelling along one path is `O(n log n)` in the blocks it merges. An
+//! the lighter class (blocks plus application uses), so member lookup is one
+//! map access and each moved block/use is charged to a growing class. Affine
+//! payload work is charged separately. Same-snapshot load signatures propagate
+//! merges iteratively through indexed parent uses, with no nesting cutoff. An
 //! equality between two blocks already in one class adds nothing here: it
 //! relates offsets, not bases, and stays with the offset facts.
 
 use super::*;
+
+/// A retained, interned machine atom. Equality and ordering use the stable
+/// ID; the original term is retained only for legacy spelling reconstruction.
+#[derive(Clone)]
+pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm);
+
+impl MachineAtom {
+    fn new(ty: crate::kernel::MachineIntegerType, value: Bitvector32Term) -> Self {
+        Self(crate::kernel::SharedMachineIntegerTerm::intern(ty, value))
+    }
+    fn value(&self) -> &Bitvector32Term {
+        self.0.value()
+    }
+}
+impl std::fmt::Debug for MachineAtom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.id().fmt(f)
+    }
+}
+impl PartialEq for MachineAtom {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.id() == other.0.id()
+    }
+}
+impl Eq for MachineAtom {}
+impl PartialOrd for MachineAtom {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for MachineAtom {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.id().cmp(&other.0.id())
+    }
+}
+impl std::hash::Hash for MachineAtom {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.id().hash(state);
+    }
+}
 
 /// One atom of an affine offset: a quantity the normal form does not
 /// decompose, with the numeric reading the offset term gives it.
@@ -39,12 +81,31 @@ pub(in crate::kernel) enum OffsetAtom {
     /// A 64-bit offset variable.
     Variable(Variable),
     /// A 32-bit index, sign-extended.
-    Int32(Bitvector32Term),
+    Int32(MachineAtom),
     /// A 64-bit index, signed or unsigned.
-    Int64 {
-        value: Bitvector32Term,
-        unsigned: bool,
-    },
+    Int64 { value: MachineAtom, unsigned: bool },
+}
+
+impl OffsetAtom {
+    fn spelling_cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use OffsetAtom::*;
+        match (self, other) {
+            (Variable(a), Variable(b)) => a.cmp(b),
+            (Int32(a), Int32(b)) => a.value().cmp(b.value()),
+            (
+                Int64 {
+                    value: a,
+                    unsigned: au,
+                },
+                Int64 {
+                    value: b,
+                    unsigned: bu,
+                },
+            ) => a.value().cmp(b.value()).then(au.cmp(bu)),
+            (Variable(_), _) | (Int32(_), Int64 { .. }) => std::cmp::Ordering::Less,
+            _ => std::cmp::Ordering::Greater,
+        }
+    }
 }
 
 /// `constant + sum(coefficient * atom)` over exact integers, with no zero
@@ -63,61 +124,88 @@ impl AffineOffset {
         }
     }
 
-    fn atom(atom: OffsetAtom, coefficient: i128) -> Self {
-        let mut terms = std::collections::BTreeMap::new();
+    fn add_atom(&mut self, atom: OffsetAtom, coefficient: i128) -> Option<()> {
         if coefficient != 0 {
-            terms.insert(atom, coefficient);
+            let entry = self.terms.entry(atom.clone()).or_insert(0);
+            *entry = entry.checked_add(coefficient)?;
+            if *entry == 0 {
+                self.terms.remove(&atom);
+            }
         }
-        Self { constant: 0, terms }
+        Some(())
     }
 
-    /// The normal form of an offset term, or `None` when its arithmetic
-    /// overflows the exact form.
+    /// Normalize the explicit offset in one iterative traversal. Building a
+    /// fresh form at every Add node would copy a growing prefix quadratically.
     pub(in crate::kernel) fn of(offset: &PointerOffsetTerm) -> Option<Self> {
-        match offset {
-            PointerOffsetTerm::Constant(value) => Some(Self::constant(i128::from(*value))),
-            PointerOffsetTerm::Variable(variable) => {
-                Some(Self::atom(OffsetAtom::Variable(*variable), 1))
-            }
-            PointerOffsetTerm::Add(left, right) => Self::of(left)?.checked_add(&Self::of(right)?),
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                let width = i128::from(*byte_width);
-                match value.as_const() {
-                    Some(value) => {
-                        Some(Self::constant(i128::from(value as i32).checked_mul(width)?))
-                    }
-                    None => Some(Self::atom(
-                        OffsetAtom::Int32(crate::kernel::canonical_term(value)),
-                        width,
-                    )),
+        let mut result = Self::default();
+        let mut pending = vec![offset];
+        while let Some(offset) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match offset {
+                PointerOffsetTerm::Constant(value) => {
+                    result.constant = result.constant.checked_add(i128::from(*value))?;
                 }
-            }
-            PointerOffsetTerm::Int64Scaled {
-                value,
-                byte_width,
-                unsigned,
-            } => {
-                let width = i128::from(*byte_width);
-                let constant = if *unsigned {
-                    value.uint64_as_const().map(i128::from)
-                } else {
-                    value.int64_as_const().map(i128::from)
-                };
-                match constant {
-                    Some(value) => Some(Self::constant(value.checked_mul(width)?)),
-                    None => Some(Self::atom(
-                        OffsetAtom::Int64 {
-                            value: crate::kernel::canonical_term(value),
-                            unsigned: *unsigned,
-                        },
-                        width,
-                    )),
+                PointerOffsetTerm::Variable(variable) => {
+                    result.add_atom(OffsetAtom::Variable(*variable), 1)?;
+                }
+                PointerOffsetTerm::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                    let width = i128::from(*byte_width);
+                    if let Some(value) = value.as_const() {
+                        result.constant = result
+                            .constant
+                            .checked_add(i128::from(value as i32).checked_mul(width)?)?;
+                    } else {
+                        result.add_atom(
+                            OffsetAtom::Int32(MachineAtom::new(
+                                crate::kernel::MachineIntegerType::Int32,
+                                crate::kernel::canonical_term(value),
+                            )),
+                            width,
+                        )?;
+                    }
+                }
+                PointerOffsetTerm::Int64Scaled {
+                    value,
+                    byte_width,
+                    unsigned,
+                } => {
+                    let width = i128::from(*byte_width);
+                    let constant = if *unsigned {
+                        value.uint64_as_const().map(i128::from)
+                    } else {
+                        value.int64_as_const().map(i128::from)
+                    };
+                    if let Some(value) = constant {
+                        result.constant = result.constant.checked_add(value.checked_mul(width)?)?;
+                    } else {
+                        result.add_atom(
+                            OffsetAtom::Int64 {
+                                value: MachineAtom::new(
+                                    if *unsigned {
+                                        crate::kernel::MachineIntegerType::UInt64
+                                    } else {
+                                        crate::kernel::MachineIntegerType::Int64
+                                    },
+                                    crate::kernel::canonical_term(value),
+                                ),
+                                unsigned: *unsigned,
+                            },
+                            width,
+                        )?;
+                    }
                 }
             }
         }
+        Some(result)
     }
 
     pub(in crate::kernel) fn checked_add(&self, other: &Self) -> Option<Self> {
+        crate::instrumentation::record_deterministic_work(self.terms.len() + other.terms.len());
         let mut sum = self.clone();
         sum.constant = sum.constant.checked_add(other.constant)?;
         for (atom, coefficient) in &other.terms {
@@ -131,6 +219,7 @@ impl AffineOffset {
     }
 
     pub(in crate::kernel) fn checked_negate(&self) -> Option<Self> {
+        crate::instrumentation::record_deterministic_work(self.terms.len());
         let mut negated = Self::constant(self.constant.checked_neg()?);
         for (atom, coefficient) in &self.terms {
             negated
@@ -149,7 +238,11 @@ impl AffineOffset {
     /// one) or a value leaves `i64`.
     pub(in crate::kernel) fn to_offset_term(&self) -> Option<PointerOffsetTerm> {
         let mut term = PointerOffsetTerm::Constant(i64::try_from(self.constant).ok()?);
-        for (atom, coefficient) in &self.terms {
+        // Compact IDs depend on interning order. Legacy spelling output must
+        // retain structural order so proof routes do not depend on that order.
+        let mut terms: Vec<_> = self.terms.iter().collect();
+        terms.sort_by(|(left, _), (right, _)| left.spelling_cmp(right));
+        for (atom, coefficient) in terms {
             let coefficient = i64::try_from(*coefficient).ok()?;
             let addend = match atom {
                 OffsetAtom::Variable(variable) if coefficient == 1 => {
@@ -157,11 +250,11 @@ impl AffineOffset {
                 }
                 OffsetAtom::Variable(_) => return None,
                 OffsetAtom::Int32(value) => PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(value.clone()),
+                    value: Box::new(value.value().clone()),
                     byte_width: coefficient,
                 },
                 OffsetAtom::Int64 { value, unsigned } => PointerOffsetTerm::Int64Scaled {
-                    value: Box::new(value.clone()),
+                    value: Box::new(value.value().clone()),
                     byte_width: coefficient,
                     unsigned: *unsigned,
                 },
@@ -180,261 +273,139 @@ pub(in crate::kernel) struct CanonicalPointer {
     pub(in crate::kernel) offset: AffineOffset,
 }
 
-/// A pointer's normal form under the recorded equalities and load
-/// congruence: its base is either a class representative, or, for a loaded
-/// pointer no equality places in a class, the load it is the value of,
-/// itself in normal form. Two pointers with one normal form are equal.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(in crate::kernel) struct NormalPointer {
-    base: NormalBase,
-    offset: AffineOffset,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-enum NormalBase {
-    Class(PointerBlock),
-    Load(SharedCMemory, Box<NormalPointer>),
-}
-
-thread_local! {
-    /// Pairs of loaded pointers whose cross-snapshot equality is being
-    /// decided on this thread.
-    static FRAME_PAIRS_IN_PROGRESS: std::cell::RefCell<std::collections::BTreeSet<(Variable, Variable)>> =
-        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
-}
-
-/// How many nested loads a normal form looks through.
-const LOAD_CONGRUENCE_DEPTH: usize = 4;
-
-#[derive(Clone, Debug, Default)]
+/// The pointer fragment's closed, persistent state. Query registration adds only
+/// definitional load applications; hypotheses enter through `assume_equal`.
+/// Cloning copies the persistent roots into a new lock, never a shared mutable
+/// graph. The lock preserves `PureFactContext`'s Send/Sync contract.
+#[derive(Default)]
 pub(in crate::kernel) struct PointerClasses {
-    /// For every block that is not its class's representative: the
-    /// representative and `delta` with `base(block) = base(rep) + delta`.
+    state: std::sync::Mutex<PointerClassState>,
+}
+
+impl Clone for PointerClasses {
+    fn clone(&self) -> Self {
+        Self {
+            state: std::sync::Mutex::new(self.state.lock().expect("pointer classes").clone()),
+        }
+    }
+}
+
+impl std::fmt::Debug for PointerClasses {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = self.state.lock().expect("pointer classes");
+        f.debug_struct("PointerClasses")
+            .field("members", &state.parent.len())
+            .field("loads", &state.loads.len())
+            .finish()
+    }
+}
+
+/// A signature compares only snapshot identities, block identities and an
+/// interned affine-offset ID. It never compares snapshots or load trees.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct LoadSignature {
+    memory: (u32, u32),
+    address_block: PointerBlock,
+    address_offset: u64,
+}
+
+#[derive(Clone)]
+struct LoadApplication {
+    memory: (u32, u32),
+    address_block: PointerBlock,
+    address_offset: AffineOffset,
+}
+
+/// Hash-consing the affine sequence uses shallow keys. Offset atoms hold
+/// interned machine terms, so a map comparison never descends into a term.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum OffsetPart {
+    Constant(i128),
+    Term(u64, OffsetAtom, i128),
+}
+
+#[derive(Clone, Default)]
+struct PointerClassState {
     parent: crate::persistent::PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
-    /// For every representative with at least one other member: those
-    /// members and their deltas.
     members: crate::persistent::PersistentMap<
         PointerBlock,
         crate::persistent::PersistentMap<PointerBlock, AffineOffset>,
     >,
-    /// The classed blocks that are loaded pointers, by the snapshot their
-    /// load read. Load congruence consults only the loads of the queried
-    /// load's own snapshot. Blocks never leave a class, so this only grows.
-    classed_loads: crate::persistent::PersistentMap<
-        SharedCMemory,
+    // Weight includes application uses, so repeatedly joining a fresh block
+    // to one with many parents never reindexes the large side.
+    weights: crate::persistent::PersistentMap<PointerBlock, usize>,
+    loads: crate::persistent::PersistentMap<PointerBlock, LoadApplication>,
+    uses: crate::persistent::PersistentMap<
+        PointerBlock,
         crate::persistent::PersistentSet<PointerBlock>,
     >,
+    signatures: crate::persistent::PersistentMap<LoadSignature, PointerBlock>,
+    load_signatures: crate::persistent::PersistentMap<PointerBlock, LoadSignature>,
+    offset_parts: crate::persistent::PersistentMap<OffsetPart, u64>,
 }
 
 impl PointerClasses {
-    /// The representative of `block`'s class and `block`'s base relative to
-    /// it. One map access: a union relabels every member it moves.
-    pub(in crate::kernel) fn find(&self, block: &PointerBlock) -> (PointerBlock, AffineOffset) {
-        match self.parent.get(block) {
-            Some((representative, delta)) => (representative.clone(), delta.clone()),
-            None => (block.clone(), AffineOffset::default()),
-        }
-    }
-
-    /// The class-relative form of `pointer`, or `None` when its offset has no
-    /// exact normal form.
-    pub(in crate::kernel) fn canonical(&self, pointer: &Pointer) -> Option<CanonicalPointer> {
-        let offset = AffineOffset::of(&pointer.offset)?;
-        let (representative, delta) = self.find(&pointer.block);
-        Some(CanonicalPointer {
-            representative,
-            offset: delta.checked_add(&offset)?,
-        })
-    }
-
-    /// Whether the recorded equalities, with load congruence, prove the two
-    /// pointers equal.
     pub(in crate::kernel) fn proves_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         if left == right {
             return true;
         }
-        if let (Some(left), Some(right)) = (self.canonical(left), self.canonical(right))
-            && left == right
-        {
-            return true;
+        let mut state = self.state.lock().expect("pointer classes");
+        state.register_blocks([left.block.clone(), right.block.clone()]);
+        // Different classes cannot meet by offset normalization. In
+        // particular, do not traverse an unrelated allocation's offset just
+        // to discover that its block has no equality with the query's block.
+        let (left_rep, left_delta) = state.find(&left.block);
+        let (right_rep, right_delta) = state.find(&right.block);
+        if left_rep != right_rep {
+            return false;
         }
         match (
-            self.normal(left, LOAD_CONGRUENCE_DEPTH),
-            self.normal(right, LOAD_CONGRUENCE_DEPTH),
+            AffineOffset::of(&left.offset).and_then(|offset| left_delta.checked_add(&offset)),
+            AffineOffset::of(&right.offset).and_then(|offset| right_delta.checked_add(&offset)),
         ) {
             (Some(left), Some(right)) => left == right,
             _ => false,
         }
     }
 
-    /// `proves_equal`, and also: two loaded pointers that read the same
-    /// address at two snapshots are equal when the path's facts prove the
-    /// cell unchanged between them. That question goes to the kernel's
-    /// cross-snapshot load equality once per compared pair; it is never
-    /// asked of loads nobody compares.
-    pub(in crate::kernel) fn proves_equal_in(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        if self.proves_equal(left, right) {
-            return true;
-        }
-        let (Some(left_normal), Some(right_normal)) = (
-            self.normal(left, LOAD_CONGRUENCE_DEPTH),
-            self.normal(right, LOAD_CONGRUENCE_DEPTH),
-        ) else {
-            return false;
-        };
-        let (
-            NormalBase::Load(left_memory, left_address),
-            NormalBase::Load(right_memory, right_address),
-        ) = (&left_normal.base, &right_normal.base)
-        else {
-            return false;
-        };
-        if left_normal.offset != right_normal.offset
-            || left_memory == right_memory
-            || left_address != right_address
-        {
-            return false;
-        }
-        let (PointerBlock::Symbolic(left_variable), PointerBlock::Symbolic(right_variable)) =
-            (&left.block, &right.block)
-        else {
-            return false;
-        };
-        let pair = if left_variable <= right_variable {
-            (*left_variable, *right_variable)
-        } else {
-            (*right_variable, *left_variable)
-        };
-        // Frame reasoning may itself ask pointer questions; a pair already
-        // being decided answers no rather than recursing.
-        if !FRAME_PAIRS_IN_PROGRESS.with(|active| active.borrow_mut().insert(pair)) {
-            return false;
-        }
-        crate::instrumentation::record_deterministic_work(1);
-        let load = |variable: &Variable| {
-            let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
-                .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
-            Some(Bitvector32Term::MemoryLoad(memory, Box::new(address)))
-        };
-        let equal = match (load(left_variable), load(right_variable)) {
-            (Some(left_load), Some(right_load)) => {
-                crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
-                    &left_load,
-                    &right_load,
-                    assumptions,
-                )
-            }
-            _ => false,
-        };
-        FRAME_PAIRS_IN_PROGRESS.with(|active| active.borrow_mut().remove(&pair));
-        equal
+    pub(in crate::kernel) fn assume_equal(&mut self, left: &Pointer, right: &Pointer) -> bool {
+        let state = self.state.get_mut().expect("pointer classes");
+        state.register_blocks([left.block.clone(), right.block.clone()]);
+        state.close(vec![(left.clone(), right.clone())])
     }
 
-    /// The load a block is the identity of, when it is a loaded pointer's.
-    fn loaded_block_load(block: &PointerBlock) -> Option<(SharedCMemory, Pointer)> {
-        let PointerBlock::Symbolic(variable) = block else {
-            return None;
-        };
-        if !crate::kernel::is_load_variable(variable) {
-            return None;
-        }
-        crate::kernel::registered_load_for_variable(variable)
+    pub(in crate::kernel) fn is_classed(&self, block: &PointerBlock) -> bool {
+        let mut state = self.state.lock().expect("pointer classes");
+        state.register_blocks([block.clone()]);
+        state.parent.contains_key(block) || state.members.contains_key(block)
     }
 
-    /// A pointer's normal form. A loaded pointer outside every class is the
-    /// load it names: two loads of one snapshot at pointers with one normal
-    /// form are one value (load congruence). When such a load is also the
-    /// load a classed loaded pointer names, the pointer joins that class.
-    pub(in crate::kernel) fn normal(
-        &self,
-        pointer: &Pointer,
-        depth: usize,
-    ) -> Option<NormalPointer> {
-        let offset = AffineOffset::of(&pointer.offset)?;
-        let (representative, delta) = self.find(&pointer.block);
-        let class_form = |representative: PointerBlock, delta: AffineOffset| {
-            Some(NormalPointer {
-                base: NormalBase::Class(representative),
-                offset: delta.checked_add(&offset)?,
-            })
-        };
-        if depth == 0 || self.is_classed(&pointer.block) {
-            return class_form(representative, delta);
-        }
-        let Some((memory, address)) = Self::loaded_block_load(&pointer.block) else {
-            return class_form(representative, delta);
-        };
-        let Some(address) = self.normal(&address, depth - 1) else {
-            return class_form(representative, delta);
-        };
-        crate::instrumentation::record_deterministic_work(1);
-        let key = (memory, address);
-        // A classed loaded pointer naming the same load puts this one in its
-        // class. Only the classed loads of this snapshot are candidates.
-        if let Some(candidates) = self.classed_loads.get(&key.0) {
-            for member in candidates.iter() {
-                crate::instrumentation::record_deterministic_work(1);
-                if let Some((_, member_address)) = Self::loaded_block_load(member)
-                    && self.normal(&member_address, depth - 1).as_ref() == Some(&key.1)
-                {
-                    let (member_representative, member_delta) = self.find(member);
-                    return class_form(member_representative, member_delta);
-                }
-            }
-        }
-        Some(NormalPointer {
-            base: NormalBase::Load(key.0, Box::new(key.1)),
-            offset,
-        })
-    }
-
-    fn class_size(&self, representative: &PointerBlock) -> usize {
-        self.members
-            .get(representative)
-            .map_or(1, |members| members.len() + 1)
-    }
-
-    /// Every block in `block`'s class, including `block` itself, with the
-    /// delta `d` such that `base(block) = base(member) + d`. A pointer
-    /// `block + o` is therefore the pointer `member + (o + d)`. The work is
-    /// the class's size.
+    /// Transitional resource consumers still enumerate spellings. This is
+    /// deliberately separate from congruence lookup, which never enumerates.
     pub(in crate::kernel) fn class_blocks(
         &self,
         block: &PointerBlock,
     ) -> Vec<(PointerBlock, AffineOffset)> {
-        let (representative, own) = self.find(block);
-        let mut blocks = Vec::with_capacity(self.class_size(&representative));
-        let mut push = |member: &PointerBlock, member_delta: &AffineOffset| {
-            if let Some(delta) = own.checked_sub(member_delta) {
+        let mut state = self.state.lock().expect("pointer classes");
+        state.register_blocks([block.clone()]);
+        let (representative, own) = state.find(block);
+        let mut blocks = Vec::new();
+        let mut push = |member: &PointerBlock, delta: &AffineOffset| {
+            if let Some(delta) = own.checked_sub(delta) {
                 blocks.push((member.clone(), delta));
             }
         };
         push(&representative, &AffineOffset::default());
-        if let Some(members) = self.members.get(&representative) {
-            for (member, delta) in members.iter() {
+        if let Some(members) = state.members.get(&representative) {
+            for (member, delta) in members {
                 push(member, delta);
             }
         }
         blocks
     }
 
-    /// Whether `block` shares its class with another block. One lookup, so a
-    /// caller decides whether an alias retry is possible before paying for
-    /// the class.
-    pub(in crate::kernel) fn is_classed(&self, block: &PointerBlock) -> bool {
-        self.parent.contains_key(block) || self.members.contains_key(block)
-    }
-
-    /// `pointer` restated at every other block of its class, in class order.
-    /// Empty when the block is alone in its class, so a caller that retries a
-    /// lookup under these spellings pays nothing on the common path.
     pub(in crate::kernel) fn other_spellings(&self, pointer: &Pointer) -> Vec<Pointer> {
-        if !self.parent.contains_key(&pointer.block) && !self.members.contains_key(&pointer.block) {
+        if !self.is_classed(&pointer.block) {
             return Vec::new();
         }
         self.class_blocks(&pointer.block)
@@ -448,79 +419,200 @@ impl PointerClasses {
             })
             .collect()
     }
+}
 
-    /// Records a true pointer equality. Returns whether two classes merged;
-    /// an equality inside one class, or over an offset with no exact normal
-    /// form, records nothing.
-    pub(in crate::kernel) fn assume_equal(&mut self, left: &Pointer, right: &Pointer) -> bool {
-        let (Some(left), Some(right)) = (self.canonical(left), self.canonical(right)) else {
-            return false;
-        };
-        if left.representative == right.representative {
-            return false;
-        }
-        // base(left.rep) + left.offset = base(right.rep) + right.offset, so
-        // base(left.rep) = base(right.rep) + (right.offset - left.offset).
-        let Some(left_from_right) = right.offset.checked_sub(&left.offset) else {
-            return false;
-        };
-        let (moved, kept, moved_from_kept) =
-            if self.class_size(&left.representative) <= self.class_size(&right.representative) {
-                (left.representative, right.representative, left_from_right)
-            } else {
-                let Some(right_from_left) = left_from_right.checked_negate() else {
-                    return false;
-                };
-                (right.representative, left.representative, right_from_left)
-            };
-        self.relabel(moved, kept, moved_from_kept)
+impl PointerClassState {
+    fn find(&self, block: &PointerBlock) -> (PointerBlock, AffineOffset) {
+        crate::instrumentation::record_deterministic_work(1);
+        self.parent
+            .get(block)
+            .cloned()
+            .unwrap_or_else(|| (block.clone(), AffineOffset::default()))
     }
 
-    /// Moves every member of `moved`'s class under `kept`, where
-    /// `base(moved) = base(kept) + moved_from_kept`.
+    fn canonical(&self, pointer: &Pointer) -> Option<CanonicalPointer> {
+        let offset = AffineOffset::of(&pointer.offset)?;
+        let (representative, delta) = self.find(&pointer.block);
+        Some(CanonicalPointer {
+            representative,
+            offset: delta.checked_add(&offset)?,
+        })
+    }
+
+    fn weight(&self, block: &PointerBlock) -> usize {
+        self.weights.get(block).copied().unwrap_or(1)
+    }
+
+    fn intern_offset(&mut self, offset: &AffineOffset) -> u64 {
+        let mut part = OffsetPart::Constant(offset.constant);
+        let mut id = self.intern_offset_part(part);
+        for (atom, coefficient) in &offset.terms {
+            part = OffsetPart::Term(id, atom.clone(), *coefficient);
+            id = self.intern_offset_part(part);
+        }
+        id
+    }
+
+    fn intern_offset_part(&mut self, part: OffsetPart) -> u64 {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(id) = self.offset_parts.get(&part) {
+            return *id;
+        }
+        let id = u64::try_from(self.offset_parts.len()).expect("affine identity capacity");
+        self.offset_parts.insert(part, id);
+        id
+    }
+
+    /// Register the explicit roots and their load-address dependencies once,
+    /// with an iterative traversal rather than a semantic nesting limit.
+    fn register_blocks(&mut self, roots: impl IntoIterator<Item = PointerBlock>) {
+        let is_load = |block: &PointerBlock| matches!(block, PointerBlock::Symbolic(variable) if crate::kernel::is_load_variable(variable));
+        let mut pending: Vec<_> = roots.into_iter().filter(is_load).collect();
+        let mut equalities = Vec::new();
+        while let Some(block) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if self.loads.contains_key(&block) {
+                continue;
+            }
+            let PointerBlock::Symbolic(variable) = &block else {
+                continue;
+            };
+            // Only pointer-width reads can denote a load-backed pointer.
+            // A smaller read may later be registered as a pointer-width read,
+            // so it must not be permanently negative-cached here.
+            if !crate::kernel::is_load_variable(variable)
+                || crate::kernel::registered_load_bytes_for_variable(variable) != Some(8)
+            {
+                continue;
+            }
+            let Some((memory, address)) = crate::kernel::registered_load_for_variable(variable)
+            else {
+                continue;
+            };
+            let Some(address_offset) = AffineOffset::of(&address.offset) else {
+                continue;
+            };
+            self.loads.insert(
+                block.clone(),
+                LoadApplication {
+                    memory: memory.arena_id(),
+                    address_block: address.block.clone(),
+                    address_offset,
+                },
+            );
+            let users = self.uses.get(&address.block).cloned().unwrap_or_default();
+            self.uses
+                .insert(address.block.clone(), users.with_value(block.clone()));
+            let (representative, _) = self.find(&address.block);
+            self.weights
+                .insert(representative.clone(), self.weight(&representative) + 1);
+            self.reindex_load(&block, &mut equalities);
+            if is_load(&address.block) {
+                pending.push(address.block);
+            }
+        }
+        self.close(equalities);
+    }
+
+    fn reindex_load(&mut self, block: &PointerBlock, equalities: &mut Vec<(Pointer, Pointer)>) {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(old) = self.load_signatures.get(block).cloned() {
+            if self.signatures.get(&old) == Some(block) {
+                self.signatures.remove(&old);
+            }
+            self.load_signatures.remove(block);
+        }
+        let load = self.loads.get(block).expect("registered load").clone();
+        let (address_block, delta) = self.find(&load.address_block);
+        let Some(offset) = delta.checked_add(&load.address_offset) else {
+            return;
+        };
+        let signature = LoadSignature {
+            memory: load.memory,
+            address_block,
+            address_offset: self.intern_offset(&offset),
+        };
+        if let Some(other) = self.signatures.get(&signature) {
+            if other != block {
+                equalities.push((
+                    Pointer {
+                        block: block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    Pointer {
+                        block: other.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                ));
+            }
+        } else {
+            self.signatures.insert(signature.clone(), block.clone());
+        }
+        self.load_signatures.insert(block.clone(), signature);
+    }
+
+    fn close(&mut self, mut equalities: Vec<(Pointer, Pointer)>) -> bool {
+        let mut changed = false;
+        while let Some((left, right)) = equalities.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let (Some(left), Some(right)) = (self.canonical(&left), self.canonical(&right)) else {
+                continue;
+            };
+            if left.representative == right.representative {
+                continue;
+            }
+            let Some(left_from_right) = right.offset.checked_sub(&left.offset) else {
+                continue;
+            };
+            let (moved, kept, delta) =
+                if self.weight(&left.representative) <= self.weight(&right.representative) {
+                    (left.representative, right.representative, left_from_right)
+                } else {
+                    let Some(delta) = left_from_right.checked_negate() else {
+                        continue;
+                    };
+                    (right.representative, left.representative, delta)
+                };
+            changed |= self.relabel(moved, kept, delta, &mut equalities);
+        }
+        changed
+    }
+
     fn relabel(
         &mut self,
         moved: PointerBlock,
         kept: PointerBlock,
         moved_from_kept: AffineOffset,
+        equalities: &mut Vec<(Pointer, Pointer)>,
     ) -> bool {
-        let mut relabelled = vec![(moved.clone(), AffineOffset::default())];
+        let mut deltas = vec![(moved.clone(), moved_from_kept.clone())];
         if let Some(members) = self.members.get(&moved) {
-            relabelled.extend(
-                members
-                    .iter()
-                    .map(|(member, delta)| (member.clone(), delta.clone())),
-            );
-        }
-        let mut deltas = Vec::with_capacity(relabelled.len());
-        for (member, delta) in &relabelled {
-            // base(member) = base(moved) + delta = base(kept) + delta + moved_from_kept.
-            let Some(delta) = delta.checked_add(&moved_from_kept) else {
-                return false;
-            };
-            deltas.push((member.clone(), delta));
-        }
-        // Moving one block is constant bookkeeping, like filing the fact in
-        // any other index; what grows is the rest of a moved class, and that
-        // is what union by size keeps to `log2 n` moves per block.
-        crate::instrumentation::record_deterministic_work(deltas.len() - 1);
-        for block in std::iter::once(&kept).chain(deltas.iter().map(|(member, _)| member)) {
-            if let Some((memory, _)) = Self::loaded_block_load(block) {
-                let loads = self.classed_loads.get(&memory).cloned().unwrap_or_default();
-                if !loads.contains(block) {
-                    self.classed_loads
-                        .insert(memory, loads.with_value(block.clone()));
-                }
+            for (member, delta) in members {
+                let Some(delta) = delta.checked_add(&moved_from_kept) else {
+                    return false;
+                };
+                deltas.push((member.clone(), delta));
             }
         }
+        crate::instrumentation::record_deterministic_work(deltas.len());
         let mut kept_members = self.members.get(&kept).cloned().unwrap_or_default();
+        self.weights
+            .insert(kept.clone(), self.weight(&moved) + self.weight(&kept));
+        self.weights.remove(&moved);
+        let mut affected = Vec::new();
         for (member, delta) in deltas {
+            if let Some(users) = self.uses.get(&member) {
+                affected.extend(users.iter().cloned());
+            }
             self.parent
                 .insert(member.clone(), (kept.clone(), delta.clone()));
             kept_members.insert(member, delta);
         }
         self.members.remove(&moved);
         self.members.insert(kept, kept_members);
+        for load in affected {
+            self.reindex_load(&load, equalities);
+        }
         true
     }
 }
@@ -706,7 +798,35 @@ mod tests {
     }
 
     #[test]
-    fn one_stored_pointer_read_across_an_unrelated_store_is_one_value() {
+    fn congruent_loads_merge_their_existing_explicit_classes() {
+        let memory = crate::kernel::intern_c_memory(
+            crate::kernel::CMemory::new().with_block(symbolic(101), 16),
+        );
+        let p = at(symbolic(102), 0);
+        let q = at(symbolic(103), 0);
+        let load = |address: &Pointer| {
+            at(
+                PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                    &memory, address, 8, &memory,
+                )),
+                0,
+            )
+        };
+        let lp = load(&p);
+        let lq = load(&q);
+        let x = at(symbolic(104), 0);
+        let y = at(symbolic(105), 0);
+        let mut classes = PointerClasses::default();
+        classes.assume_equal(&p, &q);
+        assert!(classes.proves_equal(&lp, &lq));
+        classes.assume_equal(&lp, &x);
+        classes.assume_equal(&lq, &y);
+        assert!(classes.proves_equal(&lp, &lq));
+        assert!(classes.proves_equal(&x, &y));
+    }
+
+    #[test]
+    fn cross_snapshot_load_equality_requires_a_supplied_conclusion() {
         // The store goes through a pointer structure cannot separate from the
         // cell; only a stated disequality does. The two reads therefore get
         // different names, and only the path's facts make them one value.
@@ -727,19 +847,29 @@ mod tests {
         };
         let (read_before, read_after) = (name(&before), name(&after));
         assert_ne!(read_before, read_after);
-        let classes = PointerClasses::default();
+        let mut classes = PointerClasses::default();
+        let left = at(read_before, 8);
+        let right = at(read_after, 8);
+        // Pointer comparison never searches memory history, even when a
+        // separate frame derivation could prove the cell unchanged.
+        assert!(!classes.proves_equal(&left, &right));
         let separated = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(other, cell.clone()), false);
-        assert!(classes.proves_equal_in(
-            &at(read_before.clone(), 8),
-            &at(read_after.clone(), 8),
-            &separated
+        let load = |pointer: &Pointer| {
+            let PointerBlock::Symbolic(variable) = &pointer.block else {
+                unreachable!()
+            };
+            let (memory, address) =
+                crate::kernel::registered_load_origin_for_variable(variable).unwrap();
+            Bitvector32Term::MemoryLoad(memory, Box::new(address))
+        };
+        assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
+            &load(&left), &load(&right), &separated,
         ));
-        assert!(!classes.proves_equal_in(
-            &at(read_before, 8),
-            &at(read_after, 8),
-            &PureFactContext::new()
-        ));
+        assert!(!classes.proves_equal(&left, &right));
+        // A checked caller can contribute that conclusion explicitly.
+        classes.assume_equal(&left, &right);
+        assert!(classes.proves_equal(&left, &right));
     }
 
     #[test]
@@ -792,6 +922,269 @@ mod tests {
         assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
     }
 
+    fn named_load(memory: &SharedCMemory, address: &Pointer) -> Pointer {
+        at(
+            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                memory, address, 8, memory,
+            )),
+            0,
+        )
+    }
+
+    #[test]
+    fn load_congruence_is_independent_of_equality_insertion_order() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(201), 16));
+        let p = at(symbolic(202), 0);
+        let q = at(symbolic(203), 16);
+        let lp = named_load(&memory, &at(p.block.clone(), 8));
+        let lq = named_load(&memory, &at(q.block.clone(), 24));
+        let x = at(symbolic(204), 0);
+        let y = at(symbolic(205), 0);
+        let equations = [
+            (p, q),
+            (at(lp.block.clone(), 4), x.clone()),
+            (at(lq.block.clone(), 12), y.clone()),
+        ];
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            let mut classes = PointerClasses::default();
+            for index in order {
+                classes.proves_equal(&lp, &lq); // registration before and between merges
+                classes.assume_equal(&equations[index].0, &equations[index].1);
+            }
+            assert!(classes.proves_equal(&lp, &lq), "{order:?}");
+            assert!(
+                classes.proves_equal(&at(x.block.clone(), 8), &y),
+                "{order:?}"
+            );
+            assert!(
+                !classes.proves_equal(&x, &y),
+                "different load displacements"
+            );
+            classes.assume_equal(&at(symbolic(206), 0), &at(symbolic(207), 0));
+            assert!(
+                classes.proves_equal(&lp, &lq),
+                "extra facts must preserve equality"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_load_congruence_propagates_a_late_merge_without_a_depth_cutoff() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(301), 16));
+        let p = at(symbolic(302), 0);
+        let q = at(symbolic(303), 0);
+        let mut left = p.clone();
+        let mut right = q.clone();
+        for _ in 0..12 {
+            left = named_load(&memory, &left);
+            right = named_load(&memory, &right);
+        }
+        let mut classes = PointerClasses::default();
+        assert!(!classes.proves_equal(&left, &right));
+        classes.assume_equal(&p, &q);
+        assert!(classes.proves_equal(&left, &right));
+        // A newly named parent after closure must see the existing congruence.
+        let later_left = named_load(&memory, &at(left.block, 8));
+        let later_right = named_load(&memory, &at(right.block, 8));
+        assert!(classes.proves_equal(&later_left, &later_right));
+    }
+
+    #[test]
+    fn congruence_registration_and_merges_are_isolated_between_branches() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(401), 16));
+        let p = at(symbolic(402), 0);
+        let q = at(symbolic(403), 0);
+        let lp = named_load(&memory, &p);
+        let lq = named_load(&memory, &q);
+        let x = at(symbolic(404), 0);
+        let y = at(symbolic(405), 0);
+        let mut trunk = PointerClasses::default();
+        trunk.assume_equal(&lp, &x);
+        trunk.assume_equal(&lq, &y);
+        let sibling = trunk.clone();
+        let mut branch = trunk.clone();
+        branch.assume_equal(&p, &q);
+        assert!(branch.proves_equal(&x, &y));
+        assert!(!trunk.proves_equal(&x, &y));
+        assert!(!sibling.proves_equal(&x, &y));
+        assert!(!PointerClasses::default().proves_equal(&lp, &lq));
+    }
+
+    #[test]
+    fn same_snapshot_load_queries_ignore_unrelated_applications() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(501), 16));
+        let p = at(symbolic(502), 0);
+        let q = at(symbolic(503), 0);
+        let left = named_load(&memory, &p);
+        let right = named_load(&memory, &q);
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut classes = PointerClasses::default();
+            for i in 0..size {
+                let load = named_load(&memory, &at(symbolic(100_000 + i), 0));
+                classes.assume_equal(&load, &at(symbolic(200_000 + i), 0));
+            }
+            classes.assume_equal(&p, &q);
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                classes.proves_equal(&left, &right)
+            });
+            assert!(equal);
+            costs.push(work);
+            let (equal, map_work) =
+                crate::persistent::measure_persistent_work(|| classes.proves_equal(&left, &right));
+            assert!(equal);
+            assert!(
+                map_work < 32 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
+        }
+        assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+    }
+
+    #[test]
+    fn late_merges_and_repeated_queries_have_near_linear_total_work() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(601), 16));
+        for size in [16u64, 64, 256, 1024] {
+            let left = at(symbolic(602), 0);
+            let right = at(symbolic(603), 0);
+            let mut classes = PointerClasses::default();
+            let mut pairs = Vec::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..size {
+                    let a = named_load(&memory, &at(left.block.clone(), i as i64 * 8));
+                    let b = named_load(&memory, &at(right.block.clone(), i as i64 * 8));
+                    assert!(!classes.proves_equal(&a, &b));
+                    pairs.push((a, b));
+                }
+                classes.assume_equal(&left, &right);
+                for (a, b) in &pairs {
+                    assert!(classes.proves_equal(a, b));
+                }
+            });
+            assert!(
+                work <= 128 * size as usize,
+                "size={size}, total work={work}"
+            );
+        }
+    }
+
+    #[test]
+    fn branch_merges_do_not_reindex_the_large_shared_prefix() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(701), 16));
+        let root = at(symbolic(702), 0);
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut trunk = PointerClasses::default();
+            for i in 0..size {
+                let load = named_load(&memory, &at(root.block.clone(), i as i64 * 8));
+                trunk.assume_equal(&load, &at(symbolic(300_000 + i), 0));
+            }
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..16 {
+                    let mut branch = trunk.clone();
+                    let alias = at(symbolic(400_000 + i), 0);
+                    branch.assume_equal(&root, &alias);
+                    assert!(branch.proves_equal(&root, &alias));
+                }
+            });
+            costs.push(work);
+        }
+        assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+    }
+
+    #[test]
+    fn restricted_context_and_fact_withdrawal_drop_derived_load_equalities() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(801), 16));
+        let p = at(symbolic(802), 0);
+        let q = at(symbolic(803), 0);
+        let x = at(symbolic(804), 0);
+        let y = at(symbolic(805), 0);
+        let lp = named_load(&memory, &p);
+        let lq = named_load(&memory, &q);
+        let address = ConditionTerm::pointer_equal(p, q);
+        let selected = [
+            (ConditionTerm::pointer_equal(lp, x.clone()), true),
+            (ConditionTerm::pointer_equal(lq, y.clone()), true),
+        ];
+        let mut context = PureFactContext::new().assume_condition(address.clone(), true);
+        for (condition, value) in &selected {
+            context = context.assume_condition(condition.clone(), *value);
+        }
+        assert!(context.has_indexed_pointer_equality_path(&x, &y));
+        let restricted = context.restricted_to_facts(&selected, &[]);
+        assert!(!restricted.has_indexed_pointer_equality_path(&x, &y));
+        let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(address, true));
+        assert!(!withdrawn.has_indexed_pointer_equality_path(&x, &y));
+        assert!(context.has_indexed_pointer_equality_path(&x, &y));
+    }
+
+    #[test]
+    fn a_small_load_is_not_a_pointer_load_and_can_later_be_registered_as_one() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(901), 16));
+        let p = at(symbolic(902), 0);
+        let q = at(symbolic(903), 0);
+        let small = at(
+            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                &memory, &p, 4, &memory,
+            )),
+            0,
+        );
+        let pointer = named_load(&memory, &q);
+        let mut classes = PointerClasses::default();
+        classes.assume_equal(&p, &q);
+        assert!(!classes.proves_equal(&small, &pointer));
+        let widened = named_load(&memory, &p);
+        assert_eq!(small, widened);
+        assert!(classes.proves_equal(&widened, &pointer));
+    }
+
+    #[test]
+    fn affine_spelling_order_does_not_depend_on_atom_interning_order() {
+        let high = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index(987_002)),
+            byte_width: 4,
+        };
+        let low = PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index(987_001)),
+            byte_width: 4,
+        };
+        let high_form = AffineOffset::of(&high).unwrap();
+        let low_form = AffineOffset::of(&low).unwrap();
+        let sum = high_form.checked_add(&low_form).unwrap();
+        assert_eq!(
+            sum.to_offset_term(),
+            Some(PointerOffsetTerm::add(
+                PointerOffsetTerm::add(PointerOffsetTerm::Constant(0), low),
+                high,
+            ))
+        );
+    }
+
+    #[test]
+    fn affine_input_normalization_is_linear_in_its_explicit_syntax() {
+        for size in [16u64, 64, 256, 1024] {
+            let mut input = PointerOffsetTerm::Constant(0);
+            for i in 0..size {
+                input = PointerOffsetTerm::Add(
+                    Box::new(input),
+                    Box::new(PointerOffsetTerm::Variable(Variable(900_000 + i))),
+                );
+            }
+            let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
+                AffineOffset::of(&input).unwrap()
+            });
+            assert_eq!(form.terms.len(), size as usize);
+            assert_eq!(work, 2 * size as usize + 1);
+        }
+    }
+
     /// Relabelling work along a chain of `n` equalities is `O(n log n)`:
     /// union by size moves each block at most `log2 n` times. Joining two
     /// balanced halves repeatedly is the worst case for relabelling.
@@ -814,10 +1207,10 @@ mod tests {
                 classes
             });
             assert!(classes.proves_equal(&at(symbolic(0), 0), &at(symbolic(n - 1), 0)));
-            let bound = n * u64::from(exponent);
+            let bound = 16 * n * u64::from(exponent);
             assert!(
                 work as u64 <= bound,
-                "n = {n}: relabelled {work} blocks, above n log2 n = {bound}"
+                "n = {n}: relabelled {work} blocks, above 16 n log2 n = {bound}"
             );
             // Balanced joins move a whole class each time, so the charge for
             // the moved members beyond the first is visible, not constant.

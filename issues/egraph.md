@@ -157,16 +157,66 @@ The detailed invariants and API boundaries are in
 - Keep C unchanged. Every stage lands green, with the old mechanism deleted
   for the consumer that has migrated.
 
+## Implementation progress (2026-09-27)
+
+The first implementation chunk replaces the bounded load normalizer in
+`pointer_classes.rs` with maintained same-snapshot application signatures and
+an iterative merge worklist. This fragment recognizes already-opaque,
+registered pointer-width load blocks. It does **not** yet change all C loads
+to that representation, migrate resource indexes, or complete milestone B.
+
+- Reproduced the lost-equality bug: two loads compare equal, then cease to
+  compare equal after each enters an explicit class. The replacement merges
+  those classes, including late address merges and all six equality orders.
+- Load-address uses are indexed by block. Merging classes reindexes only users
+  of moved blocks; class weight includes those uses to avoid moving a large
+  shared prefix into a fresh alias on every branch.
+- Signatures contain snapshot arena IDs, address representatives, and compact
+  affine-offset IDs. Machine atoms retain interned terms; hot signature keys
+  do not compare memory snapshots or nested load trees. Legacy spelling
+  reconstruction retains structural ordering, independent of atom ID order.
+- Query registration and closure are iterative and branch-local. Clones share
+  persistent roots, not mutable closure state. Restrictions and withdrawals
+  rebuild from remaining premises and discard their removed consequences.
+- Removed `proves_equal_in` and its comparison-time frame search. A separate
+  checked frame derivation can supply an equality; comparison alone does not
+  transport loads between snapshots.
+- Regressions cover twelve nested loads, displaced aliases, width eligibility,
+  snapshot separation, restricted premises, and branch isolation. Scaling
+  tests use sizes 16/64/256/1024 for same-snapshot ambient loads, late merges,
+  repeated queries, branch extensions, and explicit affine input; balanced
+  merge tests extend to 4096 blocks. These do not yet establish a bound for
+  every growing symbolic affine-delta pattern or resource-index migration.
+
+The rewrite audit traced certificate checking through `ProofStep::Rewrite`, `finish_rewrite`,
+and `refined_proposition`: the surface checker constructs the rewritten goal;
+the generic kernel focused-result publisher checks the open branch and accepts
+that transition. There is no independent equality-substitution check on that
+path. A binder guard now refuses substitution under `forall`/`exists` when it
+would shadow an equality variable or capture its replacement. Direct checker
+regressions exercise both cases, including a variable hidden in a pure-function
+argument. Capture collection uses the bounded, snapshot-opaque kernel walker
+and stays flat as unrelated snapshot contents grow; a source-level probe did
+not demonstrate a reachable exploit. This guard does **not** finish the kernel evidence API.
+
+Next: define and implement that checked transition boundary, settle same-block
+offset/atom updates, and make the constructor/decoder representation change
+coherent through mandatory consumers. Then integrate indexed read/fold lookup
+and complete the full milestone-B regressions before a broad consumer handoff.
+
 ## Why the migration changes
 
-The takeover review found these concrete obstacles in the partial work:
+The takeover review found these concrete obstacles in the previous partial
+work. Items 1, 2 (the load scan), and 4 are addressed by the fragment above;
+the representation mismatch and resource/earlier-load scans remain migration
+work:
 
 1. `PointerClasses::normal` stops after `LOAD_CONGRUENCE_DEPTH = 4` and returns
    immediately for a pointer already in an explicit class. It does not merge
    two explicit classes when their loaded members become congruent. Pin the
    case `p == q`, `load(M,p) == x`, `load(M,q) == y`, concluding `x == y`,
    including all insertion orders and adding facts after an earlier query.
-   This is a source-review finding to reproduce before changing the code.
+   This was reproduced and is now covered by an executable regression.
 2. Load normalization scans classed loads in the queried snapshot. The current
    scaling regression adds loads in other snapshots, so it does not cover
    the expensive case. Alias enumeration in resource consumption and the
@@ -323,8 +373,8 @@ Useful landed foundations and investigation anchors:
 | `56ce7b7c`, `82349436` | Centralized loaded-pointer construction/decoding |
 | `69fec2b3`, `9f0efd19` | Never-address-taken and later-declared local separation |
 | `387d9120` | Rewrite through a loaded pointer |
-| `4ab772fa` | Bounded same-snapshot load normalization, to be replaced |
-| `d80a0f32` | Frame reasoning during equality comparison, to be relocated |
+| `4ab772fa` | Historical bounded load normalizer, now replaced |
+| `d80a0f32` | Historical comparison-time frame search, now removed |
 | `08eb341f` | Bare-offset separation and loaded-block artifact identity |
 
 Branch `egraph-loaded-pointer-flip`, commit `ea9de0ff`, is a historical
