@@ -261,11 +261,14 @@ impl PureFactContext {
             }
             true
         };
-        // A run outside the load's alias candidates is in a block proven
-        // distinct from it, which `run_slots_resolving_load` answers with no
-        // slot, so only the candidate runs are asked.
-        let run_candidates = crate::kernel::primitives::AliasCandidates::of_block(&pointer.block);
-        for run in memory.cells.candidate_runs(&run_candidates) {
+        // A cell or run outside the load's alias candidates is in a block
+        // proven distinct from it, which `consider` and
+        // `run_slots_resolving_load` answer as elsewhere, so only the
+        // candidates are asked. Each candidate asked, cell or run, is one
+        // unit; a run asked slot by slot is one per slot.
+        let candidates = crate::kernel::primitives::AliasCandidates::of_block(&pointer.block);
+        for run in memory.cells.candidate_runs(&candidates) {
+            crate::instrumentation::record_deterministic_work(1);
             match crate::kernel::reasoning::memory_resolution::run_slots_resolving_load(
                 run, pointer,
             ) {
@@ -314,6 +317,7 @@ impl PureFactContext {
                 }
                 None => {
                     for index in run.live_indexes() {
+                        crate::instrumentation::record_deterministic_work(1);
                         let cell_pointer = run.slot_pointer(index);
                         let value = run.value(index);
                         let met = consider(&cell_pointer, &value, &mut first_equal);
@@ -325,7 +329,8 @@ impl PureFactContext {
                 }
             }
         }
-        for (cell_pointer, value) in memory.cells.concrete().iter() {
+        for (cell_pointer, value) in candidates.entries(memory.cells.concrete()) {
+            crate::instrumentation::record_deterministic_work(1);
             let met = consider(cell_pointer, value, &mut first_equal);
             unresolved_alias |= met
                 && !first_equal

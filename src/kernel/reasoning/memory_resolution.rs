@@ -2816,8 +2816,7 @@ pub(in crate::kernel) fn run_slots_resolving_load(
     run: &CellRun,
     pointer: &Pointer,
 ) -> Option<(Option<u32>, bool)> {
-    // One step of the caller's scan, charged as the scan charges a concrete
-    // cell: by what asking about it costs, not by the visit.
+    // One step of the caller's scan, which charges the visit.
     match run_access(run, pointer) {
         RunAccess::DistinctBlock => Some((None, false)),
         RunAccess::Shift(shift) => {
