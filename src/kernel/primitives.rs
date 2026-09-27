@@ -7412,6 +7412,12 @@ pub struct PureFactContext {
     /// (`condition_match_family`).
     pub(super) open_condition_facts:
         crate::persistent::PersistentMap<u8, crate::persistent::PersistentMap<ConditionTerm, bool>>,
+    /// The signed-order condition facts (`<`, `<=`, `>`, `>=`, either
+    /// value) of `condition_facts`, in its order: what
+    /// `condition_order_facts` collects, so collecting reads only order
+    /// facts instead of every condition fact. Derived incrementally with
+    /// the condition-match indexes.
+    pub(super) order_condition_facts: crate::persistent::PersistentMap<ConditionTerm, bool>,
     /// True `Bitvector32Equal` and `Bitvector64Equal` facts that pin a term
     /// to a constant, keyed by that term and carrying, per fact, the constant
     /// it names. Derived incrementally from `condition_facts`; ordered by

@@ -464,6 +464,17 @@ impl Drop for ReasoningProvenanceCollectionGuard {
     }
 }
 
+/// Runs a debug-build cross-check without recording reasoning provenance:
+/// the check re-asks questions the release build skips, and a premise it
+/// recorded would make a debug run's certificates differ from release's.
+#[cfg(debug_assertions)]
+pub(super) fn without_reasoning_provenance<R>(body: impl FnOnce() -> R) -> R {
+    let previous = RECORDING_REASONING_PROVENANCE.with(|recording| recording.replace(true));
+    let result = body();
+    RECORDING_REASONING_PROVENANCE.with(|recording| recording.set(previous));
+    result
+}
+
 struct ReasoningProvenanceRecordingGuard;
 
 impl ReasoningProvenanceRecordingGuard {
@@ -3125,6 +3136,7 @@ impl PureFactContext {
     fn rebuild_condition_match_indexes(&mut self) {
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.open_condition_facts = crate::persistent::PersistentMap::default();
+        self.order_condition_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.pointer_classes = PointerClasses::default();
@@ -3146,6 +3158,14 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
+        if condition_as_order_fact(condition, value).is_some() {
+            self.order_condition_facts = if insert {
+                self.order_condition_facts
+                    .with_inserted(condition.clone(), value)
+            } else {
+                self.order_condition_facts.without_key(condition)
+            };
+        }
         if let Some(key) = condition_match_key(condition) {
             let family = key.family();
             let facts = self

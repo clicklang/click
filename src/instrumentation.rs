@@ -798,6 +798,14 @@ pub(crate) fn numeric_operation_work_exceeded(units: usize) -> bool {
 /// must consume its allowance before multiplication, not just count a unit
 /// after the result has already been allocated.
 pub(crate) fn deadline_exceeded_with_work(units: usize) -> bool {
+    // A debug-build self-check's checkpoints charge nothing, exactly as its
+    // direct records do not (`uncharged_debug_check`).
+    #[cfg(debug_assertions)]
+    let units = if UNCHARGED_DEBUG_CHECK.with(Cell::get) {
+        0
+    } else {
+        units
+    };
     let work = !charge_deterministic_work(units);
     let contained = expired_containment_bound().is_some();
     let pending = PENDING_LIMIT.with(|pending| pending.borrow().as_ref().map(|p| p.kind));

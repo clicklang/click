@@ -3825,13 +3825,31 @@ fn prepare_verified_function_call<'a>(
         "verified function rule application",
         "verified call requirement checking",
     );
+    // Each requirement is checked under the call's path context plus every
+    // obligation and requirement the earlier ones established. Build that
+    // context once and extend it by what each requirement adds: rebuilding
+    // it from the growing lists per requirement was quadratic in the
+    // requirement count. The lists are sets of assumptions, so the order in
+    // which later entries join them names the same context.
+    let mut requirement_context =
+        assumptions_with_path_context(&path_assumptions, &facts, &obligations);
+    let mut assumed_obligations = obligations.len();
+    let mut assumed_requirements = 0;
     for (requirement_ordinal, requirement) in
         contract_interface.contract_requires().iter().enumerate()
     {
-        let requirement_assumptions =
-            assumptions_with_path_context(&path_assumptions, &facts, &obligations);
-        let requirement_assumptions =
-            assumptions_with_propositions(&requirement_assumptions, &established_requirements);
+        requirement_context = assumptions_with_path_context(
+            &requirement_context,
+            &[],
+            &obligations[assumed_obligations..],
+        );
+        assumed_obligations = obligations.len();
+        requirement_context = assumptions_with_propositions(
+            &requirement_context,
+            &established_requirements[assumed_requirements..],
+        );
+        assumed_requirements = established_requirements.len();
+        let requirement_assumptions = &requirement_context;
         let lowering_assumptions = requirement_assumptions
             .clone()
             .allow_symbolic_contract_loads();
@@ -3906,7 +3924,7 @@ fn prepare_verified_function_call<'a>(
         }
         for requirement_path in requirement_paths {
             let path_assumptions = assumptions_with_path_context(
-                &requirement_assumptions,
+                requirement_assumptions,
                 &requirement_path.facts,
                 &requirement_path.obligations,
             );
@@ -3937,13 +3955,13 @@ fn prepare_verified_function_call<'a>(
                     && super::api::contract_certification::c_state_justifies_loadability_obligation(
                         &precondition_state,
                         &guarded,
-                        &requirement_assumptions,
+                        requirement_assumptions,
                     );
                 if load_condition_is_justified
-                    || required_obligation_is_exactly_discharged(&requirement_assumptions, &guarded)
+                    || required_obligation_is_exactly_discharged(requirement_assumptions, &guarded)
                 {
                     super::assumptions::record_reasoning_provenance(
-                        &requirement_assumptions,
+                        requirement_assumptions,
                         &guarded,
                     );
                 } else {
@@ -4019,11 +4037,11 @@ fn prepare_verified_function_call<'a>(
                 // emitted required verification condition. The general
                 // prover decides no precondition.
                 if required_obligation_is_exactly_discharged(
-                    &requirement_assumptions,
+                    requirement_assumptions,
                     &guarded_requirement,
                 ) {
                     super::assumptions::record_reasoning_provenance(
-                        &requirement_assumptions,
+                        requirement_assumptions,
                         &guarded_requirement,
                     );
                 } else {

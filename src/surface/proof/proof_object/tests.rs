@@ -2015,16 +2015,18 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
     }
     let (_, base_height, base_allocations) = allocation_samples[0];
     assert!(
-        base_allocations <= 50,
+        base_allocations <= 57,
         "small persistent fact insertion allocated {base_allocations} nodes (identity index included)"
     );
     for (size, height, allocations) in allocation_samples {
         // A condition fact updates the exact and normalized indexes, the
         // kernel condition map, the two endpoint maps in its signed-order
-        // index, and the stated-requirement identity map plus its bucket.
-        // Every one is an AVL path copy. The identity map and bucket add two
-        // constant base nodes (50 rather than the former 48); adding two
-        // tree levels may therefore add at most 24 nodes.
+        // index, the order-fact index (`order_condition_facts`, for an
+        // order fact such as these), and the stated-requirement identity map
+        // plus its bucket. Every one is an AVL path copy. The identity map
+        // and bucket add two constant base nodes and the order-fact index
+        // seven (57 rather than the former 48); adding two tree levels may
+        // therefore add at most 24 nodes (measured: 16).
         let allocation_bound = base_allocations + 12 * (height - base_height);
         assert!(
             allocations <= allocation_bound,
@@ -11416,8 +11418,11 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
         );
     }
     let (_, base_height, base_allocations) = allocation_samples[0];
+    // The branch's `x < 0` joins each arm's context as an order fact, filed
+    // in `order_condition_facts` as well as the condition indexes: the
+    // small case allocates 168 nodes, including that index's path copy.
     assert!(
-        base_allocations <= 160,
+        base_allocations <= 176,
         "small checked execution branch allocated {base_allocations} persistent nodes"
     );
     for (size, height, allocations) in allocation_samples {

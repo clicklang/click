@@ -2203,6 +2203,10 @@ pub(super) fn initial_claim_context_with_caller_owner(
             .then_some(ordinal)
         })
         .collect::<BTreeSet<_>>();
+    // Every requirement below is lowered under the one context of the
+    // lowered requirement facts, built once rather than once per requirement
+    // (which was quadratic in the requirement count).
+    let requirement_context = assumptions_from_propositions(&requirement_pure_facts);
     let folded_defined_facts = function_block
         .requires()
         .iter()
@@ -2220,7 +2224,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 &state,
                 predicate_environment,
                 click_function_environment,
-                &assumptions_from_propositions(&requirement_pure_facts),
+                &requirement_context,
             )
         })
         .collect::<Result<Vec<_>, _>>()?
@@ -2253,7 +2257,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             &state,
             predicate_environment,
             click_function_environment,
-            &assumptions_from_propositions(&requirement_pure_facts),
+            &requirement_context,
         )?;
         if let Some(kernel) = lowered.first() {
             surface_propositions.record_lowering(&surface, kernel)?;
@@ -2324,6 +2328,10 @@ pub(super) fn initial_claim_context_with_caller_owner(
         })
         .collect::<Vec<_>>();
     (requirement_pure_facts, entry_fact_origins) = retained.into_iter().unzip();
+    // Extended by the facts each re-lowered requirement adds, not rebuilt
+    // per requirement.
+    let mut definedness_context = PureFactContext::new();
+    let mut definedness_context_facts = 0;
     for (source_ordinal, requirement) in function_block.requires().iter().enumerate() {
         let Requirement::Proposition(surface) = requirement.inner() else {
             continue;
@@ -2331,6 +2339,12 @@ pub(super) fn initial_claim_context_with_caller_owner(
         if !click_proposition_mentions_defined(surface) {
             continue;
         }
+        for fact in &requirement_pure_facts[definedness_context_facts..] {
+            crate::instrumentation::record_deterministic_work(1);
+            definedness_context = definedness_context
+                .assume_proposition(crate::kernel::clone_proposition_iteratively(fact));
+        }
+        definedness_context_facts = requirement_pure_facts.len();
         let projected =
             crate::surface::lowering::requirement_propositions_with_sources_and_assumptions(
                 std::slice::from_ref(requirement),
@@ -2339,7 +2353,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 &definedness_state,
                 predicate_environment,
                 click_function_environment,
-                &assumptions_from_propositions(&requirement_pure_facts),
+                &definedness_context,
             )?;
         let Some(principal) = projected.iter().find(|fact| {
             matches!(

@@ -65,8 +65,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn condition_order_facts(&self) -> std::rc::Rc<Vec<OrderFact>> {
         // Ambient scope id when live, content id otherwise — the same
         // hash-once-per-distinct-fact-set policy `decide` pays at its entry.
-        // Each hit saves a full fact-set scan, so the collection stays
-        // cheaper than the hash only for fact sets never queried twice.
+        // A miss reads only the order facts (`order_condition_facts`), not
+        // every condition fact, so a growing context of other facts does
+        // not make each new context's collection grow with it.
         let memo_id = super::super::dag_memo_assumptions_id(self);
         if let Some(hit) = ORDER_FACTS_MEMO.with(|memo| memo.borrow().get(&memo_id).cloned()) {
             // One checkpoint keeps a run of memo hits responsive to the
@@ -76,7 +77,7 @@ impl PureFactContext {
         }
         let mut facts = Vec::new();
         let mut complete = true;
-        for (condition, value) in self.condition_facts.iter() {
+        for (condition, value) in self.order_condition_facts.iter() {
             if crate::kernel::assumptions::reasoning_interrupted() {
                 complete = false;
                 break;
@@ -84,6 +85,20 @@ impl PureFactContext {
             if let Some(fact) = condition_as_order_fact(condition, *value) {
                 facts.push(fact);
             }
+        }
+        #[cfg(debug_assertions)]
+        if complete {
+            crate::instrumentation::uncharged_debug_check(|| {
+                let scanned = self
+                    .condition_facts
+                    .iter()
+                    .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    facts, scanned,
+                    "the order-fact index disagrees with the condition facts"
+                );
+            });
         }
         let facts = std::rc::Rc::new(facts);
         // A scan cut short by the deadline is not this fact set's collection;

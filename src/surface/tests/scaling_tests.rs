@@ -3327,7 +3327,10 @@ fn call_ensure_lowering_is_linear_in_the_ensure_count() {
         );
         samples.push(sample);
     }
-    assert!(lowering[0] > 0, "the ensures were never lowered: {lowering:?}");
+    assert!(
+        lowering[0] > 0,
+        "the ensures were never lowered: {lowering:?}"
+    );
     // Linear with a small allowance: each doubling of the ensures at most
     // 2.2 times the lowering work (a quadratic rebuild is 4 times).
     for pair in lowering.windows(2) {
@@ -3343,6 +3346,74 @@ fn call_ensure_lowering_is_linear_in_the_ensure_count() {
         );
     }
     assert_near_linear_scaling("call ensure count", &samples);
+}
+
+/// One `step()` over a call whose external contract has `N` requirements,
+/// each discharged by the caller's one order fact, checks them in work
+/// linear in `N`.
+///
+/// Three costs grew with the requirements already checked: the requirement
+/// context was rebuilt from every earlier requirement per requirement, the
+/// memory-resolution fact match scanned every condition fact of that growing
+/// context, and each new context's order facts were collected by scanning
+/// every condition fact. The counter reported 10.5k, 38.5k, and 147k units
+/// at 50, 100, and 200 requirements. The context is now extended, the match
+/// reads the condition-match index, and the order facts are an index of
+/// their own.
+#[test]
+fn call_requirement_checking_is_linear_in_the_requirement_count() {
+    const SPAN: &str = "operation `verified call requirement checking`";
+    let mut samples = Vec::new();
+    let mut checking = Vec::new();
+    let mut rebuilds = Vec::new();
+    for size in [32, 64, 128, 256] {
+        let requires = (1..=size)
+            .map(|k| format!("    requires x != {k};\n"))
+            .collect::<String>();
+        let click_source = format!(
+            "verifying \"many_requires.c\";\n\n\
+             extern int32 g(int32 x) {{\n{requires}    ensures result == x;\n}}\n\n\
+             int32 caller(int32 x) {{\n    requires x > {size};\n    ensures result == x;\n}} by {{\n    \
+             step();\n    step();\n    simp();\n}}\n"
+        );
+        let rebuilds_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(
+                &click_source,
+                &[(
+                    "many_requires.c",
+                    "int32 g(int32 x);\n\nint32 caller(int32 x) {\n    return g(x);\n}\n",
+                )],
+            )
+        });
+        verified.unwrap_or_else(|error| {
+            panic!("size {size} many-requires call failed: {}", error.message())
+        });
+        rebuilds.push(
+            crate::kernel::reasoning::path_facts::context_rebuild_entries() - rebuilds_before,
+        );
+        checking.push(sample.named_work.get(SPAN).copied().unwrap_or(0));
+        samples.push(sample);
+    }
+    assert!(
+        checking[0] > 0,
+        "the requirements were never checked: {checking:?}"
+    );
+    // Linear with a small allowance: each doubling of the requirements at
+    // most 2.2 times the checking work (the quadratic was nearly 4 times).
+    for pair in checking.windows(2) {
+        assert!(
+            pair[1] * 10 <= pair[0] * 22,
+            "call requirement checking grows faster than the requirement count: {checking:?}"
+        );
+    }
+    for pair in rebuilds.windows(2) {
+        assert!(
+            pair[1] * 10 <= pair[0] * 22,
+            "the call's context rebuilds grow faster than the requirement count: {rebuilds:?}"
+        );
+    }
+    assert_near_linear_scaling("call requirement count", &samples);
 }
 
 /// A copy loop whose preservation `simp` reaches a fact transport the
