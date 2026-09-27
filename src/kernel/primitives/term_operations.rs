@@ -3048,6 +3048,27 @@ impl Pointer {
         }
     }
 
+    /// The parts `Pointer::loaded` built this pointer from, when its form is
+    /// a loaded pointer's: the storage block, the loaded bits (a raw
+    /// `MemoryLoad` or a load variable), and the pointee width. Consumers
+    /// decode a loaded pointer here rather than by pattern-matching its
+    /// representation, so the representation can change in one place.
+    ///
+    /// The storage-relative form is also the form of an array element whose
+    /// index was loaded (`a[i]`), so a consumer still checks, as before, that
+    /// the load is of the cell it means.
+    pub(crate) fn as_loaded(&self) -> Option<(&PointerBlock, &Bitvector32Term, i64)> {
+        let PointerOffsetTerm::Int32Scaled { value, byte_width } = &self.offset else {
+            return None;
+        };
+        let is_load = match value.as_ref() {
+            Bitvector32Term::MemoryLoad(_, _) => true,
+            Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
+            _ => false,
+        };
+        is_load.then_some((&self.block, value.as_ref(), *byte_width))
+    }
+
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
             block: PointerBlock::FunctionSymbolic(variable),

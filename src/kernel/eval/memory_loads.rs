@@ -1088,25 +1088,17 @@ fn canonicalized_symbolic_load_value_with_identity(
     let CValue::Pointer(pointer_value) = &value else {
         return Some(value);
     };
-    let Pointer {
-        block,
-        offset:
-            PointerOffsetTerm::Int32Scaled {
-                value: bits,
-                byte_width,
-            },
-    } = pointer_value.pointer()
-    else {
+    let Some((block, bits, byte_width)) = pointer_value.pointer().as_loaded() else {
         return Some(value);
     };
-    if !matches!(bits.as_ref(), Bitvector32Term::MemoryLoad(_, _)) {
+    if !matches!(bits, Bitvector32Term::MemoryLoad(_, _)) {
         return Some(value);
     }
     let fresh = mint_load_variable(bits, facts, assumptions, source)?;
     let pointer = if use_symbolic_identity {
         Pointer::symbolic(fresh)
     } else {
-        Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), *byte_width)
+        Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), byte_width)
     };
     Some(CValue::typed_pointer(pointer, pointer_value.c_type()))
 }
@@ -2979,23 +2971,16 @@ fn materialized_pointer_cell_load_variable(
     let CValue::Pointer(value) = memory.cells.get(pointer)? else {
         return None;
     };
-    let stored = value.pointer();
-    if stored.block != pointer.block {
+    let (storage, index, byte_width) = value.pointer().as_loaded()?;
+    if *storage != pointer.block {
         return None;
     }
-    let PointerOffsetTerm::Int32Scaled {
-        value: index,
-        byte_width,
-    } = &stored.offset
-    else {
-        return None;
-    };
     // The scale must be the one a typed load of this cell applies, or the
     // stored index would not be the loaded one.
-    if value.c_type().pointee_type()?.byte_width() != u32::try_from(*byte_width).ok()? {
+    if value.c_type().pointee_type()?.byte_width() != u32::try_from(byte_width).ok()? {
         return None;
     }
-    let Bitvector32Term::Variable(variable) = index.as_ref() else {
+    let Bitvector32Term::Variable(variable) = index else {
         return None;
     };
     let (_, registered) = registered_load_for_variable(variable)?;
