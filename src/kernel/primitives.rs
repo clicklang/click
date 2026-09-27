@@ -4882,6 +4882,28 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
     })
 }
 
+/// The interned snapshot `memory` is the canonical storage of, found by its
+/// storage roots alone, or `None`. Interns nothing and compares no content:
+/// a snapshot a derivation produced carries its interned storage forward
+/// ([`record_c_memory_derivation`]), so a live state's memory is found here
+/// in O(1), and any other memory is left to the caller.
+pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedCMemory> {
+    C_MEMORY_ARENA.with(|arena| {
+        let arena = arena.borrow();
+        let (token, arena) = &*arena;
+        let (id, content_hash) = arena
+            .shallow_identities
+            .get(&CMemoryShallowIdentity::of(memory))
+            .copied()?;
+        Some(SharedCMemory {
+            arena: *token,
+            id,
+            content_hash,
+            memory: arena.memories[id as usize].clone(),
+        })
+    })
+}
+
 /// Interns by reference: an already-interned snapshot is found without
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.

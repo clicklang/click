@@ -4848,6 +4848,24 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
     collect_pointer_offset_bitvector_variables(&pointer.offset, variables);
 }
 
+#[cfg(test)]
+thread_local! {
+    /// How many concrete and union cells, and how many run slots, variable
+    /// collection has visited on this thread: the scaling regressions'
+    /// measure of a collection, whose visits are not all charged.
+    static CELLS_COLLECTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// `operation`'s result and how many cells and run slots variable
+/// collection visited while it ran.
+#[cfg(test)]
+pub(crate) fn count_cells_collected<R>(operation: impl FnOnce() -> R) -> (R, usize) {
+    let before = CELLS_COLLECTED.with(std::cell::Cell::get);
+    let result = operation();
+    let after = CELLS_COLLECTED.with(std::cell::Cell::get);
+    (result, after - before)
+}
+
 /// The variables a run's cells mention.
 ///
 /// Each slot mentions its pointer's variables and its value's: the value is
@@ -4885,6 +4903,8 @@ fn collect_run_slot_bitvector_variables(
     index: u32,
     variables: &mut BTreeSet<Variable>,
 ) {
+    #[cfg(test)]
+    CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     collect_pointer_bitvector_variables(&run.slot_pointer(index), variables);
     collect_c_value_bitvector_variables(&run.value(index), variables);
 }
@@ -4955,10 +4975,22 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
     memory: &SharedCMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
-    variables.extend(shared_memory_variable_counts(memory).keys().copied());
+    variables.extend(
+        shared_memory_variable_counts(memory, WholeCount::Charged)
+            .keys()
+            .copied(),
+    );
 }
 
-fn shared_memory_variable_counts(memory: &SharedCMemory) -> VariableCounts {
+/// Whether counting a snapshot of the chain whole is charged; see
+/// [`collect_memory_bitvector_variables`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WholeCount {
+    Charged,
+    Uncharged,
+}
+
+fn shared_memory_variable_counts(memory: &SharedCMemory, whole: WholeCount) -> VariableCounts {
     if let Some(counts) = remembered_memory_variables(memory) {
         return counts;
     }
@@ -4996,7 +5028,7 @@ fn shared_memory_variable_counts(memory: &SharedCMemory) -> VariableCounts {
             Some((base, counts)) => {
                 counts_from_base(counts.clone(), base.memory(), snapshot.memory())
             }
-            None => counts_whole(snapshot.memory()),
+            None => counts_whole(snapshot.memory(), whole),
         };
         SHARED_MEMORY_VARIABLES.with(|table| {
             table
@@ -5065,6 +5097,8 @@ fn block_variables(block: &PointerBlock, contents: &CBlock) -> BTreeSet<Variable
 }
 
 fn cell_variables(pointer: &Pointer, value: &CValue) -> BTreeSet<Variable> {
+    #[cfg(test)]
+    CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     let mut variables = BTreeSet::new();
     collect_pointer_bitvector_variables(pointer, &mut variables);
     collect_c_value_bitvector_variables(value, &mut variables);
@@ -5125,9 +5159,12 @@ fn adjust_run_counts_by_changed_slots(
     true
 }
 
-/// A snapshot's counts from all of its entries; one unit per entry.
-fn counts_whole(memory: &CMemory) -> VariableCounts {
-    crate::instrumentation::record_deterministic_work(memory_entry_count(memory));
+/// A snapshot's counts from all of its entries; one unit per entry unless
+/// `whole` is [`WholeCount::Uncharged`].
+fn counts_whole(memory: &CMemory, whole: WholeCount) -> VariableCounts {
+    if whole == WholeCount::Charged {
+        crate::instrumentation::record_deterministic_work(memory_entry_count(memory));
+    }
     let mut counts = VariableCounts::default();
     for (block, contents) in memory.blocks.iter() {
         add_counts(&mut counts, block_variables(block, contents), 1);
@@ -5201,6 +5238,34 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    // A live state's memory is the interned storage its last derivation
+    // left, so its variables are that snapshot's remembered counts, counted
+    // once per session from its derivation base's: the work of what changed,
+    // not of every cell and run slot again on every collection. Where its
+    // history reaches no counted snapshot, one of its chain is counted
+    // whole: that is the walk every collection of it made, uncharged, before
+    // the counts were kept, and it stays uncharged; the steps back to a
+    // counted snapshot and the entries they changed are charged, as are the
+    // snapshots its cells' loads reach.
+    if let Some(shared) = crate::kernel::primitives::interned_storage_of(memory) {
+        variables.extend(
+            shared_memory_variable_counts(&shared, WholeCount::Uncharged)
+                .keys()
+                .copied(),
+        );
+        return;
+    }
+    collect_memory_bitvector_variables_whole(memory, variables);
+}
+
+/// [`collect_memory_bitvector_variables`] by visiting every entry of
+/// `memory`, for a snapshot no derivation interned. The counts of
+/// [`shared_memory_variable_counts`] are built from the same per-entry
+/// collectors, so the two agree on every snapshot.
+pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
+    memory: &CMemory,
+    variables: &mut BTreeSet<Variable>,
+) {
     for (block, contents) in memory.blocks.iter() {
         match block {
             PointerBlock::Symbolic(variable)
@@ -5232,6 +5297,8 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
         collect_bitvector_variables(contents.size(), variables);
     }
     for (pointer, value) in memory.cells.concrete().iter() {
+        #[cfg(test)]
+        CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
         collect_pointer_bitvector_variables(pointer, variables);
         collect_c_value_bitvector_variables(value, variables);
     }

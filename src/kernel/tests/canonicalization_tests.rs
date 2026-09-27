@@ -1306,6 +1306,50 @@ fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
     }
 }
 
+/// A live memory's variables read from its interned counts are exactly the
+/// variables a walk of its every entry finds, through stores, a seeded run,
+/// a store into the run and a store that brings back an overwritten value.
+#[test]
+fn a_live_memorys_counted_variables_are_its_walked_variables() {
+    let block = PointerBlock::Symbolic(Variable(7_950_000));
+    let at = |offset: i64| Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::add(
+            PointerOffsetTerm::Variable(Variable(7_950_001)),
+            PointerOffsetTerm::Constant(offset),
+        ),
+    };
+    let value = |variable: u64| CValue::Int32(Bitvector32Term::Variable(Variable(variable)));
+    let source = crate::kernel::intern_c_memory(CMemory::new().with_block("counted-source", 64));
+    let mut memory = CMemory::new();
+    let mut states = Vec::new();
+    for (offset, variable) in [(0, 7_950_010), (4, 7_950_011)] {
+        memory = memory.store(at(offset), value(variable));
+        states.push(memory.clone());
+    }
+    memory = memory.with_seeded_cells(at(8), 4, CType::Int32, 0, 1_000, source);
+    states.push(memory.clone());
+    for (offset, variable) in [(16, 7_950_012), (0, 7_950_013), (0, 7_950_010)] {
+        memory = memory.store(at(offset), value(variable));
+        states.push(memory.clone());
+    }
+    crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
+    for (step, state) in states.iter().enumerate() {
+        assert!(
+            crate::kernel::primitives::interned_storage_of(state).is_some(),
+            "step {step}: a derived memory carries its interned storage"
+        );
+        let mut counted = BTreeSet::new();
+        crate::kernel::reasoning::collect_memory_bitvector_variables(state, &mut counted);
+        let mut walked = BTreeSet::new();
+        crate::kernel::reasoning::variable_collection::collect_memory_bitvector_variables_whole(
+            state,
+            &mut walked,
+        );
+        assert_eq!(counted, walked, "step {step}");
+    }
+}
+
 /// How many snapshots the named `substitution: snapshot rewrite` operation
 /// rebuilt while `operation` ran, beside the run's total deterministic work.
 ///

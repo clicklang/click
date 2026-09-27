@@ -69,6 +69,8 @@ pub use pure_functions::{
 };
 pub(crate) use quantified_frame::{QuantifiedFrameRefusal, frame_quantified_transport};
 pub(crate) mod reasoning;
+#[cfg(test)]
+pub(crate) use reasoning::variable_collection::count_cells_collected;
 pub(crate) mod resource_tracker;
 mod spec;
 pub(crate) use spec::{

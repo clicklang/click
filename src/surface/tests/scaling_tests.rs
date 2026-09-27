@@ -3480,6 +3480,69 @@ fn explicit_fold_read_transport_along_a_store_sequence_is_near_linear() {
     assert_near_linear_scaling("explicit fold read transport along stores", &samples);
 }
 
+/// Collecting the variables of a state's memory reads the snapshot's counts,
+/// kept once per session from its derivation base's, so a proof beside a
+/// global array visits each of the array's cells once however many steps
+/// collect the state's variables. Walking the live memory whole on every
+/// collection visited them eight times for a one-statement body and 22 for
+/// an eight-statement one (2020 and 5562 visits beside 250 elements, 8020
+/// and 22062 beside 1000); a global array of 100000 elements exhausted the
+/// wall-clock limit.
+#[test]
+fn collecting_a_states_variables_visits_a_global_array_once() {
+    let c_source = |length: u64, statements: usize| {
+        format!(
+            "int32 g[{length}];\n\nint32 inc(int32 x) {{\n    int32 y = x;\n{}    return y;\n}}\n",
+            "    y = y + 1;\n".repeat(statements)
+        )
+    };
+    let click_source = |statements: usize| {
+        format!(
+            "verifying \"inc.c\";\n\nint32 inc(int32 x) {{\n    requires x < 100;\n    ensures result == x + {statements};\n}} by {{\n    execute();\n    simp();\n}}\n"
+        )
+    };
+    let samples = [
+        (250u64, 1usize),
+        (250, 8),
+        (500, 1),
+        (500, 8),
+        (1_000, 1),
+        (1_000, 8),
+    ]
+    .map(|(length, statements)| {
+        let (verified, visits) = crate::kernel::count_cells_collected(|| {
+            verify_c0_sources(
+                &click_source(statements),
+                &[("inc.c", &c_source(length, statements))],
+            )
+        });
+        verified.unwrap_or_else(|error| {
+            panic!(
+                "a body of {statements} statements beside a global array of {length} \
+                     elements should verify: {}",
+                error.message()
+            )
+        });
+        (length, statements, visits)
+    });
+    for (length, statements, visits) in samples {
+        let length = usize::try_from(length).expect("small length");
+        assert!(
+            visits <= length + 4 * statements + 16,
+            "collection visits each element of the global array at most once: {samples:?}"
+        );
+    }
+    for pair in samples.chunks(2) {
+        let [(_, _, short), (_, _, long)] = pair else {
+            unreachable!("samples come in pairs");
+        };
+        assert!(
+            long - short <= 64,
+            "more statements must not revisit the array: {samples:?}"
+        );
+    }
+}
+
 /// A constant range is one run of seeded cells, so a proof over it costs the
 /// same whatever the range's length. Before runs, every element was a stored
 /// cell and each load scanned all of them: `views a[0..100000]` exhausted
