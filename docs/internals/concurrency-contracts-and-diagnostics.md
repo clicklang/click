@@ -823,6 +823,35 @@ substitution. Initially hidden wrapper inputs remain conservative; abstract
 acquire/release and returned guards still require explicit protocol-effect
 checking before the transition freeze can be removed.
 
+## Opaque abstract protocol and balanced acquisition kernel
+
+The kernel now has a sealed abstract protocol description backed by one actual
+rooted `mutex_use` input and its initialization identity. An address, a use
+resource description without ownership, another participant, or another root
+cannot supply this description. Binding it grants no lifecycle ownership and
+establishes no runtime initialization.
+
+A second checked layer models a successful local acquisition and release of
+that opaque protocol. Acquisition creates a fresh guard occurrence and pins the
+use root with a lifetime hold. Release requires that exact guard occurrence and
+its matching root, participant, initialization, and hold. It removes the guard
+and releases the hold. Both transitions retain checked loan-call evidence.
+Returning the preserved use input requires no outstanding guard or child scope.
+Hiding or removing the guard cannot discharge its lifetime dependency.
+
+The protected assertion remains opaque throughout: these operations add no
+payload resource or memory fact and do not infer an earlier observation's
+value. They describe successful transitions, not termination or absence of
+blocking. Tests cover balanced operation, repeated fresh acquisitions, missing
+ownership, cross-root and cross-scope receipts, unchanged payload authority,
+evidence composition, and scaling over unrelated resources.
+
+These are kernel components, not new surface behavior. Runtime dispatch remains
+frozen for abstract contracts. Wiring it requires checking acquisition effects
+at calls (including existing guard ownership), connecting declared invariant
+interfaces, and handling escaping guards. No syntax or continuity witness is
+added by this checkpoint.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

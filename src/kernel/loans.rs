@@ -4513,6 +4513,21 @@ impl LoanLedger {
         Ok(ledger)
     }
 
+    pub(crate) fn release_mutex_use_hold_with_transition(
+        &self,
+        usage: MutexUseBinding,
+        owner: &CResourceFact,
+        hold: LoanHoldId,
+        holder: LoanParticipantId,
+    ) -> Result<(Self, CheckedLoanTransition), LoanRefusal> {
+        if self.mutex_use_identity_description(usage, holder)? != owner
+            || self.storage.data.holds.get(&hold) != Some(&(usage.0.scope, holder))
+        {
+            return Err(LoanRefusal::MissingLoanBinding);
+        }
+        self.release_with_transition(hold, holder)
+    }
+
     pub(crate) fn release_with_transition(
         &self,
         hold: LoanHoldId,

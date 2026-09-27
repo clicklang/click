@@ -9,6 +9,10 @@
 //! The C binding still has to validate the declaration, pointer, status,
 //! and initialization before a pthread call can use these transitions.
 
+// Checked abstract transitions are staged until contract effects are available.
+#[allow(dead_code)]
+mod assumed_protocol;
+
 use std::cmp::Ordering as CmpOrdering;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
