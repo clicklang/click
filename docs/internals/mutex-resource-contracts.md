@@ -62,28 +62,18 @@ independently of its callers must know this association before it can acquire
 protected state. A call must check the association against the supplied
 initialization; matching the printed mutex address is insufficient.
 
-A candidate contract spelling is:
+The proposed general interface is now described in
+[General proof parameters and resource contracts](resource-parameters.md):
 
 ```text
-owns access: mutex_use(&counter->mu, counter_state(counter));
+owns access: mutex_use<counter_state(counter)>(&counter->mu);
 ```
 
-This identifies the protected assertion. It does not promise any particular
-`counter_state.value`, grant ownership of that state, or assert that the mutex
-is held. Unary `mutex_use(mu)` remains useful for helpers that only need opaque
-balanced locking and never open protected data.
-
-The association needs a coherent representation on lifecycle authority too.
-The implementation must not add a second argument to `mutex_use` in isolation
-and leave initialization, destruction, wrappers, and reborrowing unable to
-express or retain the same information. Whether the surface uses a resource
-argument on both authority types or a general contract resource parameter is
-still an open syntax choice. This document fixes the semantics, not that
-parameter grammar.
-
-Selecting the assertion must use the same mechanism available to ordinary
-resource-parameterized contracts. A name such as `counter_state(counter)` in
-this position denotes a Click resource assertion, not a C function call.
+It uses the same `<P: Resource>` proof parameter as an ordinary resource or
+contract. Both lifecycle and use authority carry P. This supersedes the earlier
+candidate second ordinary argument; it is a proposal, not implemented syntax.
+The new document also proposes normalizing named-contract instance binders,
+named memory authority, and the precise `guarded_by(P, mu)` requirement.
 
 ## The four runtime contracts
 
@@ -106,7 +96,7 @@ clauses.
 ```text
 consumes storage: Storage(mu);
 consumes state: P;
-produces lifetime: mutex_live(mu);
+produces lifetime: mutex_live<P>(mu);
 ```
 
 The resource definition's `guarded_by` declaration must identify this mutex.
@@ -126,7 +116,7 @@ return duplicate storage ownership nor lose allocation-lifetime protection.
 ### Acquisition
 
 ```text
-owns access: mutex_use(mu);
+owns access: mutex_use<P>(mu);
 produces guard: mutex_guard(mu);
 produces state: P;
 ```
@@ -147,7 +137,7 @@ contract transfer, not a source-level continuity witness.
 ### Release
 
 ```text
-owns access: mutex_use(mu);
+owns access: mutex_use<P>(mu);
 consumes guard: mutex_guard(mu);
 consumes state: P;
 ```
@@ -165,7 +155,7 @@ Likewise, renaming a local binder has no effect on acquisition identity.
 ### Destruction
 
 ```text
-consumes lifetime: mutex_live(mu);
+consumes lifetime: mutex_live<P>(mu);
 produces storage: Storage(mu);
 produces state: P;
 ```
@@ -272,7 +262,7 @@ Requires owns mutex_live(mu)
 
 For a proposed typed use clause, an association mismatch should name the full
 required assertion, for example
-`Requires owns mutex_use(mu, counter_state(counter))`, and show the supplied
+`Requires owns mutex_use<counter_state(counter)>(mu)`, and show the supplied
 resource if useful. Matching by address must not suppress this failure.
 
 Where a supplied occurrence is incompatible, identify it and its source: the
