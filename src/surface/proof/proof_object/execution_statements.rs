@@ -1213,7 +1213,18 @@ impl<'a> Proof<'a> {
                 }
             }
         } else {
-            root.try_authoritative_linear_script(body)
+            // A written body that ran every step and still left a goal open
+            // names that goal, as the member planner names the member it
+            // stopped at.
+            let mut unfinished = None;
+            let attempted =
+                root.try_authoritative_linear_script_leaving_open(body, &mut unfinished);
+            if matches!(attempted, Ok(None))
+                && let Some(unfinished) = unfinished
+            {
+                record_unclosed_bundle_member(unfinished.bundle_member_spelling());
+            }
+            attempted
         };
         let attempted = match attempted {
             Ok(attempted) => attempted,

@@ -5833,7 +5833,43 @@ impl<'a> Proof<'a> {
         sites: &[ProofStepSite],
         declined: &mut Option<LinearScriptDecline>,
     ) -> Result<Option<Self>, ClickError> {
+        self.run_addressed_linear_script(tactics, sites, declined, None)
+    }
+
+    /// [`Self::try_authoritative_linear_script`], also keeping the proof a
+    /// body left with its focused goal still open, so a caller refusing the
+    /// body can name the goal it stopped at. Only a script that ran every
+    /// written step (in its own block or in a proof `if`, `cases` or `both`
+    /// arm) leaves one; a declined step leaves none.
+    pub(in crate::surface::proof) fn try_authoritative_linear_script_leaving_open(
+        &self,
+        tactics: &[ProofTactic],
+        unfinished: &mut Option<Self>,
+    ) -> Result<Option<Self>, ClickError> {
+        let sites = (0..tactics.len())
+            .map(|index| self.site().at_block_position(index))
+            .collect::<Vec<_>>();
+        self.run_addressed_linear_script(tactics, &sites, &mut None, Some(unfinished))
+    }
+
+    fn run_addressed_linear_script(
+        &self,
+        tactics: &[ProofTactic],
+        sites: &[ProofStepSite],
+        declined: &mut Option<LinearScriptDecline>,
+        mut unfinished: Option<&mut Option<Self>>,
+    ) -> Result<Option<Self>, ClickError> {
         debug_assert_eq!(tactics.len(), sites.len());
+        let finish = |proof: Self, unfinished: Option<&mut Option<Self>>| {
+            if proof.focused_discharged() {
+                Some(proof)
+            } else {
+                if let Some(unfinished) = unfinished {
+                    *unfinished = Some(proof);
+                }
+                None
+            }
+        };
         let pure_source = matches!(self.context.as_ref(), ProofContext::Pure(_));
         if tactics.is_empty() {
             *declined = Some(LinearScriptDecline::Shape);
@@ -5974,14 +6010,24 @@ impl<'a> Proof<'a> {
                     let marker = split_proof.checkpoint();
                     let Some(then_done) = split_proof
                         .focus_branch(ids[0])?
-                        .try_addressed_linear_script(&then_tactics, &then_sites, &mut None)?
+                        .run_addressed_linear_script(
+                            &then_tactics,
+                            &then_sites,
+                            &mut None,
+                            unfinished.as_deref_mut(),
+                        )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
                     let Some(both_done) = then_done
                         .focus_branch(ids[1])?
-                        .try_addressed_linear_script(&else_tactics, &else_sites, &mut None)?
+                        .run_addressed_linear_script(
+                            &else_tactics,
+                            &else_sites,
+                            &mut None,
+                            unfinished.as_deref_mut(),
+                        )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
@@ -5989,7 +6035,7 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_if(&marker, split, ids, proof_if.condition.clone())?
                         .at_site(&sites[index]);
-                    return Ok(proof.focused_discharged().then_some(proof));
+                    return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Both(both) => {
                     // A `both` arm proves one conjunct and continues nothing.
@@ -6004,17 +6050,23 @@ impl<'a> Proof<'a> {
                     let marker = split_proof.checkpoint();
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
-                        .try_addressed_linear_script(&both.left_tactics, &left_sites, &mut None)?
+                        .run_addressed_linear_script(
+                            &both.left_tactics,
+                            &left_sites,
+                            &mut None,
+                            unfinished.as_deref_mut(),
+                        )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
                     let Some(both_done) = left_done
                         .focus_branch(ids[1])?
-                        .try_addressed_linear_script(
+                        .run_addressed_linear_script(
                             &both.right_tactics,
                             &right_sites,
                             &mut None,
+                            unfinished.as_deref_mut(),
                         )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
@@ -6040,14 +6092,24 @@ impl<'a> Proof<'a> {
                     let marker = split_proof.checkpoint();
                     let Some(left_done) = split_proof
                         .focus_branch(ids[0])?
-                        .try_addressed_linear_script(&left_tactics, &left_sites, &mut None)?
+                        .run_addressed_linear_script(
+                            &left_tactics,
+                            &left_sites,
+                            &mut None,
+                            unfinished.as_deref_mut(),
+                        )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
                     };
                     let Some(both_done) = left_done
                         .focus_branch(ids[1])?
-                        .try_addressed_linear_script(&right_tactics, &right_sites, &mut None)?
+                        .run_addressed_linear_script(
+                            &right_tactics,
+                            &right_sites,
+                            &mut None,
+                            unfinished.as_deref_mut(),
+                        )?
                     else {
                         *declined = Some(LinearScriptDecline::Step(index));
                         return Ok(None);
@@ -6055,7 +6117,7 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_cases(&marker, split, ids, proof_cases.disjunction.clone())?
                         .at_site(&sites[index]);
-                    return Ok(proof.focused_discharged().then_some(proof));
+                    return Ok(finish(proof, unfinished));
                 }
                 tactic => {
                     if matches!(tactic, ProofTactic::Sorry) {
@@ -6102,7 +6164,7 @@ impl<'a> Proof<'a> {
             }
         }
 
-        Ok(proof.focused_discharged().then_some(proof))
+        Ok(finish(proof, unfinished))
     }
 
     /// Applies one statement step, retaining one newly proved non-load
