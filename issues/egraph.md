@@ -263,9 +263,18 @@ contract entry. Nothing here changes the design constraints above.
   order facts and the partition check does not. Ordering is out of scope for
   the closure, so either antisymmetry must be excluded from equality routes
   consistently, or a proved `p <= q and q <= p` must merge `p` and `q` like any
-  other proved equality. A separate agent in the DFS session is checking
-  whether this yields a false theorem and fixing the partition check; its
-  result will be recorded here.
+  other proved equality. This yields no false theorem. Contract entry is
+  fail-open by design: it assumes the caller, so it refuses only a proven
+  overlap. Every consumer (calls, returns, folds, and refinement through
+  `loans::plan_stable_view_transfer_with_bindings_and_composites`) reserves
+  each owned requirement from what is actually held, and neither overlap
+  detection nor coverage uses order antisymmetry, so an order-equal
+  precondition is unsatisfiable. Regressions:
+  `mdtests/order_equal_pointers_do_not_supply_two_owners.md`,
+  `mdtests/order_equal_indices_do_not_carve_two_owners_from_one_array.md`, and
+  `mdtests/a_return_cannot_produce_two_owners_of_order_equal_pointers.md`.
+  The closure still has to choose between merging on proven antisymmetry and
+  excluding it consistently.
 
 ## Acceptance criteria
 
