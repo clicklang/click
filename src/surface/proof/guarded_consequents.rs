@@ -11,7 +11,9 @@
 //! operands' bounds), extracts the consequent, and continues the closure.
 //! Expansion therefore renders the discharge as `have defined(..) by { .. }`
 //! followed by `extract(..)`. An implication under an ordinary condition is
-//! not selected: applying it stays an explicit step.
+//! not selected here: its antecedent is never proved by a nested search. The
+//! direct logical closure applies one only when its antecedent is already
+//! exactly available (`try_discharged_consequent_closure`).
 
 use super::*;
 use std::cell::Cell;

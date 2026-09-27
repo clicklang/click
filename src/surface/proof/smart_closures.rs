@@ -1306,11 +1306,38 @@ impl<'a> Proof<'a> {
                 scope.succeed();
                 return Ok(Some(closed));
             }
+            if let Some(closed) = proof.try_discharged_consequent_closure()? {
+                scope.succeed();
+                return Ok(Some(closed));
+            }
             match attempt::candidate_outcome(proof.apply_step(ProofStep::Intro))? {
                 Some(introduced) => proof = introduced,
                 None => return Ok(None),
             }
         }
+    }
+
+    /// Modus ponens as a direct logical step: the goal is the consequent of
+    /// an available implication (or chain) whose antecedents are exactly
+    /// available, such as a call guarantee `left_result == 0 implies X`
+    /// inside the branch whose path condition is `left_result == 0`. The
+    /// indexed consequent lookup that the checked `extract` rule performs
+    /// decides it; nothing is searched, and a goal no available implication
+    /// concludes costs one index probe. Expansion prints `extract(goal)`.
+    fn try_discharged_consequent_closure(&self) -> Result<Option<Self>, ClickError> {
+        let (Some(goal), Some(surface)) = (self.goal(), self.surface_goal()) else {
+            return Ok(None);
+        };
+        if !self
+            .facts()
+            .contains_discharged_implication_consequent(goal)
+        {
+            return Ok(None);
+        }
+        Ok(
+            attempt::candidate_outcome(self.apply_step(ProofStep::Extract(surface.clone())))?
+                .filter(Self::focused_discharged),
+        )
     }
 
     /// Extends [`Self::try_direct_logical_closure`] through the goal's
@@ -1381,6 +1408,9 @@ impl<'a> Proof<'a> {
         if let Some(closed) =
             attempt::try_steps(self, &mut budget, direct_logical_candidates(self.goal()))?
         {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) = self.try_discharged_consequent_closure()? {
             return Ok(Some(closed));
         }
         if matches!(self.goal(), Some(Proposition::And(_, _))) {
