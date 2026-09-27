@@ -64,6 +64,7 @@
 - [Stable views](internals/stable-views.md)
 - [Resource invariants and synchronization](internals/resource-invariants.md)
 - [Concurrency contracts and diagnostics (proposal)](internals/concurrency-contracts-and-diagnostics.md)
+- [Mutex operations as resource contracts (proposal)](internals/mutex-resource-contracts.md)
 - [Byte representation](internals/byte-representation.md)
 - [Memory derivation DAG](internals/memory-dag.md)
   - [The resource tracker](internals/resource-tracker.md)

@@ -11,6 +11,11 @@ It refines the [resource-invariant design](resource-invariants.md)
 and the [shared-counter protocol](https://github.com/lacker/click/blob/master/design/concurrency-probes/mutex-shared-protocol.md). Existing failure
 classification is described in [proof-failure triage](../concepts/proof-failure-triage.md).
 
+The proposed uniform interfaces for initialization, lock, unlock, and destruction
+are specified together in [Mutex operations as resource contracts](mutex-resource-contracts.md).
+That proposal replaces the special initialization binder with ordinary contract
+inputs and outputs; its syntax is not implemented yet.
+
 ## What exists and what would change
 
 Today, `owns mutex_guard(mu)` can occur directly in preserving function

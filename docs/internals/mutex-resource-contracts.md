@@ -1,0 +1,328 @@
+# Mutex operations as resource contracts
+
+Status: proposed design, not implemented surface syntax. The naming and transfer
+scheme below is the design direction; resource-parameter notation and the
+storage binding syntax still need to be settled before implementation.
+
+Mutexes should behave like resources described by ordinary Click contracts.
+Their runtime implementation needs trusted rules, but their proof inputs and
+outputs should not need a separate naming convention or special `step` syntax.
+This document specifies initialization, acquisition, release, and destruction
+together so that one operation's outputs fit the next operation's inputs.
+
+This refines [Concurrency contracts and failure explanations](concurrency-contracts-and-diagnostics.md).
+For the public contract design, it supersedes the hard-coded initialization
+binder `invariant` and the tentative lock output names `invariant` and
+`protected`. It does not change their implementation by itself.
+
+## Ordinary contracts determine the proof interface
+
+`pthread_mutex_lock` is a pthread library function, not a C language builtin.
+Click's selected runtime gives it a trusted specification. That specification
+should expose a contract with ordinary named resource binders, just as a
+user-defined function's sidecar does.
+
+In an ordinary contract, `produces item: R` lets a caller write
+`let { item: x } = step(...)`. The name `item` belongs to the contract; `x` is
+chosen by the caller. The produced resource is independent of the function's C
+return value. A mutex operation should follow exactly that rule: `step` must
+not invent an output because it recognizes a word such as `protected`.
+
+The standard runtime contracts choose the names below. User-defined contracts
+may choose different binder names for the same resource types.
+
+| Contract binder | Resource | Meaning |
+| --- | --- | --- |
+| `lifetime` | `mutex_live(mu)` | Exclusive lifecycle authority for one initialization, including responsibility for destruction. |
+| `access` | `mutex_use(mu)` | Permission to use that initialization while its lifetime is guaranteed. |
+| `guard` | `mutex_guard(mu)` | Ownership of one particular acquisition. |
+| `state` | The user-defined protected resource | Ownership of the protected data and its currently observed values. |
+| `storage` | Existing exclusive memory authority for the mutex representation | Storage consumed by initialization and recovered by destruction. |
+
+The last row names an ordinary memory input/output, not a proposed
+`mutex_storage` resource. Its exact range syntax and support for naming raw
+memory authority must follow the general memory-resource interface.
+
+An *invariant* is the assertion that must hold whenever the mutex is unlocked.
+A `state` instance owns resources satisfying that assertion. Locking returns
+ownership of such an instance; it does not return an assertion as a value.
+The invariant is not a C argument, a mutable field snapshot, or a new kind of
+ownership clause.
+
+## The invariant association
+
+Write `P` in the sketches below for a resource assertion such as
+`counter_state(counter)`: the resource family and its parameters, without an
+instance binder or observed field values. `P` is explanatory notation, not an
+accepted Click type parameter or a new resource named `P`.
+
+Initialization binds one `P` to one fresh mutex initialization. Both lifecycle
+authority and borrowed use authority retain that association. A helper checked
+independently of its callers must know this association before it can acquire
+protected state. A call must check the association against the supplied
+initialization; matching the printed mutex address is insufficient.
+
+A candidate contract spelling is:
+
+```text
+owns access: mutex_use(&counter->mu, counter_state(counter));
+```
+
+This identifies the protected assertion. It does not promise any particular
+`counter_state.value`, grant ownership of that state, or assert that the mutex
+is held. Unary `mutex_use(mu)` remains useful for helpers that only need opaque
+balanced locking and never open protected data.
+
+The association needs a coherent representation on lifecycle authority too.
+The implementation must not add a second argument to `mutex_use` in isolation
+and leave initialization, destruction, wrappers, and reborrowing unable to
+express or retain the same information. Whether the surface uses a resource
+argument on both authority types or a general contract resource parameter is
+still an open syntax choice. This document fixes the semantics, not that
+parameter grammar.
+
+Selecting the assertion must use the same mechanism available to ordinary
+resource-parameterized contracts. A name such as `counter_state(counter)` in
+this position denotes a Click resource assertion, not a C function call.
+
+## The four runtime contracts
+
+These are semantic sketches, not parser-ready declarations. `Storage(mu)`
+denotes the existing memory authority for the complete modeled mutex
+representation. Its size and alignment come from the selected runtime ABI.
+`P` is the assertion associated with the initialization in question. The table
+states the full transfer; the subsequent sketches emphasize ordinary contract
+clauses.
+
+| Operation | Required inputs | Produced outputs |
+| --- | --- | --- |
+| Initialize | Consume `storage` and folded `state: P`; require alignment and valid initialization arguments. | `lifetime`; the protected state is placed under the mutex. |
+| Lock | Preserve `access` for this initialization. | A new `guard` and freshly observed `state: P`. |
+| Unlock | Preserve `access`; consume the matching `guard` and restored folded `state: P`. | No new resource. |
+| Destroy | Consume `lifetime`; require every use loan recovered and no outstanding acquisition. | `storage` and folded `state: P`. |
+
+### Initialization
+
+```text
+consumes storage: Storage(mu);
+consumes state: P;
+produces lifetime: mutex_live(mu);
+```
+
+The resource definition's `guarded_by` declaration must identify this mutex.
+The caller must actually own the folded state; a resource definition or an
+association alone supplies no ownership. Initialization establishes the
+association from that input and gives it a fresh initialization identity.
+
+Consuming storage removes ordinary write authority over the initialized mutex
+representation. It does not consume ownership of the surrounding allocation
+or unrelated fields. The lifecycle resource retains the storage dependency;
+it cannot outlive the allocation or local object containing the mutex.
+
+This is the proposed uniform ownership interface. The current implementation
+also uses storage reservations; migrating those reservations must neither
+return duplicate storage ownership nor lose allocation-lifetime protection.
+
+### Acquisition
+
+```text
+owns access: mutex_use(mu);
+produces guard: mutex_guard(mu);
+produces state: P;
+```
+
+The guard records a fresh acquisition of this initialization. The state grants
+payload ownership; the guard by itself does not grant access to the payload.
+The pair carries a checked association with the same protocol and acquisition.
+
+Observed fields are fresh on each acquisition and constrained by `P`. Earlier
+observations remain descriptions of earlier states, not facts about current
+memory. Reusing a local name must not reuse an old observation identity.
+
+The use permission survives the call. The guard retains a lifetime dependency
+until release, so returning from the lock call or an acquiring helper does not
+make the initialization destroyable. This escaping dependency is part of the
+contract transfer, not a source-level continuity witness.
+
+### Release
+
+```text
+owns access: mutex_use(mu);
+consumes guard: mutex_guard(mu);
+consumes state: P;
+```
+
+Release requires the actual acquisition authority and a restored folded
+instance of the associated assertion. Values may have changed while held;
+they must satisfy the resource's invariant when returned. A same-address guard
+from another acquisition, or a same-family state for different parameters,
+cannot substitute. Outstanding payload borrows must end before release.
+
+Folding a wrapper around the guard does not release the mutex. The wrapper
+must expose the required authority through ordinary resource operations.
+Likewise, renaming a local binder has no effect on acquisition identity.
+
+### Destruction
+
+```text
+consumes lifetime: mutex_live(mu);
+produces storage: Storage(mu);
+produces state: P;
+```
+
+Lifecycle authority is exclusive. All loans and guard holds must be discharged
+before it can be consumed. Destruction returns the protected resource and raw
+mutex storage; freeing the allocation is a separate operation.
+
+If the mutex has been shared, destruction cannot revive the values originally
+supplied at initialization. Its returned state is constrained by the invariant
+and any separately established guarantees, not by stale observations.
+Reinitializing the same address creates a different initialization.
+
+An empty mutex follows the same protocol with the empty protected assertion.
+There is no payload ownership to expose. The exact surface treatment of the
+trivial `state` binder must be specified together with ordinary empty-resource
+contracts; it should not introduce another mutex-specific output convention.
+
+## Call syntax follows from those contracts
+
+With an available named use instance `u`, ordinary named input and output
+transport gives the following proposed proof steps:
+
+```text
+let { guard: g, state: s } =
+    step(pthread_mutex_lock(mu), { access: u });
+
+// Unfold s, verify the C operations, and restore the folded state.
+
+step(pthread_mutex_unlock(mu), {
+    access: u,
+    guard: g,
+    state: s
+});
+```
+
+The input map names resources already owned; the output pattern introduces
+new instances. `guard` and `state` are declared contract outputs, not reserved
+keys understood only by the mutex dispatcher. The C call still returns its
+ordinary status code. Its proof resources do not become additional C results.
+
+Once ordinary storage binders are supported, initialization and destruction
+would have the corresponding shape:
+
+```text
+let { lifetime: life } = step(pthread_mutex_init(mu, 0), {
+    storage: bytes,
+    state: initial
+});
+
+// Checked borrowing of life supplies use authority for calls.
+
+let { storage: bytes_after, state: final } =
+    step(pthread_mutex_destroy(mu), { lifetime: life });
+```
+
+These examples do not establish new syntax for introducing `u` or `bytes`.
+Those introductions need general loan and memory binding rules. The existing
+checked conversion from lifecycle authority to a synchronous use loan should
+remain available, but its interaction with explicit named input maps must be
+specified. It must select supplied authority rather than search for a
+convenient matching instance, and an escaping guard must retain the loan.
+
+The current initialization spelling
+`step(pthread_mutex_init(mu, 0), { invariant: initial })` is a hard-coded
+selection hook. Replace it with the declared contract inputs above when the
+ordinary binder machinery supports them; merely renaming its magic key to
+`state` would not complete the migration.
+
+## Preserving, replacing, and packaging resources
+
+An ordinary helper with `owns guard: mutex_guard(mu)` preserves that acquisition.
+Unlocking and relocking cannot satisfy that promise. A helper that replaces an
+acquisition must consume an input guard and produce a new output guard, just
+as it would replace any other resource occurrence.
+
+User-defined wrappers may package a guard and protected state together. They
+may also package lifecycle or use authority subject to the ordinary lifetime
+rules. Folding a wrapper changes the presentation of owned resources; it does
+not initialize a mutex, acquire it, grant access, or discharge a loan.
+
+The selected runtime supplies the default contracts. User-defined helpers can
+use the same clauses and binding machinery. Trusted code remains responsible
+for the actual mutex transition, fresh identities, interference, and storage
+effects; it must not bypass ordinary resource input/output validation.
+
+The current modeled runtime assumes successful valid operations under its
+checked preconditions. These sketches do not prove the operating system's
+implementation, absence of deadlock, or termination. A runtime profile that
+models failure or a future try-lock operation needs outcome-dependent resource
+contracts: failure cannot produce a successful acquisition's guard or state.
+The status result and resource outputs must describe the same outcome.
+
+## Failures should name the missing requirement
+
+Missing authority should use existing Click resource terms:
+
+```text
+Requires owns mutex_use(mu)
+Requires owns mutex_guard(mu)
+Requires owns counter_state(counter)
+Requires owns mutex_live(mu)
+```
+
+For a proposed typed use clause, an association mismatch should name the full
+required assertion, for example
+`Requires owns mutex_use(mu, counter_state(counter))`, and show the supplied
+resource if useful. Matching by address must not suppress this failure.
+
+Where a supplied occurrence is incompatible, identify it and its source: the
+required entry guard versus the newly acquired guard, or the lifetime whose
+loan remains outstanding. Do not invent a `not_held` fact just to phrase a
+protocol failure as a missing proposition. Report the outstanding resource or
+loan and its source location. Distinguish an unsupported contract form from
+missing ownership.
+
+The checker may track generations, receipts, and loan identities internally.
+Ordinary diagnostics should name the relevant Click resources and binders,
+not expose those implementation structures.
+
+## Current boundary and implementation sequence
+
+At this design checkpoint, direct unary preserving `mutex_use` contracts can
+perform balanced opaque lock/unlock. Their checked transitions expose no
+protected state. Preserving guard and lifecycle contracts exist, but named
+primitive binders, general consuming/producing transitions, and escaping guards
+are not implemented. Concrete publication still uses the special `invariant`
+input and concrete lock retrieves the escrowed instance. None of the proposed
+syntax in this document is a passing fixture yet.
+
+Implement the design in this order:
+
+1. Settle the general representation and surface notation for resource
+   assertion parameters and named primitive/memory resources. Write all four
+   standard contracts using it before extending the runtime dispatcher.
+2. Route runtime contract inputs and outputs through ordinary binder checking.
+   Validate missing, extra, unowned, and incorrectly typed inputs exactly as
+   for user-defined contracts. Remove the special initialization key.
+3. Carry the invariant association through initialization, independent helper
+   entry, checked calls, reborrows, and wrappers. Reject stale initializations
+   and mismatched resource families or parameters.
+4. Produce fresh guards and protected observations on acquisition; require
+   restoration on release. Check modular memory effects so callers cannot
+   retain stale payload or representation-byte facts.
+5. Support escaping guard lifetime dependencies and destruction/storage
+   recovery. Verify consuming/producing helper contracts and their certificates,
+   including exceptional exits and outstanding payload borrows.
+
+Each stage needs negative certificate tests as well as surface examples.
+Acceptance includes a user-defined acquiring/releasing helper whose interface
+uses the same rules as the runtime contract, reacquisition that cannot recover
+an earlier value without proof, failed substitution of a different guard, and
+refusal to destroy while any acquisition or use loan survives. Preserve
+existing C as the regression boundary. Do not rewrite C into a more convenient
+proof shape.
+
+Shared worker execution, loop assertions with conditional acquisition,
+conserved contribution accounting, and atomic publication remain separate
+semantic work. Completing these four resource interfaces is necessary for
+that work, not evidence that it is already implemented.
