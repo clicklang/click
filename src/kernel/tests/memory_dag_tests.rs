@@ -2559,6 +2559,124 @@ fn a_cell_clears_a_read_only_outside_its_bytes() {
     }
 }
 
+/// The same exact byte test at anchors the 32-bit byte rebuild cannot spell:
+/// an `int64` scaled index and an opaque offset variable, each with constant
+/// displacements on both sides, and constants beyond the int32 range. The gap
+/// is the difference of the constants, exactly, so every offset from -16 to
+/// 16 is decided as the plain constant case decides it.
+#[test]
+fn an_exact_constant_gap_decides_bytes_at_every_anchor() {
+    use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
+
+    let bare = PureFactContext::new();
+    let anchors = [
+        PointerOffsetTerm::Int64Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(97_101))),
+            byte_width: 8,
+            unsigned: false,
+        },
+        PointerOffsetTerm::Variable(Variable(97_102)),
+        PointerOffsetTerm::Constant(1 << 40),
+    ];
+    let at = |anchor: &PointerOffsetTerm, shift: i64| Pointer {
+        block: "wide-anchor-memory".into(),
+        offset: PointerOffsetTerm::Add(
+            Box::new(anchor.clone()),
+            Box::new(PointerOffsetTerm::Constant(shift)),
+        ),
+    };
+    for anchor in &anchors {
+        for (write_bytes, read_bytes) in [(1u32, 8u32), (4, 4), (8, 8), (8, 1)] {
+            for shift in -16..=16i64 {
+                let decided = access_byte_overlap(
+                    &at(anchor, 8 + shift),
+                    write_bytes,
+                    &at(anchor, 8),
+                    read_bytes,
+                    &bare,
+                );
+                let overlaps = shift < i64::from(read_bytes) && -shift < i64::from(write_bytes);
+                let expected = if overlaps {
+                    AccessByteOverlap::Overlaps
+                } else {
+                    AccessByteOverlap::Separate
+                };
+                assert_eq!(
+                    decided, expected,
+                    "{write_bytes} bytes at {shift} from {read_bytes} at {anchor:?}"
+                );
+            }
+        }
+    }
+    // A constant beyond the int32 range is not its low word: 2^32 bytes
+    // apart is apart, where the wrapped distance was zero.
+    let far = Pointer {
+        block: "wide-anchor-memory".into(),
+        offset: PointerOffsetTerm::Constant(1 << 32),
+    };
+    let near = Pointer {
+        block: "wide-anchor-memory".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    assert_eq!(
+        access_byte_overlap(&far, 8, &near, 8, &bare),
+        AccessByteOverlap::Separate
+    );
+}
+
+/// Where the gap is not an exact constant, nothing is decided from it. Two
+/// different `int64` indices have no gap at all, and an `int32` index `i + 1`
+/// is one element past `i` only when that addition does not wrap, so the
+/// summand is compared whole rather than split into `i` plus one element.
+#[test]
+fn a_gap_that_may_wrap_or_differ_is_not_decided() {
+    use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
+
+    let bare = PureFactContext::new();
+    let block = "wrap-anchor-memory";
+    let scaled64 = |id: u64| PointerOffsetTerm::Int64Scaled {
+        value: Box::new(Bitvector32Term::Variable(Variable(id))),
+        byte_width: 8,
+        unsigned: false,
+    };
+    let pointer = |offset: PointerOffsetTerm| Pointer {
+        block: block.into(),
+        offset,
+    };
+    assert_eq!(
+        access_byte_overlap(
+            &pointer(scaled64(97_201)),
+            8,
+            &pointer(scaled64(97_202)),
+            8,
+            &bare
+        ),
+        AccessByteOverlap::Unknown
+    );
+    let i = Bitvector32Term::Variable(Variable(97_203));
+    let next = pointer(PointerOffsetTerm::Int32Scaled {
+        value: Box::new(Bitvector32Term::add(
+            i.clone(),
+            Bitvector32Term::Constant(1),
+        )),
+        byte_width: 4,
+    });
+    let beside = pointer(PointerOffsetTerm::Add(
+        Box::new(PointerOffsetTerm::Int32Scaled {
+            value: Box::new(i),
+            byte_width: 4,
+        }),
+        Box::new(PointerOffsetTerm::Constant(2)),
+    ));
+    // `i + 1` sits 4 bytes past `i` when it does not wrap, so a 4-byte access
+    // two bytes past `i` overlaps it then; wrapped, the two are 2^34 bytes
+    // apart. Neither answer may be given for both.
+    assert_ne!(
+        access_byte_overlap(&next, 4, &beside, 4, &bare),
+        AccessByteOverlap::Separate
+    );
+}
+
 /// Two snapshots that differ on a cell inside a read do not hold one value for
 /// it. `memories_directly_match_for_pointer_load` decided each differing cell
 /// from the two *addresses* — a constant nonzero byte offset was enough — and

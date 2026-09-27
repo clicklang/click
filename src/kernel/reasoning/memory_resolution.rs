@@ -3206,7 +3206,9 @@ pub(in crate::kernel) fn access_byte_overlap(
     right_bytes: u32,
     assumptions: &PureFactContext,
 ) -> AccessByteOverlap {
-    if let Some(shift) = constant_byte_shift_between(left, right) {
+    if let Some(shift) =
+        exact_constant_byte_shift(left, right).or_else(|| constant_byte_shift_between(left, right))
+    {
         return if crate::kernel::byte_intervals_disjoint(
             shift,
             i64::from(left_bytes),
@@ -3276,6 +3278,60 @@ fn one_element_gap_separates_bytes(
         return false;
     };
     i64::from(lower_access_bytes) <= element_width
+}
+
+/// The exact byte distance from `base` to `pointer`, when their offsets are
+/// the same non-constant summands plus different constants.
+///
+/// A pointer offset is a mathematical `i64` sum, so two offsets with the same
+/// multiset of non-constant summands differ by exactly the difference of their
+/// constant parts, whatever those summands are: an `int64` scaled index, an
+/// opaque offset variable, or an `int32` scaled index alike. Each summand is
+/// kept whole. In particular an `int32` index `i + 1` is not split into
+/// `i` plus one element: `sext(i + 1)` is `sext(i) + 1` only when the int32
+/// addition does not wrap, which nothing here knows. A constant sum that
+/// leaves `i64` has no answer.
+fn exact_constant_byte_shift(pointer: &Pointer, base: &Pointer) -> Option<i64> {
+    fn summands(
+        offset: &PointerOffsetTerm,
+        atoms: &mut Vec<PointerOffsetTerm>,
+        shift: &mut Option<i64>,
+    ) {
+        match offset {
+            PointerOffsetTerm::Add(left, right) => {
+                summands(left, atoms, shift);
+                summands(right, atoms, shift);
+            }
+            PointerOffsetTerm::Constant(value) => {
+                *shift = shift.and_then(|shift| shift.checked_add(*value));
+            }
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                match signed_bitvector_constant(value) {
+                    Some(value) => {
+                        *shift = shift
+                            .zip(value.checked_mul(*byte_width))
+                            .and_then(|(shift, bytes)| shift.checked_add(bytes));
+                    }
+                    None => atoms.push(offset.clone()),
+                }
+            }
+            other => atoms.push(other.clone()),
+        }
+    }
+    if pointer.block != base.block {
+        return None;
+    }
+    let mut pointer_atoms = Vec::new();
+    let mut pointer_shift = Some(0);
+    summands(&pointer.offset, &mut pointer_atoms, &mut pointer_shift);
+    let mut base_atoms = Vec::new();
+    let mut base_shift = Some(0);
+    summands(&base.offset, &mut base_atoms, &mut base_shift);
+    pointer_atoms.sort();
+    base_atoms.sort();
+    (pointer_atoms == base_atoms)
+        .then(|| pointer_shift?.checked_sub(base_shift?))
+        .flatten()
 }
 
 /// The constant byte distance from `base` to `pointer`, when the two
