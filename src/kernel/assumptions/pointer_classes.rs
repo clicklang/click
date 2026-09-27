@@ -196,6 +196,13 @@ enum NormalBase {
     Load(SharedCMemory, Box<NormalPointer>),
 }
 
+thread_local! {
+    /// Pairs of loaded pointers whose cross-snapshot equality is being
+    /// decided on this thread.
+    static FRAME_PAIRS_IN_PROGRESS: std::cell::RefCell<std::collections::BTreeSet<(Variable, Variable)>> =
+        const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
+}
+
 /// How many nested loads a normal form looks through.
 const LOAD_CONGRUENCE_DEPTH: usize = 4;
 
@@ -258,6 +265,74 @@ impl PointerClasses {
             (Some(left), Some(right)) => left == right,
             _ => false,
         }
+    }
+
+    /// `proves_equal`, and also: two loaded pointers that read the same
+    /// address at two snapshots are equal when the path's facts prove the
+    /// cell unchanged between them. That question goes to the kernel's
+    /// cross-snapshot load equality once per compared pair; it is never
+    /// asked of loads nobody compares.
+    pub(in crate::kernel) fn proves_equal_in(
+        &self,
+        left: &Pointer,
+        right: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if self.proves_equal(left, right) {
+            return true;
+        }
+        let (Some(left_normal), Some(right_normal)) = (
+            self.normal(left, LOAD_CONGRUENCE_DEPTH),
+            self.normal(right, LOAD_CONGRUENCE_DEPTH),
+        ) else {
+            return false;
+        };
+        let (
+            NormalBase::Load(left_memory, left_address),
+            NormalBase::Load(right_memory, right_address),
+        ) = (&left_normal.base, &right_normal.base)
+        else {
+            return false;
+        };
+        if left_normal.offset != right_normal.offset
+            || left_memory == right_memory
+            || left_address != right_address
+        {
+            return false;
+        }
+        let (PointerBlock::Symbolic(left_variable), PointerBlock::Symbolic(right_variable)) =
+            (&left.block, &right.block)
+        else {
+            return false;
+        };
+        let pair = if left_variable <= right_variable {
+            (*left_variable, *right_variable)
+        } else {
+            (*right_variable, *left_variable)
+        };
+        // Frame reasoning may itself ask pointer questions; a pair already
+        // being decided answers no rather than recursing.
+        if !FRAME_PAIRS_IN_PROGRESS.with(|active| active.borrow_mut().insert(pair)) {
+            return false;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let load = |variable: &Variable| {
+            let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
+                .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+            Some(Bitvector32Term::MemoryLoad(memory, Box::new(address)))
+        };
+        let equal = match (load(left_variable), load(right_variable)) {
+            (Some(left_load), Some(right_load)) => {
+                crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
+                    &left_load,
+                    &right_load,
+                    assumptions,
+                )
+            }
+            _ => false,
+        };
+        FRAME_PAIRS_IN_PROGRESS.with(|active| active.borrow_mut().remove(&pair));
+        equal
     }
 
     /// The load a block is the identity of, when it is a loaded pointer's.
@@ -628,6 +703,43 @@ mod tests {
         classes.assume_equal(&at(through_r.clone(), 0), &at(symbolic(60), 0));
         let through_r_again = name(&memory, at(symbolic(43), 0));
         assert!(classes.proves_equal(&at(through_r_again, 4), &at(symbolic(60), 4)));
+    }
+
+    #[test]
+    fn one_stored_pointer_read_across_an_unrelated_store_is_one_value() {
+        // The store goes through a pointer structure cannot separate from the
+        // cell; only a stated disequality does. The two reads therefore get
+        // different names, and only the path's facts make them one value.
+        let cell = Pointer {
+            block: PointerBlock::Heap(95_001),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let other = at(symbolic(95_003), 0);
+        let before = crate::kernel::CMemory::new().with_block(PointerBlock::Heap(95_001), 16);
+        let after = before
+            .clone()
+            .store(other.clone(), CValue::Int32(Bitvector32Term::Constant(3)));
+        let name = |memory: &crate::kernel::CMemory| {
+            let memory = crate::kernel::intern_c_memory(memory.clone());
+            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                &memory, &cell, 8, &memory,
+            ))
+        };
+        let (read_before, read_after) = (name(&before), name(&after));
+        assert_ne!(read_before, read_after);
+        let classes = PointerClasses::default();
+        let separated = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(other, cell.clone()), false);
+        assert!(classes.proves_equal_in(
+            &at(read_before.clone(), 8),
+            &at(read_after.clone(), 8),
+            &separated
+        ));
+        assert!(!classes.proves_equal_in(
+            &at(read_before, 8),
+            &at(read_after, 8),
+            &PureFactContext::new()
+        ));
     }
 
     #[test]

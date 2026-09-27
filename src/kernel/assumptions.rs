@@ -2970,7 +2970,7 @@ impl PureFactContext {
         // normal form alone would equate offsets whose loads are still named
         // by their exact spelling, which the load stage of the equality
         // closure has to change first.
-        if left.block != right.block && self.pointer_classes.proves_equal(left, right) {
+        if left.block != right.block && self.pointer_classes.proves_equal_in(left, right, self) {
             return true;
         }
         let matches = |candidate: &Pointer, expected: &Pointer| {
