@@ -4961,6 +4961,9 @@ pub struct CState {
     /// An opaque guard-bearing input frames its acquisition for this body.
     /// No mutex transition is permitted until contracts describe those effects.
     pub(super) preserves_mutex_protocols: bool,
+    /// Storage reserved by abstract contract inputs, retained independently
+    /// of their current folded/unfolded representation.
+    pub(super) mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
     /// One unresolved modeled pthread creation. The visible state carries
     /// only authority safe in either outcome; this record selects the exact
     /// checked delta when a C condition establishes the returned status.

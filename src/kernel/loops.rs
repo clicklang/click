@@ -1316,6 +1316,8 @@ fn execute_modeled_pthread_create_paths(
                                     neutral.loan_ledger = success.loan_ledger.clone();
                                     neutral.loan_view_bindings = success.loan_view_bindings.clone();
                                     neutral.mutex_ledger = success.mutex_ledger.clone();
+                                    neutral.mutex_input_reservations =
+                                        success.mutex_input_reservations.clone();
                                     neutral = modeled_pthread_indeterminate_handle(
                                         neutral,
                                         output_slot,
@@ -2318,6 +2320,9 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
     if top_state.preserves_mutex_protocols != next_state.preserves_mutex_protocols {
         changed.push("mutex protocol frame");
+    }
+    if top_state.mutex_input_reservations != next_state.mutex_input_reservations {
+        changed.push("mutex input storage reservations");
     }
     match (&top_state.mutex_ledger, &next_state.mutex_ledger) {
         (None, None) => {}

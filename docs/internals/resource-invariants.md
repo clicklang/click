@@ -307,9 +307,14 @@ reserved against ordinary stores, aggregate writes, call-result assignments,
 modular mutable footprints, and overlapping initializations. The ledger keeps
 this restriction independently of visible ownership and heldness until destroy.
 A dyadic interval index selects concrete same-object overlaps. Runtime transitions
-may change representation bytes and respect stable loans. Abstract preserving
-bodies are still checked through the protocol freeze and the caller's concrete
-reservation at application; abstract reservation inputs remain future work.
+may change representation bytes and respect stable loans. Independent abstract
+inputs now carry immutable indexed reservation dependencies derived through the
+same resource-definition traversal used for owned memory footprints. Folding or
+transferring the visible atom cannot erase that dependency. The dependency grants
+no lifecycle or guard authority and does not relax the protocol transition freeze.
+Undecided arms contribute their union; recursive or unresolved dependencies remain
+conservatively unnamed. Known dependencies use ordinary separation checks for
+writes and allocation retirement.
 
 The lifecycle owner now lives in the same resource context as guards, as
 `CResource::MutexLive`. Initialization mints exactly one owned atom; destruction

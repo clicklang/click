@@ -98,6 +98,7 @@ struct PendingCreateAuthority {
     loan_view_bindings: LoanViewBindings,
     thread_ledger: Option<ThreadLedger>,
     mutex_ledger: Option<super::mutexes::MutexLedger>,
+    mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
 }
 
 impl PendingCreateAuthority {
@@ -108,6 +109,7 @@ impl PendingCreateAuthority {
             loan_view_bindings: state.loan_view_bindings.clone(),
             thread_ledger: state.thread_ledger.clone(),
             mutex_ledger: state.mutex_ledger.clone(),
+            mutex_input_reservations: state.mutex_input_reservations.clone(),
         }
     }
 
@@ -117,6 +119,7 @@ impl PendingCreateAuthority {
         state.loan_view_bindings = self.loan_view_bindings.clone();
         state.thread_ledger = self.thread_ledger.clone();
         state.mutex_ledger = self.mutex_ledger.clone();
+        state.mutex_input_reservations = self.mutex_input_reservations.clone();
     }
 }
 
@@ -189,6 +192,7 @@ impl PendingThreadCreate {
                     loan_view_bindings: storage.success.loan_view_bindings.clone(),
                     thread_ledger: storage.success.thread_ledger.clone(),
                     mutex_ledger: storage.success.mutex_ledger.clone(),
+                    mutex_input_reservations: storage.success.mutex_input_reservations.clone(),
                 },
                 failure: PendingCreateAuthority {
                     resources: storage.failure.resources.clone(),
@@ -196,6 +200,7 @@ impl PendingThreadCreate {
                     loan_view_bindings: storage.failure.loan_view_bindings.clone(),
                     thread_ledger: storage.failure.thread_ledger.clone(),
                     mutex_ledger: storage.failure.mutex_ledger.clone(),
+                    mutex_input_reservations: storage.failure.mutex_input_reservations.clone(),
                 },
                 deltas: storage.deltas.with_inserted(storage.next_delta, delta),
                 next_delta: storage.next_delta + 1,
@@ -218,6 +223,7 @@ impl PendingThreadCreate {
             loan_view_bindings: authority.loan_view_bindings.clone(),
             thread_ledger: authority.thread_ledger.clone(),
             mutex_ledger: authority.mutex_ledger.clone(),
+            mutex_input_reservations: authority.mutex_input_reservations.clone(),
         };
         let mut deltas = PersistentMap::default();
         for (index, delta) in &storage.deltas {

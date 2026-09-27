@@ -2357,6 +2357,51 @@ impl PureFactContext {
         }
     }
 
+    /// A stated separation covering two physical byte spans. Allocation sizes
+    /// are unsigned; never reinterpret their high bit as a signed range bound.
+    /// Only the matching block-pair bucket is visited. Clause bounds retain
+    /// their signed Click meaning and are widened before multiplying widths.
+    pub(in crate::kernel) fn proves_stated_byte_separation(
+        &self,
+        left: &Pointer,
+        left_bytes: u32,
+        right: &Pointer,
+        right_bytes: u32,
+    ) -> bool {
+        let covers = |fact: &CMemoryRange, base: &Pointer, bytes: u32| {
+            let Some(delta) = fact
+                .base()
+                .exact_element_delta_from_base(base, 1, Some(self))
+            else {
+                return false;
+            };
+            if !delta.is_constant() {
+                return false;
+            }
+            let bounds = (|| {
+                let start = i64::from(fact.start().as_const()? as i32)
+                    .checked_mul(i64::from(fact.element_width()))?
+                    .checked_add(delta.constant)?;
+                let end = i64::from(fact.end().as_const()? as i32)
+                    .checked_mul(i64::from(fact.element_width()))?
+                    .checked_add(delta.constant)?;
+                Some(start <= 0 && i64::from(bytes) <= end && start < end)
+            })();
+            bounds == Some(true)
+        };
+        self.memory_separation_candidates(&left.block, &right.block)
+            .any(|(proposition, fact_left, fact_right)| {
+                let entails = (covers(fact_left, left, left_bytes)
+                    && covers(fact_right, right, right_bytes))
+                    || (covers(fact_left, right, right_bytes)
+                        && covers(fact_right, left, left_bytes));
+                if entails {
+                    record_implicit_reasoning_provenance(self, proposition);
+                }
+                entails
+            })
+    }
+
     pub(crate) fn proves_resource_separate(&self, left: &CResource, right: &CResource) -> bool {
         self.proves_resource_separate_inner(left, right)
     }

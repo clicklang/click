@@ -4201,6 +4201,7 @@ impl CState {
             && self.thread_ledger == other.thread_ledger
             && self.mutex_ledger == other.mutex_ledger
             && self.preserves_mutex_protocols == other.preserves_mutex_protocols
+            && self.mutex_input_reservations == other.mutex_input_reservations
             && self.population_access == other.population_access
             && self.pending_thread_create == other.pending_thread_create
             && (std::sync::Arc::ptr_eq(&self.counted_populations, &other.counted_populations)

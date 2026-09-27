@@ -66,10 +66,12 @@ the reservation; destruction does. Missing separation reports `Requires separate
 Every checked mutex runtime transition may change its opaque bytes, forgets their
 old values, and must respect active stable storage loans.
 
-Reservations are retained in the concrete runtime ledger. Abstract preserving
-helper bodies still use the protocol freeze; their mutable footprints are checked
-against the caller's concrete reservations at application. This does not implement
-standalone abstract reservation inputs, lifecycle outputs, or `mutex_use` loans.
+Reservations are retained in the concrete runtime ledger. Independently verified
+preserving helpers also retain the storage dependencies of their assumed owned
+mutex inputs, including inputs inside declared resources. These dependencies
+survive changes to the visible resource representation, do not grant runtime
+authority, and leave the protocol transition freeze in place. Unknown dependencies
+are conservative. Lifecycle outputs and `mutex_use` loans remain unimplemented.
 
 The C client still owes its worker proof, creation failure paths, ownership
 separation, parent access checks, and every source-level continuation. The

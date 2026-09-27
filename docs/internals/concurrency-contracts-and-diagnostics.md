@@ -36,8 +36,8 @@ an overlapping initialized mutex. Retirement also checks indexed provenance
 classes for possible aliases, including symbolic addresses that may designate
 an allocation with a different block identity. Unresolved overlap reports the
 required `separate(...)` fact. Destruction removes this dependency; unlocking
-does not. Abstract preserving-guard contracts conservatively refuse allocation
-retirement until checked lifecycle inputs can describe their dependencies.
+does not. Abstract preserving contracts now derive reservation dependencies
+from their owned inputs and require separation before allocation retirement.
 This retirement check adds no surface syntax. Initialization storage checks
 and write reservations are described below; use loans remain unimplemented.
 Automatic-storage expiry is now checked as described below.
@@ -116,10 +116,22 @@ multiple mutexes inside one object. Ambiguous symbolic footprints require
 separation evidence. Checked runtime mutex calls bypass the ordinary-write gate
 but still respect stable storage loans and forget old representation values.
 
-This is a concrete-runtime reservation checkpoint. Abstract preserving helper
-bodies retain the existing protocol freeze; their effects are checked against
-concrete reservations at the call boundary. Standalone abstract reservation
-inputs, lifecycle outputs, and `mutex_use` lending remain future work.
+Independent preserving contracts now derive the same storage dependencies from
+owned `mutex_live` and `mutex_guard` inputs, including folded resources, named
+children, and matched bodies. The derivation uses the existing resource-definition
+footprint traversal once at entry. The resulting indexed reservation stays with
+the checked C state across assignments, folding, calls, and loop joins; it does
+not grant a live owner, a guard, or permission to change the protocol.
+
+An undecided match reserves the union of its possible mutex footprints. Recursive
+or unresolved descriptions conservatively reserve an unnamed footprint, so
+external writes remain blocked when Click cannot name the storage dependency.
+Fresh automatic objects are independent of these pre-existing inputs. Known
+footprints permit adjacent payload writes and separated allocation retirement;
+missing evidence reports `Requires separate(...)`. No surface syntax is added.
+
+Preserving contracts still freeze mutex protocol transitions. Lifecycle outputs
+and `mutex_use` lending remain future work.
 
 The surface status is:
 

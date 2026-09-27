@@ -269,7 +269,28 @@ pub(super) fn storage_write_refusal(
     write: &super::CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
-    let ledger = state.mutex_ledger.as_ref()?;
+    if write.start() == write.end() {
+        return None;
+    }
+    if let Some(inputs) = &state.mutex_input_reservations {
+        // Contract inputs predate this body's fresh automatic objects.
+        if inputs.unnamed && !write.base().block.starts_with("local:") {
+            return Some(super::CRuntimeError::FunctionContract(
+                "Click cannot yet check this write because an input resource's mutex storage could not be determined".into(),
+            ));
+        }
+        if let Some(error) = ledger_storage_write_refusal(&inputs.ledger, write, assumptions) {
+            return Some(error);
+        }
+    }
+    ledger_storage_write_refusal(state.mutex_ledger.as_ref()?, write, assumptions)
+}
+
+fn ledger_storage_write_refusal(
+    ledger: &MutexLedger,
+    write: &super::CMemoryRange,
+    assumptions: &PureFactContext,
+) -> Option<super::CRuntimeError> {
     if !ledger.has_any_mutex() || write.start() == write.end() {
         return None;
     }
@@ -324,6 +345,49 @@ pub(super) fn storage_write_refusal(
         }
     }
     None
+}
+
+/// Immutable storage dependencies of an independently assumed contract input.
+/// This ledger is used only as a footprint index: it grants no live owner or
+/// guard and is never consulted by a runtime mutex transition.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) struct MutexInputReservations {
+    ledger: MutexLedger,
+    unnamed: bool,
+}
+
+impl MutexInputReservations {
+    pub(super) fn from_ranges(
+        ranges: impl IntoIterator<Item = super::CMemoryRange>,
+    ) -> Option<Self> {
+        let mut result = Self {
+            ledger: MutexLedger::new(),
+            unnamed: false,
+        };
+        for range in ranges {
+            if range.is_unnamed_footprint() {
+                result.unnamed = true;
+                continue;
+            }
+            let Some(bytes) = range.end().as_const().filter(|bytes| {
+                *bytes > 0 && range.start().as_const() == Some(0) && range.element_width() == 1
+            }) else {
+                result.unnamed = true;
+                continue;
+            };
+            if result.ledger.get(range.base()).is_none() {
+                result.ledger = result.ledger.with_inserted(
+                    range.base().clone(),
+                    MutexEntry::Unlocked {
+                        initialization: MutexInitialization::fresh(bytes)
+                            .expect("nonempty modeled mutex storage"),
+                        invariant: None,
+                    },
+                );
+            }
+        }
+        (result.unnamed || result.ledger.has_any_mutex()).then_some(result)
+    }
 }
 
 /// An acquisition identity. The private fields cannot be synthesized from a
@@ -450,7 +514,17 @@ pub(super) fn storage_retirement_refusal(
     allocation: &super::CMemoryRange,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
-    if state.preserves_mutex_protocols && state.mutex_ledger.is_none() {
+    if let Some(inputs) = &state.mutex_input_reservations {
+        if inputs.unnamed {
+            return Some(super::CRuntimeError::UnsupportedMutexStorageRetirement);
+        }
+        if let Some(error) = inputs
+            .ledger
+            .storage_retirement_refusal(allocation, assumptions)
+        {
+            return Some(error);
+        }
+    } else if state.preserves_mutex_protocols && state.mutex_ledger.is_none() {
         return Some(super::CRuntimeError::UnsupportedMutexStorageRetirement);
     }
     state
@@ -946,14 +1020,23 @@ impl MutexLedger {
                 }
                 let end = delta.constant.checked_add(i64::from(*bytes))?;
                 Some(end <= 0 || delta.constant >= extent)
-            })() == Some(true);
-            if !disjoint
-                && !assumptions.proves_exact(&super::Proposition::CResourceSeparate {
+            })();
+            let stated_separation =
+                assumptions.proves_exact(&super::Proposition::CResourceSeparate {
                     left: allocation_resource.clone(),
-                    right: storage,
-                })
-            {
-                return Some(if &mutex.block == block {
+                    right: storage.clone(),
+                }) || (allocation.element_width() == 1
+                    && allocation.start().as_const() == Some(0)
+                    && allocation.end().as_const().is_some_and(|extent| {
+                        assumptions.proves_stated_byte_separation(
+                            allocation.base(),
+                            extent,
+                            mutex,
+                            *bytes,
+                        )
+                    }));
+            if disjoint != Some(true) && !stated_separation {
+                return Some(if disjoint == Some(false) {
                     super::CRuntimeError::MutexStorageInUse {
                         mutex: mutex.clone(),
                         allocation: allocation.base().clone(),
@@ -2296,6 +2379,103 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn abstract_reservation_is_retained_without_granting_runtime_authority() {
+        use super::super::*;
+        let address = mutex(91_201);
+        let mut state = CState::new();
+        state.preserves_mutex_protocols = true;
+        state.mutex_input_reservations =
+            MutexInputReservations::from_ranges([storage_range(&address, 40)]);
+        let assumptions = PureFactContext::new();
+        let snapshot = state.clone();
+        assert!(state.mutex_ledger.is_none());
+        assert!(state.resources.facts().is_empty());
+        assert!(storage_write_refusal(&state, &storage_range(&address, 4), &assumptions).is_some());
+        assert!(
+            storage_write_refusal(
+                &state,
+                &storage_range(&address.offset_by_bytes(40), 4),
+                &assumptions
+            )
+            .is_none()
+        );
+        assert!(
+            storage_retirement_refusal(&state, &storage_range(&address, 64), &assumptions)
+                .is_some()
+        );
+        assert!(
+            MutexContext::new(state.clone())
+                .destroy(&address, &assumptions)
+                .is_err()
+        );
+        state.resources = ResourceContext::new();
+        assert_eq!(state, snapshot);
+        let mut forged = state.clone();
+        forged.mutex_input_reservations = None;
+        assert_ne!(state, forged);
+        assert!(!state.shares_non_memory_storage_with(&forged));
+    }
+
+    #[test]
+    fn unresolved_input_storage_refuses_external_writes_but_not_fresh_locals() {
+        use super::super::*;
+        let (mut state, local) = automatic_holder();
+        state.mutex_input_reservations =
+            MutexInputReservations::from_ranges([CMemoryRange::unnamed_footprint()]);
+        let assumptions = PureFactContext::new();
+        assert!(
+            matches!(storage_write_refusal(&state, &storage_range(&mutex(91_203), 4), &assumptions),
+            Some(CRuntimeError::FunctionContract(message)) if message.contains("mutex storage could not be determined"))
+        );
+        assert!(storage_write_refusal(&state, &storage_range(&local, 4), &assumptions).is_none());
+        assert!(
+            storage_write_refusal(&state, &storage_range(&mutex(91_203), 0), &assumptions)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn abstract_reservation_queries_do_not_scan_other_mutexes_in_one_object() {
+        use super::super::*;
+        let base = mutex(91_202);
+        let assumptions = PureFactContext::new();
+        let mut samples = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut state = CState::new();
+            state.mutex_input_reservations = MutexInputReservations::from_ranges(
+                (0..size).map(|index| storage_range(&base.offset_by_bytes(index * 64), 40)),
+            );
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                for index in [0, size / 2, size - 1] {
+                    assert!(
+                        storage_write_refusal(
+                            &state,
+                            &storage_range(&base.offset_by_bytes(index * 64 + 39), 1),
+                            &assumptions
+                        )
+                        .is_some()
+                    );
+                    assert!(
+                        storage_write_refusal(
+                            &state,
+                            &storage_range(&base.offset_by_bytes(index * 64 + 40), 8),
+                            &assumptions
+                        )
+                        .is_none()
+                    );
+                }
+            });
+            samples.push(work);
+        }
+        for window in samples.windows(2) {
+            assert!(
+                window[1] <= window[0] + 2048,
+                "abstract reservation query work: {samples:?}"
+            );
+        }
     }
 
     #[test]

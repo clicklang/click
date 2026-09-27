@@ -3263,6 +3263,7 @@ fn execute_verified_function_applications_with_suspension(
         return_state = return_state.with_loan_view_bindings(return_view_bindings);
         return_state.thread_ledger = post_state.thread_ledger.clone();
         return_state.mutex_ledger = post_state.mutex_ledger.clone();
+        return_state.mutex_input_reservations = post_state.mutex_input_reservations.clone();
         return_state.population_access = post_state.population_access.clone();
         return_state.counted_populations = post_state.counted_populations;
         return_state.next_local_frame = post_state.next_local_frame;
@@ -5803,6 +5804,33 @@ pub(super) fn checked_owned_memory_ranges(
     OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
 }
 
+/// Project storage dependencies once at an independent contract entry. The
+/// ordinary definition walk handles folded instances, children and match arms;
+/// unknown dependencies conservatively reserve an unnamed footprint.
+pub(super) fn assumed_mutex_input_reservations(
+    state: &CState,
+    function: &CFunction,
+    assumptions: &PureFactContext,
+) -> Option<super::mutexes::MutexInputReservations> {
+    let bytes =
+        crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin().mutex_storage_bytes;
+    let mut ranges = Vec::new();
+    for fact in state.resources.facts() {
+        let mut derivation = OwnedFootprintDerivation::new(
+            function.composite_resource_definitions(),
+            state,
+            assumptions,
+        );
+        derivation.mutex_storage_bytes = Some(bytes);
+        ranges.extend(
+            derivation
+                .derive(fact)
+                .unwrap_or_else(|| vec![CMemoryRange::unnamed_footprint()]),
+        );
+    }
+    super::mutexes::MutexInputReservations::from_ranges(ranges)
+}
+
 /// What a caller keeps owning across a call whose resource transfer left it
 /// `residual`: the residual itself, whose flat owned members the havoc finds
 /// through its base index, and the owned memory of each owned residual
@@ -6170,6 +6198,7 @@ const OWNED_FOOTPRINT_WORK_LIMIT: usize = 4096;
 /// cell it wrote (`mdtests/call_through_deep_instance_chain_footprint_includes_its_memory.md`
 /// and the other `*_footprint_includes_*` fixtures).
 struct OwnedFootprintDerivation<'a> {
+    mutex_storage_bytes: Option<u32>,
     definitions: &'a [CCompositeResourceDefinition],
     state: &'a CState,
     assumptions: &'a PureFactContext,
@@ -6206,6 +6235,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             definitions,
             state,
             assumptions,
+            mutex_storage_bytes: None,
             evaluation_assumptions: assumptions
                 .clone()
                 .allow_symbolic_contract_loads()
@@ -6248,6 +6278,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
         // composition that expanded a composite normalized them. Ranges the
         // union of several arms spells may overlap, and then stay as they
         // are.
+        if self.mutex_storage_bytes.is_some() {
+            if self.reaches_unnamed {
+                self.ranges.push(CMemoryRange::unnamed_footprint());
+            }
+            return Some(self.ranges);
+        }
         let mut ranges = match ResourceContext::new().try_compose_with_facts(
             self.ranges.iter().cloned().map(CResourceFact::own_memory),
             self.assumptions,
@@ -6291,6 +6327,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
     /// every definition on a cycle of families; in a set assembled otherwise,
     /// a cycle through several families is cut by the work bound.
     fn enters(&mut self, definition: &CCompositeResourceDefinition) -> bool {
+        if self.mutex_storage_bytes.is_some() && !definition.contains_mutex_authority {
+            return false;
+        }
         if definition.owned_footprint_reaches_unnamed_memory() || definition.is_recursive() {
             self.reaches_unnamed = true;
             return false;
@@ -6303,13 +6342,30 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         match fact.resource() {
-            CResource::Memory(range) => self.ranges.push(canonical_memory_range(range.clone())),
-            CResource::Iterated(iterated) => self
-                .ranges
-                .push(canonical_memory_range(iterated.spanning_range())),
+            CResource::Memory(range) => {
+                if self.mutex_storage_bytes.is_none() {
+                    self.ranges.push(canonical_memory_range(range.clone()));
+                }
+            }
+            CResource::Iterated(iterated) => {
+                if self.mutex_storage_bytes.is_none() {
+                    self.ranges
+                        .push(canonical_memory_range(iterated.spanning_range()));
+                }
+            }
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
-            CResource::Token { .. } | CResource::MutexGuard(_) | CResource::MutexLive(_) => {}
+            CResource::Token { .. } => {}
+            CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
+                if let Some(bytes) = self.mutex_storage_bytes {
+                    self.ranges.push(CMemoryRange::new_with_element_width(
+                        identity.mutex.clone(),
+                        0u32.into(),
+                        bytes.into(),
+                        1,
+                    ));
+                }
+            }
             CResource::Composite { name, arguments } => self.composite(name, arguments),
             CResource::Instance(instance) => {
                 let Some(definition) = self.definition(instance.name()) else {
@@ -6361,14 +6417,15 @@ impl<'a> OwnedFootprintDerivation<'a> {
             self.undefined_family = true;
             return;
         };
+        if !self.enters(definition) {
+            return;
+        }
         if definition.instance_schema.is_some() || definition.matched.is_some() {
             self.reaches_unnamed = true;
             return;
         }
-        if !self.enters(definition) {
-            return;
-        }
         let mut evaluation = CState::new().with_memory(self.state.memory().clone());
+        evaluation.preserves_mutex_protocols = self.state.preserves_mutex_protocols;
         if !Self::bind_parameters(definition, arguments, &mut evaluation)
             || bind_composite_witnesses(definition, arguments, &mut evaluation, self.assumptions)
                 .is_none()
@@ -6385,19 +6442,22 @@ impl<'a> OwnedFootprintDerivation<'a> {
         arguments: &[AlgebraicValue],
         fields: &[Option<AlgebraicValue>],
     ) {
+        if !self.enters(definition) {
+            return;
+        }
         let Some(schema) = definition.instance_schema.as_ref() else {
             self.reaches_unnamed = true;
             return;
         };
-        if schema.fields().len() != fields.len()
-            || !definition.witnesses.is_empty()
-            || !self.enters(definition)
-        {
+        if schema.fields().len() != fields.len() || !definition.witnesses.is_empty() {
             self.reaches_unnamed = true;
             return;
         }
         let mut evaluation = self.state.clone();
         evaluation.resources = ResourceContext::new();
+        if self.mutex_storage_bytes.is_some() {
+            evaluation.locals = CLocalEnvironment::default();
+        }
         if definition.matched.is_some() {
             // An arm's C names are lexical parameters and constructor
             // bindings, never incidental locals of the function holding it.
@@ -11443,6 +11503,7 @@ pub(super) fn bind_c_function_arguments(
             caller_state.enclosing_frame_holds_locals() || !caller_state.locals.is_empty(),
         );
     callee_state.mutex_ledger = caller_state.mutex_ledger.clone();
+    callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.preserves_mutex_protocols = caller_state.preserves_mutex_protocols
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
@@ -11561,6 +11622,7 @@ fn bind_c_contract_arguments(
             caller_state.enclosing_frame_holds_locals() || !caller_state.locals.is_empty(),
         );
     callee_state.mutex_ledger = caller_state.mutex_ledger.clone();
+    callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.preserves_mutex_protocols =
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
@@ -23355,6 +23417,7 @@ fn function_outcome_from_body_with_resource_transfer(
     return_state = return_state.with_loan_view_bindings(return_view_bindings);
     return_state.thread_ledger = state.thread_ledger.clone();
     return_state.mutex_ledger = state.mutex_ledger.clone();
+    return_state.mutex_input_reservations = state.mutex_input_reservations.clone();
     return_state.population_access = state.population_access.clone();
     return_state.counted_populations = state.counted_populations;
     return_state.next_local_frame = state.next_local_frame;
@@ -23773,6 +23836,7 @@ pub(super) fn function_outcome_from_body(
                 .with_loan_participant(state.loan_participant());
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
+            caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
@@ -23812,6 +23876,7 @@ pub(super) fn function_outcome_from_body(
             }
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
+            caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
             if function.has_inline_body() {
                 let memory = caller_state.memory.clone();
                 caller_state.sync_scalar_locals_from_memory(&memory);

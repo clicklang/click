@@ -20,7 +20,7 @@ thread_local! {
 }
 
 thread_local! {
-    /// The borrowed-input roots installed for each function in this
+    /// The borrowed-input roots and abstract mutex reservations installed for each function in this
     /// verification session, keyed by function name and holding the exact
     /// entry state they were installed on. Every proof unit of one function
     /// (each claim proof, loop proof, and certification) must share one
@@ -2534,11 +2534,11 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
     let mut state = state;
     state.preserves_mutex_protocols |=
         crate::kernel::functions::preserves_mutex_protocols(function.contract_interface());
-    if !function
+    let has_views = function
         .resource_requires()
         .iter()
-        .any(CResourceSpec::is_view)
-    {
+        .any(CResourceSpec::is_view);
+    if !has_views && !state.preserves_mutex_protocols {
         return Ok(state);
     }
     if state.loan_ledger().is_some()
@@ -2557,7 +2557,19 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
     }) {
         return Ok(rooted);
     }
-    let rooted = install_borrowed_contract_inputs(state.clone(), function, arguments, assumptions)?;
+    let mut rooted = if has_views {
+        install_borrowed_contract_inputs(state.clone(), function, arguments, assumptions)?
+    } else {
+        state.clone()
+    };
+    if state.preserves_mutex_protocols && state.mutex_ledger.is_none() {
+        rooted.mutex_input_reservations =
+            crate::kernel::functions::assumed_mutex_input_reservations(
+                &state,
+                function,
+                assumptions,
+            );
+    }
     BORROWED_INPUT_ROOTS.with(|roots| {
         roots
             .borrow_mut()
