@@ -1456,6 +1456,24 @@ pub(super) fn describe_missing_range_end_note(
     else {
         return String::new();
     };
+    // When earlier requirements of the same call were reserved before this
+    // one found no owner, what was compared is the caller's context after
+    // those reservations, not before them: two requirements naming one cell
+    // are refused although the caller's whole range covers each of them.
+    let reservation = crate::kernel::owned_reservation_miss_for(resource);
+    let (resource_facts, reserved_prefix) = match &reservation {
+        Some(miss) => (
+            miss.remaining.as_slice(),
+            format!(
+                "after reserving {} for an earlier requirement of this call, ",
+                describe_bounded_list(&miss.reserved, |fact| format!(
+                    "`{}`",
+                    describe_resource_fact(fact, parameters, arguments)
+                ))
+            ),
+        ),
+        None => (resource_facts, String::new()),
+    };
     let required_parameter = parameter_relative_base(required, parameters, arguments);
     // Endpoints of the held range and of the required one, on one scale.
     let comparable = |held: &CMemoryRange| {
@@ -1510,7 +1528,17 @@ pub(super) fn describe_missing_range_end_note(
         .min_by_key(|(_, sides)| sides.len())
         .cloned()
     else {
-        return String::new();
+        return match &reservation {
+            Some(miss) => format!(
+                "\n  note: {reserved_prefix}no remaining owner covers `{}`; remaining: {}",
+                describe_memory_range(required, parameters, arguments),
+                describe_bounded_list(&miss.remaining, |fact| format!(
+                    "`{}`",
+                    describe_resource_fact(fact, parameters, arguments)
+                ))
+            ),
+            None => String::new(),
+        };
     };
     let decided = |lower: &Bitvector32Term, upper: &Bitvector32Term| {
         Some(lower.as_const()? as i32 <= upper.as_const()? as i32)
@@ -1524,7 +1552,7 @@ pub(super) fn describe_missing_range_end_note(
             .find(|(lower, upper)| decided(lower, upper) == Some(false))
             .expect("found a refuted side above");
         return format!(
-            "\n  note: held `{}` does not cover `{}`: `{} <= {}` is false",
+            "\n  note: {reserved_prefix}held `{}` does not cover `{}`: `{} <= {}` is false",
             describe_resource_fact(held_fact, parameters, arguments),
             describe_memory_range(required, parameters, arguments),
             describe_bitvector_with_context(lower, parameters, arguments),
@@ -1546,7 +1574,7 @@ pub(super) fn describe_missing_range_end_note(
         return String::new();
     }
     format!(
-        "\n  note: held `{}` covers `{}` only when {}",
+        "\n  note: {reserved_prefix}held `{}` covers `{}` only when {}",
         describe_resource_fact(held_fact, parameters, arguments),
         describe_memory_range(required, parameters, arguments),
         conditions.join(" and "),

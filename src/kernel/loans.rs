@@ -2196,6 +2196,39 @@ fn lend_owned_view_to_suspended_worker(
     Ok(child)
 }
 
+/// The caller's context at the moment one call's exclusive reservation found
+/// no owner for a requirement: what earlier requirements of the same call had
+/// already reserved, and what remained of the caller's partition. A refusal
+/// naming the missing owner reads this so it can say what was compared, not
+/// the caller's context before any reservation (which may well cover the
+/// requirement, as it does when two requirements name one cell).
+///
+/// Diagnostic only. Every plan clears it on entry and sets it on this one
+/// refusal, so it describes the latest plan, and a reader matches the missing
+/// fact before trusting it.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnedReservationMiss {
+    pub(crate) missing: CResourceFact,
+    pub(crate) reserved: Vec<CResourceFact>,
+    pub(crate) remaining: Vec<CResourceFact>,
+}
+
+thread_local! {
+    static LAST_OWNED_RESERVATION_MISS: std::cell::RefCell<Option<OwnedReservationMiss>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The reservation state behind the latest plan's missing owner `missing`,
+/// if the latest plan refused exactly that requirement.
+pub(crate) fn owned_reservation_miss_for(missing: &CResourceFact) -> Option<OwnedReservationMiss> {
+    LAST_OWNED_RESERVATION_MISS.with(|miss| {
+        miss.borrow()
+            .as_ref()
+            .filter(|miss| &miss.missing == missing)
+            .cloned()
+    })
+}
+
 pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
     caller_resources: &ResourceContext,
     requirements: &[CCheckedResourceFact],
@@ -2215,6 +2248,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
         return Err(StableViewPlanError::InvalidRequirement);
     }
 
+    LAST_OWNED_RESERVATION_MISS.with(|miss| *miss.borrow_mut() = None);
     let mut residual = caller_resources.clone();
     let mut parent_view_bindings = parent_view_bindings.clone();
     let mut callee_resources = ResourceContext::new();
@@ -2280,7 +2314,22 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
         let Some((occurrence, caller_fact)) =
             residual.directly_supporting_owned_entry(&requirement.fact, assumptions)
         else {
-            return Err(missing_own_requirement(&requirement.fact));
+            let error = missing_own_requirement(&requirement.fact);
+            if let StableViewPlanError::MissingResource(missing) = &error
+                && !reserved_ownership_supports.is_empty()
+            {
+                let reserved = reserved_ownership_supports
+                    .iter()
+                    .map(|(fact, _): &(CResourceFact, _)| fact.clone())
+                    .collect();
+                let miss = OwnedReservationMiss {
+                    missing: missing.clone(),
+                    reserved,
+                    remaining: residual.facts().to_vec(),
+                };
+                LAST_OWNED_RESERVATION_MISS.with(|last| *last.borrow_mut() = Some(miss));
+            }
+            return Err(error);
         };
         let same_memory_extent = match (requirement.fact.resource(), caller_fact.resource()) {
             (CResource::Memory(required), CResource::Memory(caller)) => {

@@ -38,6 +38,7 @@ mod loans;
 pub(crate) use loans::LoanLedger;
 #[cfg(test)]
 pub(crate) use loans::LoanRefusal;
+pub(crate) use loans::owned_reservation_miss_for;
 pub(crate) use loans::{
     CheckedLoanCallEvidenceSequence, LoanViewBinding, concat_checked_loan_evidence,
     empty_checked_loan_evidence_sequence,
