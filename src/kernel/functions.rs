@@ -10139,9 +10139,19 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     effective_assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<()> {
+    // Every ensure is lowered under the call's context plus the facts
+    // published so far, the earlier ensures' among them. Build that context
+    // once and extend it by each ensure's own new facts: rebuilding it from
+    // the whole fact list per ensure was quadratic in the ensure count, and
+    // uncharged. The facts and obligations are sets of assumptions, so
+    // assuming a later fact after the obligations names the same context.
+    let mut ensure_assumptions =
+        assumptions_with_path_context(effective_assumptions, facts, obligations);
+    let mut facts_have_memory_effect_summary = facts
+        .iter()
+        .any(|fact| matches!(fact.proposition(), Proposition::CMemoryEffectSummary { .. }));
     for ensure in ensures {
-        let ensure_assumptions =
-            assumptions_with_path_context(effective_assumptions, facts, obligations);
+        let published_before = facts.len();
         // A verified callee certifies that its ensures, including the memory
         // loads used to state them, are well-defined. Lower those loads into
         // explicit path obligations here instead of asking the general prover
@@ -10210,6 +10220,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             }
             add_normalized_verified_ensure_facts(
                 facts,
+                facts_have_memory_effect_summary,
                 &ensure_path.proposition,
                 &ensure_assumptions,
                 &ensure_path.facts,
@@ -10237,6 +10248,13 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 }
             }
         }
+        let published = &facts[published_before..];
+        crate::instrumentation::record_deterministic_work(published.len());
+        for fact in published {
+            facts_have_memory_effect_summary |=
+                matches!(fact.proposition(), Proposition::CMemoryEffectSummary { .. });
+            ensure_assumptions = ensure_assumptions.assume_proposition(fact.proposition().clone());
+        }
     }
     Ok(())
 }
@@ -10251,15 +10269,14 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// pre-havoc cell.
 fn add_normalized_verified_ensure_facts(
     facts: &mut Vec<ExecutionPureFact>,
+    facts_have_memory_effect_summary: bool,
     ensure: &Proposition,
     ensure_assumptions: &PureFactContext,
     ensure_facts: &[ExecutionPureFact],
     ensure_obligations: &[ProofObligation],
 ) {
     if !ensure_obligations.is_empty()
-        || !facts
-            .iter()
-            .any(|fact| matches!(fact.proposition(), Proposition::CMemoryEffectSummary { .. }))
+        || !facts_have_memory_effect_summary
         || !crate::kernel::eval::proposition_mentions_registered_load_variable(ensure)
     {
         return;
@@ -10292,6 +10309,9 @@ fn add_normalized_verified_ensure_facts(
             ensure_facts,
             &[],
         );
+        // The duplicate test reads the published list, so it is charged by
+        // that list's length.
+        crate::instrumentation::record_deterministic_work(facts.len());
         if !facts.iter().any(|fact| fact.proposition() == &normalized) {
             facts.push(ExecutionPureFact::certified(normalized));
         }

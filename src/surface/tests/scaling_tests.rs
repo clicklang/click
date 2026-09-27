@@ -3272,6 +3272,79 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
     assert_near_linear_scaling("counter call chain", &totals);
 }
 
+/// One `step()` over a call whose external contract has `N` ensures lowers
+/// them in work linear in `N`.
+///
+/// Each ensure is lowered under the call's context plus every fact already
+/// published, and that context used to be rebuilt from the whole growing
+/// fact list for every ensure: quadratic wall time (0.05 s, 0.23 s, 0.92 s
+/// at 100, 200, 400 ensures; 25 s at 1,000) while the counter, which does not
+/// charge a context rebuild, reported linear work. The context is now
+/// extended by each ensure's own facts. The test pins both the charged
+/// lowering work and the entries the verification's context rebuilds assume
+/// (`context_rebuild_entries`), which a return of the per-ensure rebuild
+/// makes quadratic.
+#[test]
+fn call_ensure_lowering_is_linear_in_the_ensure_count() {
+    const SPANS: [&str; 2] = [
+        "operation `verified call provisional ensure lowering`",
+        "operation `verified call ensure lowering`",
+    ];
+    let mut samples = Vec::new();
+    let mut lowering = Vec::new();
+    let mut rebuilds = Vec::new();
+    for size in [32, 64, 128, 256] {
+        let ensures = (1..=size)
+            .map(|k| format!("    ensures result != {k};\n"))
+            .collect::<String>();
+        let click_source = format!(
+            "verifying \"many_ensures.c\";\n\n\
+             extern int32 g(int32 x) {{\n{ensures}}}\n\n\
+             int32 caller(int32 x) {{\n    ensures result != 1;\n}} by {{\n    \
+             step();\n    step();\n    simp();\n}}\n"
+        );
+        let rebuilds_before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+        let (verified, sample) = scaling_sample(size, || {
+            verify_c0_sources(
+                &click_source,
+                &[(
+                    "many_ensures.c",
+                    "int32 g(int32 x);\n\nint32 caller(int32 x) {\n    return g(x);\n}\n",
+                )],
+            )
+        });
+        rebuilds.push(
+            crate::kernel::reasoning::path_facts::context_rebuild_entries() - rebuilds_before,
+        );
+        verified.unwrap_or_else(|error| {
+            panic!("size {size} many-ensures call failed: {}", error.message())
+        });
+        lowering.push(
+            SPANS
+                .iter()
+                .map(|span| sample.named_work.get(*span).copied().unwrap_or(0))
+                .sum::<usize>(),
+        );
+        samples.push(sample);
+    }
+    assert!(lowering[0] > 0, "the ensures were never lowered: {lowering:?}");
+    // Linear with a small allowance: each doubling of the ensures at most
+    // 2.2 times the lowering work (a quadratic rebuild is 4 times).
+    for pair in lowering.windows(2) {
+        assert!(
+            pair[1] * 10 <= pair[0] * 22,
+            "call ensure lowering grows faster than the ensure count: {lowering:?}"
+        );
+    }
+    for pair in rebuilds.windows(2) {
+        assert!(
+            pair[1] * 10 <= pair[0] * 22,
+            "the call's context rebuilds grow faster than the ensure count: {rebuilds:?}"
+        );
+    }
+    assert_near_linear_scaling("call ensure count", &samples);
+}
+
 /// A copy loop whose preservation `simp` reaches a fact transport the
 /// explicit-premise planner cannot view: the element just stored is named
 /// `dst[k]` under `k == i - 1`, so `old(src[k]) == old(src[k])` does not

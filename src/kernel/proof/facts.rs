@@ -139,6 +139,7 @@ pub(crate) trait PropositionSource {
     fn propositions(&self) -> impl Iterator<Item = &Proposition>;
     fn pure_context(&self) -> PureFactContext {
         self.propositions()
+            .inspect(|_| crate::kernel::reasoning::path_facts::count_context_rebuild_entries(1))
             .map(crate::kernel::clone_proposition_iteratively)
             .fold(PureFactContext::new(), PureFactContext::assume_proposition)
     }

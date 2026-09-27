@@ -193,6 +193,25 @@ charged to visible semantic output rather than hidden ambient state:
   removing them needs the cells indexed by the index terms the facts order,
   which no rule has yet. Heap `initialized_cells` and union views are still
   visited per candidate on every store.
+- Rebuilding a fact context from a list (`assumptions_with_path_context`,
+  `assumptions_with_propositions`, `PropositionSource::pure_context`) charges
+  no deterministic work, and many operations rebuild one from the path's
+  facts at each step, so each such step is linear in the path and a path is
+  quadratic in wall time while its counted work stays linear. This is a known
+  violation, not an exception. It was visible as quadratic wall time for a
+  call step over an external contract with `N` ensures or `N` requirements,
+  whose rebuild per clause is gone (`call_ensure_lowering_is_linear_in_the_ensure_count`,
+  `call_requirement_checking_is_linear_in_the_requirement_count`, which also
+  pin the rebuilt entries through the test-only `context_rebuild_entries`
+  count). Charging every rebuild one unit per entry makes four scaling
+  regressions fail today: the implicit empty-effect check over early-return
+  paths (37, 87, 235, 723 units at 4 to 32 paths), the expanded round trip's
+  work per source byte and its extra copy beside unrelated allocations, and
+  the plain round trip's extra copy. The same holds for the set of a path's
+  retained facts that evidence checking reads once per checked step
+  (`proof_evidence_unretained_premise`): charging it grows the expanded
+  extra copy one unit per unrelated allocation. Removing these needs each
+  step's context carried persistently instead of rebuilt from the path.
 
 ## Execution capacity follows selected syntax
 

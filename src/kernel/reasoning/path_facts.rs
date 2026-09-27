@@ -1525,11 +1525,35 @@ pub(in crate::kernel) fn decide_with_facts(
         })
 }
 
+#[cfg(test)]
+thread_local! {
+    static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts, in test builds, the entries a context rebuilt from a list
+/// assumes (`assumptions_with_path_context`, `assumptions_with_propositions`,
+/// and `PropositionSource::pure_context`). These rebuilds charge no
+/// deterministic work, so a caller that rebuilt a context from a growing
+/// list once per item was quadratic in wall time while its counted work
+/// stayed linear. Scaling regressions read this count to pin such a loop.
+/// Charging the rebuilds instead makes several existing scaling tests fail
+/// (see `docs/internals/verification-efficiency.md`).
+pub(crate) fn count_context_rebuild_entries(_entries: usize) {
+    #[cfg(test)]
+    CONTEXT_REBUILD_ENTRIES.with(|count| count.set(count.get() + _entries));
+}
+
+#[cfg(test)]
+pub(crate) fn context_rebuild_entries() -> usize {
+    CONTEXT_REBUILD_ENTRIES.with(std::cell::Cell::get)
+}
+
 pub(in crate::kernel) fn assumptions_with_path_context(
     assumptions: &PureFactContext,
     facts: &[ExecutionPureFact],
     obligations: &[ProofObligation],
 ) -> PureFactContext {
+    count_context_rebuild_entries(facts.len() + obligations.len());
     let mut assumptions = assumptions.clone();
     for fact in facts {
         assumptions = assumptions.assume_proposition(fact.proposition().clone());
@@ -1546,6 +1570,7 @@ pub(in crate::kernel) fn assumptions_with_propositions(
     assumptions: &PureFactContext,
     propositions: &[Proposition],
 ) -> PureFactContext {
+    count_context_rebuild_entries(propositions.len());
     let mut assumptions = assumptions.clone();
     for proposition in propositions {
         assumptions = assumptions.assume_proposition(proposition.clone());
