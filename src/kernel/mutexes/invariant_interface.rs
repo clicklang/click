@@ -2,8 +2,7 @@
 
 use super::*;
 use crate::kernel::{
-    AlgebraicValue, CMutexGuardDeclaration, CValue, ResourceArguments, ResourceFieldSchema,
-    ResourceInstance,
+    AlgebraicValue, CMutexGuardDeclaration, CValue, ResourceDescription, ResourceInstance,
 };
 use std::collections::BTreeMap;
 
@@ -12,9 +11,7 @@ use std::collections::BTreeMap;
 /// supplied separately before an abstract acquisition can use such an interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct MutexInvariantInterface {
-    family: String,
-    arguments: ResourceArguments,
-    schema: ResourceFieldSchema,
+    description: ResourceDescription,
     mutex: Pointer,
 }
 
@@ -44,11 +41,13 @@ impl MutexInvariantInterface {
             return Err("selected resource is guarded by a different mutex");
         }
         Ok(Self {
-            family: instance.name.clone(),
-            arguments: instance.arguments.clone(),
-            schema: instance.schema.clone(),
+            description: ResourceDescription::from_instance(instance),
             mutex: expected,
         })
+    }
+
+    pub(super) fn description(&self) -> &ResourceDescription {
+        &self.description
     }
 
     pub(super) fn mutex(&self) -> &Pointer {
@@ -59,7 +58,9 @@ impl MutexInvariantInterface {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{CType, ResourceContext, ResourceFieldType, Variable, int32};
+    use crate::kernel::{
+        CType, ResourceContext, ResourceFieldSchema, ResourceFieldType, Variable, int32,
+    };
 
     fn instance(identity: u64, value: u32) -> ResourceInstance {
         ResourceInstance::new(
@@ -105,6 +106,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first, later);
+        assert_eq!(
+            first.description(),
+            &ResourceDescription::from_instance(&instance(1, 20))
+        );
         let mut other_argument = instance(2, 20);
         other_argument.arguments =
             vec![CValue::pointer(Pointer::symbolic(Variable(71))).into()].into();
@@ -242,6 +247,80 @@ mod tests {
             .interface()
             .unwrap()
             .clone()
+    }
+
+    #[test]
+    fn declared_release_accepts_owned_replacement_with_the_full_description() {
+        let assumptions = PureFactContext::new();
+        let (published, original) = published();
+        let replacement = CResourceFact::own(CResource::Instance(instance(2, 99)));
+        let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
+        held.state.resources = held
+            .state
+            .resources
+            .clone()
+            .without_fact(&original, &assumptions)
+            .unwrap()
+            .try_compose_with_facts_delaying_normalization([replacement.clone()], &assumptions)
+            .unwrap();
+        let released = held
+            .release(guard, replacement.clone(), &assumptions)
+            .unwrap();
+        assert!(
+            !released
+                .state
+                .resources
+                .contains_exact_representation(&replacement)
+        );
+        assert!(Arc::ptr_eq(&binding(&published), &binding(&released)));
+        let (acquired, _) = released.acquire(&address(), &assumptions).unwrap();
+        assert!(
+            acquired
+                .state
+                .resources
+                .contains_exact_representation(&replacement)
+        );
+        assert!(
+            !acquired
+                .state
+                .resources
+                .contains_exact_representation(&original)
+        );
+    }
+
+    #[test]
+    fn declared_release_checks_schema_arguments_family_and_actual_ownership() {
+        let assumptions = PureFactContext::new();
+        let (published, original) = published();
+        // An equal description alone is insufficient: this instance is not owned.
+        let absent = CResourceFact::own(CResource::Instance(instance(2, 99)));
+        let (held, guard) = published.acquire(&address(), &assumptions).unwrap();
+        assert_eq!(
+            held.release(guard, absent.clone(), &assumptions).err(),
+            Some(MutexTransitionError::MissingInvariant(absent))
+        );
+        let mut wrong_family = instance(2, 99);
+        wrong_family.name = "other_state".into();
+        let mut wrong_arguments = instance(2, 99);
+        wrong_arguments.arguments =
+            vec![CValue::pointer(Pointer::symbolic(Variable(71))).into()].into();
+        let mut wrong_schema = instance(2, 99);
+        wrong_schema.schema =
+            ResourceFieldSchema::new(vec![("other".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        for candidate in [wrong_family, wrong_arguments, wrong_schema] {
+            let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
+            let candidate = CResourceFact::own(CResource::Instance(candidate));
+            held.state.resources = held
+                .state
+                .resources
+                .clone()
+                .unchecked_with_fact(candidate.clone());
+            assert_eq!(
+                held.release(guard, candidate, &assumptions).err(),
+                Some(MutexTransitionError::MissingInvariant(original.clone()))
+            );
+        }
     }
 
     #[test]

@@ -1600,7 +1600,23 @@ impl MutexContext {
         {
             return Err(MutexTransitionError::MissingGuard(guard.mutex.clone()));
         }
-        if !same_instance(previous, &restored) {
+        let restores_description = if let Some(interface) = &interface {
+            matches!(&restored, Some(CResourceFact::Own(CResource::Instance(instance), quantity))
+                if quantity.as_const() == Some(1)
+                    && interface.declaration.description().matches_instance(instance))
+        } else {
+            // Low-level escrow without a checked declaration supplies no
+            // general assertion under which a replacement can be justified.
+            same_instance(previous, &restored)
+        };
+        if !restores_description {
+            if interface.is_some() {
+                return Err(MutexTransitionError::MissingInvariant(
+                    previous
+                        .clone()
+                        .expect("declared invariant has an escrowed assertion"),
+                ));
+            }
             return Err("mutex release requires the same resource instance".into());
         }
         if restored.is_some()

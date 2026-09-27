@@ -4,6 +4,35 @@ Status: proposal for review, not accepted parser syntax. This extends
 [mutex operations as resource contracts](mutex-resource-contracts.md). The
 language reference continues to describe implemented behavior.
 
+## Immediate implementation scope
+
+The concurrency implementation starts with `P: Resource` on named contracts
+and C sidecars, resource descriptions as explicit arguments, and P in ownership
+clauses and `mutex_use<P>` / `mutex_live<P>`. It does not add value parameters,
+higher-order families, generic theorems or packaging declarations, inference,
+or the contract-header migration below. Existing storage checks remain in use;
+named memory transport is a later step. The public `guarded_by(P, mu)` query is
+also deferred until generic initializing helpers need it. Concrete publication
+continues to check the resource declaration's existing `guarded_by` annotation.
+
+The first kernel checkpoint extracts a shared `ResourceDescription` from the
+mutex-specific interface. It retains a declared instance's family, evaluated
+arguments, and field schema, excluding its occurrence identity and observed
+fields. The kernel transition for declared invariant restoration checks that
+description and actual ownership; an explicitly supplied owned replacement
+with the same description is valid. Current runtime unlock still selects the
+original named instance; selecting a replacement from a proof awaits the named
+`state` call interface. A missing
+instance or a different family, arguments, or schema is rejected. Guard and
+initialization checks remain separate.
+
+This checkpoint does not accept `<P: Resource>` source syntax. A verified
+function rule currently contains a concrete interface. The next kernel layer
+must certify an opaque resource parameter once and check instantiation of its
+resource transfers and memory effects. Treating an unknown P as having an empty
+footprint, or rechecking just the concrete instantiations found in a project,
+would not implement the proposed generic rule.
+
 ## Recommendation
 
 Use one explicit proof-parameter list, `<name: kind, ...>`, for declarations

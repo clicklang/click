@@ -3555,8 +3555,8 @@ pub enum CRuntimeError {
     MissingMutexGuard {
         mutex: Pointer,
     },
-    /// Unlock requires the exact folded instance selected at initialization.
-    /// Its cached fields are not an obligation to restore historical values.
+    /// Unlock requires owned folded authority satisfying its protected assertion.
+    /// The diagnostic witness's cached fields do not require historical values.
     MissingMutexInvariant {
         resource: CResourceFact,
     },
