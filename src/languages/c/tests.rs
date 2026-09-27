@@ -70,8 +70,8 @@ fn global_and_static_pointer_arrays_preserve_address_initializers() {
     assert_eq!(function.global_arrays().len(), 1);
     assert_eq!(function.static_arrays().len(), 1);
     for values in [
-        function.global_arrays()[0].initial_values(),
-        function.static_arrays()[0].initial_values(),
+        function.global_arrays()[0].initial_values().dense_values(),
+        function.static_arrays()[0].initial_values().dense_values(),
     ] {
         assert!(
             matches!(&values[0], crate::kernel::CValue::Pointer(pointer) if !pointer.is_null())
@@ -1452,6 +1452,113 @@ fn c0_rejects_dynamic_static_subobject_address_initializers() {
     );
 }
 
+/// A static-storage array's initializer is held as what it wrote, whatever
+/// the array's declared length: a tentative definition lists no element, a
+/// partial or designated initializer (one- or multidimensional, file-scope
+/// or static local) lists the elements it names, and lowering to the kernel
+/// costs those elements. Every array used to hold, copy and lower one
+/// expression per declared element, so four million-element arrays cost
+/// seconds before verification began.
+#[test]
+fn c0_static_array_initializers_cost_what_they_write_whatever_the_length() {
+    let samples = [100u32, 10_000, 1_000_000].map(|length| {
+        let source = format!(
+            "int32 buf[{length}];
+            int32 table[{length}] = {{1, 2, [{last}] = 7}};
+            static int32 grid[{rows}][10] = {{{{4}}, {{5, 6}}}};
+            int32 read() {{
+                static uint8 counts[{length}] = {{[7] = 5}};
+                return buf[0] + table[0] + grid[0][0] + counts[7];
+            }}",
+            last = length - 1,
+            rows = length / 10,
+        );
+        let functions = syntax::parse_functions(&source).expect("large arrays should parse");
+        let function = &functions[0];
+        let written = |initializer: &syntax::C0ArrayInitializer| {
+            assert_eq!(initializer.length(), length);
+            initializer.elements().to_vec()
+        };
+        let arrays = function.global_arrays();
+        let listed = [
+            written(arrays["buf"].initializer().expect("tentative storage")),
+            written(arrays["table"].initializer().expect("definition")),
+            written(arrays["grid"].initializer().expect("definition")),
+            written(
+                function
+                    .static_arrays()
+                    .values()
+                    .next()
+                    .expect("static array")
+                    .initializer(),
+            ),
+        ];
+        let (kernel, work) =
+            crate::instrumentation::measure_deterministic_work(|| function.to_kernel_function());
+        let kernel_listed = kernel
+            .global_arrays()
+            .iter()
+            .map(|array| array.initial_values().explicit_elements().len())
+            .chain(
+                kernel
+                    .static_arrays()
+                    .iter()
+                    .map(|array| array.initial_values().explicit_elements().len()),
+            )
+            .collect::<Vec<_>>();
+        let table = kernel
+            .global_arrays()
+            .iter()
+            .find(|array| array.name() == "table")
+            .expect("kernel table")
+            .initial_values();
+        assert_eq!(
+            [
+                table.value_at(1),
+                table.value_at(2),
+                table.value_at(length - 1)
+            ],
+            [
+                &crate::kernel::int32(2),
+                &crate::kernel::int32(0),
+                &crate::kernel::int32(7)
+            ],
+            "[{length}] table contents"
+        );
+        (length, listed, kernel_listed, work)
+    });
+    let (_, listed, kernel_listed, work) = &samples[0];
+    assert_eq!(
+        listed,
+        &[
+            vec![],
+            vec![
+                (0, syntax::C0Expression::Int32Literal(1)),
+                (1, syntax::C0Expression::Int32Literal(2)),
+                (99, syntax::C0Expression::Int32Literal(7)),
+            ],
+            vec![
+                (0, syntax::C0Expression::Int32Literal(4)),
+                (10, syntax::C0Expression::Int32Literal(5)),
+                (11, syntax::C0Expression::Int32Literal(6)),
+            ],
+            vec![(7, syntax::C0Expression::UInt32Literal(5))],
+        ]
+    );
+    assert!(
+        samples.iter().all(|sample| {
+            sample
+                .1
+                .iter()
+                .map(Vec::len)
+                .eq(listed.iter().map(Vec::len))
+                && (&sample.2, sample.3) == (kernel_listed, *work)
+        }),
+        "an initializer's representation or lowering depends on its array's length \
+         (length, written elements, kernel elements, lowering work): {samples:?}"
+    );
+}
+
 #[test]
 fn c0_collects_file_scope_scalar_arrays() {
     let functions = syntax::parse_functions(
@@ -1471,7 +1578,10 @@ fn c0_collects_file_scope_scalar_arrays() {
     assert_eq!(table.element_type(), syntax::C0Type::Int32);
     assert_eq!(table.length(), 3);
     assert_eq!(
-        table.initializer(),
+        table
+            .initializer()
+            .map(|initializer| initializer.dense_values())
+            .as_deref(),
         Some(
             [
                 syntax::C0Expression::Int32Literal(1),
@@ -1491,7 +1601,7 @@ fn c0_collects_file_scope_scalar_arrays() {
     assert_eq!(kernel_table.element_type(), crate::kernel::CType::Int32);
     assert_eq!(kernel_table.length(), 3);
     assert_eq!(
-        kernel_table.initial_values(),
+        kernel_table.initial_values().dense_values(),
         &[
             crate::kernel::int32(1),
             crate::kernel::int32(2),
@@ -1518,7 +1628,10 @@ fn c0_collects_multidimensional_file_scope_scalar_arrays() {
     assert_eq!(values.shape(), Some(&[2, 3][..]));
     assert_eq!(values.length(), 6);
     assert_eq!(
-        values.initializer(),
+        values
+            .initializer()
+            .map(|initializer| initializer.dense_values())
+            .as_deref(),
         Some(
             [
                 syntax::C0Expression::Int32Literal(1),
@@ -1538,7 +1651,7 @@ fn c0_collects_multidimensional_file_scope_scalar_arrays() {
         .find(|array| array.name() == "values")
         .expect("kernel multidimensional array metadata");
     assert_eq!(
-        kernel_values.initial_values(),
+        kernel_values.initial_values().dense_values(),
         &[
             crate::kernel::int32(1),
             crate::kernel::int32(2),
@@ -1586,7 +1699,10 @@ fn c0_infers_file_scope_scalar_array_bounds() {
     let values = &functions[0].global_arrays()["values"];
     assert_eq!(values.length(), 3);
     assert_eq!(
-        values.initializer(),
+        values
+            .initializer()
+            .map(|initializer| initializer.dense_values())
+            .as_deref(),
         Some(
             [
                 syntax::C0Expression::Int32Literal(1),
@@ -1623,7 +1739,9 @@ fn c0_coalesces_tentative_scalar_array_declarations_before_initialization() {
     assert!(table.is_defined());
     assert!(table.is_tentative());
     assert_eq!(
-        functions[0].to_kernel_function().global_arrays()[0].initial_values(),
+        functions[0].to_kernel_function().global_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(0),
             crate::kernel::int32(0),
@@ -1648,7 +1766,9 @@ fn c0_coalesces_tentative_scalar_array_declarations_before_initialization() {
     assert!(table.is_defined());
     assert!(!table.is_tentative());
     assert_eq!(
-        initialized[0].to_kernel_function().global_arrays()[0].initial_values(),
+        initialized[0].to_kernel_function().global_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(4),
             crate::kernel::int32(5),
@@ -2492,7 +2612,9 @@ fn c0_infers_incomplete_outer_dimension_from_multidimensional_initializer() {
     assert_eq!(values.shape(), Some(&[2, 3][..]));
     assert_eq!(values.incomplete_shape(), None);
     assert_eq!(
-        functions[0].to_kernel_function().global_arrays()[0].initial_values(),
+        functions[0].to_kernel_function().global_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(1),
             crate::kernel::int32(2),
@@ -2525,7 +2647,9 @@ fn c0_infers_incomplete_outer_dimension_for_static_multidimensional_initializer(
     assert_eq!(values.shape(), Some(&[2, 3][..]));
     assert_eq!(values.incomplete_shape(), None);
     assert_eq!(
-        functions[0].to_kernel_function().global_arrays()[0].initial_values(),
+        functions[0].to_kernel_function().global_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(1),
             crate::kernel::int32(2),
@@ -2580,7 +2704,9 @@ fn c0_resolves_incomplete_file_static_scalar_arrays_within_one_translation_unit(
     assert!(values.is_defined());
     assert!(!values.is_tentative());
     assert_eq!(
-        functions[0].to_kernel_function().global_arrays()[0].initial_values(),
+        functions[0].to_kernel_function().global_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(2),
             crate::kernel::int32(6),
@@ -2609,7 +2735,9 @@ fn c0_resolves_incomplete_tentative_scalar_arrays_to_complete_definitions() {
     assert!(values.is_defined());
     assert!(values.is_tentative());
     assert_eq!(
-        functions[0].to_kernel_function().global_arrays()[0].initial_values(),
+        functions[0].to_kernel_function().global_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(0),
             crate::kernel::int32(0),
@@ -2872,7 +3000,7 @@ fn c0_collects_static_scalar_arrays_with_stable_kernel_names() {
     assert_eq!(array.element_type(), syntax::C0Type::Int32);
     assert_eq!(array.length(), 3);
     assert_eq!(
-        array.initializer(),
+        array.initializer().dense_values(),
         &[
             syntax::C0Expression::Int32Literal(5),
             syntax::C0Expression::Int32Literal(7),
@@ -2882,7 +3010,9 @@ fn c0_collects_static_scalar_arrays_with_stable_kernel_names() {
     let kernel_function = function.to_kernel_function();
     assert_eq!(kernel_function.static_arrays().len(), 1);
     assert_eq!(
-        kernel_function.static_arrays()[0].initial_values(),
+        kernel_function.static_arrays()[0]
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(5),
             crate::kernel::int32(7),
@@ -2940,7 +3070,8 @@ fn c0_folds_integer_constant_static_initializers() {
             .values()
             .find(|array| array.name() == "values")
             .expect("folded static array")
-            .initializer(),
+            .initializer()
+            .dense_values(),
         &[
             syntax::C0Expression::Int32Literal(2),
             syntax::C0Expression::Int32Literal(4),
@@ -2977,7 +3108,10 @@ fn c0_folds_comparison_logical_conditional_and_cast_static_initializers() {
         .find(|function| function.name() == "read")
         .expect("reader function");
     assert_eq!(
-        function.global_arrays()["values"].initializer(),
+        function.global_arrays()["values"]
+            .initializer()
+            .map(|initializer| initializer.dense_values())
+            .as_deref(),
         Some(
             &[
                 syntax::C0Expression::Int32Literal(1),
@@ -3062,7 +3196,10 @@ fn c0_collects_designated_static_scalar_array_initializers() {
 
     let function = &functions[0];
     assert_eq!(
-        function.global_arrays()["shared"].initializer(),
+        function.global_arrays()["shared"]
+            .initializer()
+            .map(|initializer| initializer.dense_values())
+            .as_deref(),
         Some(
             [
                 syntax::C0Expression::Int32Literal(0),
@@ -3080,7 +3217,8 @@ fn c0_collects_designated_static_scalar_array_initializers() {
             .values()
             .next()
             .expect("designated static local array metadata")
-            .initializer(),
+            .initializer()
+            .dense_values(),
         &[
             syntax::C0Expression::Int32Literal(0),
             syntax::C0Expression::Int32Literal(2),
@@ -3096,7 +3234,8 @@ fn c0_collects_designated_static_scalar_array_initializers() {
             .iter()
             .find(|array| array.name() == "shared")
             .expect("kernel designated global array metadata")
-            .initial_values(),
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(0),
             crate::kernel::int32(3),
@@ -3111,7 +3250,8 @@ fn c0_collects_designated_static_scalar_array_initializers() {
             .iter()
             .next()
             .expect("kernel designated static local array metadata")
-            .initial_values(),
+            .initial_values()
+            .dense_values(),
         &[
             crate::kernel::int32(0),
             crate::kernel::int32(2),

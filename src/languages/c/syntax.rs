@@ -401,8 +401,9 @@ impl C0Global {
 /// A file-scope scalar array collected from one C translation unit.
 /// `initializer` is absent for an `extern` declaration or an incomplete
 /// tentative definition, and present for the definition that supplies storage.
-/// Missing elements in a complete definition are represented explicitly as
-/// zero values. A definition without an initializer is marked tentative so
+/// Missing elements in a complete definition are the zero initializer, held
+/// implicitly by the [`C0ArrayInitializer`] rather than one by one. A
+/// definition without an initializer is marked tentative so
 /// repeated declarations can be coalesced before a real initializer is
 /// selected.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -413,7 +414,7 @@ pub struct C0GlobalArray {
     length: Option<u32>,
     shape: Option<Vec<u32>>,
     incomplete_shape: Option<Vec<u32>>,
-    initializer: Option<Vec<C0Expression>>,
+    initializer: Option<C0ArrayInitializer>,
     tentative: bool,
     file_static: bool,
     constant: bool,
@@ -450,10 +451,15 @@ impl C0GlobalArray {
         kernel_name: String,
         element_type: C0Type,
         shape: Vec<u32>,
-        initializer: Vec<C0Expression>,
+        initializer: C0ArrayInitializer,
         file_static: bool,
     ) -> Self {
         let length = array_shape_element_count(&shape).expect("validated global array shape");
+        assert_eq!(
+            initializer.length(),
+            length,
+            "a global array initializer covers its declared length"
+        );
         Self {
             name,
             kernel_name,
@@ -564,13 +570,13 @@ impl C0GlobalArray {
         self
     }
 
-    pub fn initializer(&self) -> Option<&[C0Expression]> {
-        self.initializer.as_deref()
+    pub fn initializer(&self) -> Option<&C0ArrayInitializer> {
+        self.initializer.as_ref()
     }
 
     fn to_kernel_global_array_with_values(
         &self,
-        values: Vec<crate::kernel::CValue>,
+        values: crate::kernel::CArrayContents,
     ) -> crate::kernel::CGlobalArray {
         crate::kernel::CGlobalArray::new_with_kernel_name(
             self.name.clone(),
@@ -1129,7 +1135,7 @@ pub struct C0StaticArray {
     element_type: C0Type,
     length: u32,
     shape: Vec<u32>,
-    initializer: Vec<C0Expression>,
+    initializer: C0ArrayInitializer,
     constant: bool,
 }
 
@@ -1139,8 +1145,13 @@ impl C0StaticArray {
         kernel_name: String,
         element_type: C0Type,
         length: u32,
-        initializer: Vec<C0Expression>,
+        initializer: C0ArrayInitializer,
     ) -> Self {
+        assert_eq!(
+            initializer.length(),
+            length,
+            "a static array initializer covers its declared length"
+        );
         Self {
             source_name,
             kernel_name,
@@ -1182,7 +1193,7 @@ impl C0StaticArray {
             .expect("validated static array element type")
     }
 
-    pub fn initializer(&self) -> &[C0Expression] {
+    pub fn initializer(&self) -> &C0ArrayInitializer {
         &self.initializer
     }
 
@@ -1197,7 +1208,7 @@ impl C0StaticArray {
 
     fn to_kernel_static_array_with_values(
         &self,
-        values: Vec<crate::kernel::CValue>,
+        values: crate::kernel::CArrayContents,
     ) -> crate::kernel::CStaticArray {
         crate::kernel::CStaticArray::new(
             self.source_name.clone(),
@@ -1333,6 +1344,131 @@ fn initializer_integer_bits(initializer: &C0Expression) -> Option<u32> {
         C0Expression::UInt8Literal(value) => Some(u32::from(*value)),
         C0Expression::UInt32Literal(value) => Some(*value),
         _ => None,
+    }
+}
+
+/// A static-storage scalar array's initializer as written: the elements it
+/// names, by flattened index, ascending, over the element type's zero
+/// initializer for every other of the array's `length` elements.
+///
+/// Held once and shared, so `int32 buf[1000000];` or `int32 t[1000] = {1};`
+/// costs what its initializer wrote, not its declared length, however often
+/// the declaration is copied, compared or lowered. An element whose written
+/// value is exactly the zero initializer is not listed, so two initializers
+/// are equal exactly when every element is spelled the same.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct C0ArrayInitializer {
+    length: u32,
+    zero: C0Expression,
+    elements: std::sync::Arc<[(u32, C0Expression)]>,
+}
+
+impl C0ArrayInitializer {
+    /// `length` elements of `element_type`, each the zero initializer except
+    /// the listed ones, whose indices are ascending, distinct and in bounds.
+    fn new(
+        length: u32,
+        element_type: C0Type,
+        elements: impl IntoIterator<Item = (u32, C0Expression)>,
+    ) -> Self {
+        let zero = zero_initializer(element_type);
+        let elements = elements
+            .into_iter()
+            .filter(|(_, value)| *value != zero)
+            .collect::<std::sync::Arc<[_]>>();
+        assert!(
+            elements.windows(2).all(|pair| pair[0].0 < pair[1].0)
+                && elements.last().is_none_or(|(index, _)| *index < length),
+            "an array initializer lists distinct in-bounds elements in ascending order"
+        );
+        Self {
+            length,
+            zero,
+            elements,
+        }
+    }
+
+    /// Every element the zero initializer.
+    fn zeroed(length: u32, element_type: C0Type) -> Self {
+        Self::new(length, element_type, [])
+    }
+
+    /// One written value per element, index order.
+    fn dense(element_type: C0Type, values: Vec<C0Expression>) -> Self {
+        let length = u32::try_from(values.len()).expect("validated array initializer length");
+        Self::new(
+            length,
+            element_type,
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| (index as u32, value)),
+        )
+    }
+
+    pub fn length(&self) -> u32 {
+        self.length
+    }
+
+    /// The value of every element the initializer does not list.
+    pub fn zero(&self) -> &C0Expression {
+        &self.zero
+    }
+
+    /// The listed elements, ascending by index.
+    pub fn elements(&self) -> &[(u32, C0Expression)] {
+        &self.elements
+    }
+
+    /// Whether some element is the zero initializer.
+    pub fn has_zero_elements(&self) -> bool {
+        self.elements.len() < self.length as usize
+    }
+
+    /// Every distinct spelling of an element: the zero initializer when
+    /// some element is it, then each listed value.
+    pub fn values(&self) -> impl Iterator<Item = &C0Expression> + '_ {
+        self.has_zero_elements()
+            .then_some(&self.zero)
+            .into_iter()
+            .chain(self.elements.iter().map(|(_, value)| value))
+    }
+
+    /// Every element in index order, one per element.
+    #[cfg(test)]
+    pub(crate) fn dense_values(&self) -> Vec<C0Expression> {
+        let mut values = vec![self.zero.clone(); self.length as usize];
+        for (index, value) in self.elements.iter() {
+            values[*index as usize] = value.clone();
+        }
+        values
+    }
+
+    /// The kernel's contents: each element lowered by `lower`, which is
+    /// asked once for the zero initializer when some element is it and once
+    /// per listed element, or `None` when one does not lower. When every
+    /// element is listed, the first one's value stands as the default.
+    fn to_kernel_contents(
+        &self,
+        mut lower: impl FnMut(&C0Expression) -> Option<crate::kernel::CValue>,
+    ) -> Option<crate::kernel::CArrayContents> {
+        let default = match (self.has_zero_elements(), self.elements.first()) {
+            (false, Some((_, first))) => lower(first)?,
+            _ => lower(&self.zero)?,
+        };
+        let elements = self
+            .elements
+            .iter()
+            .map(|(index, value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                Some((*index, lower(value)?))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(crate::kernel::CArrayContents::new(
+            self.length,
+            default,
+            elements,
+        ))
     }
 }
 
@@ -2948,7 +3084,7 @@ impl C0Function {
             .filter(|array| array.element_type().is_pointer())
         {
             if let Some(initializer) = array.initializer() {
-                for value in initializer {
+                for value in initializer.values() {
                     self.validate_static_pointer_initializer(array.element_type(), false, value)?;
                 }
             }
@@ -2967,7 +3103,7 @@ impl C0Function {
             .values()
             .filter(|array| array.element_type().is_pointer())
         {
-            for value in array.initializer() {
+            for value in array.initializer().values() {
                 self.validate_static_pointer_initializer(array.element_type(), false, value)?;
             }
         }
@@ -2987,26 +3123,18 @@ impl C0Function {
     }
 
     fn to_kernel_global_array(&self, array: &C0GlobalArray) -> Option<crate::kernel::CGlobalArray> {
-        let values = array
-            .initializer()?
-            .iter()
-            .map(|initializer| {
-                self.static_address_initializer_value(array.element_type(), false, initializer)
-                    .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let values = array.initializer()?.to_kernel_contents(|initializer| {
+            self.static_address_initializer_value(array.element_type(), false, initializer)
+                .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
+        })?;
         Some(array.to_kernel_global_array_with_values(values))
     }
 
     fn to_kernel_static_array(&self, array: &C0StaticArray) -> Option<crate::kernel::CStaticArray> {
-        let values = array
-            .initializer()
-            .iter()
-            .map(|initializer| {
-                self.static_address_initializer_value(array.element_type(), false, initializer)
-                    .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
-            })
-            .collect::<Option<Vec<_>>>()?;
+        let values = array.initializer().to_kernel_contents(|initializer| {
+            self.static_address_initializer_value(array.element_type(), false, initializer)
+                .or_else(|| kernel_integer_literal_value(array.element_type(), initializer))
+        })?;
         Some(array.to_kernel_static_array_with_values(values))
     }
 
@@ -8515,7 +8643,8 @@ impl Parser {
                                 "inferred file-scope array `{name}` requires a non-empty initializer"
                             )));
                         }
-                        inferred_initializer = Some(initializer);
+                        inferred_initializer =
+                            Some(C0ArrayInitializer::dense(parsed_type.c_type, initializer));
                         Some(GlobalArrayLength::Complete(vec![length]))
                     } else {
                         self.position += 1;
@@ -8574,7 +8703,7 @@ impl Parser {
                         } else if is_extern {
                             None
                         } else {
-                            Some(vec![zero_initializer(parsed_type.c_type); length as usize])
+                            Some(C0ArrayInitializer::zeroed(length, parsed_type.c_type))
                         };
                         let tentative = !has_initializer && !is_extern;
                         self.register_global_array_declaration(
@@ -8804,10 +8933,10 @@ impl Parser {
         name: &str,
         element_type: C0Type,
         inner_shape: &[u32],
-    ) -> Result<(Vec<u32>, Vec<C0Expression>), C0SyntaxError> {
+    ) -> Result<(Vec<u32>, C0ArrayInitializer), C0SyntaxError> {
         self.expect(Token::LBrace)?;
-        let zero = zero_initializer(element_type);
         let mut values = Vec::new();
+        let mut next = 0u32;
         let mut outer_length = 0u32;
         if self.peek() == Some(&Token::RBrace) {
             self.position += 1;
@@ -8822,7 +8951,13 @@ impl Parser {
                     inner_shape.len()
                 )));
             }
-            self.parse_array_initializer_level(name, inner_shape, 0, &mut values, &zero)?;
+            self.parse_sparse_array_initializer_level(
+                name,
+                inner_shape,
+                0,
+                &mut values,
+                &mut next,
+            )?;
             outer_length = outer_length.checked_add(1).ok_or_else(|| {
                 self.error_here(format!(
                     "inferred file-scope multidimensional array `{name}` has too many initializer rows"
@@ -8853,12 +8988,13 @@ impl Parser {
         let mut shape = Vec::with_capacity(inner_shape.len() + 1);
         shape.push(outer_length);
         shape.extend_from_slice(inner_shape);
-        let initializer = values
-            .into_iter()
-            .map(|value| {
-                normalize_static_initializer(self, element_type, false, &value, "global", false)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let length = array_shape_element_count(&shape).ok_or_else(|| {
+            self.error_here(format!(
+                "inferred file-scope multidimensional array `{name}` dimensions are too large"
+            ))
+        })?;
+        let initializer =
+            self.normalized_array_initializer(element_type, length, values, "global", false)?;
         Ok((shape, initializer))
     }
 
@@ -8960,21 +9096,44 @@ impl Parser {
         name: &str,
         element_type: C0Type,
         shape: &[u32],
-    ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         let length = array_shape_element_count(shape).expect("validated global array shape");
         if shape.len() == 1 {
             self.parse_scalar_array_initializer(name, element_type, length, false)
         } else {
-            let zero = zero_initializer(element_type);
             let mut values = Vec::new();
-            self.parse_array_initializer_level(name, shape, 0, &mut values, &zero)?;
-            values
-                .into_iter()
-                .map(|value| {
-                    normalize_static_initializer(self, element_type, false, &value, "global", false)
-                })
-                .collect()
+            let mut next = 0u32;
+            self.parse_sparse_array_initializer_level(name, shape, 0, &mut values, &mut next)?;
+            self.normalized_array_initializer(element_type, length, values, "global", false)
         }
+    }
+
+    /// The initializer of `length` elements of `element_type` whose written
+    /// elements are `values`, ascending by index, each normalized as a
+    /// static initializer of `storage`.
+    fn normalized_array_initializer(
+        &self,
+        element_type: C0Type,
+        length: u32,
+        values: Vec<(u32, C0Expression)>,
+        storage: &str,
+        static_local: bool,
+    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
+        let values = values
+            .into_iter()
+            .map(|(index, value)| {
+                normalize_static_initializer(
+                    self,
+                    element_type,
+                    false,
+                    &value,
+                    storage,
+                    static_local,
+                )
+                .map(|value| (index, value))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(C0ArrayInitializer::new(length, element_type, values))
     }
 
     fn parse_scalar_array_initializer(
@@ -8983,16 +9142,14 @@ impl Parser {
         element_type: C0Type,
         length: u32,
         static_local: bool,
-    ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         let context = if static_local {
             "static local scalar array"
         } else {
             "file-scope scalar array"
         };
         self.expect(Token::LBrace)?;
-        let zero = zero_initializer(element_type);
-        let mut values = vec![zero; length as usize];
-        let mut initialized = BTreeSet::new();
+        let mut values = BTreeMap::new();
         let mut next_element_index = 0u32;
         if self.peek() != Some(&Token::RBrace) {
             loop {
@@ -9016,7 +9173,7 @@ impl Parser {
                         .expect("validated scalar array initializer index");
                     index
                 };
-                if !initialized.insert(element_index) {
+                if values.contains_key(&element_index) {
                     return Err(self.error_here(format!(
                         "duplicate designator for {context} `{name}[{element_index}]`"
                     )));
@@ -9041,7 +9198,7 @@ impl Parser {
                         false,
                     )?
                 };
-                values[element_index as usize] = value;
+                values.insert(element_index, value);
                 match self.peek() {
                     Some(Token::Comma) => {
                         self.position += 1;
@@ -9065,7 +9222,7 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        Ok(values)
+        Ok(C0ArrayInitializer::new(length, element_type, values))
     }
 
     fn parse_scalar_array_designator(
@@ -11382,6 +11539,8 @@ impl Parser {
         Ok(balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip))
     }
 
+    /// One brace level of a nested array initializer, appended to `values`
+    /// with every element it leaves out as `zero`.
     fn parse_array_initializer_level(
         &mut self,
         name: &str,
@@ -11389,6 +11548,36 @@ impl Parser {
         depth: usize,
         values: &mut Vec<C0Expression>,
         zero: &C0Expression,
+    ) -> Result<(), C0SyntaxError> {
+        let mut next = u32::try_from(values.len()).expect("validated array initializer length");
+        let mut written = Vec::new();
+        self.parse_sparse_array_initializer_level(
+            name,
+            dimensions,
+            depth,
+            &mut written,
+            &mut next,
+        )?;
+        for (index, value) in written {
+            values.resize(index as usize, zero.clone());
+            values.push(value);
+        }
+        values.resize(next as usize, zero.clone());
+        Ok(())
+    }
+
+    /// One brace level of a nested array initializer whose first element is
+    /// flattened element `next`: each written element is appended to
+    /// `values` with its flattened index, and `next` is left past the
+    /// level's last element, written or not, so what the level leaves out
+    /// costs nothing.
+    fn parse_sparse_array_initializer_level(
+        &mut self,
+        name: &str,
+        dimensions: &[u32],
+        depth: usize,
+        values: &mut Vec<(u32, C0Expression)>,
+        next: &mut u32,
     ) -> Result<(), C0SyntaxError> {
         let child_width = dimensions[depth + 1..]
             .iter()
@@ -11399,7 +11588,7 @@ impl Parser {
                     .expect("validated array shape has a representable width")
             });
         let child_count = dimensions[depth];
-        let start = values.len();
+        let start = *next;
         self.expect(Token::LBrace)?;
         let mut children = 0u32;
         if self.peek() != Some(&Token::RBrace) {
@@ -11409,7 +11598,8 @@ impl Parser {
                         .error_here(format!("too many initializers for `{name}[{child_count}]`")));
                 }
                 if depth + 1 == dimensions.len() {
-                    values.push(self.parse_expression()?);
+                    values.push((*next, self.parse_expression()?));
+                    *next += 1;
                 } else {
                     if self.peek() != Some(&Token::LBrace) {
                         return Err(self.error_here(format!(
@@ -11417,7 +11607,13 @@ impl Parser {
                             dimensions.len() - depth - 1
                         )));
                     }
-                    self.parse_array_initializer_level(name, dimensions, depth + 1, values, zero)?;
+                    self.parse_sparse_array_initializer_level(
+                        name,
+                        dimensions,
+                        depth + 1,
+                        values,
+                        next,
+                    )?;
                 }
                 children += 1;
                 match self.peek() {
@@ -11444,13 +11640,12 @@ impl Parser {
         }
         self.expect(Token::RBrace)?;
 
-        let present = (values.len() - start) as u32;
         let expected = child_count
             .checked_mul(child_width)
             .expect("validated array shape has a representable length");
-        for _ in present..expected {
-            values.push(zero.clone());
-        }
+        *next = start
+            .checked_add(expected)
+            .expect("validated array shape has a representable length");
         Ok(())
     }
 
@@ -12938,7 +13133,7 @@ impl Parser {
                                 )?
                             }
                         } else {
-                            vec![zero_initializer(parsed_type.c_type); length as usize]
+                            C0ArrayInitializer::zeroed(length, parsed_type.c_type)
                         };
                         (shape, initializer)
                     }
@@ -12957,7 +13152,10 @@ impl Parser {
                             let length = u32::try_from(initializer.len())
                                 .ok().filter(|length| *length > 0)
                                 .ok_or_else(|| self.error_here("inferred static array requires a non-empty bounded initializer"))?;
-                            (vec![length], initializer)
+                            (
+                                vec![length],
+                                C0ArrayInitializer::dense(parsed_type.c_type, initializer),
+                            )
                         } else {
                             self.parse_inferred_multidimensional_global_array_initializer(
                                 &source_name,
@@ -13043,7 +13241,7 @@ impl Parser {
         name: &str,
         element_type: C0Type,
         length: u32,
-    ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+    ) -> Result<C0ArrayInitializer, C0SyntaxError> {
         self.parse_scalar_array_initializer(name, element_type, length, true)
     }
 

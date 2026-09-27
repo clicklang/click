@@ -1186,6 +1186,14 @@ fn symbolic_index_run_load(
         .candidate_runs(&AliasCandidates::of_block(&pointer.block))
         .find(|run| {
             crate::instrumentation::record_deterministic_work(1);
+            // A constant run's slots are not loads of its source, which is
+            // empty; its slots are read as the equal cells they stand for.
+            if matches!(
+                run.value_mode(),
+                crate::kernel::primitives::RunValueMode::Constant(_)
+            ) {
+                return false;
+            }
             let RunAccess::Scaled {
                 index,
                 scale,

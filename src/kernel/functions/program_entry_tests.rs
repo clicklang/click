@@ -273,7 +273,7 @@ fn function_with_global_array(element_type: CType, length: u32) -> CFunction {
         "buf",
         element_type,
         length,
-        vec![zero_element(element_type); length as usize],
+        CArrayContents::new(length, zero_element(element_type), []),
     )])
 }
 
@@ -475,4 +475,171 @@ fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
              and the stored cell's: {samples:?}"
         );
     }
+}
+
+/// A function over a global `int32 buf[length] = {[2] = 7, [length - 1] = 3}`
+/// (`const` when asked) and a static `uint8 counts[length] = {255}`.
+fn function_with_initialized_arrays(length: u32, constant: bool) -> CFunction {
+    storage_function("main", vec![])
+        .with_global_arrays(vec![
+            CGlobalArray::new_with_kernel_name(
+                "buf",
+                "buf",
+                CType::Int32,
+                length,
+                CArrayContents::new(length, int32(0), [(2, int32(7)), (length - 1, int32(3))]),
+            )
+            .with_constant(constant),
+        ])
+        .with_static_arrays(vec![CStaticArray::new(
+            "counts",
+            "counts",
+            CType::UInt8,
+            length,
+            CArrayContents::new(length, uint8(0), [(0, uint8(255))]),
+        )])
+}
+
+/// Program startup stores an initialized array's contents as one run of its
+/// default with the written elements stored over it, and that leaves exactly
+/// the cells, and the startup permissions, of storing every element one by
+/// one in element order.
+#[test]
+fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
+    for length in [4u32, 5, 64, 65, 300] {
+        let function = function_with_initialized_arrays(length, false);
+        let startup = initialize_c_program_storage([function.clone()]);
+        let mut reference = CMemory::new();
+        let mut per_element = |pointer: Pointer, element_type: CType, contents: &CArrayContents| {
+            reference = reference.clone().with_block_or_read_only(
+                pointer.block.clone(),
+                length * element_type.byte_width(),
+                false,
+            );
+            for index in 0..length {
+                reference = reference.clone().store(
+                    pointer.offset_by_bytes(index * element_type.byte_width()),
+                    contents.value_at(index).clone(),
+                );
+            }
+        };
+        per_element(
+            CMemory::global_pointer("buf"),
+            CType::Int32,
+            function.global_arrays()[0].initial_values(),
+        );
+        per_element(
+            CMemory::static_pointer("main", "counts"),
+            CType::UInt8,
+            function.static_arrays()[0].initial_values(),
+        );
+        assert_eq!(
+            startup.memory().cells.logical(),
+            reference.cells.logical(),
+            "[{length}] holds the per-element cells"
+        );
+        assert!(
+            startup.memory().cells.representation_len() <= 5,
+            "[{length}] is two runs and three written cells"
+        );
+        assert_eq!(
+            startup.resources().facts(),
+            initial_static_resources(&reference, || {}).facts(),
+            "[{length}] partitions its storage as the per-element cells do"
+        );
+    }
+}
+
+/// Program startup, a load of a written element, of an unwritten one, and
+/// a store then a load, cost the same whatever the declared length of the
+/// initialized arrays, and every load yields exactly the initializer's (or
+/// the store's) value. Startup used to store every element one by one, and
+/// partitioning the startup permissions walked every cell.
+#[test]
+fn an_initialized_array_at_startup_costs_the_same_whatever_its_length() {
+    let samples = [8u32, 1_000, 1_000_000].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = function_with_initialized_arrays(length, false);
+        let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialize_c_program_storage([function.clone()])
+        });
+        let buf = CMemory::global_pointer("buf");
+        let counts = CMemory::static_pointer("main", "counts");
+        let element = |index: u32| buf.offset_by_bytes(index * 4);
+        let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
+            let memory = startup.memory();
+            let stored = memory.clone().store(element(5), int32(9));
+            [
+                memory.load(&element(2)),
+                memory.load(&element(5)),
+                memory.load(&element(length - 1)),
+                memory.load(&counts),
+                memory.load(&counts.offset_by_bytes(length - 1)),
+                stored.load(&element(5)),
+                stored.load(&element(6)),
+            ]
+        });
+        let value = CExpressionOutcome::Value;
+        assert_eq!(
+            loads,
+            [
+                value(int32(7)),
+                value(int32(0)),
+                value(int32(3)),
+                value(uint8(255)),
+                value(uint8(0)),
+                value(int32(9)),
+                value(int32(0)),
+            ],
+            "[{length}] reads its initializer"
+        );
+        (
+            length,
+            startup_work,
+            load_work,
+            startup.memory().cells.representation_len(),
+            startup.resources().facts().len(),
+        )
+    });
+    let (_, startup_work, load_work, entries, facts) = samples[0];
+    assert!(
+        samples
+            .iter()
+            .all(|sample| (sample.1, sample.2, sample.3, sample.4)
+                == (startup_work, load_work, entries, facts)),
+        "startup cost depends on the arrays' length (length, startup work, load work, \
+         cell entries, startup permissions): {samples:?}"
+    );
+}
+
+/// An ordinary function's entry knows a `const` array's contents too, and
+/// installs them at the same cost whatever the array's length.
+#[test]
+fn a_constant_array_at_function_entry_costs_the_same_whatever_its_length() {
+    let samples = [8u32, 1_000, 1_000_000].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = function_with_initialized_arrays(length, true);
+        let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialize_c_function_globals(&CState::new(), &function)
+        });
+        let buf = CMemory::global_pointer("buf");
+        assert_eq!(
+            entry.memory().load(&buf.offset_by_bytes(8)),
+            CExpressionOutcome::Value(int32(7)),
+            "[{length}] element 2"
+        );
+        assert_eq!(
+            entry.memory().load(&buf.offset_by_bytes(12)),
+            CExpressionOutcome::Value(int32(0)),
+            "[{length}] element 3"
+        );
+        (length, work, entry.memory().cells.representation_len())
+    });
+    assert!(
+        samples
+            .iter()
+            .all(|sample| (sample.1, sample.2) == (samples[0].1, samples[0].2)),
+        "constant array entry cost depends on its length (length, work, cell entries): \
+         {samples:?}"
+    );
 }

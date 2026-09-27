@@ -2277,7 +2277,7 @@ pub struct CGlobalArray {
     pub(super) kernel_name: String,
     pub(super) element_type: CType,
     pub(super) length: u32,
-    pub(super) initial_values: Vec<CValue>,
+    pub(super) initial_values: CArrayContents,
     pub(super) constant: bool,
 }
 
@@ -2324,8 +2324,121 @@ pub struct CStaticArray {
     pub(super) kernel_name: String,
     pub(super) element_type: CType,
     pub(super) length: u32,
-    pub(super) initial_values: Vec<CValue>,
+    pub(super) initial_values: CArrayContents,
     pub(super) constant: bool,
+}
+
+/// The initial contents of a static-storage scalar array: every element
+/// holds `default` except the few an initializer names, which are listed
+/// ascending by index, each distinct from `default`.
+///
+/// A declaration such as `int32 buf[1000000];` or `int32 t[1000] = {1, 2};`
+/// writes a handful of elements and leaves the rest zero, so the contents
+/// are held as that default and the written elements, shared behind an
+/// `Arc`: storing, cloning, comparing and hashing a declaration costs what
+/// its initializer wrote, not its declared length. The frontend gives the
+/// lowered zero initializer of the element type as the default. The default
+/// is part of the identity, and with it the element list is canonical: an
+/// element equal to the default is never listed, so two contents with one
+/// default are equal exactly when every element holds the same value.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CArrayContents {
+    length: u32,
+    default: CValue,
+    elements: std::sync::Arc<[(u32, CValue)]>,
+}
+
+impl CArrayContents {
+    /// `length` elements holding `default`, except each listed `(index,
+    /// value)`. The indices must be ascending, distinct and below `length`;
+    /// a listed value equal to `default` is dropped.
+    pub fn new(
+        length: u32,
+        default: CValue,
+        elements: impl IntoIterator<Item = (u32, CValue)>,
+    ) -> Self {
+        let elements = elements
+            .into_iter()
+            .filter(|(_, value)| *value != default)
+            .collect::<std::sync::Arc<[_]>>();
+        assert!(
+            elements.windows(2).all(|pair| pair[0].0 < pair[1].0)
+                && elements.last().is_none_or(|(index, _)| *index < length),
+            "array contents list distinct in-bounds elements in ascending order"
+        );
+        Self {
+            length,
+            default,
+            elements,
+        }
+    }
+
+    pub fn length(&self) -> u32 {
+        self.length
+    }
+
+    /// The value of every element the list does not name.
+    pub fn default_value(&self) -> &CValue {
+        &self.default
+    }
+
+    /// The elements holding something other than the default, ascending.
+    pub fn explicit_elements(&self) -> &[(u32, CValue)] {
+        &self.elements
+    }
+
+    /// Whether some element holds the default.
+    pub fn has_default_elements(&self) -> bool {
+        self.elements.len() < self.length as usize
+    }
+
+    /// The value element `index` holds.
+    pub fn value_at(&self, index: u32) -> &CValue {
+        match self
+            .elements
+            .binary_search_by_key(&index, |(element, _)| *element)
+        {
+            Ok(position) => &self.elements[position].1,
+            Err(_) => &self.default,
+        }
+    }
+
+    /// Every distinct way an element is spelled: the default when some
+    /// element holds it, then each listed value.
+    pub fn values(&self) -> impl Iterator<Item = &CValue> + '_ {
+        self.has_default_elements()
+            .then_some(&self.default)
+            .into_iter()
+            .chain(self.elements.iter().map(|(_, value)| value))
+    }
+
+    /// Every element's value in index order, one per element.
+    #[cfg(test)]
+    pub fn dense_values(&self) -> Vec<CValue> {
+        (0..self.length)
+            .map(|index| self.value_at(index).clone())
+            .collect()
+    }
+}
+
+impl From<Vec<CValue>> for CArrayContents {
+    /// One value per element, index order. The last value is the default,
+    /// so a trailing stretch of equal values is not listed.
+    fn from(values: Vec<CValue>) -> Self {
+        let length = u32::try_from(values.len()).expect("array contents length fits in u32");
+        let default = values
+            .last()
+            .cloned()
+            .expect("array contents hold at least one element");
+        Self::new(
+            length,
+            default,
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(index, value)| (index as u32, value)),
+        )
+    }
 }
 
 /// A function-local aggregate with one stable function-qualified block.

@@ -3364,12 +3364,12 @@ fn function_address_taken(function: &CFunction, taken: &mut BTreeSet<String>) {
     let arrays = function
         .global_arrays()
         .iter()
-        .flat_map(|array| &array.initial_values)
+        .flat_map(|array| array.initial_values.values())
         .chain(
             function
                 .static_arrays()
                 .iter()
-                .flat_map(|array| &array.initial_values),
+                .flat_map(|array| array.initial_values.values()),
         );
     let aggregates = function
         .global_aggregates()

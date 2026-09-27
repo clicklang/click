@@ -11985,20 +11985,46 @@ pub(crate) fn initialize_c_program_storage(
 /// Partition physical storage using its initialized cell types. Adjacent
 /// cells of one width form an ordinary typed array range; padding and opaque
 /// union storage remain byte ranges. No cross-width ownership rule is added.
+///
+/// The cells are read as the store holds them: a concrete cell is one span
+/// of its width, and each stretch of a run's live slots is one span of
+/// contiguous cells, so a million-element array initialized as one run
+/// costs its stretches, not its elements.
 fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> ResourceContext {
-    let mut cells_by_block = BTreeMap::<PointerBlock, Vec<(u32, u32)>>::new();
-    for (pointer, value) in memory.cells.iter() {
-        visit();
+    let constant_offset = |pointer: &Pointer| {
         let PointerOffsetTerm::Constant(offset) = pointer.offset else {
             unreachable!("static initializers have constant cell offsets");
         };
-        cells_by_block
+        u32::try_from(offset).expect("static cell offset")
+    };
+    // Each block's initialized spans: start, end and cell width.
+    let mut spans_by_block = BTreeMap::<PointerBlock, Vec<(u32, u32, u32)>>::new();
+    for (pointer, value) in memory.cells.concrete().iter() {
+        visit();
+        let offset = constant_offset(pointer);
+        spans_by_block
             .entry(pointer.block.clone())
             .or_default()
-            .push((
-                u32::try_from(offset).expect("static cell offset"),
-                value.byte_width(),
-            ));
+            .push((offset, offset + value.byte_width(), value.byte_width()));
+    }
+    for run in memory.cells.runs() {
+        let spans = spans_by_block.entry(run.base().block.clone()).or_default();
+        let width = run.value_width();
+        for (low, high) in run.holes().gap_intervals(run.count()) {
+            visit();
+            if run.element_width() == width {
+                let start = constant_offset(&run.slot_pointer(low));
+                spans.push((start, start + (high - low) * width, width));
+            } else {
+                for index in low..high {
+                    let start = constant_offset(&run.slot_pointer(index));
+                    spans.push((start, start + width, width));
+                }
+            }
+        }
+    }
+    for spans in spans_by_block.values_mut() {
+        spans.sort_unstable();
     }
     let mut resources = ResourceContext::default();
     for (identity, block) in memory.blocks.iter() {
@@ -12006,9 +12032,9 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
         let size = block.size().as_const().expect("static block size");
         let mut ranges = Vec::<(u32, u32, u32)>::new();
         let mut cursor = 0;
-        for &(offset, width) in cells_by_block.get(identity).into_iter().flatten() {
+        for &(offset, span_end, width) in spans_by_block.get(identity).into_iter().flatten() {
             visit();
-            assert!(offset >= cursor && offset.checked_add(width).is_some_and(|end| end <= size));
+            assert!(offset >= cursor && span_end <= size);
             if offset > cursor {
                 ranges.push((cursor, offset, 1));
             }
@@ -12016,11 +12042,11 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
                 && *end == offset
                 && *previous_width == width
             {
-                *end = offset + width;
+                *end = span_end;
             } else {
-                ranges.push((offset, offset + width, width));
+                ranges.push((offset, span_end, width));
             }
-            cursor = offset + width;
+            cursor = span_end;
         }
         if cursor < size {
             ranges.push((cursor, size, 1));
@@ -12172,18 +12198,12 @@ fn initialize_c_function_globals_owned(
                 global_array.is_constant(),
             ));
             if initialize_missing_storage || global_array.is_constant() {
-                for (index, value) in global_array.initial_values().iter().enumerate() {
-                    state.set_memory(
-                        state.memory.clone().store(
-                            slot.offset_by_bytes(
-                                u32::try_from(index)
-                                    .expect("validated C global array length")
-                                    .saturating_mul(global_array.element_type().byte_width()),
-                            ),
-                            value.clone(),
-                        ),
-                    );
-                }
+                state.set_memory(store_array_contents(
+                    state.memory.clone(),
+                    &slot,
+                    global_array.element_type(),
+                    global_array.initial_values(),
+                ));
             } else {
                 state.set_memory(materialize_symbolic_array(
                     state.memory.clone(),
@@ -12401,18 +12421,12 @@ fn initialize_c_function_globals_owned(
                 static_array.is_constant(),
             ));
             if initialize_missing_storage || static_array.is_constant() {
-                for (index, value) in static_array.initial_values().iter().enumerate() {
-                    state.set_memory(
-                        state.memory.clone().store(
-                            slot.offset_by_bytes(
-                                u32::try_from(index)
-                                    .expect("validated C static local array length")
-                                    .saturating_mul(static_array.element_type().byte_width()),
-                            ),
-                            value.clone(),
-                        ),
-                    );
-                }
+                state.set_memory(store_array_contents(
+                    state.memory.clone(),
+                    &slot,
+                    static_array.element_type(),
+                    static_array.initial_values(),
+                ));
             } else {
                 state.set_memory(materialize_symbolic_array(
                     state.memory.clone(),
@@ -12597,6 +12611,44 @@ fn symbolic_memory_base(memory: &CMemory, pointer: &Pointer) -> CMemory {
         .and_then(|block| block.size().as_const())
         .expect("symbolic static-storage block has a constant size");
     CMemory::new().with_block_without_derivation(pointer.block.clone(), size)
+}
+
+/// Stores `contents` into the just-declared array storage at `base`, as a
+/// store of each element's value in element order leaves it, at a cost of
+/// the elements the initializer wrote rather than the declared length: the
+/// elements holding the default are one constant [`CellRun`], and the
+/// written ones are stored over it. Where a run is refused
+/// ([`CMemory::with_constant_run`]) every element is stored one by one.
+///
+/// [`CellRun`]: crate::kernel::primitives::CellRun
+fn store_array_contents(
+    mut memory: CMemory,
+    base: &Pointer,
+    element_type: CType,
+    contents: &crate::kernel::CArrayContents,
+) -> CMemory {
+    let element =
+        |index: u32| base.offset_by_bytes(index.saturating_mul(element_type.byte_width()));
+    if contents.has_default_elements() {
+        match memory.with_constant_run(
+            base.clone(),
+            element_type,
+            contents.length(),
+            contents.default_value().clone(),
+        ) {
+            Ok(mut stored) => {
+                for (index, value) in contents.explicit_elements() {
+                    stored = stored.store(element(*index), value.clone());
+                }
+                return stored;
+            }
+            Err(unchanged) => memory = unchanged,
+        }
+    }
+    for index in 0..contents.length() {
+        memory = memory.store(element(index), contents.value_at(index).clone());
+    }
+    memory
 }
 
 /// Every element of a symbolic static-storage array at `base` holds its

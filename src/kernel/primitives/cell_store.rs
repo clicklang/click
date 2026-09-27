@@ -18,6 +18,13 @@
 //! rather than a pointer into the run's own block. The mode is part of the
 //! run's identity.
 //!
+//! Static storage whose contents the function does know (program startup,
+//! or a `const` array) used to be stored element by element too, so
+//! `int32 buf[1000000];` cost a million stores before `main` began. The
+//! elements its initializer leaves at one value are a run whose every slot
+//! holds that value ([`RunValueMode::Constant`]), with the written elements
+//! stored over it.
+//!
 //! **Canonical form.** For each run, a slot is either *live* — it holds the
 //! run's value and the concrete map has no entry at its pointer — or a
 //! *hole*, whose pointer the concrete map may or may not hold, and never with
@@ -227,7 +234,7 @@ impl IndexIntervals {
 /// How a run spells the load of each element in its source as the value the
 /// element's cell holds. Part of the run's identity: two runs over the same
 /// slots whose modes differ hold different values.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum RunValueMode {
     /// The value a seeded range stores: [`cell_run_value`] of the element's
     /// canonical load.
@@ -241,6 +248,13 @@ pub(crate) enum RunValueMode {
     /// ([`crate::kernel::eval::declare_symbolic_array_access_widths`]) rather
     /// than recorded as the element is named.
     SymbolicStorage,
+    /// Every slot holds this one value, whatever the source: the known
+    /// initial contents of static storage whose initializer leaves the
+    /// elements zero (or another constant), stored as C would store them.
+    /// The source is the empty memory, and the value is part of the mode,
+    /// so two constant runs over the same slots are one run exactly when
+    /// they hold one value.
+    Constant(CValue),
 }
 
 /// `count` seeded cells at `base`, `base + width`, …: the cell at element `i`
@@ -299,6 +313,12 @@ impl CellRun {
         mode: RunValueMode,
         holes: IndexIntervals,
     ) -> Self {
+        // A constant run's value is its mode's, so it keeps no cache.
+        let cached = if count <= CACHED_RUN_VALUES && !matches!(mode, RunValueMode::Constant(_)) {
+            count
+        } else {
+            0
+        };
         Self {
             base,
             element_width,
@@ -307,9 +327,7 @@ impl CellRun {
             source,
             mode,
             holes,
-            values: (0..if count <= CACHED_RUN_VALUES { count } else { 0 })
-                .map(|_| OnceLock::new())
-                .collect(),
+            values: (0..cached).map(|_| OnceLock::new()).collect(),
         }
     }
 
@@ -323,8 +341,8 @@ impl CellRun {
     }
 
     /// How the run spells each element's value.
-    pub(crate) fn value_mode(&self) -> RunValueMode {
-        self.mode
+    pub(crate) fn value_mode(&self) -> &RunValueMode {
+        &self.mode
     }
 
     /// The run's place in a store's index: see [`RunKey`].
@@ -337,7 +355,7 @@ impl CellRun {
                 element_type: self.element_type,
                 count: self.count,
                 source: RunSource(self.source.clone()),
-                mode: self.mode,
+                mode: self.mode.clone(),
             },
         }
     }
@@ -463,7 +481,7 @@ impl CellRun {
     /// typed as the element and spelled as the run's mode says.
     fn named_value(&self, index: u32) -> CValue {
         let pointer = self.slot_pointer(index);
-        match self.mode {
+        match &self.mode {
             RunValueMode::Load => {
                 let load =
                     crate::kernel::canonical_form_of_load(self.source.clone(), pointer.clone());
@@ -476,6 +494,7 @@ impl CellRun {
                 false,
             )
             .expect("a symbolic storage run holds only element types with a value"),
+            RunValueMode::Constant(value) => value.clone(),
         }
     }
 
@@ -520,7 +539,7 @@ impl CellRun {
         CType,
         u32,
         &SharedCMemory,
-        RunValueMode,
+        &RunValueMode,
         &IndexIntervals,
     ) {
         (
@@ -529,7 +548,7 @@ impl CellRun {
             self.element_type,
             self.count,
             &self.source,
-            self.mode,
+            &self.mode,
             &self.holes,
         )
     }
@@ -2393,22 +2412,34 @@ mod tests {
                             2 => constant(&other, (stream.next(3) * 4) as i64),
                             _ => at(&symbolic, symbolic_bases[stream.next(3) as usize].clone()),
                         };
-                        // A third of the runs spell their values as a
-                        // symbolic static array's entry does: the same slots
-                        // under another mode are another run.
-                        let seeded = if stream.next(3) == 0 {
-                            let plain = run(base, width, count, source);
+                        // A quarter of the runs spell their values as a
+                        // symbolic static array's entry does, and a quarter
+                        // hold one of two constants, as initialized static
+                        // storage does: the same slots under another mode,
+                        // or another constant, are another run.
+                        let plain = run(base, width, count, source);
+                        let with_mode = |mode: RunValueMode| {
                             CellRun::new_with_mode(
                                 plain.base().clone(),
                                 plain.element_width(),
                                 plain.element_type(),
                                 plain.count(),
                                 plain.source().clone(),
-                                RunValueMode::SymbolicStorage,
+                                mode,
                                 IndexIntervals::default(),
                             )
-                        } else {
-                            run(base, width, count, source)
+                        };
+                        let seeded = match stream.next(4) {
+                            0 => with_mode(RunValueMode::SymbolicStorage),
+                            1 => {
+                                let constant = Bitvector32Term::Constant(stream.next(2) as u32);
+                                with_mode(RunValueMode::Constant(if width == 1 {
+                                    CValue::UInt8(constant)
+                                } else {
+                                    CValue::Int32(constant)
+                                }))
+                            }
+                            _ => plain.clone(),
                         };
                         runs_seen.push(seeded.clone());
                         seed(&mut store, &mut model, seeded);

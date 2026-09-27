@@ -192,7 +192,7 @@ impl CGlobalArray {
         kernel_name: impl Into<String>,
         element_type: CType,
         length: u32,
-        initial_values: Vec<CValue>,
+        initial_values: impl Into<CArrayContents>,
     ) -> Self {
         assert!(
             matches!(
@@ -209,14 +209,15 @@ impl CGlobalArray {
             "C global arrays require supported scalar or pointer elements"
         );
         assert!(length > 0, "C global arrays must have positive length");
+        let initial_values = initial_values.into();
         assert_eq!(
-            initial_values.len(),
-            length as usize,
+            initial_values.length(),
+            length,
             "C global array initializer must cover its declared length"
         );
         assert!(
             initial_values
-                .iter()
+                .values()
                 .all(|value| value.c_type() == element_type),
             "C global array initializers must match their declared element type"
         );
@@ -246,7 +247,7 @@ impl CGlobalArray {
         self.length
     }
 
-    pub fn initial_values(&self) -> &[CValue] {
+    pub fn initial_values(&self) -> &CArrayContents {
         &self.initial_values
     }
 
@@ -488,7 +489,7 @@ impl CStaticArray {
         kernel_name: impl Into<String>,
         element_type: CType,
         length: u32,
-        initial_values: Vec<CValue>,
+        initial_values: impl Into<CArrayContents>,
     ) -> Self {
         assert!(
             matches!(
@@ -508,14 +509,15 @@ impl CStaticArray {
             length > 0,
             "C static local arrays must have positive length"
         );
+        let initial_values = initial_values.into();
         assert_eq!(
-            initial_values.len(),
-            length as usize,
+            initial_values.length(),
+            length,
             "C static local array initializer must cover its declared length"
         );
         assert!(
             initial_values
-                .iter()
+                .values()
                 .all(|value| value.c_type() == element_type),
             "C static local array initializers must match their declared element type"
         );
@@ -545,7 +547,7 @@ impl CStaticArray {
         self.length
     }
 
-    pub fn initial_values(&self) -> &[CValue] {
+    pub fn initial_values(&self) -> &CArrayContents {
         &self.initial_values
     }
 

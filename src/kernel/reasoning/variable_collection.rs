@@ -4917,8 +4917,14 @@ fn collect_run_slot_bitvector_variables(
 fn run_representative_variables(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<BTreeSet<Variable>> {
-    if run.value_mode() == crate::kernel::primitives::RunValueMode::SymbolicStorage {
-        return Some(symbolic_storage_run_shared_variables(run));
+    match run.value_mode() {
+        crate::kernel::primitives::RunValueMode::SymbolicStorage => {
+            return Some(symbolic_storage_run_shared_variables(run));
+        }
+        crate::kernel::primitives::RunValueMode::Constant(value) => {
+            return Some(constant_run_variables(run, value));
+        }
+        crate::kernel::primitives::RunValueMode::Load => {}
     }
     let representatives =
         crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)?;
@@ -4963,6 +4969,21 @@ fn symbolic_storage_run_shared_variables(
     let mut shared = BTreeSet::new();
     collect_pointer_bitvector_variables(run.base(), &mut shared);
     collect_shared_memory_bitvector_variables(run.source(), &mut shared);
+    shared
+}
+
+/// The variables every slot of a constant run mentions: its base pointer's
+/// and its one value's. Each slot's pointer is the base plus a constant and
+/// each holds that value, so these are exactly the variables of every slot,
+/// found without visiting one.
+fn constant_run_variables(
+    run: &crate::kernel::primitives::CellRun,
+    value: &CValue,
+) -> BTreeSet<Variable> {
+    crate::instrumentation::record_deterministic_work(1);
+    let mut shared = BTreeSet::new();
+    collect_pointer_bitvector_variables(run.base(), &mut shared);
+    collect_c_value_bitvector_variables(value, &mut shared);
     shared
 }
 

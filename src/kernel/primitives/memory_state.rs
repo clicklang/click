@@ -3160,6 +3160,53 @@ impl CMemory {
         ))
     }
 
+    /// A store of `value` into each of the `count` elements of `element_type`
+    /// at `base`, in element order, as one [`CellRun`] at a cost that does
+    /// not depend on `count`: the known initial contents of static storage
+    /// whose elements an initializer leaves at one value. The run's slots are
+    /// exactly the cells the stores would leave, and one `CellsSeeded` edge
+    /// stands for the stores.
+    ///
+    /// Where a run would not do what the stores do, `Err` hands the memory
+    /// back unchanged for the caller's own stores: a block already holding a
+    /// cell (a store overwrites it, where a run would keep it as a hole), an
+    /// automatic or heap block (a store there marks initialization a run
+    /// does not), and, as for [`Self::with_seeded_cells`], a snapshot with
+    /// typed union views or a base that may lie in a live allocation.
+    pub(crate) fn with_constant_run(
+        self,
+        base: Pointer,
+        element_type: CType,
+        count: u32,
+        value: CValue,
+    ) -> Result<Self, Self> {
+        if count == 0 {
+            return Ok(self);
+        }
+        if base.block.starts_with("local:")
+            || matches!(base.block, PointerBlock::Heap(_))
+            || value.c_type() != element_type
+            || !self.run_can_stand_for_cells_at(&base)
+            || AliasCandidates::only_block(&base.block)
+                .entries(self.cells.concrete())
+                .next()
+                .is_some()
+            || self.cells.runs_in_block(&base.block).next().is_some()
+        {
+            return Err(self);
+        }
+        let source = crate::kernel::intern_c_memory(CMemory::new());
+        Ok(self.with_run_of_cells(
+            base,
+            element_type.byte_width(),
+            element_type,
+            0,
+            count,
+            source,
+            RunValueMode::Constant(value),
+        ))
+    }
+
     /// Whether a run at `base` stands for the cells it seeds with nothing
     /// else to do: no typed union view to displace, and no live allocation
     /// the base may lie in to mark initialized.
