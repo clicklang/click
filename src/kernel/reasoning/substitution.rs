@@ -4579,6 +4579,26 @@ fn substitute_through_load_variable(
     if substituted_pointer == pointer && substituted_memory == memory {
         return None;
     }
+    // A load variable's snapshot is the canonical projection of the snapshot
+    // the load read, cut down to what that one address can observe. The
+    // projection is recorded per `(projected, address)`, and the history walk
+    // reaches the source through that record. A substituted address has none,
+    // so a load renamed or instantiated here would be stranded at a snapshot
+    // with no history, where the same read lowered directly for the new
+    // address (an `intro`duced binder, say) crosses the steps back to the
+    // source. Substitute from the source instead and let `canonical_term`
+    // project it for the new address and record that projection, exactly as
+    // a direct lowering does. Sound: two snapshots with one projection agree
+    // on every cell the address may observe for every value of its
+    // variables, and an instance observes no more of them than that.
+    let substituted_memory = if substituted_pointer == pointer {
+        substituted_memory
+    } else {
+        match super::memory_resolution::canonical_load_projection_source(&memory, &pointer) {
+            Some(source) => substitute_bitvector_variable_in_shared_memory(&source, from, to),
+            None => substituted_memory,
+        }
+    };
     Some(crate::kernel::eval::canonical_term(
         &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer)),
     ))

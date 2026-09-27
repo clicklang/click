@@ -268,16 +268,14 @@ int32 dfs(int32 *left, int32 *right, int32 *visited,
     have left_result == 0 implies at(before_right, visited[at(after_mark, left[cur])]) != 0 by { simp(); }
     have at(before_right, visited[at(after_mark, left[cur])]) != 0 by { simp(); }
 
-    have forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) } by {
-        intro(); intro();
-        transport(old(left[k]) == old(left[k]), old(left[k]) == at(before_right, left[k])) using { old(left[k]) == old(left[k]); };
-        assumption();
-    }
-    have forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) } by {
-        intro(); intro();
-        transport(old(right[k]) == old(right[k]), old(right[k]) == at(before_right, right[k])) using { old(right[k]) == old(right[k]); };
-        assumption();
-    }
+    transport(
+        forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) },
+        forall (k: int32) { 0 <= k and k < n implies old(left[k]) == at(before_right, left[k]) }
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(left[k]) == old(left[k]) }; };
+    transport(
+        forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) },
+        forall (k: int32) { 0 <= k and k < n implies old(right[k]) == at(before_right, right[k]) }
+    ) using { forall (k: int32) { 0 <= k and k < n implies old(right[k]) == old(right[k]) }; };
 
     have unmarked(at(before_right, visited), 0, n)
         <= old(unmarked(visited, 0, n)) by { simp(); }
