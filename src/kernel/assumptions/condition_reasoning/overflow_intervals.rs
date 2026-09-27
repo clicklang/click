@@ -46,6 +46,64 @@ impl PureFactContext {
         })
     }
 
+    /// The tightest constant bound on `term` that a chain of recorded int32
+    /// order facts reaches: an upper bound (`upper`) from `term <= a < b <= c`
+    /// ending at a constant, or a lower bound from a chain ending below
+    /// `term`. A strict link anywhere on the chain tightens the constant by
+    /// one, which is exact over the integers the int32 values denote.
+    ///
+    /// Every step is a keyed lookup in `signed_order_bounds` at the current
+    /// node's canonical form, which files each fact under both endpoints, so
+    /// the walk reads only the facts on chains out of `term` in the one
+    /// direction asked, never an unrelated fact. Each `(node, strict)` state
+    /// is expanded once, so the work is linear in the order facts of that
+    /// component. A chain reaching a constant stops there: a constant's own
+    /// bounds cannot tighten what it already bounds.
+    fn chained_signed_constant_bound(&self, term: &Bitvector32Term, upper: bool) -> Option<i64> {
+        let start = crate::kernel::eval::canonical_term(term);
+        let mut best: Option<i64> = None;
+        let mut stack = vec![(start, false)];
+        let mut seen = BTreeSet::new();
+        while let Some((node, strict_so_far)) = stack.pop() {
+            if !seen.insert((node.clone(), strict_so_far)) {
+                continue;
+            }
+            // A strict state reaches everything the non-strict state reaches
+            // with bounds at least as tight, so the non-strict one adds
+            // nothing once the strict one has been expanded.
+            if !strict_so_far && seen.contains(&(node.clone(), true)) {
+                continue;
+            }
+            let Some(bounds) = self.signed_order_bounds.get(&node) else {
+                continue;
+            };
+            for (_, other, strict, own_is_lower) in bounds.keys() {
+                crate::instrumentation::record_deterministic_work(1);
+                if *own_is_lower != upper {
+                    continue;
+                }
+                let strict = strict_so_far || *strict;
+                if let Some(value) = signed_bitvector_constant(other) {
+                    let candidate = match (upper, strict) {
+                        (true, true) => value.checked_sub(1),
+                        (false, true) => value.checked_add(1),
+                        (_, false) => Some(value),
+                    };
+                    if let Some(candidate) = candidate {
+                        best = Some(match (best, upper) {
+                            (Some(best), true) => best.min(candidate),
+                            (Some(best), false) => best.max(candidate),
+                            (None, _) => candidate,
+                        });
+                    }
+                    continue;
+                }
+                stack.push((crate::kernel::eval::canonical_term(other), strict));
+            }
+        }
+        best
+    }
+
     pub(in crate::kernel) fn decide_from_overflow_facts(
         &self,
         condition: &ConditionTerm,
@@ -552,8 +610,19 @@ impl PureFactContext {
         } else {
             self.exact_signed_order_bounds(term)
         };
+        // Whether some recorded bound on a side links `term` to another term
+        // rather than a constant: only then can an order chain add anything.
+        let mut linked_upper = false;
+        let mut linked_lower = false;
         if let Some(bounds) = exact_bounds {
             for bound in bounds {
+                if signed_bitvector_constant(&bound.other).is_none() {
+                    if bound.upper {
+                        linked_upper = true;
+                    } else {
+                        linked_lower = true;
+                    }
+                }
                 let Some(value) = signed_bitvector_constant(&bound.other) else {
                     continue;
                 };
@@ -576,6 +645,35 @@ impl PureFactContext {
                     };
                     lower = lower.max(value);
                 }
+            }
+            if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
+                return (lower <= upper).then_some((lower, upper));
+            }
+        }
+        // An atom bounded only through another term (`i <= j` with
+        // `j < 1000`) takes the constant its order chain reaches. Compound
+        // terms are ranged from their operands below, so only atoms walk, and
+        // only on a side a recorded bound links to another term.
+        if (linked_upper || linked_lower)
+            && !matches!(
+                term,
+                Bitvector32Term::Add(_, _)
+                    | Bitvector32Term::Subtract(_, _)
+                    | Bitvector32Term::Multiply(_, _)
+                    | Bitvector32Term::If { .. }
+            )
+        {
+            if linked_upper
+                && upper == i64::from(i32::MAX)
+                && let Some(bound) = self.chained_signed_constant_bound(term, true)
+            {
+                upper = upper.min(bound);
+            }
+            if linked_lower
+                && lower == i64::from(i32::MIN)
+                && let Some(bound) = self.chained_signed_constant_bound(term, false)
+            {
+                lower = lower.max(bound);
             }
             if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
                 return (lower <= upper).then_some((lower, upper));
@@ -852,6 +950,130 @@ mod tests {
             Some(false)
         );
         assert_eq!(PureFactContext::signed_interval_fallback_fact_visits(), 0);
+    }
+
+    /// `0 <= i`, `i <= j`, `j < 1000` bounds `i` to `[0, 999]`, so neither
+    /// `i + 1` nor `i - 1` overflows; without `j < 1000`, `i + 1` may.
+    #[test]
+    fn an_order_chain_to_a_constant_bounds_an_increment() {
+        let i = Bitvector32Term::Variable(Variable(96_001));
+        let j = Bitvector32Term::Variable(Variable(96_002));
+        let lower_and_link = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), i.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::signed_less_equal(i.clone(), j.clone()), true);
+        let bounded = lower_and_link.clone().assume_condition(
+            ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::Constant(1000)),
+            true,
+        );
+        let increment =
+            ConditionTerm::signed_add_overflows(i.clone(), Bitvector32Term::Constant(1));
+        assert_eq!(bounded.decide(&increment), Some(false));
+        assert_eq!(bounded.signed_interval(&i), Some((0, 999)));
+        assert_eq!(
+            bounded.decide(&ConditionTerm::signed_subtract_overflows(
+                i.clone(),
+                Bitvector32Term::Constant(1)
+            )),
+            Some(false)
+        );
+        // `j` unbounded: `i` may be INT32_MAX.
+        assert_eq!(lower_and_link.decide(&increment), None);
+        // A chain ending at a constant that leaves no room is no bound.
+        let at_max = lower_and_link.clone().assume_condition(
+            ConditionTerm::signed_less_equal(j.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
+            true,
+        );
+        assert_eq!(at_max.decide(&increment), None);
+        // The lower direction: `-5 < k <= i`, `i <= 10` ranges `k - 1`.
+        let k = Bitvector32Term::Variable(Variable(96_003));
+        let below = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Constant((-5i32) as u32),
+                    k.clone(),
+                ),
+                true,
+            )
+            .assume_condition(ConditionTerm::signed_less_equal(k.clone(), i.clone()), true)
+            .assume_condition(
+                ConditionTerm::signed_less_equal(i.clone(), Bitvector32Term::Constant(10)),
+                true,
+            );
+        assert_eq!(below.signed_interval(&k), Some((-4, 10)));
+        // A lower chain needs a constant below: `m <= k` alone leaves `m`
+        // at INT32_MIN possible.
+        let m = Bitvector32Term::Variable(Variable(96_004));
+        let unbounded_below =
+            below.assume_condition(ConditionTerm::signed_less_equal(m.clone(), k.clone()), true);
+        assert_eq!(
+            unbounded_below.decide(&ConditionTerm::signed_subtract_overflows(
+                m,
+                Bitvector32Term::Constant(1)
+            )),
+            None
+        );
+    }
+
+    /// The chain walk reads the facts on the chain alone: its work grows
+    /// linearly with the chain length and not at all with unrelated order
+    /// facts, including unrelated chains.
+    #[test]
+    fn order_chain_bound_work_is_linear_in_the_chain_and_flat_in_unrelated_facts() {
+        let chain_context = |length: u64, unrelated: u64| {
+            let mut assumptions = PureFactContext::new();
+            for index in 0..unrelated {
+                let a = Bitvector32Term::Variable(Variable(97_000 + 2 * index));
+                let b = Bitvector32Term::Variable(Variable(97_001 + 2 * index));
+                assumptions = assumptions
+                    .assume_condition(ConditionTerm::signed_less_equal(a, b.clone()), true)
+                    .assume_condition(
+                        ConditionTerm::signed_less_than(b, Bitvector32Term::Constant(50)),
+                        true,
+                    );
+            }
+            let link = |index: u64| Bitvector32Term::Variable(Variable(98_000 + index));
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), link(0)),
+                true,
+            );
+            for index in 0..length {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::signed_less_equal(link(index), link(index + 1)),
+                    true,
+                );
+            }
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::signed_less_than(link(length), Bitvector32Term::Constant(1000)),
+                true,
+            );
+            (assumptions, link(0))
+        };
+        let measure = |length: u64, unrelated: u64| {
+            let (assumptions, start) = chain_context(length, unrelated);
+            let (bound, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assumptions.chained_signed_constant_bound(&start, true)
+            });
+            assert_eq!(bound, Some(999), "length {length}, unrelated {unrelated}");
+            work
+        };
+        let flat = [0, 16, 64, 256].map(|unrelated| measure(8, unrelated));
+        assert!(
+            flat.iter().all(|work| *work == flat[0]),
+            "chain walk work grew with unrelated facts: {flat:?}"
+        );
+        let by_length = [4, 8, 16, 32].map(|length| measure(length, 16));
+        for pair in by_length.windows(2) {
+            // Each link is filed at both endpoints, so doubling the chain at
+            // most doubles the entries read, plus a constant.
+            assert!(
+                pair[1] <= 2 * pair[0] + 4,
+                "chain walk work is not linear in the chain: {by_length:?}"
+            );
+        }
+        assert!(by_length[3] > by_length[0], "{by_length:?}");
     }
 
     #[test]
