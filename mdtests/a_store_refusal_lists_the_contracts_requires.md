@@ -42,6 +42,6 @@ fail: missing resource fact `owns b[1..2]`
   note: held `owns b[0..n]` covers `b[1..2]` only when `2 <= n`
   C operation: *(b + 1) = 1
 proof context:
-  pure facts: [0 <= n, 1 <= n, n <= 1073741823, n <= 1073741823 (unsigned), viewable(base=a, bytes=(n * 4)), viewable(base=b, bytes=(n * 4)), separate(memory(b[0..n]), memory(a[0..n]))]
+  pure facts: [0 <= n, 1 <= n, n <= 1073741823, n <= 1073741823 (unsigned), viewable(a[0..n]), viewable(b[0..n]), separate(memory(b[0..n]), memory(a[0..n]))]
   resource facts: [views a[0..n], owns b[0..n]]
 ```

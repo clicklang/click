@@ -342,11 +342,16 @@ pub(super) fn describe_pure_fact(
         Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_)) => {
             "algebraic value equality".to_string()
         }
-        Proposition::CMemoryLoadable { base, bytes, .. } => format!(
-            "viewable(base={}, bytes={})",
-            describe_pointer(base, parameters, arguments),
-            describe_bitvector_with_context(bytes, parameters, arguments)
-        ),
+        Proposition::CMemoryLoadable { base, bytes, .. } => describe_loadable_as_source_range(
+            base, bytes, parameters, arguments,
+        )
+        .unwrap_or_else(|| {
+            format!(
+                "viewable(base={}, bytes={})",
+                describe_pointer(base, parameters, arguments),
+                describe_bitvector_with_context(bytes, parameters, arguments)
+            )
+        }),
         Proposition::CResourceSeparate { left, right } => format!(
             "separate({}, {})",
             describe_c_resource(left, parameters, arguments),
@@ -2881,6 +2886,99 @@ fn describe_mutex_pointer(
         }
     }
     describe_pointer(pointer, parameters, arguments)
+}
+
+/// A loadability fact spelled as the source range it came from:
+/// `viewable(visited[0..n])` for a base inside a parameter's array whose byte
+/// count is an element count times that parameter's element width (`n * 4`
+/// for an `int32 *`). `None` when the byte count is not such a product, so the
+/// caller keeps the byte spelling rather than guessing an element type.
+fn describe_loadable_as_source_range(
+    base: &Pointer,
+    bytes: &Bitvector32Term,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let count_at_width = |width: i64| -> Option<Bitvector32Term> {
+        if width <= 0 {
+            return None;
+        }
+        let width = u32::try_from(width).ok()?;
+        // Only the product form: a constant byte count says nothing about
+        // how the source counted it (eight bytes of a struct pointer's
+        // fields are not two `int32` elements).
+        match bytes {
+            Bitvector32Term::Multiply(left, right) => match (left.as_const(), right.as_const()) {
+                (_, Some(factor)) if factor == width => Some(left.as_ref().clone()),
+                (Some(factor), _) if factor == width => Some(right.as_ref().clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    };
+    let mut best: Option<String> = None;
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(parameter_base)) = argument else {
+            continue;
+        };
+        // Only an array of scalars has an element count a byte count divides
+        // into; a struct pointer's bytes are its fields, not elements.
+        if parameter.pointee_struct_layout().is_some() || parameter.struct_layout().is_some() {
+            continue;
+        }
+        let Some(width) = scalar_element_width(parameter.c_type()) else {
+            continue;
+        };
+        let Some(count) = count_at_width(width) else {
+            continue;
+        };
+        let Some(start) = diagnostic_pointer_element_index_from_base(base, parameter_base, width)
+        else {
+            continue;
+        };
+        let count = describe_bitvector_with_context(&count, parameters, arguments);
+        let spelled = if start == Bitvector32Term::Constant(0) {
+            format!("viewable({}[0..{count}])", parameter.name())
+        } else {
+            let start = describe_bitvector_with_context(&start, parameters, arguments);
+            format!("viewable({}[{start}..{start} + {count}])", parameter.name())
+        };
+        if best.as_ref().is_none_or(|best| spelled.len() < best.len()) {
+            best = Some(spelled);
+        }
+    }
+    best
+}
+
+/// The element width of a parameter that points to (or is) an array of one
+/// scalar type, the only shape a byte count can be read back as an element
+/// count for.
+fn scalar_element_width(c_type: C0Type) -> Option<i64> {
+    match c_type {
+        C0Type::CharPointer
+        | C0Type::CharArray(_)
+        | C0Type::Int8Pointer
+        | C0Type::Int8Array(_)
+        | C0Type::UInt8Pointer
+        | C0Type::UInt8Array(_) => Some(1),
+        C0Type::Int16Pointer
+        | C0Type::Int16Array(_)
+        | C0Type::UInt16Pointer
+        | C0Type::UInt16Array(_) => Some(2),
+        C0Type::Int32Pointer
+        | C0Type::Int32Array(_)
+        | C0Type::UInt32Pointer
+        | C0Type::UInt32Array(_)
+        | C0Type::Float32Pointer
+        | C0Type::Float32Array(_) => Some(4),
+        C0Type::Int64Pointer
+        | C0Type::Int64Array(_)
+        | C0Type::UInt64Pointer
+        | C0Type::UInt64Array(_)
+        | C0Type::Float64Pointer
+        | C0Type::Float64Array(_) => Some(8),
+        _ => None,
+    }
 }
 
 pub(super) fn describe_pointer(
