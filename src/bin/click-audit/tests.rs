@@ -12,6 +12,14 @@ fn parses_arguments_and_duration_units() {
                 "250ms",
                 "--verification-time-limit",
                 "2m",
+                "--session-work-limit",
+                "7_000",
+                "--expansion-work-limit",
+                "8000",
+                "--verification-work-limit",
+                "9000",
+                "--performance-slack",
+                "1_000",
                 "--start-at",
                 "examples/example.click:12:3",
                 "--claim",
@@ -27,9 +35,24 @@ fn parses_arguments_and_duration_units() {
             .map(str::to_string),
         )
         .unwrap();
-        assert_eq!(arguments.session_limit, Duration::from_secs(30));
-        assert_eq!(arguments.expansion_limit, Duration::from_millis(250));
-        assert_eq!(arguments.verification_limit, Duration::from_secs(120));
+        assert_eq!(
+            arguments.limits,
+            AuditLimits {
+                session: PhaseLimit {
+                    work: 7_000,
+                    time: Duration::from_secs(30),
+                },
+                expansion: PhaseLimit {
+                    work: 8_000,
+                    time: Duration::from_millis(250),
+                },
+                verification: PhaseLimit {
+                    work: 9_000,
+                    time: Duration::from_secs(120),
+                },
+                performance_slack: 1_000,
+            }
+        );
         assert_eq!(
             arguments.start_at,
             Some(SourceLocation {
@@ -44,6 +67,34 @@ fn parses_arguments_and_duration_units() {
         assert_eq!(arguments.changed_since.as_deref(), Some("HEAD~1"));
         assert_eq!(arguments.max_sites, Some(3));
         assert_eq!(arguments.path, PathBuf::from("examples"));
+    })
+}
+
+#[test]
+fn work_options_count_units_and_refuse_durations() {
+    click::cli::with_work_budget_verdicts(|| {
+        let error =
+            parse_arguments(["--performance-slack", "500ms", "examples"].map(str::to_string))
+                .unwrap_err();
+        assert!(error.contains("--performance-slack"), "{error}");
+        assert!(error.contains("not time"), "{error}");
+        assert!(parse_work_units("").is_err());
+        assert!(parse_work_units("_").is_err());
+        assert_eq!(parse_work_units("2_000_000"), Ok(2_000_000));
+        let defaults = parse_arguments(["examples".to_string()]).unwrap();
+        assert_eq!(defaults.limits, AuditLimits::default());
+        // The help text states the defaults the parser applies.
+        for (option, value) in [
+            ("--session-work-limit", DEFAULT_SESSION_WORK_LIMIT),
+            ("--expansion-work-limit", DEFAULT_EXPANSION_WORK_LIMIT),
+            ("--verification-work-limit", DEFAULT_VERIFICATION_WORK_LIMIT),
+            ("--performance-slack", DEFAULT_PERFORMANCE_SLACK),
+        ] {
+            assert!(
+                USAGE.contains(&format!("{option} {value}")),
+                "usage should state `{option} {value}`"
+            );
+        }
     })
 }
 
@@ -192,10 +243,21 @@ fn resume_command_retries_the_cursor_inclusively() {
     click::cli::with_work_budget_verdicts(|| {
         let arguments = Arguments {
             path: PathBuf::from("examples with spaces"),
-            session_limit: Duration::from_secs(30),
-            expansion_limit: Duration::from_secs(2),
-            verification_limit: Duration::from_secs(3),
-            performance_slack: Duration::from_millis(500),
+            limits: AuditLimits {
+                session: PhaseLimit {
+                    work: 7_000,
+                    time: Duration::from_secs(30),
+                },
+                expansion: PhaseLimit {
+                    work: 8_000,
+                    time: Duration::from_secs(2),
+                },
+                verification: PhaseLimit {
+                    work: 9_000,
+                    time: Duration::from_secs(3),
+                },
+                performance_slack: 1_000,
+            },
             time_limit: Duration::from_secs(600),
             start_at: None,
             claims: vec!["example.ensures_0".to_string()],
@@ -211,8 +273,10 @@ fn resume_command_retries_the_cursor_inclusively() {
         };
         assert_eq!(
             resume_command(&arguments, &location),
-            "click audit --session-time-limit 30s --expansion-time-limit 2s \
-             --verification-time-limit 3s --performance-slack 500ms --time-limit 10m \
+            "click audit --session-work-limit 7000 --expansion-work-limit 8000 \
+             --verification-work-limit 9000 --performance-slack 1000 \
+             --session-time-limit 30s --expansion-time-limit 2s \
+             --verification-time-limit 3s --time-limit 10m \
              --verbose --claim example.ensures_0 --changed-since 'HEAD~1' --max-sites 1 \
              --start-at /tmp/example.click:12:34 'examples with spaces'"
         );
@@ -230,22 +294,123 @@ fn end_of_options_accepts_a_dash_prefixed_target() {
 #[test]
 fn performance_comparison_requires_ratio_and_absolute_slack() {
     click::cli::with_work_budget_verdicts(|| {
-        let slack = Duration::from_millis(500);
-        assert!(!verification_regressed(
-            Duration::from_secs(5),
-            Duration::from_secs(9),
-            slack,
-        ));
-        assert!(!verification_regressed(
-            Duration::from_millis(100),
-            Duration::from_millis(250),
-            slack,
-        ));
-        assert!(verification_regressed(
-            Duration::from_secs(1),
-            Duration::from_millis(2_501),
-            slack,
-        ));
+        let slack = 500;
+        assert!(!verification_regressed(5_000, 9_000, slack));
+        assert!(!verification_regressed(100, 250, slack));
+        assert!(verification_regressed(1_000, 2_501, slack));
+        assert!(!verification_regressed(usize::MAX, usize::MAX, slack));
+    })
+}
+
+/// The expanded-over-original comparison counts deterministic work: an
+/// expanded proof that genuinely does more work fails, and fails with the
+/// same counts every time, whatever the clock says.
+#[test]
+fn an_expansion_that_does_more_work_fails_the_comparison_deterministically() {
+    click::cli::with_work_budget_verdicts(|| {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/scalar.md");
+        let source = load_audit_source(&path).unwrap();
+        let original = source.container_source.clone();
+        let explicit = "by {\n        step();\n        have result == 1 by {\n            normalize();\n        }\n        assumption();\n    }";
+        let redundant = format!(
+            "by {{\n        step();\n{}        assumption();\n    }}",
+            "        have result == 1 by {\n            normalize();\n        }\n".repeat(300)
+        );
+        let lean = original.replacen("by auto;", explicit, 1);
+        let heavy = original.replacen("by auto;", &redundant, 1);
+        assert_ne!(lean, original);
+        assert_ne!(heavy, original);
+        let limits = AuditLimits::default();
+        let cost = |container: &str| {
+            cold_verify(
+                container,
+                &source,
+                "scalar.arithmetic_result",
+                limits.verification,
+                "test verification",
+            )
+            .unwrap()
+        };
+        // A process's first verification also loads the built-in standard
+        // library; `click audit` has always initialized its session first.
+        cost(&original);
+        let original_cost = cost(&original);
+        // The expansion `click expand` emits passes.
+        assert_eq!(
+            performance_regression(original_cost, cost(&lean), limits.performance_slack),
+            None
+        );
+        let heavy_cost = cost(&heavy);
+        let regression = performance_regression(
+            original_cost,
+            heavy_cost,
+            limits.performance_slack,
+        )
+        .unwrap_or_else(|| {
+            panic!(
+                "an expansion doing far more work regresses: {original_cost:?} -> {heavy_cost:?}"
+            )
+        });
+        assert!(
+            regression.contains("deterministic work units"),
+            "{regression}"
+        );
+        let (again_original, again_heavy) = (cost(&original), cost(&heavy));
+        assert_eq!(again_original.work, original_cost.work);
+        assert_eq!(again_heavy.work, heavy_cost.work);
+    })
+}
+
+/// Machine load changes only the reported wall clock: every audit phase
+/// spends the same deterministic work on a machine whose cores are all busy.
+#[test]
+fn an_audit_under_cpu_load_spends_the_same_work() {
+    click::cli::with_work_budget_verdicts(|| {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/scalar.md");
+        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+        let site = sites.first().expect("the scalar mdtest has one smart site");
+        let limits = AuditLimits::default();
+        let run = || {
+            let mut worker = AuditSessionWorker::start(&path, limits.session).unwrap();
+            let timings = audit_site(
+                site,
+                &mut worker,
+                &limits,
+                true,
+                Instant::now() + Duration::from_secs(600),
+            )
+            .expect("the scalar site audits");
+            let cold = timings.cold_verification.expect("the first site compares");
+            [
+                worker.initialization.work,
+                timings.expansion.work,
+                timings.session_verification.work,
+                cold.0.work,
+                cold.1.work,
+                timings.reexpansion.work,
+            ]
+        };
+        // The first run in a process also loads the built-in standard library.
+        run();
+        let quiet = run();
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let burners = (0..std::thread::available_parallelism().map_or(4, |count| count.get()) * 2)
+            .map(|_| {
+                let stop = stop.clone();
+                std::thread::spawn(move || {
+                    let mut spin = 0_u64;
+                    while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                        spin = std::hint::black_box(spin.wrapping_add(1));
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        let loaded = run();
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        for burner in burners {
+            burner.join().unwrap();
+        }
+        assert_eq!(quiet, loaded);
     })
 }
 
@@ -270,22 +435,32 @@ fn whole_run_deadline_caps_each_phase() {
 #[test]
 fn site_timing_output_distinguishes_measured_and_skipped_cold_work() {
     click::cli::with_work_budget_verdicts(|| {
+        let cost = |work, milliseconds| PhaseCost {
+            work,
+            elapsed: Duration::from_millis(milliseconds),
+        };
         let base = SiteTimings {
-            expansion: Duration::from_millis(1),
-            session_verification: Duration::from_millis(2),
+            expansion: cost(10, 1),
+            session_verification: cost(20, 2),
             cold_verification: None,
-            reexpansion: Duration::from_millis(5),
+            reexpansion: cost(50, 5),
         };
         let skipped = render_site_timings(&base);
         assert!(skipped.contains("cold comparison not run"), "{skipped}");
         assert!(!skipped.contains("cold original 0"), "{skipped}");
 
         let measured = render_site_timings(&SiteTimings {
-            cold_verification: Some((Duration::from_millis(3), Duration::from_millis(4))),
+            cold_verification: Some((cost(30, 3), cost(40, 4))),
             ..base
         });
-        assert!(measured.contains("cold original 3ms"), "{measured}");
-        assert!(measured.contains("cold rewritten 4ms"), "{measured}");
+        assert!(
+            measured.contains("cold original 30 units, 3ms"),
+            "{measured}"
+        );
+        assert!(
+            measured.contains("cold rewritten 40 units, 4ms"),
+            "{measured}"
+        );
     })
 }
 
@@ -520,14 +695,11 @@ fn markdown_inventory_and_expansion_use_container_coordinates() {
         let refs = source_refs(&source.c_sources);
         verify_c0_sources(&source.click_source, &refs)
             .expect("expanded markdown proof should verify");
-        let limit = Duration::from_secs(10);
-        let mut worker = AuditSessionWorker::start(&path, limit).unwrap();
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
         audit_site(
             site,
             &mut worker,
-            limit,
-            limit,
-            Duration::from_secs(1),
+            &AuditLimits::default(),
             true,
             Instant::now() + Duration::from_secs(30),
         )
@@ -682,8 +854,7 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         click::languages::c::compiler_import::create_lock(&config).unwrap();
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert!(sites.len() >= 2);
-        let limit = Duration::from_secs(10);
-        let mut worker = AuditSessionWorker::start(&path, limit).unwrap();
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
         // An active audit has already selected an immutable input. Any attempt to
         // reread the importer per tactic would now fail. A new audit must fail.
         fs::remove_file(directory.join("unit.i")).unwrap();
@@ -691,15 +862,13 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
             audit_site(
                 site,
                 &mut worker,
-                limit,
-                limit,
-                Duration::from_secs(1),
+                &AuditLimits::default(),
                 true,
                 Instant::now() + Duration::from_secs(30),
             )
             .unwrap();
         }
-        assert!(AuditSessionWorker::start(&path, limit).is_err());
+        assert!(AuditSessionWorker::start(&path, AuditLimits::default().session).is_err());
         fs::remove_dir_all(directory).unwrap();
     })
 }
@@ -1066,7 +1235,6 @@ int32 stop_at(int32 n) {
 fn reduced_arena_init_fixtures_audit_every_site() {
     click::cli::with_work_budget_verdicts(|| {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let limit = Duration::from_secs(60);
         let deadline = Instant::now() + Duration::from_secs(120);
         for relative in [
             "mdtests/loop_after_proof_branch_expands.md",
@@ -1075,14 +1243,13 @@ fn reduced_arena_init_fixtures_audit_every_site() {
             let path = root.join(relative);
             let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
             assert!(sites.len() >= 4, "{relative}: {sites:?}");
-            let mut worker = AuditSessionWorker::start(&path, limit).unwrap();
+            let mut worker =
+                AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
             for (index, site) in sites.iter().enumerate() {
                 if let Err(message) = audit_site(
                     site,
                     &mut worker,
-                    limit,
-                    limit,
-                    Duration::from_secs(1),
+                    &AuditLimits::default(),
                     index == 0,
                     deadline,
                 ) {
@@ -1101,18 +1268,15 @@ fn a_field_selected_memory_endpoint_audits_every_site() {
     click::cli::with_work_budget_verdicts(|| {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/resource_field_memory_endpoint.md");
-        let limit = Duration::from_secs(60);
         let deadline = Instant::now() + Duration::from_secs(120);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert!(sites.len() >= 2, "{sites:?}");
-        let mut worker = AuditSessionWorker::start(&path, limit).unwrap();
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
         for (index, site) in sites.iter().enumerate() {
             if let Err(message) = audit_site(
                 site,
                 &mut worker,
-                limit,
-                limit,
-                Duration::from_secs(1),
+                &AuditLimits::default(),
                 index == 0,
                 deadline,
             ) {
@@ -1130,18 +1294,15 @@ fn an_unfold_bound_scalar_field_audits_every_site() {
     click::cli::with_work_budget_verdicts(|| {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/resource_unfold_binds_scalar_field.md");
-        let limit = Duration::from_secs(60);
         let deadline = Instant::now() + Duration::from_secs(120);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
         assert!(sites.len() >= 2, "{sites:?}");
-        let mut worker = AuditSessionWorker::start(&path, limit).unwrap();
+        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
         for (index, site) in sites.iter().enumerate() {
             if let Err(message) = audit_site(
                 site,
                 &mut worker,
-                limit,
-                limit,
-                Duration::from_secs(1),
+                &AuditLimits::default(),
                 index == 0,
                 deadline,
             ) {

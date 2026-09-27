@@ -368,16 +368,16 @@ phase of `scripts/check.sh` as well.
 The tests under `src/bin/` drive `click verify`, `expand`, `profile`, and
 `audit` in-process, and the tools install real-time limits of their own: a
 whole-run deadline, `expand`'s and `profile`'s per-tactic clocks, `audit`'s
-phase limits and its expanded-versus-original timing comparison, and on
-every thread production's default tactic clocks. Under load the 512-deep
+phase crash bounds, and on every thread production's default tactic clocks. Under load the 512-deep
 expression-boundary tests once exhausted `verify`'s 30-second deadline in the
 environment phase and failed at random.
 
 Each such test runs its body in `click::cli::with_work_budget_verdicts(|| {
 ... })`. Inside it the tools install no per-tactic clock, raise every
-whole-run and phase limit to `click::cli::CRASH_CONTAINMENT_TIME_LIMIT`, and
-report audit's timing comparison without failing on it; `click audit`
-carries the scope onto its session thread. Every tool routes its limits
+whole-run and phase limit to `click::cli::CRASH_CONTAINMENT_TIME_LIMIT`;
+`click audit` carries the scope onto its session thread. Audit's own verdicts,
+its phase work budgets and its expanded-versus-original comparison, count
+deterministic work and apply inside the scope as outside it. Every tool routes its limits
 through `cli::tool_time_limit` and `cli::with_tool_tactic_limits` so the scope
 reaches them. A test about real-time interruption itself, such as an
 exhausted `--time-limit 1ms`, stays outside the scope and goes on the short
@@ -886,7 +886,7 @@ audit target is narrowed to one sidecar. `--verbose` prints all per-site phase
 timings:
 
 ```text
-[1/26] examples/input-cursor/input_cursor.click:8:9  incremented_zero_is_one.ensures_0 (simp) ... ok (expand 22ms, verify 29ms, cold original 37ms, cold rewritten 35ms, reexpand 23ms)
+[1/1] mdtests/scalar.md:16:47  scalar.arithmetic_result (auto) ... ok (expand 1107 units, 25ms, verify 1210 units, 17ms, cold original 1053 units, 13ms, cold rewritten 1240 units, 12ms, reexpand 163 units, 4ms)
 ```
 
 ### Small-stack canary
@@ -903,29 +903,50 @@ keep rule-local enum and proposition payloads out of their dispatchers'
 frames; they are stable stack budget boundaries. Changes to those boundaries
 must keep the small-stack canary green.
 
-### Rate-aware performance comparison
+### Deterministic performance comparison
 
-Raw site totals are informational because all verification phases naturally
-grow with proof-unit size. Audit compares expanded cold verification with its
-same-run original baseline. The expanded proof must be both more than twice as
-slow and more than `--performance-slack` slower (default 500 ms), then repeat
-that regression in a second serial comparison, to fail. The failure prints
-commands that materialize and profile the exact expanded artifact.
+Audit's verdicts count deterministic work units, the units the tactic budgets
+are charged (`click::instrumentation::measure_deterministic_work`), so the
+same source reaches the same verdict on any machine under any load. Comparing
+wall-clock time once let machine load fail a site. Raw site totals are
+informational because all verification phases naturally grow with proof-unit
+size. Audit compares the work of expanded cold verification with the
+original's in the same run: the expanded proof fails when it spends both more
+than twice the original's work and more than `--performance-slack` units
+beyond it (default 10,000). One comparison decides, since a repeat spends the
+same units. The failure reports both counts, the wall-clock times as
+information, and commands that materialize and profile the exact expanded
+artifact. `an_expansion_that_does_more_work_fails_the_comparison_deterministically`
+and `an_audit_under_cpu_load_spends_the_same_work` pin both directions.
 
-The whole run is also bounded by `--time-limit` (default 10 minutes). Every
-blocking phase is capped by the time remaining in that deadline, including
-session initialization and cold verification. Reaching it stops at the current
-inclusive cursor, prints one resume command, and exits unsuccessfully without
-counting deadline exhaustion as a Click check failure.
+Each phase has a deterministic work budget: `--session-work-limit` (default
+100 million units), `--expansion-work-limit` and `--verification-work-limit`
+(default 50 million each). On 2026-09-26 the largest session measured was
+`examples/arena`'s at 6.5 million units, and the largest expansion or
+proof-unit verification under half a million. A process's first verification
+also charges the one-time load of the built-in standard library, about 24,000
+units; audit initializes its session before any comparison, so both compared
+runs are warm.
+
+A phase's wall-clock limit is crash containment only (default 10 minutes
+each), for a hung or CPU-starved run. The whole run is also bounded by
+`--time-limit` (default 10 minutes). Every blocking phase is capped by the
+time remaining in that deadline, including session initialization and cold
+verification. Reaching it stops at the current inclusive cursor, prints one
+resume command, and exits unsuccessfully without counting deadline exhaustion
+as a Click check failure.
 
 ### Time limits and resuming
 
 | Option | Default | Bounds |
 | --- | --- | --- |
-| `--session-time-limit` | 5m | original-sidecar session initialization |
-| `--expansion-time-limit` | 2m | one expansion, and the re-expansion check |
-| `--verification-time-limit` | 5m | retained and cold proof-unit verification |
-| `--performance-slack` | 500ms | minimum same-run regression in addition to the 2x ratio |
+| `--session-work-limit` | 100000000 | work of original-sidecar session initialization |
+| `--expansion-work-limit` | 50000000 | work of one expansion, and of the re-expansion check |
+| `--verification-work-limit` | 50000000 | work of one retained or cold proof-unit verification |
+| `--performance-slack` | 10000 | minimum expanded-over-original work increase, beside the 2x ratio |
+| `--session-time-limit` | 10m | crash containment for session initialization |
+| `--expansion-time-limit` | 10m | crash containment for one expansion or re-expansion |
+| `--verification-time-limit` | 10m | crash containment for one proof-unit verification |
 | `--time-limit` | 10m | the whole run's wall clock |
 
 `--claim` and `--verbose` are selection/presentation controls and are retained
@@ -946,12 +967,14 @@ options are retained in resume commands.
 `--performance-slack`.
 
 By default the audit stops at the first session, expansion, verification,
-fixed-point, or confirmed performance failure and prints a copy-pasteable
+fixed-point, work-budget, or performance failure and prints a copy-pasteable
 continuation command carrying every current limit:
 
 ```sh
-click audit --session-time-limit 5m --expansion-time-limit 2m \
-  --verification-time-limit 5m --performance-slack 500ms --time-limit 10m \
+click audit --session-work-limit 100000000 --expansion-work-limit 50000000 \
+  --verification-work-limit 50000000 --performance-slack 10000 \
+  --session-time-limit 10m --expansion-time-limit 10m \
+  --verification-time-limit 10m --time-limit 10m \
   --start-at path/to/file.click:LINE:COLUMN examples
 ```
 
@@ -966,7 +989,7 @@ Every site starts from the unchanged baseline source, so an earlier rewrite
 cannot hide or cause a later failure. With `--keep-going`, a failed session is
 rebuilt from a fresh complete verification before the audit continues. The command exits
 unsuccessfully if session initialization, expansion, parsing, source isolation,
-proof-unit verification, the fixed-point check, the confirmed relative
+proof-unit verification, the fixed-point check, a phase work budget, the relative
 performance contract, or the run limit fails.
 
 Proof scripts have no runtime semantics. Re-verifying the same isolated claim

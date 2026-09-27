@@ -29,10 +29,31 @@ use click::surface::{
     verifying_source_paths,
 };
 
-const DEFAULT_SESSION_LIMIT: Duration = Duration::from_secs(5 * 60);
-const DEFAULT_EXPANSION_LIMIT: Duration = Duration::from_secs(2 * 60);
-const DEFAULT_VERIFICATION_LIMIT: Duration = Duration::from_secs(5 * 60);
-const DEFAULT_PERFORMANCE_SLACK: Duration = Duration::from_millis(500);
+/// Each phase's wall-clock bound is crash containment only: a phase is judged
+/// by its deterministic work, so machine load cannot change a verdict.
+const DEFAULT_SESSION_LIMIT: Duration = cli::CRASH_CONTAINMENT_TIME_LIMIT;
+const DEFAULT_EXPANSION_LIMIT: Duration = cli::CRASH_CONTAINMENT_TIME_LIMIT;
+const DEFAULT_VERIFICATION_LIMIT: Duration = cli::CRASH_CONTAINMENT_TIME_LIMIT;
+/// Deterministic work budgets for one phase, in the units the tactic budgets
+/// are charged (`click::instrumentation::measure_deterministic_work`).
+///
+/// Calibration (2026-09-26, base `8a223dd2`): the largest session is
+/// `examples/arena`'s at 6.5 million units, and the largest expansion and
+/// proof-unit verification measured were under half a million units
+/// (`examples/arena`, `rbtree-model`, `owned-vector`). The budgets leave over
+/// 15x headroom on the session and 100x on one expansion or verification. At
+/// the slowest measured rate (about 110,000 units a second under a load
+/// average of 18) the crash bound still fires only past what these budgets
+/// admit.
+const DEFAULT_SESSION_WORK_LIMIT: usize = 100_000_000;
+const DEFAULT_EXPANSION_WORK_LIMIT: usize = 50_000_000;
+const DEFAULT_VERIFICATION_WORK_LIMIT: usize = 50_000_000;
+/// The smallest expanded-over-original work increase that can fail the
+/// performance comparison, beside its 2x ratio. Measured expansions spend
+/// within 1% of their original's work; the slack keeps a proof unit of a few
+/// thousand units from failing over a few thousand units of certificate
+/// checking.
+const DEFAULT_PERFORMANCE_SLACK: usize = 10_000;
 const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 const RUN_LIMIT_EXHAUSTED: &str = "whole-run time limit exhausted";
 const USAGE: &str = "\
@@ -48,26 +69,37 @@ the first failure and prints an inclusive --start-at resume command.
 Successful progress is concise by default: one row per claim. `--verbose`
 restores one row per smart site.
 
-Raw phase time grows with proof-unit size and is reported but is not itself a
-failure. On the first site of each claim, audit compares cold verification of
-the expanded proof with the original proof in the same run. A regression must
-be both over 2x and over the performance slack, then repeat once, to fail.
-Hard phase and whole-run limits remain safety failures.
+The audit's own checks count deterministic work units, the ones the tactic
+budgets are charged, so machine load cannot change them; wall-clock time is
+reported only as information. On the first site of each claim, audit compares
+the work of cold verification of the expanded proof with the original's, and
+fails when the expanded proof spends both over 2x and over the performance
+slack more. Each phase has a deterministic work budget. The phase time limits
+are crash-containment bounds for a hung run, and the whole-run time limit
+stops at a resumable cursor. Verification inside each phase keeps the tactic
+limits `click verify` applies.
 
 defaults:
-  --session-time-limit 5m     original-sidecar session initialization
-  --expansion-time-limit 2m   one source expansion
-  --verification-time-limit 5m rewritten-sidecar verification
-  --performance-slack 500ms   minimum same-run expanded verification regression
-  --time-limit 10m            whole-run wall clock; prints the resume cursor
+  --session-work-limit 100000000   original-sidecar session initialization
+  --expansion-work-limit 50000000  one expansion, and the re-expansion check
+  --verification-work-limit 50000000
+                                   one retained or cold proof-unit verification
+  --performance-slack 10000        minimum expanded-over-original work increase
+  --session-time-limit 10m         crash containment for session initialization
+  --expansion-time-limit 10m       crash containment for one expansion
+  --verification-time-limit 10m    crash containment for one verification
+  --time-limit 10m                 whole-run wall clock; prints the resume cursor
 
 options:
+  --session-work-limit <UNITS>
+  --expansion-work-limit <UNITS>
+  --verification-work-limit <UNITS>
+  --performance-slack <UNITS>
+  --slow-site-limit <UNITS>   deprecated alias for --performance-slack
   --session-time-limit <DURATION>
                               (`--discovery-time-limit` is a compatibility alias)
   --expansion-time-limit <DURATION>
   --verification-time-limit <DURATION>
-  --performance-slack <DURATION>
-  --slow-site-limit <DURATION> deprecated alias for --performance-slack
   --time-limit <DURATION>
   --start-at <PATH:LINE:COLUMN>
                               inclusively resume at this source location
@@ -87,10 +119,7 @@ fn main() {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Arguments {
     path: PathBuf,
-    session_limit: Duration,
-    expansion_limit: Duration,
-    verification_limit: Duration,
-    performance_slack: Duration,
+    limits: AuditLimits,
     time_limit: Duration,
     start_at: Option<SourceLocation>,
     claims: Vec<String>,
@@ -98,6 +127,112 @@ struct Arguments {
     verbose: bool,
     keep_going: bool,
     max_sites: Option<usize>,
+}
+
+/// The bounds on one audit phase: a deterministic work budget, which is the
+/// verdict, and a wall-clock bound kept only as crash containment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PhaseLimit {
+    work: usize,
+    time: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AuditLimits {
+    session: PhaseLimit,
+    expansion: PhaseLimit,
+    verification: PhaseLimit,
+    /// The smallest expanded-over-original work increase that can fail the
+    /// performance comparison, beside its 2x ratio.
+    performance_slack: usize,
+}
+
+impl Default for AuditLimits {
+    fn default() -> Self {
+        Self {
+            session: PhaseLimit {
+                work: DEFAULT_SESSION_WORK_LIMIT,
+                time: DEFAULT_SESSION_LIMIT,
+            },
+            expansion: PhaseLimit {
+                work: DEFAULT_EXPANSION_WORK_LIMIT,
+                time: DEFAULT_EXPANSION_LIMIT,
+            },
+            verification: PhaseLimit {
+                work: DEFAULT_VERIFICATION_WORK_LIMIT,
+                time: DEFAULT_VERIFICATION_LIMIT,
+            },
+            performance_slack: DEFAULT_PERFORMANCE_SLACK,
+        }
+    }
+}
+
+impl PhaseLimit {
+    /// This limit with its crash bound capped by what remains of the
+    /// whole-run `deadline`.
+    fn within(self, deadline: Instant) -> Result<Self, String> {
+        Ok(Self {
+            work: self.work,
+            time: remaining_phase_limit(deadline, self.time)?,
+        })
+    }
+}
+
+/// What one audit phase cost: the deterministic work that judges it, and the
+/// wall-clock time reported only as information.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct PhaseCost {
+    work: usize,
+    elapsed: Duration,
+}
+
+impl std::fmt::Display for PhaseCost {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "{} units, {}",
+            self.work,
+            format_duration(self.elapsed)
+        )
+    }
+}
+
+/// Runs one audit phase under `limit`: its deterministic work is the
+/// verdict, and its wall-clock bound only contains a hung run.
+fn run_phase<R>(
+    label: &str,
+    limit: PhaseLimit,
+    operation: impl FnOnce() -> Result<R, String>,
+) -> Result<(R, PhaseCost), String> {
+    let time_limit = cli::tool_time_limit(limit.time);
+    let started = Instant::now();
+    let (result, work) = click::instrumentation::measure_deterministic_work(|| {
+        click::instrumentation::with_deadline(time_limit, operation)
+    });
+    let elapsed = started.elapsed();
+    if elapsed >= time_limit {
+        return Err(format!(
+            "{label} crossed its {} crash-containment bound after {} ({work} work units); \
+             audit judges a phase by its deterministic work, so a run this slow is hung \
+             or starved of CPU{}",
+            format_duration(time_limit),
+            format_duration(elapsed),
+            result
+                .err()
+                .map(|message| format!("\n{message}"))
+                .unwrap_or_default()
+        ));
+    }
+    let value = result?;
+    if work > limit.work {
+        return Err(format!(
+            "{label} spent {work} deterministic work units, over its {}-unit budget \
+             (wall clock {}, information only)",
+            limit.work,
+            format_duration(elapsed)
+        ));
+    }
+    Ok((value, PhaseCost { work, elapsed }))
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -134,14 +269,16 @@ struct ConciseClaimProgress {
 struct AuditSessionWorker {
     source: AuditSource,
     requests: Option<mpsc::Sender<SessionRequest>>,
-    responses: mpsc::Receiver<Result<Duration, String>>,
+    responses: mpsc::Receiver<Result<PhaseCost, String>>,
     thread: Option<thread::JoinHandle<()>>,
+    /// What initializing the session cost.
+    initialization: PhaseCost,
 }
 
 struct SessionRequest {
     click_source: String,
     position: SourcePosition,
-    limit: Duration,
+    limit: PhaseLimit,
 }
 
 /// At least the main thread's usual 8 MiB, so a proof that `click verify`
@@ -149,8 +286,7 @@ struct SessionRequest {
 const SESSION_THREAD_STACK_BYTES: usize = 64 << 20;
 
 impl AuditSessionWorker {
-    fn start(click_path: &Path, limit: Duration) -> Result<Self, String> {
-        let started = Instant::now();
+    fn start(click_path: &Path, limit: PhaseLimit) -> Result<Self, String> {
         let source = load_audit_source(click_path)?;
         let session_source = source.clone();
         let (request_sender, request_receiver) = mpsc::channel::<SessionRequest>();
@@ -163,18 +299,21 @@ impl AuditSessionWorker {
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn(move || {
                 cli::with_inherited_work_budget_verdicts(work_budget_verdicts, || {
-                    let session = match start_session(&session_source, limit) {
-                        Ok(session) => {
-                            if response_sender.send(Ok(Duration::ZERO)).is_err() {
+                    let session =
+                        match run_phase("verification-session initialization", limit, || {
+                            start_session(&session_source)
+                        }) {
+                            Ok((session, cost)) => {
+                                if response_sender.send(Ok(cost)).is_err() {
+                                    return;
+                                }
+                                session
+                            }
+                            Err(message) => {
+                                let _ = response_sender.send(Err(message));
                                 return;
                             }
-                            session
-                        }
-                        Err(message) => {
-                            let _ = response_sender.send(Err(message));
-                            return;
-                        }
-                    };
+                        };
                     for request in request_receiver {
                         let result = verify_in_session(&session, &session_source, &request);
                         if response_sender.send(result).is_err() {
@@ -189,13 +328,9 @@ impl AuditSessionWorker {
             requests: Some(request_sender),
             responses: response_receiver,
             thread: Some(thread),
+            initialization: PhaseCost::default(),
         };
-        worker.receive("verification-session initialization")?;
-        ensure_phase_limit(
-            started.elapsed(),
-            limit,
-            "verification-session initialization",
-        )?;
+        worker.initialization = worker.receive("verification-session initialization")?;
         Ok(worker)
     }
 
@@ -203,8 +338,8 @@ impl AuditSessionWorker {
         &mut self,
         click_source: &str,
         position: SourcePosition,
-        limit: Duration,
-    ) -> Result<Duration, String> {
+        limit: PhaseLimit,
+    ) -> Result<PhaseCost, String> {
         let request = SessionRequest {
             click_source: click_source.to_string(),
             position,
@@ -218,7 +353,7 @@ impl AuditSessionWorker {
         self.receive("rewritten-sidecar verification")
     }
 
-    fn receive(&mut self, label: &str) -> Result<Duration, String> {
+    fn receive(&mut self, label: &str) -> Result<PhaseCost, String> {
         self.responses.recv().unwrap_or_else(|_| {
             Err(format!(
                 "the verification-session thread stopped during {label}"
@@ -243,23 +378,21 @@ impl Drop for AuditSessionWorker {
     }
 }
 
-fn start_session(source: &AuditSource, limit: Duration) -> Result<C0VerificationSession, String> {
-    let (session, _) = click::instrumentation::with_deadline(cli::tool_time_limit(limit), || {
-        match &source.inputs {
-            CInput::Bundle(sources) => match &source.project {
-                Some(project) => C0VerificationSession::new_project(project, &source_refs(sources)),
-                None => C0VerificationSession::new(&source.click_source, &source_refs(sources)),
-            },
-            CInput::Prepared(imports) => match &source.project {
-                Some(project) => C0VerificationSession::new_prepared_project(project, imports),
-                None => C0VerificationSession::new_prepared(&source.click_source, imports),
-            },
-            CInput::PreparedCpp(import) => match &source.project {
-                Some(project) => C0VerificationSession::new_cpp_prepared_project(project, import),
-                None => C0VerificationSession::new_cpp_prepared(&source.click_source, import),
-            },
-        }
-    })
+fn start_session(source: &AuditSource) -> Result<C0VerificationSession, String> {
+    let (session, _) = match &source.inputs {
+        CInput::Bundle(sources) => match &source.project {
+            Some(project) => C0VerificationSession::new_project(project, &source_refs(sources)),
+            None => C0VerificationSession::new(&source.click_source, &source_refs(sources)),
+        },
+        CInput::Prepared(imports) => match &source.project {
+            Some(project) => C0VerificationSession::new_prepared_project(project, imports),
+            None => C0VerificationSession::new_prepared(&source.click_source, imports),
+        },
+        CInput::PreparedCpp(import) => match &source.project {
+            Some(project) => C0VerificationSession::new_cpp_prepared_project(project, import),
+            None => C0VerificationSession::new_cpp_prepared(&source.click_source, import),
+        },
+    }
     .map_err(|error| error.report())?;
     Ok(session)
 }
@@ -268,14 +401,13 @@ fn verify_in_session(
     session: &C0VerificationSession,
     source: &AuditSource,
     request: &SessionRequest,
-) -> Result<Duration, String> {
-    let start = Instant::now();
+) -> Result<PhaseCost, String> {
     let SessionRequest {
         click_source,
         position,
         limit,
     } = request;
-    click::instrumentation::with_deadline(cli::tool_time_limit(*limit), || match &source.inputs {
+    let verify = || match &source.inputs {
         CInput::Bundle(_) => match &source.project {
             Some(_) => session.verify_at_project(click_source, position.line, position.column),
             None => session.verify_at(click_source, position.line, position.column),
@@ -284,11 +416,11 @@ fn verify_in_session(
             Some(_) => session.verify_at_project(click_source, position.line, position.column),
             None => session.verify_at_prepared(click_source, position.line, position.column),
         },
-    })
-    .map_err(|error| error.report())?;
-    let elapsed = start.elapsed();
-    ensure_phase_limit(elapsed, *limit, "rewritten-sidecar verification")?;
-    Ok(elapsed)
+    };
+    let ((), cost) = run_phase("rewritten-sidecar verification", *limit, || {
+        verify().map(|_| ()).map_err(|error| error.report())
+    })?;
+    Ok(cost)
 }
 
 fn entry() -> Result<(), String> {
@@ -306,10 +438,7 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
 
 fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Arguments, String> {
     let mut path = None;
-    let mut session_limit = DEFAULT_SESSION_LIMIT;
-    let mut expansion_limit = DEFAULT_EXPANSION_LIMIT;
-    let mut verification_limit = DEFAULT_VERIFICATION_LIMIT;
-    let mut performance_slack = DEFAULT_PERFORMANCE_SLACK;
+    let mut limits = AuditLimits::default();
     let mut time_limit = DEFAULT_TIME_LIMIT;
     let mut start_at = None;
     let mut claims = Vec::new();
@@ -332,16 +461,25 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         }
         match argument.as_str() {
             "--session-time-limit" | "--discovery-time-limit" => {
-                session_limit = parse_next_duration(&mut arguments, &argument)?;
+                limits.session.time = parse_next_duration(&mut arguments, &argument)?;
             }
             "--expansion-time-limit" => {
-                expansion_limit = parse_next_duration(&mut arguments, &argument)?;
+                limits.expansion.time = parse_next_duration(&mut arguments, &argument)?;
             }
             "--verification-time-limit" => {
-                verification_limit = parse_next_duration(&mut arguments, &argument)?;
+                limits.verification.time = parse_next_duration(&mut arguments, &argument)?;
+            }
+            "--session-work-limit" => {
+                limits.session.work = parse_next_work_units(&mut arguments, &argument)?;
+            }
+            "--expansion-work-limit" => {
+                limits.expansion.work = parse_next_work_units(&mut arguments, &argument)?;
+            }
+            "--verification-work-limit" => {
+                limits.verification.work = parse_next_work_units(&mut arguments, &argument)?;
             }
             "--performance-slack" | "--slow-site-limit" => {
-                performance_slack = parse_next_duration(&mut arguments, &argument)?;
+                limits.performance_slack = parse_next_work_units(&mut arguments, &argument)?;
             }
             "--time-limit" => {
                 time_limit = parse_next_duration(&mut arguments, &argument)?;
@@ -397,10 +535,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     }
     Ok(Arguments {
         path: path.ok_or_else(|| USAGE.to_string())?,
-        session_limit,
-        expansion_limit,
-        verification_limit,
-        performance_slack,
+        limits,
         time_limit,
         start_at,
         claims,
@@ -424,6 +559,30 @@ fn parse_next_duration(
         .next()
         .ok_or_else(|| format!("missing duration after `{option}`\n{USAGE}"))?;
     parse_duration(&source)
+}
+
+fn parse_next_work_units(
+    arguments: &mut impl Iterator<Item = String>,
+    option: &str,
+) -> Result<usize, String> {
+    let source = arguments
+        .next()
+        .ok_or_else(|| format!("missing work-unit count after `{option}`\n{USAGE}"))?;
+    parse_work_units(&source).map_err(|message| format!("`{option}`: {message}"))
+}
+
+/// Parses a deterministic work-unit count; `_` may group digits.
+fn parse_work_units(source: &str) -> Result<usize, String> {
+    let digits = source.trim().replace('_', "");
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!(
+            "invalid work-unit count `{source}`; audit budgets and the performance slack count \
+             deterministic work units, not time (for example `100000` or `2_000_000`)"
+        ));
+    }
+    digits
+        .parse::<usize>()
+        .map_err(|_| format!("work-unit count `{source}` is too large"))
 }
 
 fn run_audit(arguments: Arguments) -> Result<(), String> {
@@ -516,13 +675,18 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let started = Instant::now();
     let deadline = started + cli::tool_time_limit(arguments.time_limit);
 
+    let limits = &arguments.limits;
     println!(
-        "\nClick expansion audit (session {}, expansion {}, verification {}, \
-         performance slack {}, run limit {})",
-        format_duration(arguments.session_limit),
-        format_duration(arguments.expansion_limit),
-        format_duration(arguments.verification_limit),
-        format_duration(arguments.performance_slack),
+        "\nClick expansion audit (work budgets: session {}, expansion {}, verification {}, \
+         performance slack {} units; crash bounds: session {}, expansion {}, verification {}; \
+         run limit {})",
+        limits.session.work,
+        limits.expansion.work,
+        limits.verification.work,
+        limits.performance_slack,
+        format_duration(limits.session.time),
+        format_duration(limits.expansion.time),
+        format_duration(limits.verification.time),
         format_duration(arguments.time_limit),
     );
 
@@ -547,7 +711,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             std::io::stdout()
                 .flush()
                 .map_err(|error| format!("failed to flush audit progress: {error}"))?;
-            let session_limit = match remaining_phase_limit(deadline, arguments.session_limit) {
+            let session_limit = match arguments.limits.session.within(deadline) {
                 Ok(limit) => limit,
                 Err(_) => {
                     println!("STOPPED ({RUN_LIMIT_EXHAUSTED})");
@@ -557,7 +721,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             };
             match AuditSessionWorker::start(&site.click_path, session_limit) {
                 Ok(new_worker) => {
-                    println!("ready");
+                    println!("ready ({})", new_worker.initialization);
                     worker = Some((site.click_path.clone(), new_worker));
                 }
                 Err(message) => {
@@ -618,15 +782,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             .1;
         let cold_reverify =
             cold_reverified_claims.insert((site.click_path.clone(), site.claim.clone()));
-        match audit_site(
-            site,
-            current,
-            arguments.expansion_limit,
-            arguments.verification_limit,
-            arguments.performance_slack,
-            cold_reverify,
-            deadline,
-        ) {
+        match audit_site(site, current, &arguments.limits, cold_reverify, deadline) {
             Ok(timings) => {
                 audited_sites += 1;
                 if arguments.verbose {
@@ -1259,17 +1415,24 @@ fn print_resume(arguments: &Arguments, site: &AuditSite) {
 }
 
 fn resume_command(arguments: &Arguments, location: &SourceLocation) -> String {
+    let limits = &arguments.limits;
     let mut words = vec![
         "click".to_string(),
         "audit".to_string(),
-        "--session-time-limit".to_string(),
-        format_duration(arguments.session_limit),
-        "--expansion-time-limit".to_string(),
-        format_duration(arguments.expansion_limit),
-        "--verification-time-limit".to_string(),
-        format_duration(arguments.verification_limit),
+        "--session-work-limit".to_string(),
+        limits.session.work.to_string(),
+        "--expansion-work-limit".to_string(),
+        limits.expansion.work.to_string(),
+        "--verification-work-limit".to_string(),
+        limits.verification.work.to_string(),
         "--performance-slack".to_string(),
-        format_duration(arguments.performance_slack),
+        limits.performance_slack.to_string(),
+        "--session-time-limit".to_string(),
+        format_duration(limits.session.time),
+        "--expansion-time-limit".to_string(),
+        format_duration(limits.expansion.time),
+        "--verification-time-limit".to_string(),
+        format_duration(limits.verification.time),
         "--time-limit".to_string(),
         format_duration(arguments.time_limit),
     ];
@@ -1301,30 +1464,25 @@ fn resume_command(arguments: &Arguments, location: &SourceLocation) -> String {
         .join(" ")
 }
 
-/// Timings for the checks performed on one audited site.
+/// The cost of each check performed on one audited site.
 struct SiteTimings {
-    expansion: Duration,
-    session_verification: Duration,
-    cold_verification: Option<(Duration, Duration)>,
-    reexpansion: Duration,
+    expansion: PhaseCost,
+    session_verification: PhaseCost,
+    cold_verification: Option<(PhaseCost, PhaseCost)>,
+    reexpansion: PhaseCost,
 }
 
 fn render_site_timings(timings: &SiteTimings) -> String {
     if let Some((original, rewritten)) = timings.cold_verification {
         format!(
-            "ok (expand {}, verify {}, cold original {}, cold rewritten {}, reexpand {})",
-            format_duration(timings.expansion),
-            format_duration(timings.session_verification),
-            format_duration(original),
-            format_duration(rewritten),
-            format_duration(timings.reexpansion),
+            "ok (expand {}, verify {}, cold original {original}, cold rewritten {rewritten}, \
+             reexpand {})",
+            timings.expansion, timings.session_verification, timings.reexpansion,
         )
     } else {
         format!(
             "ok (expand {}, verify {}, cold comparison not run, reexpand {})",
-            format_duration(timings.expansion),
-            format_duration(timings.session_verification),
-            format_duration(timings.reexpansion),
+            timings.expansion, timings.session_verification, timings.reexpansion,
         )
     }
 }
@@ -1337,25 +1495,10 @@ fn remaining_phase_limit(deadline: Instant, configured: Duration) -> Result<Dura
     Ok(configured.min(remaining))
 }
 
-fn ensure_phase_limit(elapsed: Duration, limit: Duration, label: &str) -> Result<(), String> {
-    let limit = cli::tool_time_limit(limit);
-    if elapsed > limit {
-        Err(format!(
-            "{label} exceeded {} after {}",
-            format_duration(limit),
-            format_duration(elapsed)
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn audit_site(
     site: &AuditSite,
     worker: &mut AuditSessionWorker,
-    expansion_limit: Duration,
-    verification_limit: Duration,
-    performance_slack: Duration,
+    limits: &AuditLimits,
     cold_reverify: bool,
     deadline: Instant,
 ) -> Result<SiteTimings, String> {
@@ -1365,14 +1508,9 @@ fn audit_site(
         site.position.line,
         site.position.column
     );
-    let phase_limit = remaining_phase_limit(deadline, expansion_limit)?;
-    let expansion_started = Instant::now();
-    let expanded =
-        click::instrumentation::with_deadline(cli::tool_time_limit(phase_limit), || {
-            expand_location_with_source(&location, &worker.source)
-        })?;
-    let expansion_elapsed = expansion_started.elapsed();
-    ensure_phase_limit(expansion_elapsed, phase_limit, "expansion")?;
+    let (expanded, expansion) = run_phase("expansion", limits.expansion.within(deadline)?, || {
+        expand_location_with_source(&location, &worker.source)
+    })?;
     let original = worker.source.container_source.clone();
     if expanded == original {
         return Err("expansion returned the original sidecar unchanged".to_string());
@@ -1385,15 +1523,15 @@ fn audit_site(
     // Expansion can insert or remove lines at the selected tactic.  Resolve
     // the proof unit again by claim instead of sending its now-stale source
     // coordinate to the retained verification session.
-    let verification_elapsed = worker.verify(
+    let session_verification = worker.verify(
         &expanded_click_source,
         expanded_position,
-        remaining_phase_limit(deadline, verification_limit)?,
+        limits.verification.within(deadline)?,
     )?;
 
     // Checklist step 6: reverify the rewritten proof unit from normal
     // inputs by running the direct targeted entry point under
-    // the verification time limit. The retained session already checked the
+    // the verification limits. The retained session already checked the
     // rewrite changed nothing outside the audited proof unit, so the other
     // units' outcomes cannot change; a whole-file pass here would redo them
     // all per site, which made auditing a project cost sites x whole-file
@@ -1402,62 +1540,35 @@ fn audit_site(
     // exercises — repeating it for every site of a many-site claim would
     // double the whole audit for no additional coverage.
     let cold_verification = if cold_reverify {
-        let original_elapsed = cold_verify(
+        let original_cost = cold_verify(
             &original,
             &worker.source,
             &site.claim,
-            remaining_phase_limit(deadline, verification_limit)?,
+            limits.verification.within(deadline)?,
             "original proof-unit verification",
         )?;
-        let expanded_elapsed = cold_verify(
+        let expanded_cost = cold_verify(
             &expanded,
             &worker.source,
             &site.claim,
-            remaining_phase_limit(deadline, verification_limit)?,
+            limits.verification.within(deadline)?,
             "expanded proof-unit verification",
         )?;
-        // A timing comparison is a finding, not a verdict, when the caller
-        // judges by deterministic work budgets.
-        if !cli::work_budget_verdicts()
-            && verification_regressed(original_elapsed, expanded_elapsed, performance_slack)
+        if let Some(regression) =
+            performance_regression(original_cost, expanded_cost, limits.performance_slack)
         {
-            // Timing-only findings get one fresh serial confirmation, matching
-            // the ordinary tactic-budget gate's noise policy.
-            let confirmed_original = cold_verify(
-                &original,
-                &worker.source,
-                &site.claim,
-                remaining_phase_limit(deadline, verification_limit)?,
-                "confirmation original proof-unit verification",
-            )?;
-            let confirmed_expanded = cold_verify(
-                &expanded,
-                &worker.source,
-                &site.claim,
-                remaining_phase_limit(deadline, verification_limit)?,
-                "confirmation expanded proof-unit verification",
-            )?;
-            if verification_regressed(confirmed_original, confirmed_expanded, performance_slack) {
-                let artifact = audit_artifact_path(&site.click_path);
-                return Err(format!(
-                    "expanded proof-unit verification regressed in two serial comparisons: \
-                     {} -> {}, then {} -> {} (failure requires over 2x and over {}); \
-                     reproduce the exact expanded workload with:\n  \
-                     click expand --time-limit {} --output {} {}\n  \
-                     click profile {}",
-                    format_duration(original_elapsed),
-                    format_duration(expanded_elapsed),
-                    format_duration(confirmed_original),
-                    format_duration(confirmed_expanded),
-                    format_duration(performance_slack),
-                    format_duration(expansion_limit),
-                    shell_quote(&artifact.display().to_string()),
-                    shell_quote(&location),
-                    shell_quote(&artifact.display().to_string()),
-                ));
-            }
+            let artifact = audit_artifact_path(&site.click_path);
+            return Err(format!(
+                "{regression}; reproduce the exact expanded workload with:\n  \
+                 click expand --time-limit {} --output {} {}\n  \
+                 click profile {}",
+                format_duration(limits.expansion.time),
+                shell_quote(&artifact.display().to_string()),
+                shell_quote(&location),
+                shell_quote(&artifact.display().to_string()),
+            ));
         }
-        Some((original_elapsed, expanded_elapsed))
+        Some((original_cost, expanded_cost))
     } else {
         None
     };
@@ -1465,16 +1576,15 @@ fn audit_site(
     // Checklist step 7: re-expanding the same claim against the rewritten
     // source must be a fixed point, byte for byte. The site is re-resolved
     // by claim because the rewrite moves and replaces tactics.
-    let phase_limit = remaining_phase_limit(deadline, expansion_limit)?;
-    let reexpansion_started = Instant::now();
-    let reexpanded = reexpand_source_with_inputs(
-        &worker.source,
-        &site.claim,
-        &expanded_click_source,
-        &expanded,
-    )?;
-    let reexpansion_elapsed = reexpansion_started.elapsed();
-    ensure_phase_limit(reexpansion_elapsed, phase_limit, "re-expansion")?;
+    let (reexpanded, reexpansion) =
+        run_phase("re-expansion", limits.expansion.within(deadline)?, || {
+            reexpand_source_with_inputs(
+                &worker.source,
+                &site.claim,
+                &expanded_click_source,
+                &expanded,
+            )
+        })?;
     if reexpanded != expanded {
         return Err(format!(
             "re-expansion was not byte-identical to the first rewrite \
@@ -1490,10 +1600,10 @@ fn audit_site(
     // is intentionally not an audit invariant.
 
     Ok(SiteTimings {
-        expansion: expansion_elapsed,
-        session_verification: verification_elapsed,
+        expansion,
+        session_verification,
         cold_verification,
-        reexpansion: reexpansion_elapsed,
+        reexpansion,
     })
 }
 
@@ -1501,25 +1611,41 @@ fn cold_verify(
     source: &str,
     original: &AuditSource,
     claim_label: &str,
-    verification_limit: Duration,
+    limit: PhaseLimit,
     label: &str,
-) -> Result<Duration, String> {
-    let started = Instant::now();
-    let rewritten_click_source = rewritten_click_source(original, source)?;
-    click::instrumentation::with_deadline(cli::tool_time_limit(verification_limit), || {
+) -> Result<PhaseCost, String> {
+    let ((), cost) = run_phase(label, limit, || {
+        let rewritten_click_source = rewritten_click_source(original, source)?;
         verify_rewritten_with_inputs(original, claim_label, &rewritten_click_source)
     })?;
-    let elapsed = started.elapsed();
-    ensure_phase_limit(elapsed, verification_limit, label)?;
-    Ok(elapsed)
+    Ok(cost)
 }
 
-fn verification_regressed(
-    original: Duration,
-    expanded: Duration,
-    performance_slack: Duration,
-) -> bool {
-    expanded > original.saturating_mul(2) && expanded > original + performance_slack
+/// Whether the expanded proof's deterministic work regressed: over twice the
+/// original's and more than `performance_slack` units over it.
+fn verification_regressed(original: usize, expanded: usize, performance_slack: usize) -> bool {
+    expanded > original.saturating_mul(2) && expanded > original.saturating_add(performance_slack)
+}
+
+/// The performance comparison's verdict on cold verification of the original
+/// and expanded proof unit. Work units are deterministic, so one comparison
+/// decides on any machine under any load; wall-clock time is information.
+fn performance_regression(
+    original: PhaseCost,
+    expanded: PhaseCost,
+    performance_slack: usize,
+) -> Option<String> {
+    verification_regressed(original.work, expanded.work, performance_slack).then(|| {
+        format!(
+            "expanded proof-unit verification spent {} deterministic work units against the \
+             original's {} (failure requires over 2x and over {performance_slack} units more; \
+             wall clock {} -> {}, information only)",
+            expanded.work,
+            original.work,
+            format_duration(original.elapsed),
+            format_duration(expanded.elapsed),
+        )
+    })
 }
 
 fn audit_artifact_path(source: &Path) -> PathBuf {

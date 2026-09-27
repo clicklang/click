@@ -5,8 +5,10 @@ sites remain discoverable, expandable into normally verifiable source, and
 within the project's performance policy.
 
 An audit session discovers applicable proof sites, performs bounded expansion,
-verifies the resulting proof, and records performance. Site-specific deadlines
-contain one operation; the session deadline bounds the complete run. Selection
+verifies the resulting proof, and records performance. Each phase is judged by
+the deterministic work it spends, so machine load cannot change a verdict;
+wall-clock time is reported as information, a phase's time limit only
+contains a hung run, and the session deadline bounds the complete run. Selection
 options let maintainers resume at a source location, restrict claims, or audit
 only changes since a Git revision.
 
@@ -16,7 +18,8 @@ The stages protect different invariants:
 - expansion must extract and render the checked operations attributed to the
   selected site;
 - ordinary verification must accept the complete rewritten source;
-- performance comparison must remain inside the configured slack and limits.
+- the expanded proof's deterministic work must remain inside the configured
+  ratio and slack of the original's.
 
 `--keep-going` gathers further independent failures after a site fails. It
 doesn't make the run successful. A whole-session timeout can leave only a

@@ -76,6 +76,9 @@ pub const PUBLIC_CLI_BEHAVIORS: &[&str] = &[
     "audit.selection.claim",
     "audit.selection.changed-since",
     "audit.selection.start-at",
+    "audit.default.session-work-limit",
+    "audit.default.expansion-work-limit",
+    "audit.default.verification-work-limit",
     "audit.default.session-time-limit",
     "audit.default.expansion-time-limit",
     "audit.default.verification-time-limit",
@@ -285,8 +288,8 @@ thread_local! {
 /// Inside this scope the tools install no per-tactic real-time limit (neither
 /// production's defaults nor the ones `click expand` and `click profile`
 /// install themselves), raise every whole-run and phase wall-clock limit to
-/// [`CRASH_CONTAINMENT_TIME_LIMIT`], and report `click audit`'s timing
-/// comparisons without failing on them. The scope is thread-local; a tool
+/// [`CRASH_CONTAINMENT_TIME_LIMIT`]. `click audit`'s own verdicts count
+/// deterministic work and apply unchanged. The scope is thread-local; a tool
 /// that verifies on a thread of its own re-enters it there.
 ///
 /// Tests that drive a tool in-process use this. Tests about real-time

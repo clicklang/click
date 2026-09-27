@@ -34,21 +34,29 @@ For each selected site, audit:
 6. on the first site in a claim, compares cold original and rewritten
    verification.
 
-A cold performance regression fails only when the rewritten proof is both more
-than twice as slow and beyond the configured slack, and the comparison repeats
-in a second serial run. Raw time growth by itself is not a size-independent
-failure.
+Every audit check counts deterministic work units, the units the tactic
+budgets are charged, so the same source reaches the same verdict on any
+machine under any load. The performance comparison fails when the rewritten
+proof's cold verification spends both more than twice the original's work and
+more than the configured slack beyond it. Each phase also fails when it spends
+more than its work budget. Wall-clock times are reported as information only.
+A phase time limit is a crash-containment bound for a hung or starved run, and
+the whole-run time limit stops at a resumable cursor. Verification inside each
+phase keeps the per-tactic limits [`click verify`](verify.md) applies.
 
 ## Options and defaults
 
 | Option | Default | Meaning |
 | --- | ---: | --- |
-| `--session-time-limit DURATION` | `5m` | Limit original-sidecar session initialization. |
-| `--discovery-time-limit DURATION` | `5m` | Compatibility alias for `--session-time-limit`. |
-| `--expansion-time-limit DURATION` | `2m` | Limit one source expansion. |
-| `--verification-time-limit DURATION` | `5m` | Limit rewritten-sidecar verification. |
-| `--performance-slack DURATION` | `500ms` | Set the minimum same-run rewritten regression. |
-| `--slow-site-limit DURATION` | `500ms` | Deprecated alias for `--performance-slack`. |
+| `--session-work-limit UNITS` | `100000000` | Budget the deterministic work of original-sidecar session initialization. |
+| `--expansion-work-limit UNITS` | `50000000` | Budget the deterministic work of one expansion or re-expansion. |
+| `--verification-work-limit UNITS` | `50000000` | Budget the deterministic work of one retained or cold proof-unit verification. |
+| `--performance-slack UNITS` | `10000` | Set the minimum expanded-over-original work increase that can fail. |
+| `--slow-site-limit UNITS` | `10000` | Deprecated alias for `--performance-slack`. |
+| `--session-time-limit DURATION` | `10m` | Contain a hung session initialization. |
+| `--discovery-time-limit DURATION` | `10m` | Compatibility alias for `--session-time-limit`. |
+| `--expansion-time-limit DURATION` | `10m` | Contain a hung expansion or re-expansion. |
+| `--verification-time-limit DURATION` | `10m` | Contain a hung proof-unit verification. |
 | `--time-limit DURATION` | `10m` | Limit the whole audit and print a resume cursor on exhaustion. |
 | `--start-at PATH:LINE:COLUMN` | none | Resume inclusively at a source location. |
 | `--claim CLAIM` | all | Select an exact claim. Repeat the option to select several claims. |

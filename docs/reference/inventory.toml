@@ -1798,6 +1798,18 @@ id = "cli.audit.command"
 path = "reference/cli/audit.md#click-audit-command"
 
 [[item]]
+id = "cli.audit.--session-work-limit"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
+id = "cli.audit.--expansion-work-limit"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
+id = "cli.audit.--verification-work-limit"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
 id = "cli.audit.--session-time-limit"
 path = "reference/cli/audit.md#options-and-defaults"
 
@@ -2047,6 +2059,18 @@ path = "reference/cli/audit.md#options-and-defaults"
 
 [[item]]
 id = "cli.behavior.audit.selection.start-at"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
+id = "cli.behavior.audit.default.session-work-limit"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
+id = "cli.behavior.audit.default.expansion-work-limit"
+path = "reference/cli/audit.md#options-and-defaults"
+
+[[item]]
+id = "cli.behavior.audit.default.verification-work-limit"
 path = "reference/cli/audit.md#options-and-defaults"
 
 [[item]]
