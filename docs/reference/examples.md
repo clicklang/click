@@ -15,10 +15,15 @@ starting with 41 proves the helper returns 7 or 9 while restoring 41. The
 project's README gives the pinned compiler-import setup and ordinary
 verification commands.
 
-`examples/multifile-registry/` verifies a registry across four C translation
+`examples/multifile-registry/` specifies a registry across four C translation
 units and two headers. It covers shared updates, independent same-named private
 statics, persistent local arrays, const lookup tables, and unchanged fields.
-The data definitions live in a translation unit without functions.
+The data definitions live in a translation unit without functions. It does
+not verify yet, so the examples gate quarantines it: `click verify` and the
+gate both stop at `registry_run`'s entry, which cannot evaluate an owned field
+path into another module's function-local static struct array, and past that
+point the cross-file caller needs static-state caller transport
+(`issues/static-state-caller-transport.md`).
 
 `examples/heap-object/` is the focused allocation-lifetime project. It shows a
 nullable factory, full initialization, a read-only borrower, ownership transfer

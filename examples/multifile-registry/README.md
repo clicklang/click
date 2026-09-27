@@ -44,5 +44,11 @@ Run from the repository root:
 cargo run --bin click -- verify examples/multifile-registry/registry.click
 ```
 
-The ordinary examples gate discovers this directory automatically;
-`scripts/check.sh` verifies it with the rest of the repository.
+The project does not verify yet. `click verify` and the examples gate agree:
+both stop at `registry_run`'s entry, which cannot evaluate
+`owns beta::record_beta::batches[0].value[0..1]` (an owned field path into
+another module's function-local static struct array has no known pointee
+type), and past that point the cross-file caller needs static-state caller
+transport (`issues/static-state-caller-transport.md`). The examples gate
+quarantines the directory until then; `CLICK_EXAMPLE=multifile-registry` runs
+it.
