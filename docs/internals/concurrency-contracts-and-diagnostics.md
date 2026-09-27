@@ -527,8 +527,8 @@ obligations, not claims that the tutorial already proves Click's design.
 
 The current design direction is:
 
-1. Use the names `mutex_live` and `mutex_use`. They are still proposed language
-   additions, not implemented resources.
+1. Use the names `mutex_live` and `mutex_use`. `mutex_live` is implemented;
+   `mutex_use` remains a proposed language addition.
 2. Keep the existing ownership-clause vocabulary. Do not introduce a `uses`
    keyword or a general protocol-effect annotation.
 3. Permit automatic checked lending and reborrowing, provided a failure prints
@@ -557,6 +557,31 @@ new semantic rules and their diagnostics pass the ordinary gate. This document
 does not authorize implementing unresolved syntax choices or claiming that the
 example diagnostics already exist.
 
+## Shared lifetime-hold checkpoint
+
+The loan ledger now separates possession of a live share from permission to
+read a resource description. A lifetime binding names the exact loan, scope,
+share, and backing occurrence; every use checks those identities against the
+current ledger and participant. Holding that lifetime prevents scope closure
+and ownership recovery. It grants no memory view, ownership, new share, or
+recovery right. Transferring a share does not release its outstanding holds;
+ending a reborrow remains blocked until its holds are released.
+
+Existing borrowing composites use this lifetime path after separately checking
+their viewed resource. View authorization and reborrow rechecking use the same
+possession check, so scope, occurrence, and holder checks cannot drift between
+these operations. The hold transition itself carries no stable-read assertion.
+Tests cover mixed identities, transferred and split shares, pinned reborrows,
+ended scopes, forged certificates, and deterministic scaling over loan counts.
+
+This is shared kernel infrastructure, not yet `mutex_use` support. The next
+adapter must escrow the exact `mutex_live` initialization, authorize use without
+a memory description, and attach a lifetime hold to each acquired guard.
+Surface calls and worker joins must then transport and recover that authority.
+Until those adapters exist, acquiring still requires `mutex_live`, and abstract
+contract protocol transitions remain frozen. No surface syntax changes in this
+checkpoint.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.
@@ -565,8 +590,8 @@ hostile certificate tests:
 
 1. **Storage and lifetime authority.** The exclusive `mutex_live` owner is implemented,
    including generative identity, fold/unfold, and preserving call transport.
-   Initialization must still establish live,
-   exclusive storage, and initialized bytes must resist ordinary writes.
+   Initialization now establishes live, exclusive storage, and initialized
+   bytes resist ordinary writes, including through abstract contract inputs.
    Scope exit now checks concrete initializations and conservatively refuses
    ambiguous symbolic ones. `mutex_use` needs checked lending from `mutex_live`, reborrowing, worker join
    recovery, and returned guards that keep their lender alive. The current heap

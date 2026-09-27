@@ -92,6 +92,17 @@ impl StableViewDescription {
     }
 }
 
+/// Identity and possession of one live loan share. This establishes a lifetime
+/// dependency only: it grants no resource description, memory access, escrow
+/// ownership, or close/recovery right. Every use rechecks the current ledger.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct LoanAuthorityBinding {
+    loan: LoanId,
+    scope: LoanScopeId,
+    share: LoanShareId,
+    support: ResourceOccurrenceId,
+}
+
 /// Exact binding from a resource occurrence to the live loan/share that
 /// authorizes reading it. This is carried by checked state, never inferred by
 /// searching the ambient ledger or resource frame.
@@ -106,6 +117,17 @@ pub(crate) struct LoanViewBinding {
     /// body piece it restores when unfolded): the occurrence keeps this
     /// loan's scope open until the hold is released.
     pub(crate) hold: Option<LoanHoldId>,
+}
+
+impl LoanViewBinding {
+    fn authority(&self) -> LoanAuthorityBinding {
+        LoanAuthorityBinding {
+            loan: self.loan,
+            scope: self.scope,
+            share: self.share,
+            support: self.support,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -1157,7 +1179,7 @@ enum LoanTransitionEvidence {
         holder: LoanParticipantId,
     },
     Hold {
-        binding: LoanViewBinding,
+        binding: LoanAuthorityBinding,
         holder: LoanParticipantId,
         hold: LoanHoldId,
     },
@@ -3874,6 +3896,17 @@ impl LoanLedger {
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
         self.validate_view_binding(binding.clone(), holder)?;
+        self.hold_authority_with_transition(binding.authority(), holder)
+    }
+
+    /// Lifetime holds need possession, not a stable-read description. The
+    /// view adapter above must still check its description before delegating.
+    fn hold_authority_with_transition(
+        &self,
+        binding: LoanAuthorityBinding,
+        holder: LoanParticipantId,
+    ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
+        self.validate_authority_binding(binding, holder)?;
         let hold = LoanHoldId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_hold,
@@ -3884,7 +3917,7 @@ impl LoanLedger {
             .checked_add(1)
             .ok_or(LoanRefusal::IdentitySpaceExhausted)?;
         let transition = self.issue(LoanTransitionEvidence::Hold {
-            binding: binding.clone(),
+            binding,
             holder,
             hold,
         })?;
@@ -3975,11 +4008,11 @@ impl LoanLedger {
         })
     }
 
-    pub(crate) fn validate_view_binding(
+    fn validate_authority_binding(
         &self,
-        binding: LoanViewBinding,
+        binding: LoanAuthorityBinding,
         holder: LoanParticipantId,
-    ) -> Result<(), LoanRefusal> {
+    ) -> Result<&LoanRecord, LoanRefusal> {
         self.require_participant(holder)?;
         let loan = self
             .storage
@@ -4000,13 +4033,26 @@ impl LoanLedger {
             .get(&binding.share)
             .ok_or(LoanRefusal::MissingShare)?;
         if loan.scope != binding.scope
+            || scope.loan != binding.loan
             || loan.support != binding.support
             || !scope.active
             || loan.recovered
             || share.scope != binding.scope
             || share.holder != Some(holder)
             || share.pinned_by.is_some()
-            || !binding.viewed.is_view()
+        {
+            return Err(LoanRefusal::MissingLoanBinding);
+        }
+        Ok(loan)
+    }
+
+    pub(crate) fn validate_view_binding(
+        &self,
+        binding: LoanViewBinding,
+        holder: LoanParticipantId,
+    ) -> Result<(), LoanRefusal> {
+        let loan = self.validate_authority_binding(binding.authority(), holder)?;
+        if !binding.viewed.is_view()
             || !loan.permitted.iter().any(|permitted| {
                 ResourceContext::new()
                     .unchecked_with_fact(permitted.clone())
@@ -4239,18 +4285,16 @@ impl LoanLedger {
         let Some(loan) = self.storage.data.loans.get(&description.loan) else {
             return false;
         };
-        let Some(scope) = self.storage.data.scopes.get(&loan.scope) else {
-            return false;
-        };
-        let Some(share) = self.storage.data.shares.get(&share) else {
-            return false;
-        };
-        scope.active
-            && !loan.recovered
-            && description.support == loan.support
-            && share.scope == loan.scope
-            && share.holder == Some(holder)
-            && share.pinned_by.is_none()
+        self.validate_authority_binding(
+            LoanAuthorityBinding {
+                loan: description.loan,
+                scope: loan.scope,
+                share,
+                support: description.support,
+            },
+            holder,
+        )
+        .is_ok()
             && description.viewed.is_view()
             && loan.permitted.iter().any(|permitted| {
                 ResourceContext::new()
@@ -4968,20 +5012,8 @@ impl LoanLedger {
                     .get(&parent.share)
                     .cloned()
                     .ok_or(LoanRefusal::MissingShare)?;
-                if parent_loan.scope != parent.scope
-                    || parent_loan.support != parent.support
-                    || !parent_scope.active
-                    || parent_loan.recovered
-                    || parent_share.scope != parent.scope
-                    || parent_share.holder != Some(*lender)
-                    || parent_share.pinned_by.is_some()
-                    || !parent.viewed.is_view()
-                    || !parent_loan.permitted.iter().any(|permitted| {
-                        ResourceContext::new()
-                            .unchecked_with_fact(permitted.clone())
-                            .satisfies_fact(&parent.viewed, &PureFactContext::default())
-                    })
-                    || scope.arena != data.arena
+                self.validate_view_binding(parent.clone(), *lender)?;
+                if scope.arena != data.arena
                     || loan.arena != data.arena
                     || root.arena != data.arena
                     || scope.ordinal != data.next_scope
@@ -5204,7 +5236,7 @@ impl LoanLedger {
                 holder,
                 hold,
             } => {
-                self.validate_view_binding(binding.clone(), *holder)?;
+                self.validate_authority_binding(*binding, *holder)?;
                 let scope_record = data
                     .scopes
                     .get(&binding.scope)
@@ -6458,6 +6490,261 @@ mod tests {
         let ledger = ledger.apply(&end).unwrap();
         assert!(!ledger.has_active_memory_loans());
         assert!(ledger.invariant_holds());
+    }
+
+    #[test]
+    fn lifetime_hold_needs_possession_but_grants_no_read_or_recovery_authority() {
+        let (ledger, owner, reader) = participants();
+        let fact = owned("lifetime");
+        let support = backing(&fact);
+        let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let authority = LoanAuthorityBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+        };
+        let invalid_view = LoanViewBinding {
+            loan: authority.loan,
+            scope: authority.scope,
+            share: authority.share,
+            support,
+            viewed: memory(0, 1, false),
+            hold: None,
+        };
+        assert_eq!(
+            ledger.hold(&invalid_view, reader),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let (held, hold, certificate) = ledger
+            .hold_authority_with_transition(authority, reader)
+            .unwrap();
+        assert_eq!(ledger.apply(&certificate).unwrap(), held);
+        assert!(!held.has_active_memory_loans());
+        assert_eq!(
+            held.permitted_descriptions(opening.loan),
+            ledger.permitted_descriptions(opening.loan)
+        );
+        assert_eq!(
+            held.validate_view_binding(invalid_view, reader),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        assert_eq!(
+            held.recover(opening.loan, reader),
+            Err(LoanRefusal::InvalidEvidence)
+        );
+        assert_eq!(
+            held.recover(opening.loan, owner),
+            Err(LoanRefusal::ScopeStillActive)
+        );
+        let moved = held
+            .apply(&held.transfer(opening.root_share, reader, owner).unwrap())
+            .unwrap();
+        assert_eq!(
+            moved.end(opening.scope, owner),
+            Err(LoanRefusal::ActiveDependency)
+        );
+        assert_eq!(
+            moved.hold_authority_with_transition(authority, reader),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let released = moved.release(hold, reader).unwrap();
+        let ended = released
+            .apply(&released.end(opening.scope, owner).unwrap())
+            .unwrap();
+        assert_eq!(
+            ended.hold_authority_with_transition(authority, owner),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let (recover, recovered, _) = ended.recover(opening.loan, owner).unwrap();
+        assert_eq!(recovered, fact);
+        assert!(ended.apply(&recover).unwrap().invariant_holds());
+    }
+
+    #[test]
+    fn lifetime_hold_rechecks_split_reborrow_and_exact_occurrence() {
+        let (ledger, owner, reader) = participants();
+        let fact = owned("same-description");
+        let support = backing(&fact);
+        let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let authority = LoanAuthorityBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+        };
+        let other = ledger.lend(owner, reader, backing(&fact), fact).unwrap();
+        let ledger = ledger.apply(&other.transition).unwrap();
+        for forged in [
+            LoanAuthorityBinding {
+                loan: other.loan,
+                ..authority
+            },
+            LoanAuthorityBinding {
+                scope: other.scope,
+                ..authority
+            },
+            LoanAuthorityBinding {
+                share: other.root_share,
+                ..authority
+            },
+            LoanAuthorityBinding {
+                support: other.description.support(),
+                ..authority
+            },
+        ] {
+            assert_eq!(
+                ledger.hold_authority_with_transition(forged, reader),
+                Err(LoanRefusal::MissingLoanBinding)
+            );
+        }
+        let (split, left, right) = ledger
+            .split(authority.share, reader, reader, owner)
+            .unwrap();
+        let ledger = ledger.apply(&split).unwrap();
+        assert_eq!(
+            ledger.hold_authority_with_transition(authority, reader),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let left_authority = LoanAuthorityBinding {
+            share: left,
+            ..authority
+        };
+        assert!(
+            ledger
+                .hold_authority_with_transition(left_authority, reader)
+                .is_ok()
+        );
+        assert_eq!(
+            ledger.hold_authority_with_transition(
+                LoanAuthorityBinding {
+                    share: right,
+                    ..authority
+                },
+                reader
+            ),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let child = ledger
+            .reborrow(
+                LoanViewBinding {
+                    loan: authority.loan,
+                    scope: authority.scope,
+                    share: left,
+                    support,
+                    viewed: opening.description.viewed().clone(),
+                    hold: None,
+                },
+                reader,
+                owner,
+            )
+            .unwrap();
+        let ledger = ledger.apply(&child.transition).unwrap();
+        assert_eq!(
+            ledger.hold_authority_with_transition(left_authority, reader),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let child_authority = LoanAuthorityBinding {
+            loan: child.loan,
+            scope: child.scope,
+            share: child.root_share,
+            support,
+        };
+        let (held, hold, _) = ledger
+            .hold_authority_with_transition(child_authority, owner)
+            .unwrap();
+        let held = held
+            .apply(&held.transfer(child.root_share, owner, reader).unwrap())
+            .unwrap();
+        assert_eq!(
+            held.end(child.scope, reader),
+            Err(LoanRefusal::ActiveDependency)
+        );
+        let released = held.release(hold, owner).unwrap();
+        let ended = released
+            .apply(&released.end(child.scope, reader).unwrap())
+            .unwrap();
+        assert!(
+            ended
+                .hold_authority_with_transition(left_authority, reader)
+                .is_ok()
+        );
+        assert!(ended.invariant_holds());
+    }
+
+    #[test]
+    fn lifetime_hold_certificate_cannot_substitute_a_different_share() {
+        let (ledger, owner, reader) = participants();
+        let fact = owned("lifetime");
+        let support = backing(&fact);
+        let opening = ledger.lend(owner, reader, support, fact).unwrap();
+        let ledger = ledger.apply(&opening.transition).unwrap();
+        let binding = LoanAuthorityBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support,
+        };
+        let (held, _, mut certificate) = ledger
+            .hold_authority_with_transition(binding, reader)
+            .unwrap();
+        assert_eq!(held.apply(&certificate), Err(LoanRefusal::StalePredecessor));
+        let LoanTransitionEvidence::Hold { binding, .. } = &mut certificate.evidence else {
+            panic!("hold certificate")
+        };
+        binding.support = ResourceOccurrenceId::default();
+        assert_eq!(
+            ledger.apply(&certificate),
+            Err(LoanRefusal::InvalidEvidence)
+        );
+        // Even rewriting the structural seal cannot bypass the transition's
+        // own possession check when the checker rechecks it.
+        certificate.checked_evidence = certificate.evidence.clone();
+        assert_eq!(
+            ledger.apply(&certificate),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+    }
+
+    #[test]
+    fn lifetime_holds_scale_with_selected_shares() {
+        let mut samples = Vec::new();
+        for size in [16, 32, 64, 128] {
+            let (mut ledger, owner, reader) = participants();
+            let mut bindings = Vec::new();
+            for i in 0..size {
+                let fact = owned(&format!("lifetime-{i}"));
+                let support = backing(&fact);
+                let opening = ledger.lend(owner, reader, support, fact).unwrap();
+                ledger = ledger.apply(&opening.transition).unwrap();
+                bindings.push(LoanAuthorityBinding {
+                    loan: opening.loan,
+                    scope: opening.scope,
+                    share: opening.root_share,
+                    support,
+                });
+            }
+            let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    for binding in bindings {
+                        let (held, hold, _) = ledger
+                            .hold_authority_with_transition(binding, reader)
+                            .unwrap();
+                        ledger = held.release(hold, reader).unwrap();
+                    }
+                })
+            });
+            assert!(ledger.invariant_holds());
+            samples.push((size, work, persistent_work));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 3 && pair[1].2 <= pair[0].2 * 3,
+                "lifetime holds scan unrelated loans: {samples:?}"
+            );
+        }
     }
 
     /// A hold placed by a folded borrowing composite keeps the loan's scope
