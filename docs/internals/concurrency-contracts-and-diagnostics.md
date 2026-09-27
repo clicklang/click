@@ -607,10 +607,41 @@ This is a staged kernel adapter, exercised by transition and hostile-evidence
 tests; ordinary C calls still acquire through `mutex_live`. The entry methods
 remain internal until resource occurrences can carry use bindings through
 contracts and workers. There is no new accepted surface syntax, implicit call
-lending, use reborrowing, worker-join integration, or escaping-guard transport
+lending, worker-join integration, or escaping-guard transport
 in this checkpoint. Abstract contract protocol transitions remain frozen.
 Deterministic scaling tests check one lend/acquire/release/recover operation
 against increasing numbers of unrelated mutexes.
+
+## Use-reborrowing kernel checkpoint
+
+A concrete use permission can now be reborrowed through the existing checked
+scope transition. The child pins exactly the supplying share, retains its
+backing occurrence, and refers directly to the original loan's escrowed
+`mutex_live` owner. It receives no owner copy, stable view, or recovery right.
+A direct root-loan identity avoids searching the chain of parent scopes when
+a deeply nested helper acquires a mutex.
+
+The child borrower can acquire only that original mutex initialization.
+Acquisition puts its hold on the child's scope; the child dependency keeps
+all supplying scopes open. Returning the child share is insufficient while a
+guard or descendant still depends on it. Ending the reborrow requires the
+lender's close right and the complete child share, then restores only the
+pinned parent share. Only the original lending scope can recover ownership.
+Sibling shares remain available, and ended child permissions cannot be reused
+or replaced by a later child with the same printed mutex address.
+
+Views and mutex use share scope creation, pinning, dependency, and closure
+rules, while each checks its own authority. A stable view cannot be converted
+to mutex use, and mutex reborrows cannot produce stable views. Tests cover
+nested acquisition/release, cross-participant returns, outstanding guards,
+forged parent identities and stale transitions, protocol freezing, and
+multi-size scaling of deep reborrow chains.
+
+These remain internal adapters. There is still no accepted `mutex_use` surface
+syntax or automatic transport through contract resources, worker creation,
+join, or returned guards. Ordinary C calls continue to require `mutex_live`,
+and abstract protocol transitions remain frozen. The next boundary is binding
+these permissions to resource occurrences and carrying them through contracts.
 
 ## Remaining semantic implementation boundaries
 
@@ -623,9 +654,9 @@ hostile certificate tests:
    Initialization now establishes live, exclusive storage, and initialized
    bytes resist ordinary writes, including through abstract contract inputs.
    Scope exit now checks concrete initializations and conservatively refuses
-   ambiguous symbolic ones. Concrete kernel use lending and guard holds are
+   ambiguous symbolic ones. Concrete kernel use lending, reborrowing, and guard holds are
    implemented. `mutex_use` still needs resource-occurrence and contract transport,
-   reborrowing, worker-join recovery, and escaping guards that retain the loan.
+   worker-join recovery, and escaping guards that retain the loan.
    The current heap refusal is a conservative dependency check, not this
    resource protocol.
 2. **Abstract guard transitions.** Contracts need generative initialization and

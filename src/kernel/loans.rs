@@ -116,6 +116,21 @@ pub(crate) struct MutexUseLoan {
     pub(crate) usage: MutexUseBinding,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ReborrowBinding {
+    View(LoanViewBinding),
+    MutexUse(MutexUseBinding),
+}
+
+impl ReborrowBinding {
+    fn authority(&self) -> LoanAuthorityBinding {
+        match self {
+            Self::View(binding) => binding.authority(),
+            Self::MutexUse(binding) => binding.0,
+        }
+    }
+}
+
 /// Exact binding from a resource occurrence to the live loan/share that
 /// authorizes reading it. This is carried by checked state, never inferred by
 /// searching the ambient ledger or resource frame.
@@ -570,6 +585,9 @@ enum LoanOrigin {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct LoanRecord {
     scope: LoanScopeId,
+    /// Direct anchor to the sole escrowed mutex owner. Child scopes carry
+    /// this identity, never an owner copy or a walk through ancestor scopes.
+    mutex_root: Option<LoanId>,
     support: ResourceOccurrenceId,
     escrow: Option<CResourceFact>,
     /// Every checked viewed projection authorized by this loan.  A composite
@@ -1166,7 +1184,7 @@ enum LoanTransitionEvidence {
         root: LoanShareId,
     },
     Reborrow {
-        parent: LoanViewBinding,
+        parent: ReborrowBinding,
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
         scope: LoanScopeId,
@@ -3707,6 +3725,109 @@ impl LoanLedger {
         ))
     }
 
+    /// Check possession of this scope, then consult the original escrow by
+    /// its indexed identity. Root shares may be pinned: the root's *scope*
+    /// must remain live, but its holder need not be the current borrower.
+    fn mutex_use_owner(
+        &self,
+        usage: MutexUseBinding,
+        holder: LoanParticipantId,
+    ) -> Result<&CResourceFact, LoanRefusal> {
+        let record = self.validate_authority_binding(usage.0, holder)?;
+        let root_id = record.mutex_root.ok_or(LoanRefusal::MissingLoanBinding)?;
+        let root = self
+            .storage
+            .data
+            .loans
+            .get(&root_id)
+            .ok_or(LoanRefusal::MissingLoan)?;
+        if !record.permitted.is_empty()
+            || !record.memory_backing.is_empty()
+            || root.mutex_root != Some(root_id)
+            || root.support != record.support
+            || root.recovered
+            || !matches!(root.origin, LoanOrigin::Escrowed(_))
+            || !self
+                .storage
+                .data
+                .scopes
+                .get(&root.scope)
+                .is_some_and(|scope| scope.active)
+        {
+            return Err(LoanRefusal::MissingLoanBinding);
+        }
+        root.escrow
+            .as_ref()
+            .filter(|owner| is_concrete_mutex_owner(owner))
+            .ok_or(LoanRefusal::MissingLoanBinding)
+    }
+
+    pub(crate) fn reborrow_mutex_use(
+        &self,
+        parent: MutexUseBinding,
+        lender: LoanParticipantId,
+        borrower: LoanParticipantId,
+    ) -> Result<(Self, MutexUseLoan), LoanRefusal> {
+        let scope = LoanScopeId {
+            arena: self.storage.data.arena,
+            ordinal: self.storage.data.next_scope,
+        };
+        let loan = LoanId {
+            arena: self.storage.data.arena,
+            ordinal: self.storage.data.next_loan,
+        };
+        let root = LoanShareId {
+            arena: self.storage.data.arena,
+            ordinal: self.storage.data.next_share,
+        };
+        let transition = self.issue(LoanTransitionEvidence::Reborrow {
+            parent: ReborrowBinding::MutexUse(parent),
+            lender,
+            borrower,
+            scope,
+            loan,
+            root,
+        })?;
+        Ok((
+            self.apply(&transition)?,
+            MutexUseLoan {
+                scope,
+                loan,
+                usage: MutexUseBinding(LoanAuthorityBinding {
+                    loan,
+                    scope,
+                    share: root,
+                    support: parent.0.support,
+                }),
+            },
+        ))
+    }
+
+    /// Closing a child restores its pinned parent share through the ordinary
+    /// End transition. A child has no escrow and cannot recover ownership.
+    pub(crate) fn end_mutex_reborrow(
+        &self,
+        opening: &MutexUseLoan,
+        holder: LoanParticipantId,
+    ) -> Result<Self, LoanRefusal> {
+        self.mutex_use_owner(opening.usage, holder)?;
+        let authority = opening.usage.0;
+        let record = self
+            .storage
+            .data
+            .loans
+            .get(&authority.loan)
+            .ok_or(LoanRefusal::MissingLoan)?;
+        if opening.scope != authority.scope
+            || opening.loan != authority.loan
+            || record.origin != LoanOrigin::Reborrowed
+            || record.escrow.is_some()
+        {
+            return Err(LoanRefusal::MissingLoanBinding);
+        }
+        self.apply(&self.end(opening.scope, holder)?)
+    }
+
     pub(crate) fn recover_mutex_use(
         &self,
         opening: &MutexUseLoan,
@@ -3716,6 +3837,7 @@ impl LoanLedger {
         let record = self.validate_authority_binding(authority, holder)?;
         if opening.scope != authority.scope
             || opening.loan != authority.loan
+            || record.mutex_root != Some(opening.loan)
             || !record.escrow.as_ref().is_some_and(is_concrete_mutex_owner)
             || !record.permitted.is_empty()
             || !record.memory_backing.is_empty()
@@ -3733,12 +3855,7 @@ impl LoanLedger {
         owner: &CResourceFact,
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId), LoanRefusal> {
-        let record = self.validate_authority_binding(usage.0, holder)?;
-        if !is_concrete_mutex_owner(owner)
-            || record.escrow.as_ref() != Some(owner)
-            || !record.permitted.is_empty()
-            || !record.memory_backing.is_empty()
-        {
+        if self.mutex_use_owner(usage, holder)? != owner {
             return Err(LoanRefusal::MissingLoanBinding);
         }
         let (held, hold, _) = self.hold_authority_with_transition(usage.0, holder)?;
@@ -4190,7 +4307,7 @@ impl LoanLedger {
             ordinal: self.storage.data.next_share,
         };
         let evidence = LoanTransitionEvidence::Reborrow {
-            parent: parent.clone(),
+            parent: ReborrowBinding::View(parent.clone()),
             lender,
             borrower,
             scope,
@@ -4822,6 +4939,7 @@ impl LoanLedger {
                     *loan,
                     LoanRecord {
                         scope: *scope,
+                        mutex_root: is_concrete_mutex_owner(escrow).then_some(*loan),
                         support: *support,
                         escrow: Some(escrow.clone()),
                         permitted: if is_concrete_mutex_owner(escrow) {
@@ -4943,6 +5061,7 @@ impl LoanLedger {
                     *loan,
                     LoanRecord {
                         scope: *scope,
+                        mutex_root: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
                         permitted: std::iter::once(CResourceFact::View(escrow.resource().clone()))
@@ -5059,6 +5178,7 @@ impl LoanLedger {
                     *loan,
                     LoanRecord {
                         scope: *scope,
+                        mutex_root: None,
                         support: *support,
                         escrow: None,
                         permitted,
@@ -5104,13 +5224,32 @@ impl LoanLedger {
                 loan,
                 root,
             } => {
+                let (permitted, memory_backing, mutex_root) = match parent {
+                    ReborrowBinding::View(binding) => {
+                        self.validate_view_binding(binding.clone(), *lender)?;
+                        let record = self
+                            .storage
+                            .data
+                            .loans
+                            .get(&binding.loan)
+                            .ok_or(LoanRefusal::MissingLoan)?;
+                        let (permitted, backing) = reborrowed_authority(record, &binding.viewed);
+                        (permitted, backing, None)
+                    }
+                    ReborrowBinding::MutexUse(binding) => {
+                        self.mutex_use_owner(*binding, *lender)?;
+                        let record = self
+                            .storage
+                            .data
+                            .loans
+                            .get(&binding.0.loan)
+                            .ok_or(LoanRefusal::MissingLoan)?;
+                        (Vec::new(), Vec::new(), record.mutex_root)
+                    }
+                };
+                let parent = parent.authority();
                 self.require_participant(*lender)?;
                 self.require_participant(*borrower)?;
-                let parent_loan = data
-                    .loans
-                    .get(&parent.loan)
-                    .cloned()
-                    .ok_or(LoanRefusal::MissingLoan)?;
                 let parent_scope = data
                     .scopes
                     .get(&parent.scope)
@@ -5121,7 +5260,6 @@ impl LoanLedger {
                     .get(&parent.share)
                     .cloned()
                     .ok_or(LoanRefusal::MissingShare)?;
-                self.validate_view_binding(parent.clone(), *lender)?;
                 if scope.arena != data.arena
                     || loan.arena != data.arena
                     || root.arena != data.arena
@@ -5171,15 +5309,11 @@ impl LoanLedger {
                         holds: crate::persistent::PersistentSet::default(),
                     },
                 );
-                // One description authorized this transition, so the child
-                // inherits that description and the parent backing inside
-                // it, not the parent's whole permitted set (F5).
-                let (permitted, memory_backing) =
-                    reborrowed_authority(&parent_loan, &parent.viewed);
                 data.loans = data.loans.with_inserted(
                     *loan,
                     LoanRecord {
                         scope: *scope,
+                        mutex_root,
                         support: parent.support,
                         escrow: None,
                         permitted: permitted.clone(),
@@ -5645,6 +5779,24 @@ impl LoanLedger {
             };
             if loan.recovered && scope.active {
                 return false;
+            }
+            if let Some(root_id) = loan.mutex_root {
+                let Some(root) = data.loans.get(&root_id) else {
+                    return false;
+                };
+                if root.mutex_root != Some(root_id)
+                    || root.support != loan.support
+                    || !root.escrow.as_ref().is_some_and(is_concrete_mutex_owner)
+                    || !loan.permitted.is_empty()
+                    || !loan.memory_backing.is_empty()
+                    || (scope.active
+                        && (root.recovered
+                            || !data.scopes.get(&root.scope).is_some_and(|s| s.active)))
+                    || (root_id != *loan_id
+                        && (loan.escrow.is_some() || loan.origin != LoanOrigin::Reborrowed))
+                {
+                    return false;
+                }
             }
             let origin_is_valid = match &loan.origin {
                 LoanOrigin::Escrowed(recovery_right) => {
@@ -6609,6 +6761,208 @@ mod tests {
             },
             epoch,
         }))
+    }
+
+    #[test]
+    fn mutex_use_reborrow_pins_parent_and_guard_blocks_return_across_participants() {
+        let (ledger, owner, worker) = participants();
+        let helper = ledger.fresh_participant().unwrap();
+        let live = mutex_owner(Some(1));
+        let (ledger, root) = ledger
+            .lend_mutex_use(owner, worker, backing(&live), live.clone())
+            .unwrap();
+        let (ledger, child) = ledger
+            .reborrow_mutex_use(root.usage, worker, helper)
+            .unwrap();
+        assert!(ledger.hold_mutex_use(root.usage, &live, worker).is_err());
+        assert!(
+            ledger
+                .reborrow_mutex_use(root.usage, worker, helper)
+                .is_err()
+        );
+        assert!(ledger.recover_mutex_use(&root, owner).is_err());
+        assert!(ledger.recover_mutex_use(&child, helper).is_err());
+        assert!(ledger.recover(child.loan, helper).is_err());
+        assert!(ledger.permitted_descriptions(child.loan).is_empty());
+        assert!(!ledger.has_active_memory_loans());
+        let (ledger, hold) = ledger.hold_mutex_use(child.usage, &live, helper).unwrap();
+        let ledger = ledger
+            .apply(
+                &ledger
+                    .transfer(child.usage.0.share, helper, worker)
+                    .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            ledger.end_mutex_reborrow(&child, worker),
+            Err(LoanRefusal::ActiveDependency)
+        );
+        assert!(ledger.release(hold, worker).is_err());
+        let ledger = ledger.release(hold, helper).unwrap();
+        let ledger = ledger.end_mutex_reborrow(&child, worker).unwrap();
+        assert!(ledger.end_mutex_reborrow(&child, worker).is_err());
+        assert!(ledger.hold_mutex_use(child.usage, &live, worker).is_err());
+        assert!(ledger.hold_mutex_use(root.usage, &live, worker).is_ok());
+        let ledger = ledger
+            .apply(&ledger.transfer(root.usage.0.share, worker, owner).unwrap())
+            .unwrap();
+        let (ledger, recovered) = ledger.recover_mutex_use(&root, owner).unwrap();
+        assert_eq!(recovered, live);
+        assert!(ledger.invariant_holds());
+    }
+
+    #[test]
+    fn mutex_use_reborrow_preserves_sibling_share_and_initialization() {
+        let (ledger, owner, helper) = participants();
+        let live = mutex_owner(Some(1));
+        let (ledger, root) = ledger
+            .lend_mutex_use(owner, owner, backing(&live), live.clone())
+            .unwrap();
+        let (split, left, right) = ledger
+            .split(root.usage.0.share, owner, owner, owner)
+            .unwrap();
+        let ledger = ledger.apply(&split).unwrap();
+        let left_use = MutexUseBinding(LoanAuthorityBinding {
+            share: left,
+            ..root.usage.0
+        });
+        let right_use = MutexUseBinding(LoanAuthorityBinding {
+            share: right,
+            ..root.usage.0
+        });
+        let (ledger, child) = ledger.reborrow_mutex_use(left_use, owner, helper).unwrap();
+        assert!(ledger.hold_mutex_use(left_use, &live, owner).is_err());
+        assert!(ledger.hold_mutex_use(right_use, &live, owner).is_ok());
+        assert!(
+            ledger
+                .hold_mutex_use(child.usage, &mutex_owner(Some(2)), helper)
+                .is_err()
+        );
+        assert!(ledger.hold_mutex_use(child.usage, &live, helper).is_ok());
+        assert_eq!(
+            ledger
+                .storage
+                .data
+                .loans
+                .get(&child.loan)
+                .unwrap()
+                .mutex_root,
+            Some(root.loan)
+        );
+        assert!(
+            ledger
+                .storage
+                .data
+                .loans
+                .get(&child.loan)
+                .unwrap()
+                .escrow
+                .is_none()
+        );
+        assert!(ledger.end_mutex_reborrow(&root, owner).is_err());
+        let forged = MutexUseLoan {
+            scope: root.scope,
+            ..child.clone()
+        };
+        assert!(ledger.end_mutex_reborrow(&forged, helper).is_err());
+        assert!(ledger.invariant_holds());
+    }
+
+    #[test]
+    fn mutex_use_reborrow_rejects_forged_parent_and_stale_transition() {
+        let (ledger, owner, helper) = participants();
+        let live = mutex_owner(Some(1));
+        let (ledger, root) = ledger
+            .lend_mutex_use(owner, owner, backing(&live), live.clone())
+            .unwrap();
+        let (next, child) = ledger
+            .reborrow_mutex_use(root.usage, owner, helper)
+            .unwrap();
+        let evidence = LoanTransitionEvidence::Reborrow {
+            parent: ReborrowBinding::MutexUse(root.usage),
+            lender: owner,
+            borrower: helper,
+            scope: child.scope,
+            loan: child.loan,
+            root: child.usage.0.share,
+        };
+        let transition = ledger.issue(evidence.clone()).unwrap();
+        assert_eq!(next.apply(&transition), Err(LoanRefusal::StalePredecessor));
+        let mut forged = evidence;
+        let LoanTransitionEvidence::Reborrow { parent, .. } = &mut forged else {
+            panic!("reborrow")
+        };
+        *parent = ReborrowBinding::MutexUse(MutexUseBinding(LoanAuthorityBinding {
+            support: ResourceOccurrenceId::default(),
+            ..root.usage.0
+        }));
+        assert!(ledger.issue(forged).is_err());
+        assert!(
+            ledger
+                .reborrow_mutex_use(root.usage, helper, owner)
+                .is_err()
+        );
+        let (foreign, foreign_owner, _) = participants();
+        assert!(
+            foreign
+                .reborrow_mutex_use(root.usage, foreign_owner, foreign_owner)
+                .is_err()
+        );
+        let fact = owned("ordinary-token");
+        let opening = ledger.lend(owner, owner, backing(&fact), fact).unwrap();
+        let ordinary = ledger.apply(&opening.transition).unwrap();
+        let fabricated = MutexUseBinding(LoanAuthorityBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support: opening.description.support(),
+        });
+        assert!(
+            ordinary
+                .reborrow_mutex_use(fabricated, owner, helper)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn mutex_use_deep_reborrows_scale_without_ancestry_walks() {
+        let mut samples = Vec::new();
+        for depth in [16, 32, 64, 128] {
+            let (ledger, owner, _) = participants();
+            let live = mutex_owner(Some(1));
+            let (mut ledger, root) = ledger
+                .lend_mutex_use(owner, owner, backing(&live), live.clone())
+                .unwrap();
+            let (((), work), persistent_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let mut parent = root.usage;
+                    let mut children = Vec::new();
+                    for _ in 0..depth {
+                        let (next, child) =
+                            ledger.reborrow_mutex_use(parent, owner, owner).unwrap();
+                        ledger = next;
+                        let (held, hold) =
+                            ledger.hold_mutex_use(child.usage, &live, owner).unwrap();
+                        ledger = held.release(hold, owner).unwrap();
+                        parent = child.usage;
+                        children.push(child);
+                    }
+                    for child in children.iter().rev() {
+                        ledger = ledger.end_mutex_reborrow(child, owner).unwrap();
+                    }
+                })
+            });
+            let (ledger, recovered) = ledger.recover_mutex_use(&root, owner).unwrap();
+            assert_eq!(recovered, live);
+            assert!(ledger.invariant_holds());
+            samples.push((depth, work, persistent_work));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 3 && pair[1].2 <= pair[0].2 * 3,
+                "mutex reborrow work grows with ancestry: {samples:?}"
+            );
+        }
     }
 
     #[test]
