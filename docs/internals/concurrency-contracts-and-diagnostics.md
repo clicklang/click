@@ -696,6 +696,37 @@ need to connect contract clauses to these roots, with precise missing-resource
 diagnostics. Abstract acquire/release protocols and escaping output guards remain
 separate work; the existing transition freeze stays in place.
 
+## Synchronous use-call transfer kernel checkpoint
+
+A checked transfer component now handles one selected mutex-use requirement.
+It consumes an exact owned `mutex_live` occurrence by lending, or an exact owned
+`mutex_use` occurrence by reborrowing. The caller retains its unrelated resource
+frame; the helper receives only its new use occurrence. The transfer retains the
+original source, both participants, and checkable entry evidence. It never
+invokes the modular-input assumption rule to supply missing call-site authority.
+
+A preserving return requires the helper's exact owned use resource and checked
+loan transitions connecting that call's entry to its returned ledger. Returning
+a different ledger with similar descriptions, omitting transitions, or introducing
+modular assumption roots in the call body is refused. Transferring the share back
+and closing its scope must pass the existing guard, child-scope, and full-share
+checks. The component then restores exactly the original owner or parent use
+permission. Other returned clauses remain separate for the surrounding contract
+planner to check; they are neither granted nor silently discarded.
+
+Tests cover owner lending, nested helpers from caller-assumed inputs, preservation
+of unrelated resources, missing/duplicate/wrong-holder authority, divergent
+histories, outstanding guards, stale returns, and forbidden input assumptions.
+Deterministic multi-size checks cover unrelated frames and explicit certificate
+deltas. This component checks loan/resource transport; it does not replace body
+certification or check mutex invariant restoration on its own.
+
+Surface `mutex_use` clauses and automatic contract-planner integration are still
+pending. That integration must select exact clause occurrences, retain the body
+loan evidence, and report missing resources using Click syntax. Abstract mutex
+operations, returned guards, and worker transport remain separate boundaries;
+the current protocol freeze is unchanged.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.
@@ -710,7 +741,7 @@ hostile certificate tests:
    ambiguous symbolic ones. Concrete kernel use lending, reborrowing, and guard holds are
    implemented, including owned use-resource occurrences. `mutex_use` still needs
    contract transport (caller-supplied input roots and preserving return checks
-   are implemented in the kernel), worker-join recovery, and escaping guards that retain the loan.
+   and synchronous resource transfer are implemented in the kernel), worker-join recovery, and escaping guards that retain the loan.
    The current heap refusal is a conservative dependency check, not this
    resource protocol.
 2. **Abstract guard transitions.** Contracts need generative initialization and

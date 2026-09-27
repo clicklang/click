@@ -5,6 +5,8 @@
 //! contains no C call-stack policy: ordinary calls, named contracts, and
 //! future language frontends must all use the same transitions.
 
+pub(crate) mod mutex_calls;
+
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
     PointerBlock, ResourceMemoryIntervalNode, memory_interval_ancestors, memory_interval_nodes,
@@ -3731,6 +3733,18 @@ impl LoanLedger {
         support: ResourceOccurrenceId,
         escrow: CResourceFact,
     ) -> Result<(Self, MutexUseLoan), LoanRefusal> {
+        let (ledger, loan, _) =
+            self.lend_mutex_use_with_transition(lender, borrower, support, escrow)?;
+        Ok((ledger, loan))
+    }
+
+    pub(crate) fn lend_mutex_use_with_transition(
+        &self,
+        lender: LoanParticipantId,
+        borrower: LoanParticipantId,
+        support: ResourceOccurrenceId,
+        escrow: CResourceFact,
+    ) -> Result<(Self, MutexUseLoan, CheckedLoanTransition), LoanRefusal> {
         if !is_concrete_mutex_owner(&escrow) {
             return Err(LoanRefusal::UnsupportedResource);
         }
@@ -3767,6 +3781,7 @@ impl LoanLedger {
                     support,
                 }),
             },
+            transition,
         ))
     }
 
@@ -3954,6 +3969,17 @@ impl LoanLedger {
         lender: LoanParticipantId,
         borrower: LoanParticipantId,
     ) -> Result<(Self, MutexUseLoan), LoanRefusal> {
+        let (ledger, loan, _) =
+            self.reborrow_mutex_use_with_transition(parent, lender, borrower)?;
+        Ok((ledger, loan))
+    }
+
+    pub(crate) fn reborrow_mutex_use_with_transition(
+        &self,
+        parent: MutexUseBinding,
+        lender: LoanParticipantId,
+        borrower: LoanParticipantId,
+    ) -> Result<(Self, MutexUseLoan, CheckedLoanTransition), LoanRefusal> {
         let scope = LoanScopeId {
             arena: self.storage.data.arena,
             ordinal: self.storage.data.next_scope,
@@ -3986,6 +4012,7 @@ impl LoanLedger {
                     support: parent.0.support,
                 }),
             },
+            transition,
         ))
     }
 
