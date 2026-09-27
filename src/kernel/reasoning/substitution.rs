@@ -3967,6 +3967,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
     match resource {
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
             binding: identity.binding,
+            initialization: identity.initialization,
             mutex: if identity.binding.is_none() {
                 substitute_bitvector_variable_in_pointer(&identity.mutex, from, to)
             } else {
@@ -6632,6 +6633,7 @@ fn substitute_pointer_variable_in_c_resource(
     match resource {
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
             binding: identity.binding,
+            initialization: identity.initialization,
             mutex: if identity.binding.is_none() {
                 substitute_pointer_variable_in_pointer(&identity.mutex, from, to)
             } else {

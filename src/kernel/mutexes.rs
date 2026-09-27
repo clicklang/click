@@ -69,26 +69,40 @@ enum MutexEntry {
 /// Identity of one successful initialization, independent of its address and
 /// protected assertion. Lock/unlock retain it; destroy/init must replace it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct MutexInitialization(u64, u32);
+struct MutexInitialization(MutexInitializationId, u32);
 
-impl MutexInitialization {
-    fn resource_fact(self, mutex: &Pointer) -> CResourceFact {
+/// Lifetime identities for both runtime initialization and assumed inputs.
+/// The private constructor prevents addresses from manufacturing identities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct MutexInitializationId(u64);
+
+impl MutexInitializationId {
+    pub(super) fn fresh() -> Result<Self, &'static str> {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        })
+        .map(Self)
+        .map_err(|_| "mutex initialization identity space exhausted")
+    }
+    pub(super) fn description(self, mutex: &Pointer) -> CResourceFact {
         CResourceFact::own(CResource::MutexLive(super::MutexIdentity {
             epoch: Some(self.0),
             mutex: mutex.clone(),
         }))
+    }
+}
+
+impl MutexInitialization {
+    fn resource_fact(self, mutex: &Pointer) -> CResourceFact {
+        self.0.description(mutex)
     }
 
     fn fresh(storage_bytes: u32) -> Result<Self, &'static str> {
         if storage_bytes == 0 {
             return Err("mutex storage extent must be nonzero");
         }
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
-            value.checked_add(1)
-        })
-        .map(|identity| Self(identity, storage_bytes))
-        .map_err(|_| "mutex initialization identity space exhausted")
+        Ok(Self(MutexInitializationId::fresh()?, storage_bytes))
     }
 }
 
@@ -365,6 +379,7 @@ pub(super) struct MutexInputReservations {
     ledger: MutexLedger,
     unnamed: bool,
     guards: PersistentMap<Pointer, CResourceFact>,
+    lifetimes: PersistentMap<Pointer, CResourceFact>,
 }
 
 // Input descriptions are immutable after entry. Compare their identity, not
@@ -398,6 +413,7 @@ impl MutexInputReservations {
             ledger: MutexLedger::new(),
             unnamed: false,
             guards: PersistentMap::default(),
+            lifetimes: PersistentMap::default(),
         }
     }
 
@@ -495,6 +511,53 @@ pub(super) fn bind_assumed_guard_inputs(
     Ok(state)
 }
 
+/// Bind direct lifecycle inputs without initializing runtime storage.
+pub(super) fn bind_assumed_lifetime_inputs(
+    mut state: CState,
+    assumptions: &PureFactContext,
+) -> Result<CState, super::loans::LoanRefusal> {
+    use super::loans::LoanRefusal;
+    let inputs = state.resources.facts().iter().filter(|fact|
+        matches!(fact.resource(), CResource::MutexLive(identity) if identity.epoch.is_none()))
+        .cloned().collect::<Vec<_>>();
+    if !inputs.is_empty() && (!state.preserves_mutex_protocols || state.mutex_ledger.is_some()) {
+        return Err(LoanRefusal::InvalidEvidence);
+    }
+    for fact in inputs {
+        state
+            .resources
+            .unique_owned_occurrence_for_fact(&fact)
+            .ok_or(LoanRefusal::MissingBacking)?;
+        let CResource::MutexLive(identity) = fact.resource() else {
+            unreachable!()
+        };
+        // Reject ambiguous or non-unit ownership before allocating an identity.
+        if state.resources.mutex_live_at(&identity.mutex) != Some(&fact) {
+            return Err(LoanRefusal::MissingBacking);
+        }
+        let bound = MutexInitializationId::fresh()
+            .map_err(|_| LoanRefusal::IdentitySpaceExhausted)?
+            .description(&identity.mutex);
+        let inputs = state
+            .mutex_input_reservations
+            .get_or_insert_with(MutexInputReservations::empty);
+        if inputs.lifetimes.contains_key(&identity.mutex) {
+            return Err(LoanRefusal::InvalidEvidence);
+        }
+        inputs.identity = MutexLedger::fresh_identity();
+        inputs
+            .lifetimes
+            .insert(identity.mutex.clone(), bound.clone());
+        state.resources = state
+            .resources
+            .without_fact_delaying_normalization(&fact, assumptions)
+            .ok_or(LoanRefusal::MissingBacking)?
+            .try_compose_with_facts_delaying_normalization([bound], assumptions)
+            .map_err(|_| LoanRefusal::MissingBacking)?;
+    }
+    Ok(state)
+}
+
 impl MutexGuard {
     fn resource_fact(&self) -> CResourceFact {
         CResourceFact::own(CResource::MutexGuard(super::MutexIdentity {
@@ -513,6 +576,14 @@ pub(super) fn live_resource(
 ) -> Option<CResourceFact> {
     if let Some(ledger) = &state.mutex_ledger {
         ledger.live_resource(mutex)
+    } else if let Some(bound) = state
+        .mutex_input_reservations
+        .as_ref()
+        .and_then(|inputs| inputs.lifetimes.get(mutex))
+    {
+        Some(bound.clone())
+    } else if let Some(bound) = state.resources.mutex_live_at(mutex) {
+        Some(bound.clone())
     } else if abstract_entry || state.preserves_mutex_protocols {
         Some(CResourceFact::own(CResource::MutexLive(
             super::MutexIdentity {
@@ -534,6 +605,7 @@ pub(super) fn use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
         .unwrap_or_else(|| {
             CResourceFact::own(CResource::MutexUse(super::MutexUseIdentity {
                 binding: None,
+                initialization: None,
                 mutex: mutex.clone(),
             }))
         })
@@ -1856,6 +1928,50 @@ mod tests {
         )
         .unwrap()
         .unwrap()
+    }
+
+    #[test]
+    fn assumed_lifetime_inputs_are_generative_and_keep_description_without_authority() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let mut input = CState::new();
+        input.preserves_mutex_protocols = true;
+        let description = live_resource(&input, &address, true).unwrap();
+        input.resources = input.resources.unchecked_with_fact(description.clone());
+        let first = bind_assumed_lifetime_inputs(input.clone(), &assumptions).unwrap();
+        let second = bind_assumed_lifetime_inputs(input.clone(), &assumptions).unwrap();
+        let first_owner = live_resource(&first, &address, false).unwrap();
+        let second_owner = live_resource(&second, &address, false).unwrap();
+        assert_ne!(first_owner, second_owner);
+        assert_ne!(first_owner, description);
+        assert!(!second.resources.satisfies_fact(&first_owner, &assumptions));
+        let mut hidden = first.clone();
+        hidden.resources = ResourceContext::new();
+        assert_eq!(
+            live_resource(&hidden, &address, false),
+            Some(first_owner.clone())
+        );
+        assert!(!hidden.resources.satisfies_fact(&first_owner, &assumptions));
+        assert!(first.mutex_ledger.is_none());
+        assert!(
+            MutexContext::new(first.clone())
+                .destroy(&address, &assumptions)
+                .is_err()
+        );
+        assert_eq!(
+            live_resource(
+                &bind_assumed_lifetime_inputs(first, &assumptions).unwrap(),
+                &address,
+                false
+            ),
+            Some(first_owner)
+        );
+        let mut duplicate = input.clone();
+        duplicate.resources = duplicate.resources.unchecked_with_fact(description.clone());
+        assert!(bind_assumed_lifetime_inputs(duplicate, &assumptions).is_err());
+        input.resources = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::View(description.resource().clone()));
+        assert!(bind_assumed_lifetime_inputs(input, &assumptions).is_err());
     }
 
     fn assumed_guard_state(address: &Pointer) -> CState {
@@ -4104,6 +4220,7 @@ mod tests {
                 .unchecked_with_fact(CResourceFact::own(CResource::MutexUse(
                     super::super::MutexUseIdentity {
                         binding: None,
+                        initialization: None,
                         mutex: address.clone(),
                     },
                 )));
@@ -4752,7 +4869,7 @@ mod tests {
         );
         let stale = MutexGuard {
             mutex: mutex.clone(),
-            initialization: MutexInitialization(0, 40),
+            initialization: MutexInitialization(MutexInitializationId(0), 40),
             epoch: 0,
         };
         assert_eq!(

@@ -625,7 +625,7 @@ impl LoanRecord {
                 self.assumed_mutex.as_ref().filter(|owner| {
                     matches!(owner,
                     CResourceFact::Own(CResource::MutexLive(identity), quantity)
-                    if identity.epoch.is_none() && quantity.as_const() == Some(1))
+                    if identity.epoch.is_some() && quantity.as_const() == Some(1))
                 })
             }
             _ => None,
@@ -1208,6 +1208,7 @@ enum LoanTransitionEvidence {
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
         mutex: super::Pointer,
+        initialization: super::mutexes::MutexInitializationId,
         scope: LoanScopeId,
         loan: LoanId,
         root: LoanShareId,
@@ -3951,6 +3952,7 @@ impl LoanLedger {
         Ok(CResourceFact::own(CResource::MutexUse(
             super::MutexUseIdentity {
                 binding: Some(usage),
+                initialization: identity.epoch,
                 mutex: identity.mutex.clone(),
             },
         )))
@@ -4020,6 +4022,8 @@ impl LoanLedger {
             holder,
             support,
             mutex,
+            initialization: super::mutexes::MutexInitializationId::fresh()
+                .map_err(|_| LoanRefusal::IdentitySpaceExhausted)?,
             scope,
             loan,
             root,
@@ -5460,6 +5464,7 @@ impl LoanLedger {
                 holder,
                 support,
                 mutex,
+                initialization,
                 scope,
                 loan,
                 root,
@@ -5508,12 +5513,7 @@ impl LoanLedger {
                         scope: *scope,
                         mutex_root: Some(*loan),
                         support: *support,
-                        assumed_mutex: Some(CResourceFact::own(CResource::MutexLive(
-                            super::MutexIdentity {
-                                epoch: None,
-                                mutex: mutex.clone(),
-                            },
-                        ))),
+                        assumed_mutex: Some(initialization.description(mutex)),
                         escrow: None,
                         permitted: Vec::new(),
                         origin: LoanOrigin::BorrowedContractInput,
@@ -7222,7 +7222,67 @@ mod tests {
                 identity.mutex.clone(),
             )
             .unwrap();
+        let live = ledger
+            .mutex_use_identity_description(input.usage, holder)
+            .unwrap()
+            .clone();
         (ledger, holder, input, live)
+    }
+
+    #[test]
+    fn assumed_use_initializations_cannot_be_exchanged_between_sibling_roots() {
+        let ledger = LoanLedger::new();
+        let holder = ledger.fresh_participant().unwrap();
+        let support = backing(&owned("same principal input"));
+        let mutex = Pointer::symbolic(Variable(901));
+        let (left, left_input) = ledger
+            .borrowed_mutex_use_input(holder, support, mutex.clone())
+            .unwrap();
+        let (right, right_input) = ledger
+            .borrowed_mutex_use_input(holder, support, mutex)
+            .unwrap();
+        // Both branches reserve the same share coordinates. Their lifetime
+        // identities still differ and must be part of the owned use atom.
+        assert_eq!(left_input.usage, right_input.usage);
+        let left_fact = left.mutex_use_resource(left_input.usage, holder).unwrap();
+        let right_fact = right.mutex_use_resource(right_input.usage, holder).unwrap();
+        assert_ne!(left_fact, right_fact);
+        assert!(
+            right
+                .check_mutex_use_input_return(
+                    &right_input,
+                    holder,
+                    &ResourceContext::new().unchecked_with_fact(left_fact)
+                )
+                .is_err()
+        );
+        let left_owner = left
+            .mutex_use_identity_description(left_input.usage, holder)
+            .unwrap();
+        let right_owner = right
+            .mutex_use_identity_description(right_input.usage, holder)
+            .unwrap();
+        assert_ne!(left_owner, right_owner);
+        assert!(
+            right
+                .hold_mutex_use(right_input.usage, left_owner, holder)
+                .is_err()
+        );
+        assert!(
+            right
+                .hold_mutex_use(right_input.usage, right_owner, holder)
+                .is_ok()
+        );
+        let helper = left.fresh_participant().unwrap();
+        let (nested, child) = left
+            .reborrow_mutex_use(left_input.usage, holder, helper)
+            .unwrap();
+        assert_eq!(
+            nested
+                .mutex_use_identity_description(child.usage, helper)
+                .unwrap(),
+            left_owner
+        );
     }
 
     #[test]
@@ -7263,7 +7323,7 @@ mod tests {
         );
         assert!(
             ledger
-                .hold_mutex_use(input.usage, &mutex_owner(Some(1)), holder)
+                .hold_mutex_use(input.usage, &mutex_owner(None), holder)
                 .is_err()
         );
         let (held, hold) = ledger
@@ -7485,6 +7545,7 @@ mod tests {
             holder,
             support: backing(&owned("input")),
             mutex: Pointer::symbolic(Variable(4321)),
+            initialization: super::super::mutexes::MutexInitializationId::fresh().unwrap(),
             scope: LoanScopeId {
                 arena,
                 ordinal: ledger.storage.data.next_scope,

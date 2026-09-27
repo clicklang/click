@@ -571,6 +571,7 @@ mod tests {
                 holder: plan.callee,
                 support,
                 mutex: Pointer::symbolic(Variable(200)),
+                initialization: crate::kernel::mutexes::MutexInitializationId::fresh().unwrap(),
                 scope: LoanScopeId {
                     arena,
                     ordinal: data.next_scope,
@@ -693,6 +694,7 @@ mod tests {
             let required = CCheckedResourceFact {
                 fact: CResourceFact::own(CResource::MutexUse(crate::kernel::MutexUseIdentity {
                     binding: None,
+                    initialization: None,
                     mutex: Pointer::symbolic(Variable(100)),
                 })),
                 role: CResourceTransferRole::Borrow,

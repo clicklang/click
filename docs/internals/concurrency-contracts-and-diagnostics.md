@@ -799,6 +799,30 @@ the abstract-contract protocol freeze. The surface spelling is unchanged.
 Abstract invariant descriptions, acquisition outputs, and escaping-guard call
 recovery remain separate work before helpers can perform these transitions.
 
+## Lifecycle inputs and use roots identify initializations
+
+Direct `owns mutex_live(mu)` inputs now receive fresh internal initialization
+identities at independent proof entry. Like direct guards, their descriptions
+survive folding and nested preserving calls. A description alone grants no
+ownership and does not initialize runtime storage. Replacing the input with a
+new same-address lifetime cannot discharge its preserving return requirement.
+Runtime initialization and assumed inputs use the same private identity
+allocator, so their identifiers cannot accidentally collide.
+
+Assumed `mutex_use` roots also record a fresh initialization identity in their
+checked opening evidence. Reborrowing retains that identity; lifetime holds
+check it. Each bound use resource includes both its share binding and its
+initialization identity. This matters even when two branches allocate the same
+share coordinates: their differently initialized use resources cannot replace
+one another at return or supply one another's guard lifetime hold.
+
+These two steps change no surface spelling. A new fixture combines direct
+lifecycle ownership, wrapper transport, and use lending. Kernel regressions
+cover same-address replacement, missing/ambiguous ownership, and sibling-root
+substitution. Initially hidden wrapper inputs remain conservative; abstract
+acquire/release and returned guards still require explicit protocol-effect
+checking before the transition freeze can be removed.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

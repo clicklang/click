@@ -5750,14 +5750,14 @@ pub enum CResource {
 
 /// Opaque identity for one mutex initialization or acquisition. The resource
 /// variant distinguishes these namespaces. Copying syntax never duplicates ownership.
-/// Epochs are generative for concrete transitions and rooted direct guard inputs.
+/// Epochs are generative for concrete transitions and rooted direct mutex inputs.
 /// Unbound descriptions are valid only while protocol transitions are prohibited.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexIdentity {
     /// `None` is an unbound description at abstract contract entry.
     pub(in crate::kernel) epoch: Option<u64>,
-    /// Concrete addresses are immutable diagnostic provenance; only an
-    /// abstract authority's address participates in substitution.
+    /// Bound addresses are immutable diagnostic provenance; only an
+    /// unbound description's address participates in substitution.
     pub(in crate::kernel) mutex: Pointer,
 }
 
@@ -5767,6 +5767,7 @@ pub struct MutexIdentity {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
     pub(in crate::kernel) binding: Option<super::loans::MutexUseBinding>,
+    pub(in crate::kernel) initialization: Option<u64>,
     pub(in crate::kernel) mutex: Pointer,
 }
 
