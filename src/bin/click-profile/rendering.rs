@@ -56,7 +56,7 @@ pub(super) fn render_profiles_with_top(
     let mut output = String::new();
     writeln!(
         output,
-        "Click proof profile (smart >= {}, simple >= {}, control >= {}; project limit {})",
+        "Click proof profile (smart >= {}, simple >= {}, control >= {}; crash-containment bound {} per project)",
         format_fractional_duration(thresholds.smart),
         format_fractional_duration(thresholds.simple),
         format_fractional_duration(thresholds.control),
@@ -111,7 +111,6 @@ pub(super) fn render_profiles_with_top(
             advice: "A slow simple tactic is deterministic certificate validation. Reduce its verifier path and fix that bottleneck before expanding more smart tactics.",
         },
         thresholds,
-        time_limit,
         &blocked_expansion_sources,
     );
     render_category(
@@ -123,7 +122,6 @@ pub(super) fn render_profiles_with_top(
             advice: "A successful hotspot in a fully verified proof is an expansion candidate. In an incomplete run it is diagnostic only. A failed smart search has no certificate; use smaller or explicit simple tactics unless it missed its bound or failed unclearly.",
         },
         thresholds,
-        time_limit,
         &blocked_expansion_sources,
     );
     render_category(
@@ -135,7 +133,6 @@ pub(super) fn render_profiles_with_top(
             advice: "This is a proof container. Use its nested SMART/SIMPLE timings; do not optimize or expand it based on the container row alone.",
         },
         thresholds,
-        time_limit,
         &blocked_expansion_sources,
     );
 
@@ -174,7 +171,7 @@ pub(super) fn render_profiles_with_top(
     for profile in timed_out {
         writeln!(
             output,
-            "  timed out: {} after {}",
+            "  stopped by a limit: {} (a deterministic work budget, or the {} crash-containment bound; its verification failure says which)",
             profile.project,
             format_fractional_duration(time_limit)
         )
@@ -991,7 +988,6 @@ fn render_category(
     slow_steps: &[&SlowStep],
     section: CategorySection,
     thresholds: Thresholds,
-    time_limit: Duration,
     blocked_expansion_sources: &BTreeSet<PathBuf>,
 ) {
     writeln!(output, "\n{}", section.title).expect("writing a String cannot fail");
@@ -1039,7 +1035,7 @@ fn render_category(
                 (section.category, step.key.position.clone())
             && !blocked_expansion_sources.contains(&step.key.source_path)
         {
-            render_expansion_command(output, &step.key, position, thresholds, time_limit);
+            render_expansion_command(output, &step.key, position, thresholds);
         }
     }
 }
@@ -1071,7 +1067,6 @@ pub(super) fn render_expansion_command(
     key: &StepKey,
     position: SourcePosition,
     thresholds: Thresholds,
-    time_limit: Duration,
 ) {
     let artifact = expanded_artifact_path(&key.source_path);
     let location = format!(
@@ -1082,8 +1077,7 @@ pub(super) fn render_expansion_command(
     );
     writeln!(
         output,
-        "              expand: click expand --time-limit {} --output {} {}",
-        format_duration(DEFAULT_EXPANSION_TIME_LIMIT),
+        "              expand: click expand --output {} {}",
         shell_quote(&artifact.display().to_string()),
         shell_quote(&location),
     )
@@ -1098,11 +1092,10 @@ pub(super) fn render_expansion_command(
     }
     writeln!(
         output,
-        "           reprofile: click profile --smart-threshold {} --simple-threshold {} --control-threshold {} --time-limit {} {}",
+        "           reprofile: click profile --smart-threshold {} --simple-threshold {} --control-threshold {} {}",
         format_duration(thresholds.smart),
         format_duration(thresholds.simple),
         format_duration(thresholds.control),
-        format_duration(time_limit),
         shell_quote(&artifact.display().to_string()),
     )
     .expect("writing a String cannot fail");

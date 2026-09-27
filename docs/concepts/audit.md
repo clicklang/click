@@ -8,7 +8,8 @@ An audit session discovers applicable proof sites, performs bounded expansion,
 verifies the resulting proof, and records performance. Each phase is judged by
 the deterministic work it spends, so machine load cannot change a verdict;
 wall-clock time is reported as information, a phase's time limit only
-contains a hung run, and the session deadline bounds the complete run. Selection
+contains a hung run, and the whole-run time limit paces a long audit at a
+resumable cursor. Selection
 options let maintainers resume at a source location, restrict claims, or audit
 only changes since a Git revision.
 

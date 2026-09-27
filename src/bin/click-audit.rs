@@ -46,7 +46,7 @@ const DEFAULT_VERIFICATION_LIMIT: Duration = cli::CRASH_CONTAINMENT_TIME_LIMIT;
 /// average of 18) the crash bound still fires only past what these budgets
 /// admit.
 const DEFAULT_SESSION_WORK_LIMIT: usize = 100_000_000;
-const DEFAULT_EXPANSION_WORK_LIMIT: usize = 50_000_000;
+const DEFAULT_EXPANSION_WORK_LIMIT: usize = cli::DEFAULT_EXPANSION_WORK_LIMIT;
 const DEFAULT_VERIFICATION_WORK_LIMIT: usize = 50_000_000;
 /// The smallest expanded-over-original work increase that can fail the
 /// performance comparison, beside its 2x ratio. Measured expansions spend
@@ -204,10 +204,16 @@ fn run_phase<R>(
     limit: PhaseLimit,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<(R, PhaseCost), String> {
-    let time_limit = cli::tool_time_limit(limit.time);
+    let time_limit = limit.time;
     let started = Instant::now();
     let (result, work) = click::instrumentation::measure_deterministic_work(|| {
-        click::instrumentation::with_deadline(time_limit, operation)
+        cli::within_run_limits(
+            cli::RunLimits {
+                work: limit.work,
+                time: time_limit,
+            },
+            operation,
+        )
     });
     let elapsed = started.elapsed();
     if elapsed >= time_limit {
@@ -223,15 +229,19 @@ fn run_phase<R>(
                 .unwrap_or_default()
         ));
     }
-    let value = result?;
     if work > limit.work {
         return Err(format!(
             "{label} spent {work} deterministic work units, over its {}-unit budget \
-             (wall clock {}, information only)",
+             (wall clock {}, information only){}",
             limit.work,
-            format_duration(elapsed)
+            format_duration(elapsed),
+            result
+                .err()
+                .map(|message| format!("\n{message}"))
+                .unwrap_or_default()
         ));
     }
+    let value = result?;
     Ok((value, PhaseCost { work, elapsed }))
 }
 
@@ -291,36 +301,30 @@ impl AuditSessionWorker {
         let session_source = source.clone();
         let (request_sender, request_receiver) = mpsc::channel::<SessionRequest>();
         let (response_sender, response_receiver) = mpsc::channel();
-        // The caller's verdict policy is thread-local; carry it onto the
-        // session thread.
-        let work_budget_verdicts = cli::work_budget_verdicts();
         let thread = thread::Builder::new()
             .name("click-audit-session".to_string())
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn(move || {
-                cli::with_inherited_work_budget_verdicts(work_budget_verdicts, || {
-                    let session =
-                        match run_phase("verification-session initialization", limit, || {
-                            start_session(&session_source)
-                        }) {
-                            Ok((session, cost)) => {
-                                if response_sender.send(Ok(cost)).is_err() {
-                                    return;
-                                }
-                                session
-                            }
-                            Err(message) => {
-                                let _ = response_sender.send(Err(message));
-                                return;
-                            }
-                        };
-                    for request in request_receiver {
-                        let result = verify_in_session(&session, &session_source, &request);
-                        if response_sender.send(result).is_err() {
+                let session = match run_phase("verification-session initialization", limit, || {
+                    start_session(&session_source)
+                }) {
+                    Ok((session, cost)) => {
+                        if response_sender.send(Ok(cost)).is_err() {
                             return;
                         }
+                        session
                     }
-                })
+                    Err(message) => {
+                        let _ = response_sender.send(Err(message));
+                        return;
+                    }
+                };
+                for request in request_receiver {
+                    let result = verify_in_session(&session, &session_source, &request);
+                    if response_sender.send(result).is_err() {
+                        return;
+                    }
+                }
             })
             .map_err(|error| format!("failed to start the verification-session thread: {error}"))?;
         let mut worker = Self {
@@ -673,7 +677,7 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
     let mut cold_reverified_claims = std::collections::BTreeSet::new();
     let mut concise_progress: Option<ConciseClaimProgress> = None;
     let started = Instant::now();
-    let deadline = started + cli::tool_time_limit(arguments.time_limit);
+    let deadline = started + arguments.time_limit;
 
     let limits = &arguments.limits;
     println!(
@@ -857,7 +861,9 @@ fn run_audit(arguments: Arguments) -> Result<(), String> {
             print_resume(&arguments, &selected[cursor]);
         }
         return Err(format!(
-            "audit stopped at its {} run limit after {} of {} selected sites{}",
+            "audit stopped at its {} wall-clock run bound after {} of {} selected sites{}; \
+             this bound paces a long audit and is not a verdict about any proof, so resume \
+             with the command above",
             format_duration(arguments.time_limit),
             attempted_sites,
             selected.len(),

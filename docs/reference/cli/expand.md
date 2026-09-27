@@ -15,13 +15,16 @@ another expansion candidate.
 ## Synopsis
 
 ```text
-usage: click expand [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]
-       click expand --claim <LABEL> [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>
+usage: click expand [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>:<line>[:<column>]
+       click expand --claim <LABEL> [--work-limit <UNITS>] [--time-limit <DURATION>] [--output <PATH> | --in-place] <sidecar.click|mdtest.md>
 ```
 
 Replace the following:
 
-- `DURATION`: the whole-command limit; the default is `1m` (60 seconds).
+- `UNITS`: the whole command's deterministic work budget; the default is
+  `50000000`.
+- `DURATION`: the whole command's wall-clock crash-containment bound; the
+  default is `10m`.
 - `PATH`: a destination for the complete rewritten sidecar or mdtest.
 - `LINE` and `COLUMN`: one-based coordinates selecting a smart tactic. The
   column may be omitted when the line starts exactly one smart tactic.
@@ -84,7 +87,8 @@ selected type instance; expansion preserves the generic declaration.
 | Option | Meaning |
 | --- | --- |
 | `--claim LABEL` | Expand all smart tactics in one named claim instead of selecting a location. |
-| `--time-limit DURATION` | Override the default `1m` whole-command limit. |
+| `--work-limit UNITS` | Set the deterministic work budget of the whole command, generating the expansion and checking it. The default is `50000000`. |
+| `--time-limit DURATION` | Set the wall-clock crash-containment bound of the whole command. The default is `10m`. It stops a hung or CPU-starved run and is not a verdict about the proof; smart search inside the expansion is bounded by its deterministic smart work budget, not by a clock. |
 | `--output PATH` | Write the complete verified rewrite to a different path. |
 | `--in-place` | Atomically replace the input only after verification succeeds. |
 | `-h`, `--help` | Print command help and exit successfully. |
@@ -128,8 +132,9 @@ way: the arm never runs, so the rewrite removes the tactic rather than
 reporting a missing source occurrence.
 
 The command exits with status 1 and writes no requested artifact when
-selection, expansion extraction, rewritten proof verification, the
-deadline, or file output fails. In-place output uses an adjacent temporary file
+selection, expansion extraction, or rewritten proof verification fails, a
+work budget is exhausted, the crash-containment bound stops the run, or file
+output fails. In-place output uses an adjacent temporary file
 and an atomic rename after all checks pass.
 
 A claim expansion whose explicit proof would nest `match`, `branch`, and proof

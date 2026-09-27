@@ -470,10 +470,10 @@ fn condition_certificate_search_reports_its_budget_without_dumping_snapshots() {
         ),
         true,
     );
-    let limits = crate::instrumentation::TacticLimits {
-        simple: std::time::Duration::from_secs(1),
-        smart: std::time::Duration::ZERO,
-        control: std::time::Duration::from_secs(1),
+    let limits = crate::instrumentation::TacticWorkLimits {
+        simple: 1_000_000,
+        smart: 0,
+        control: 1_000_000,
     };
     let tactic = crate::instrumentation::TacticEvent {
         claim: "wide-condition.contract".to_string(),
@@ -484,7 +484,7 @@ fn condition_certificate_search_reports_its_budget_without_dumping_snapshots() {
         source_index: 0,
     };
 
-    let error = crate::instrumentation::with_tactic_limits(limits, || {
+    let error = crate::instrumentation::with_tactic_work_limits(limits, || {
         crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticStarted(
             tactic.clone(),
         ));
@@ -628,7 +628,9 @@ fn expired_project_deadline_outweighs_semantic_mismatch_diagnostic() {
     });
 
     assert!(
-        error.message().contains("outer wall-clock deadline"),
+        error
+            .message()
+            .contains("wall-clock crash-containment bound"),
         "{error:?}"
     );
     assert!(!error.message().contains("ghost regions"), "{error:?}");

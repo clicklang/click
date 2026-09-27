@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Measures the deterministic work every tactic in the example and mdtest
 # corpus charges, with budgets disabled so no cost is clipped, and prints the
-# per-class statistics that `TacticWorkLimits::default` is calibrated from.
+# per-class statistics that `TacticWorkLimits::default` is calibrated from,
+# plus each fixture's whole-verification work (class `run`), which
+# `click::cli::DEFAULT_VERIFY_WORK_LIMIT` is calibrated from.
 #
 #     scripts/measure-tactic-work.sh [REPORT_DIR]
 #
@@ -69,7 +71,7 @@ print("corpus: " + ", ".join(
 for scope in ("examples", "mdtests", "all"):
     print(f"\n== {scope} ==")
     print(f"{'class':8} {'count':>7} {'p50':>9} {'p95':>9} {'p99':>9} {'second':>10} {'max':>10}")
-    for cls in ("simple", "smart", "control"):
+    for cls in ("simple", "smart", "control", "run"):
         values = sorted(r["work"] for r in rows
                         if r["cls"] == cls and (scope == "all" or r["harness"] == scope))
         if not values:
@@ -86,5 +88,12 @@ for cls in ("simple", "smart", "control"):
         failed = " (failed)" if r["outcome"] == "failed" else ""
         print(f"{r['work']:>10}  {r['name']}{failed}  {r['loc']}  "
               f"[{r['claim']}, statement {r['stmt']}, source tactic {r['src']}]")
+
+# One `run` row per fixture: its whole verification, which calibrates
+# `click::cli::DEFAULT_VERIFY_WORK_LIMIT`.
+top = sorted((r for r in rows if r["cls"] == "run"), key=lambda r: -r["work"])[:10]
+print(f"\n== top {len(top)} whole verifications by work ==")
+for r in top:
+    print(f"{r['work']:>10}  {r['harness']} {r['fixture']}")
 PY
 exit 0

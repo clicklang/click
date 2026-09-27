@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use click::cli::{
-    CInput, DEFAULT_EXPANSION_TIME_LIMIT, DEFAULT_SIMPLE_TACTIC_LIMIT, DEFAULT_SMART_TACTIC_LIMIT,
-    MdTestExpectation, TargetSelection, format_duration, format_fractional_duration,
-    load_sidecar_inputs, looks_like_mdtest, parse_duration, prepare_mdtest_inputs,
-    read_click_project, read_mdtest, select_targets, shell_quote, source_refs,
+    CInput, DEFAULT_SIMPLE_TACTIC_LIMIT, DEFAULT_SMART_TACTIC_LIMIT, MdTestExpectation, RunLimits,
+    TargetSelection, format_duration, format_fractional_duration, load_sidecar_inputs,
+    looks_like_mdtest, parse_duration, parse_work_limit, prepare_mdtest_inputs, read_click_project,
+    read_mdtest, select_targets, shell_quote, source_refs,
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
 use click::surface::{
@@ -21,7 +21,11 @@ use click::surface::{
     verify_c0_sources, verify_cpp_prepared_project,
 };
 
-const DEFAULT_TIME_LIMIT: Duration = Duration::from_secs(30);
+/// The crash-containment bound per profiled project; see
+/// `click::cli::CRASH_CONTAINMENT_TIME_LIMIT`.
+const DEFAULT_TIME_LIMIT: Duration = click::cli::CRASH_CONTAINMENT_TIME_LIMIT;
+/// The deterministic work budget per profiled project, `click verify`'s.
+const DEFAULT_WORK_LIMIT: usize = click::cli::DEFAULT_VERIFY_WORK_LIMIT;
 const MATERIAL_UNATTRIBUTED_FLOOR: Duration = Duration::from_millis(250);
 const MATERIAL_UNATTRIBUTED_TIME: Duration = Duration::from_secs(1);
 const MATERIAL_UNATTRIBUTED_SHARE: f64 = 10.0;
@@ -48,7 +52,8 @@ defaults:
   --smart-threshold 2s      smart tactics in verified proofs are expansion candidates
   --simple-threshold 500ms  slow simple tactics are verifier bugs; do not expand them
   --control-threshold 2s    inspect slow control-tactic containers and their nested steps
-  --time-limit 30s          wall-clock limit per project
+  --work-limit 50000000     deterministic work budget per project
+  --time-limit 10m          crash containment per project, not a verdict
   --top 8                   maximum function/claim attribution rows per project
 
 options:
@@ -57,7 +62,12 @@ options:
   --control-threshold <DURATION>
   --top <COUNT>
   --threshold <DURATION>    shorthand setting all three thresholds
-  --time-limit <DURATION>";
+  --work-limit <UNITS>
+  --time-limit <DURATION>
+
+The thresholds are reporting thresholds. What stops a run is deterministic:
+each tactic's work budget and the project's --work-limit. --time-limit only
+contains a hung or CPU-starved run.";
 
 fn main() {
     if let Err(message) = entry() {
@@ -71,6 +81,7 @@ struct Arguments {
     path: PathBuf,
     thresholds: Thresholds,
     time_limit: Duration,
+    work_limit: usize,
     top_attribution_rows: usize,
 }
 
@@ -338,7 +349,10 @@ pub(crate) fn entry_with(arguments: impl IntoIterator<Item = String>) -> Result<
         profiles.push(profile_target(
             target,
             arguments.thresholds,
-            arguments.time_limit,
+            RunLimits {
+                work: arguments.work_limit,
+                time: arguments.time_limit,
+            },
         )?);
     }
     print_profiles(
@@ -366,6 +380,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
     let mut common_threshold = None;
     let mut class_threshold_supplied = false;
     let mut time_limit = DEFAULT_TIME_LIMIT;
+    let mut work_limit = DEFAULT_WORK_LIMIT;
     let mut top_attribution_rows = DEFAULT_TOP_ATTRIBUTION_ROWS;
     let mut parse_options = true;
     let mut arguments = arguments.into_iter();
@@ -417,6 +432,12 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
                     .ok_or_else(|| format!("missing duration after `--time-limit`\n{USAGE}"))?;
                 time_limit = parse_duration(&source)?;
             }
+            "--work-limit" => {
+                let source = arguments
+                    .next()
+                    .ok_or_else(|| format!("missing unit count after `--work-limit`\n{USAGE}"))?;
+                work_limit = parse_work_limit(&source)?;
+            }
             "--top" => {
                 let source = arguments
                     .next()
@@ -448,6 +469,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
         path: path.ok_or_else(|| USAGE.to_string())?,
         thresholds,
         time_limit,
+        work_limit,
         top_attribution_rows,
     })
 }
@@ -504,27 +526,22 @@ fn profile_targets(path: &Path) -> Result<Vec<ProfileTarget>, String> {
 fn profile_target(
     target: &ProfileTarget,
     thresholds: Thresholds,
-    time_limit: Duration,
+    limits: RunLimits,
 ) -> Result<ProjectProfile, String> {
     let project = target.path();
-    let time_limit = click::cli::tool_time_limit(time_limit);
+    let time_limit = limits.time;
     let started = Instant::now();
-    let diagnostic_limits = instrumentation::TacticLimits {
-        simple: time_limit,
-        smart: time_limit,
-        control: time_limit,
-    };
-    let (verification, events) = instrumentation::with_deadline(time_limit, || {
-        click::cli::with_tool_tactic_limits(diagnostic_limits, || {
-            instrumentation::collect(|| match target {
-                ProfileTarget::Mdtest(path) => verify_mdtest(path),
-                ProfileTarget::Sidecars {
-                    project,
-                    project_root,
-                    sidecars,
-                } => verify_sidecars(project, project_root, sidecars),
-            })
-        })
+    let ((verification, events), work_exhausted) = click::cli::within_run_limits(limits, || {
+        let collected = instrumentation::collect(|| match target {
+            ProfileTarget::Mdtest(path) => verify_mdtest(path),
+            ProfileTarget::Sidecars {
+                project,
+                project_root,
+                sidecars,
+            } => verify_sidecars(project, project_root, sidecars),
+        });
+        let exhausted = instrumentation::run_work_used().is_some_and(|used| used > limits.work);
+        (collected, exhausted)
     });
     let wall_elapsed = started.elapsed();
     let project_name = project
@@ -537,6 +554,7 @@ fn profile_target(
         &events,
         thresholds,
         wall_elapsed >= time_limit
+            || work_exhausted
             || events.iter().any(|event| {
                 matches!(
                     event,
@@ -589,7 +607,14 @@ fn runtime_assumptions(
 #[allow(dead_code)] // Used by the shared dispatcher regression matrix.
 pub(crate) fn verify_target_for_test(path: &Path) -> Result<(), String> {
     for target in profile_targets(path)? {
-        let profile = profile_target(&target, Thresholds::default(), Duration::from_secs(5))?;
+        let profile = profile_target(
+            &target,
+            Thresholds::default(),
+            RunLimits {
+                work: DEFAULT_WORK_LIMIT,
+                time: DEFAULT_TIME_LIMIT,
+            },
+        )?;
         if let Some(error) = profile.verification_failure {
             return Err(error);
         }

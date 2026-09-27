@@ -17,7 +17,7 @@ mdtests directory. An mdtest is loaded from its fenced C or C++ and Click blocks
 with the same preparation used by the mdtest gate. C++ fences use the pinned
 compiler importer. Profiling ignores quarantine so a
 specific quarantined fixture can be diagnosed. Each selected project receives
-its own deadline and report.
+its own limits and report.
 
 Sidecar, example-project, and examples-directory targets select sidecars
 exactly as [`click verify`](verify.md#target-selection) does: a directory that
@@ -40,7 +40,8 @@ proofs.
 | `--simple-threshold DURATION` | `500ms` | Report a slow simple tactic as a verifier performance defect. |
 | `--control-threshold DURATION` | `2s` | Report a slow control-tactic container and its nested work. |
 | `--threshold DURATION` | none | Set all three tactic-class thresholds together. It cannot be combined with a class-specific threshold. |
-| `--time-limit DURATION` | `30s` | Set the wall-clock limit for each project. |
+| `--work-limit UNITS` | `50000000` | Set the deterministic work budget for each project, `click verify`'s whole-run budget. |
+| `--time-limit DURATION` | `10m` | Set the wall-clock crash-containment bound for each project. It stops a hung or CPU-starved run and is not a verdict about the proof. |
 | `--top COUNT` | `8` | Limit each function and claim attribution ranking to a positive number of rows. |
 | `-h`, `--help` | none | Print command help and exit successfully. |
 | `--` | none | Stop option parsing before the target path. |
@@ -50,7 +51,7 @@ proofs.
 The report reconciles measured work into named phases. `SIMPLE`, `SMART`, and
 `CONTROL` are exclusive tactic times. `CERTIFICATION` and `VERIFIER CORE`
 cover checked work outside those operations. `PROCESS/DRIVER` covers source I/O
-and known driver overhead. `INTERRUPTED` is unfinished time after a deadline;
+and known driver overhead. `INTERRUPTED` is unfinished time after a limit stopped the run;
 `UNATTRIBUTED` indicates inconsistent or unknown accounting rather than a
 healthy miscellaneous bucket.
 
@@ -72,8 +73,12 @@ the problem being diagnosed.
 ## Output and exit behavior
 
 The command prints one report per selected project. It exits with status 1 if
-any project fails verification or if target loading, event classification, or
-the project deadline fails. A timeout report is explicitly partial.
+any project fails verification or if target loading or event classification
+fails. A run stopped by a work budget or by the crash-containment bound is
+explicitly partial. The time thresholds are reporting thresholds only: every
+verdict comes from the deterministic budgets
+[`click verify`](verify.md#deterministic-verdicts) applies, so a profile
+verifies or fails exactly as `click verify` does, whatever the machine's load.
 
 ## Examples
 

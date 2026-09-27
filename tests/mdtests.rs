@@ -37,100 +37,94 @@ const ARTIFACT_REUSE_REJECTION_BASELINE: &[(ArtifactReuseRejection, usize)] = &[
 
 #[test]
 fn mdtests() {
-    limits::deterministic(|| {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let mdtests_dir = manifest_dir.join("mdtests");
-        let mut paths = fs::read_dir(&mdtests_dir)
-            .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", mdtests_dir.display()))
-            .map(|entry| {
-                entry
-                    .unwrap_or_else(|error| {
-                        panic!("failed to read mdtest directory entry: {error}")
-                    })
-                    .path()
-            })
-            // Imported theorem bodies are interfaces to their importers. Run each
-            // local Click library as its own entry so the gate checks those bodies.
-            .filter(|path| {
-                path.extension()
-                    .is_some_and(|extension| extension == "md" || extension == "click")
-            })
-            .collect::<Vec<_>>();
-        let filtered = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
-            paths.retain(|path| {
-                path.file_name()
-                    .is_some_and(|name| name.to_string_lossy().contains(&filter))
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mdtests_dir = manifest_dir.join("mdtests");
+    let mut paths = fs::read_dir(&mdtests_dir)
+        .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", mdtests_dir.display()))
+        .map(|entry| {
+            entry
+                .unwrap_or_else(|error| panic!("failed to read mdtest directory entry: {error}"))
+                .path()
+        })
+        // Imported theorem bodies are interfaces to their importers. Run each
+        // local Click library as its own entry so the gate checks those bodies.
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "md" || extension == "click")
+        })
+        .collect::<Vec<_>>();
+    let filtered = if let Ok(filter) = std::env::var("MDTEST_FILTER") {
+        paths.retain(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().contains(&filter))
+        });
+        true
+    } else {
+        false
+    };
+    if !filtered && std::env::var_os(RUN_QUARANTINED).is_none() {
+        paths.retain(|path| {
+            let name = path.file_name().and_then(|name| name.to_str());
+            let quarantine = name.and_then(|name| {
+                QUARANTINED
+                    .iter()
+                    .find(|(quarantined, _)| *quarantined == name)
             });
-            true
-        } else {
-            false
-        };
-        if !filtered && std::env::var_os(RUN_QUARANTINED).is_none() {
-            paths.retain(|path| {
-                let name = path.file_name().and_then(|name| name.to_str());
-                let quarantine = name.and_then(|name| {
-                    QUARANTINED
-                        .iter()
-                        .find(|(quarantined, _)| *quarantined == name)
-                });
-                match quarantine {
-                    Some((name, reason)) => {
-                        println!("SKIPPING quarantined mdtest `{name}`: {reason}");
-                        false
-                    }
-                    None => true,
+            match quarantine {
+                Some((name, reason)) => {
+                    println!("SKIPPING quarantined mdtest `{name}`: {reason}");
+                    false
                 }
-            });
-        }
-        paths.sort();
-
-        assert!(
-            !paths.is_empty(),
-            "expected at least one mdtest in `{}`",
-            mdtests_dir.display()
-        );
-
-        // Verify files on every core. Tactic correctness is enforced by
-        // deterministic work budgets, not by how much CPU time happens to be
-        // available to each file, so concurrency cannot change a verdict. Peak
-        // memory stays small: on 2026-09-11 the whole corpus peaked at 171 MB
-        // serially and 291 MB on 8 workers.
-        let _ = instrumentation::take_artifact_reuse_rejection_census();
-        let _ = instrumentation::take_backwards_memory_derivation_census();
-        let workers = std::thread::available_parallelism().map_or(1, usize::from);
-        let failures = limits::run_parallel(&paths, workers, |path| run_mdtest_in_thread(path));
-        let census = instrumentation::take_artifact_reuse_rejection_census();
-        // Which producers still end a step on a snapshot older than itself, so
-        // that the step is recorded on no history. A knowledge-losing forget
-        // cannot: its mark makes the result a node no earlier snapshot can be
-        // (`CMemory::mark_forgotten_from`). Anything else here is a producer
-        // whose steps are invisible to every history-based rule, and this line
-        // is how a corpus run names it.
-        eprintln!(
-            "backwards memory derivations over the corpus: {:?}",
-            instrumentation::take_backwards_memory_derivation_census()
-        );
-        if failures.is_empty() {
-            if !filtered
-                && std::env::var_os(RUN_QUARANTINED).is_none()
-                && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
-                    &census,
-                    ARTIFACT_REUSE_REJECTION_BASELINE,
-                )
-            {
-                panic!(
-                    "artifact reuse rejection ratchet (tests/mdtests.rs baselines):\n{mismatch}"
-                );
+                None => true,
             }
-            return;
-        }
+        });
+    }
+    paths.sort();
 
-        let mut message = format!("{} of {} mdtests failed:\n", failures.len(), paths.len());
-        for (index, diagnostics) in failures {
-            message.push_str(&format!("\n`{}` {diagnostics}\n", paths[index].display()));
+    assert!(
+        !paths.is_empty(),
+        "expected at least one mdtest in `{}`",
+        mdtests_dir.display()
+    );
+
+    // Verify files on every core. Tactic correctness is enforced by
+    // deterministic work budgets, not by how much CPU time happens to be
+    // available to each file, so concurrency cannot change a verdict. Peak
+    // memory stays small: on 2026-09-11 the whole corpus peaked at 171 MB
+    // serially and 291 MB on 8 workers.
+    let _ = instrumentation::take_artifact_reuse_rejection_census();
+    let _ = instrumentation::take_backwards_memory_derivation_census();
+    let workers = std::thread::available_parallelism().map_or(1, usize::from);
+    let failures = limits::run_parallel(&paths, workers, |path| run_mdtest_in_thread(path));
+    let census = instrumentation::take_artifact_reuse_rejection_census();
+    // Which producers still end a step on a snapshot older than itself, so
+    // that the step is recorded on no history. A knowledge-losing forget
+    // cannot: its mark makes the result a node no earlier snapshot can be
+    // (`CMemory::mark_forgotten_from`). Anything else here is a producer
+    // whose steps are invisible to every history-based rule, and this line
+    // is how a corpus run names it.
+    eprintln!(
+        "backwards memory derivations over the corpus: {:?}",
+        instrumentation::take_backwards_memory_derivation_census()
+    );
+    if failures.is_empty() {
+        if !filtered
+            && std::env::var_os(RUN_QUARANTINED).is_none()
+            && let Some(mismatch) = instrumentation::artifact_reuse_rejection_census_mismatch(
+                &census,
+                ARTIFACT_REUSE_REJECTION_BASELINE,
+            )
+        {
+            panic!("artifact reuse rejection ratchet (tests/mdtests.rs baselines):\n{mismatch}");
         }
-        panic!("{message}");
-    })
+        return;
+    }
+
+    let mut message = format!("{} of {} mdtests failed:\n", failures.len(), paths.len());
+    for (index, diagnostics) in failures {
+        message.push_str(&format!("\n`{}` {diagnostics}\n", paths[index].display()));
+    }
+    panic!("{message}");
 }
 
 fn run_mdtest_in_thread(path: &Path) -> Result<(), String> {

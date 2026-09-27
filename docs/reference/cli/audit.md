@@ -42,7 +42,7 @@ more than the configured slack beyond it. Each phase also fails when it spends
 more than its work budget. Wall-clock times are reported as information only.
 A phase time limit is a crash-containment bound for a hung or starved run, and
 the whole-run time limit stops at a resumable cursor. Verification inside each
-phase keeps the per-tactic limits [`click verify`](verify.md) applies.
+phase keeps the per-tactic work budgets [`click verify`](verify.md#deterministic-verdicts) applies; no tactic has a wall-clock limit.
 
 ## Options and defaults
 

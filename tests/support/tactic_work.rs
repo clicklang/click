@@ -23,11 +23,31 @@ pub fn report_dir() -> Option<PathBuf> {
     std::env::var_os(REPORT).map(PathBuf::from)
 }
 
-/// Runs one fixture verification, recording its tactics when a report was
+/// The class of the one extra row per fixture that records its whole
+/// verification's work, which calibrates `click::cli::DEFAULT_VERIFY_WORK_LIMIT`.
+pub const WHOLE_RUN_CLASS: &str = "run";
+
+/// Runs one fixture verification, recording its tactics, and its whole
+/// verification's work as one [`WHOLE_RUN_CLASS`] row, when a report was
 /// requested.
 pub fn measure<R>(operation: impl FnOnce() -> R) -> (R, Vec<TacticWorkSample>) {
     if report_dir().is_some() {
-        instrumentation::collect_tactic_work(operation)
+        let ((result, mut samples), work) = instrumentation::measure_deterministic_work(|| {
+            instrumentation::collect_tactic_work(operation)
+        });
+        samples.push(TacticWorkSample {
+            tactic: instrumentation::TacticEvent {
+                claim: "-".to_string(),
+                tactic_index: 0,
+                tactic_name: "whole verification".to_string(),
+                class: WHOLE_RUN_CLASS.to_string(),
+                statement_index: 0,
+                source_index: 0,
+            },
+            work,
+            failed: false,
+        });
+        (result, samples)
     } else {
         (operation(), Vec::new())
     }

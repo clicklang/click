@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use click::cli::{
-    DEFAULT_EXPANSION_TIME_LIMIT, DEFAULT_VERIFY_TIME_LIMIT, PUBLIC_CLI_BEHAVIORS,
-    PUBLIC_ENVIRONMENT_VARIABLES, format_duration,
+    CRASH_CONTAINMENT_TIME_LIMIT, PUBLIC_CLI_BEHAVIORS, PUBLIC_ENVIRONMENT_VARIABLES, RunLimits,
+    format_duration,
 };
 use click::languages::c::syntax::C0_PUBLIC_FORMS;
 use click::surface::{PUBLIC_TACTIC_FORMS, SURFACE_CLICK_FORMS, SURFACE_CLICK_WORDS};
@@ -87,127 +87,157 @@ fn language_proof_code_cannot_rebuild_the_kernel_proof_object() {
     }
 }
 
-/// Fixture verdicts come from deterministic tactic-work budgets, never from
-/// a wall-clock tactic limit: library verification installs production's
-/// thread-local tactic clocks unless `tests/support/limits.rs` turns them
-/// off. Every integration test file therefore routes each `#[test]` body and
-/// every verifier thread through that helper, except the named files that
-/// never reach tactic checking.
+/// The part of a source file that ships: everything before an inline
+/// `#[cfg(test)] mod tests` block, or nothing for a file of tests.
+fn shipped_part<'a>(path: &Path, source: &'a str) -> Option<&'a str> {
+    let name = path.file_name().unwrap().to_str().unwrap();
+    if name.ends_with("tests.rs")
+        || path
+            .components()
+            .any(|component| component.as_os_str() == "tests")
+    {
+        return None;
+    }
+    Some(
+        source
+            .find("\n#[cfg(test)]\nmod tests {")
+            .map_or(source, |end| &source[..end]),
+    )
+}
+
+/// Verdicts come from deterministic work budgets only: the per-class tactic
+/// budgets and the whole-run budget of `click::cli::RunLimits`. The one
+/// wall-clock bound a shipped tool installs is the crash-containment bound of
+/// `click::cli::with_run_limits`, whose message says it is not a verdict
+/// about the proof. So no shipped source outside that helper may install a
+/// deadline, and no fixture harness may install one of its own.
 #[test]
-fn every_fixture_harness_judges_tactics_by_work_budgets_only() {
-    const NON_VERIFYING: &[(&str, &str)] = &[
-        (
-            "condition_transport_api.rs",
-            "calls kernel transport rules directly, with no tactics",
-        ),
-        (
-            "documentation.rs",
-            "checks documentation and source inventories",
-        ),
-    ];
-    // Spelled in pieces so this file does not match its own check.
-    let verification_calls: Vec<String> = ["verify", "expand"]
-        .iter()
-        .flat_map(|verb| {
-            ["_c0", "_cpp", "_at_project("]
-                .iter()
-                .map(move |target| format!("{verb}{target}"))
-        })
-        .collect();
-    let thread_starts = [
-        "thread::Builder",
-        "thread::spawn",
-        "thread::scope",
-        ".spawn(",
-    ];
+fn wall_clock_bounds_are_crash_containment_only() {
+    const OWNERS: &[&str] = &["src/instrumentation.rs", "src/cli.rs"];
+    let mut files = Vec::new();
+    files_with_extension(&root().join("src"), "rs", &mut files);
+    files.sort();
     let mut checked = 0;
-    for entry in fs::read_dir(root().join("tests")).expect("read tests directory") {
-        let path = entry.expect("read tests entry").path();
-        if path.extension().and_then(|value| value.to_str()) != Some("rs") {
+    for path in &files {
+        let display = path.strip_prefix(root()).unwrap().display().to_string();
+        let source = fs::read_to_string(path).expect("read source");
+        let Some(shipped) = shipped_part(path, &source) else {
             continue;
-        }
-        let name = path.file_name().unwrap().to_str().unwrap().to_string();
-        let source = fs::read_to_string(&path).expect("read test harness");
-        if NON_VERIFYING.iter().any(|(exempt, _)| *exempt == name) {
-            for call in &verification_calls {
-                assert!(
-                    !source.contains(call.as_str()),
-                    "tests/{name} is listed as non-verifying but calls `{call}`; \
-                     route it through tests/support/limits.rs instead"
-                );
-            }
-            continue;
-        }
+        };
         checked += 1;
-        assert!(
-            source.contains("#[path = \"support/limits.rs\"]\nmod limits;"),
-            "tests/{name} must declare `mod limits` from tests/support/limits.rs"
-        );
-        for start in thread_starts {
-            assert!(
-                !source.contains(start),
-                "tests/{name} starts a thread with `{start}`; tactic limits are \
-                 thread-local, so use `limits::spawn` or `limits::run_parallel`"
-            );
+        if OWNERS.contains(&display.as_str()) {
+            continue;
         }
-        let lines: Vec<&str> = source.lines().collect();
+        let lines = shipped.lines().collect::<Vec<_>>();
         for (index, line) in lines.iter().enumerate() {
-            if line.trim() != "#[test]" {
+            let Some(forbidden) = ["with_deadline(", "with_run_work_limit("]
+                .into_iter()
+                .find(|forbidden| line.contains(forbidden))
+            else {
                 continue;
-            }
-            let signature = lines[index + 1..]
+            };
+            // A `#[test]` or `#[cfg(test)]` function outside a `tests`
+            // module is test code too.
+            let in_test_function = lines[..index]
                 .iter()
-                .position(|line| line.trim_start().starts_with("fn "))
-                .map(|offset| index + 1 + offset)
-                .unwrap_or_else(|| panic!("tests/{name}:{} has no test function", index + 1));
-            let body = lines
-                .get(signature + 1)
-                .map_or("", |line| line.trim_start());
+                .rposition(|line| {
+                    let line = line.trim_start();
+                    line.starts_with("fn ") || line.starts_with("pub") && line.contains(" fn ")
+                })
+                .is_some_and(|function| {
+                    lines[function.saturating_sub(3)..function]
+                        .iter()
+                        .any(|line| matches!(line.trim(), "#[test]" | "#[cfg(test)]"))
+                });
             assert!(
-                lines[signature].trim_end().ends_with('{')
-                    && body.starts_with("limits::deterministic(|| {"),
-                "tests/{name}:{} `{}` must run its body in `limits::deterministic(|| {{ ... }})` \
-                 so no wall-clock tactic limit can decide it",
-                signature + 1,
-                lines[signature].trim()
+                in_test_function,
+                "{display}:{} calls `{forbidden}` outside tests; a shipped tool bounds a run \
+                 only through `click::cli::with_run_limits`, so wall-clock time stays crash \
+                 containment and never becomes a verdict",
+                index + 1
             );
         }
     }
-    assert!(checked >= 5, "expected the fixture harnesses under tests/");
-    let helper = fs::read_to_string(root().join("tests/support/limits.rs"))
-        .expect("read tests/support/limits.rs");
-    assert!(helper.contains("instrumentation::without_tactic_time_limits(operation)"));
+    assert!(checked >= 100, "expected the shipped sources under src/");
+    let cli = fs::read_to_string(root().join("src/cli.rs")).expect("read src/cli.rs");
+    assert_eq!(
+        cli.matches("instrumentation::with_deadline(").count(),
+        1,
+        "src/cli.rs installs the crash-containment bound in exactly one helper"
+    );
+    let instrumentation =
+        fs::read_to_string(root().join("src/instrumentation.rs")).expect("read instrumentation");
+    for message in ["crash-containment bound", "not a verdict about the proof"] {
+        assert!(
+            instrumentation.contains(message),
+            "an expired containment bound must say `{message}`"
+        );
+    }
+
+    let mut harnesses = Vec::new();
+    files_with_extension(&root().join("tests"), "rs", &mut harnesses);
+    for path in harnesses {
+        let source = fs::read_to_string(&path).expect("read harness");
+        let display = path.strip_prefix(root()).unwrap().display().to_string();
+        if display == "tests/documentation.rs" {
+            continue;
+        }
+        for forbidden in ["with_deadline(", "Instant::now() +"] {
+            assert!(
+                !source.contains(forbidden),
+                "{display} installs a wall-clock bound (`{forbidden}`); fixture verdicts come \
+                 from deterministic work budgets, and nextest's per-test timeout is the \
+                 harnesses' hang containment"
+            );
+        }
+    }
 }
 
-/// The command-line tools install real-time limits of their own, so every
-/// test that drives one in-process runs under
-/// `click::cli::with_work_budget_verdicts`; only a test about real-time
-/// interruption itself stays outside it.
+/// The command-line tools bound a run by deterministic work, and their
+/// wall-clock bound is ten-minute crash containment, so an in-process test
+/// of a tool cannot pass or fail with machine load unless it shortens that
+/// bound itself. Every test that does, or that installs a deadline directly,
+/// is listed here with its reason, so the wall-clock-dependent tests stay a
+/// short, reviewed list.
 #[test]
-fn every_command_line_test_judges_by_work_budgets_only() {
-    const REAL_TIME: &[(&str, &str, &str)] = &[
+fn command_line_tests_name_every_wall_clock_bound_they_set() {
+    const WALL_CLOCK: &[(&str, &str, &str)] = &[
         (
             "click-expand.rs",
             "reports_an_expired_expansion_deadline_directly",
-            "checks the diagnostic of an already-expired deadline",
+            "checks the diagnostic of an already-expired containment bound",
         ),
         (
             "click-expand.rs",
             "exhausted_command_deadline_writes_no_artifact",
-            "checks that an exhausted `--time-limit 1ms` writes no artifact",
+            "checks that `--time-limit 1ms` containment writes no artifact",
         ),
         (
             "click-expand.rs",
-            "generated_proof_check_uses_the_command_limit_for_remaining_smart_tactics",
-            "checks that the command installs its own smart-tactic clock",
+            "parses_time_limit_before_or_after_positionals",
+            "parses the option; runs no verification",
+        ),
+        (
+            "click-expand.rs",
+            "parses_source_location_with_colons_in_path",
+            "parses the option; runs no verification",
+        ),
+        (
+            "click-verify.rs",
+            "parses_default_and_overridden_run_limits",
+            "parses the option; runs no verification",
+        ),
+        (
+            "tests.rs",
+            "parses_profile_arguments",
+            "parses the option; runs no verification",
         ),
     ];
-    const SCOPE: &str = "click::cli::with_work_budget_verdicts(|| {";
     let mut files = Vec::new();
     files_with_extension(&root().join("src/bin"), "rs", &mut files);
     files.sort();
     let mut checked = 0;
-    let mut exempted = BTreeSet::new();
+    let mut listed = BTreeSet::new();
     for path in files {
         let name = path.file_name().unwrap().to_str().unwrap().to_string();
         let display = path.strip_prefix(root()).unwrap().display().to_string();
@@ -228,21 +258,31 @@ fn every_command_line_test_judges_by_work_budgets_only() {
                 .split('(')
                 .next()
                 .unwrap();
-            if REAL_TIME
+            let indent = lines[signature].len() - lines[signature].trim_start().len();
+            let close = format!("{}}}", " ".repeat(indent));
+            let body = lines[signature + 1..]
                 .iter()
-                .any(|(file, exempt, _)| *file == name && *exempt == test)
-            {
-                exempted.insert((name.clone(), test.to_string()));
-                continue;
-            }
+                .take_while(|line| **line != close)
+                .copied()
+                .collect::<Vec<_>>()
+                .join("\n");
             checked += 1;
-            let body = lines
-                .get(signature + 1)
-                .map_or("", |line| line.trim_start());
+            // Passing the option: an argument-list element or an owned
+            // argument string, not a mention in an assertion.
+            let sets_wall_clock = body.contains("with_deadline(")
+                || body.contains("\"--time-limit\",")
+                || body.contains("\"--time-limit\".to_string()");
+            let exempt = WALL_CLOCK
+                .iter()
+                .any(|(file, exempt, _)| *file == name && *exempt == test);
+            if exempt {
+                listed.insert((name.clone(), test.to_string()));
+            }
             assert!(
-                lines[signature].trim_end().ends_with('{') && body.starts_with(SCOPE),
-                "{display}:{} `{test}` must run its body in `{SCOPE} ... }})` so no \
-                 wall-clock limit of the tool it drives can decide it",
+                !sets_wall_clock || exempt,
+                "{display}:{} `{test}` sets a wall-clock bound; judge it by a deterministic \
+                 work budget (`--work-limit`, `with_run_work_limit`) instead, or list it with \
+                 a reason in `command_line_tests_name_every_wall_clock_bound_they_set`",
                 signature + 1,
             );
         }
@@ -251,10 +291,10 @@ fn every_command_line_test_judges_by_work_budgets_only() {
         checked >= 100,
         "expected the command-line tests under src/bin/"
     );
-    for (file, test, _) in REAL_TIME {
+    for (file, test, _) in WALL_CLOCK {
         assert!(
-            exempted.contains(&(file.to_string(), test.to_string())),
-            "exempt real-time test `{test}` is no longer in src/bin/{file}; remove it"
+            listed.contains(&(file.to_string(), test.to_string())),
+            "listed wall-clock test `{test}` is no longer in src/bin/**/{file}; remove it"
         );
     }
 }
@@ -1160,16 +1200,22 @@ fn cli_defaults_are_source_backed() {
         }
     }
 
-    for (command, default) in [
-        ("verify", DEFAULT_VERIFY_TIME_LIMIT),
-        ("expand", DEFAULT_EXPANSION_TIME_LIMIT),
+    for (command, limits) in [
+        ("verify", RunLimits::verify()),
+        ("expand", RunLimits::expand()),
     ] {
+        assert_eq!(limits.time, CRASH_CONTAINMENT_TIME_LIMIT);
         let reference = fs::read_to_string(root().join(format!("docs/reference/cli/{command}.md")))
             .expect("read CLI reference");
-        let default = format_duration(default);
+        let time = format_duration(limits.time);
         assert!(
-            reference.contains(&format!("`{default}`")),
-            "click {command} default time limit `{default}` is absent or stale"
+            reference.contains(&format!("`{time}`")),
+            "click {command} default crash-containment bound `{time}` is absent or stale"
+        );
+        let work = limits.work.to_string();
+        assert!(
+            reference.contains(&format!("`{work}`")),
+            "click {command} default work limit `{work}` is absent or stale"
         );
     }
 }

@@ -1686,6 +1686,10 @@ id = "cli.verify.--time-limit"
 path = "reference/cli/verify.md#options"
 
 [[item]]
+id = "cli.verify.--work-limit"
+path = "reference/cli/verify.md#options"
+
+[[item]]
 id = "cli.verify.--changed-since"
 path = "reference/cli/verify.md#options"
 
@@ -1750,6 +1754,10 @@ id = "cli.profile.--time-limit"
 path = "reference/cli/profile.md#options-and-defaults"
 
 [[item]]
+id = "cli.profile.--work-limit"
+path = "reference/cli/profile.md#options-and-defaults"
+
+[[item]]
 id = "cli.profile.--help"
 path = "reference/cli/profile.md#options-and-defaults"
 
@@ -1775,6 +1783,10 @@ path = "reference/cli/expand.md#options"
 
 [[item]]
 id = "cli.expand.--time-limit"
+path = "reference/cli/expand.md#options"
+
+[[item]]
+id = "cli.expand.--work-limit"
 path = "reference/cli/expand.md#options"
 
 [[item]]
@@ -1938,6 +1950,10 @@ id = "cli.behavior.verify.default.time-limit"
 path = "reference/cli/verify.md#options"
 
 [[item]]
+id = "cli.behavior.verify.default.work-limit"
+path = "reference/cli/verify.md#options"
+
+[[item]]
 id = "cli.behavior.verify.output"
 path = "reference/cli/verify.md#output-and-exit-behavior"
 
@@ -1978,6 +1994,10 @@ id = "cli.behavior.profile.default.time-limit"
 path = "reference/cli/profile.md#options-and-defaults"
 
 [[item]]
+id = "cli.behavior.profile.default.work-limit"
+path = "reference/cli/profile.md#options-and-defaults"
+
+[[item]]
 id = "cli.behavior.profile.default.top"
 path = "reference/cli/profile.md#options-and-defaults"
 
@@ -2007,6 +2027,10 @@ path = "reference/cli/expand.md#selection"
 
 [[item]]
 id = "cli.behavior.expand.default.time-limit"
+path = "reference/cli/expand.md#options"
+
+[[item]]
+id = "cli.behavior.expand.default.work-limit"
 path = "reference/cli/expand.md#options"
 
 [[item]]

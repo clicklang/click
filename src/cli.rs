@@ -45,6 +45,7 @@ pub const PUBLIC_CLI_BEHAVIORS: &[&str] = &[
     "verify.target.collection",
     "verify.selection.incremental",
     "verify.default.time-limit",
+    "verify.default.work-limit",
     "verify.output",
     "profile.target.sidecar",
     "profile.target.project",
@@ -55,6 +56,7 @@ pub const PUBLIC_CLI_BEHAVIORS: &[&str] = &[
     "profile.default.simple-threshold",
     "profile.default.control-threshold",
     "profile.default.time-limit",
+    "profile.default.work-limit",
     "profile.default.top",
     "profile.output.report",
     "profile.output.partial",
@@ -63,6 +65,7 @@ pub const PUBLIC_CLI_BEHAVIORS: &[&str] = &[
     "expand.selection.location",
     "expand.selection.claim",
     "expand.default.time-limit",
+    "expand.default.work-limit",
     "expand.output.stdout",
     "expand.output.path",
     "expand.output.in-place",
@@ -252,98 +255,157 @@ fn duration_from_optional_os(
     parse_duration(source).map_err(|message| format!("{variable}: {message}"))
 }
 
-/// Per-class tactic time thresholds (owner ruling 2026-07-31): a slow SIMPLE
-/// tactic is an engine bug. A successful slow SMART tactic is an expansion
-/// candidate; a failed SMART search should be decomposed unless it missed its
-/// enforced bound or produced a tooling-quality failure.
-/// These match `click profile`'s default reporting thresholds and the
-/// structured-violation diagnostics below. Production *enforcement* is the
+/// Per-class tactic time *reporting* thresholds (owner ruling 2026-07-31): a
+/// slow SIMPLE tactic is an engine bug. A successful slow SMART tactic is an
+/// expansion candidate; a failed SMART search should be decomposed unless it
+/// missed its enforced bound or produced a tooling-quality failure. These are
+/// `click profile`'s default reporting thresholds and the structured-violation
+/// diagnostics below. They never decide a verdict: enforcement is the
 /// deterministic per-class work budget in `instrumentation::TacticWorkLimits`
-/// with a generous real-time backstop (`instrumentation::TacticLimits`):
-/// crossing a reporting threshold is a finding to investigate, while
-/// exhausting a work budget fails the proof deterministically.
+/// and the whole-run work budget of [`RunLimits`]. Crossing a reporting
+/// threshold is a finding to investigate; exhausting a work budget fails the
+/// proof on every machine under every load.
 pub const DEFAULT_SIMPLE_TACTIC_LIMIT: Duration = Duration::from_millis(500);
 pub const DEFAULT_SMART_TACTIC_LIMIT: Duration = Duration::from_secs(2);
 pub const DEFAULT_CONTROL_TACTIC_LIMIT: Duration = Duration::from_secs(6);
-pub const DEFAULT_EXPANSION_TIME_LIMIT: Duration = Duration::from_secs(60);
-/// Whole-sidecar deadline used by ordinary `click verify` and verification
-/// fixtures. Directory verification applies it independently to each
-/// sidecar, so one slow project cannot consume the following projects' time.
-pub const DEFAULT_VERIFY_TIME_LIMIT: Duration = Duration::from_secs(30);
 
-/// The only wall-clock bound a command-line tool keeps under
-/// [`with_work_budget_verdicts`]: containment for a genuinely hung run, far
-/// above what a loaded machine produces for a run that deterministic work
-/// budgets accept.
+/// The wall-clock bound every command-line tool applies by default, and the
+/// meaning of each tool's `--time-limit`: crash containment for a genuinely
+/// hung or CPU-starved run, never a verdict about a proof. It sits far above
+/// what a loaded machine takes for any run the deterministic work budgets
+/// accept, and a run it stops says it was stopped by containment.
 pub const CRASH_CONTAINMENT_TIME_LIMIT: Duration = Duration::from_secs(10 * 60);
 
-thread_local! {
-    static WORK_BUDGET_VERDICTS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+/// Deterministic whole-run work budget of one `click verify` (and `click
+/// profile`) target: one sidecar, one mdtest, or one selected proof unit.
+/// Directory verification applies it independently to each sidecar, so one
+/// expensive project cannot consume the following projects' budget. It
+/// counts the units the tactic budgets are charged
+/// (`instrumentation::measure_deterministic_work`), including driver,
+/// certification, and lowering work outside any tactic.
+///
+/// Calibration (2026-09-26, base `a8ad65f7`, `scripts/measure-tactic-work.sh`,
+/// which records each fixture's whole verification as a `run` row): over 36
+/// example sidecars and 2,354 mdtests, p50 = 2,591, p95 = 46,701, p99 =
+/// 138,621, and the largest whole-run costs are `examples/arena`'s
+/// `arena_cells.click` at 6,536,557 units, the next an mdtest at 1,124,531,
+/// and `examples/owned-vector` at 540,079; the largest example project in
+/// total is `examples/arena` at the same 6,536,557. 50,000,000 gives the
+/// largest 7.6x headroom. It also stays below what the crash-containment
+/// bound admits on a loaded machine (about 110,000 units a second at a load
+/// average of 18 is 66 million units in ten minutes), so for any run this
+/// budget accepts, containment is not what decides. A project larger than
+/// the corpus raises it with `--work-limit`.
+pub const DEFAULT_VERIFY_WORK_LIMIT: usize = 50_000_000;
+
+/// Deterministic whole-run work budget of one `click expand` invocation:
+/// generating the expansion and checking the generated certificate. The
+/// largest expansion `click audit` measured on 2026-09-26 (base `8a223dd2`)
+/// was under half a million units; the budget leaves 100x.
+pub const DEFAULT_EXPANSION_WORK_LIMIT: usize = 50_000_000;
+
+/// The two bounds a command-line tool puts on one run: the deterministic
+/// work budget, which is the verdict, and the wall-clock crash-containment
+/// bound, which only stops a hung run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RunLimits {
+    /// Deterministic work units the whole run may spend (`--work-limit`).
+    pub work: usize,
+    /// Wall-clock crash-containment bound (`--time-limit`).
+    pub time: Duration,
 }
 
-/// Runs `operation` with every command-line tool judging verification by its
-/// deterministic tactic-work budgets alone, the way the fixture harnesses and
-/// library tests do, so machine load cannot change a verdict.
-///
-/// Inside this scope the tools install no per-tactic real-time limit (neither
-/// production's defaults nor the ones `click expand` and `click profile`
-/// install themselves), raise every whole-run and phase wall-clock limit to
-/// [`CRASH_CONTAINMENT_TIME_LIMIT`]. `click audit`'s own verdicts count
-/// deterministic work and apply unchanged. The scope is thread-local; a tool
-/// that verifies on a thread of its own re-enters it there.
-///
-/// Tests that drive a tool in-process use this. Tests about real-time
-/// interruption itself stay outside it.
-pub fn with_work_budget_verdicts<R>(operation: impl FnOnce() -> R) -> R {
-    struct Guard;
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            WORK_BUDGET_VERDICTS.with(|depth| depth.set(depth.get() - 1));
+impl RunLimits {
+    pub const fn verify() -> Self {
+        Self {
+            work: DEFAULT_VERIFY_WORK_LIMIT,
+            time: CRASH_CONTAINMENT_TIME_LIMIT,
         }
     }
-    WORK_BUDGET_VERDICTS.with(|depth| depth.set(depth.get() + 1));
-    let _guard = Guard;
-    crate::instrumentation::without_tactic_time_limits(operation)
-}
 
-/// Whether the current thread is inside [`with_work_budget_verdicts`].
-pub fn work_budget_verdicts() -> bool {
-    WORK_BUDGET_VERDICTS.with(|depth| depth.get() > 0)
-}
-
-/// Re-enters [`with_work_budget_verdicts`] around `operation` when `inherited`
-/// is set: how a tool carries the caller's policy onto a thread it starts.
-pub fn with_inherited_work_budget_verdicts<R>(inherited: bool, operation: impl FnOnce() -> R) -> R {
-    if inherited {
-        with_work_budget_verdicts(operation)
-    } else {
-        operation()
+    pub const fn expand() -> Self {
+        Self {
+            work: DEFAULT_EXPANSION_WORK_LIMIT,
+            time: CRASH_CONTAINMENT_TIME_LIMIT,
+        }
     }
 }
 
-/// The wall-clock limit a tool enforces for a `configured` whole-run or phase
-/// limit: the configured value, or at least [`CRASH_CONTAINMENT_TIME_LIMIT`]
-/// under [`with_work_budget_verdicts`].
-pub fn tool_time_limit(configured: Duration) -> Duration {
-    if work_budget_verdicts() {
-        configured.max(CRASH_CONTAINMENT_TIME_LIMIT)
-    } else {
-        configured
+/// Runs one command-line operation under `limits`: its deterministic
+/// whole-run work budget decides, at the same checkpoint on every machine,
+/// whether the run may continue, and its wall-clock bound only contains a
+/// hung run. A failure after the wall-clock bound expired says, before the
+/// verifier's own message, that containment stopped the run and that this is
+/// not a verdict about the proof.
+///
+/// This is the only route by which a shipped tool installs a wall-clock
+/// bound; `tests/documentation.rs` enforces that.
+pub fn with_run_limits<R>(
+    tool: &str,
+    limits: RunLimits,
+    operation: impl FnOnce() -> Result<R, String>,
+) -> Result<R, String> {
+    let started = std::time::Instant::now();
+    let (result, exhausted) = within_run_limits(limits, || {
+        let result = operation();
+        (result, crate::instrumentation::run_work_exhaustion())
+    });
+    let elapsed = started.elapsed();
+    match (result, exhausted) {
+        (Err(message), _) if elapsed >= limits.time => Err(format!(
+            "{tool} was stopped after {} by {}; rerun on a less loaded machine or raise `--time-limit`\n{message}",
+            format_fractional_duration(elapsed),
+            crate::instrumentation::containment_bound_description(limits.time),
+        )),
+        // A search that failed because the budget ran out can report an
+        // earlier alternative's failure instead; the budget is what stopped
+        // the run, so say so first. A run is never green past its budget.
+        (result, Some((used, limit)))
+            if result
+                .as_ref()
+                .err()
+                .is_none_or(|message| !message.contains(WHOLE_RUN_BUDGET_EXHAUSTED)) =>
+        {
+            let below = result
+                .err()
+                .map(|message| {
+                    format!(
+                        "\nthe error below is where the verifier stopped; it may be a consequence of the exhausted budget rather than a property of the proof\n{message}"
+                    )
+                })
+                .unwrap_or_default();
+            Err(format!(
+                "{tool} {WHOLE_RUN_BUDGET_EXHAUSTED} after {used} units ({limit} limit); raise `--work-limit` for a project larger than the calibrated corpus{below}"
+            ))
+        }
+        (result, _) => result,
     }
 }
 
-/// Runs `operation` under per-tactic real-time `limits` a tool installs
-/// itself, except under [`with_work_budget_verdicts`], where no per-tactic
-/// clock applies.
-pub fn with_tool_tactic_limits<R>(
-    limits: crate::instrumentation::TacticLimits,
-    operation: impl FnOnce() -> R,
-) -> R {
-    if work_budget_verdicts() {
-        operation()
-    } else {
-        crate::instrumentation::with_tactic_limits(limits, operation)
-    }
+/// How a whole-run work budget's exhaustion is named, here and in
+/// `instrumentation`'s pending-limit message.
+const WHOLE_RUN_BUDGET_EXHAUSTED: &str = "exhausted its deterministic whole-run work budget";
+
+/// Installs both of `limits`' bounds around `operation`, for a tool that
+/// inspects the outcome itself (`click profile`); [`with_run_limits`] is the
+/// ordinary route.
+pub fn within_run_limits<R>(limits: RunLimits, operation: impl FnOnce() -> R) -> R {
+    crate::instrumentation::with_deadline(limits.time, || {
+        crate::instrumentation::with_run_work_limit(limits.work, operation)
+    })
+}
+
+/// Parses a `--work-limit` value: a positive count of deterministic work
+/// units, with optional `_` or `,` digit separators.
+pub fn parse_work_limit(source: &str) -> Result<usize, String> {
+    let digits = source.replace(['_', ','], "");
+    digits
+        .parse::<usize>()
+        .ok()
+        .filter(|units| *units > 0)
+        .ok_or_else(|| {
+            format!("work limit `{source}` must be a positive whole number of work units")
+        })
 }
 
 /// Disables tactic budget enforcement in the fixture harnesses, for A/B runs
@@ -2017,6 +2079,53 @@ mod tests {
         assert!(
             violations[0].contains("f.contract 1 step"),
             "{violations:?}"
+        );
+    }
+
+    #[test]
+    fn an_exhausted_whole_run_budget_is_named_before_the_error_it_caused() {
+        let limits = RunLimits {
+            work: 10,
+            time: CRASH_CONTAINMENT_TIME_LIMIT,
+        };
+        // A search that ran out of budget and reported an earlier
+        // alternative's failure.
+        let masked = with_run_limits("click verify", limits, || -> Result<(), String> {
+            crate::instrumentation::record_deterministic_work(11);
+            Err("`normalize` goal did not normalize to true".to_string())
+        })
+        .expect_err("an exhausted budget fails the run");
+        assert!(
+            masked.starts_with(
+                "click verify exhausted its deterministic whole-run work budget after 11 units (10 limit)"
+            ) && masked.ends_with("`normalize` goal did not normalize to true"),
+            "{masked}"
+        );
+        // A run is never green past its budget.
+        let green = with_run_limits("click verify", limits, || {
+            crate::instrumentation::record_deterministic_work(11);
+            Ok(())
+        })
+        .expect_err("a run past its budget is not green");
+        assert!(
+            green.contains("after 11 units (10 limit)") && !green.contains("error below"),
+            "{green}"
+        );
+        // A message that already names the budget is kept as it is.
+        let named = with_run_limits("click verify", limits, || -> Result<(), String> {
+            crate::instrumentation::record_deterministic_work(11);
+            assert!(crate::instrumentation::deadline_exceeded());
+            Err(crate::instrumentation::deadline_context())
+        })
+        .expect_err("an exhausted budget fails the run");
+        assert!(
+            named.starts_with("the run exhausted its deterministic whole-run work budget"),
+            "{named}"
+        );
+        // Within the budget, the operation's result stands.
+        assert_eq!(
+            with_run_limits("click verify", limits, || Ok::<_, String>(7)),
+            Ok(7)
         );
     }
 

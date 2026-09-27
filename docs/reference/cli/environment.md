@@ -54,7 +54,8 @@ fixture, into `DIR`. `scripts/measure-tactic-work.sh` sets it together with
 ### `CLICK_DISABLE_TACTIC_BUDGETS`
 
 Set `CLICK_DISABLE_TACTIC_BUDGETS=1` to disable per-tactic budget enforcement
-for reduction and archaeology. Outer command limits still apply.
+for reduction and archaeology. The command's whole-run work budget and its
+crash-containment bound still apply.
 
 This variable is an internal experiment handle, not a stable user feature.
 Use it only for an A/B regression that names the expected invariant. The

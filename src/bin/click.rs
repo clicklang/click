@@ -67,10 +67,8 @@ mod tests {
 
     #[test]
     fn rejects_unknown_subcommands() {
-        click::cli::with_work_budget_verdicts(|| {
-            let error = entry(["unknown".to_string()]).unwrap_err();
-            assert!(error.contains("unknown command `unknown`"));
-        })
+        let error = entry(["unknown".to_string()]).unwrap_err();
+        assert!(error.contains("unknown command `unknown`"));
     }
 
     /// The command-line front end verifies under the shipped stable-view
@@ -79,33 +77,31 @@ mod tests {
     /// a store outside the owned footprint.
     #[test]
     fn verify_refuses_a_store_into_a_viewed_global_with_the_loan_message() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-viewed-global-store-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            let sidecar = directory.join("viewed_global.click");
-            fs::write(
-                directory.join("viewed_global.c"),
-                "int32 words[2];\nvoid set_second() { words[1] = 7; }\n",
-            )
-            .unwrap();
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-viewed-global-store-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let sidecar = directory.join("viewed_global.click");
+        fs::write(
+            directory.join("viewed_global.c"),
+            "int32 words[2];\nvoid set_second() { words[1] = 7; }\n",
+        )
+        .unwrap();
+        fs::write(
             &sidecar,
             "verifying \"viewed_global.c\";\nvoid set_second() {\n    views words[1..2];\n    ensures words[1] == 7 by auto;\n}\n",
         )
         .unwrap();
-            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-            assert!(
-                error.contains("stable-view memory access conflicts with an active loan"),
-                "{error}"
-            );
-            assert!(!error.contains("outside the owned footprint"), "{error}");
-            assert!(error.starts_with("proof error:"), "{error}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("stable-view memory access conflicts with an active loan"),
+            "{error}"
+        );
+        assert!(!error.contains("outside the owned footprint"), "{error}");
+        assert!(error.starts_with("proof error:"), "{error}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     /// A bare sidecar name has an empty `Path::parent`, which is not a
@@ -118,54 +114,50 @@ mod tests {
     /// the directory is restored before any assertion can unwind.
     #[test]
     fn every_cli_tool_accepts_a_bare_sidecar_name() {
-        click::cli::with_work_budget_verdicts(|| {
-            if std::env::var("NEXTEST_EXECUTION_MODE").as_deref() != Ok("process-per-test") {
-                eprintln!(
-                    "skipped: changing the working directory needs nextest process isolation"
-                );
-                return;
-            }
-            let directory = std::env::temp_dir()
-                .join(format!("click-bare-sidecar-name-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
-            fs::write(
-                directory.join("f.click"),
-                "verifying \"f.c\";\nint32 f() { ensures result == 1 by auto; }\n",
-            )
-            .unwrap();
-            let original = std::env::current_dir().unwrap();
-            std::env::set_current_dir(&directory).unwrap();
-            let arguments = |words: &[&str]| {
-                words
-                    .iter()
-                    .map(|word| word.to_string())
-                    .collect::<Vec<_>>()
-            };
-            let results = [
-                entry(arguments(&["verify", "f.click"])),
-                entry(arguments(&["verify", "f.click:2:13"])),
-                entry(arguments(&["profile", "f.click"])),
-                entry(arguments(&[
-                    "expand",
-                    "--claim",
-                    "f.ensures_0",
-                    "--output",
-                    "expanded.click",
-                    "f.click",
-                ])),
-                entry(arguments(&["audit", "--claim", "f.ensures_0", "f.click"])),
-                entry(arguments(&["verify", "expanded.click"])),
-            ];
-            std::env::set_current_dir(original).unwrap();
+        if std::env::var("NEXTEST_EXECUTION_MODE").as_deref() != Ok("process-per-test") {
+            eprintln!("skipped: changing the working directory needs nextest process isolation");
+            return;
+        }
+        let directory =
+            std::env::temp_dir().join(format!("click-bare-sidecar-name-{}", std::process::id()));
+        if directory.exists() {
             fs::remove_dir_all(&directory).unwrap();
-            for result in results {
-                result.unwrap();
-            }
-        })
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        fs::write(
+            directory.join("f.click"),
+            "verifying \"f.c\";\nint32 f() { ensures result == 1 by auto; }\n",
+        )
+        .unwrap();
+        let original = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&directory).unwrap();
+        let arguments = |words: &[&str]| {
+            words
+                .iter()
+                .map(|word| word.to_string())
+                .collect::<Vec<_>>()
+        };
+        let results = [
+            entry(arguments(&["verify", "f.click"])),
+            entry(arguments(&["verify", "f.click:2:13"])),
+            entry(arguments(&["profile", "f.click"])),
+            entry(arguments(&[
+                "expand",
+                "--claim",
+                "f.ensures_0",
+                "--output",
+                "expanded.click",
+                "f.click",
+            ])),
+            entry(arguments(&["audit", "--claim", "f.ensures_0", "f.click"])),
+            entry(arguments(&["verify", "expanded.click"])),
+        ];
+        std::env::set_current_dir(original).unwrap();
+        fs::remove_dir_all(&directory).unwrap();
+        for result in results {
+            result.unwrap();
+        }
     }
 
     /// `click verify` takes an mdtest as `profile`, `expand`, and `audit` do:
@@ -173,139 +165,135 @@ mod tests {
     /// or reports is a line of the markdown file.
     #[test]
     fn verify_accepts_an_mdtest_with_markdown_locations() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory =
-                std::env::temp_dir().join(format!("click-verify-mdtest-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            let mdtest = |body: &str, expectation: &str| {
-                format!(
-                    "# a markdown test\n\n```c filename=f.c\nint32 f() {{ return 1; }}\n```\n\n```click\nverifying \"f.c\";\n{body}\n```\n\n```expect\n{expectation}\n```\n"
-                )
-            };
-            let passing = directory.join("passing.md");
-            fs::write(
-                &passing,
-                mdtest("int32 f() { ensures result == 1 by auto; }", "pass"),
+        let directory =
+            std::env::temp_dir().join(format!("click-verify-mdtest-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let mdtest = |body: &str, expectation: &str| {
+            format!(
+                "# a markdown test\n\n```c filename=f.c\nint32 f() {{ return 1; }}\n```\n\n```click\nverifying \"f.c\";\n{body}\n```\n\n```expect\n{expectation}\n```\n"
             )
-            .unwrap();
-            let failing = directory.join("failing.md");
-            fs::write(
-                &failing,
-                mdtest(
-                    "int32 f() { ensures result == 1; } by { step(); step(); simp(); }",
-                    "fail: step",
-                ),
-            )
-            .unwrap();
-            let verify = |target: String| entry(["verify".to_string(), target]);
+        };
+        let passing = directory.join("passing.md");
+        fs::write(
+            &passing,
+            mdtest("int32 f() { ensures result == 1 by auto; }", "pass"),
+        )
+        .unwrap();
+        let failing = directory.join("failing.md");
+        fs::write(
+            &failing,
+            mdtest(
+                "int32 f() { ensures result == 1; } by { step(); step(); simp(); }",
+                "fail: step",
+            ),
+        )
+        .unwrap();
+        let verify = |target: String| entry(["verify".to_string(), target]);
 
-            verify(passing.display().to_string()).expect("a passing mdtest verifies");
-            // Line 9 of the file is line 2 of the Click block.
-            verify(format!("{}:9:13", passing.display())).expect("an mdtest location verifies");
-            let outside = verify(format!("{}:2:1", passing.display())).unwrap_err();
-            assert!(
-                outside.contains("is not inside the ```click block"),
-                "{outside}"
-            );
+        verify(passing.display().to_string()).expect("a passing mdtest verifies");
+        // Line 9 of the file is line 2 of the Click block.
+        verify(format!("{}:9:13", passing.display())).expect("an mdtest location verifies");
+        let outside = verify(format!("{}:2:1", passing.display())).unwrap_err();
+        assert!(
+            outside.contains("is not inside the ```click block"),
+            "{outside}"
+        );
 
-            let error = verify(failing.display().to_string()).unwrap_err();
-            assert!(error.starts_with("proof error:"), "{error}");
-            assert!(error.contains("tactic@9:"), "{error}");
-            assert!(error.contains("\n  step();"), "{error}");
-            assert!(!error.contains("-->"), "{error}");
-            let changed = entry([
-                "verify".to_string(),
-                "--changed-since".to_string(),
-                "HEAD".to_string(),
-                passing.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(changed.contains("does not take an mdtest"), "{changed}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let error = verify(failing.display().to_string()).unwrap_err();
+        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.contains("tactic@9:"), "{error}");
+        assert!(error.contains("\n  step();"), "{error}");
+        assert!(!error.contains("-->"), "{error}");
+        let changed = entry([
+            "verify".to_string(),
+            "--changed-since".to_string(),
+            "HEAD".to_string(),
+            passing.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(changed.contains("does not take an mdtest"), "{changed}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn verify_names_the_failed_simple_tactic() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-failed-step-report-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
-            let sidecar = directory.join("f.click");
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-failed-step-report-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
             &sidecar,
             "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); step(); simp(); }\n",
         )
         .unwrap();
-            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-            assert!(error.starts_with("proof error:"), "{error}");
-            assert!(error.contains("\n\ntactic@2:"), "{error}");
-            assert!(
-                error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
-                "{error}"
-            );
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(error.contains("\n\ntactic@2:"), "{error}");
+        assert!(
+            error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
+            "{error}"
+        );
 
-            let traced = entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "f".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(traced.starts_with("proof error:\n"), "{traced}");
-            assert!(traced.contains("\n\ntactic@2:"), "{traced}");
-            assert!(!traced.contains("\n  --> "), "{traced}");
-            assert!(
-                traced.contains("\n\nproof trace (checked tactics and branch facts):"),
-                "{traced}"
-            );
-            assert!(
-                traced.contains("proof trace (checked tactics and branch facts)"),
-                "{traced}"
-            );
-            assert!(traced.contains("steps through: return 1"), "{traced}");
-            assert!(!traced.contains("error kind:"), "{traced}");
-            assert!(!traced.contains("stage: proof step"), "{traced}");
-            assert!(!traced.contains("To get a trace:"), "{traced}");
+        let traced = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(traced.starts_with("proof error:\n"), "{traced}");
+        assert!(traced.contains("\n\ntactic@2:"), "{traced}");
+        assert!(!traced.contains("\n  --> "), "{traced}");
+        assert!(
+            traced.contains("\n\nproof trace (checked tactics and branch facts):"),
+            "{traced}"
+        );
+        assert!(
+            traced.contains("proof trace (checked tactics and branch facts)"),
+            "{traced}"
+        );
+        assert!(traced.contains("steps through: return 1"), "{traced}");
+        assert!(!traced.contains("error kind:"), "{traced}");
+        assert!(!traced.contains("stage: proof step"), "{traced}");
+        assert!(!traced.contains("To get a trace:"), "{traced}");
 
-            fs::write(
-                directory.join("f.c"),
-                "int32 f() { int32 x; x = 1; return x; }\n",
-            )
-            .unwrap();
-            fs::write(
+        fs::write(
+            directory.join("f.c"),
+            "int32 f() { int32 x; x = 1; return x; }\n",
+        )
+        .unwrap();
+        fs::write(
             &sidecar,
             "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { normalize(); } step(); simp(); }\n",
         )
         .unwrap();
-            let nested = entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "f".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(nested.contains("tactic@2:66:\n  normalize();"), "{nested}");
-            assert!(!nested.contains("have body tactic"), "{nested}");
-            assert!(nested.contains("steps through: declare x"), "{nested}");
+        let nested = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(nested.contains("tactic@2:66:\n  normalize();"), "{nested}");
+        assert!(!nested.contains("have body tactic"), "{nested}");
+        assert!(nested.contains("steps through: declare x"), "{nested}");
 
-            let wrong = entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "missing".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(wrong.contains("is not a selected proof"), "{wrong}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let wrong = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "missing".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(wrong.contains("is not a selected proof"), "{wrong}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     /// A failing tactic written in a proof `if`, `cases`, or `both` arm
@@ -315,263 +303,251 @@ mod tests {
     /// line, and initialize-phase bodies reported no line at all.
     #[test]
     fn verify_locates_failed_tactics_in_have_arms_and_initialize_helpers() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory =
-                std::env::temp_dir().join(format!("click-arm-locations-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
-                directory.join("identity.c"),
-                "int32 identity(int32 x) { return x; }\n",
-            )
-            .unwrap();
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-arm-locations-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("identity.c"),
+            "int32 identity(int32 x) { return x; }\n",
+        )
+        .unwrap();
+        fs::write(
                 directory.join("count_up.c"),
                 "int32 count_to_n(int32 n) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i++;\n    }\n    return i;\n}\n",
             )
             .unwrap();
-            let identity = |body: &str| {
-                format!(
-                    "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    execute();\n    simp();\n}}\n"
-                )
-            };
-            let count_up = |phase: &str| {
-                format!(
-                    "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
-                )
-            };
-            let cases = [
-                (
-                    "if_arm",
-                    identity(
-                        "        have x == x by simp;\n        if x > 0 {\n            simp();\n        } else {\n            assumption();\n        }\n",
-                    ),
-                    10,
+        let identity = |body: &str| {
+            format!(
+                "verifying \"identity.c\";\nint32 identity(int32 x) {{\n    ensures result == x;\n}} by {{\n    have x <= x by {{\n{body}    }}\n    execute();\n    simp();\n}}\n"
+            )
+        };
+        let count_up = |phase: &str| {
+            format!(
+                "verifying \"count_up.c\";\nint32 count_to_n(int32 n) {{\n    requires n >= 0 and n <= 2147483647;\n    ensures result == n;\n}} by {{\n    step();\n    step();\n    loop {{\n        decreases n - i;\n        invariant i >= 0;\n        invariant i <= n;\n        initialize by {{\n{phase}        }}\n        preserve by {{\n            step();\n            close_invariants();\n        }}\n    }}\n    step();\n    simp();\n}}\n"
+            )
+        };
+        let cases = [
+            (
+                "if_arm",
+                identity(
+                    "        have x == x by simp;\n        if x > 0 {\n            simp();\n        } else {\n            assumption();\n        }\n",
                 ),
-                (
-                    "cases_arm",
-                    identity(
-                        "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases (x > 0 or not (x > 0)) {\n            simp();\n        } {\n            assumption();\n        }\n",
-                    ),
-                    16,
+                10,
+            ),
+            (
+                "cases_arm",
+                identity(
+                    "        have x > 0 or not (x > 0) by {\n            if x > 0 {\n                left();\n            } else {\n                right();\n            }\n        }\n        cases (x > 0 or not (x > 0)) {\n            simp();\n        } {\n            assumption();\n        }\n",
                 ),
-                (
-                    "if_continuation",
-                    identity(
-                        "        if x > 0 {\n            have x == x by simp;\n            have x == x by simp;\n        } else {\n            have x == x by simp;\n        }\n        assumption();\n",
-                    ),
-                    12,
+                16,
+            ),
+            (
+                "if_continuation",
+                identity(
+                    "        if x > 0 {\n            have x == x by simp;\n            have x == x by simp;\n        } else {\n            have x == x by simp;\n        }\n        assumption();\n",
                 ),
-                (
-                    "initialize_helper",
-                    count_up(
-                        "            have 0 <= n by {\n                have n == n by simp;\n                assumption();\n            }\n            simp();\n",
-                    ),
-                    15,
+                12,
+            ),
+            (
+                "initialize_helper",
+                count_up(
+                    "            have 0 <= n by {\n                have n == n by simp;\n                assumption();\n            }\n            simp();\n",
                 ),
-                (
-                    "initialize_invariant_body",
-                    count_up(
-                        "            have i >= 0 by simp;\n            have i <= n by {\n                have n == n by simp;\n                assumption();\n            }\n",
-                    ),
-                    16,
+                15,
+            ),
+            (
+                "initialize_invariant_body",
+                count_up(
+                    "            have i >= 0 by simp;\n            have i <= n by {\n                have n == n by simp;\n                assumption();\n            }\n",
                 ),
-                (
-                    "initialize_shared_script",
-                    count_up("            have n == n by simp;\n            assumption();\n"),
-                    14,
-                ),
-            ];
-            for (name, source, line) in cases {
-                let sidecar = directory.join(format!("{name}.click"));
-                fs::write(&sidecar, &source).unwrap();
-                let error =
-                    entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-                assert_eq!(
-                    source.lines().nth(line - 1).map(str::trim),
-                    Some("assumption();"),
-                    "{name}"
-                );
-                assert!(
-                    error.contains(&format!("\n\ntactic@{line}:\n  assumption();")),
-                    "{name}: {error}"
-                );
-            }
-            fs::remove_dir_all(directory).unwrap();
-        })
+                16,
+            ),
+            (
+                "initialize_shared_script",
+                count_up("            have n == n by simp;\n            assumption();\n"),
+                14,
+            ),
+        ];
+        for (name, source, line) in cases {
+            let sidecar = directory.join(format!("{name}.click"));
+            fs::write(&sidecar, &source).unwrap();
+            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+            assert_eq!(
+                source.lines().nth(line - 1).map(str::trim),
+                Some("assumption();"),
+                "{name}"
+            );
+            assert!(
+                error.contains(&format!("\n\ntactic@{line}:\n  assumption();")),
+                "{name}: {error}"
+            );
+        }
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn trace_shows_the_whole_failed_multiline_tactic() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-whole-failed-tactic-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
-            let sidecar = directory.join("f.click");
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-whole-failed-tactic-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
             &sidecar,
             "verifying \"f.c\";\nint32 f() { ensures result == 1; } by {\n    step();\n    have exists (x: int32) { x == 0 } by {\n        let (x: int32) satisfy {\n            x == 0\n        };\n    }\n    simp();\n}\n",
         )
         .unwrap();
-            let traced = entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "f".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(!traced.contains("prove it with `have` first"), "{traced}");
-            assert!(
-                traced.contains("requirement `exists (x: int32) { x == 0 }` not satisfied"),
-                "{traced}"
-            );
-            assert!(
-                traced.contains("requires: exists (x: int32) { x == 0 }"),
-                "{traced}"
-            );
-            assert!(!traced.contains("\ngoal:"), "{traced}");
-            assert!(
-                traced.contains("tactic@5:\n  let (x: int32) satisfy {\n      x == 0\n  };"),
-                "{traced}"
-            );
-            assert!(!traced.contains("\nstep: "), "{traced}");
-            assert!(traced.contains("let (x: int32) satisfy {\n"), "{traced}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let traced = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(!traced.contains("prove it with `have` first"), "{traced}");
+        assert!(
+            traced.contains("requirement `exists (x: int32) { x == 0 }` not satisfied"),
+            "{traced}"
+        );
+        assert!(
+            traced.contains("requires: exists (x: int32) { x == 0 }"),
+            "{traced}"
+        );
+        assert!(!traced.contains("\ngoal:"), "{traced}");
+        assert!(
+            traced.contains("tactic@5:\n  let (x: int32) satisfy {\n      x == 0\n  };"),
+            "{traced}"
+        );
+        assert!(!traced.contains("\nstep: "), "{traced}");
+        assert!(traced.contains("let (x: int32) satisfy {\n"), "{traced}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn tautological_ensure_preserves_population_certification() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-certification-trace-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
-                directory.join("shared_parent.c"),
-                include_str!("../../design/shared-heap-probes/shared_parent.c"),
-            )
-            .unwrap();
-            let sidecar = directory.join("shared_parent.click");
-            let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-            let source = source.replacen(
-                "    produces &p->kid;\n",
-                "    produces &p->kid;\n    ensures old(p->kid) == old(p->kid);\n",
-                1,
-            );
-            assert!(source.contains("ensures old(p->kid) == old(p->kid);"));
-            fs::write(&sidecar, source).unwrap();
-            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-            entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "parent_detach".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap();
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let directory =
+            std::env::temp_dir().join(format!("click-certification-trace-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("shared_parent.c"),
+            include_str!("../../design/shared-heap-probes/shared_parent.c"),
+        )
+        .unwrap();
+        let sidecar = directory.join("shared_parent.click");
+        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
+        let source = source.replacen(
+            "    produces &p->kid;\n",
+            "    produces &p->kid;\n    ensures old(p->kid) == old(p->kid);\n",
+            1,
+        );
+        assert!(source.contains("ensures old(p->kid) == old(p->kid);"));
+        fs::write(&sidecar, source).unwrap();
+        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
+        entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "parent_detach".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap();
+        fs::remove_dir_all(directory).unwrap();
     }
 
     // Simple claim closers must perform the same checked return exchange as
     // simp, including a consuming contract with no returned resource claim.
     #[test]
     fn shared_population_release_expansion_retains_lifetime() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir().join(format!(
-                "click-population-release-expansion-{}",
-                std::process::id()
-            ));
-            fs::create_dir_all(&directory).unwrap();
-            fs::write(
-                directory.join("shared_parent.c"),
-                include_str!("../../design/shared-heap-probes/shared_parent.c"),
-            )
-            .unwrap();
-            let sidecar = directory.join("shared_parent.click");
-            let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
-            fs::write(&sidecar, source).unwrap();
-            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-            let release_end = source.find("void parent_attach(").unwrap();
-            let simp = source[..release_end].rfind("        simp();").unwrap();
-            let line = source[..simp].bytes().filter(|byte| *byte == b'\n').count() + 1;
-            entry([
-                "expand".to_string(),
-                "--in-place".to_string(),
-                format!("{}:{line}:9", sidecar.display()),
-            ])
-            .unwrap();
-            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let directory = std::env::temp_dir().join(format!(
+            "click-population-release-expansion-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(
+            directory.join("shared_parent.c"),
+            include_str!("../../design/shared-heap-probes/shared_parent.c"),
+        )
+        .unwrap();
+        let sidecar = directory.join("shared_parent.click");
+        let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
+        fs::write(&sidecar, source).unwrap();
+        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
+        let release_end = source.find("void parent_attach(").unwrap();
+        let simp = source[..release_end].rfind("        simp();").unwrap();
+        let line = source[..simp].bytes().filter(|byte| *byte == b'\n').count() + 1;
+        entry([
+            "expand".to_string(),
+            "--in-place".to_string(),
+            format!("{}:{line}:9", sidecar.display()),
+        ])
+        .unwrap();
+        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn trace_includes_checked_prefix_before_a_statement_runtime_error() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir().join(format!(
-                "click-trace-statement-runtime-error-{}",
-                std::process::id()
-            ));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(directory.join("f.c"), "int32 f() { int32 x; return x; }\n").unwrap();
-            let sidecar = directory.join("f.click");
-            fs::write(
+        let directory = std::env::temp_dir().join(format!(
+            "click-trace-statement-runtime-error-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { int32 x; return x; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
             &sidecar,
             "verifying \"f.c\";\nint32 f() { ensures result == 0; } by { step(); step(); simp(); }\n",
         )
         .unwrap();
-            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-            assert!(error.starts_with("proof error:"), "{error}");
-            assert!(
-                error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
-                "{error}"
-            );
-            let traced = entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "f".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(traced.contains("read of uninitialized storage"), "{traced}");
-            assert!(!traced.contains("\nstep: "), "{traced}");
-            assert!(!traced.contains("error kind:"), "{traced}");
-            assert!(traced.contains("tactic@2:41: step"), "{traced}");
-            assert!(traced.contains("steps through: declare x"), "{traced}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.starts_with("proof error:"), "{error}");
+        assert!(
+            error.contains("\n\nTo get a trace:\n  click verify --trace-proof f "),
+            "{error}"
+        );
+        let traced = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(traced.contains("read of uninitialized storage"), "{traced}");
+        assert!(!traced.contains("\nstep: "), "{traced}");
+        assert!(!traced.contains("error kind:"), "{traced}");
+        assert!(traced.contains("tactic@2:41: step"), "{traced}");
+        assert!(traced.contains("steps through: declare x"), "{traced}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn trace_names_source_values_and_distinguishes_saved_loads() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-trace-source-names-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-trace-source-names-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
             directory.join("calls.c"),
             "int32 child(int32 *a, int32 *visited, int32 x) { visited[0] = 1; return 1; }\nint32 parent(int32 *a, int32 *visited, int32 cur) { return child(a, visited, a[cur]); }\n",
         )
         .unwrap();
-            let sidecar = directory.join("calls.click");
-            fs::write(
-                &sidecar,
-                r#"verifying "calls.c";
+        let sidecar = directory.join("calls.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "calls.c";
 int32 child(int32 *a, int32 *visited, int32 x) {
     views a[0..2];
     owns visited[0..1];
@@ -599,63 +575,61 @@ int32 parent(int32 *a, int32 *visited, int32 cur) {
     step(); simp();
 }
 "#,
-            )
-            .unwrap();
-            let report = entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "parent".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .unwrap_err();
-            assert!(
-                report.contains("goal: exists (z: int32) { z == a[cur] }"),
-                "{report}"
-            );
-            assert!(!report.contains("recent premises"), "{report}");
-            assert!(report.contains("adds: r == 1"), "{report}");
-            assert!(
-                report.contains("tactic@19: let r = step(child("),
-                "{report}"
-            );
-            assert!(
-                report.contains("1 checked fact(s) with no exact Click spelling"),
-                "{report}"
-            );
-            assert_eq!(
-                report
-                    .matches("goal: exists (z: int32) { z == a[cur] }")
-                    .count(),
-                1,
-                "{report}"
-            );
-            assert!(
-                !report.contains("snapshot identity (internal):"),
-                "{report}"
-            );
-            assert!(!report.contains("v1000001"), "{report}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        )
+        .unwrap();
+        let report = entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "parent".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .unwrap_err();
+        assert!(
+            report.contains("goal: exists (z: int32) { z == a[cur] }"),
+            "{report}"
+        );
+        assert!(!report.contains("recent premises"), "{report}");
+        assert!(report.contains("adds: r == 1"), "{report}");
+        assert!(
+            report.contains("tactic@19: let r = step(child("),
+            "{report}"
+        );
+        assert!(
+            report.contains("1 checked fact(s) with no exact Click spelling"),
+            "{report}"
+        );
+        assert_eq!(
+            report
+                .matches("goal: exists (z: int32) { z == a[cur] }")
+                .count(),
+            1,
+            "{report}"
+        );
+        assert!(
+            !report.contains("snapshot identity (internal):"),
+            "{report}"
+        );
+        assert!(!report.contains("v1000001"), "{report}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn trace_accepts_an_exact_historical_call_guarantee() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-trace-call-guarantee-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-trace-call-guarantee-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
             directory.join("calls.c"),
             "extern int32 child(int32 *a, int32 *b, int32 n, int32 x);\nint32 parent(int32 *a, int32 *b, int32 n, int32 i) { return child(a, b, n, a[i]); }\n",
         )
         .unwrap();
-            let sidecar = directory.join("calls.click");
-            fs::write(
-                &sidecar,
-                r#"verifying "calls.c";
+        let sidecar = directory.join("calls.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "calls.c";
 spec enum Path { Here }
 function pick(x: int32, path: Path) -> int32 {
     match path { Path::Here => x }
@@ -685,177 +659,163 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
     step(); simp();
 }
 "#,
-            )
-            .unwrap();
-            entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "parent".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .expect("a call-produced existential has an exact historical spelling");
-            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
-            fs::remove_dir_all(directory).unwrap();
-        })
+        )
+        .unwrap();
+        entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "parent".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .expect("a call-produced existential has an exact historical spelling");
+        entry(["verify".to_string(), sidecar.display().to_string()]).unwrap();
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn failed_call_names_the_c_operation_and_parameter_bindings() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir()
-                .join(format!("click-call-error-context-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
-                directory.join("calls.c"),
-                "void read(int32* p) { }\nvoid caller(int32* second) { read(second); }\n",
-            )
-            .unwrap();
-            let sidecar = directory.join("calls.click");
-            fs::write(
+        let directory =
+            std::env::temp_dir().join(format!("click-call-error-context-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("calls.c"),
+            "void read(int32* p) { }\nvoid caller(int32* second) { read(second); }\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("calls.click");
+        fs::write(
             &sidecar,
             "verifying \"calls.c\";\nvoid read(int32* p) { owns p[0..1]; } by { execute(); simp(); }\nvoid caller(int32* second) { ensures second == second; } by { step(); simp(); }\n",
         )
         .unwrap();
-            let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-            assert!(error.contains("\n  C operation\n  read(second)"), "{error}");
-            assert!(error.contains("\n  call bindings\n  p = second"), "{error}");
-            assert!(!error.contains("proof context:"), "{error}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(error.contains("\n  C operation\n  read(second)"), "{error}");
+        assert!(error.contains("\n  call bindings\n  p = second"), "{error}");
+        assert!(!error.contains("proof context:"), "{error}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn trace_verifies_only_the_named_function() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir().join(format!(
-                "click-trace-selects-one-function-{}",
-                std::process::id()
-            ));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
-                directory.join("f.c"),
-                "int32 f() { return 1; } int32 g() { return 2; }\n",
-            )
-            .unwrap();
-            let sidecar = directory.join("f.click");
-            fs::write(
+        let directory = std::env::temp_dir().join(format!(
+            "click-trace-selects-one-function-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 f() { return 1; } int32 g() { return 2; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
             &sidecar,
             "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); simp(); }\nint32 g() { ensures result == 2; } by { step(); step(); simp(); }\n",
         )
         .unwrap();
-            assert!(entry(["verify".to_string(), sidecar.display().to_string()]).is_err());
-            entry([
-                "verify".to_string(),
-                "--trace-proof".to_string(),
-                "f".to_string(),
-                sidecar.display().to_string(),
-            ])
-            .expect("the selected function should verify independently");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        assert!(entry(["verify".to_string(), sidecar.display().to_string()]).is_err());
+        entry([
+            "verify".to_string(),
+            "--trace-proof".to_string(),
+            "f".to_string(),
+            sidecar.display().to_string(),
+        ])
+        .expect("the selected function should verify independently");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn verify_reports_syntax_and_type_error_kinds() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory =
-                std::env::temp_dir().join(format!("click-error-kinds-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            fs::write(
-                directory.join("f.c"),
-                "int32 read(int32 *p) { return p[0]; }\n",
-            )
-            .unwrap();
-            let sidecar = directory.join("f.click");
-            fs::write(&sidecar, "verifying \"f.c\"; int32 read(").unwrap();
-            let syntax = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-            assert!(syntax.starts_with("syntax error:"), "{syntax}");
-            assert!(!syntax.contains("To get a trace:"), "{syntax}");
+        let directory =
+            std::env::temp_dir().join(format!("click-error-kinds-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 read(int32 *p) { return p[0]; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(&sidecar, "verifying \"f.c\"; int32 read(").unwrap();
+        let syntax = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(syntax.starts_with("syntax error:"), "{syntax}");
+        assert!(!syntax.contains("To get a trace:"), "{syntax}");
 
-            fs::write(
-                &sidecar,
-                "verifying \"f.c\"; int32 read(const int32 *p) { ensures result == 0; }\n",
-            )
-            .unwrap();
-            let type_error =
-                entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
-            assert!(type_error.starts_with("type error:"), "{type_error}");
-            assert!(!type_error.contains("To get a trace:"), "{type_error}");
-            fs::remove_dir_all(directory).unwrap();
-        })
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\"; int32 read(const int32 *p) { ensures result == 0; }\n",
+        )
+        .unwrap();
+        let type_error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(type_error.starts_with("type error:"), "{type_error}");
+        assert!(!type_error.contains("To get a trace:"), "{type_error}");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
     fn dispatches_import_help_without_spawning() {
-        click::cli::with_work_budget_verdicts(|| {
-            entry(["import".to_string(), "--help".to_string()]).unwrap();
-        })
+        entry(["import".to_string(), "--help".to_string()]).unwrap();
     }
 
     #[test]
     fn dispatches_verify_help_without_spawning() {
-        click::cli::with_work_budget_verdicts(|| {
-            entry(["verify".to_string(), "--help".to_string()]).unwrap();
-        })
+        entry(["verify".to_string(), "--help".to_string()]).unwrap();
     }
 
     #[test]
     fn arithmetic_tools_agree_on_expanded_certificate() {
-        click::cli::with_work_budget_verdicts(|| {
-            let directory = std::env::temp_dir().join(format!(
-                "click-arithmetic-tool-parity-{}",
-                std::process::id()
-            ));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
-            let source_path = directory.join("parity.click");
-            let expanded_path = directory.join("parity-expanded.click");
-            let source = r#"theorem arithmetic_tool_parity(n: int32) {
+        let directory = std::env::temp_dir().join(format!(
+            "click-arithmetic-tool-parity-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let source_path = directory.join("parity.click");
+        let expanded_path = directory.join("parity-expanded.click");
+        let source = r#"theorem arithmetic_tool_parity(n: int32) {
     requires n <= 10;
     ensures n <= 10 by {
         arithmetic() using { n <= 10; }
     }
 }
 "#;
-            fs::write(&source_path, source).unwrap();
+        fs::write(&source_path, source).unwrap();
 
-            entry(["verify".to_string(), source_path.display().to_string()])
-                .expect("click verify should accept the smart arithmetic request");
-            entry([
-                "expand".to_string(),
-                "--claim".to_string(),
-                "arithmetic_tool_parity.ensures_0".to_string(),
-                "--output".to_string(),
-                expanded_path.display().to_string(),
-                source_path.display().to_string(),
-            ])
-            .expect("click expand should emit the checked arithmetic certificate");
-            let expanded = fs::read_to_string(&expanded_path).unwrap();
-            assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
-            assert!(!expanded.contains("arithmetic()"), "{expanded}");
+        entry(["verify".to_string(), source_path.display().to_string()])
+            .expect("click verify should accept the smart arithmetic request");
+        entry([
+            "expand".to_string(),
+            "--claim".to_string(),
+            "arithmetic_tool_parity.ensures_0".to_string(),
+            "--output".to_string(),
+            expanded_path.display().to_string(),
+            source_path.display().to_string(),
+        ])
+        .expect("click expand should emit the checked arithmetic certificate");
+        let expanded = fs::read_to_string(&expanded_path).unwrap();
+        assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
+        assert!(!expanded.contains("arithmetic()"), "{expanded}");
 
-            entry(["verify".to_string(), expanded_path.display().to_string()])
-                .expect("click verify should recheck the expanded certificate");
-            entry(["profile".to_string(), source_path.display().to_string()])
-                .expect("click profile should verify the original arithmetic proof");
-            entry(["profile".to_string(), expanded_path.display().to_string()])
-                .expect("click profile should verify the expanded arithmetic proof");
-            entry(["audit".to_string(), source_path.display().to_string()])
-                .expect("click audit should reach the same expansion fixed point");
+        entry(["verify".to_string(), expanded_path.display().to_string()])
+            .expect("click verify should recheck the expanded certificate");
+        entry(["profile".to_string(), source_path.display().to_string()])
+            .expect("click profile should verify the original arithmetic proof");
+        entry(["profile".to_string(), expanded_path.display().to_string()])
+            .expect("click profile should verify the expanded arithmetic proof");
+        entry(["audit".to_string(), source_path.display().to_string()])
+            .expect("click audit should reach the same expansion fixed point");
 
-            fs::remove_dir_all(directory).unwrap();
-        })
+        fs::remove_dir_all(directory).unwrap();
     }
 
     fn with_supported_boundary(
@@ -969,321 +929,301 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
 
     #[test]
     fn every_cli_tool_accepts_the_supported_expression_boundary() {
-        click::cli::with_work_budget_verdicts(|| {
-            const EXPRESSION_CHAIN_LIMIT: usize = 512;
-            let additions = (0..EXPRESSION_CHAIN_LIMIT)
-                .map(|_| "0")
-                .collect::<Vec<_>>()
-                .join(" + ");
-            exercise_supported_boundary(
-                "expression",
-                format!(
-                    "theorem at_limit_expression() {{ requires {additions} == 0; ensures 0 == 0 by auto; }}\n"
-                ),
-                "at_limit_expression.ensures_0",
-            );
-        })
+        const EXPRESSION_CHAIN_LIMIT: usize = 512;
+        let additions = (0..EXPRESSION_CHAIN_LIMIT)
+            .map(|_| "0")
+            .collect::<Vec<_>>()
+            .join(" + ");
+        exercise_supported_boundary(
+            "expression",
+            format!(
+                "theorem at_limit_expression() {{ requires {additions} == 0; ensures 0 == 0 by auto; }}\n"
+            ),
+            "at_limit_expression.ensures_0",
+        );
     }
 
     #[test]
     fn supported_implication_boundary_verifies_and_expands() {
-        click::cli::with_work_budget_verdicts(|| {
-            verify_and_expand_supported_boundary(
-                "implication-verify-expand",
-                supported_implication_boundary_source(),
-                "at_limit_implication.ensures_0",
-            );
-        })
+        verify_and_expand_supported_boundary(
+            "implication-verify-expand",
+            supported_implication_boundary_source(),
+            "at_limit_implication.ensures_0",
+        );
     }
 
     #[test]
     fn supported_implication_boundary_profiles() {
-        click::cli::with_work_budget_verdicts(|| {
-            profile_supported_boundary(
-                "implication-profile",
-                supported_implication_boundary_source(),
-            );
-        })
+        profile_supported_boundary(
+            "implication-profile",
+            supported_implication_boundary_source(),
+        );
     }
 
     #[test]
     fn supported_implication_boundary_audits() {
-        click::cli::with_work_budget_verdicts(|| {
-            audit_supported_boundary(
-                "implication-audit",
-                supported_implication_boundary_source(),
-                "at_limit_implication.ensures_0",
-            );
-        })
+        audit_supported_boundary(
+            "implication-audit",
+            supported_implication_boundary_source(),
+            "at_limit_implication.ensures_0",
+        );
     }
 
     #[test]
     fn every_cli_tool_accepts_the_supported_quantifier_boundary() {
-        click::cli::with_work_budget_verdicts(|| {
-            const STRUCTURAL_NESTING_LIMIT: usize = 32;
-            let mut quantifier_body = String::from("0 == 0");
-            for index in (0..STRUCTURAL_NESTING_LIMIT - 1).rev() {
-                quantifier_body = format!("forall (q{index}: Integer) {{ {quantifier_body} }}");
-            }
-            exercise_supported_boundary(
-                "quantifiers",
-                format!(
-                    "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by auto; }}\n"
-                ),
-                "at_limit_quantifiers.ensures_0",
-            );
-        })
+        const STRUCTURAL_NESTING_LIMIT: usize = 32;
+        let mut quantifier_body = String::from("0 == 0");
+        for index in (0..STRUCTURAL_NESTING_LIMIT - 1).rev() {
+            quantifier_body = format!("forall (q{index}: Integer) {{ {quantifier_body} }}");
+        }
+        exercise_supported_boundary(
+            "quantifiers",
+            format!(
+                "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by auto; }}\n"
+            ),
+            "at_limit_quantifiers.ensures_0",
+        );
     }
 
     #[test]
     fn every_cli_tool_accepts_the_supported_conditional_boundary() {
-        click::cli::with_work_budget_verdicts(|| {
-            const STRUCTURAL_NESTING_LIMIT: usize = 32;
-            let nested_conditionals = (0..STRUCTURAL_NESTING_LIMIT - 1)
-                .fold("0".to_string(), |body, _| {
-                    format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
-                });
-            exercise_supported_boundary(
-                "conditionals",
-                format!(
-                    "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by auto; }}\n"
-                ),
-                "at_limit_conditionals.ensures_0",
-            );
-        })
+        const STRUCTURAL_NESTING_LIMIT: usize = 32;
+        let nested_conditionals = (0..STRUCTURAL_NESTING_LIMIT - 1)
+            .fold("0".to_string(), |body, _| {
+                format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
+            });
+        exercise_supported_boundary(
+            "conditionals",
+            format!(
+                "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by auto; }}\n"
+            ),
+            "at_limit_conditionals.ensures_0",
+        );
     }
 
     #[test]
     fn supported_proof_boundary_verifies_and_profiles() {
-        click::cli::with_work_budget_verdicts(|| {
-            const STRUCTURAL_NESTING_LIMIT: usize = 32;
-            let mut proof_goal = String::from("0 == 0");
-            let mut proof_body = String::from("normalize();");
-            for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
-                proof_goal.push_str(" and 0 == 0");
-                proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
-            }
-            verify_and_profile_supported_boundary(
-                "proof",
-                format!(
-                    "theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}\n"
-                ),
-            );
-        })
+        const STRUCTURAL_NESTING_LIMIT: usize = 32;
+        let mut proof_goal = String::from("0 == 0");
+        let mut proof_body = String::from("normalize();");
+        for _ in 0..STRUCTURAL_NESTING_LIMIT - 2 {
+            proof_goal.push_str(" and 0 == 0");
+            proof_body = format!("both {{ {proof_body} }} and {{ normalize(); }}");
+        }
+        verify_and_profile_supported_boundary(
+            "proof",
+            format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}\n"),
+        );
     }
 
     #[test]
     fn every_cli_tool_accepts_the_supported_type_boundary() {
-        click::cli::with_work_budget_verdicts(|| {
-            const ALGEBRAIC_TYPE_NESTING_LIMIT: usize = 32;
-            let nested_type = (0..ALGEBRAIC_TYPE_NESTING_LIMIT)
-                .fold("Integer".to_string(), |type_name, _| {
-                    format!("BoundaryBox<{type_name}>")
-                });
-            exercise_supported_boundary(
-                "type",
-                format!(
-                    "spec enum BoundaryBox<T> {{ Wrapped(T) }}\n\
+        const ALGEBRAIC_TYPE_NESTING_LIMIT: usize = 32;
+        let nested_type = (0..ALGEBRAIC_TYPE_NESTING_LIMIT)
+            .fold("Integer".to_string(), |type_name, _| {
+                format!("BoundaryBox<{type_name}>")
+            });
+        exercise_supported_boundary(
+            "type",
+            format!(
+                "spec enum BoundaryBox<T> {{ Wrapped(T) }}\n\
                  theorem at_limit_type(value: {nested_type}) {{ ensures 0 == 0 by auto; }}\n"
-                ),
-                "at_limit_type.ensures_0",
-            );
-        })
+            ),
+            "at_limit_type.ensures_0",
+        );
     }
 
     #[test]
     fn every_cli_tool_reports_overdeep_surface_input_without_aborting() {
-        click::cli::with_work_budget_verdicts(|| {
-            const STRUCTURAL_LIMIT: usize = 32;
-            const CONTRACT_LET_LIMIT: usize = 128;
-            const ALGEBRAIC_TYPE_LIMIT: usize = 32;
+        const STRUCTURAL_LIMIT: usize = 32;
+        const CONTRACT_LET_LIMIT: usize = 128;
+        const ALGEBRAIC_TYPE_LIMIT: usize = 32;
 
-            let nested_generic_type = (0..=ALGEBRAIC_TYPE_LIMIT)
-                .fold("Integer".to_string(), |type_name, _| {
-                    format!("Box<{type_name}>")
-                });
-            let nested_generic_field = (0..=ALGEBRAIC_TYPE_LIMIT)
-                .fold("Integer".to_string(), |type_name, _| {
-                    format!("Box<{type_name}>")
-                });
+        let nested_generic_type = (0..=ALGEBRAIC_TYPE_LIMIT)
+            .fold("Integer".to_string(), |type_name, _| {
+                format!("Box<{type_name}>")
+            });
+        let nested_generic_field = (0..=ALGEBRAIC_TYPE_LIMIT)
+            .fold("Integer".to_string(), |type_name, _| {
+                format!("Box<{type_name}>")
+            });
 
-            let directory = std::env::temp_dir()
-                .join(format!("click-surface-depth-cli-{}", std::process::id()));
-            if directory.exists() {
-                fs::remove_dir_all(&directory).unwrap();
-            }
-            fs::create_dir(&directory).unwrap();
+        let directory =
+            std::env::temp_dir().join(format!("click-surface-depth-cli-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
 
-            let sources = [
-                (
-                    "not",
-                    format!(
-                        "theorem too_deep_not() {{ requires {}0 == 0; ensures 0 == 0; }}\n",
-                        "not ".repeat(128)
-                    ),
-                    "too_deep_not.ensures_0",
+        let sources = [
+            (
+                "not",
+                format!(
+                    "theorem too_deep_not() {{ requires {}0 == 0; ensures 0 == 0; }}\n",
+                    "not ".repeat(128)
                 ),
-                (
-                    "implies",
-                    format!(
-                        "theorem too_deep_implies() {{ requires {}; ensures 0 == 0; }}\n",
-                        (0..=512)
-                            .map(|_| "0 == 0")
-                            .collect::<Vec<_>>()
-                            .join(" implies ")
-                    ),
-                    "too_deep_implies.ensures_0",
+                "too_deep_not.ensures_0",
+            ),
+            (
+                "implies",
+                format!(
+                    "theorem too_deep_implies() {{ requires {}; ensures 0 == 0; }}\n",
+                    (0..=512)
+                        .map(|_| "0 == 0")
+                        .collect::<Vec<_>>()
+                        .join(" implies ")
                 ),
-                (
-                    "add",
-                    format!(
-                        "theorem too_deep_add() {{ requires {} == 0; ensures 0 == 0; }}\n",
-                        (0..=1024).map(|_| "0").collect::<Vec<_>>().join(" + ")
-                    ),
-                    "too_deep_add.ensures_0",
+                "too_deep_implies.ensures_0",
+            ),
+            (
+                "add",
+                format!(
+                    "theorem too_deep_add() {{ requires {} == 0; ensures 0 == 0; }}\n",
+                    (0..=1024).map(|_| "0").collect::<Vec<_>>().join(" + ")
                 ),
-                (
-                    "let",
-                    format!(
-                        "theorem too_deep_let() {{ requires {}; ensures 0 == 0; }}\n",
-                        (0..=CONTRACT_LET_LIMIT)
-                            .rev()
-                            .fold("0 == 0".to_string(), |body, index| {
-                                format!("let value{index} = 0; {body}")
-                            })
-                    ),
-                    "too_deep_let.ensures_0",
-                ),
-                (
-                    "quantifier",
-                    format!(
-                        "theorem too_deep_quantifier() {{ requires {}; ensures 0 == 0; }}\n",
-                        (0..STRUCTURAL_LIMIT)
-                            .rev()
-                            .fold("0 == 0".to_string(), |body, index| {
-                                format!("forall (q{index}: Integer) {{ {body} }}")
-                            })
-                    ),
-                    "too_deep_quantifier.ensures_0",
-                ),
-                (
-                    "bracket",
-                    format!(
-                        "theorem too_deep_bracket() {{ ensures {} == {}; }}\n",
-                        (0..=STRUCTURAL_LIMIT).fold("0".to_string(), |expression, _| {
-                            format!("[{expression}]")
-                        }),
-                        (0..=STRUCTURAL_LIMIT).fold("0".to_string(), |expression, _| {
-                            format!("[{expression}]")
+                "too_deep_add.ensures_0",
+            ),
+            (
+                "let",
+                format!(
+                    "theorem too_deep_let() {{ requires {}; ensures 0 == 0; }}\n",
+                    (0..=CONTRACT_LET_LIMIT)
+                        .rev()
+                        .fold("0 == 0".to_string(), |body, index| {
+                            format!("let value{index} = 0; {body}")
                         })
-                    ),
-                    "too_deep_bracket.ensures_0",
                 ),
-                (
-                    "proof",
-                    format!(
-                        "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
-                        (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
-                            "both {{ {body} }} and {{ normalize(); }}"
-                        ))
-                    ),
-                    "too_deep_proof.ensures_0",
-                ),
-                (
-                    "conditional",
-                    format!(
-                        "theorem too_deep_conditional() {{ requires {}; ensures 0 == 0; }}\n",
-                        (0..=STRUCTURAL_LIMIT).fold("0".to_string(), |body, _| {
-                            format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
+                "too_deep_let.ensures_0",
+            ),
+            (
+                "quantifier",
+                format!(
+                    "theorem too_deep_quantifier() {{ requires {}; ensures 0 == 0; }}\n",
+                    (0..STRUCTURAL_LIMIT)
+                        .rev()
+                        .fold("0 == 0".to_string(), |body, index| {
+                            format!("forall (q{index}: Integer) {{ {body} }}")
                         })
-                    ),
-                    "too_deep_conditional.ensures_0",
                 ),
-                (
-                    "old",
-                    format!(
-                        "theorem too_deep_old() {{ requires {} == 0; ensures 0 == 0; }}\n",
-                        (0..=16).fold("0".to_string(), |expression, _| {
-                            format!("old({expression})")
-                        })
-                    ),
-                    "too_deep_old.ensures_0",
+                "too_deep_quantifier.ensures_0",
+            ),
+            (
+                "bracket",
+                format!(
+                    "theorem too_deep_bracket() {{ ensures {} == {}; }}\n",
+                    (0..=STRUCTURAL_LIMIT).fold("0".to_string(), |expression, _| {
+                        format!("[{expression}]")
+                    }),
+                    (0..=STRUCTURAL_LIMIT).fold("0".to_string(), |expression, _| {
+                        format!("[{expression}]")
+                    })
                 ),
-                (
-                    "at",
-                    format!(
-                        "theorem too_deep_at() {{ requires {} == 0; ensures 0 == 0; }}\n",
-                        (0..=16).fold("0".to_string(), |expression, _| {
-                            format!("at(function.entry, {expression})")
-                        })
-                    ),
-                    "too_deep_at.ensures_0",
+                "too_deep_bracket.ensures_0",
+            ),
+            (
+                "proof",
+                format!(
+                    "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
+                    (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
+                        "both {{ {body} }} and {{ normalize(); }}"
+                    ))
                 ),
-                (
-                    "call",
-                    format!(
-                        "theorem too_deep_call() {{ requires {} == 0; ensures 0 == 0; }}\n",
-                        (0..=16).fold("0".to_string(), |expression, _| {
-                            format!("identity({expression})")
-                        })
-                    ),
-                    "too_deep_call.ensures_0",
+                "too_deep_proof.ensures_0",
+            ),
+            (
+                "conditional",
+                format!(
+                    "theorem too_deep_conditional() {{ requires {}; ensures 0 == 0; }}\n",
+                    (0..=STRUCTURAL_LIMIT).fold("0".to_string(), |body, _| {
+                        format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
+                    })
                 ),
-                (
-                    "constructor",
-                    format!(
-                        "theorem too_deep_constructor() {{ requires {} == 0; ensures 0 == 0; }}\n",
-                        (0..=16).fold("0".to_string(), |expression, _| {
-                            format!("Box::Wrapped({expression})")
-                        })
-                    ),
-                    "too_deep_constructor.ensures_0",
+                "too_deep_conditional.ensures_0",
+            ),
+            (
+                "old",
+                format!(
+                    "theorem too_deep_old() {{ requires {} == 0; ensures 0 == 0; }}\n",
+                    (0..=16).fold("0".to_string(), |expression, _| {
+                        format!("old({expression})")
+                    })
                 ),
-                (
-                    "generic-type",
-                    format!(
-                        "theorem too_deep_generic(value: {nested_generic_type}) {{ ensures 0 == 0; }}\n"
-                    ),
-                    "too_deep_generic.ensures_0",
+                "too_deep_old.ensures_0",
+            ),
+            (
+                "at",
+                format!(
+                    "theorem too_deep_at() {{ requires {} == 0; ensures 0 == 0; }}\n",
+                    (0..=16).fold("0".to_string(), |expression, _| {
+                        format!("at(function.entry, {expression})")
+                    })
                 ),
-                (
-                    "generic-field",
-                    format!(
-                        "spec enum too_deep<T> {{ Wrapped({nested_generic_field}) }}\n\
+                "too_deep_at.ensures_0",
+            ),
+            (
+                "call",
+                format!(
+                    "theorem too_deep_call() {{ requires {} == 0; ensures 0 == 0; }}\n",
+                    (0..=16).fold("0".to_string(), |expression, _| {
+                        format!("identity({expression})")
+                    })
+                ),
+                "too_deep_call.ensures_0",
+            ),
+            (
+                "constructor",
+                format!(
+                    "theorem too_deep_constructor() {{ requires {} == 0; ensures 0 == 0; }}\n",
+                    (0..=16).fold("0".to_string(), |expression, _| {
+                        format!("Box::Wrapped({expression})")
+                    })
+                ),
+                "too_deep_constructor.ensures_0",
+            ),
+            (
+                "generic-type",
+                format!(
+                    "theorem too_deep_generic(value: {nested_generic_type}) {{ ensures 0 == 0; }}\n"
+                ),
+                "too_deep_generic.ensures_0",
+            ),
+            (
+                "generic-field",
+                format!(
+                    "spec enum too_deep<T> {{ Wrapped({nested_generic_field}) }}\n\
                      theorem too_deep_field() {{ ensures 0 == 0; }}\n"
-                    ),
-                    "too_deep_field.ensures_0",
                 ),
-            ];
+                "too_deep_field.ensures_0",
+            ),
+        ];
 
-            for (name, source, claim) in sources {
-                let path = directory.join(format!("{name}.click"));
-                fs::write(&path, source).unwrap();
-                let path_string = path.display().to_string();
+        for (name, source, claim) in sources {
+            let path = directory.join(format!("{name}.click"));
+            fs::write(&path, source).unwrap();
+            let path_string = path.display().to_string();
 
-                for command in ["verify", "expand", "audit"] {
-                    let arguments = match command {
-                        "verify" => vec![command.to_string(), path_string.clone()],
-                        "expand" => vec![
-                            command.to_string(),
-                            "--claim".to_string(),
-                            claim.to_string(),
-                            path_string.clone(),
-                        ],
-                        "audit" => vec![command.to_string(), path_string.clone()],
-                        _ => unreachable!(),
-                    };
-                    let error = entry(arguments).expect_err("over-deep input must be rejected");
-                    assert_bounded_depth_error(name, command, &error);
-                }
-
-                let error = profile::verify_target_for_test(&path)
-                    .expect_err("profile must reject over-deep input through its verifier");
-                assert_bounded_depth_error(name, "profile", &error);
+            for command in ["verify", "expand", "audit"] {
+                let arguments = match command {
+                    "verify" => vec![command.to_string(), path_string.clone()],
+                    "expand" => vec![
+                        command.to_string(),
+                        "--claim".to_string(),
+                        claim.to_string(),
+                        path_string.clone(),
+                    ],
+                    "audit" => vec![command.to_string(), path_string.clone()],
+                    _ => unreachable!(),
+                };
+                let error = entry(arguments).expect_err("over-deep input must be rejected");
+                assert_bounded_depth_error(name, command, &error);
             }
 
-            fs::remove_dir_all(directory).unwrap();
-        })
+            let error = profile::verify_target_for_test(&path)
+                .expect_err("profile must reject over-deep input through its verifier");
+            assert_bounded_depth_error(name, "profile", &error);
+        }
+
+        fs::remove_dir_all(directory).unwrap();
     }
 
     fn assert_bounded_depth_error(family: &str, command: &str, error: &str) {

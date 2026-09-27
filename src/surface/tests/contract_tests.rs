@@ -2335,7 +2335,7 @@ fn post_execution_frame_using_relowers_a_preceding_have_fact() {
 }
 
 #[test]
-fn ordinary_verification_stops_at_the_tactic_deadline() {
+fn ordinary_verification_stops_at_the_tactic_work_budget() {
     let c_source = r#"
             int32 identity(int32 x) {
                 return x;
@@ -2351,18 +2351,21 @@ fn ordinary_verification_stops_at_the_tactic_deadline() {
                 }
             }
         "#;
-    let limits = crate::instrumentation::TacticLimits {
-        simple: std::time::Duration::ZERO,
-        smart: std::time::Duration::ZERO,
-        control: std::time::Duration::ZERO,
+    let limits = crate::instrumentation::TacticWorkLimits {
+        simple: 0,
+        smart: 0,
+        control: 0,
     };
     let (result, events) = crate::instrumentation::collect(|| {
-        crate::instrumentation::with_tactic_limits(limits, || {
+        crate::instrumentation::with_tactic_work_limits(limits, || {
             verify_c0_sources(click_source, &[("identity.c", c_source)])
         })
     });
-    let error = result.expect_err("the first tactic should hit its zero deadline");
-    assert!(error.message().contains("real-time limit"), "{error:?}");
+    let error = result.expect_err("the first tactic should exhaust its zero work budget");
+    assert!(
+        error.message().contains("deterministic") && error.message().contains("work budget"),
+        "{error:?}"
+    );
     let started = events
         .iter()
         .filter_map(|event| match event {
@@ -2378,7 +2381,7 @@ fn ordinary_verification_stops_at_the_tactic_deadline() {
     );
     assert!(
         !started.contains(&"simp"),
-        "later tactics must not start after a deadline: {started:?}"
+        "later tactics must not start after an exhausted budget: {started:?}"
     );
 }
 

@@ -7,15 +7,17 @@ expansion.
 ## Synopsis
 
 ```text
-usage: click verify [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
+usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
        click verify --trace-proof <FUNCTION> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
-       click verify [--time-limit <DURATION>] <project-directory|examples-directory>
+       click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 ```
 
 Replace the following:
 
 - `DURATION`: a duration such as `500ms`, `30s`, or `2m`.
+- `UNITS`: a positive count of deterministic work units, such as `50000000`
+  or `50_000_000`.
 - `SIDECAR`: the path to a `.click` sidecar.
 - `MDTEST`: the path to a `.md` markdown test.
 - `LINE` and `COLUMN`: one-based coordinates inside a proof unit.
@@ -63,7 +65,8 @@ rather than checking their proofs.
 
 | Option | Meaning |
 | --- | --- |
-| `--time-limit DURATION` | Set the outer deadline independently for each selected sidecar or proof unit. The default is `30s`. |
+| `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
+| `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
 | `--trace-proof FUNCTION` | Verify only this C function in one sidecar and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace output is bounded. |
 | `--trace-to LINE[:COLUMN]` | Focus `--trace-proof` on a written tactic at this source location, including in a successful proof; the tactic may sit inside a proof `match` arm or a loop's `preserve` body, whose trace is shown under the enclosing proof's path up to the `loop`. Without it, the trace follows the failing tactic. |
 | `--changed-since REVISION` | Select claims affected since a Git revision. Reuse requires a valid full-verification marker for the baseline and verifier binary. |
@@ -114,7 +117,8 @@ for any full rebuild; an incremental verification prints the same assumption
 lines for the claims it actually verifies.
 
 The command exits with status 1 when parsing, source loading, target discovery,
-verification, or the outer deadline fails. A proof failure is a correctness
+or verification fails, a work budget is exhausted, or the crash-containment
+bound stops the run. A proof failure is a correctness
 result; repair it before using `click profile` unless unexpected slowness is
 itself the failure being investigated.
 
@@ -135,6 +139,27 @@ snapshots. It records up to
 2,048 checked steps and renders at most 64 KiB. The trace option requires one
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.
+
+## Deterministic verdicts
+
+Every verdict is deterministic: the same sources verify or fail the same way
+on any machine under any load. Two budgets, both counted in deterministic
+work units (the units `click profile` reports), decide:
+
+- each tactic's per-class budget (simple, smart, control), which names the
+  tactic, its class, and its units when exhausted; and
+- the whole-run budget of `--work-limit`, which also counts driver,
+  certification, and lowering work outside any tactic, and names what was
+  running when exhausted.
+
+`--time-limit` is only crash containment. It stops a genuinely hung or
+CPU-starved run, and a run it stops says it was stopped by the
+crash-containment bound and that this is not a verdict about the proof. No
+tactic has a wall-clock limit. Verifier work that is slow but charges few
+units is a Click defect, not a slow proof: `click profile` shows it as a
+step whose time is out of proportion to its units, and only the
+crash-containment bound stops it. The per-class budgets and their calibration
+are in [Testing](../../internals/testing.md#time-bounded-runs).
 
 ## Examples
 

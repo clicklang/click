@@ -278,28 +278,49 @@ mdtest and example harnesses took 58.2 and 17.6 seconds respectively, so the
 20-minute containment boundary has more than 20x headroom over the slower
 aggregate gate.
 
-Production tactics have two independent bounds, and the deterministic work
-budget is the primary one. There is one work counter: every unit the
-verifier records (`record_deterministic_work`, and the cooperative
-checkpoints, which record through the same path) charges the innermost
-active tactic's budget and every enclosing scaling measurement alike, so a
-step's cost in a scaling regression is exactly what its budget is charged,
-and the same source spends the same units on any machine under any load. A
-record does not interrupt its caller; exhaustion leaves a pending limit that
-the next checkpoint reports, and the verifier checks after every function,
-so a tactic cannot finish green past its budget. Nested tactics charge their
-own budgets, not their control parent's. The real-time limits are a backstop
-for stretches of work that record nothing: five seconds for simple tactics,
-two seconds for smart tactics, and six seconds for control tactics. Simple
-correctness must not hinge on wall-clock speed — near-threshold time
-enforcement made one audit pass or fail with machine load — while smart
-search keeps a short cutoff because its latency is itself the product.
-Exhaustion says which kind of bound fired, and a work exhaustion names the
-open and completed operation spans its units went to when operation
-measurement is on (`click profile`, `CLICK_TIMINGS=1`). Completed tactic
-events report both real CPU time and deterministic work, so `click profile`
-can continue measuring actual user latency without making that measurement
-a correctness oracle.
+Every verdict, in the gate and in the shipped tools alike, comes from
+deterministic work budgets; no tactic has a wall-clock limit. There is one
+work counter: every unit the verifier records (`record_deterministic_work`,
+and the cooperative checkpoints, which record through the same path)
+charges the innermost active tactic's budget, every whole-run budget, and
+every enclosing scaling measurement alike, so a step's cost in a scaling
+regression is exactly what its budget is charged, and the same source spends
+the same units on any machine under any load. A record does not interrupt
+its caller; exhaustion leaves a pending limit that the next checkpoint
+reports, and the verifier checks after every function, so a tactic cannot
+finish green past its budget. Nested tactics charge their own budgets, not
+their control parent's. A tactic-budget exhaustion names the tactic, its
+class, its units, and the open and completed operation spans its units went
+to when operation measurement is on (`click profile`, `CLICK_TIMINGS=1`).
+Completed tactic events report both real CPU time and deterministic work, so
+`click profile` keeps measuring actual latency without making that
+measurement a correctness oracle.
+
+The budgets are:
+
+- the per-class tactic budgets, `TacticWorkLimits::default` (below);
+- the whole-run budget of one `click verify` or `click profile` target
+  (`click::cli::DEFAULT_VERIFY_WORK_LIMIT`, `--work-limit`) and of one
+  `click expand` (`DEFAULT_EXPANSION_WORK_LIMIT`), installed by
+  `click::cli::with_run_limits`, which also counts driver, certification,
+  and lowering work outside any tactic; and
+- `click audit`'s per-phase budgets.
+
+Wall clock survives in two roles only. It is reported information: profile
+timings and the reporting thresholds (`DEFAULT_SIMPLE_TACTIC_LIMIT` and its
+siblings), which flag slow steps as findings but never fail a proof. And it
+is crash containment: each tool's `--time-limit` (default
+`click::cli::CRASH_CONTAINMENT_TIME_LIMIT`, ten minutes) stops a genuinely
+hung or CPU-starved process, and the message of a run it stops says that it
+was the crash-containment bound and not a verdict about the proof. The
+`wall_clock_bounds_are_crash_containment_only` test in
+`tests/documentation.rs` checks that no shipped source outside
+`with_run_limits` installs a deadline. Until 2026-09-26 the shipped tools
+also gave each tactic a real-time limit (500 ms simple, 2 s smart, 6 s
+control, later 5 s simple) and each `click verify` sidecar a 30-second
+deadline, so a proof could pass on an idle machine and fail under load:
+`click audit examples/arena` failed at `arena_pipeline.contract` tactic 113
+after 2.002 s against the smart limit.
 
 Budgets are measured with one command:
 
@@ -314,76 +335,68 @@ each fixture records in process the work every tactic charged and writes it
 to REPORT_DIR (default: a fresh directory under `target/tactic-work/`). It
 prints, per class and per corpus, the count, p50, p95, p99, second-largest,
 and maximum, and the ten heaviest tactics of each class with their source
-locations. A fixture that fails with budgets disabled is named, and its
-tactics are still measured.
+locations. Each fixture also records its whole verification as one `run`
+row, which calibrates the whole-run budget. A fixture that fails with
+budgets disabled is named, and its tactics are still measured.
 
 The default budgets are 750,000 units for simple tactics, 2,000,000 for
-smart tactics, and 2,500,000 for control tactics, calibrated on 2026-09-25
-(base `57ee1ebf`) over 35 example sidecars and 2,084 mdtests. Simple: 7,990
-tactics, p95 = 1,651, p99 = 5,368, max = 83,759. Smart: 11,280 tactics, p95
-= 3,340, p99 = 20,565, max = 671,115. Control: 1,778 tactics, p95 = 5,523,
-p99 = 33,069, max = 745,173. Every simple tactic is at least 9x under its
-budget; the smart and control budgets give their corpus maxima about 3x,
-and the tactics that are not 10x under them are named in
-`TacticWorkLimits::default` (owned-vector's `simp`, the arena proofs' heavy
-`have`s, and three mdtest sites); they are slow steps to reduce, not
-headroom. Recalibration must run the script over both the
-examples and the mdtests and record its statistics there. Changing a work
-budget requires corpus measurements and a documented reason;
-it is not a way to make one difficult proof pass.
+smart tactics, and 2,500,000 for control tactics, calibrated on 2026-09-26
+(base `a8ad65f7`) over 36 example sidecars and 2,354 mdtests. Simple: 9,161
+tactics, p95 = 1,540, p99 = 4,847, max = 73,463. Smart: 12,200 tactics, p95
+= 3,162, p99 = 21,899, max = 1,069,444. Control: 1,850 tactics, p95 = 4,864,
+p99 = 17,831, max = 288,302. Every simple tactic is at least 10x under its
+budget, so the simple budget stays the detector for a pathological simple
+tactic; control has 8.7x. Smart has 1.87x, down from 3.0x the day before:
+the arena proofs' heaviest `have` grew from 450,033 to 957,192 units. The
+budget is not raised to regain headroom; that growth is a finding to reduce,
+and surfacing it is the budget's job. The smart tactics near it are named
+in `TacticWorkLimits::default` (an mdtest `simp` and the arena proofs' heavy
+`have`s); they are slow steps to reduce, not headroom. The same run's `run`
+rows calibrate the whole-run budget: the largest whole verification is
+`examples/arena/arena_cells.click` at 6,536,557 units, so
+`DEFAULT_VERIFY_WORK_LIMIT`'s 50,000,000 leaves 7.6x. Recalibration must run
+the script over both the examples and the mdtests and record its statistics
+there. Changing a work budget requires corpus measurements and a documented
+reason; it is not a way to make one difficult proof pass.
 
 ### Adding a fixture harness
 
 Every integration test file that reaches verification or expansion — the
 mdtest, example, compiler-import, C++-import, and Bitcoin Core harnesses —
-judges tactics by deterministic work budgets only. Library verification
-entry points install production's two-second smart and other real-time
-tactic limits unless the calling thread has turned them off, and a harness
-that forgets to do so turns machine load into a false red: a C++-import
-fixture that passed alone once failed a loaded gate run at 2.006 seconds
-against the smart limit. The shipped CLI keeps its real-time backstops; the
-harnesses, and the command-line tests below, drop them.
+judges fixtures by the deterministic work budgets that every library
+verification entry point installs, so a harness needs no special scope for
+deterministic verdicts. It must not install a wall-clock bound of its own;
+nextest's per-test timeout is the harnesses' hang containment, and
+`wall_clock_bounds_are_crash_containment_only` in `tests/documentation.rs`
+rejects a harness that calls `with_deadline`.
 
-`tests/support/limits.rs` is the one route. A new harness declares it with
-`#[path = "support/limits.rs"] mod limits;` and then:
-
-- runs each `#[test]` body as `limits::deterministic(|| { ... })`;
-- starts a verifier thread only with `limits::spawn`, which gives it a 64 MiB
-  stack and re-enters `deterministic` on the new thread, because tactic
-  limits are thread-local; and
-- fans fixtures out with `limits::run_parallel` rather than
-  `click::cli::run_parallel`, for the same reason.
-
-Pinned per-fixture budgets, such as the mdtest canaries, nest inside with
-`instrumentation::with_tactic_work_limits`. The
-`every_fixture_harness_judges_tactics_by_work_budgets_only` test in
-`tests/documentation.rs` enforces these rules over every `tests/*.rs` file.
-A file that never reaches tactic checking goes on its short exemption list
-with a reason instead, and the test rejects an exempt file that names a
-verification or expansion entry point. Add the new harness to the fixture
-phase of `scripts/check.sh` as well.
+A harness that verifies on threads of its own declares
+`#[path = "support/limits.rs"] mod limits;` and starts them with
+`limits::spawn`, which gives each a 64 MiB stack, or fans fixtures out with
+`limits::run_parallel`. Pinned per-fixture budgets, such as the mdtest
+canaries, nest inside with `instrumentation::with_tactic_work_limits`. Add
+the new harness to the fixture phase of `scripts/check.sh` as well.
 
 ### Command-line tests
 
 The tests under `src/bin/` drive `click verify`, `expand`, `profile`, and
-`audit` in-process, and the tools install real-time limits of their own: a
-whole-run deadline, `expand`'s and `profile`'s per-tactic clocks, `audit`'s
-phase crash bounds, and on every thread production's default tactic clocks. Under load the 512-deep
-expression-boundary tests once exhausted `verify`'s 30-second deadline in the
-environment phase and failed at random.
+`audit` in-process with the tools' own limits: deterministic work budgets
+decide, and the ten-minute crash-containment bound cannot fire for a test
+the budgets accept, so machine load cannot change a command-line test's
+verdict. Before 2026-09-26 the tools installed real-time limits (a 30-second
+`verify` deadline, per-tactic clocks), each such test ran inside a
+`with_work_budget_verdicts` scope that removed them, and under load the
+512-deep expression-boundary tests once exhausted the deadline in the
+environment phase and failed at random. The scope is gone because
+production now behaves the way it did.
 
-Each such test runs its body in `click::cli::with_work_budget_verdicts(|| {
-... })`. Inside it the tools install no per-tactic clock, raise every
-whole-run and phase limit to `click::cli::CRASH_CONTAINMENT_TIME_LIMIT`;
-`click audit` carries the scope onto its session thread. Audit's own verdicts,
-its phase work budgets and its expanded-versus-original comparison, count
-deterministic work and apply inside the scope as outside it. Every tool routes its limits
-through `cli::tool_time_limit` and `cli::with_tool_tactic_limits` so the scope
-reaches them. A test about real-time interruption itself, such as an
-exhausted `--time-limit 1ms`, stays outside the scope and goes on the short
-exemption list of `every_command_line_test_judges_by_work_budgets_only` in
-`tests/documentation.rs`, which enforces the rule over every `#[test]` in
-`src/bin/`.
+A test that shortens the wall-clock bound itself, with `--time-limit` or
+`instrumentation::with_deadline`, is about crash containment, or only parses
+the option; it goes on the short list of
+`command_line_tests_name_every_wall_clock_bound_they_set` in
+`tests/documentation.rs` with its reason. A test about a budget verdict uses
+`--work-limit` or `instrumentation::with_run_work_limit` instead, which is
+deterministic.
 
 ### Scaling regressions
 
@@ -454,9 +467,10 @@ one function under a grouped proof and requires the implicit empty-effect
 check to stay near-linear in the paths: a grouped proof issues one theorem per
 path over one shared execution, and finalization visits that execution once.
 
-Rust library tests and every fixture harness under `tests/` enforce
-deterministic tactic-work budgets but do not inherit production time limits.
-Tests specifically about real-time interruption install explicit time limits. Fixture traversal runs on
+Rust library tests and every fixture harness under `tests/` enforce the same
+deterministic tactic-work budgets production does; neither has a wall-clock
+tactic limit. Tests specifically about crash containment install an explicit
+`with_deadline`. Fixture traversal runs on
 every core and reports every failing fixture, while nextest owns the narrow
 process-level timeout for an uncooperative hang. The former load-sensitive bubble-sort canary is pinned
 at 100,000 deterministic units per tactic class; its measured maxima on
@@ -465,10 +479,10 @@ do not rerun a successful proof to decide whether a noisy timing observation was
 "confirmed": host throughput cannot change the semantic result in the first
 place.
 
-Real-time tactic accounting still uses exclusive per-thread CPU time on Unix,
-so descheduling is not charged to a tactic. On platforms without a thread CPU
-clock it falls back to exclusive wall-clock time. Whole-project deadlines are
-always wall-clock limits. `CLICK_DISABLE_TACTIC_BUDGETS=1` remains a narrow A/B
+Reported tactic timings use per-thread CPU time on Unix, so descheduling is
+not charged to a tactic's reported time. On platforms without a thread CPU
+clock they fall back to wall-clock time. The crash-containment bound is
+always wall clock. `CLICK_DISABLE_TACTIC_BUDGETS=1` remains a narrow A/B
 diagnostic escape hatch; it must not be used for the ordinary correctness
 gate.
 
@@ -631,10 +645,13 @@ A declaration module (imports, types, predicates, pure functions, and
 resources only) is checked through its importers and is not an entry
 (`click::cli::project_sidecars`); the examples gate selects entries the same
 way.
-Every sidecar or selected proof unit has an independent 30-second limit. Use
-`--time-limit DURATION` to override it. A timeout exits unsuccessfully and
-names both the target and the active phase or tactic; one slow project cannot
-consume the following projects' budgets.
+Every sidecar or selected proof unit has an independent deterministic
+whole-run work budget (`--work-limit`, default 50 million units) and an
+independent ten-minute crash-containment bound (`--time-limit`). An exhausted
+budget exits unsuccessfully and names both the target and the active phase or
+tactic; one expensive project cannot consume the following projects'
+budgets. A run the crash-containment bound stops says so, and that is not a
+verdict about the proof.
 
 That makes the expansion loop runnable end to end:
 
