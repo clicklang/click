@@ -569,6 +569,16 @@ impl PointerBlock {
         {
             return true;
         }
+        // A loaded pointer is a value obtained at the snapshot it was read
+        // in, and cannot point into an object that did not exist then.
+        let loaded_before = |value: &Self, object: &Self| {
+            matches!(value, Self::Symbolic(variable)
+                if crate::kernel::is_load_variable(variable)
+                    && crate::kernel::eval::loaded_pointer_predates_block(variable, object))
+        };
+        if loaded_before(self, other) || loaded_before(other, self) {
+            return true;
+        }
         // A symbolic block is a logic variable that later facts may constrain
         // to any address, including a heap block named below (a contract
         // postcondition such as `result == destination` does exactly that).

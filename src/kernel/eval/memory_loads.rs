@@ -1608,6 +1608,27 @@ pub(crate) fn registered_load_origin_for_variable(
     })
 }
 
+/// Whether the pointer a load variable names was obtained before `block`
+/// existed, so cannot point into it: a pointer value read at a snapshot
+/// cannot hold the address of an object that snapshot does not have.
+///
+/// The reference is the load's live origin, the state it was first read in,
+/// never its canonical memory, which may be a projection that leaves
+/// unrelated blocks out. Only local blocks are judged: a local exists from
+/// the step that declares it into the snapshot, so a local the origin does
+/// not hold, and has not ended, was declared after the read. Heap blocks
+/// are not judged, because a heap identity can come from a contract's
+/// allocation claim rather than from a snapshot's own blocks.
+pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &PointerBlock) -> bool {
+    if !block.starts_with("local:") {
+        return false;
+    }
+    let Some((origin, _)) = registered_load_origin_for_variable(variable) else {
+        return false;
+    };
+    !origin.has_block(block) && !origin.forgotten.ended_local_blocks.contains(block)
+}
+
 /// Views a term as a memory load for equality reasoning: load terms pass
 /// through, and registered load variables resolve to the loads they
 /// represent. Other terms are not loads.
@@ -3374,6 +3395,51 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_loaded_pointer_cannot_reach_a_local_declared_after_the_read() {
+        let storage = PointerBlock::Heap(8710);
+        let early: PointerBlock = "local:early_object".into();
+        let later: PointerBlock = "local:later_object".into();
+        let cell = Pointer {
+            block: storage.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new()
+            .with_block(storage.clone(), 16)
+            .with_block(early.clone(), 4);
+        let value_type = CType::Int32Pointer;
+        let assumptions = PureFactContext::new()
+            .assume_proposition(Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: cell.clone(),
+                value_type,
+            })
+            .assume_proposition(Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: cell.clone(),
+                bytes: Bitvector32Term::Constant(8),
+            });
+        let paths = evaluate_spec_memory_load_paths(
+            &memory,
+            cell,
+            value_type,
+            Vec::new(),
+            Vec::new(),
+            &assumptions,
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one typed read expected");
+        };
+        let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+            panic!("pointer value expected");
+        };
+        let loaded = &value.pointer().block;
+        assert!(loaded.proven_distinct(&later));
+        assert!(later.proven_distinct(loaded));
+        assert!(!loaded.proven_distinct(&early));
+        assert!(!loaded.proven_distinct(&PointerBlock::Heap(8711)));
+    }
 
     #[test]
     fn unknown_pointer_in_fresh_storage_does_not_inherit_storage_provenance() {
