@@ -2485,9 +2485,12 @@ pub(in crate::kernel) fn canonical_memory_for_pointer_load(
 /// which every element shares. A projection with no recorded derivation is
 /// then the point every element's load is named at. What is left to differ
 /// between two elements is the pointer's spelling: element 0 is spelled as
-/// the base itself and every later element as the base plus its constant
-/// shift, so the first live element of each of those two shapes answers for
-/// its shape.
+/// the base itself, the element whose shift cancels a constant the base ends
+/// in (if any) as the base's bare stem, and every other element as that stem
+/// plus its own constant ([`CellRun::slot_pointer`]), so the first live
+/// element of each of those shapes answers for its shape.
+///
+/// [`CellRun::slot_pointer`]: crate::kernel::primitives::CellRun::slot_pointer
 pub(in crate::kernel) fn run_shape_representatives(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<Vec<u32>> {
@@ -2495,10 +2498,16 @@ pub(in crate::kernel) fn run_shape_representatives(
     if source_holds_cells_observable_by(run.source(), &run.base().block) {
         return None;
     }
-    let first_later = run.live_indexes().find(|later| *later > 0);
-    let representatives = std::iter::once(first)
-        .chain(first_later.filter(|later| *later != first))
-        .collect::<Vec<_>>();
+    let stem = run_stem_slot(run).filter(|index| !run.holes().contains(*index));
+    let first_later = run
+        .live_indexes()
+        .find(|later| *later > 0 && Some(*later) != stem);
+    let mut representatives = vec![first];
+    for representative in first_later.into_iter().chain(stem) {
+        if !representatives.contains(&representative) {
+            representatives.push(representative);
+        }
+    }
     for representative in &representatives {
         let cell_pointer = run.slot_pointer(*representative);
         let value = run.value(*representative);
@@ -2509,6 +2518,20 @@ pub(in crate::kernel) fn run_shape_representatives(
         }
     }
     Some(representatives)
+}
+
+/// The later element of `run` spelled as its base's bare stem: the one whose
+/// shift cancels a negative constant the base ends in.
+fn run_stem_slot(run: &crate::kernel::primitives::CellRun) -> Option<u32> {
+    let (stem, constant) = crate::kernel::primitives::offset_stem_and_constant(&run.base().offset);
+    stem?;
+    let width = i64::from(run.element_width());
+    if constant >= 0 || width <= 0 || constant % width != 0 {
+        return None;
+    }
+    u32::try_from(-constant / width)
+        .ok()
+        .filter(|index| *index < run.count())
 }
 
 /// Whether `source` holds a cell, a typed view or a live run slot that a
@@ -2545,15 +2568,23 @@ fn source_holds_cells_observable_by(
 }
 
 /// The representative of element `index` among `representatives`
-/// ([`run_shape_representatives`]): element 0 answers for itself, and the
-/// last representative for every later element.
+/// ([`run_shape_representatives`]): element 0 and the bare-stem element
+/// answer for themselves, and the first other later representative for
+/// every other later element.
 #[cfg(debug_assertions)]
-pub(in crate::kernel) fn run_shape_representative(representatives: &[u32], index: u32) -> u32 {
-    if index == 0 {
-        representatives[0]
-    } else {
-        *representatives.last().expect("a representative")
+pub(in crate::kernel) fn run_shape_representative(
+    run: &crate::kernel::primitives::CellRun,
+    representatives: &[u32],
+    index: u32,
+) -> u32 {
+    let stem = run_stem_slot(run);
+    if index == 0 || Some(index) == stem {
+        return index;
     }
+    *representatives
+        .iter()
+        .find(|representative| **representative > 0 && Some(**representative) != stem)
+        .unwrap_or(&representatives[0])
 }
 
 /// The load-canonical source of each live slot of `run`, as
@@ -2578,7 +2609,7 @@ fn run_materialization_sources(run: &crate::kernel::primitives::CellRun) -> Vec<
     if run.count() <= crate::kernel::primitives::CHECKED_RUN_SLOTS {
         crate::instrumentation::uncharged_debug_check(|| {
             for index in run.live_indexes() {
-                let representative = run_shape_representative(&representatives, index);
+                let representative = run_shape_representative(run, &representatives, index);
                 let position = representatives
                     .iter()
                     .position(|candidate| *candidate == representative)

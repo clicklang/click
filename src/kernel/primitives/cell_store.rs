@@ -38,10 +38,13 @@
 //! share their runs' persistent nodes are compared, hashed and diffed in the
 //! work of what they do not share. The key orders the run's source memory by
 //! its content hash before its structure, so no key comparison walks a
-//! memory unless two sources' hashes collide. A run based at a constant
-//! offset is also filed by the bytes its slots span, in
-//! `CellStore::constant_cover`, so a constant pointer finds exactly the
-//! runs whose span holds it. Equality, hashing and ordering read only the
+//! memory unless two sources' hashes collide. A slot is spelled as a load of
+//! its address is ([`CellRun::slot_pointer`]): its run's base plus a constant,
+//! folded into any constant the base ends in, so every slot lies on its
+//! base's *line*, the base's block and the stem the base adds a constant to
+//! (`CoverLine`). Every run is also filed by the bytes its slots span on its
+//! line, in `CellStore::span_cover`, so a pointer finds exactly the runs
+//! whose span on its line holds it. Equality, hashing and ordering read only the
 //! concrete map and the run map, never that cover or the cached counts,
 //! which are functions of the run map, so a store's identity does not
 //! depend on the order its runs were added in.
@@ -390,23 +393,37 @@ impl CellRun {
         &self.holes
     }
 
-    /// The pointer of element `index`, spelled exactly as contract seeding
-    /// spells it: the base's offset plus a constant byte shift, folded when
-    /// either side is a constant and elided when the shift is zero.
+    /// The pointer of element `index`, spelled as a load of that address
+    /// spells it: the base's offset plus a constant byte shift through
+    /// [`PointerOffsetTerm::add`], which folds the shift into a constant the
+    /// base already ends in. So element 1 of a run based at `p + 16` with
+    /// stride 4 is `p + 20`, not `(p + 16) + 4`, and a question about a load
+    /// of `p + 20` is the same question whether a run or a cell answers it.
     pub(crate) fn slot_pointer(&self, index: u32) -> Pointer {
         let shift = i64::from(index) * i64::from(self.element_width);
-        let offset = match (&self.base.offset, shift) {
-            (_, 0) => self.base.offset.clone(),
-            (PointerOffsetTerm::Constant(base), shift) => PointerOffsetTerm::Constant(base + shift),
-            (base, shift) => PointerOffsetTerm::Add(
-                Box::new(base.clone()),
-                Box::new(PointerOffsetTerm::Constant(shift)),
-            ),
-        };
         Pointer {
             block: self.base.block.clone(),
-            offset,
+            offset: PointerOffsetTerm::add(
+                self.base.offset.clone(),
+                PointerOffsetTerm::Constant(shift),
+            ),
         }
+    }
+
+    /// Where the run's slots lie: the block and the stem every slot's offset
+    /// adds a constant to ([`offset_stem_and_constant`]), and the constant
+    /// byte offsets of the first and last slot on that line.
+    fn slot_line_span(&self) -> (CoverLine, i64, i64) {
+        let (stem, start) = offset_stem_and_constant(&self.base.offset);
+        let span = i64::try_from(self.span()).unwrap_or(i64::MAX);
+        (
+            CoverLine {
+                block: self.base.block.clone(),
+                stem: stem.cloned(),
+            },
+            start,
+            start.saturating_add(span),
+        )
     }
 
     /// The element whose slot is spelled exactly `pointer`, hole or not.
@@ -415,19 +432,12 @@ impl CellRun {
             return None;
         }
         let width = i64::from(self.element_width);
-        let shift = match (&self.base.offset, &pointer.offset) {
-            (PointerOffsetTerm::Constant(base), PointerOffsetTerm::Constant(offset)) => {
-                offset.checked_sub(*base)?
-            }
-            (base, offset) if base == offset => 0,
-            (base, PointerOffsetTerm::Add(left, right)) if left.as_ref() == base => {
-                match right.as_ref() {
-                    PointerOffsetTerm::Constant(shift) if *shift != 0 => *shift,
-                    _ => return None,
-                }
-            }
-            _ => return None,
-        };
+        let (base_stem, base_constant) = offset_stem_and_constant(&self.base.offset);
+        let (stem, constant) = offset_stem_and_constant(&pointer.offset);
+        if stem != base_stem {
+            return None;
+        }
+        let shift = constant.checked_sub(base_constant)?;
         if shift < 0 || shift % width != 0 {
             return None;
         }
@@ -597,9 +607,9 @@ impl Ord for RunSource {
     }
 }
 
-/// Where a run's slots sit in their block. A run based at a constant offset
-/// has every slot at a constant offset; any other run has every slot at its
-/// base offset plus a constant shift (see [`CellRun::slot_pointer`]). The
+/// Where a run's base sits in its block: a constant offset, or a symbolic
+/// one. Every slot is on the base's line (see [`CellRun::slot_pointer`]),
+/// which is how a pointer finds a run; the anchor only orders runs. The
 /// first and last variants bound key ranges and are no run's anchor.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum RunAnchor {
@@ -889,13 +899,13 @@ impl CellRun {
 pub(crate) struct CellStore {
     concrete: SnapshotMap<Pointer, CValue>,
     runs: SnapshotMap<RunKey, CellRun>,
-    /// The held runs based at a constant offset, by the bytes from their
-    /// first slot to their last: each block's covered bytes cut into
-    /// disjoint segments, keyed by block and first byte, each naming the runs
+    /// The held runs, by the bytes from their first slot to their last on
+    /// their line ([`CoverLine`]): each line's covered bytes cut into
+    /// disjoint segments, keyed by line and first byte, each naming the runs
     /// whose span covers it in key order. Adjacent touching segments name
     /// different runs, so there are at most two per run. A function of the
     /// run map, left out of equality, hashing and ordering.
-    constant_cover: imbl::OrdMap<(PointerBlock, i64), CoverSegment>,
+    span_cover: imbl::OrdMap<(CoverLine, i64), CoverSegment>,
     /// The live slots of every run together; a function of the runs.
     run_cells: u64,
     /// The logical cell map, built on first need when there are runs. A
@@ -912,22 +922,47 @@ thread_local! {
     static RUNS_VISITED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// The bytes `[start, end)` of one block covered by exactly these runs'
-/// spans; see `CellStore::constant_cover`.
+/// The bytes `[start, end)` of one line covered by exactly these runs'
+/// spans; see `CellStore::span_cover`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CoverSegment {
     end: i64,
     runs: Vec<RunKey>,
 }
 
-/// The bytes a run based at a constant offset spans, first slot to last,
-/// as `[start, end)`; `None` for any other run.
-fn constant_span(run: &CellRun) -> Option<(i64, i64)> {
-    let PointerOffsetTerm::Constant(base) = run.base.offset else {
-        return None;
-    };
-    let span = i64::try_from(run.span()).unwrap_or(i64::MAX);
-    Some((base, base.saturating_add(span).saturating_add(1)))
+/// The addresses of one block that differ only in a constant byte offset: a
+/// constant offset (no stem), or one stem plus a constant. See
+/// [`offset_stem_and_constant`].
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct CoverLine {
+    block: PointerBlock,
+    stem: Option<PointerOffsetTerm>,
+}
+
+/// An offset as the stem [`PointerOffsetTerm::add`] shifts by a constant, and
+/// that constant: `(None, c)` for a constant offset, `(Some(stem), c)` for
+/// `stem + c` (with every trailing constant `add` folds into one peeled
+/// off), and `(Some(offset), 0)` for any other offset. `add` of a constant
+/// to an offset moves only the constant, so every slot of a run, and every
+/// load spelling one of its addresses, lies on its base's line.
+pub(crate) fn offset_stem_and_constant(
+    offset: &PointerOffsetTerm,
+) -> (Option<&PointerOffsetTerm>, i64) {
+    let mut stem = offset;
+    let mut constant = 0i64;
+    loop {
+        if let Some(value) = stem.as_const() {
+            return (None, constant.saturating_add(value));
+        }
+        let PointerOffsetTerm::Add(left, right) = stem else {
+            return (Some(stem), constant);
+        };
+        let Some(value) = right.as_const() else {
+            return (Some(stem), constant);
+        };
+        constant = constant.saturating_add(value);
+        stem = left;
+    }
 }
 
 /// One held run's slot at a pointer.
@@ -1021,41 +1056,18 @@ impl CellStore {
     }
 
     /// Every held run that has a slot, live or not, spelled exactly
-    /// `pointer`, in key order. Only runs anchored where such a slot can be
-    /// are visited: a constant pointer is a slot only of a run based at a
-    /// constant whose span holds it, which the constant cover names exactly,
-    /// and any other pointer only of a run based at the pointer's own offset
-    /// or at the offset it adds a constant to.
+    /// `pointer`, in key order. Only runs whose span on the pointer's line
+    /// ([`CoverLine`]) holds it are visited, which the span cover names
+    /// exactly: a slot's offset is its run's base plus a constant, so it lies
+    /// on the base's line.
     fn slots_at<'a>(&'a self, pointer: &'a Pointer) -> impl Iterator<Item = SlotAt<'a>> + 'a {
-        let block = &pointer.block;
-        let (covering, first, second) = match &pointer.offset {
-            PointerOffsetTerm::Constant(offset) => {
-                (self.constant_runs_covering(block, *offset), None, None)
-            }
-            offset => {
-                let own = RunAnchor::Symbolic(offset.clone());
-                let shifted = match offset {
-                    PointerOffsetTerm::Add(left, right) if matches!(right.as_ref(), PointerOffsetTerm::Constant(shift) if *shift != 0) => {
-                        Some(RunAnchor::of(left))
-                            .filter(|anchor| matches!(anchor, RunAnchor::Symbolic(_)))
-                    }
-                    _ => None,
-                };
-                (
-                    Vec::new(),
-                    Some((own.clone(), own)),
-                    shifted.map(|anchor| (anchor.clone(), anchor)),
-                )
-            }
+        let (stem, offset) = offset_stem_and_constant(&pointer.offset);
+        let line = CoverLine {
+            block: pointer.block.clone(),
+            stem: stem.cloned(),
         };
-        covering
+        self.runs_covering(&line, offset)
             .into_iter()
-            .chain(
-                first
-                    .into_iter()
-                    .chain(second)
-                    .flat_map(move |(low, high)| self.runs_anchored(block, low, high)),
-            )
             .filter_map(move |run| {
                 // Positioning in the run map is a persistent-map lookup, as a
                 // concrete cell's is, and is not charged; a visited run that
@@ -1100,17 +1112,15 @@ impl CellStore {
         }
     }
 
-    /// The held runs based at a constant offset whose span holds `offset`,
-    /// in key order: one lookup of the cover segment holding it.
-    fn constant_runs_covering<'a>(&'a self, block: &PointerBlock, offset: i64) -> Vec<&'a CellRun> {
-        let Some(((segment_block, _), segment)) = self
-            .constant_cover
-            .range(..=(block.clone(), offset))
-            .next_back()
+    /// The held runs whose span on `line` holds `offset`, in key order: one
+    /// lookup of the cover segment holding it.
+    fn runs_covering<'a>(&'a self, line: &CoverLine, offset: i64) -> Vec<&'a CellRun> {
+        let Some(((segment_line, _), segment)) =
+            self.span_cover.range(..=(line.clone(), offset)).next_back()
         else {
             return Vec::new();
         };
-        if segment_block != block || segment.end <= offset {
+        if segment_line != line || segment.end <= offset {
             return Vec::new();
         }
         segment
@@ -1120,52 +1130,52 @@ impl CellStore {
             .collect()
     }
 
-    /// Splits the cover segment of `block` holding `offset`, if one does
+    /// Splits the cover segment of `line` holding `offset`, if one does
     /// and starts below it, so that a segment starts there.
-    fn split_cover_at(&mut self, block: &PointerBlock, offset: i64) {
-        let Some(((segment_block, start), segment)) = self
-            .constant_cover
-            .range(..(block.clone(), offset))
+    fn split_cover_at(&mut self, line: &CoverLine, offset: i64) {
+        let Some(((segment_line, start), segment)) = self
+            .span_cover
+            .range(..(line.clone(), offset))
             .next_back()
             .map(|(key, segment)| (key.clone(), segment.clone()))
         else {
             return;
         };
-        if segment_block != *block || segment.end <= offset {
+        if segment_line != *line || segment.end <= offset {
             return;
         }
         crate::instrumentation::record_deterministic_work(1);
-        self.constant_cover.insert(
-            (block.clone(), start),
+        self.span_cover.insert(
+            (line.clone(), start),
             CoverSegment {
                 end: offset,
                 runs: segment.runs.clone(),
             },
         );
-        self.constant_cover.insert((block.clone(), offset), segment);
+        self.span_cover.insert((line.clone(), offset), segment);
     }
 
-    /// Joins the segment of `block` ending at `offset` with the one starting
+    /// Joins the segment of `line` ending at `offset` with the one starting
     /// there when they name the same runs.
-    fn join_cover_at(&mut self, block: &PointerBlock, offset: i64) {
-        let Some(after) = self.constant_cover.get(&(block.clone(), offset)).cloned() else {
+    fn join_cover_at(&mut self, line: &CoverLine, offset: i64) {
+        let Some(after) = self.span_cover.get(&(line.clone(), offset)).cloned() else {
             return;
         };
-        let Some(((before_block, before_start), before)) = self
-            .constant_cover
-            .range(..(block.clone(), offset))
+        let Some(((before_line, before_start), before)) = self
+            .span_cover
+            .range(..(line.clone(), offset))
             .next_back()
             .map(|(key, segment)| (key.clone(), segment.clone()))
         else {
             return;
         };
-        if before_block != *block || before.end != offset || before.runs != after.runs {
+        if before_line != *line || before.end != offset || before.runs != after.runs {
             return;
         }
         crate::instrumentation::record_deterministic_work(1);
-        self.constant_cover.remove(&(block.clone(), offset));
-        self.constant_cover.insert(
-            (block.clone(), before_start),
+        self.span_cover.remove(&(line.clone(), offset));
+        self.span_cover.insert(
+            (line.clone(), before_start),
             CoverSegment {
                 end: after.end,
                 runs: before.runs,
@@ -1173,26 +1183,24 @@ impl CellStore {
         );
     }
 
-    /// Files a newly held run under the bytes it spans, if it is based at a
-    /// constant offset. Costs the segments its span meets.
+    /// Files a newly held run under the bytes it spans on its line. Costs
+    /// the segments its span meets.
     fn cover(&mut self, key: &RunKey, run: &CellRun) {
-        let Some((start, end)) = constant_span(run) else {
-            return;
-        };
-        let block = &run.base.block;
-        self.split_cover_at(block, start);
-        self.split_cover_at(block, end);
+        let (line, start, last) = run.slot_line_span();
+        let end = last.saturating_add(1);
+        self.split_cover_at(&line, start);
+        self.split_cover_at(&line, end);
         let met = self
-            .constant_cover
-            .range((block.clone(), start)..(block.clone(), end))
+            .span_cover
+            .range((line.clone(), start)..(line.clone(), end))
             .map(|((_, segment_start), segment)| (*segment_start, segment.clone()))
             .collect::<Vec<_>>();
         crate::instrumentation::record_deterministic_work(met.len() + 1);
         let mut cursor = start;
         for (segment_start, mut segment) in met {
             if cursor < segment_start {
-                self.constant_cover.insert(
-                    (block.clone(), cursor),
+                self.span_cover.insert(
+                    (line.clone(), cursor),
                     CoverSegment {
                         end: segment_start,
                         runs: vec![key.clone()],
@@ -1205,32 +1213,30 @@ impl CellStore {
                 .expect_err("a newly held run is in no segment");
             segment.runs.insert(position, key.clone());
             cursor = segment.end;
-            self.constant_cover
-                .insert((block.clone(), segment_start), segment);
+            self.span_cover
+                .insert((line.clone(), segment_start), segment);
         }
         if cursor < end {
-            self.constant_cover.insert(
-                (block.clone(), cursor),
+            self.span_cover.insert(
+                (line.clone(), cursor),
                 CoverSegment {
                     end,
                     runs: vec![key.clone()],
                 },
             );
         }
-        self.join_cover_at(block, start);
-        self.join_cover_at(block, end);
+        self.join_cover_at(&line, start);
+        self.join_cover_at(&line, end);
     }
 
-    /// Withdraws a run no longer held from the bytes it spans. Costs the
-    /// segments its span meets.
+    /// Withdraws a run no longer held from the bytes it spans on its line.
+    /// Costs the segments its span meets.
     fn uncover(&mut self, key: &RunKey, run: &CellRun) {
-        let Some((start, end)) = constant_span(run) else {
-            return;
-        };
-        let block = &run.base.block;
+        let (line, start, last) = run.slot_line_span();
+        let end = last.saturating_add(1);
         let met = self
-            .constant_cover
-            .range((block.clone(), start)..(block.clone(), end))
+            .span_cover
+            .range((line.clone(), start)..(line.clone(), end))
             .map(|((_, segment_start), segment)| (*segment_start, segment.clone()))
             .collect::<Vec<_>>();
         crate::instrumentation::record_deterministic_work(met.len() + 1);
@@ -1241,14 +1247,14 @@ impl CellStore {
                 .expect("a held run is in every segment of its span");
             segment.runs.remove(position);
             if segment.runs.is_empty() {
-                self.constant_cover.remove(&(block.clone(), segment_start));
+                self.span_cover.remove(&(line.clone(), segment_start));
             } else {
-                self.constant_cover
-                    .insert((block.clone(), segment_start), segment);
+                self.span_cover
+                    .insert((line.clone(), segment_start), segment);
             }
         }
-        self.join_cover_at(block, start);
-        self.join_cover_at(block, end);
+        self.join_cover_at(&line, start);
+        self.join_cover_at(&line, end);
     }
 
     /// Applies each `(key, run)` replacement, after a walk that collected
@@ -1784,7 +1790,7 @@ impl CellStore {
         }
         if kept_runs.runs != self.runs {
             self.runs = kept_runs.runs;
-            self.constant_cover = kept_runs.constant_cover;
+            self.span_cover = kept_runs.span_cover;
             self.run_cells = kept_runs.run_cells;
         }
         visited
@@ -2023,7 +2029,7 @@ impl CellStore {
         Self {
             concrete,
             runs: self.runs.clone(),
-            constant_cover: self.constant_cover.clone(),
+            span_cover: self.span_cover.clone(),
             run_cells: self.run_cells,
             logical: OnceLock::new(),
         }
@@ -2031,10 +2037,11 @@ impl CellStore {
 }
 
 /// The entries of an ordered pointer collection that can be slots of `run`,
-/// ascending, found by `range` over the few key intervals such slots occupy:
-/// the constant offsets from the base to the last slot for a constant base,
-/// and otherwise the base offset itself and the offsets that add a constant
-/// to it. Visits only entries in those intervals.
+/// ascending, found by `range` over the few key intervals such slots occupy
+/// on the run's line: the constant offsets from the first slot to the last
+/// for a constant base, and otherwise the stem itself (when a slot's
+/// constant cancels) and the stem plus each constant from the first slot's
+/// to the last's. Visits only entries in those intervals.
 fn run_slot_candidates_in<'a, I>(
     run: &CellRun,
     mut range: impl FnMut(Bound<Pointer>, Bound<Pointer>) -> I,
@@ -2042,34 +2049,35 @@ fn run_slot_candidates_in<'a, I>(
 where
     I: Iterator<Item = &'a Pointer> + 'a,
 {
-    let block = run.base.block.clone();
+    let (line, first, last) = run.slot_line_span();
     let at = |offset: PointerOffsetTerm| Pointer {
-        block: block.clone(),
+        block: line.block.clone(),
         offset,
     };
     let mut intervals = Vec::new();
-    match &run.base.offset {
-        PointerOffsetTerm::Constant(base) => {
-            let last = base.saturating_add(i64::try_from(run.span()).unwrap_or(i64::MAX));
+    match &line.stem {
+        None => {
             intervals.push(range(
-                Bound::Included(at(PointerOffsetTerm::Constant(*base))),
+                Bound::Included(at(PointerOffsetTerm::Constant(first))),
                 Bound::Included(at(PointerOffsetTerm::Constant(last))),
             ));
         }
-        offset => {
-            intervals.push(range(
-                Bound::Included(at(offset.clone())),
-                Bound::Included(at(offset.clone())),
-            ));
+        Some(stem) => {
+            if first <= 0 && 0 <= last {
+                intervals.push(range(
+                    Bound::Included(at(stem.clone())),
+                    Bound::Included(at(stem.clone())),
+                ));
+            }
             let shifted = |shift: i64| {
                 at(PointerOffsetTerm::Add(
-                    Box::new(offset.clone()),
+                    Box::new(stem.clone()),
                     Box::new(PointerOffsetTerm::Constant(shift)),
                 ))
             };
             intervals.push(range(
-                Bound::Included(shifted(i64::MIN)),
-                Bound::Included(shifted(i64::MAX)),
+                Bound::Included(shifted(first)),
+                Bound::Included(shifted(last)),
             ));
         }
     }
@@ -2290,16 +2298,49 @@ mod tests {
     /// runs are anchored at symbolic offsets, and in a second block; after
     /// every step each store's cells, lookups, diffs against every earlier
     /// store, equality and relative equality agree with a per-cell model.
+    /// A slot of a run based at `p + 16` is spelled as a load of its
+    /// address is, `p + 20`, not `(p + 16) + 4`: the run answers for that
+    /// load, a store there refills or displaces that slot, and a run based
+    /// at `p - 4` has a slot at bare `p`.
+    #[test]
+    fn slots_are_spelled_as_loads_spell_their_addresses() {
+        let block = PointerBlock::Symbolic(Variable(9_310_101));
+        let stem = PointerOffsetTerm::Variable(Variable(9_310_102));
+        let shifted = |shift: i64| {
+            at(
+                &block,
+                PointerOffsetTerm::add(stem.clone(), PointerOffsetTerm::Constant(shift)),
+            )
+        };
+        let seeded = run(shifted(16), 4, 3, &source(1));
+        assert_eq!(seeded.slot_pointer(1), shifted(20));
+        assert_eq!(seeded.slot_index(&shifted(20)), Some(1));
+        assert_eq!(seeded.slot_index(&shifted(22)), None);
+        let mut store = CellStore::new();
+        store.add_run(seeded.clone());
+        assert_eq!(store.get(&shifted(24)), Some(seeded.value(2)));
+        store.insert(shifted(20), CValue::Int32(Bitvector32Term::Constant(7)));
+        assert_eq!(
+            store.get(&shifted(20)),
+            Some(CValue::Int32(Bitvector32Term::Constant(7)))
+        );
+        assert_eq!(store.len(), 3);
+        let below = run(shifted(-4), 4, 3, &source(1));
+        assert_eq!(below.slot_pointer(1), at(&block, stem.clone()));
+        assert_eq!(below.slot_index(&at(&block, stem.clone())), Some(1));
+    }
+
     #[test]
     fn the_run_index_agrees_with_a_per_cell_model() {
         let global = PointerBlock::Concrete("cell-store-global".to_string());
         let other = PointerBlock::Concrete("cell-store-other".to_string());
         let symbolic = PointerBlock::Symbolic(Variable(9_310_001));
         let anchor = PointerOffsetTerm::Variable(Variable(9_310_002));
-        let shifted_anchor = PointerOffsetTerm::Add(
-            Box::new(anchor.clone()),
-            Box::new(PointerOffsetTerm::Constant(8)),
-        );
+        let symbolic_bases = [
+            anchor.clone(),
+            PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(8)),
+            PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(-8)),
+        ];
         let sources = [source(1), source(2)];
         for seed_value in 1..=24u64 {
             let mut stream = Stream(seed_value);
@@ -2313,17 +2354,16 @@ mod tests {
             for offset in (0..16).step_by(4) {
                 pointers.push(constant(&other, offset));
             }
-            for base in [&anchor, &shifted_anchor] {
-                pointers.push(at(&symbolic, base.clone()));
-                for shift in (4..24).step_by(4) {
-                    pointers.push(at(
-                        &symbolic,
-                        PointerOffsetTerm::Add(
-                            Box::new(base.clone()),
-                            Box::new(PointerOffsetTerm::Constant(shift)),
-                        ),
-                    ));
-                }
+            // Every address on the anchor's line, spelled as a load spells
+            // it: runs based at the anchor, eight bytes past it and eight
+            // bytes before it share these slots, and a slot of the last can
+            // be the bare anchor.
+            pointers.push(at(&symbolic, anchor.clone()));
+            for shift in (-8..32).filter(|shift| *shift != 0) {
+                pointers.push(at(
+                    &symbolic,
+                    PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(shift)),
+                ));
             }
             let mut runs_seen = Vec::<CellRun>::new();
             for _ in 0..60 {
@@ -2335,14 +2375,7 @@ mod tests {
                         let base = match stream.next(4) {
                             0 | 1 => constant(&global, (stream.next(9) * 4) as i64),
                             2 => constant(&other, (stream.next(3) * 4) as i64),
-                            _ => at(
-                                &symbolic,
-                                if stream.next(2) == 0 {
-                                    anchor.clone()
-                                } else {
-                                    shifted_anchor.clone()
-                                },
-                            ),
+                            _ => at(&symbolic, symbolic_bases[stream.next(3) as usize].clone()),
                         };
                         // A third of the runs spell their values as a
                         // symbolic static array's entry does: the same slots
@@ -2404,7 +2437,7 @@ mod tests {
                 assert_eq!(store.len(), model.len());
                 assert!(store.runs().all(|run| run.live_count() > 0));
                 assert_eq!(
-                    store.constant_cover,
+                    store.span_cover,
                     cover_of_runs(&store),
                     "seed {seed_value}: the cover is a function of the runs"
                 );
@@ -2566,13 +2599,13 @@ mod tests {
         );
     }
 
-    /// The constant cover built afresh from `store`'s runs alone.
-    fn cover_of_runs(store: &CellStore) -> imbl::OrdMap<(PointerBlock, i64), CoverSegment> {
+    /// The span cover built afresh from `store`'s runs alone.
+    fn cover_of_runs(store: &CellStore) -> imbl::OrdMap<(CoverLine, i64), CoverSegment> {
         let mut fresh = CellStore::new();
         for run in store.runs() {
             fresh.set_run(&run.key(), Some(run.clone()));
         }
-        fresh.constant_cover
+        fresh.span_cover
     }
 
     /// One run spanning a million slots beside 1 to 1000 small runs of the
