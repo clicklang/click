@@ -173,17 +173,9 @@ Each stage lands green with its regressions and scaling curves:
    - Chosen direction: give every loaded pointer an opaque identity, the
      symbolic pointer named by its load. Every construction now goes through
      `Pointer::loaded` (landed, no behaviour change).
-   - Measured, then reverted: flipping `Pointer::loaded` to the opaque form
-     broke about 29 unit tests and 34 fixtures. The common cause is that the
-     kernel relates a pointer loaded at one snapshot to the same pointer
-     loaded at another through machinery that compares load terms inside
-     offsets across snapshots (frame reasoning over an unchanged cell). With
-     opaque identities those become two blocks compared exactly, and that
-     machinery no longer applies.
-   - So the opaque form needs a bridging rule first: two loaded pointers are
-     equal when memory reasoning proves their loads equal. Resource lookup
-     and pointer comparison must consult that rule, not only exact block
-     identity. That design is the next open step of stage 2.
+   - The flip is being prepared consumer by consumer. Its current state,
+     the trial branch, and what still breaks are under "Handoff
+     (2026-09-27)" below.
 3. Bitvector terms.
 4. Algebraic terms and pure-function applications.
 5. Tactics modulo the closure, plus a kernel-checked equality rule for
@@ -246,6 +238,173 @@ from facts rather than from spelling. The rule it rests on:
   exact block (the loop effect summary that `transport` no longer finds, for
   instance) needs lookup by pointer class, not provenance. The trial
   checklist is sorted into those two kinds.
+
+## Handoff (2026-09-27)
+
+The loaded-pointer flip (stage 2, migration step 3) is where the work
+stands. Everything below is on master, green, unless it says otherwise.
+
+### Landed toward the flip
+
+In order. Each commit has its own regressions.
+- `7f8eac4f` pointer classes (`src/kernel/assumptions/pointer_classes.rs`):
+  a persistent weighted union-find over pointer blocks with an exact affine
+  offset normal form.
+- `9884ce02` a specification read that misses its cell retries at the other
+  spellings the classes give.
+- `56ce7b7c` and `82349436`: every loaded pointer is built by
+  `Pointer::loaded` and decoded by `Pointer::as_loaded`.
+- `69fec2b3` provenance: a local whose address is never taken is distinct
+  from every pointer value.
+- `9f0efd19` provenance: a loaded pointer is distinct from a local declared
+  after the read (`loaded_pointer_predates_block` in
+  `src/kernel/eval/memory_loads.rs`, consulted by `proven_distinct`).
+- `387d9120` `rewrite` reaches through a loaded pointer to the load it names
+  (`rewrite_through_loaded_pointer_block` in `src/surface/checking/simp.rs`).
+- `4ab772fa` load congruence inside one snapshot: `load(M, p)` and
+  `load(M, q)` are one value when the classes prove `p == q`
+  (`PointerClasses::normal`, bounded by `LOAD_CONGRUENCE_DEPTH`).
+- `d80a0f32` cross-snapshot equality at comparison time:
+  `PointerClasses::proves_equal_in` also accepts two loads of one cell at
+  two snapshots when memory reasoning proves the cell unchanged between
+  them. This is frame reasoning, so it takes the path's facts and runs only
+  when a comparison asks; it is never recorded in the classes.
+- `08eb341f` two checks that assumed an indexed address adds a base term to
+  its block: the common-base separation ladder now compares bare offsets
+  of one block (`p[i]` against `p[j]` for a pointer that is its own block),
+  and the alpha identity key expands a load variable in pointer-block
+  position into the snapshot and address it reads. The latter needed
+  `#![recursion_limit = "256"]` in `src/lib.rs`.
+
+### The trial branch
+
+Branch `egraph-loaded-pointer-flip` is master at `08eb341f` plus one commit,
+`ea9de0ff`, holding the flip. It is not green and must not be merged. It
+changes `Pointer::loaded` to return `Pointer::symbolic(load variable)`. A
+pointer loaded from a cell that the path proves equal to an earlier load
+reuses that load's name (`earlier_equal_load_variable` in
+`src/kernel/eval/memory_loads.rs`). `Pointer::as_loaded` is still the old
+decoder, so consumers that call it simply see no loaded pointer.
+
+The loop is: diagnose one failure on the branch, land the general fix on
+master green without the flip, rebase the branch, and remeasure. To measure
+from a worktree of master:
+
+```sh
+git diff 08eb341f ea9de0ff > /tmp/flip.patch   # once
+git apply --3way /tmp/flip.patch
+export RUST_MIN_STACK=8388608
+cargo nextest run --lib --bins --test documentation --no-fail-fast > unit.log 2>&1
+cargo nextest run --test mdtests --test examples --test-threads 1 --no-capture \
+    --no-fail-fast > md.log 2>&1
+grep -E "^\s+FAIL" unit.log | sort -u
+grep -oE "mdtest \`[^\`]*\` failed" md.log
+git checkout -- src/
+```
+
+Counts over time: 34 mdtests and 29 unit tests at the first trial, then
+22/27, now 16/20.
+
+### What still breaks under the flip, at `08eb341f`
+
+mdtests, grouped by what is known:
+- `loop_frame_field_cells_at_constant_indices.md`: the loop's closer leaves
+  `load(S2, G+0) == load(S3, G+0)` open, where `G` is the loaded
+  `arena->occupied`. That is `occupied[0]` across the store `occupied[i]`
+  with `2 <= start <= i`. Not yet diagnosed. Start by checking whether
+  `store_cell_effect` separates `G@Constant(0)` from `G@4*i` under those
+  facts; the bare-offset ladder of `08eb341f` should cover it.
+- `loop_frame_through_two_hop_field_of_folded_state.md`: `transport` finds
+  no frame evidence for `region->arena->occupied[k]`. The pointer is a load
+  whose own block is a load. Not yet diagnosed.
+- `rewrite_through_a_loaded_pointer_field.md` and
+  `rewrite_pointer_base_inside_field_load.md`: `o->in` gets different load
+  names on the two sides of the rewrite.
+- `augment_rotate_callback.md`, `augment_rotate_callback_child_read.md`,
+  `augment_rotate_callback_rejects_extra_write.md`,
+  `augment_rotate_callback_rejects_consumed_shape.md`: stable-view
+  separation. Views were separated by the block their loaded pointer
+  borrowed, which the opaque form no longer supplies.
+- Region and descriptor group, not diagnosed:
+  `call_keeps_region_beside_folded_arena_state.md`,
+  `call_keeps_a_region_cell_read_through_its_descriptor.md`,
+  `unfold_region_after_writing_through_another_descriptors_pool.md`,
+  `call_refuses_a_kept_view_that_may_alias_the_allocation_it_frees.md`.
+- `shared_heap_detach_leak_diagnostic.md`, `shared_heap_two_parent_caller.md`:
+  not diagnosed.
+- `field_derived_precise_effect_after_metadata_write.md`,
+  `load_through_a_pointer_alias_after_a_store.md`: not diagnosed.
+
+Unit tests (20), not yet diagnosed:
+- `kernel::tests::canonicalization_tests::pointer_loaded_from_an_opaque_cell_takes_a_canonical_offset`
+  asserts the old encoding itself and is expected to be rewritten at the
+  flip, not fixed before it.
+- `kernel::tests::resource_scaling_tests::unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors`
+- `surface::verification::artifact_identity_tests::field_derived_view_does_not_retarget_after_a_pointer_write`
+- `surface::tests::project_tests::`: `truncated_service_step_reports_the_budget_not_a_missing_fact`,
+  `perpetual_service_example_verifies_stably_across_repeated_runs`,
+  `verifications_on_one_thread_are_independent`,
+  `borrowed_slice_creates_only_canonical_terms`,
+  `owned_split_buffer_carried_load_facts_stay_on_direct_proof_path`,
+  `input_cursor_creates_only_canonical_terms`,
+  `input_cursor_call_step_with_trailing_have_stays_on_proof`
+- `surface::tests::expansion_tests::`: `branch_interface_service_simp_expands_and_rechecks`,
+  `smart_have_expansion_plans_against_the_ordinary_surface_goal`,
+  `source_expander_derives_separation_from_call_postconditions`,
+  `scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify`,
+  `input_cursor_pipeline_has_no_outcome_fallbacks`,
+  `expanded_step_uses_the_whole_context_for_frame_evidence`
+- `surface::tests::scaling_tests::`: `a_fixed_store_proof_costs_the_same_after_a_growing_unrelated_proof`,
+  `bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts`
+- `surface::tests::contract_tests::`: `following_c_if_splits_one_symbolic_call_successor`,
+  `explicit_proof_if_does_not_capture_shared_following_c_if`
+
+### How the last group was diagnosed
+
+The loop-frame failures looked like a naming problem and were not. What
+found the real cause was temporary `eprintln!` probes, gated on an
+environment variable, run against one fixture both with and without the
+flip, and diffed:
+- `store_cell_effect` in `src/kernel/resource_tracker/step_effect.rs`: which
+  store/cell pairs are separated, and by which rule;
+- `load_variable_for_cell_with_origin` in `src/kernel/eval/memory_loads.rs`:
+  which cell and snapshot epoch each load name stands for;
+- `check_fixed_state_fact_transport_using_facts` in
+  `src/surface/proof/fixed_state_proofs/fact_transport.rs`: the lowered
+  source and target and the number of effect facts;
+- the body-fact check before `BodyFactNotEstablished` in
+  `src/kernel/functions.rs`, with the context's quantified facts.
+
+Run one fixture with `MDTEST_FILTER=<name>` on the release build
+(`cargo nextest run --release --test mdtests --no-capture`); debug builds
+are slow enough to trip budgets. Remove the probes before committing.
+
+### Things to watch
+
+- **Naming stays assumption-free.** The load-variable registry is global
+  across paths, and a name comes from the fact-free epoch walk
+  (`cell_last_same_point`). The trial's `earlier_equal_load_variable`
+  chooses among already-registered names using the path's facts. It
+  returns that name in the path's value and registers nothing, but review
+  that argument before landing it.
+- **Scaling.** `earlier_equal_load_variable` scans every earlier load of the
+  same address, which is linear per load and quadratic over a loop. It
+  needs a scaling regression, and probably an index by pointer class,
+  before it lands. `relabel` and congruence already have scaling tests in
+  `pointer_classes.rs`.
+- **Provenance, not spelling.** When a separation disappears under the flip,
+  ask whether it rested on the borrowed storage block. If so, the fix is a
+  provenance rule derived from facts (see the section above), not a new
+  spelling.
+- **Expansion tests pin routes.** A general fix can change which premises a
+  smart tactic cites. `08eb341f` did so for
+  `entry_alignment_premise_expands.md`. Keep what such a test guards by
+  testing it directly, rather than restoring the old route.
+- Judge green only from an unpiped `scripts/check.sh`.
+
+After the trial is clean, the flip lands as one commit: the constructor, the
+decoder, reuse at load time, and the rewritten encoding tests. Then the old
+cross-snapshot offset machinery the classes replace can be deleted.
 
 ## Open questions (from the design note)
 
