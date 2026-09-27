@@ -131,7 +131,11 @@ impl Default for TacticWorkLimits {
     ///   maximum 1.87x, down from 3.0x at the 2026-09-25 calibration (max
     ///   671,115). The budget is deliberately not raised to regain headroom:
     ///   the arena `have`s grew from 450,033 to 957,192 in one day, and that
-    ///   growth is what the budget exists to surface. Below them sit the arena `have` at :4290
+    ///   growth is what the budget exists to surface. (It was reduced
+    ///   after this calibration: the rewrite chain's closing probe asks only
+    ///   the direct logical closer, and premise surface synthesis is lazy
+    ///   and charged; `click profile` then puts the heaviest arena `have`
+    ///   at 488,691 units, every one counted.) Below them sit the arena `have` at :4290
     ///   (772,427) and loop_frame_rejects_rewritten_field_of_folded_state's
     ///   `close_invariants` (509,163); every other smart tactic is below
     ///   450,000.

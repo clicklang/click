@@ -3879,6 +3879,9 @@ impl<'a> Proof<'a> {
         while !remaining.is_empty() {
             let mut selected = None;
             for (index, surface) in remaining.iter().enumerate() {
+                // Once an earlier equality applies, a later one is only a
+                // probe for the rewrite that closes the goal outright.
+                let probing = selected.is_some();
                 for oriented in
                     std::iter::once(surface.clone()).chain(reverse_surface_equality(surface))
                 {
@@ -3889,7 +3892,9 @@ impl<'a> Proof<'a> {
                         return None;
                     }
                     if let Ok(rewritten) = proof.apply_step(ProofStep::Rewrite(oriented)) {
-                        let closed = if restricted {
+                        let closed = if probing {
+                            rewritten.try_direct_logical_closure().ok().flatten()
+                        } else if restricted {
                             rewritten.try_typed_atomic_simp_from_selected_premises(premise_pairs)
                         } else {
                             rewritten
@@ -3910,6 +3915,12 @@ impl<'a> Proof<'a> {
                 // away from the equality that would: with `q == p` stated at
                 // two points, rewriting `p` to the older `q` first leaves no
                 // rewrite by the newer one that reaches a reflexive goal.
+                // The probe asks only the direct logical closer (the
+                // reflexive goal is its case): giving every later equality
+                // the whole typed simp closure made each round cost that
+                // closure once per remaining equality, and took the arena
+                // `have` at arena_cells.click:3846 from 208,305 to 957,192
+                // units.
             }
             let (index, rewritten) = selected?;
             remaining.remove(index);

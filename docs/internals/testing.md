@@ -349,7 +349,14 @@ budget, so the simple budget stays the detector for a pathological simple
 tactic; control has 8.7x. Smart has 1.87x, down from 3.0x the day before:
 the arena proofs' heaviest `have` grew from 450,033 to 957,192 units. The
 budget is not raised to regain headroom; that growth is a finding to reduce,
-and surfacing it is the budget's job. The smart tactics near it are named
+and surfacing it is the budget's job. It was reduced: the growth came from
+`5815f41f8`, whose rewrite chain gave every remaining equality the whole
+typed simp closure as a closing probe, and much of that closure's cost was
+uncharged premise surface synthesis. The probe now asks the direct logical
+closer, and the synthesis is lazy and charged, so the heaviest arena `have`
+(`click profile`, after this calibration) is 488,691 units with every unit
+counted, and the heaviest smart tactic is the failing mdtest `simp`
+(1,040,194). The smart tactics near it are named
 in `TacticWorkLimits::default` (an mdtest `simp` and the arena proofs' heavy
 `have`s); they are slow steps to reduce, not headroom. The same run's `run`
 rows calibrate the whole-run budget: the largest whole verification is
