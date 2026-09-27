@@ -42,5 +42,5 @@ int32 stale_ptr(int32 arr[], int32 n, int32 cap) {
 ```
 
 ```expect
-fail: missing resource fact `views symbolic-pointer:
+fail: missing resource fact `views …[0..1]`
 ```

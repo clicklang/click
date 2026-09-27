@@ -9435,8 +9435,10 @@ mod no_value_path_tests {
     #[test]
     fn a_load_width_mismatch_names_the_load_and_the_cell() {
         let summary = width_mismatch().kernel_summary();
-        assert!(summary.starts_with("a 4-byte Int32 load at "), "{summary}");
-        assert!(summary.contains("found "), "{summary}");
+        assert_eq!(
+            summary,
+            "a 4-byte load found a value of 8 bytes in the cell"
+        );
     }
 }
 

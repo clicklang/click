@@ -3584,31 +3584,34 @@ impl ExecutionLimit {
 }
 
 impl CRuntimeError {
-    /// A kernel-side one-line rendering, for messages built where no C
-    /// parameter names are at hand. The surface describers spell pointers
-    /// through their parameters; this spells them as the kernel does.
     /// The sentence for [`CRuntimeError::UnbackedReturnedView`], which the
     /// surface completes with the view in source terms.
     pub const UNBACKED_RETURNED_VIEW: &'static str =
         "stable-view call returned a view without a checked input child or preserved outer binding";
 
+    /// A kernel-side one-line rendering, for messages built where no C
+    /// parameter names are at hand, so it names no pointer: the kernel's
+    /// spelling of an address is lowering state, not anything the reader
+    /// wrote. The surface describers spell pointers through the parameters.
     pub fn kernel_summary(&self) -> String {
         match self {
             CRuntimeError::LoadTypeMismatch {
-                pointer,
-                value_type,
-                stored,
+                value_type, stored, ..
             } => {
-                let found = match stored {
-                    Some(stored) => format!("found {stored:?}"),
+                let found = match stored.as_deref() {
+                    Some(CValue::Pointer(_)) => "found a pointer in the cell".to_string(),
+                    Some(stored) => {
+                        format!("found a value of {} bytes in the cell", stored.byte_width())
+                    }
                     None => "did not fit the cell's value".to_string(),
                 };
-                format!(
-                    "a {}-byte {value_type:?} load at {pointer:?} {found}",
-                    value_type.byte_width()
+                format!("a {}-byte load {found}", value_type.byte_width())
+            }
+            other => {
+                crate::kernel::api::contract_certification::describe_certification_runtime_error(
+                    other,
                 )
             }
-            other => format!("{other:?}"),
         }
     }
 }

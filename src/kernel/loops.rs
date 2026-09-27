@@ -5992,8 +5992,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                                     loop_effect_failure_context(
                                         check,
                                         format!(
-                                            "could not evaluate mutable segment {segment_index} in {:?}: {message}",
-                                            check.effect()
+                                            "could not evaluate the loop's mutable segment {segment_index}: {message}"
                                         ),
                                     ),
                                 );
@@ -6023,8 +6022,8 @@ pub(super) fn collect_loop_effect_check_obligations(
                     loop_effect_failure_context(
                         check,
                         format!(
-                            "write to {pointer:?} is outside the mutable footprint; external writes: {writes:?}; declared effect: {:?}; evaluated segments: {segments:?}",
-                            check.effect()
+                            "a {bytes}-byte write in the loop body is outside the loop's mutable footprint ({})",
+                            describe_loop_footprint_segments(&segments)
                         ),
                     ),
                 );
@@ -6040,8 +6039,13 @@ pub(super) fn collect_loop_effect_check_obligations(
                     loop_effect_failure_context(
                         check,
                         format!(
-                            "effect summary range {range:?} is outside the mutable footprint; declared effect: {:?}; evaluated segments: {segments:?}",
-                            check.effect()
+                            "a call in the loop body may write {} outside the loop's mutable footprint ({})",
+                            describe_loop_footprint_range(
+                                &range.start,
+                                &range.end,
+                                range.element_width
+                            ),
+                            describe_loop_footprint_segments(&segments)
                         ),
                     ),
                 );
@@ -6307,6 +6311,34 @@ pub(super) fn loop_effect_segment_contains_range(
 
 pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
     !pointer.block.starts_with("local:") && !pointer.block.starts_with("havoc:")
+}
+
+/// A footprint range for a loop-effect refusal, without the kernel's
+/// internal spelling of its base: the kernel has no source names here, and a
+/// `Debug` of the pointer or of symbolic bounds is lowering state rather than
+/// anything the reader wrote. Constant bounds are the one part worth printing.
+fn describe_loop_footprint_range(
+    start: &Bitvector32Term,
+    end: &Bitvector32Term,
+    element_width: u32,
+) -> String {
+    match (start.as_const(), end.as_const()) {
+        (Some(start), Some(end)) => format!(
+            "elements {}..{} of a {element_width}-byte-element range",
+            start as i32, end as i32
+        ),
+        _ => format!("a range of {element_width}-byte elements"),
+    }
+}
+
+/// How many mutable segments the loop declared and could evaluate, for a
+/// loop-effect refusal.
+fn describe_loop_footprint_segments(segments: &[EvaluatedMemorySegment]) -> String {
+    match segments.len() {
+        0 => "the loop declares no mutable memory".to_string(),
+        1 => "no part of its one mutable segment covers it".to_string(),
+        count => format!("none of its {count} mutable segments covers it"),
+    }
 }
 
 pub(super) fn loop_effect_failure_context(check: &CLoopEffectCheck, message: String) -> String {

@@ -71,5 +71,5 @@ int32 lends_below_its_local() {
 ```
 
 ```expect
-fail: missing resource fact `views local:pair@0[-1..3]`
+fail: missing resource fact `views pair[-1..3]`
 ```

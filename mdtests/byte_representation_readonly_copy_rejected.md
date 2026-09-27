@@ -30,5 +30,5 @@ int f(uint8 src[]) {
 ```
 
 ```expect
-fail: missing resource fact `owns global:buf@0[0..16]`
+fail: missing resource fact `owns buf[0..16]`
 ```

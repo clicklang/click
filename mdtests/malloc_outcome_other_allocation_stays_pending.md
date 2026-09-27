@@ -32,5 +32,5 @@ int f() {
 ```
 
 ```expect
-fail: missing resource fact `owns symbolic-pointer:1000001@0[0..1]`
+fail: missing resource fact `owns …[0..1]`
 ```

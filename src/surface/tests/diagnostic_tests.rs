@@ -433,7 +433,7 @@ fn certificate_reconstruction_diagnostics_summarize_internal_snapshots() {
     let rendered = super::diagnostics::describe_unexpressed_pure_facts(&failures, &[], &[]);
 
     assert!(
-        rendered.contains("load(read-cell@0) == 1 is true"),
+        rendered.contains("load(&read-cell) == 1 is true"),
         "{rendered}"
     );
     assert!(rendered.contains("no checkable surface form"), "{rendered}");

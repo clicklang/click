@@ -953,7 +953,7 @@ b[0..1]; }`:
 
 - `split(g, g)` from a caller holding `owns g[0..4]` — refused, *"a required
   resource overlaps a live borrowed footprint refused during planning;
-  selected resource `owns global:g@0[0..1]`"*;
+  selected resource `owns g[0..1]`"*;
 - the same through a function pointer under `contract Split` — refused
   identically;
 - `split(g, q)` where the caller holds `owns g[0..4]` and nothing about `q` —

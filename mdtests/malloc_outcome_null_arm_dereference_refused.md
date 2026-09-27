@@ -33,5 +33,5 @@ int f() {
 ```
 
 ```expect
-fail: missing resource fact `owns null@0[0..1]`
+fail: missing resource fact `owns NULL[0..1]`
 ```

@@ -36,5 +36,5 @@ int run() {
 ```
 
 ```expect
-fail: missing resource fact `owns local:value
+fail: missing resource fact `owns value[0..1]`
 ```

@@ -33,5 +33,5 @@ int32 wrapper() {
 ```
 
 ```expect
-fail: missing resource fact `owns global:g@0[0..1]`
+fail: missing resource fact `owns g[0..1]`
 ```

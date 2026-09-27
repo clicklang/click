@@ -1341,12 +1341,33 @@ pub(super) fn describe_memory_range(
     if let Some(description) = describe_parameter_relative_range(range, parameters, arguments) {
         return description;
     }
+    // A range over a named object starts at the object itself (`g[0..4]`),
+    // not at a pointer to it.
+    let base = match named_object_block(&range.base().block, parameters, arguments) {
+        Some(name) if range.base().offset == PointerOffsetTerm::Constant(0) => name,
+        _ => describe_pointer(range.base(), parameters, arguments),
+    };
     format!(
         "{}[{}..{}]",
-        describe_pointer(range.base(), parameters, arguments),
+        base,
         describe_bitvector_with_context(range.start(), parameters, arguments),
         describe_bitvector_with_context(range.end(), parameters, arguments)
     )
+}
+
+/// The source name of the object a block holds: a local, global or static
+/// by its declared name, and the null block as `NULL`. `None` for blocks the
+/// verifier introduced (heap allocations, temporaries, symbolic pointers),
+/// which no source text names.
+fn named_object_block(
+    block: &PointerBlock,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    if matches!(block, PointerBlock::Concrete(name) if name == "null") {
+        return Some("NULL".to_string());
+    }
+    describe_memory_block(block, parameters, arguments)
 }
 
 pub(super) fn describe_parameter_relative_range(
@@ -2904,11 +2925,23 @@ pub(super) fn describe_pointer(
         // External argument blocks are verifier-owned lowering artifacts. Do
         // not expose their block names or offsets in user-facing diagnostics.
         PointerBlock::ExternalArgument => "the pointer value at this program point".to_string(),
-        _ => format!(
-            "{}@{}",
-            pointer.block,
-            describe_pointer_offset(&pointer.offset)
-        ),
+        // A named object (a local, global or static, or the object a
+        // parameter points into) is spelled by the name the source gave it,
+        // never by the block's internal spelling (`local:frame:3:x@0`).
+        PointerBlock::Concrete(name)
+            if name == "null" && pointer.offset == PointerOffsetTerm::Constant(0) =>
+        {
+            "NULL".to_string()
+        }
+        block => match named_object_block(block, parameters, arguments) {
+            Some(name) if pointer.offset == PointerOffsetTerm::Constant(0) => format!("&{name}"),
+            Some(name) => format!(
+                "(char *)&{name} + {}",
+                describe_pointer_offset(&pointer.offset)
+            ),
+            // Heap, temporary and symbolic blocks have no source name.
+            None => "…".to_string(),
+        },
     }
 }
 
