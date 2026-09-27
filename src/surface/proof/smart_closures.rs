@@ -3379,15 +3379,21 @@ impl<'a> Proof<'a> {
                     .premise_fixed_state_view()
                     .map(|view| (view.parameters, view.arguments, view.recorded_snapshots)),
             }
-            && let Some(anchored) = synthesize_surface_at_recorded_snapshots(
-                kernel,
-                parameters,
-                arguments,
-                recorded_snapshots,
-                anchor,
+            && let Some(anchored) = crate::instrumentation::measure_operation(
+                "surface",
+                "simp premise",
+                "simp premise surface at recorded snapshots",
+                || {
+                    synthesize_surface_at_recorded_snapshots(
+                        kernel,
+                        parameters,
+                        arguments,
+                        recorded_snapshots,
+                        anchor,
+                    )
+                    .find(|surface| matches_kernel(surface).is_some())
+                },
             )
-            .into_iter()
-            .find(|surface| matches_kernel(surface).is_some())
         {
             return Some(anchored);
         }
@@ -3629,15 +3635,22 @@ impl<'a> Proof<'a> {
         // operand at the nearest recorded statement entry that denotes it,
         // walking back from the selected premise anchor; the candidate is
         // accepted only when ordinary lowering recovers this exact fact.
-        synthesize_surface_at_recorded_snapshots(
-            kernel,
-            parameters,
-            arguments,
-            recorded_snapshots,
-            premise_anchor?,
+        let premise_anchor = premise_anchor?;
+        crate::instrumentation::measure_operation(
+            "surface",
+            "simp premise",
+            "simp premise surface at recorded snapshots",
+            || {
+                synthesize_surface_at_recorded_snapshots(
+                    kernel,
+                    parameters,
+                    arguments,
+                    recorded_snapshots,
+                    premise_anchor,
+                )
+                .find(|surface| matches_kernel(surface).is_some())
+            },
         )
-        .into_iter()
-        .find(|surface| matches_kernel(surface).is_some())
     }
 
     /// Tries equalities attached to terms occurring in the current goal.
@@ -7123,13 +7136,19 @@ fn requirement_uses_planning_compatibility(
 /// equality whose operands were read from different snapshots, one anchor per
 /// operand. Callers must re-lower each candidate and accept it only when it
 /// denotes exactly `kernel`.
-pub(super) fn synthesize_surface_at_recorded_snapshots(
-    kernel: &Proposition,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-    recorded_snapshots: &RecordedSnapshots,
+///
+/// The candidates are produced lazily, nearest point first, and each
+/// point's synthesis is charged one unit: a caller takes the first candidate
+/// whose lowering recovers the fact, so the points past it are never
+/// synthesized. Synthesizing every recorded point for every selected premise
+/// was a smart `have`'s largest uncharged cost in `examples/arena`.
+pub(super) fn synthesize_surface_at_recorded_snapshots<'a>(
+    kernel: &'a Proposition,
+    parameters: &'a [syntax::C0Parameter],
+    arguments: &'a [CExpression],
+    recorded_snapshots: &'a RecordedSnapshots,
     anchor: &ProgramPointRef,
-) -> Vec<ClickProposition> {
+) -> impl Iterator<Item = ClickProposition> + 'a {
     let anchor_index = match &anchor.region {
         CodeRegionRef::Statement(index) => *index,
         _ => usize::MAX,
@@ -7165,17 +7184,27 @@ pub(super) fn synthesize_surface_at_recorded_snapshots(
             Some((point, state))
         })
         .collect::<Vec<_>>();
-    let mut candidates = points
-        .iter()
-        .filter_map(|(point, state)| {
+    let points = std::rc::Rc::new(points);
+    let across_points = points.clone();
+    (0..points.len())
+        .filter_map(move |position| {
+            let (point, state) = &points[position];
+            crate::instrumentation::record_deterministic_work(1);
             let surface = synthesize_surface_proposition(kernel, parameters, arguments, state)?;
             surface_at_snapshot(&surface, point).ok()
         })
-        .collect::<Vec<_>>();
-    candidates.extend(synthesize_surface_equality_across_points(
-        kernel, parameters, arguments, &points,
-    ));
-    candidates
+        .chain(
+            std::iter::once_with(move || {
+                crate::instrumentation::record_deterministic_work(across_points.len());
+                synthesize_surface_equality_across_points(
+                    kernel,
+                    parameters,
+                    arguments,
+                    &across_points,
+                )
+            })
+            .flatten(),
+        )
 }
 
 /// `b == a` for the fact `a == b`.

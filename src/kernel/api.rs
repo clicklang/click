@@ -4257,20 +4257,6 @@ pub(in crate::kernel) fn proof_evidence_assumptions(
     assumptions
 }
 
-/// Whether `premise` is `fact` or one of its conjuncts. Conjunction
-/// elimination is the one structural rule the proof object applies to retained
-/// facts: a kernel theorem lists the context it executed under as atomic
-/// condition facts, while a loop step retains the lowered invariant it
-/// assumed as one conjunction, so `And(a, b)` retained is `a` retained.
-fn retained_fact_contains(fact: &Proposition, premise: &Proposition) -> bool {
-    fact == premise
-        || matches!(
-            fact,
-            Proposition::And(left, right)
-                if retained_fact_contains(left, premise) || retained_fact_contains(right, premise)
-        )
-}
-
 /// The first premise of a retained transition theorem that is not retained,
 /// if any. A premise is retained when it is an
 /// exact fact of the entry context, of the context the theorem was proved
@@ -4289,16 +4275,48 @@ pub(in crate::kernel) fn proof_evidence_unretained_premise(
     state: &CState,
     function_entry_resource_facts: Option<&PureFactContext>,
 ) -> Option<Proposition> {
+    // The path's retained facts (with their conjuncts) and obligations, as
+    // one set built the first time a premise misses both contexts: a
+    // theorem lists a premise per context fact, and scanning the path's
+    // facts once per premise was quadratic in the path. A retained fact
+    // contributes its conjuncts: conjunction elimination is the one
+    // structural rule the proof object applies to retained facts (a kernel
+    // theorem lists the context it executed under as atomic condition facts,
+    // while a loop step retains the lowered invariant it assumed as one
+    // conjunction, so `And(a, b)` retained is `a` retained).
+    let mut retained: Option<BTreeSet<&Proposition>> = None;
+    let mut retained_contains = |premise: &Proposition| {
+        retained
+            .get_or_insert_with(|| {
+                let mut set = BTreeSet::new();
+                let mut pending = execution_facts
+                    .iter()
+                    .map(ExecutionPureFact::proposition)
+                    .collect::<Vec<_>>();
+                // Uncharged, as the scan it replaces was. The set is still
+                // linear in the path's facts at each checked step, a
+                // per-step cost the contract does not allow: charging it
+                // makes `expanded_roundtrip_extra_copy_is_logarithmic_beside_unrelated_allocations`
+                // grow a unit per unrelated allocation (see
+                // docs/internals/verification-efficiency.md).
+                while let Some(fact) = pending.pop() {
+                    if set.insert(fact)
+                        && let Proposition::And(left, right) = fact
+                    {
+                        pending.push(left);
+                        pending.push(right);
+                    }
+                }
+                set.extend(obligations.iter().map(ProofObligation::proposition));
+                set
+            })
+            .contains(premise)
+    };
     let mut proposition = theorem.proposition();
     while let Proposition::Implies(premise, body) = proposition {
         if !(assumptions.proves_exact(premise)
             || executed_under.is_some_and(|context| context.proves_exact(premise))
-            || execution_facts
-                .iter()
-                .any(|fact| retained_fact_contains(fact.proposition(), premise))
-            || obligations
-                .iter()
-                .any(|obligation| obligation.proposition() == premise.as_ref())
+            || retained_contains(premise)
             || resources_certify_loadability(state, state.resources(), premise, assumptions)
             || (matches!(premise.as_ref(), Proposition::CMemoryLoadable { .. })
                 && executed_under
