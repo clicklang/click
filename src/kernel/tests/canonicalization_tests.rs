@@ -1194,6 +1194,118 @@ fn variable_collection_after_a_store_costs_the_store() {
     );
 }
 
+/// The same for a store into a symbolic static array: its elements are one
+/// run whose slots mention no variable but their own load variables, so the
+/// run's variables are counted slot by slot, and a store changes the counts
+/// by the one slot it writes rather than by the whole run.
+#[test]
+fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
+    let block = PointerBlock::Concrete("symbolic-array-history".to_string());
+    let at = |offset: i64| Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(offset),
+    };
+    let samples = [16u32, 64, 256, 1024].map(|elements| {
+        let size = 4 * elements;
+        let source = crate::kernel::intern_c_memory(
+            CMemory::new().with_block_without_derivation(block.clone(), size),
+        );
+        let Ok(memory) = CMemory::new()
+            .with_block("symbolic-array-history", size)
+            .with_symbolic_storage_run(at(0), CType::Int32, elements, source)
+        else {
+            panic!("a symbolic array over a fresh block is one run");
+        };
+        let own_variable = |index: i64| match memory.cells.get(&at(4 * index)) {
+            Some(CValue::Int32(Bitvector32Term::Variable(variable))) => variable,
+            other => panic!("an element holds its load variable, not {other:?}"),
+        };
+        let before = crate::kernel::intern_c_memory(memory.clone());
+        crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
+        let mut variables = BTreeSet::new();
+        crate::kernel::reasoning::collect_bitvector_variables(
+            &Bitvector32Term::MemoryLoad(before, Box::new(at(0))),
+            &mut variables,
+        );
+        assert_eq!(variables.len(), elements as usize);
+        let overwritten = own_variable(0);
+        let last = own_variable(i64::from(elements) - 1);
+        let after = memory.clone().store(
+            at(0),
+            CValue::Int32(Bitvector32Term::Variable(Variable(7_900_000))),
+        );
+        let load =
+            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(at(4)));
+        let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut variables = BTreeSet::new();
+            crate::kernel::reasoning::collect_bitvector_variables(&load, &mut variables);
+            variables
+        });
+        assert!(variables.contains(&Variable(7_900_000)));
+        assert!(
+            !variables.contains(&overwritten),
+            "the overwritten element's variable leaves"
+        );
+        assert!(variables.contains(&last));
+        assert_eq!(variables.len(), elements as usize);
+        (elements, work)
+    });
+    let (_, first) = samples[0];
+    assert!(
+        samples.iter().all(|(_, work)| *work <= first + 4),
+        "a store's collection grows with the array's other elements: {samples:?}"
+    );
+}
+
+/// A symbolic static array of pointers holds, at each element, a fresh
+/// symbolic pointer named by that element's own load, so substituting that
+/// name rewrites that element and no other. The elements the run's
+/// representatives stand for are unchanged by it, so the run has to single
+/// the element out rather than keep itself whole.
+#[test]
+fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
+    let block = PointerBlock::Concrete("symbolic-pointer-array".to_string());
+    let at = |offset: i64| Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(offset),
+    };
+    let elements = 100u32;
+    let width = CType::Int32Pointer.byte_width();
+    let size = width * elements;
+    let source = crate::kernel::intern_c_memory(
+        CMemory::new().with_block_without_derivation(block.clone(), size),
+    );
+    let Ok(memory) = CMemory::new()
+        .with_block("symbolic-pointer-array", size)
+        .with_symbolic_storage_run(at(0), CType::Int32Pointer, elements, source)
+    else {
+        panic!("a symbolic array over a fresh block is one run");
+    };
+    let element = |memory: &CMemory, index: i64| {
+        memory
+            .cells
+            .get(&at(index * i64::from(width)))
+            .expect("every element holds a cell")
+    };
+    let named = match element(&memory, 50) {
+        CValue::Pointer(pointer) => match pointer.pointer().block {
+            PointerBlock::Symbolic(variable) => variable,
+            ref other => panic!("an element points into its own symbolic block, not {other:?}"),
+        },
+        other => panic!("an element holds a pointer, not {other:?}"),
+    };
+    let target = CMemory::global_pointer("target");
+    let substituted =
+        crate::kernel::reasoning::substitute_pointer_variable_in_memory(&memory, named, &target);
+    assert_eq!(
+        element(&substituted, 50),
+        CValue::typed_pointer(target, CType::Int32Pointer)
+    );
+    for index in [0, 1, 49, 51, 99] {
+        assert_eq!(element(&substituted, index), element(&memory, index));
+    }
+}
+
 /// How many snapshots the named `substitution: snapshot rewrite` operation
 /// rebuilt while `operation` ran, beside the run's total deterministic work.
 ///

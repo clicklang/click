@@ -4869,28 +4869,42 @@ fn collect_cell_run_bitvector_variables(
     run: &crate::kernel::primitives::CellRun,
     variables: &mut BTreeSet<Variable>,
 ) {
-    let collect_slot = |index: u32, variables: &mut BTreeSet<Variable>| {
-        collect_pointer_bitvector_variables(&run.slot_pointer(index), variables);
-        collect_c_value_bitvector_variables(&run.value(index), variables);
-    };
-    if let Some(representatives) =
-        crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)
-    {
-        let mut shared = BTreeSet::new();
-        for index in &representatives {
-            collect_slot(*index, &mut shared);
-        }
-        let shared_beyond_loads = shared
-            .iter()
-            .any(|variable| !crate::kernel::is_load_variable(variable));
-        if shared_beyond_loads {
-            variables.extend(shared);
-            return;
+    match run_representative_variables(run) {
+        Some(shared) => variables.extend(shared),
+        None => {
+            for index in run.live_indexes() {
+                collect_run_slot_bitvector_variables(run, index, variables);
+            }
         }
     }
-    for index in run.live_indexes() {
-        collect_slot(index, variables);
+}
+
+/// The variables of one slot of a run: its pointer's and its value's.
+fn collect_run_slot_bitvector_variables(
+    run: &crate::kernel::primitives::CellRun,
+    index: u32,
+    variables: &mut BTreeSet<Variable>,
+) {
+    collect_pointer_bitvector_variables(&run.slot_pointer(index), variables);
+    collect_c_value_bitvector_variables(&run.value(index), variables);
+}
+
+/// The variables a run's representative slots mention, when they stand for
+/// the whole run (see [`collect_cell_run_bitvector_variables`]); `None` when
+/// every slot has to be visited.
+fn run_representative_variables(
+    run: &crate::kernel::primitives::CellRun,
+) -> Option<BTreeSet<Variable>> {
+    let representatives =
+        crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)?;
+    let mut shared = BTreeSet::new();
+    for index in &representatives {
+        collect_run_slot_bitvector_variables(run, *index, &mut shared);
     }
+    shared
+        .iter()
+        .any(|variable| !crate::kernel::is_load_variable(variable))
+        .then_some(shared)
 }
 
 /// How many of a snapshot's entries (blocks, concrete cells, runs, union
@@ -5057,10 +5071,58 @@ fn cell_variables(pointer: &Pointer, value: &CValue) -> BTreeSet<Variable> {
     variables
 }
 
-fn run_variables(run: &crate::kernel::primitives::CellRun) -> BTreeSet<Variable> {
+/// Counts a run's variables in or out: as one entry when its
+/// representatives stand for it, and otherwise as one entry per live slot.
+/// Either way the variables counted are exactly the run's
+/// ([`collect_cell_run_bitvector_variables`]); per slot, a store into the run
+/// changes the counts by the slots it changes rather than by the whole run.
+fn add_run_counts(
+    counts: &mut VariableCounts,
+    run: &crate::kernel::primitives::CellRun,
+    sign: i64,
+) {
+    match run_representative_variables(run) {
+        Some(shared) => add_counts(counts, shared, sign),
+        None => {
+            for index in run.live_indexes() {
+                crate::instrumentation::record_deterministic_work(1);
+                add_counts(counts, run_slot_variables(run, index), sign);
+            }
+        }
+    }
+}
+
+fn run_slot_variables(run: &crate::kernel::primitives::CellRun, index: u32) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
-    collect_cell_run_bitvector_variables(run, &mut variables);
+    collect_run_slot_bitvector_variables(run, index, &mut variables);
     variables
+}
+
+/// A run held on both sides of a diff with other holes, counted per slot on
+/// both: only the slots whose liveness differs change the counts. `false`
+/// when either side is counted as one entry, and the caller counts the two
+/// sides whole.
+fn adjust_run_counts_by_changed_slots(
+    counts: &mut VariableCounts,
+    before: &crate::kernel::primitives::CellRun,
+    after: &crate::kernel::primitives::CellRun,
+) -> bool {
+    if !before.same_slots_as(after)
+        || run_representative_variables(before).is_some()
+        || run_representative_variables(after).is_some()
+    {
+        return false;
+    }
+    let changed = before.holes().symmetric_difference(after.holes());
+    crate::instrumentation::record_deterministic_work(changed.interval_count());
+    for index in changed.indexes() {
+        crate::instrumentation::record_deterministic_work(1);
+        // The two runs have the same slots holding the same values, so a
+        // slot's variables are the same on both sides.
+        let sign = if after.holes().contains(index) { -1 } else { 1 };
+        add_counts(counts, run_slot_variables(before, index), sign);
+    }
+    true
 }
 
 /// A snapshot's counts from all of its entries; one unit per entry.
@@ -5074,7 +5136,7 @@ fn counts_whole(memory: &CMemory) -> VariableCounts {
         add_counts(&mut counts, cell_variables(pointer, value), 1);
     }
     for run in memory.cells.runs() {
-        add_counts(&mut counts, run_variables(run), 1);
+        add_run_counts(&mut counts, run, 1);
     }
     for ((pointer, _), value) in memory.union_cells.iter() {
         add_counts(&mut counts, cell_variables(pointer, value), 1);
@@ -5109,11 +5171,16 @@ fn counts_from_base(
         }
     }
     for (before, after) in base.cells.run_diff(&memory.cells) {
+        if let (Some(before), Some(after)) = (before, after)
+            && adjust_run_counts_by_changed_slots(&mut counts, before, after)
+        {
+            continue;
+        }
         if let Some(run) = before {
-            add_counts(&mut counts, run_variables(run), -1);
+            add_run_counts(&mut counts, run, -1);
         }
         if let Some(run) = after {
-            add_counts(&mut counts, run_variables(run), 1);
+            add_run_counts(&mut counts, run, 1);
         }
     }
     for change in base.union_cells.diff(&memory.union_cells) {

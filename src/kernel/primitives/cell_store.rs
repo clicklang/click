@@ -9,6 +9,15 @@
 //! [`CellStore::logical`] is that cell map, and each mutation keeps the run
 //! and the concrete map in one canonical form.
 //!
+//! A function's entry names every element of a symbolic static-storage array
+//! (a global or `static` array whose contents the function does not know) the
+//! same way, one element at a time, so a `static char buf[65536]` cost 65,536
+//! cells at every entry. Such an array is a run too. Its slots spell their
+//! loads as the entry does ([`RunValueMode::SymbolicStorage`]): an element of
+//! pointer type is a fresh symbolic pointer, which may point into any block,
+//! rather than a pointer into the run's own block. The mode is part of the
+//! run's identity.
+//!
 //! **Canonical form.** For each run, a slot is either *live* — it holds the
 //! run's value and the concrete map has no entry at its pointer — or a
 //! *hole*, whose pointer the concrete map may or may not hold, and never with
@@ -212,9 +221,29 @@ impl IndexIntervals {
     }
 }
 
+/// How a run spells the load of each element in its source as the value the
+/// element's cell holds. Part of the run's identity: two runs over the same
+/// slots whose modes differ hold different values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum RunValueMode {
+    /// The value a seeded range stores: [`cell_run_value`] of the element's
+    /// canonical load.
+    Load,
+    /// The value a symbolic static-storage cell holds at function entry
+    /// ([`crate::kernel::eval::symbolic_storage_cell_value`]): a fresh
+    /// symbolic pointer named by the load for an object pointer, which may
+    /// point into any block, and the typed load otherwise. The run's source
+    /// holds only the storage's block, and every element's access width is
+    /// declared for the whole run
+    /// ([`crate::kernel::eval::declare_symbolic_array_access_widths`]) rather
+    /// than recorded as the element is named.
+    SymbolicStorage,
+}
+
 /// `count` seeded cells at `base`, `base + width`, …: the cell at element `i`
-/// holds the load of that element in `source`, typed as `element_type`,
-/// exactly as a store of [`cell_run_value`] would have left it.
+/// holds the load of that element in `source`, typed as `element_type` and
+/// spelled as `mode` says, exactly as a store of that value would have left
+/// it.
 #[derive(Clone)]
 pub struct CellRun {
     base: Pointer,
@@ -222,6 +251,7 @@ pub struct CellRun {
     element_type: CType,
     count: u32,
     source: SharedCMemory,
+    mode: RunValueMode,
     holes: IndexIntervals,
     /// Each slot's value, holes included, named on its first need, for a
     /// run of at most [`CACHED_RUN_VALUES`] slots (empty for a longer one).
@@ -245,17 +275,53 @@ impl CellRun {
         source: SharedCMemory,
         holes: IndexIntervals,
     ) -> Self {
+        Self::new_with_mode(
+            base,
+            element_width,
+            element_type,
+            count,
+            source,
+            RunValueMode::Load,
+            holes,
+        )
+    }
+
+    /// [`Self::new`] for a run whose values `mode` spells.
+    pub(crate) fn new_with_mode(
+        base: Pointer,
+        element_width: u32,
+        element_type: CType,
+        count: u32,
+        source: SharedCMemory,
+        mode: RunValueMode,
+        holes: IndexIntervals,
+    ) -> Self {
         Self {
             base,
             element_width,
             element_type,
             count,
             source,
+            mode,
             holes,
             values: (0..if count <= CACHED_RUN_VALUES { count } else { 0 })
                 .map(|_| OnceLock::new())
                 .collect(),
         }
+    }
+
+    /// This run with `holes` in place of its own: the same slots holding the
+    /// same values, sharing the named-value cache.
+    pub(crate) fn with_holes(&self, holes: IndexIntervals) -> Self {
+        Self {
+            holes,
+            ..self.clone()
+        }
+    }
+
+    /// How the run spells each element's value.
+    pub(crate) fn value_mode(&self) -> RunValueMode {
+        self.mode
     }
 
     /// The run's place in a store's index: see [`RunKey`].
@@ -268,6 +334,7 @@ impl CellRun {
                 element_type: self.element_type,
                 count: self.count,
                 source: RunSource(self.source.clone()),
+                mode: self.mode,
             },
         }
     }
@@ -382,12 +449,24 @@ impl CellRun {
         }
     }
 
-    /// The value slot `index` holds: the canonical load of its pointer in
-    /// the source, typed as the element.
+    /// The value slot `index` holds: the load of its pointer in the source,
+    /// typed as the element and spelled as the run's mode says.
     fn named_value(&self, index: u32) -> CValue {
         let pointer = self.slot_pointer(index);
-        let load = crate::kernel::canonical_form_of_load(self.source.clone(), pointer.clone());
-        cell_run_value(&pointer, self.element_type, load)
+        match self.mode {
+            RunValueMode::Load => {
+                let load =
+                    crate::kernel::canonical_form_of_load(self.source.clone(), pointer.clone());
+                cell_run_value(&pointer, self.element_type, load)
+            }
+            RunValueMode::SymbolicStorage => crate::kernel::eval::symbolic_storage_cell_value(
+                self.source.memory(),
+                &pointer,
+                self.element_type,
+                false,
+            )
+            .expect("a symbolic storage run holds only element types with a value"),
+        }
     }
 
     pub(crate) fn live_count(&self) -> u64 {
@@ -419,15 +498,28 @@ impl CellRun {
             && self.element_type == other.element_type
             && self.count == other.count
             && self.source == other.source
+            && self.mode == other.mode
     }
 
-    fn descriptor(&self) -> (&Pointer, u32, CType, u32, &SharedCMemory, &IndexIntervals) {
+    #[allow(clippy::type_complexity)]
+    fn descriptor(
+        &self,
+    ) -> (
+        &Pointer,
+        u32,
+        CType,
+        u32,
+        &SharedCMemory,
+        RunValueMode,
+        &IndexIntervals,
+    ) {
         (
             &self.base,
             self.element_width,
             self.element_type,
             self.count,
             &self.source,
+            self.mode,
             &self.holes,
         )
     }
@@ -441,6 +533,7 @@ impl std::fmt::Debug for CellRun {
             .field("element_width", &self.element_width)
             .field("element_type", &self.element_type)
             .field("count", &self.count)
+            .field("mode", &self.mode)
             .field("holes", &self.holes)
             .finish_non_exhaustive()
     }
@@ -535,6 +628,7 @@ pub(crate) enum RunShape {
         element_type: CType,
         count: u32,
         source: RunSource,
+        mode: RunValueMode,
     },
     Greatest,
 }
@@ -2246,7 +2340,23 @@ mod tests {
                                 },
                             ),
                         };
-                        let seeded = run(base, width, count, source);
+                        // A third of the runs spell their values as a
+                        // symbolic static array's entry does: the same slots
+                        // under another mode are another run.
+                        let seeded = if stream.next(3) == 0 {
+                            let plain = run(base, width, count, source);
+                            CellRun::new_with_mode(
+                                plain.base().clone(),
+                                plain.element_width(),
+                                plain.element_type(),
+                                plain.count(),
+                                plain.source().clone(),
+                                RunValueMode::SymbolicStorage,
+                                IndexIntervals::default(),
+                            )
+                        } else {
+                            run(base, width, count, source)
+                        };
                         runs_seen.push(seeded.clone());
                         seed(&mut store, &mut model, seeded);
                     }

@@ -1250,6 +1250,7 @@ pub(crate) fn clear_load_variable_registry() {
     // left behind would answer for an unrelated cell there.
     LOAD_ACCESS_WIDTH.with(|widths| widths.borrow_mut().clear());
     LOAD_ACCESS_WIDTH_AT_ADDRESS.with(|widths| widths.borrow_mut().clear());
+    SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| arrays.borrow_mut().clear());
     LOAD_ORIGIN_EPOCH.with(|epoch| epoch.set(0));
 }
 
@@ -1312,14 +1313,148 @@ thread_local! {
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
+/// The element widths a symbolic static array declared for all of its
+/// elements at once, in place of one [`record_load_access_width`] per
+/// element: see [`declare_symbolic_array_access_widths`].
+#[derive(Clone)]
+struct SymbolicArrayAccessWidths {
+    /// The snapshot every element's load reads.
+    source: SharedCMemory,
+    /// The byte distance between elements.
+    stride: i64,
+    count: u32,
+    /// The width of every element's load.
+    bytes: u32,
+}
+
+impl SymbolicArrayAccessWidths {
+    /// The byte just past the last element's first byte, for an array based
+    /// at `base`.
+    fn end(&self, base: i64) -> i64 {
+        base.saturating_add(
+            i64::from(self.count)
+                .saturating_sub(1)
+                .saturating_mul(self.stride),
+        )
+        .saturating_add(1)
+    }
+}
+
+thread_local! {
+    /// The symbolic static arrays whose element widths are declared rather
+    /// than recorded one element at a time, by block and constant base
+    /// offset. No two overlap, so a constant pointer is an element of at most
+    /// the one based nearest below it. Every reader of the two width tables
+    /// reads a declared element as the entry the per-element record would
+    /// have made, so the answers are that record's. Cleared with the tables.
+    static SYMBOLIC_ARRAY_ACCESS_WIDTHS: std::cell::RefCell<
+        std::collections::BTreeMap<(PointerBlock, i64), SymbolicArrayAccessWidths>,
+    > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// The declared array element spelled exactly `pointer` (a constant offset in
+/// the array's block, as the element's own load spells it): the snapshot its
+/// load reads, and its width.
+fn declared_array_access_width(pointer: &Pointer) -> Option<(SharedCMemory, u32)> {
+    let PointerOffsetTerm::Constant(offset) = pointer.offset else {
+        return None;
+    };
+    SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| {
+        let arrays = arrays.borrow();
+        if arrays.is_empty() {
+            return None;
+        }
+        let ((block, base), array) = arrays
+            .range(..=(pointer.block.clone(), offset))
+            .next_back()?;
+        (*block == pointer.block
+            && offset < array.end(*base)
+            && (offset - base) % array.stride == 0)
+            .then(|| (array.source.clone(), array.bytes))
+    })
+}
+
+/// The width the snapshot-keyed record at `(memory, pointer)` would hold for
+/// a declared array element.
+fn declared_exact_access_width(memory: &SharedCMemory, pointer: &Pointer) -> Option<u32> {
+    declared_array_access_width(pointer)
+        .filter(|(source, _)| source == memory)
+        .map(|(_, bytes)| bytes)
+}
+
+/// Says that a load of `bytes` bytes happens at every element `base`,
+/// `base + stride`, … of a `count`-element array in `source`, exactly as
+/// [`symbolic_load_value`] of each element would have recorded it, in work
+/// that does not depend on `count`. Only a constant base is declared, and
+/// only where no other declared array overlaps the elements; `false`
+/// declares nothing, and the caller records the elements one by one.
+///
+/// Declaring before any element is named keeps every name what it was: the
+/// naming reads the width back through [`recorded_load_access_width`], which
+/// answers with the declaration.
+pub(in crate::kernel) fn declare_symbolic_array_access_widths(
+    source: &SharedCMemory,
+    base: &Pointer,
+    stride: u32,
+    count: u32,
+    bytes: u32,
+) -> bool {
+    let PointerOffsetTerm::Constant(offset) = base.offset else {
+        return false;
+    };
+    if count == 0 || stride == 0 {
+        return false;
+    }
+    let declared = SymbolicArrayAccessWidths {
+        source: source.clone(),
+        stride: i64::from(stride),
+        count,
+        bytes,
+    };
+    let end = declared.end(offset);
+    SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| {
+        let mut arrays = arrays.borrow_mut();
+        let key = (base.block.clone(), offset);
+        if let Some(held) = arrays.get(&key) {
+            // The same array declared again, as every function entry does.
+            return held.source == declared.source
+                && held.stride == declared.stride
+                && held.count == declared.count
+                && held.bytes == declared.bytes;
+        }
+        let below = arrays
+            .range(..&key)
+            .next_back()
+            .filter(|((block, _), _)| *block == base.block)
+            .is_some_and(|((_, held_base), held)| held.end(*held_base) > offset);
+        let above = arrays
+            .range(&key..)
+            .next()
+            .filter(|((block, _), _)| *block == base.block)
+            .is_some_and(|((_, held_base), _)| *held_base < end);
+        if below || above {
+            return false;
+        }
+        arrays.insert(key, declared);
+        true
+    })
+}
+
 /// Remembers that a load of `bytes` bytes happens at this address in this
 /// snapshot. Widening on conflict: the entry has to cover every access that
-/// resolves through it.
+/// resolves through it. A declared array element counts as already recorded
+/// at its declared width.
 fn record_load_access_width(memory: &CMemory, pointer: &Pointer, bytes: u32) {
     let key = (
         crate::kernel::intern_c_memory(memory.clone()),
         pointer.clone(),
     );
+    let declared = declared_array_access_width(pointer);
+    let declared_exact = declared
+        .as_ref()
+        .filter(|(source, _)| *source == key.0)
+        .map(|(_, bytes)| *bytes);
+    let declared_at_address = declared.map(|(_, bytes)| bytes);
     // A recorded width can only ever widen, and a name computed under the
     // narrower one is stale: the epoch walk a narrow access takes crosses
     // stores the wider one stops at, so it names the load at an older
@@ -1339,17 +1474,28 @@ fn record_load_access_width(memory: &CMemory, pointer: &Pointer, bytes: u32) {
         if widths.len() >= 100_000 {
             widths.clear();
         }
-        widths.entry(key).and_modify(&mut widen).or_insert(bytes);
+        match widths.get_mut(&key) {
+            Some(known) => widen(known),
+            None => {
+                let mut known = declared_exact.unwrap_or(bytes);
+                widen(&mut known);
+                widths.insert(key, known);
+            }
+        }
     });
     LOAD_ACCESS_WIDTH_AT_ADDRESS.with(|widths| {
         let mut widths = widths.borrow_mut();
         if widths.len() >= 100_000 {
             widths.clear();
         }
-        widths
-            .entry(pointer.clone())
-            .and_modify(&mut widen)
-            .or_insert(bytes);
+        match widths.get_mut(pointer) {
+            Some(known) => widen(known),
+            None => {
+                let mut known = declared_at_address.unwrap_or(bytes);
+                widen(&mut known);
+                widths.insert(pointer.clone(), known);
+            }
+        }
     });
     if widened {
         LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
@@ -1370,7 +1516,10 @@ pub(in crate::kernel) fn declare_load_access_width(pointer: &Pointer, bytes: u32
             .borrow_mut()
             .entry(pointer.clone())
             .and_modify(|known| *known = (*known).max(bytes))
-            .or_insert(bytes);
+            .or_insert_with(|| {
+                declared_array_access_width(pointer)
+                    .map_or(bytes, |(_, declared)| declared.max(bytes))
+            });
     });
 }
 
@@ -1385,12 +1534,21 @@ pub(crate) fn recorded_load_access_width(memory: &SharedCMemory, pointer: &Point
                 .get(&(memory.clone(), pointer.clone()))
                 .copied()
         })
+        .or_else(|| declared_exact_access_width(memory, pointer))
         .or_else(|| {
             // This snapshot saw no typed load here, but the address still has
             // a width if any snapshot did: the C type at an address does not
             // change with the snapshot a framing walk happens to start from.
-            LOAD_ACCESS_WIDTH_AT_ADDRESS.with(|widths| widths.borrow().get(pointer).copied())
+            recorded_load_access_width_at_address(pointer)
         })
+}
+
+/// The widest C load recorded at this address in any snapshot, a declared
+/// array element's included.
+fn recorded_load_access_width_at_address(pointer: &Pointer) -> Option<u32> {
+    LOAD_ACCESS_WIDTH_AT_ADDRESS
+        .with(|widths| widths.borrow().get(pointer).copied())
+        .or_else(|| declared_array_access_width(pointer).map(|(_, bytes)| bytes))
 }
 
 /// The access width to use for a load named only by a term.
@@ -1409,8 +1567,7 @@ pub(crate) fn load_access_width_or_widest(memory: &SharedCMemory, pointer: &Poin
 /// runs at a snapshot later than the load it is carrying, so the exact key
 /// would miss and fall through to this table regardless.
 pub(crate) fn load_access_width_at_address_or_widest(pointer: &Pointer) -> u32 {
-    LOAD_ACCESS_WIDTH_AT_ADDRESS
-        .with(|widths| widths.borrow().get(pointer).copied())
+    recorded_load_access_width_at_address(pointer)
         .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes)
 }
 
@@ -3074,6 +3231,18 @@ pub(in crate::kernel) fn symbolic_load_value(
     // would have to assume the widest scalar. Recording it here is what lets
     // an `int32` load keep being separated from a store one element away.
     record_load_access_width(memory, pointer, value_type.byte_width());
+    symbolic_load_value_unrecorded(memory, pointer, value_type)
+}
+
+/// [`symbolic_load_value`] without recording the access width, for a caller
+/// that has already said how wide the access is, as a symbolic static array
+/// says it for every element at once
+/// ([`declare_symbolic_array_access_widths`]).
+pub(in crate::kernel) fn symbolic_load_value_unrecorded(
+    memory: &CMemory,
+    pointer: &Pointer,
+    value_type: CType,
+) -> Option<CValue> {
     match value_type {
         CType::Void | CType::VoidPointer => None,
         CType::Bool => {
@@ -3152,6 +3321,54 @@ pub(in crate::kernel) fn symbolic_load_value(
         | CType::Float64Array(_) => None,
         CType::PointerArray(_, _) => None,
     }
+}
+
+/// The value a symbolic static-storage cell of type `c_type` at `pointer`
+/// holds at function entry, where `memory` holds only the storage's block: a
+/// fresh symbolic pointer named by the cell's load for an object pointer (a
+/// stored pointer may point into any block), and otherwise the cell's typed
+/// load, its integer loads named as their load variables.
+///
+/// `record_width` says the access width here, as [`symbolic_load_value`]
+/// does; a caller that declared it for a whole array
+/// ([`declare_symbolic_array_access_widths`]) passes `false`. An object
+/// pointer's load records no width either way.
+pub(in crate::kernel) fn symbolic_storage_cell_value(
+    memory: &CMemory,
+    pointer: &Pointer,
+    c_type: CType,
+    record_width: bool,
+) -> Option<CValue> {
+    if c_type.is_object_pointer() {
+        let load = Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(memory.clone()),
+            Box::new(pointer.clone()),
+        );
+        let (variable, _) = load_variable_for_term(&load)
+            .expect("symbolic pointer cells must be backed by memory loads");
+        return Some(CValue::typed_pointer(Pointer::symbolic(variable), c_type));
+    }
+    // The cell holds the load of this storage at its symbolic base, and a
+    // term is canonical at creation: name the load as its load variable,
+    // exactly as a contract clause over the same storage names it. A raw
+    // load here reached the facts a callee's `old(...)` produced, where
+    // nothing equates it with the caller's name for the same cell.
+    let value = if record_width {
+        symbolic_load_value(memory, pointer, c_type)
+    } else {
+        symbolic_load_value_unrecorded(memory, pointer, c_type)
+    };
+    value.map(|value| match value {
+        CValue::Int8(bits) => CValue::Int8(canonical_term(&bits)),
+        CValue::Int16(bits) => CValue::Int16(canonical_term(&bits)),
+        CValue::Int32(bits) => CValue::Int32(canonical_term(&bits)),
+        CValue::UInt8(bits) => CValue::UInt8(canonical_term(&bits)),
+        CValue::UInt16(bits) => CValue::UInt16(canonical_term(&bits)),
+        CValue::UInt32(bits) => CValue::UInt32(canonical_term(&bits)),
+        CValue::Int64(bits) => CValue::Int64(canonical_term(&bits)),
+        CValue::UInt64(bits) => CValue::UInt64(canonical_term(&bits)),
+        other => other,
+    })
 }
 
 #[cfg(test)]

@@ -7068,14 +7068,7 @@ fn run_slots_clear_of_loop_summaries(
     for (low, high) in all.difference(&kept).intervals() {
         holes.insert_range(low, high);
     }
-    Some(crate::kernel::primitives::CellRun::new(
-        run.base().clone(),
-        run.element_width(),
-        run.element_type(),
-        count,
-        run.source().clone(),
-        holes,
-    ))
+    Some(run.with_holes(holes))
 }
 
 pub(super) fn address_escaped_scalar_locals(state: &CState, body: &CStatement) -> BTreeSet<String> {

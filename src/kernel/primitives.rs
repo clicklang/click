@@ -40,7 +40,7 @@ mod cell_store;
 #[cfg(debug_assertions)]
 pub(crate) use cell_store::CHECKED_RUN_SLOTS;
 pub use cell_store::CellRun;
-pub(crate) use cell_store::{CellStore, IndexIntervals, RuleAnswer, SlotSet};
+pub(crate) use cell_store::{CellStore, IndexIntervals, RuleAnswer, RunValueMode, SlotSet};
 mod derivations;
 mod memory_state;
 mod persistent_map;

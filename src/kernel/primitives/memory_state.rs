@@ -3072,7 +3072,15 @@ impl CMemory {
             }
             return self;
         }
-        self.with_run_of_cells(base, element_width, element_type, first, count, source)
+        self.with_run_of_cells(
+            base,
+            element_width,
+            element_type,
+            first,
+            count,
+            source,
+            RunValueMode::Load,
+        )
     }
 
     /// [`Self::materialize_named_cell`] of each element `first..count` at
@@ -3107,7 +3115,49 @@ impl CMemory {
         {
             return Err(self);
         }
-        Ok(self.with_run_of_cells(base, element_width, element_type, first, count, source))
+        Ok(self.with_run_of_cells(
+            base,
+            element_width,
+            element_type,
+            first,
+            count,
+            source,
+            RunValueMode::Load,
+        ))
+    }
+
+    /// [`Self::materialize_named_cell`] of every element of a symbolic
+    /// static-storage array of `count` elements of `element_type` at `base`,
+    /// each holding its symbolic entry value in `source`
+    /// ([`crate::kernel::eval::symbolic_storage_cell_value`]), as one
+    /// [`CellRun`] at a cost that does not depend on `count`; see
+    /// [`Self::with_named_cell_run`], whose refusals this shares. The
+    /// caller has declared the elements' access widths.
+    pub(crate) fn with_symbolic_storage_run(
+        self,
+        base: Pointer,
+        element_type: CType,
+        count: u32,
+        source: SharedCMemory,
+    ) -> Result<Self, Self> {
+        if count == 0 {
+            return Ok(self);
+        }
+        if base.block.starts_with("local:")
+            || matches!(base.block, PointerBlock::Heap(_))
+            || !self.run_can_stand_for_cells_at(&base)
+        {
+            return Err(self);
+        }
+        Ok(self.with_run_of_cells(
+            base,
+            element_type.byte_width(),
+            element_type,
+            0,
+            count,
+            source,
+            RunValueMode::SymbolicStorage,
+        ))
     }
 
     /// Whether a run at `base` stands for the cells it seeds with nothing
@@ -3120,6 +3170,7 @@ impl CMemory {
     }
 
     /// The run of [`Self::with_seeded_cells`], its preconditions checked.
+    #[allow(clippy::too_many_arguments)]
     fn with_run_of_cells(
         mut self,
         base: Pointer,
@@ -3128,15 +3179,17 @@ impl CMemory {
         first: u32,
         count: u32,
         source: SharedCMemory,
+        mode: RunValueMode,
     ) -> Self {
         let mut holes = IndexIntervals::default();
         holes.insert_range(0, first);
-        let probe = CellRun::new(
+        let probe = CellRun::new_with_mode(
             base.clone(),
             element_width,
             element_type,
             count,
             source.clone(),
+            mode,
             IndexIntervals::default(),
         );
         // An element that already holds a cell keeps it: seeding skips it,
@@ -3166,7 +3219,7 @@ impl CMemory {
         if holes.count() >= u64::from(count) {
             return self;
         }
-        let run = CellRun::new(base, element_width, element_type, count, source, holes);
+        let run = probe.with_holes(holes);
         let derivation_base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
         record_c_memory_derivation(

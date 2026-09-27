@@ -250,3 +250,151 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
             .satisfies_fact(&owned, &PureFactContext::new())
     );
 }
+
+/// A zero of each global-array element type, for initializers the symbolic
+/// entry below never reads.
+fn zero_element(element_type: CType) -> CValue {
+    match element_type {
+        CType::Int8 => int8(0),
+        CType::Int16 => int16(0),
+        CType::Int32 => int32(0),
+        CType::UInt8 => uint8(0),
+        CType::UInt16 => uint16(0),
+        CType::UInt32 => uint32(0),
+        CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        pointer => CValue::typed_pointer(Pointer::null(), pointer),
+    }
+}
+
+fn function_with_global_array(element_type: CType, length: u32) -> CFunction {
+    storage_function("read", vec![]).with_global_arrays(vec![CGlobalArray::new_with_kernel_name(
+        "buf",
+        "buf",
+        element_type,
+        length,
+        vec![zero_element(element_type); length as usize],
+    )])
+}
+
+/// An ordinary function's entry names every element of a global array it has
+/// no initializer authority over by its symbolic entry value. The elements
+/// are one run and their access widths one declaration, and together they
+/// are exactly what materializing each element by itself leaves: the same
+/// cells, and the same width recorded at every element before and after the
+/// elements are named one by one.
+#[test]
+fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
+    for element_type in [
+        CType::Int8,
+        CType::Int32,
+        CType::UInt8,
+        CType::UInt16,
+        CType::Int64,
+        CType::UInt64,
+        CType::Int32Pointer,
+        CType::UInt8Pointer,
+    ] {
+        for length in [1u32, 5, 64, 65, 300] {
+            crate::kernel::eval::clear_load_variable_registry();
+            let function = function_with_global_array(element_type, length);
+            let entry = initialize_c_function_globals(&CState::new(), &function);
+            let base = CMemory::global_pointer("buf");
+            let width = element_type.byte_width();
+            assert_eq!(
+                entry.memory().cells.representation_len(),
+                1,
+                "{element_type:?}[{length}] is one run"
+            );
+            let source =
+                crate::kernel::intern_c_memory(symbolic_memory_base(entry.memory(), &base));
+            let slot = |index: u32| base.offset_by_bytes(index * width);
+            // An object pointer's entry load records no width.
+            let expected_width = (!element_type.is_object_pointer()).then_some(width);
+            let widths = |memory: &SharedCMemory| {
+                (0..length)
+                    .map(|index| {
+                        (
+                            crate::kernel::eval::recorded_load_access_width(memory, &slot(index)),
+                            crate::kernel::load_access_width_at_address_or_widest(&slot(index)),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let declared = widths(&source);
+            assert!(
+                declared.iter().all(|(exact, _)| *exact == expected_width),
+                "{element_type:?}[{length}] declares its widths: {declared:?}"
+            );
+            let mut reference =
+                CMemory::new().with_block_or_read_only(base.block.clone(), length * width, false);
+            for index in 0..length {
+                reference = materialize_symbolic_cell(reference, &slot(index), element_type);
+            }
+            assert_eq!(
+                entry.memory().cells.logical(),
+                reference.cells.logical(),
+                "{element_type:?}[{length}] holds the per-element cells"
+            );
+            // Recording each element's width again, as the per-element path
+            // just did, changes no answer: the declaration was those records.
+            assert_eq!(widths(&source), declared, "{element_type:?}[{length}]");
+            for index in [0, length / 2, length - 1] {
+                assert_eq!(
+                    entry.memory().load(&slot(index)),
+                    reference.load(&slot(index)),
+                    "{element_type:?}[{length}] element {index}"
+                );
+            }
+            // A store into the array writes that element alone.
+            let stored = zero_element(element_type);
+            let written = entry
+                .memory()
+                .clone()
+                .store(slot(length - 1), stored.clone());
+            assert_eq!(
+                written.load(&slot(length - 1)),
+                CExpressionOutcome::Value(stored)
+            );
+            if length > 1 {
+                assert_eq!(written.load(&slot(0)), reference.load(&slot(0)));
+            }
+        }
+    }
+}
+
+/// Entering a function that names a global array costs the same whatever
+/// the array's declared length. Before runs, every element was materialized
+/// as its own cell, named and width-recorded one by one, so a
+/// `static char buf[65536]` cost 65,536 cells at every entry.
+#[test]
+fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
+    for element_type in [CType::UInt8, CType::Int32, CType::Int32Pointer] {
+        let samples = [8u32, 1_000, 1_000_000].map(|length| {
+            crate::kernel::eval::clear_load_variable_registry();
+            let function = function_with_global_array(element_type, length);
+            let (entry, work) = crate::instrumentation::measure_deterministic_work(|| {
+                initialize_c_function_globals(&CState::new(), &function)
+            });
+            (length, work, entry.memory().cells.representation_len())
+        });
+        let least = samples
+            .iter()
+            .map(|(_, work, _)| *work)
+            .min()
+            .expect("samples");
+        let most = samples
+            .iter()
+            .map(|(_, work, _)| *work)
+            .max()
+            .expect("samples");
+        assert_eq!(
+            least, most,
+            "{element_type:?} entry work depends on the array's length: {samples:?}"
+        );
+        assert!(
+            samples.iter().all(|(_, _, entries)| *entries == 1),
+            "{element_type:?} entry is one run: {samples:?}"
+        );
+    }
+}

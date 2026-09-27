@@ -12266,27 +12266,9 @@ fn initialize_c_function_globals_owned(
 
 fn materialize_symbolic_cell(memory: CMemory, pointer: &Pointer, c_type: CType) -> CMemory {
     let symbolic_base = symbolic_memory_base(&memory, pointer);
-    let value = if c_type.is_object_pointer() {
-        Some(symbolic_pointer_cell_load(&symbolic_base, pointer, c_type))
-    } else {
-        // The cell holds the load of this storage at its symbolic base, and a
-        // term is canonical at creation: name the load as its load variable,
-        // exactly as a contract clause over the same storage names it. A raw
-        // load here reached the facts a callee's `old(...)` produced, where
-        // nothing equates it with the caller's name for the same cell.
-        symbolic_load_value(&symbolic_base, pointer, c_type).map(|value| match value {
-            CValue::Int8(bits) => CValue::Int8(crate::kernel::eval::canonical_term(&bits)),
-            CValue::Int16(bits) => CValue::Int16(crate::kernel::eval::canonical_term(&bits)),
-            CValue::Int32(bits) => CValue::Int32(crate::kernel::eval::canonical_term(&bits)),
-            CValue::UInt8(bits) => CValue::UInt8(crate::kernel::eval::canonical_term(&bits)),
-            CValue::UInt16(bits) => CValue::UInt16(crate::kernel::eval::canonical_term(&bits)),
-            CValue::UInt32(bits) => CValue::UInt32(crate::kernel::eval::canonical_term(&bits)),
-            CValue::Int64(bits) => CValue::Int64(crate::kernel::eval::canonical_term(&bits)),
-            CValue::UInt64(bits) => CValue::UInt64(crate::kernel::eval::canonical_term(&bits)),
-            other => other,
-        })
-    };
-    if let Some(value) = value {
+    if let Some(value) =
+        crate::kernel::eval::symbolic_storage_cell_value(&symbolic_base, pointer, c_type, true)
+    {
         memory.materialize_named_cell(pointer.clone(), value)
     } else {
         memory
@@ -12334,12 +12316,56 @@ fn symbolic_memory_base(memory: &CMemory, pointer: &Pointer) -> CMemory {
     CMemory::new().with_block_without_derivation(pointer.block.clone(), size)
 }
 
+/// Every element of a symbolic static-storage array at `base` holds its
+/// symbolic entry value, as [`materialize_symbolic_cell`] of each element in
+/// order leaves it. The elements are one [`CellRun`] and their access widths
+/// one declaration, so entry costs the same whatever `length` is; where
+/// either is refused (an overlapping declaration, typed union views, a
+/// block a named cell does not initialize) the elements are materialized
+/// one by one.
+///
+/// [`CellRun`]: crate::kernel::primitives::CellRun
 fn materialize_symbolic_array(
     mut memory: CMemory,
     base: &Pointer,
     element_type: CType,
     length: u32,
 ) -> CMemory {
+    // Only an element type with an entry value is a run's: the others leave
+    // no cell.
+    let has_value = element_type.is_pointer()
+        || matches!(
+            element_type,
+            CType::Bool
+                | CType::Int8
+                | CType::Int16
+                | CType::Int32
+                | CType::UInt8
+                | CType::UInt16
+                | CType::UInt32
+                | CType::Int64
+                | CType::UInt64
+                | CType::Float32
+                | CType::Float64
+        );
+    if length > 0 && has_value {
+        let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
+        // An object pointer's load records no width, so it declares none.
+        let widths_declared = element_type.is_object_pointer()
+            || crate::kernel::eval::declare_symbolic_array_access_widths(
+                &source,
+                base,
+                element_type.byte_width(),
+                length,
+                element_type.byte_width(),
+            );
+        if widths_declared {
+            match memory.with_symbolic_storage_run(base.clone(), element_type, length, source) {
+                Ok(materialized) => return materialized,
+                Err(unchanged) => memory = unchanged,
+            }
+        }
+    }
     for index in 0..length {
         let pointer = base.offset_by_bytes(index.saturating_mul(element_type.byte_width()));
         memory = materialize_symbolic_cell(memory, &pointer, element_type);
