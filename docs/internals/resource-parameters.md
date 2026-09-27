@@ -91,114 +91,70 @@ schema. The implementation must establish how a helper's input authority
 determines its output resource before enabling protected-state outputs.
 Concrete call-site information alone cannot justify a generic body proof.
 
-### Concrete helper boundary: proposed refinement
+### Investigation: reuse ordinary resource interfaces
 
-Status: surface decision pending review. The following `protecting` modifier
-is a proposal, not accepted syntax. It adds a requirement on an existing
-authority argument; it does not add a proof argument or a resource-description
-value. Do not implement this spelling until reviewed.
+The proposed mutex-only `protecting` modifier is withdrawn. The illustrative
+`access.state == counter_state(counter)` expression is also not an accepted
+feature or a chosen design. First establish how ordinary resource definitions
+and resource arguments can express the relationship. Do not introduce either
+spelling as an implementation shortcut.
 
-Consider existing C helpers that only lock and unlock a counter's mutex:
+The current implementation has these distinct capabilities:
 
-```text
-void counter_lock(struct counter *counter) {
-    pthread_mutex_lock(&counter->mu);
-}
-void counter_unlock(struct counter *counter) {
-    pthread_mutex_unlock(&counter->mu);
-}
-```
+| Mechanism | What it establishes | What it does not establish |
+| --- | --- | --- |
+| `guarded_by counter->mu` in `counter_state` | Checks the mutex to which this resource may be published. | Does not assert that an arbitrary input authority was initialized with this resource. |
+| Initialization with `{ state: state }` | Consumes an owned instance and records its assertion for the fresh initialization. | Does not expose that association in an independent helper's unary authority requirement. |
+| Ordinary named child ownership | A parent owns a child; unfolding transfers that ownership to the proof. | Does not model state accessible only after a lock transition. |
+| Ordinary resource fields | Store C values, mathematical integers, or algebraic model values. | Cannot currently hold a resource reference. |
+| Named-contract resource proof parameters | Declare a resource binder separately from its ownership clauses. | Do not yet supply general transport of references to escrowed resources. |
 
-Assume `counter_state(counter)` is an exclusive resource whose declaration
-contains `guarded_by counter->mu;`. Proposed sidecar contracts are:
+The last distinction is important. The existing
+`mdtests/contract_resource_parameters.md` accepts both an owned parameter and
+a parameter without an ownership clause, but explicitly tests declarations
+only. `ResourceCallApplication::bind` in `src/kernel/functions.rs` checks
+current ownership of the actual instances it binds. The consumed-instance
+regressions reject passing an instance after its ownership was given up.
+Therefore this declaration syntax is useful groundwork, not evidence that an
+unowned protected-state reference already crosses calls.
 
-```text
-void counter_lock(struct counter *counter) {
-    owns access: mutex_use(&counter->mu)
-        protecting counter_state(counter);
-    produces guard: mutex_guard(&counter->mu);
-    produces state: counter_state(counter);
-}
+Resource definitions currently parse their parameters with
+`parse_click_parameters`; those are value types, not the resource proof
+parameters recognized by named contracts. `ResourceFieldType` likewise has
+only C, integer, and algebraic cases. Reusing the existing binder or field
+notation may be possible, but requires general semantic support; changing
+only a mutex resource definition is not currently sufficient.
 
-void counter_unlock(struct counter *counter) {
-    owns access: mutex_use(&counter->mu)
-        protecting counter_state(counter);
-    consumes guard: mutex_guard(&counter->mu);
-    consumes state: counter_state(counter);
-}
-```
+Mutex authorities themselves are kernel resource atoms, not ordinary Click
+resource definitions with an inspectable protected-state child or field.
+`InitializedMutexInterface` records the association in the mutex ledger, and
+`MutexUseCallTransfer` can retain that checked metadata when borrowing a
+concrete input. `AssumedMutexProtocol`, used for independent helper proofs,
+deliberately exposes no protected assertion. This is the implementation gap
+behind the helper example; initialization itself already has sufficient
+surface syntax.
 
-The extra requirement is necessary information. `guarded_by` checks where a
-resource may be published; it does not prove that an arbitrary input mutex
-was initialized with that resource. Two different resource families may name
-the same mutex in their declarations. The input must distinguish them, and
-must distinguish different captured arguments within one family.
+A wrapper that merely owns `mutex_use(mu)` cannot add the missing premise.
+Adding an owned `counter_state(counter)` child would require the caller to
+supply that state while it is escrowed, and unfolding would expose it without
+locking. Adding a tag naming the resource family would not authenticate the
+association with the actual initialization. Neither is an adequate workaround.
 
-The proposed modifier states that this authority's initialization protects the
-specified assertion. It grants no current ownership of `counter_state`, and
-does not constrain its observed fields. Bare `mutex_use(mu)` remains valid
-for helpers that do not need to know the protected assertion. The existing
-`mutex_use_named_payload_read` fixture demonstrates that bare use authority
-does not justify reading the payload even after locking.
+The next design test is whether existing resource binder notation can support
+references independently of ownership, in ordinary resource definitions as
+well as contracts. Such a reference must not grant payload fields or memory
+access, duplicate ownership, or preserve observations across acquisition.
+It must also support restoring a replacement instance satisfying the assertion:
+the present mutex semantics do not require the same occurrence on every
+release. Do not accidentally replace that rule with fixed instance identity
+when introducing a reference.
 
-At a call, the caller still passes only actual resources:
-
-```text
-let { guard: g, state: s } =
-    step(counter_lock(counter), { access: u });
-step(counter_unlock(counter), { access: u, guard: g, state: s });
-```
-
-Here `u` is the caller's existing use authority. There is no additional
-`counter_state(counter)` argument to either call. Initialization still derives
-the association from the actual resource it consumes.
-
-### Checking the proposed helper contracts
-
-The implementation would have to establish all of the following:
-
-1. **Entry.** Independently checking `counter_lock` assumes a fresh abstract
-   initialization and a rooted use input carrying exactly the stated
-   association. No protected-state ownership or field observations exist yet.
-   Validate the assertion's declaration and `guarded_by` pointer before
-   admitting that association. It is a contract premise, checked at every
-   call, not an inference from the helper's desired result.
-2. **Acquisition.** Runtime lock checks the input's loan and initialization,
-   creates an exact guard, and supplies a fresh state instance satisfying the
-   associated assertion. Its observations are arbitrary subject to that
-   assertion, never copied from a previous acquisition. Runtime calls and
-   helper bodies use this same transition.
-3. **Return.** Returning guard and state exports the checked acquisition and
-   retains its lifetime dependency. Merely finding two matching resource
-   shapes at return is insufficient. The caller must receive the acquisition
-   evidence, including its outstanding loan hold, with the resources.
-4. **Release entry.** Independently checking `counter_unlock` requires a
-   guard for this input protocol and ownership of the stated resource.
-   At a call, check that the supplied guard belongs to this initialization
-   and acquisition; the same address alone is insufficient. A replacement
-   state instance is permitted if its full assertion matches.
-5. **Release.** Consume that guard and the owned, restored state, discharge
-   the acquisition's hold, and return the use authority. Outstanding payload
-   loans prevent restoration. The checked transition must be transported
-   back to the caller so destruction cannot overlook an escaped acquisition.
-
-An association failure should state the requirement in contract terms, for
-example `Requires owns mutex_use(&counter->mu) protecting
-counter_state(counter)`, followed by the supplied authority's actual protected
-assertion. Missing guard or state ownership keeps the ordinary `Requires`
-diagnostic. A valid assertion with an unsupported transfer form is an
-unsupported-feature diagnostic, not a claim that the C implementation is wrong.
-
-Do not infer an extra input requirement just from a produced state and its
-`guarded_by` annotation. That would make a postcondition silently strengthen
-the precondition, and it would not cover a helper that locks, reads, and
-unlocks internally without returning state. Requiring ownership of the state
-on entry would also be wrong: it is escrowed while the mutex is unlocked.
-
-This proposal addresses concrete resource families first. General helpers
-that preserve an unknown association can continue to use bare authority.
-Returning or inspecting an unknown payload remains separate work; this
-proposal does not activate the dormant resource-parameter machinery.
+Work through a user-defined resource managing another resource alongside the
+mutex example before choosing the representation. The required outcome is an
+association expressible by the resource's interface, authenticated when that
+resource is constructed and checked at calls. Whether this can use existing
+notation throughout remains open; there is no established need for new
+keywords, angle parameters, or a separately supplied description value.
 
 Prefer precise existing requirements in failures:
 
