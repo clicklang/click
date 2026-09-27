@@ -131,10 +131,10 @@ pub(crate) use functions::modified_by_value_aggregate_parameter_with_current_ens
 pub(crate) use functions::publish_instance_arms;
 pub(crate) use functions::select_resource_model_arm;
 pub(crate) use functions::stable_symbolic_pointer_cell_value;
-pub(crate) use functions::storage_writes_outside_owned_footprint;
 pub(crate) use functions::symbolic_call_result;
 pub(crate) use functions::unreturned_allocation_at_function_exit;
 pub(crate) use functions::unreturned_allocation_with_checked_returned_resources;
+pub(crate) use functions::{StorageWriteOutsideFootprint, storage_writes_outside_owned_footprint};
 pub(crate) use functions::{
     contract_entry_partition_facts, evaluate_function_resource_context_with_metadata,
     project_contract_memory_effects, quantified_resource_requirement_assumptions,

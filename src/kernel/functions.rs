@@ -5565,8 +5565,17 @@ fn predicate_interfaces_are_explicitly_compatible(
         .all(|unfolding| permitted(unfolding))
 }
 
+/// One write to file-scope or static storage that no owned range covers: a
+/// store of `bytes` at `pointer`, or a summarized range a callee may write.
+/// The surface spells it in source terms.
+#[derive(Clone, Debug)]
+pub(crate) enum StorageWriteOutsideFootprint {
+    Write { pointer: Pointer, bytes: u32 },
+    Range(CMemoryRange),
+}
+
 /// Writes to file-scope or static storage that a checked path performs outside
-/// the contract's owned footprint, described for diagnostics. The caller
+/// the contract's owned footprint, for diagnostics. The caller
 /// passes the checked resource facts and, for resource-derived contracts, the
 /// already prepared projection from certification; this keeps the storage
 /// decision on the same transition artifact as modular effects. `None` is
@@ -5582,7 +5591,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     assumptions: &PureFactContext,
     transition_resources: Option<&[CCheckedResourceFact]>,
     prepared_projection: Option<&CFunctionMemoryEffectProjection>,
-) -> ExecutionResult<Option<Vec<String>>> {
+) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
     let is_storage = |pointer: &Pointer| {
         pointer.block.starts_with("global:") || pointer.block.starts_with("static:")
     };
@@ -5623,7 +5632,10 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     let mut outside = Vec::new();
     for (pointer, write_bytes) in &storage_writes {
         if !storage_write_within_owned_footprint(pointer, *write_bytes, &owned, assumptions) {
-            outside.push(format!("{pointer:?}"));
+            outside.push(StorageWriteOutsideFootprint::Write {
+                pointer: pointer.clone(),
+                bytes: *write_bytes,
+            });
         }
     }
     for range in storage_summaries {
@@ -5634,7 +5646,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
                 assumptions,
             )
         }) {
-            outside.push(format!("{range:?}"));
+            outside.push(StorageWriteOutsideFootprint::Range(range.clone()));
         }
     }
     Ok(Some(outside))
@@ -5660,8 +5672,101 @@ fn storage_write_within_owned_footprint(
             &write,
             &owned_bytes,
             assumptions,
-        )
+        ) || storage_write_within_owned_elements(pointer, write_bytes, range, assumptions)
     })
+}
+
+/// Whether a write of `write_bytes` at `pointer` lies inside `range`, read in
+/// the range's own element coordinates: `buf + 4 * j` is element `j` of an
+/// `int32` range over `buf`, and it is inside `buf[s..e]` exactly when
+/// `s <= j` and `j < e`.
+///
+/// The byte comparison beside it needs a constant distance between the two
+/// addresses, so a symbolic index is never placed by it. Here the distance is
+/// [`ExactElementDelta`]: the one symbolic index sign-extended plus an exact
+/// `i64` constant, which is what the pointer offset denotes. The written
+/// elements are `[index + c, index + c + k)` for `k = write_bytes / width`,
+/// and each endpoint comparison is posed only in a form whose int32 reading is
+/// the exact one: against constant endpoints as `s - c <= index` and
+/// `index < e - c - (k - 1)`, the constants computed in `i64`, and against
+/// symbolic endpoints only with `c = 0`, as `s <= index` and
+/// `index + (k - 1) < e` with that addition proved not to overflow. A write that
+/// does not cover whole elements, or any other shape, is left to the byte
+/// comparison.
+fn storage_write_within_owned_elements(
+    pointer: &Pointer,
+    write_bytes: u32,
+    range: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    let width = range.element_width();
+    if width == 0 || write_bytes == 0 || !write_bytes.is_multiple_of(width) {
+        return false;
+    }
+    let Some(delta) = pointer.exact_element_delta_from_base(range.base(), width, Some(assumptions))
+    else {
+        return false;
+    };
+    let elements = i64::from(write_bytes / width);
+    let index = delta.index.clone();
+    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    // `constant <= index` (lower) or `index < constant` (upper), for a
+    // constant computed exactly: a constant outside the int32 range is
+    // decided by the range itself.
+    let index_at_least = |bound: i64| match i32::try_from(bound) {
+        Ok(bound) => holds(ConditionTerm::signed_less_equal(
+            Bitvector32Term::Constant(bound as u32),
+            index.clone(),
+        )),
+        Err(_) => bound < i64::from(i32::MIN),
+    };
+    let index_below = |bound: i64| match i32::try_from(bound) {
+        Ok(bound) => holds(ConditionTerm::signed_less_than(
+            index.clone(),
+            Bitvector32Term::Constant(bound as u32),
+        )),
+        Err(_) => bound > i64::from(i32::MAX),
+    };
+    let start = signed_bitvector_constant(range.start());
+    let end = signed_bitvector_constant(range.end());
+    let lower = match start {
+        Some(start) => start
+            .checked_sub(delta.constant)
+            .is_some_and(index_at_least),
+        None => {
+            delta.constant == 0
+                && holds(ConditionTerm::signed_less_equal(
+                    range.start().clone(),
+                    index.clone(),
+                ))
+        }
+    };
+    if !lower {
+        return false;
+    }
+    match end {
+        // `index + c + k <= end` is `index < end - c - (k - 1)`.
+        Some(end) => end
+            .checked_sub(delta.constant)
+            .and_then(|end| end.checked_sub(elements - 1))
+            .is_some_and(index_below),
+        None if delta.constant == 0 && elements == 1 => holds(ConditionTerm::signed_less_than(
+            index.clone(),
+            range.end().clone(),
+        )),
+        None if delta.constant == 0 => {
+            let last = Bitvector32Term::Constant((elements - 1) as u32);
+            assumptions.decide(&ConditionTerm::signed_add_overflows(
+                index.clone(),
+                last.clone(),
+            )) == Some(false)
+                && holds(ConditionTerm::signed_less_than(
+                    Bitvector32Term::add(index.clone(), last),
+                    range.end().clone(),
+                ))
+        }
+        None => false,
+    }
 }
 
 #[cfg(test)]
@@ -5697,6 +5802,74 @@ mod storage_write_footprint_tests {
             ),
             "the write starts in the footprint but its second byte is outside"
         );
+    }
+
+    /// A write at a symbolic element index is placed in an owned range from
+    /// the facts bounding the index, exactly at each edge: with a constant
+    /// displacement, across several elements, and against a symbolic end.
+    #[test]
+    fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
+        let base = Pointer {
+            block: "global:owned".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let j = Bitvector32Term::Variable(Variable(99_001));
+        let n = Bitvector32Term::Variable(Variable(99_002));
+        let owned = |end: Bitvector32Term| {
+            vec![CMemoryRange::new_with_element_width(
+                base.clone(),
+                Bitvector32Term::Constant(0),
+                end,
+                4,
+            )]
+        };
+        let bounded = |upper: i32| {
+            PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), j.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(
+                        j.clone(),
+                        Bitvector32Term::Constant(upper as u32),
+                    ),
+                    true,
+                )
+        };
+        let at_j = base.offset_by_elements(j.clone(), 4);
+        let within =
+            |pointer: &Pointer, bytes: u32, owned: &[CMemoryRange], facts: &PureFactContext| {
+                storage_write_within_owned_footprint(pointer, bytes, owned, facts)
+            };
+        let thousand = owned(Bitvector32Term::Constant(1000));
+        assert!(within(&at_j, 4, &thousand, &bounded(1000)));
+        assert!(!within(&at_j, 4, &thousand, &bounded(1001)));
+        // Two elements from `j`: the last is `j + 1`.
+        assert!(within(&at_j, 8, &thousand, &bounded(999)));
+        assert!(!within(&at_j, 8, &thousand, &bounded(1000)));
+        // Two elements past `j`: `j + 2 < 1000`.
+        let past = at_j.offset_by_bytes(8);
+        assert!(within(&past, 4, &thousand, &bounded(998)));
+        assert!(!within(&past, 4, &thousand, &bounded(999)));
+        // A byte inside element `j` covers no whole element and is left to
+        // the byte comparison, which cannot place a symbolic index.
+        assert!(!within(&at_j, 1, &thousand, &bounded(1000)));
+        // A symbolic end.
+        let up_to_n = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), j.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::signed_less_than(j.clone(), n.clone()), true);
+        assert!(within(&at_j, 4, &owned(n.clone()), &up_to_n));
+        assert!(!within(&at_j, 4, &owned(n.clone()), &bounded(1000)));
+        // The lower edge: nothing bounds `j` below.
+        let upper_only = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::Constant(10)),
+            true,
+        );
+        assert!(!within(&at_j, 4, &thousand, &upper_only));
     }
 
     #[test]

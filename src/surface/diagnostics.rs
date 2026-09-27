@@ -3069,7 +3069,7 @@ pub(super) fn describe_pointer(
             Some(name) if pointer.offset == PointerOffsetTerm::Constant(0) => format!("&{name}"),
             Some(name) => format!(
                 "(char *)&{name} + {}",
-                describe_pointer_offset(&pointer.offset)
+                describe_pointer_offset_with_context(&pointer.offset, parameters, arguments)
             ),
             // Heap, temporary and symbolic blocks have no source name.
             None => "…".to_string(),
@@ -4521,6 +4521,77 @@ pub(super) fn describe_binary_bitvector_with_context(
         describe_bitvector_with_context(left, parameters, arguments),
         describe_bitvector_with_context(right, parameters, arguments)
     )
+}
+
+/// [`describe_pointer_offset`] with each scaled index spelled in the
+/// caller's names where it has them (`j * 4` rather than `… * 4`).
+fn describe_pointer_offset_with_context(
+    offset: &PointerOffsetTerm,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    match offset {
+        PointerOffsetTerm::Add(left, right) => format!(
+            "({} + {})",
+            describe_pointer_offset_with_context(left, parameters, arguments),
+            describe_pointer_offset_with_context(right, parameters, arguments)
+        ),
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => format!(
+            "{} * {byte_width}",
+            describe_bitvector_with_context(value, parameters, arguments)
+        ),
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned,
+        } => {
+            let signedness = if *unsigned { "uint64" } else { "int64" };
+            format!(
+                "{signedness}({}) * {byte_width}",
+                describe_bitvector_with_context(value, parameters, arguments)
+            )
+        }
+        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {
+            describe_pointer_offset(offset)
+        }
+    }
+}
+
+/// The writes to file-scope or static storage that no owned range covers, in
+/// source terms and at most the diagnostic item limit of them: each store's
+/// width and address, or the range a callee's summary may write.
+pub(super) fn describe_storage_writes_outside_footprint(
+    escapes: &[crate::kernel::StorageWriteOutsideFootprint],
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let limit = diagnostic_item_limit();
+    let mut entries = escapes
+        .iter()
+        .take(limit)
+        .map(|escape| describe_storage_write_outside_footprint(escape, parameters, arguments))
+        .collect::<Vec<_>>();
+    if escapes.len() > limit {
+        entries.push(format!("… {} more omitted", escapes.len() - limit));
+    }
+    entries.join(", ")
+}
+
+fn describe_storage_write_outside_footprint(
+    escape: &crate::kernel::StorageWriteOutsideFootprint,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    match escape {
+        crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => format!(
+            "the {bytes}-byte store to `{}`",
+            describe_pointer(pointer, parameters, arguments)
+        ),
+        crate::kernel::StorageWriteOutsideFootprint::Range(range) => format!(
+            "the range `{}` a callee may write",
+            describe_memory_range(range, parameters, arguments)
+        ),
+    }
 }
 
 pub(super) fn describe_pointer_offset(offset: &PointerOffsetTerm) -> String {

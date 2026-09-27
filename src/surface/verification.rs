@@ -3077,7 +3077,11 @@ fn verify_c0_sources_with_context(
                             return Err(ClickError::new(format!(
                                 "`{}` path {path_index}: write to storage outside the owned footprint: {}; own the written cells or declare them in a `mutable` clause",
                                 function_block.signature.name(),
-                                outside.join(", ")
+                                crate::surface::diagnostics::describe_storage_writes_outside_footprint(
+                                    &outside,
+                                    parsed_function.parameters(),
+                                    &certification_arguments,
+                                )
                             )));
                         }
                         Ok(None) => {
