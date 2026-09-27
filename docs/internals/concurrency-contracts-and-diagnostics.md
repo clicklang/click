@@ -893,6 +893,22 @@ contracts, constructing fresh protected observations, and checking acquisition
 effects remain separate boundaries. No surface syntax changes here, and abstract
 helper transitions remain restricted.
 
+## Preserving use calls retain the concrete interface binding
+
+When a synchronous preserving `mutex_use` call has a concrete mutex ledger,
+its checked transfer now selects the initialization-bound protected interface
+using the callee's canonical use permission. A same-address permission from a
+different initialization is refused. Nested reborrows retain the initialization
+and select the same shared interface binding; return checks the permission
+against the retained binding before restoring the caller's authority.
+
+This metadata grants no payload ownership and contains no observed payload
+values. Abstract inputs without a concrete association remain opaque. The
+existing missing-resource diagnostic names the selected source authority when
+a concrete initialization does not match. No contract syntax changes, and
+abstract helper acquisition remains restricted pending independent-entry
+association and fresh-observation rules.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

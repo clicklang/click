@@ -27,6 +27,7 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) entry_transition: CheckedLoanTransition,
     pub(crate) usage: MutexUseBinding,
     source: CResourceFact,
+    interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     loan: MutexUseLoan,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
@@ -88,6 +89,7 @@ impl MutexUseCallTransfer {
             ledger,
             usage: loan.usage,
             source: source.clone(),
+            interface: None,
             loan,
             entry_transition,
             caller,
@@ -95,7 +97,30 @@ impl MutexUseCallTransfer {
         })
     }
 
-    pub(super) fn source_resource(&self) -> &CResourceFact {
+    /// Attach only metadata authenticated by the selected concrete
+    /// initialization. Preparing the transfer has already checked ownership
+    /// and the callee's loan; a source declaration cannot supply this binding.
+    pub(in crate::kernel) fn bind_interface(
+        &mut self,
+        protocols: &crate::kernel::mutexes::MutexLedger,
+    ) -> Result<(), MutexUseCallError> {
+        let fact = self.ledger.mutex_use_resource(self.usage, self.callee)?;
+        let interface = protocols
+            .interface_for_use(&fact)
+            .map_err(|_| MutexUseCallError::MissingResource(self.source.clone()))?;
+        // A repeated check must not erase or replace an established binding.
+        if let Some(previous) = &self.interface
+            && !interface
+                .as_ref()
+                .is_some_and(|next| Arc::ptr_eq(previous, next))
+        {
+            return Err(MutexUseCallError::MissingResource(self.source.clone()));
+        }
+        self.interface = interface;
+        Ok(())
+    }
+
+    pub(crate) fn source_resource(&self) -> &CResourceFact {
         &self.source
     }
 
@@ -149,6 +174,13 @@ impl MutexUseCallTransfer {
         assumptions: &PureFactContext,
     ) -> Result<MutexUseCallReturn, MutexUseCallError> {
         let expected = ledger.mutex_use_resource(self.usage, self.callee)?;
+        if self
+            .interface
+            .as_ref()
+            .is_some_and(|binding| !binding.matches_use(&expected))
+        {
+            return Err(MutexUseCallError::MissingResource(expected));
+        }
         if returned_resources
             .unique_owned_occurrence_for_fact(&expected)
             .is_none()

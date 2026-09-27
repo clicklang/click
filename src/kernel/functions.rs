@@ -14341,6 +14341,15 @@ fn prepare_contract_resource_transfer(
             purpose == ResourceTransitionPurpose::SuspendedWorker,
         ) {
             Ok(mut plan) => {
+                if let Some(protocols) = &caller_state.mutex_ledger {
+                    for use_plan in &mut plan.mutex_uses {
+                        if use_plan.bind_interface(protocols).is_err() {
+                            return Ok(Err(CRuntimeError::MissingResource {
+                                resource: use_plan.source_resource().clone(),
+                            }));
+                        }
+                    }
+                }
                 // Argument binding may have created a fresh by-value aggregate
                 // copy. Its views are backed by that checked entry allocation,
                 // which does not exist in the caller's earlier memory. The

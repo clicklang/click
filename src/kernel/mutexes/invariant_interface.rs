@@ -349,4 +349,187 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn preserving_use_calls_bind_concrete_interface_through_nested_reborrows() {
+        use crate::kernel::loans::mutex_calls::MutexUseCallTransfer;
+        let assumptions = PureFactContext::new();
+        let (published, payload) = published();
+        let protocols = published.state.mutex_ledger.as_ref().unwrap();
+        let owner = protocols.live_resource(&address()).unwrap();
+        let loans = LoanLedger::new();
+        let caller = loans.fresh_participant().unwrap();
+        let helper = loans.fresh_participant().unwrap();
+        let nested = loans.fresh_participant().unwrap();
+        let mut transfer = MutexUseCallTransfer::prepare(
+            &loans,
+            caller,
+            helper,
+            &published.state.resources,
+            &owner,
+            &assumptions,
+        )
+        .unwrap();
+        transfer.bind_interface(protocols).unwrap();
+        transfer.recheck_entry(&loans).unwrap();
+        let usage = transfer
+            .ledger
+            .mutex_use_resource(transfer.usage, helper)
+            .unwrap();
+        assert!(binding(&published).matches_use(&usage));
+        assert!(
+            !transfer
+                .callee_resources
+                .contains_exact_representation(&payload)
+        );
+        assert!(
+            !transfer
+                .callee_resources
+                .contains_exact_representation(&owner)
+        );
+        let mut child = MutexUseCallTransfer::prepare(
+            &transfer.ledger,
+            helper,
+            nested,
+            &transfer.callee_resources,
+            &usage,
+            &assumptions,
+        )
+        .unwrap();
+        child.bind_interface(protocols).unwrap();
+        let child_use = child
+            .ledger
+            .mutex_use_resource(child.usage, nested)
+            .unwrap();
+        assert!(binding(&published).matches_use(&child_use));
+        let returned_child = child
+            .finish(
+                &child.ledger,
+                nested,
+                &child.callee_resources,
+                &[],
+                &assumptions,
+            )
+            .unwrap();
+        let mut evidence = vec![child.entry_transition.clone()];
+        evidence.extend(returned_child.exit_transitions);
+        let returned = transfer
+            .finish(
+                &returned_child.ledger,
+                helper,
+                &returned_child.caller_resources,
+                &evidence,
+                &assumptions,
+            )
+            .unwrap();
+        assert!(
+            returned
+                .caller_resources
+                .contains_exact_representation(&owner)
+        );
+        assert!(
+            !returned
+                .caller_resources
+                .contains_exact_representation(&payload)
+        );
+    }
+
+    #[test]
+    fn use_call_interface_rejects_stale_initialization_and_binding_erasure() {
+        use crate::kernel::loans::mutex_calls::MutexUseCallTransfer;
+        let assumptions = PureFactContext::new();
+        let (first, _) = published();
+        let (replacement, _) = published();
+        let first_protocols = first.state.mutex_ledger.as_ref().unwrap();
+        let owner = first_protocols.live_resource(&address()).unwrap();
+        let loans = LoanLedger::new();
+        let caller = loans.fresh_participant().unwrap();
+        let helper = loans.fresh_participant().unwrap();
+        let mut transfer = MutexUseCallTransfer::prepare(
+            &loans,
+            caller,
+            helper,
+            &first.state.resources,
+            &owner,
+            &assumptions,
+        )
+        .unwrap();
+        assert!(
+            transfer
+                .bind_interface(replacement.state.mutex_ledger.as_ref().unwrap())
+                .is_err()
+        );
+        transfer.bind_interface(first_protocols).unwrap();
+        transfer.bind_interface(first_protocols).unwrap();
+        let empty = MutexContext::new(CState::new());
+        assert!(
+            transfer
+                .bind_interface(empty.state.mutex_ledger.as_ref().unwrap())
+                .is_err()
+        );
+        // Failed rebinding leaves the original checked call usable.
+        transfer
+            .finish(
+                &transfer.ledger,
+                helper,
+                &transfer.callee_resources,
+                &[],
+                &assumptions,
+            )
+            .unwrap();
+    }
+    #[test]
+    fn use_interface_call_binding_scales_independently_of_resource_frame() {
+        use crate::kernel::loans::mutex_calls::MutexUseCallTransfer;
+        let assumptions = PureFactContext::new();
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let (mut context, _) = published();
+            for index in 0..size {
+                context.state.resources =
+                    context
+                        .state
+                        .resources
+                        .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                            name: format!("frame{index}"),
+                            arguments: vec![].into(),
+                        }));
+            }
+            let protocols = context.state.mutex_ledger.as_ref().unwrap();
+            let owner = protocols.live_resource(&address()).unwrap();
+            let loans = LoanLedger::new();
+            let caller = loans.fresh_participant().unwrap();
+            let helper = loans.fresh_participant().unwrap();
+            let ((returned, work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let mut transfer = MutexUseCallTransfer::prepare(
+                        &loans,
+                        caller,
+                        helper,
+                        &context.state.resources,
+                        &owner,
+                        &assumptions,
+                    )
+                    .unwrap();
+                    transfer.bind_interface(protocols).unwrap();
+                    transfer
+                        .finish(
+                            &transfer.ledger,
+                            helper,
+                            &transfer.callee_resources,
+                            &[],
+                            &assumptions,
+                        )
+                        .unwrap()
+                })
+            });
+            assert_eq!(returned.caller_resources.facts().len(), size + 1);
+            samples.push((work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].0 <= pair[0].0 * 2 + 1 && pair[1].1 <= pair[0].1 * 2 + 1,
+                "use interface binding scans unrelated resources: {samples:?}"
+            );
+        }
+    }
 }

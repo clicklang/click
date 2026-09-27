@@ -76,9 +76,17 @@ enum MutexEntry {
 /// A declaration checked at publication, bound to exactly one initialization.
 /// Sharing this description conveys no ownership or observed payload value.
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct InitializedMutexInterface {
+pub(super) struct InitializedMutexInterface {
     initialization: MutexInitializationId,
     declaration: invariant_interface::MutexInvariantInterface,
+}
+
+impl InitializedMutexInterface {
+    pub(super) fn matches_use(&self, fact: &CResourceFact) -> bool {
+        matches!(fact.resource(), CResource::MutexUse(identity)
+            if identity.initialization == Some(self.initialization.0)
+                && identity.mutex == *self.declaration.mutex())
+    }
 }
 
 /// Identity of one successful initialization, independent of its address and
@@ -1586,6 +1594,31 @@ impl MutexLedger {
 
     fn get(&self, mutex: &Pointer) -> Option<&MutexEntry> {
         self.storage.entries.get(mutex)
+    }
+
+    /// Read only the selected initialization's description. The call transfer
+    /// must separately establish ownership and the participant's live loan.
+    pub(super) fn interface_for_use(
+        &self,
+        fact: &CResourceFact,
+    ) -> Result<Option<Arc<InitializedMutexInterface>>, ()> {
+        let CResource::MutexUse(identity) = fact.resource() else {
+            return Err(());
+        };
+        let Some(entry) = self.get(&identity.mutex) else {
+            return Ok(None);
+        };
+        if identity.initialization != Some(entry.initialization().0.0) {
+            return Err(());
+        }
+        let binding = entry.interface().cloned();
+        if binding
+            .as_ref()
+            .is_some_and(|binding| !binding.matches_use(fact))
+        {
+            return Err(());
+        }
+        Ok(binding)
     }
 
     /// Visit the queried block and provenance buckets that can alias it.
