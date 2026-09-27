@@ -6006,6 +6006,7 @@ fn viewed_form_of_resource_fact(fact: &CResourceFact) -> Option<CResourceFact> {
         CResourceFact::Own(
             CResource::Token { .. }
             | CResource::Instance(_)
+            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)

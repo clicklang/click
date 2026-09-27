@@ -1604,6 +1604,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
                 collect_algebraic_value_bitvector_variables(value, variables);
             }
         }
+        CResource::OpaqueParameter(_) => {}
         CResource::Memory(range) => collect_c_memory_range_bitvector_variables(range, variables),
         CResource::Iterated(iterated) => {
             for pointer in iterated.pointers() {
@@ -1675,6 +1676,7 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource.term() {
+        CResourceTerm::Parameter { .. } => {}
         CResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }
@@ -1712,6 +1714,7 @@ fn collect_resource_term_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
+        CResourceTerm::Parameter { .. } => {}
         CResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }

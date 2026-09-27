@@ -26,6 +26,24 @@ original named instance; selecting a replacement from a proof awaits the named
 instance or a different family, arguments, or schema is rejected. Guard and
 initialization checks remain separate.
 
+The next kernel checkpoint adds opaque parameter occurrences with exclusive
+unit ownership. A parameter identity names the description; a separate
+occurrence identity names the owned input. Opaque occurrences cannot be viewed,
+counted, duplicated, read as memory, or assumed safe to transfer between
+threads. Their memory footprint is unknown, rather than empty.
+
+Explicit description substitutions check parameter scope and arity separately
+from actual input ownership. They reject using one occurrence for two inputs
+and check the selected instance against the full description, using the same
+proved argument equalities as ordinary resource contracts. Substitution can
+lower a parameter clause to an existing concrete instance clause, preserving
+its binder and transfer role without copying observed fields into the clause.
+This staged substitution currently handles declared exclusive instances with
+C-typed arguments; named memory and other primitive arguments remain deferred.
+These operations do not certify a generic function rule. Generic rule issuance
+and parameter-clause evaluation remain disabled until independent opaque entry
+checking and call instantiation are connected.
+
 This checkpoint does not accept `<P: Resource>` source syntax. A verified
 function rule currently contains a concrete interface. The next kernel layer
 must certify an opaque resource parameter once and check instantiation of its

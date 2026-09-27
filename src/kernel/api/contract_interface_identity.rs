@@ -581,6 +581,7 @@ impl Names {
 
     fn resource_term(&mut self, resource: &mut CResourceTerm) {
         match resource {
+            CResourceTerm::Parameter { binder, .. } => binder.clear(),
             // A binder's spelling is a name, not part of the interface: the
             // identity beside it is the semantic key, exactly as a parameter's
             // type rather than its name is. Erase it so two declarations that

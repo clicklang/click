@@ -702,6 +702,7 @@ impl CFunctionContractInterface {
             exceptional_signature: CExceptionalSignature::None,
             parameters,
             proof_parameters: Default::default(),
+            resource_description_parameters: Default::default(),
             resource_requires: Vec::new(),
             resource_ensures: Vec::new(),
             resource_constructors: Vec::new(),
@@ -748,6 +749,10 @@ impl CFunctionContractInterface {
     pub(crate) fn with_proof_parameters(mut self, parameters: Vec<CResourceSpec>) -> Self {
         self.proof_parameters = parameters.into();
         self
+    }
+
+    pub(crate) fn resource_description_parameters(&self) -> &[Variable] {
+        &self.resource_description_parameters
     }
 
     pub fn resource_requires(&self) -> &[CResourceSpec] {
@@ -811,7 +816,9 @@ impl CFunctionContractInterface {
     }
 
     pub fn opaque_contract_supported(&self) -> bool {
-        self.opaque_contract_supported && self.exceptional_signature.is_empty()
+        self.opaque_contract_supported
+            && self.exceptional_signature.is_empty()
+            && self.resource_description_parameters.is_empty()
     }
 
     /// Whether this interface is representable by a body-certified direct
@@ -827,6 +834,7 @@ impl CFunctionContractInterface {
         self.opaque_contract_supported
             && self.exceptional_signature == CExceptionalSignature::Int32
             && self.proof_parameters.is_empty()
+            && self.resource_description_parameters.is_empty()
             && self.resource_requires.is_empty()
             && self.resource_ensures.is_empty()
             && self.resource_constructors.is_empty()
@@ -880,6 +888,7 @@ impl CFunctionContractInterface {
             && self.exceptional_signature == other.exceptional_signature
             && self.parameters == other.parameters
             && self.proof_parameters == other.proof_parameters
+            && self.resource_description_parameters == other.resource_description_parameters
             && self.resource_requires == other.resource_requires
             && self.resource_ensures == other.resource_ensures
             && self.resource_constructors == other.resource_constructors
@@ -901,6 +910,7 @@ impl CFunctionContractInterface {
     pub(crate) fn has_compatible_signature_and_resource_vocabulary(&self, other: &Self) -> bool {
         self.has_compatible_signature_and_composite_vocabulary(other)
             && self.proof_parameters.is_empty()
+            && self.resource_description_parameters.is_empty()
     }
 
     pub(crate) fn has_compatible_signature_and_composite_vocabulary(&self, other: &Self) -> bool {

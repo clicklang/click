@@ -1175,6 +1175,11 @@ impl Renderer<'_> {
     fn resource(&mut self, resource: &CResource) {
         match resource {
             CResource::MutexGuard(_) => self.push("mutex-guard"),
+            CResource::OpaqueParameter(parameter) => self.fmt(format_args!(
+                "resource-parameter(#{} occurrence #{})",
+                parameter.parameter().0,
+                parameter.occurrence().0
+            )),
             CResource::MutexLive(_) => self.push("mutex-live"),
             CResource::MutexUse(identity) => {
                 self.push("mutex_use(");

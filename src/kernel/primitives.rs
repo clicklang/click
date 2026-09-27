@@ -2677,6 +2677,10 @@ pub struct CFunctionContractInterface {
     /// Explicit resource-instance binders introduced by a named contract.
     /// These are part of the application interface, not a body assumption.
     pub(crate) proof_parameters: std::sync::Arc<[CResourceSpec]>,
+    /// Nominal declarations of resource-description parameters. These carry
+    /// no ownership; owned occurrences are introduced only by resource
+    /// clauses and their checked call bindings.
+    pub(crate) resource_description_parameters: std::sync::Arc<[Variable]>,
     pub(crate) resource_requires: Vec<CResourceSpec>,
     pub(crate) resource_ensures: Vec<CResourceSpec>,
     pub(crate) resource_constructors: Vec<CResourceSpec>,
@@ -5742,6 +5746,9 @@ pub enum CResource {
         arguments: ResourceArguments,
     },
     Instance(ResourceInstance),
+    /// Exclusive ownership of one occurrence of an opaque resource parameter.
+    /// Its declaration identity does not reveal its fields or memory.
+    OpaqueParameter(OpaqueResourceParameter),
     /// Opaque exclusive authority for one acquisition of a modeled mutex.
     MutexGuard(MutexIdentity),
     /// Exclusive lifecycle authority for one initialized mutex.
@@ -5774,6 +5781,34 @@ pub struct MutexUseIdentity {
     pub(in crate::kernel) binding: Option<super::loans::MutexUseBinding>,
     pub(in crate::kernel) initialization: Option<u64>,
     pub(in crate::kernel) mutex: Pointer,
+}
+
+/// A symbolic resource parameter and one particular owned occurrence of it.
+/// Equal parameters may have separate occurrences, but one occurrence cannot
+/// be owned twice. Neither identity describes the resource's representation.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct OpaqueResourceParameter {
+    parameter: Variable,
+    occurrence: Variable,
+}
+
+impl OpaqueResourceParameter {
+    // Production construction waits for the independent generic-entry rule.
+    #[cfg(test)]
+    pub(crate) fn new(parameter: Variable, occurrence: Variable) -> Self {
+        Self {
+            parameter,
+            occurrence,
+        }
+    }
+
+    pub fn parameter(&self) -> Variable {
+        self.parameter
+    }
+
+    pub fn occurrence(&self) -> Variable {
+        self.occurrence
+    }
 }
 
 impl MutexUseIdentity {
@@ -5912,6 +5947,37 @@ pub(super) trait ResourceFamilyAlgebra {
                     });
                 }
             }
+            ResourceFamily::OpaqueParameter => {
+                if spec.access != CResourceAccessMode::Own {
+                    return Err(CResourceSpecError::InvalidAccess {
+                        family: self.family(),
+                        access: spec.access,
+                    });
+                }
+                if spec.quantity != CResourceQuantity::One {
+                    return Err(CResourceSpecError::InvalidQuantity {
+                        family: self.family(),
+                        reason: "opaque parameters have unit quantity".into(),
+                    });
+                }
+                match &spec.term {
+                    CResourceTerm::Parameter {
+                        parameter,
+                        identity,
+                        ..
+                    } if parameter != identity => {}
+                    CResourceTerm::Parameter { .. } => {
+                        return Err(CResourceSpecError::InvalidNestedTerm(
+                            "resource description and owned occurrence must have distinct identities".into(),
+                        ));
+                    }
+                    _ => {
+                        return Err(CResourceSpecError::InvalidNestedTerm(
+                            "opaque parameters require a resource parameter term".into(),
+                        ));
+                    }
+                }
+            }
             ResourceFamily::Memory => {
                 if !matches!(spec.quantity, CResourceQuantity::One) {
                     return Err(CResourceSpecError::InvalidQuantity {
@@ -6008,6 +6074,9 @@ struct TokenResourceAlgebra;
 /// observation laws by the Click proof layer.
 struct CompositeResourceAlgebra;
 struct InstanceResourceAlgebra;
+struct OpaqueParameterResourceAlgebra;
+static OPAQUE_PARAMETER_RESOURCE_ALGEBRA: OpaqueParameterResourceAlgebra =
+    OpaqueParameterResourceAlgebra;
 struct MutexUseResourceAlgebra;
 static MUTEX_USE_RESOURCE_ALGEBRA: MutexUseResourceAlgebra = MutexUseResourceAlgebra;
 
@@ -6036,6 +6105,7 @@ pub enum ResourceFamily {
     Composite,
     Token,
     Instance,
+    OpaqueParameter,
     MutexGuard,
     MutexLive,
     MutexUse,
@@ -6071,6 +6141,14 @@ pub enum CResourceTerm {
     MutexUse {
         mutex: Box<CExpression>,
         snapshot: CResourceSnapshot,
+    },
+    /// An owned, opaque occurrence described by a declared Resource parameter.
+    /// The parameter selects the description; `identity` selects the owned
+    /// binder and cannot be inferred from the description alone.
+    Parameter {
+        parameter: Variable,
+        identity: Variable,
+        binder: String,
     },
     Composite {
         name: String,
@@ -6222,6 +6300,7 @@ impl CResourceTerm {
             Self::MutexGuard { .. } => ResourceFamily::MutexGuard,
             Self::MutexLive { .. } => ResourceFamily::MutexLive,
             Self::MutexUse { .. } => ResourceFamily::MutexUse,
+            Self::Parameter { .. } => ResourceFamily::OpaqueParameter,
             Self::Composite { .. } => ResourceFamily::Composite,
             Self::Token { .. } => ResourceFamily::Token,
             Self::Instance { .. } => ResourceFamily::Instance,
@@ -6239,6 +6318,17 @@ impl CResourceTerm {
     pub fn instance_identity(&self) -> Option<Variable> {
         match self {
             Self::Instance { identity, .. } => Some(*identity),
+            _ => None,
+        }
+    }
+
+    pub fn parameter_binding(&self) -> Option<(Variable, Variable, &str)> {
+        match self {
+            Self::Parameter {
+                parameter,
+                identity,
+                binder,
+            } => Some((*parameter, *identity, binder)),
             _ => None,
         }
     }
@@ -6422,7 +6512,8 @@ impl CResourceSpec {
             | ResourceFamily::Iterated
             | ResourceFamily::MutexGuard
             | ResourceFamily::MutexLive
-            | ResourceFamily::MutexUse => {
+            | ResourceFamily::MutexUse
+            | ResourceFamily::OpaqueParameter => {
                 return Err(CResourceSpecError::InvalidNestedTerm(
                     "only composite and token families have declared resource terms".into(),
                 ));
@@ -6453,6 +6544,31 @@ impl CResourceSpec {
                 binder,
                 schema,
                 resource: Box::new(resource.term),
+            },
+            CResourceAccessMode::Own,
+            CResourceQuantity::One,
+            role,
+            snapshot,
+        )
+    }
+
+    pub fn parameter(
+        parameter: Variable,
+        identity: Variable,
+        binder: String,
+        role: CResourceTransferRole,
+        snapshot: CResourceSnapshot,
+    ) -> Result<Self, CResourceSpecError> {
+        if parameter == identity {
+            return Err(CResourceSpecError::InvalidNestedTerm(
+                "resource description and owned occurrence must have distinct identities".into(),
+            ));
+        }
+        Self::new(
+            CResourceTerm::Parameter {
+                parameter,
+                identity,
+                binder,
             },
             CResourceAccessMode::Own,
             CResourceQuantity::One,
@@ -6557,11 +6673,13 @@ impl CResourceSpec {
 
     pub fn binding_name(&self) -> Option<&str> {
         self.instance_binder()
+            .or_else(|| self.parameter_binding().map(|(_, _, name)| name))
             .or_else(|| self.mutex_authority_binding().map(|(_, name)| name))
     }
 
     pub fn binding_identity(&self) -> Option<Variable> {
         self.instance_identity()
+            .or_else(|| self.parameter_binding().map(|(_, identity, _)| identity))
             .or_else(|| self.mutex_authority_binding().map(|(identity, _)| identity))
     }
 
@@ -6629,6 +6747,10 @@ impl CResourceSpec {
 
     pub fn instance_identity(&self) -> Option<Variable> {
         self.term.instance_identity()
+    }
+
+    pub fn parameter_binding(&self) -> Option<(Variable, Variable, &str)> {
+        self.term.parameter_binding()
     }
 
     pub fn instance_binder(&self) -> Option<&str> {

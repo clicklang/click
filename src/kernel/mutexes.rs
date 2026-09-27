@@ -1603,7 +1603,7 @@ impl MutexContext {
         let restores_description = if let Some(interface) = &interface {
             matches!(&restored, Some(CResourceFact::Own(CResource::Instance(instance), quantity))
                 if quantity.as_const() == Some(1)
-                    && interface.declaration.description().matches_instance(instance))
+                    && interface.declaration.description().matches_instance(instance, assumptions))
         } else {
             // Low-level escrow without a checked declaration supplies no
             // general assertion under which a replacement can be justified.

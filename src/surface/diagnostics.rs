@@ -1273,6 +1273,13 @@ pub(super) fn describe_resource_fact(
             instance.name(),
             instance.identity().0
         ),
+        CResourceFact::Own(CResource::OpaqueParameter(parameter), _)
+        | CResourceFact::View(CResource::OpaqueParameter(parameter)) => format!(
+            "{} resource parameter #{} occurrence #{}",
+            if resource.is_own() { "owns" } else { "views" },
+            parameter.parameter().0,
+            parameter.occurrence().0
+        ),
         CResourceFact::Own(
             CResource::Composite {
                 name,
@@ -1376,6 +1383,11 @@ fn describe_c_resource(
         CResource::Instance(instance) => {
             format!("instance {}#{}", instance.name(), instance.identity().0)
         }
+        CResource::OpaqueParameter(parameter) => format!(
+            "resource parameter #{} occurrence #{}",
+            parameter.parameter().0,
+            parameter.occurrence().0
+        ),
         CResource::Memory(range) => {
             format!(
                 "memory({})",

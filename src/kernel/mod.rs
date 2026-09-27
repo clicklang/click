@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 36;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 37;
 
 pub(crate) mod assumptions;
 mod eval;
@@ -21,6 +21,7 @@ mod owned_footprint_reach;
 mod population_access;
 mod quantified_frame;
 mod resource_description;
+mod resource_parameters;
 mod thread_confinement;
 pub(crate) use functions::ResourceBodyClauseRecord;
 #[cfg(test)]
@@ -30,6 +31,7 @@ pub(crate) use functions::{
     InstantiatedCompositeResourceFacts, instantiate_composite_resource_facts,
 };
 pub use resource_description::ResourceDescription;
+pub use resource_parameters::{ResourceParameterError, ResourceParameterSubstitution};
 mod iterated;
 pub(crate) use iterated::{IteratedStep, apply_iterated_step, plan_iterated_guard_store};
 // V0-V6 of the stable-view migration build the checked semantic spine before

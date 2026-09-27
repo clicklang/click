@@ -289,6 +289,53 @@ mod tests {
     }
 
     #[test]
+    fn declared_release_requires_evidence_for_equal_description_arguments() {
+        let assumptions = PureFactContext::new();
+        let (published, original) = published();
+        let mut replacement = instance(2, 99);
+        let other = Pointer::symbolic(Variable(71));
+        replacement.arguments = vec![CValue::pointer(other.clone()).into()].into();
+        let replacement = CResourceFact::own(CResource::Instance(replacement));
+        let (mut held, guard) = published.acquire(&address(), &assumptions).unwrap();
+        held.state.resources = held
+            .state
+            .resources
+            .clone()
+            .without_fact(&original, &assumptions)
+            .unwrap()
+            .try_compose_with_facts_delaying_normalization([replacement.clone()], &assumptions)
+            .unwrap();
+        assert_eq!(
+            held.release(
+                MutexGuard {
+                    mutex: guard.mutex.clone(),
+                    initialization: guard.initialization,
+                    epoch: guard.epoch,
+                },
+                replacement.clone(),
+                &assumptions
+            )
+            .err(),
+            Some(MutexTransitionError::MissingInvariant(original))
+        );
+        let equality = assumptions.assume_condition(
+            crate::kernel::ConditionTerm::PointerEqual(
+                Box::new(Pointer::symbolic(Variable(70))),
+                Box::new(other),
+            ),
+            true,
+        );
+        let released = held.release(guard, replacement.clone(), &equality).unwrap();
+        let (acquired, _) = released.acquire(&address(), &equality).unwrap();
+        assert!(
+            acquired
+                .state
+                .resources
+                .contains_exact_representation(&replacement)
+        );
+    }
+
+    #[test]
     fn declared_release_checks_schema_arguments_family_and_actual_ownership() {
         let assumptions = PureFactContext::new();
         let (published, original) = published();

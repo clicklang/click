@@ -4,7 +4,9 @@
 //! schema. It contains no instance identity, observed field values, or proof
 //! of ownership. Consumers must check an owned instance separately.
 
-use super::{AlgebraicValue, ResourceArguments, ResourceFieldSchema, ResourceInstance};
+use super::{
+    AlgebraicValue, PureFactContext, ResourceArguments, ResourceFieldSchema, ResourceInstance,
+};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -41,11 +43,24 @@ impl ResourceDescription {
     }
 
     /// Check the full description without requiring an earlier occurrence or
-    /// earlier observations. This predicate supplies no ownership evidence.
-    pub fn matches_instance(&self, instance: &ResourceInstance) -> bool {
+    /// earlier observations. Argument equality uses the same checked relation
+    /// as ordinary resource contracts. This supplies no ownership evidence.
+    pub fn matches_instance(
+        &self,
+        instance: &ResourceInstance,
+        assumptions: &PureFactContext,
+    ) -> bool {
         self.family() == instance.name()
-            && self.arguments() == instance.arguments()
             && self.schema() == instance.schema()
+            && self.arguments().len() == instance.arguments().len()
+            && self
+                .arguments()
+                .iter()
+                .zip(instance.arguments())
+                .all(|(left, right)| {
+                    left == right
+                        || super::resource_arguments_proven_equal(left, right, assumptions)
+                })
     }
 }
 
