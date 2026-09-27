@@ -52,7 +52,9 @@ generation's resource cannot substitute for the owner. Missing ownership reports
 memory access. It cannot be viewed, counted, or transferred to workers yet.
 
 Synchronous preserving `owns mutex_use(mu)` contracts now borrow lifecycle
-ownership or reborrow use authority. Guard and worker transport remain pending.
+ownership or reborrow use authority. Such helpers may now perform balanced
+opaque lock/unlock, granting no protected payload. Guard outputs and worker
+transport remain pending.
 Preserving lifecycle contracts
 retain the same conservative transition freeze as preserving guard contracts;
 `consumes`/`produces` and named primitive lifecycle binders remain unsupported.
@@ -906,8 +908,44 @@ This metadata grants no payload ownership and contains no observed payload
 values. Abstract inputs without a concrete association remain opaque. The
 existing missing-resource diagnostic names the selected source authority when
 a concrete initialization does not match. No contract syntax changes, and
-abstract helper acquisition remains restricted pending independent-entry
+abstract helper acquisition exposes no payload pending independent-entry
 association and fresh-observation rules.
+
+## Balanced opaque acquisitions in preserving use helpers
+
+A helper with `owns mutex_use(mu)` may now lock and unlock that mutex. The
+runtime creates a fresh guard and an exact branch-local acquisition receipt,
+pins the use scope with a lifetime hold, and retains checked loan evidence.
+Unlock requires the actual guard occurrence and matching receipt. Hiding the
+guard cannot unlock, acquire again, or discharge the local return obligation.
+Returning or throwing with an acquisition created by the current participant
+is refused; a nested helper may still preserve its caller's guard.
+
+This path grants no protected resource or payload observation. Direct
+preserving lifecycle and entry-guard contracts retain their restrictions on
+init/destroy and replacing an entry acquisition. `held` remains unavailable
+for opaque protocol inspection. There is no new surface syntax.
+
+For this first acquisition-capable contract discipline, every synchronous use
+call may acquire. The caller must supply an available matching concrete
+initialization, or show that possible abstract entry guards are separate.
+A separate guard-only footprint projection, computed once at entry, includes
+guards hidden in wrappers and undecided match arms. Runtime-created receipts
+have their own indexed footprints. Unknown aliases are refused conservatively;
+a helper that only preserves a use permission cannot yet opt out of this
+acquisition-availability restriction.
+
+Both direct lock/unlock and modular use-call summaries invalidate the mutex's
+representation bytes and reject conflicting stable storage loans. The summary
+uses an explicit runtime-authorized storage effect, separate from ordinary
+contract writes, so retained raw storage ownership cannot preserve stale byte
+observations. Disjoint owned memory remains available and unchanged.
+
+The protected-state boundary remains open: independent proof entry needs a
+contract association between the use permission and its invariant, and an
+acquisition exposing that invariant must create fresh observations. Shared
+workers, escaping guards, and conditional acquisition loop assertions remain
+separate work.
 
 ## Remaining semantic implementation boundaries
 
@@ -930,7 +968,9 @@ hostile certificate tests:
    acquisition bindings, preserving versus consuming/producing occurrences,
    and sound instantiation at calls. Named primitive binders should use that
    occurrence machinery, without becoming field-bearing wrapper instances.
-   The current blanket transition freeze must remain until this is checked.
+   Replacing an entry acquisition or exporting a new acquisition remains
+   restricted until this is checked. Balanced opaque use acquisitions do not
+   replace entry acquisitions or grant protected state.
 3. **Interference and loop abstraction.** Acquiring shared protected state must
    establish a fresh observation without reviving earlier-memory facts. Loop
    assertions need existential, possibly conditional acquisition ownership,

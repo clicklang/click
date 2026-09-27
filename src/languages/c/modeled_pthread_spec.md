@@ -1,4 +1,4 @@
-# Modeled pthread create/join and mutex specification, version 6
+# Modeled pthread create/join and mutex specification, version 7
 
 This trusted specification is an explicit assumption of a conditional Click
 client proof. It does not certify an operating system's pthread implementation.
@@ -29,7 +29,8 @@ client proof. It does not certify an operating system's pthread implementation.
   authorize initialization, and an active storage loan prevents it. Initialization
   forgets previous values of the mutex bytes while preserving disjoint memory.
 - `pthread_mutex_lock` requires the current initialization's available
-  `mutex_live` owner. It succeeds for an unlocked mutex and gives
+  `mutex_live` owner or a checked owned `mutex_use` loan for that initialization.
+  It succeeds for an unlocked mutex and gives
   the current path its escrowed resource. `pthread_mutex_unlock` succeeds only
   when that same resource has been folded and returned to escrow.
   `pthread_mutex_destroy` succeeds only for an unlocked initialized mutex,
@@ -70,8 +71,20 @@ Reservations are retained in the concrete runtime ledger. Independently verified
 preserving helpers also retain the storage dependencies of their assumed owned
 mutex inputs, including inputs inside declared resources. These dependencies
 survive changes to the visible resource representation, do not grant runtime
-authority, and leave the protocol transition freeze in place. Unknown dependencies
-are conservative. Lifecycle outputs and `mutex_use` loans remain unimplemented.
+authority. Unknown dependencies are conservative. Direct preserving `mutex_use`
+helpers may perform balanced opaque lock/unlock: acquisition creates an exact
+local guard and lifetime hold, and release consumes both. These operations
+expose no protected assertion. Return requires the preserved use input with no
+outstanding acquisition or child loan. Init/destroy, escaping acquisitions, and
+worker use sharing remain unsupported in this abstract path.
+
+Every synchronous use contract currently permits balanced acquisition. Calls
+therefore conservatively require the selected concrete initialization to be
+unlocked and reject potentially aliased owned abstract guards, including guards
+hidden in entry wrappers. This is local availability, not a promise of global
+unlockedness, fairness, or termination. Such calls may change the opaque mutex
+representation: their checked summaries forget those storage bytes and respect
+stable storage loans, even when the caller retains ordinary storage ownership.
 
 The C client still owes its worker proof, creation failure paths, ownership
 separation, parent access checks, and every source-level continuation. The

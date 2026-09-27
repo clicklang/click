@@ -3888,6 +3888,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_state(
         thread_ledger: state.thread_ledger.clone(),
         mutex_ledger: state.mutex_ledger.clone(),
         mutex_input_reservations: state.mutex_input_reservations.clone(),
+        opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
         preserves_mutex_protocols: state.preserves_mutex_protocols,
         population_access: state.population_access.clone(),
         pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {
@@ -6561,6 +6562,7 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
         thread_ledger: state.thread_ledger.clone(),
         mutex_ledger: state.mutex_ledger.clone(),
         mutex_input_reservations: state.mutex_input_reservations.clone(),
+        opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
         preserves_mutex_protocols: state.preserves_mutex_protocols,
         population_access: state.population_access.clone(),
         pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {

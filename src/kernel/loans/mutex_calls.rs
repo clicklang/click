@@ -7,6 +7,7 @@ use super::*;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MutexUseCallError {
     MissingResource(CResourceFact),
+    Unavailable(&'static str),
     Loan(LoanRefusal),
     InvalidResources(crate::kernel::ResourceContextValidityError),
 }
@@ -60,6 +61,11 @@ impl MutexUseCallTransfer {
                 ledger.lend_mutex_use_with_transition(caller, callee, support, source.clone())?
             }
             CResource::MutexUse(identity) => {
+                ledger.check_mutex_use_available(
+                    identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                    caller,
+                    resources,
+                )?;
                 if ledger.mutex_use_resource(
                     identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
                     caller,
@@ -105,6 +111,14 @@ impl MutexUseCallTransfer {
         protocols: &crate::kernel::mutexes::MutexLedger,
     ) -> Result<(), MutexUseCallError> {
         let fact = self.ledger.mutex_use_resource(self.usage, self.callee)?;
+        protocols
+            .check_use_acquisition(&fact)
+            .map_err(|error| match error {
+                crate::kernel::mutexes::MutexTransitionError::Refusal(message) => {
+                    MutexUseCallError::Unavailable(message)
+                }
+                _ => MutexUseCallError::MissingResource(self.source.clone()),
+            })?;
         let interface = protocols
             .interface_for_use(&fact)
             .map_err(|_| MutexUseCallError::MissingResource(self.source.clone()))?;

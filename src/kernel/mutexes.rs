@@ -9,9 +9,8 @@
 //! The C binding still has to validate the declaration, pointer, status,
 //! and initialization before a pthread call can use these transitions.
 
-// Checked abstract transitions are staged until contract effects are available.
-#[allow(dead_code)]
 mod assumed_protocol;
+pub(super) use assumed_protocol::{OpaqueMutexAcquisitions, opaque_runtime_transition};
 mod invariant_interface;
 
 use std::cmp::Ordering as CmpOrdering;
@@ -332,6 +331,31 @@ pub(super) fn storage_write_refusal(
     ledger_storage_write_refusal(state.mutex_ledger.as_ref()?, write, assumptions)
 }
 
+/// A modular use call that may acquire cannot start while the caller owns a
+/// possibly matching assumed guard, even when that guard is folded away.
+/// The guard projection is computed at independent entry, not at each call.
+pub(super) fn abstract_guard_acquisition_refusal(
+    state: &CState,
+    mutex: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<super::CRuntimeError> {
+    let inputs = state.mutex_input_reservations.as_ref()?;
+    if inputs.guard_unnamed && !mutex.block.starts_with("local:") {
+        return Some(super::CRuntimeError::FunctionContract(
+            "cannot establish that the mutex is available: an input guard has an unresolved mutex address".into(),
+        ));
+    }
+    let requested = storage_range(
+        mutex,
+        crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin().mutex_storage_bytes,
+    );
+    ledger_storage_write_refusal(&inputs.guard_ledger, &requested, assumptions).map(|_| {
+        super::CRuntimeError::FunctionContract(
+            "cannot establish that the mutex is available: an input mutex_guard may hold it".into(),
+        )
+    })
+}
+
 fn ledger_storage_write_refusal(
     ledger: &MutexLedger,
     write: &super::CMemoryRange,
@@ -401,6 +425,8 @@ pub(super) struct MutexInputReservations {
     identity: u64,
     ledger: MutexLedger,
     unnamed: bool,
+    guard_ledger: MutexLedger,
+    guard_unnamed: bool,
     guards: PersistentMap<Pointer, CResourceFact>,
     lifetimes: PersistentMap<Pointer, CResourceFact>,
 }
@@ -435,13 +461,23 @@ impl MutexInputReservations {
             identity: MutexLedger::fresh_identity(),
             ledger: MutexLedger::new(),
             unnamed: false,
+            guard_ledger: MutexLedger::new(),
+            guard_unnamed: false,
             guards: PersistentMap::default(),
             lifetimes: PersistentMap::default(),
         }
     }
 
+    #[cfg(test)]
     pub(super) fn from_ranges(
         ranges: impl IntoIterator<Item = super::CMemoryRange>,
+    ) -> Option<Self> {
+        Self::from_ranges_and_guards(ranges, std::iter::empty())
+    }
+
+    pub(super) fn from_ranges_and_guards(
+        ranges: impl IntoIterator<Item = super::CMemoryRange>,
+        guards: impl IntoIterator<Item = super::CMemoryRange>,
     ) -> Option<Self> {
         let mut result = Self::empty();
         for range in ranges {
@@ -467,7 +503,34 @@ impl MutexInputReservations {
                 );
             }
         }
-        (result.unnamed || result.ledger.has_any_mutex()).then_some(result)
+        for range in guards {
+            if range.is_unnamed_footprint() {
+                result.guard_unnamed = true;
+                continue;
+            }
+            let Some(bytes) = range.end().as_const().filter(|bytes| {
+                *bytes > 0 && range.start().as_const() == Some(0) && range.element_width() == 1
+            }) else {
+                result.guard_unnamed = true;
+                continue;
+            };
+            if result.guard_ledger.get(range.base()).is_none() {
+                result.guard_ledger = result.guard_ledger.with_inserted(
+                    range.base().clone(),
+                    MutexEntry::Unlocked {
+                        initialization: MutexInitialization::fresh(bytes)
+                            .expect("nonempty modeled mutex storage"),
+                        invariant: None,
+                        interface: None,
+                    },
+                );
+            }
+        }
+        (result.unnamed
+            || result.ledger.has_any_mutex()
+            || result.guard_unnamed
+            || result.guard_ledger.has_any_mutex())
+        .then_some(result)
     }
 }
 
@@ -642,6 +705,13 @@ pub(super) fn guard_resource(
     mutex: &Pointer,
     abstract_entry: bool,
 ) -> Option<CResourceFact> {
+    if let Some(guard) = state
+        .opaque_mutex_acquisitions
+        .as_ref()
+        .and_then(|held| held.guard_resource(mutex))
+    {
+        return Some(guard);
+    }
     if let Some(ledger) = &state.mutex_ledger {
         return ledger.guard_resource(mutex);
     }
@@ -661,6 +731,26 @@ pub(super) fn guard_resource(
             mutex: mutex.clone(),
         }))
     })
+}
+
+/// Current conservative call discipline: use helpers may acquire, so an
+/// entry guard or another outstanding local acquisition must be separate.
+pub(super) fn acquisition_availability_refusal(
+    state: &CState,
+    mutex: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<MutexTransitionError> {
+    if abstract_guard_acquisition_refusal(state, mutex, assumptions).is_some()
+        || state
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .is_some_and(|held| held.acquisition_conflicts(mutex, assumptions))
+    {
+        return Some(MutexTransitionError::Refusal(
+            "Click cannot acquire or lend mutex_use while a possibly aliasing mutex_guard is held",
+        ));
+    }
+    None
 }
 
 /// Preconditions for the C initialization operation, before any invariant
@@ -1594,6 +1684,24 @@ impl MutexLedger {
 
     fn get(&self, mutex: &Pointer) -> Option<&MutexEntry> {
         self.storage.entries.get(mutex)
+    }
+
+    pub(super) fn check_use_acquisition(
+        &self,
+        fact: &CResourceFact,
+    ) -> Result<(), MutexTransitionError> {
+        let CResource::MutexUse(identity) = fact.resource() else {
+            return Err("expected mutex_use authority".into());
+        };
+        match self.get(&identity.mutex) {
+            Some(MutexEntry::Unlocked { initialization, .. })
+                if identity.initialization == Some(initialization.0.0) =>
+            {
+                Ok(())
+            }
+            Some(MutexEntry::Locked { .. }) => Err("mutex is already guarded".into()),
+            _ => Err(MutexTransitionError::MissingUse(identity.mutex.clone())),
+        }
     }
 
     /// Read only the selected initialization's description. The call transfer
@@ -3214,11 +3322,67 @@ mod tests {
         let write = storage_range(&mutex(91_102), 8);
         let assumptions = PureFactContext::new();
         assert!(storage_write_refusal(context.state(), &write, &assumptions).is_some());
-        let separated = assumptions.assume_proposition(Proposition::CResourceSeparate {
-            left: CResource::Memory(write.clone()),
-            right: CResource::Memory(storage_range(&address, 40)),
-        });
+        let separated = assumptions
+            .clone()
+            .assume_proposition(Proposition::CResourceSeparate {
+                left: CResource::Memory(write.clone()),
+                right: CResource::Memory(storage_range(&address, 40)),
+            });
         assert!(storage_write_refusal(context.state(), &write, &separated).is_none());
+    }
+
+    #[test]
+    fn assumed_guard_projection_distinguishes_guards_from_use_storage() {
+        use super::super::*;
+        let held = Pointer::symbolic(Variable(91_201));
+        let requested = Pointer::symbolic(Variable(91_202));
+        let mut state = CState::new();
+        state.mutex_input_reservations = MutexInputReservations::from_ranges_and_guards(
+            [storage_range(&requested, 40)],
+            [storage_range(&held, 40)],
+        );
+        let assumptions = PureFactContext::new();
+        assert!(abstract_guard_acquisition_refusal(&state, &requested, &assumptions).is_some());
+        let separated = assumptions
+            .clone()
+            .assume_proposition(Proposition::CResourceSeparate {
+                left: CResource::Memory(storage_range(&requested, 40)),
+                right: CResource::Memory(storage_range(&held, 40)),
+            });
+        assert!(abstract_guard_acquisition_refusal(&state, &requested, &separated).is_none());
+
+        state.mutex_input_reservations =
+            MutexInputReservations::from_ranges_and_guards([storage_range(&requested, 40)], []);
+        assert!(abstract_guard_acquisition_refusal(&state, &requested, &assumptions).is_none());
+    }
+
+    #[test]
+    fn unresolved_assumed_guard_blocks_external_acquisition_only() {
+        let mut state = CState::new();
+        state.mutex_input_reservations = MutexInputReservations::from_ranges_and_guards(
+            [],
+            [super::super::CMemoryRange::unnamed_footprint()],
+        );
+        let assumptions = PureFactContext::new();
+        assert!(
+            abstract_guard_acquisition_refusal(
+                &state,
+                &Pointer::symbolic(super::super::Variable(91_203)),
+                &assumptions,
+            )
+            .is_some()
+        );
+        assert!(
+            abstract_guard_acquisition_refusal(
+                &state,
+                &Pointer {
+                    block: "local:f:fresh_mutex".into(),
+                    offset: super::super::PointerOffsetTerm::Constant(0),
+                },
+                &assumptions,
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -4364,9 +4528,16 @@ mod tests {
         ));
         let mut frozen = lent.state().clone();
         frozen.preserves_mutex_protocols = true;
-        assert!(
-            matches!(runtime_mutex_call(&frozen, &address, "pthread_mutex_lock"), Err(super::super::CRuntimeError::FunctionContract(message)) if message.contains("cannot change mutex protocols"))
+        let held = runtime_mutex_call(&frozen, &address, "pthread_mutex_lock").unwrap();
+        assert!(held.opaque_mutex_acquisitions.is_some());
+        assert_eq!(
+            held.resources.facts().len(),
+            frozen.resources.facts().len() + 1
         );
+        assert!(held.resources.satisfies_fact(&fact, &assumptions));
+        let returned = runtime_mutex_call(&held, &address, "pthread_mutex_unlock").unwrap();
+        assert!(returned.opaque_mutex_acquisitions.is_none());
+        assert_eq!(returned.resources.facts(), frozen.resources.facts());
     }
 
     #[test]

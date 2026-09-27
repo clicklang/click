@@ -1171,10 +1171,12 @@ fn complete_void_fallthrough(
     outcome: CStatementOutcome,
 ) -> CStatementOutcome {
     match (function.return_type(), outcome) {
-        (CType::Void, CStatementOutcome::Normal(state)) => CStatementOutcome::Return {
-            value: CValue::Void,
-            state,
-        },
+        (CType::Void, CStatementOutcome::Normal(state)) => {
+            super::eval::return_authority_refusal(&state).unwrap_or(CStatementOutcome::Return {
+                value: CValue::Void,
+                state,
+            })
+        }
         (_, outcome) => outcome,
     }
 }
@@ -2695,6 +2697,61 @@ fn execute_verified_function_applications_with_suspension(
             });
             continue;
         }
+        // A checked mutex-use call may execute runtime lock/unlock operations.
+        // Their representation writes are authorized by the selected use
+        // transfer, not by the contract's ordinary mutable footprint. Keep
+        // this effect separate from `transfer.memory_effects`, whose ranges
+        // must pass the ordinary mutex-storage write reservation.
+        let mutex_storage_effects = transfer
+            .stable_view_plan
+            .as_ref()
+            .into_iter()
+            .flat_map(|plan| &plan.mutex_uses)
+            .map(|use_plan| {
+                let mutex = match use_plan.source_resource().resource() {
+                    CResource::MutexUse(identity) => &identity.mutex,
+                    CResource::MutexLive(identity) => &identity.mutex,
+                    _ => unreachable!("checked use call source"),
+                };
+                CMemoryRange::new_with_element_width(
+                    mutex.clone(),
+                    0u32.into(),
+                    crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
+                        .mutex_storage_bytes
+                        .into(),
+                    1,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
+            transfer
+                .stable_view_plan
+                .as_ref()
+                .and_then(|plan| {
+                    plan.ledger.memory_access_refusal(
+                        range,
+                        &effective_assumptions,
+                        LoanRefusalOperation::MemoryAccess,
+                    )
+                })
+                .or_else(|| {
+                    entry_state.stable_loan_memory_access_refusal(
+                        range,
+                        &effective_assumptions,
+                        LoanRefusalOperation::MemoryAccess,
+                    )
+                })
+        }) {
+            paths.push(CFunctionPath {
+                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::LoanRefusal(diagnostic)),
+                facts,
+                obligations,
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            });
+            continue;
+        }
         let exceptional_path = if let Some(payload_identity) = exceptional_payload_identity {
             Some(exceptional_direct_function_path(
                 caller_state,
@@ -2749,12 +2806,28 @@ fn execute_verified_function_applications_with_suspension(
         } else {
             memory
         };
-        if !transfer.memory_effects.is_empty() {
+        let memory = if mutex_storage_effects.is_empty() {
+            memory
+        } else {
+            let identity = if transfer.memory_effects.is_empty() {
+                memory_identity
+            } else {
+                variables.next_in(budget)?
+            };
+            memory.with_storage_memory_havoc(
+                identity,
+                &mutex_storage_effects,
+                &effective_assumptions,
+            )
+        };
+        if !transfer.memory_effects.is_empty() || !mutex_storage_effects.is_empty() {
+            let mut mutable_ranges = transfer.memory_effects.clone();
+            mutable_ranges.extend(mutex_storage_effects);
             facts.push(
                 ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
                     before: entry_state.memory.clone(),
                     after: memory.clone(),
-                    mutable_ranges: transfer.memory_effects.clone(),
+                    mutable_ranges,
                 })
                 .into_certified(),
             );
@@ -3273,6 +3346,7 @@ fn execute_verified_function_applications_with_suspension(
         return_state.thread_ledger = post_state.thread_ledger.clone();
         return_state.mutex_ledger = post_state.mutex_ledger.clone();
         return_state.mutex_input_reservations = post_state.mutex_input_reservations.clone();
+        return_state.opaque_mutex_acquisitions = post_state.opaque_mutex_acquisitions.clone();
         return_state.population_access = post_state.population_access.clone();
         return_state.counted_populations = post_state.counted_populations;
         return_state.next_local_frame = post_state.next_local_frame;
@@ -6015,6 +6089,7 @@ pub(super) fn assumed_mutex_input_reservations(
     let bytes =
         crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin().mutex_storage_bytes;
     let mut ranges = Vec::new();
+    let mut guard_ranges = Vec::new();
     for fact in state.resources.facts() {
         let mut derivation = OwnedFootprintDerivation::new(
             function.composite_resource_definitions(),
@@ -6027,8 +6102,20 @@ pub(super) fn assumed_mutex_input_reservations(
                 .derive(fact)
                 .unwrap_or_else(|| vec![CMemoryRange::unnamed_footprint()]),
         );
+        let mut guards = OwnedFootprintDerivation::new(
+            function.composite_resource_definitions(),
+            state,
+            assumptions,
+        );
+        guards.mutex_storage_bytes = Some(bytes);
+        guards.mutex_guard_only = true;
+        guard_ranges.extend(
+            guards
+                .derive(fact)
+                .unwrap_or_else(|| vec![CMemoryRange::unnamed_footprint()]),
+        );
     }
-    super::mutexes::MutexInputReservations::from_ranges(ranges)
+    super::mutexes::MutexInputReservations::from_ranges_and_guards(ranges, guard_ranges)
 }
 
 /// What a caller keeps owning across a call whose resource transfer left it
@@ -6399,6 +6486,8 @@ const OWNED_FOOTPRINT_WORK_LIMIT: usize = 4096;
 /// and the other `*_footprint_includes_*` fixtures).
 struct OwnedFootprintDerivation<'a> {
     mutex_storage_bytes: Option<u32>,
+    /// Project only held guards, not live/use authority, for abstract calls.
+    mutex_guard_only: bool,
     definitions: &'a [CCompositeResourceDefinition],
     state: &'a CState,
     assumptions: &'a PureFactContext,
@@ -6436,6 +6525,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             state,
             assumptions,
             mutex_storage_bytes: None,
+            mutex_guard_only: false,
             evaluation_assumptions: assumptions
                 .clone()
                 .allow_symbolic_contract_loads()
@@ -6556,7 +6646,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
             CResource::Token { .. } => {}
-            CResource::MutexUse(identity) => {
+            CResource::MutexUse(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(CMemoryRange::new_with_element_width(
                         identity.mutex.clone(),
@@ -6566,7 +6656,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
-            CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
+            CResource::MutexGuard(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(CMemoryRange::new_with_element_width(
                         identity.mutex.clone(),
@@ -6576,6 +6666,17 @@ impl<'a> OwnedFootprintDerivation<'a> {
                     ));
                 }
             }
+            CResource::MutexLive(identity) if !self.mutex_guard_only => {
+                if let Some(bytes) = self.mutex_storage_bytes {
+                    self.ranges.push(CMemoryRange::new_with_element_width(
+                        identity.mutex.clone(),
+                        0u32.into(),
+                        bytes.into(),
+                        1,
+                    ));
+                }
+            }
+            CResource::MutexUse(_) | CResource::MutexLive(_) => {}
             CResource::Composite { name, arguments } => self.composite(name, arguments),
             CResource::Instance(instance) => {
                 let Some(definition) = self.definition(instance.name()) else {
@@ -11734,6 +11835,7 @@ pub(super) fn bind_c_function_arguments(
         );
     callee_state.mutex_ledger = caller_state.mutex_ledger.clone();
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
+    callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.preserves_mutex_protocols = caller_state.preserves_mutex_protocols
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
@@ -11853,6 +11955,7 @@ fn bind_c_contract_arguments(
         );
     callee_state.mutex_ledger = caller_state.mutex_ledger.clone();
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
+    callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
     callee_state.preserves_mutex_protocols =
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
@@ -14341,11 +14444,31 @@ fn prepare_contract_resource_transfer(
             purpose == ResourceTransitionPurpose::SuspendedWorker,
         ) {
             Ok(mut plan) => {
+                for use_plan in &plan.mutex_uses {
+                    let fact = use_plan.source_resource();
+                    let mutex = match fact.resource() {
+                        CResource::MutexUse(identity) => &identity.mutex,
+                        CResource::MutexLive(identity) => &identity.mutex,
+                        _ => unreachable!("checked use call source"),
+                    };
+                    if let Some(error) = super::mutexes::acquisition_availability_refusal(
+                        caller_state,
+                        mutex,
+                        assumptions,
+                    ) {
+                        return Ok(Err(error.into_runtime_error(mutex)));
+                    }
+                }
                 if let Some(protocols) = &caller_state.mutex_ledger {
                     for use_plan in &mut plan.mutex_uses {
-                        if use_plan.bind_interface(protocols).is_err() {
-                            return Ok(Err(CRuntimeError::MissingResource {
-                                resource: use_plan.source_resource().clone(),
+                        if let Err(error) = use_plan.bind_interface(protocols) {
+                            return Ok(Err(match error {
+                                super::loans::mutex_calls::MutexUseCallError::Unavailable(
+                                    message,
+                                ) => CRuntimeError::FunctionContract(message.into()),
+                                _ => CRuntimeError::MissingResource {
+                                    resource: use_plan.source_resource().clone(),
+                                },
                             }));
                         }
                     }
@@ -23777,6 +23900,7 @@ fn function_outcome_from_body_with_resource_transfer(
     return_state.thread_ledger = state.thread_ledger.clone();
     return_state.mutex_ledger = state.mutex_ledger.clone();
     return_state.mutex_input_reservations = state.mutex_input_reservations.clone();
+    return_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
     return_state.population_access = state.population_access.clone();
     return_state.counted_populations = state.counted_populations;
     return_state.next_local_frame = state.next_local_frame;
@@ -24196,6 +24320,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
+            caller_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
@@ -24236,6 +24361,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
+            caller_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
             if function.has_inline_body() {
                 let memory = caller_state.memory.clone();
                 caller_state.sync_scalar_locals_from_memory(&memory);

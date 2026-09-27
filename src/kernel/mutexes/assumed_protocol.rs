@@ -2,7 +2,8 @@
 //!
 //! This boundary deliberately exposes no protected assertion. It permits a
 //! checked local acquisition and release while retaining the caller's lifetime
-//! obligation. Runtime dispatch and contract effects must be wired separately.
+//! obligation. The runtime adapter records exact local receipts; protected
+//! payload acquisition remains a separate contract boundary.
 
 use super::*;
 use crate::kernel::loans::{
@@ -22,6 +23,7 @@ pub(super) struct AssumedMutexProtocol {
 
 /// An exact acquisition receipt. The guard atom and its loan hold must also
 /// remain in the state; copying this receipt never copies ownership.
+#[derive(Clone, Debug)]
 pub(super) struct AssumedMutexGuard {
     protocol: AssumedMutexProtocol,
     fact: CResourceFact,
@@ -38,7 +40,7 @@ impl AssumedMutexProtocol {
         state: &CState,
         usage: MutexUseBinding,
     ) -> Result<Self, MutexTransitionError> {
-        if !state.preserves_mutex_protocols || state.mutex_ledger.is_some() {
+        if !state.preserves_mutex_protocols {
             return Err("abstract mutex protocols require independent contract input state".into());
         }
         let holder = state
@@ -51,9 +53,13 @@ impl AssumedMutexProtocol {
         let CResource::MutexUse(identity) = use_fact.resource() else {
             unreachable!()
         };
-        loans
-            .check_assumed_mutex_use_return(usage, holder, &state.resources)
-            .map_err(|_| MutexTransitionError::MissingUse(identity.mutex.clone()))?;
+        if state
+            .resources
+            .unique_owned_occurrence_for_fact(&use_fact)
+            .is_none()
+        {
+            return Err(MutexTransitionError::MissingUse(identity.mutex.clone()));
+        }
         let initialization = identity
             .initialization
             .ok_or_else(|| MutexTransitionError::MissingUse(identity.mutex.clone()))?;
@@ -79,7 +85,6 @@ impl AssumedMutexProtocol {
     fn loans<'a>(&self, state: &'a CState) -> Result<&'a LoanLedger, MutexTransitionError> {
         let missing = || MutexTransitionError::MissingUse(self.mutex().clone());
         if !state.preserves_mutex_protocols
-            || state.mutex_ledger.is_some()
             || state.loan_participant != Some(self.holder)
             || state
                 .resources
@@ -108,7 +113,7 @@ impl AssumedMutexProtocol {
         // A hidden or removed guard still pins the scope. Do not decide local
         // heldness by merely searching the visible resource context.
         loans
-            .check_assumed_mutex_use_return(self.usage, self.holder, &state.resources)
+            .check_mutex_use_available(self.usage, self.holder, &state.resources)
             .map_err(|_| {
                 MutexTransitionError::Refusal(
                     "mutex_use has an outstanding mutex_guard or reborrow",
@@ -182,6 +187,7 @@ impl AssumedMutexProtocol {
         Ok(AssumedMutexTransition { state, evidence })
     }
 
+    #[cfg(test)]
     pub(super) fn check_return(&self, state: &CState) -> Result<(), MutexTransitionError> {
         self.loans(state)?
             .check_assumed_mutex_use_return(self.usage, self.holder, &state.resources)
@@ -207,6 +213,157 @@ impl AssumedMutexProtocol {
             &empty_checked_loan_evidence_sequence(),
             Some(Arc::new(evidence)),
         ))
+    }
+}
+
+/// Branch-local receipts, separate from immutable descriptions of entry guards.
+/// Removing a visible guard does not remove its receipt or lifetime hold.
+#[derive(Clone, Debug)]
+pub(in crate::kernel) struct OpaqueMutexAcquisitions {
+    identity: u64,
+    receipts: PersistentMap<Pointer, Arc<AssumedMutexGuard>>,
+    storage: MutexLedger,
+    holders: PersistentMap<LoanParticipantId, usize>,
+}
+
+impl OpaqueMutexAcquisitions {
+    pub(in crate::kernel) fn has_local_hold(&self, participant: Option<LoanParticipantId>) -> bool {
+        participant.is_none_or(|holder| self.holders.contains_key(&holder))
+    }
+    pub(super) fn guard_resource(&self, mutex: &Pointer) -> Option<CResourceFact> {
+        self.receipts.get(mutex).map(|guard| guard.fact.clone())
+    }
+    pub(super) fn acquisition_conflicts(
+        &self,
+        mutex: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let bytes = crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
+            .mutex_storage_bytes;
+        ledger_storage_write_refusal(&self.storage, &storage_range(mutex, bytes), assumptions)
+            .is_some()
+    }
+}
+
+impl PartialEq for OpaqueMutexAcquisitions {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity
+    }
+}
+impl Eq for OpaqueMutexAcquisitions {}
+impl PartialOrd for OpaqueMutexAcquisitions {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for OpaqueMutexAcquisitions {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.identity.cmp(&other.identity)
+    }
+}
+impl Hash for OpaqueMutexAcquisitions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identity.hash(state);
+    }
+}
+
+pub(in crate::kernel) fn opaque_runtime_transition(
+    state: &CState,
+    mutex: &Pointer,
+    acquire: bool,
+    assumptions: &PureFactContext,
+) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+    if !state.preserves_mutex_protocols {
+        return Err("opaque mutex transitions require preserving use authority".into());
+    }
+    if acquire {
+        let fact = state
+            .resources
+            .mutex_use_at(mutex)
+            .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
+        let CResource::MutexUse(identity) = fact.resource() else {
+            unreachable!()
+        };
+        let usage = identity
+            .binding
+            .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
+        let protocol = AssumedMutexProtocol::bind(state, usage)?;
+        if let Some(error) = super::acquisition_availability_refusal(state, mutex, assumptions) {
+            return Err(error);
+        }
+        if let Some(ledger) = &state.mutex_ledger {
+            ledger.check_use_acquisition(fact)?;
+        }
+        let (mut transition, guard) = protocol.acquire(state, assumptions)?;
+        let mut holders = state
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .map(|held| held.holders.clone())
+            .unwrap_or_default();
+        let count = holders.get(&protocol.holder).copied().unwrap_or(0);
+        holders.insert(protocol.holder, count + 1);
+        let receipts = state
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .map(|held| held.receipts.clone())
+            .unwrap_or_default()
+            .with_inserted(mutex.clone(), Arc::new(guard));
+        let storage = state
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .map(|held| held.storage.clone())
+            .unwrap_or_else(MutexLedger::new)
+            .with_inserted(
+                mutex.clone(),
+                MutexEntry::Unlocked {
+                    initialization: MutexInitialization(
+                        MutexInitializationId(
+                            identity.initialization.expect("checked initialization"),
+                        ),
+                        crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
+                            .mutex_storage_bytes,
+                    ),
+                    invariant: None,
+                    interface: None,
+                },
+            );
+        transition.state.opaque_mutex_acquisitions = Some(OpaqueMutexAcquisitions {
+            identity: MutexLedger::fresh_identity(),
+            receipts,
+            storage,
+            holders,
+        });
+        Ok((transition.state, transition.evidence))
+    } else {
+        let held = state
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        let guard = held
+            .receipts
+            .get(mutex)
+            .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        let mut transition = guard.protocol.release(state, guard, assumptions)?;
+        let receipts = held.receipts.without_key(mutex);
+        let holder = guard.protocol.holder;
+        let count = held
+            .holders
+            .get(&holder)
+            .copied()
+            .ok_or("missing opaque acquisition holder")?;
+        let holders = if count == 1 {
+            held.holders.without_key(&holder)
+        } else {
+            held.holders.with_inserted(holder, count - 1)
+        };
+        transition.state.opaque_mutex_acquisitions =
+            (!receipts.is_empty()).then(|| OpaqueMutexAcquisitions {
+                identity: MutexLedger::fresh_identity(),
+                receipts,
+                storage: held.storage.without(mutex),
+                holders,
+            });
+        Ok((transition.state, transition.evidence))
     }
 }
 
@@ -431,6 +588,185 @@ mod tests {
             assert!(
                 pair[1].0 <= pair[0].0 * 2 + 1 && pair[1].1 <= pair[0].1 * 2 + 1,
                 "abstract protocol scans unrelated resources: {samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn opaque_runtime_balanced_transition_retains_receipt_hold_and_evidence() {
+        let assumptions = PureFactContext::new();
+        let (state, protocol) = input();
+        let mutex = protocol.mutex();
+        let (held, acquired) =
+            opaque_runtime_transition(&state, mutex, true, &assumptions).unwrap();
+        let receipt = held
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .unwrap()
+            .guard_resource(mutex)
+            .unwrap();
+        assert!(held.resources.satisfies_fact(&receipt, &assumptions));
+        assert!(protocol.check_return(&held).is_err());
+        assert_eq!(held.memory, state.memory);
+        let (released, returned) =
+            opaque_runtime_transition(&held, mutex, false, &assumptions).unwrap();
+        assert!(released.opaque_mutex_acquisitions.is_none());
+        assert!(protocol.check_return(&released).is_ok());
+        assert_eq!(released.resources.facts(), state.resources.facts());
+        assert_eq!(released.memory, state.memory);
+        let evidence = crate::kernel::loans::concat_checked_loan_evidence(&acquired, &returned);
+        assert_eq!(evidence.len(), 2);
+        assert!(evidence.is_valid());
+        assert_eq!(
+            evidence.recovered_ledger_for(
+                state.loan_ledger.as_ref().unwrap(),
+                protocol.holder,
+                false
+            ),
+            released.loan_ledger
+        );
+    }
+
+    #[test]
+    fn opaque_runtime_hidden_guard_does_not_release_its_lifetime_hold() {
+        let assumptions = PureFactContext::new();
+        let (state, protocol) = input();
+        let mutex = protocol.mutex();
+        let (held, _) = opaque_runtime_transition(&state, mutex, true, &assumptions).unwrap();
+        let receipt = held
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .unwrap()
+            .guard_resource(mutex)
+            .unwrap();
+        let mut hidden = held.clone();
+        hidden.resources = hidden
+            .resources
+            .without_fact(&receipt, &assumptions)
+            .unwrap();
+        assert!(opaque_runtime_transition(&hidden, mutex, false, &assumptions).is_err());
+        assert!(opaque_runtime_transition(&hidden, mutex, true, &assumptions).is_err());
+        assert!(protocol.check_return(&hidden).is_err());
+    }
+
+    #[test]
+    fn opaque_runtime_rejects_duplicate_lock_and_wrong_mutex_unlock() {
+        let assumptions = PureFactContext::new();
+        let (state, protocol) = input();
+        let mutex = protocol.mutex();
+        let (held, _) = opaque_runtime_transition(&state, mutex, true, &assumptions).unwrap();
+        assert!(opaque_runtime_transition(&held, mutex, true, &assumptions).is_err());
+        let wrong = Pointer::symbolic(Variable(766));
+        assert!(opaque_runtime_transition(&held, &wrong, false, &assumptions).is_err());
+        assert!(protocol.check_return(&held).is_err());
+        let (released, _) = opaque_runtime_transition(&held, mutex, false, &assumptions).unwrap();
+        assert!(protocol.check_return(&released).is_ok());
+    }
+
+    #[test]
+    fn opaque_runtime_stale_receipt_cannot_release_a_later_acquisition() {
+        let assumptions = PureFactContext::new();
+        let (state, protocol) = input();
+        let mutex = protocol.mutex();
+        let (first, _) = opaque_runtime_transition(&state, mutex, true, &assumptions).unwrap();
+        let old = first
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .unwrap()
+            .receipts
+            .get(mutex)
+            .unwrap()
+            .clone();
+        let (between, _) = opaque_runtime_transition(&first, mutex, false, &assumptions).unwrap();
+        let (second, _) = opaque_runtime_transition(&between, mutex, true, &assumptions).unwrap();
+        let current = second
+            .opaque_mutex_acquisitions
+            .as_ref()
+            .unwrap()
+            .guard_resource(mutex)
+            .unwrap();
+        assert_ne!(old.fact, current);
+        let mut stale = second.clone();
+        let held = stale.opaque_mutex_acquisitions.as_mut().unwrap();
+        held.receipts = held.receipts.with_inserted(mutex.clone(), old);
+        assert!(opaque_runtime_transition(&stale, mutex, false, &assumptions).is_err());
+        assert!(protocol.check_return(&stale).is_err());
+        let (released, _) = opaque_runtime_transition(&second, mutex, false, &assumptions).unwrap();
+        assert!(protocol.check_return(&released).is_ok());
+    }
+
+    #[test]
+    fn opaque_runtime_void_fallthrough_rejects_an_outstanding_local_acquisition() {
+        use crate::kernel::functions::{ResourceTransitionPurpose, contract_exit_outcome};
+        use crate::kernel::{
+            CFunctionOutcome, CRuntimeError, CStatement, CStatementOutcome, CType, ExecutionBudget,
+            c_function,
+        };
+
+        let assumptions = PureFactContext::new();
+        let (state, protocol) = input();
+        let (held, _) =
+            opaque_runtime_transition(&state, protocol.mutex(), true, &assumptions).unwrap();
+        let (released, _) =
+            opaque_runtime_transition(&held, protocol.mutex(), false, &assumptions).unwrap();
+        let function = c_function(CType::Void, "fallthrough", vec![], CStatement::Skip);
+        for (exit, outstanding) in [(held, true), (released, false)] {
+            let (outcome, _, _) = contract_exit_outcome(
+                &state,
+                &function,
+                &[],
+                CStatementOutcome::Normal(exit),
+                vec![],
+                &assumptions,
+                &mut ExecutionBudget::default(),
+                ResourceTransitionPurpose::FunctionBoundary,
+            )
+            .expect("bounded exit")
+            .expect("exit outcome");
+            if outstanding {
+                assert!(matches!(outcome, CFunctionOutcome::RuntimeError(
+                    CRuntimeError::FunctionContract(ref message)
+                ) if message.contains("cannot return with a held mutex")));
+            } else {
+                assert!(matches!(outcome, CFunctionOutcome::Return { .. }));
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_runtime_transitions_ignore_unrelated_resource_frames() {
+        let assumptions = PureFactContext::new();
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let (mut state, protocol) = input();
+            for index in 0..size {
+                state.resources =
+                    state
+                        .resources
+                        .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                            name: format!("frame{index}"),
+                            arguments: vec![].into(),
+                        }));
+            }
+            let ((returned, work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let (held, _) =
+                        opaque_runtime_transition(&state, protocol.mutex(), true, &assumptions)
+                            .unwrap();
+                    let (released, _) =
+                        opaque_runtime_transition(&held, protocol.mutex(), false, &assumptions)
+                            .unwrap();
+                    protocol.check_return(&released).unwrap();
+                    released
+                })
+            });
+            assert_eq!(returned.resources.facts().len(), size + 1);
+            samples.push((work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].0 <= pair[0].0 * 2 + 1 && pair[1].1 <= pair[0].1 * 2 + 1,
+                "opaque runtime transition scans unrelated resources: {samples:?}"
             );
         }
     }

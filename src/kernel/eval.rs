@@ -6,7 +6,7 @@ mod memory_loads;
 mod operators;
 pub(in crate::kernel) mod pointer_tags;
 mod statements;
-pub(in crate::kernel) use statements::end_scope_automatic_lifetimes;
+pub(in crate::kernel) use statements::{end_scope_automatic_lifetimes, return_authority_refusal};
 
 /// Retain each sequential volatile access as a unique, kernel-certified fact.
 /// The event id is allocated from the execution's existing fresh-variable

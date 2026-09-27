@@ -935,7 +935,7 @@ fn execute_modeled_pthread_mutex_paths(
                 })
                 .flatten()
                 .or_else(|| {
-                    if initializing || state.preserves_mutex_protocols {
+                    if initializing {
                         return None;
                     }
                     let storage = CMemoryRange::new_with_element_width(
@@ -956,7 +956,7 @@ fn execute_modeled_pthread_mutex_paths(
                 Err(error)
             } else if initializing {
                 let selected = environment.selected_call_binders.as_ref();
-                if selected.is_none() {
+                let context = if selected.is_none() {
                     super::mutexes::MutexContext::new(state.clone())
                         .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
                         .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
@@ -977,10 +977,25 @@ fn execute_modeled_pthread_mutex_paths(
                         )
                     })
                     .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
-                }
+                };
+                context.map(super::mutexes::MutexContext::into_runtime_transition)
+            } else if state.preserves_mutex_protocols
+                && (function_name == binding.mutex_lock_name
+                    || function_name == binding.mutex_unlock_name)
+                && (function_name == binding.mutex_lock_name
+                    || state.resources.mutex_use_at(mutex.pointer()).is_some()
+                    || state.opaque_mutex_acquisitions.is_some())
+            {
+                super::mutexes::opaque_runtime_transition(
+                    state,
+                    mutex.pointer(),
+                    function_name == binding.mutex_lock_name,
+                    &current,
+                )
+                .map_err(|error| error.into_runtime_error(mutex.pointer()))
             } else {
                 let context = super::mutexes::MutexContext::new(state.clone());
-                if function_name == binding.mutex_lock_name {
+                let result = if function_name == binding.mutex_lock_name {
                     context
                         .acquire_current(mutex.pointer(), &current)
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))
@@ -992,11 +1007,11 @@ fn execute_modeled_pthread_mutex_paths(
                     context
                         .destroy(mutex.pointer(), &current)
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))
-                }
+                };
+                result.map(super::mutexes::MutexContext::into_runtime_transition)
             };
             match transition {
-                Ok(context) => {
-                    let (mut next, evidence) = context.into_runtime_transition();
+                Ok((mut next, evidence)) => {
                     loan_evidence = evidence;
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
@@ -1303,6 +1318,8 @@ fn execute_modeled_pthread_create_paths(
                                     neutral.mutex_ledger = success.mutex_ledger.clone();
                                     neutral.mutex_input_reservations =
                                         success.mutex_input_reservations.clone();
+                                    neutral.opaque_mutex_acquisitions =
+                                        success.opaque_mutex_acquisitions.clone();
                                     neutral = modeled_pthread_indeterminate_handle(
                                         neutral,
                                         output_slot,
@@ -2305,6 +2322,9 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
     if top_state.preserves_mutex_protocols != next_state.preserves_mutex_protocols {
         changed.push("mutex protocol frame");
+    }
+    if top_state.opaque_mutex_acquisitions != next_state.opaque_mutex_acquisitions {
+        changed.push("opaque mutex acquisitions");
     }
     if top_state.mutex_input_reservations != next_state.mutex_input_reservations {
         changed.push("mutex input storage reservations");

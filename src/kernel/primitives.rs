@@ -5099,12 +5099,14 @@ pub struct CState {
     /// Initialized mutex invariants and live guards on this C path. `None`
     /// denotes the canonical state before the first mutex operation.
     pub(super) mutex_ledger: Option<super::mutexes::MutexLedger>,
-    /// An opaque guard-bearing input frames its acquisition for this body.
-    /// No mutex transition is permitted until contracts describe those effects.
+    /// Entry mutex protocols are preserved. Direct use inputs permit only
+    /// balanced opaque acquisitions; entry guards and lifetimes stay framed.
     pub(super) preserves_mutex_protocols: bool,
     /// Storage reserved by abstract contract inputs, retained independently
     /// of their current folded/unfolded representation.
     pub(super) mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
+    /// Exact local receipts for opaque acquisitions; no payload authority.
+    pub(super) opaque_mutex_acquisitions: Option<super::mutexes::OpaqueMutexAcquisitions>,
     /// One unresolved modeled pthread creation. The visible state carries
     /// only authority safe in either outcome; this record selects the exact
     /// checked delta when a C condition establishes the returned status.

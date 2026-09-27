@@ -2225,17 +2225,32 @@ fn live_thread_return_refusal() -> CStatementOutcome {
 }
 
 fn has_live_mutex(state: &CState) -> bool {
-    !state.preserves_mutex_protocols
-        && state
-            .mutex_ledger
-            .as_ref()
-            .is_some_and(super::super::mutexes::MutexLedger::has_return_obligation)
+    state
+        .opaque_mutex_acquisitions
+        .as_ref()
+        .is_some_and(|held| held.has_local_hold(state.loan_participant))
+        || (!state.preserves_mutex_protocols
+            && state
+                .mutex_ledger
+                .as_ref()
+                .is_some_and(super::super::mutexes::MutexLedger::has_return_obligation))
 }
 
 fn live_mutex_return_refusal() -> CStatementOutcome {
     CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
         "a function cannot return with a held mutex or an unpublished guarded resource; unlock or destroy it first".to_string(),
     ))
+}
+
+/// The same authority obligations apply to explicit returns and void fallthrough.
+pub(in crate::kernel) fn return_authority_refusal(state: &CState) -> Option<CStatementOutcome> {
+    if has_live_thread_completion(state) {
+        Some(live_thread_return_refusal())
+    } else if has_live_mutex(state) {
+        Some(live_mutex_return_refusal())
+    } else {
+        None
+    }
 }
 
 fn execute_c_return_expression_paths(
@@ -2278,10 +2293,8 @@ fn execute_c_return_expression_paths(
                     } else {
                         Pointer::null()
                     };
-                    let outcome = if has_live_thread_completion(&resolved_state) {
-                        live_thread_return_refusal()
-                    } else if has_live_mutex(&resolved_state) {
-                        live_mutex_return_refusal()
+                    let outcome = if let Some(refusal) = return_authority_refusal(&resolved_state) {
+                        refusal
                     } else if resolved_state.memory.has_pending_heap_allocation() {
                         CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                     } else {
@@ -2301,10 +2314,8 @@ fn execute_c_return_expression_paths(
                 }
             }
             CExpressionOutcome::Value(value) => {
-                let outcome = if has_live_thread_completion(state) {
-                    live_thread_return_refusal()
-                } else if has_live_mutex(state) {
-                    live_mutex_return_refusal()
+                let outcome = if let Some(refusal) = return_authority_refusal(state) {
+                    refusal
                 } else if state.memory.has_pending_heap_allocation() {
                     CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
                 } else {
@@ -2919,10 +2930,8 @@ pub(in crate::kernel) fn execute_c_statement_paths(
             paths
         }
         CStatement::Return(CExpression::Value(CValue::Void)) => {
-            let outcome = if has_live_thread_completion(state) {
-                live_thread_return_refusal()
-            } else if has_live_mutex(state) {
-                live_mutex_return_refusal()
+            let outcome = if let Some(refusal) = return_authority_refusal(state) {
+                refusal
             } else if state.memory.has_pending_heap_allocation() {
                 CStatementOutcome::RuntimeError(CRuntimeError::UnresolvedAllocationOutcome)
             } else {
@@ -2948,10 +2957,8 @@ pub(in crate::kernel) fn execute_c_statement_paths(
             for path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
                 let outcome = match path.outcome {
                     CExpressionOutcome::Value(value @ CValue::Int32(_)) => {
-                        if has_live_thread_completion(state) {
-                            live_thread_return_refusal()
-                        } else if has_live_mutex(state) {
-                            live_mutex_return_refusal()
+                        if let Some(refusal) = return_authority_refusal(state) {
+                            refusal
                         } else {
                             CStatementOutcome::Throw {
                                 value,

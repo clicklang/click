@@ -4042,6 +4042,31 @@ impl LoanLedger {
         ))
     }
 
+    /// The selected use scope may acquire only while it has no outstanding
+    /// guard hold or child reborrow. Unlike modular return, this also applies
+    /// to a checked reborrow in an executing callee.
+    pub(crate) fn check_mutex_use_available(
+        &self,
+        usage: MutexUseBinding,
+        holder: LoanParticipantId,
+        resources: &ResourceContext,
+    ) -> Result<(), LoanRefusal> {
+        let fact = self.mutex_use_resource(usage, holder)?;
+        let scope = self
+            .storage
+            .data
+            .scopes
+            .get(&usage.0.scope)
+            .ok_or(LoanRefusal::MissingScope)?;
+        if !scope.dependencies.is_empty() || !scope.holds.is_empty() {
+            return Err(LoanRefusal::ActiveDependency);
+        }
+        if resources.unique_owned_occurrence_for_fact(&fact).is_none() {
+            return Err(LoanRefusal::MissingBacking);
+        }
+        Ok(())
+    }
+
     pub(crate) fn check_assumed_mutex_use_return(
         &self,
         usage: MutexUseBinding,
