@@ -91,6 +91,115 @@ schema. The implementation must establish how a helper's input authority
 determines its output resource before enabling protected-state outputs.
 Concrete call-site information alone cannot justify a generic body proof.
 
+### Concrete helper boundary: proposed refinement
+
+Status: surface decision pending review. The following `protecting` modifier
+is a proposal, not accepted syntax. It adds a requirement on an existing
+authority argument; it does not add a proof argument or a resource-description
+value. Do not implement this spelling until reviewed.
+
+Consider existing C helpers that only lock and unlock a counter's mutex:
+
+```text
+void counter_lock(struct counter *counter) {
+    pthread_mutex_lock(&counter->mu);
+}
+void counter_unlock(struct counter *counter) {
+    pthread_mutex_unlock(&counter->mu);
+}
+```
+
+Assume `counter_state(counter)` is an exclusive resource whose declaration
+contains `guarded_by counter->mu;`. Proposed sidecar contracts are:
+
+```text
+void counter_lock(struct counter *counter) {
+    owns access: mutex_use(&counter->mu)
+        protecting counter_state(counter);
+    produces guard: mutex_guard(&counter->mu);
+    produces state: counter_state(counter);
+}
+
+void counter_unlock(struct counter *counter) {
+    owns access: mutex_use(&counter->mu)
+        protecting counter_state(counter);
+    consumes guard: mutex_guard(&counter->mu);
+    consumes state: counter_state(counter);
+}
+```
+
+The extra requirement is necessary information. `guarded_by` checks where a
+resource may be published; it does not prove that an arbitrary input mutex
+was initialized with that resource. Two different resource families may name
+the same mutex in their declarations. The input must distinguish them, and
+must distinguish different captured arguments within one family.
+
+The proposed modifier states that this authority's initialization protects the
+specified assertion. It grants no current ownership of `counter_state`, and
+does not constrain its observed fields. Bare `mutex_use(mu)` remains valid
+for helpers that do not need to know the protected assertion. The existing
+`mutex_use_named_payload_read` fixture demonstrates that bare use authority
+does not justify reading the payload even after locking.
+
+At a call, the caller still passes only actual resources:
+
+```text
+let { guard: g, state: s } =
+    step(counter_lock(counter), { access: u });
+step(counter_unlock(counter), { access: u, guard: g, state: s });
+```
+
+Here `u` is the caller's existing use authority. There is no additional
+`counter_state(counter)` argument to either call. Initialization still derives
+the association from the actual resource it consumes.
+
+### Checking the proposed helper contracts
+
+The implementation would have to establish all of the following:
+
+1. **Entry.** Independently checking `counter_lock` assumes a fresh abstract
+   initialization and a rooted use input carrying exactly the stated
+   association. No protected-state ownership or field observations exist yet.
+   Validate the assertion's declaration and `guarded_by` pointer before
+   admitting that association. It is a contract premise, checked at every
+   call, not an inference from the helper's desired result.
+2. **Acquisition.** Runtime lock checks the input's loan and initialization,
+   creates an exact guard, and supplies a fresh state instance satisfying the
+   associated assertion. Its observations are arbitrary subject to that
+   assertion, never copied from a previous acquisition. Runtime calls and
+   helper bodies use this same transition.
+3. **Return.** Returning guard and state exports the checked acquisition and
+   retains its lifetime dependency. Merely finding two matching resource
+   shapes at return is insufficient. The caller must receive the acquisition
+   evidence, including its outstanding loan hold, with the resources.
+4. **Release entry.** Independently checking `counter_unlock` requires a
+   guard for this input protocol and ownership of the stated resource.
+   At a call, check that the supplied guard belongs to this initialization
+   and acquisition; the same address alone is insufficient. A replacement
+   state instance is permitted if its full assertion matches.
+5. **Release.** Consume that guard and the owned, restored state, discharge
+   the acquisition's hold, and return the use authority. Outstanding payload
+   loans prevent restoration. The checked transition must be transported
+   back to the caller so destruction cannot overlook an escaped acquisition.
+
+An association failure should state the requirement in contract terms, for
+example `Requires owns mutex_use(&counter->mu) protecting
+counter_state(counter)`, followed by the supplied authority's actual protected
+assertion. Missing guard or state ownership keeps the ordinary `Requires`
+diagnostic. A valid assertion with an unsupported transfer form is an
+unsupported-feature diagnostic, not a claim that the C implementation is wrong.
+
+Do not infer an extra input requirement just from a produced state and its
+`guarded_by` annotation. That would make a postcondition silently strengthen
+the precondition, and it would not cover a helper that locks, reads, and
+unlocks internally without returning state. Requiring ownership of the state
+on entry would also be wrong: it is escrowed while the mutex is unlocked.
+
+This proposal addresses concrete resource families first. General helpers
+that preserve an unknown association can continue to use bare authority.
+Returning or inspecting an unknown payload remains separate work; this
+proposal does not activate the dormant resource-parameter machinery.
+
 Prefer precise existing requirements in failures:
 
 ```text
