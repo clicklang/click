@@ -2537,6 +2537,7 @@ fn source_holds_cells_observable_by(
 /// The representative of element `index` among `representatives`
 /// ([`run_shape_representatives`]): element 0 answers for itself, and the
 /// last representative for every later element.
+#[cfg(debug_assertions)]
 pub(in crate::kernel) fn run_shape_representative(representatives: &[u32], index: u32) -> u32 {
     if index == 0 {
         representatives[0]

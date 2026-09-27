@@ -676,6 +676,7 @@ pub(crate) enum RuleAnswer {
 pub const CHECKED_RUN_SLOTS: u32 = 64;
 
 impl SlotSet {
+    #[cfg(debug_assertions)]
     fn holds(&self, index: u32) -> Option<bool> {
         match self {
             Self::All => Some(true),
