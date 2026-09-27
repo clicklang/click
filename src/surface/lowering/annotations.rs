@@ -1553,13 +1553,19 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
 /// as `function_contract_summary` elaborates the contract's clauses; the
 /// kernel then lowers it at the function's entry state. A predicate call
 /// stays a predicate.
+///
+/// `entry_state` is the state the kernel lowers the result at. Its bindings
+/// give a file-scope array its declared element type, as the contract
+/// summary's entry state does: elaborated over an empty state, `bytes[6]` of
+/// a `uint8 bytes[8]` defaulted to an `int32` load at byte 24, a different
+/// cell from the one the C program and every other clause read.
 pub(in crate::surface) fn elaborate_requirement_proposition(
     parameters: &[syntax::C0Parameter],
+    entry_state: &CState,
     proposition: &ClickProposition,
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
 ) -> Result<SpecProposition, String> {
-    let entry_state = CState::new();
     let mut lowerer = AnnotationLowerer {
         structural_clauses: &[],
         implicit_contract_mutable_segments: &[],
@@ -1567,7 +1573,7 @@ pub(in crate::surface) fn elaborate_requirement_proposition(
         inherits_resource_derived_frame: false,
         predicate_environment,
         click_function_environment,
-        entry_state: &entry_state,
+        entry_state,
         result_type: CType::Int32,
         entry_values: BTreeMap::new(),
         aggregate_parameters: BTreeSet::new(),

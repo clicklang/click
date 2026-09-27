@@ -6867,6 +6867,9 @@ pub(in crate::surface) fn function_resource_summary(
         .filter(|ensure| matches!(ensure.ensure(), Ensure::Resource(_)))
         .count();
     let ensure_positions = function_block.resource_ensure_positions();
+    // A guard elaborates over the function's file-scope bindings, as the
+    // contract summary's clauses do; built only when some guard needs it.
+    let guard_entry_state = std::cell::OnceCell::new();
     let mut ensure_clause_index = 0;
     for ensure in function_block.ensures() {
         let Ensure::Resource(resource) = ensure.ensure() else {
@@ -6898,6 +6901,12 @@ pub(in crate::surface) fn function_resource_summary(
             .map(|condition| {
                 crate::surface::lowering::elaborate_requirement_proposition(
                     parsed_function.parameters(),
+                    guard_entry_state.get_or_init(|| {
+                        crate::kernel::initialize_c_function_globals(
+                            &CState::new(),
+                            &parsed_function.to_kernel_function(),
+                        )
+                    }),
                     condition,
                     predicate_environment,
                     click_function_environment,

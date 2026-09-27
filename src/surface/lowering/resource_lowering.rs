@@ -2733,6 +2733,7 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
     // to their argument values where the state does not bind them.
     let spec = crate::surface::lowering::elaborate_requirement_proposition(
         parameters,
+        state,
         proposition,
         predicate_environment,
         click_function_environment,
