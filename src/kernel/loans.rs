@@ -2013,6 +2013,61 @@ impl Drop for CheckedLoanCallEvidenceSequence {
 }
 
 impl CheckedLoanCallEvidence {
+    /// A modeled runtime call retains its participant and transfers no
+    /// resource clauses. Its only loan effect is one checked hold or release.
+    pub(crate) fn runtime_mutex_transition(
+        before: &LoanLedger,
+        holder: LoanParticipantId,
+        transition: CheckedLoanTransition,
+        after: &LoanLedger,
+    ) -> Result<Self, LoanRefusal> {
+        let is_hold = match &transition.evidence {
+            LoanTransitionEvidence::Hold { holder: actual, .. } if *actual == holder => true,
+            LoanTransitionEvidence::Release { holder: actual, .. } if *actual == holder => false,
+            _ => return Err(LoanRefusal::InvalidEvidence),
+        };
+        let entry = plan_stable_view_transfer(
+            &ResourceContext::new(),
+            &[],
+            &PureFactContext::new(),
+            before,
+            holder,
+            holder,
+        )
+        .map_err(|_| LoanRefusal::InvalidEvidence)?;
+        let evidence = if is_hold {
+            Self::new(
+                entry,
+                after.clone(),
+                before.clone(),
+                vec![],
+                before.clone(),
+                vec![transition],
+            )
+        } else {
+            Self::new(
+                entry,
+                after.clone(),
+                after.clone(),
+                vec![transition],
+                after.clone(),
+                vec![],
+            )
+        };
+        evidence.recheck(before, Some(holder), before, Some(holder))?;
+        // The general call checker permits restoring its predecessor. A
+        // runtime operation must instead publish this exact successor.
+        let checked = if is_hold {
+            &evidence.recovery_hold_transitions[0]
+        } else {
+            &evidence.recovery_transitions[0]
+        };
+        if before.apply(checked)? != *after {
+            return Err(LoanRefusal::InvalidEvidence);
+        }
+        Ok(evidence)
+    }
+
     pub(crate) fn new(
         entry: StableViewTransferPlan,
         recovered_ledger: LoanLedger,
@@ -4135,17 +4190,27 @@ impl LoanLedger {
         Ok((closed.apply(&recovery)?, owner))
     }
 
+    #[cfg(test)]
     pub(crate) fn hold_mutex_use(
         &self,
         usage: MutexUseBinding,
         owner: &CResourceFact,
         holder: LoanParticipantId,
     ) -> Result<(Self, LoanHoldId), LoanRefusal> {
+        let (held, hold, _) = self.hold_mutex_use_with_transition(usage, owner, holder)?;
+        Ok((held, hold))
+    }
+
+    pub(crate) fn hold_mutex_use_with_transition(
+        &self,
+        usage: MutexUseBinding,
+        owner: &CResourceFact,
+        holder: LoanParticipantId,
+    ) -> Result<(Self, LoanHoldId, CheckedLoanTransition), LoanRefusal> {
         if self.mutex_use_identity_description(usage, holder)? != owner {
             return Err(LoanRefusal::MissingLoanBinding);
         }
-        let (held, hold, _) = self.hold_authority_with_transition(usage.0, holder)?;
-        Ok((held, hold))
+        self.hold_authority_with_transition(usage.0, holder)
     }
 
     /// Establish the shared authority supplied by a modular function
@@ -4444,7 +4509,7 @@ impl LoanLedger {
         Ok(ledger)
     }
 
-    fn release_with_transition(
+    pub(crate) fn release_with_transition(
         &self,
         hold: LoanHoldId,
         holder: LoanParticipantId,
@@ -8601,6 +8666,66 @@ mod tests {
                 .diagnostic(LoanRefusalOperation::Transition)
                 .category(),
             LoanRefusalCategory::InvalidEvidence
+        );
+    }
+
+    #[test]
+    fn runtime_mutex_evidence_requires_exact_predecessor_participant_and_successor() {
+        let (ledger, holder, other) = participants();
+        let owner = mutex_owner(Some(1));
+        let (before, loan) = ledger
+            .lend_mutex_use(holder, holder, backing(&owner), owner.clone())
+            .unwrap();
+        let (held, hold, transition) = before
+            .hold_mutex_use_with_transition(loan.usage, &owner, holder)
+            .unwrap();
+        let evidence = CheckedLoanCallEvidence::runtime_mutex_transition(
+            &before,
+            holder,
+            transition.clone(),
+            &held,
+        )
+        .unwrap();
+        assert!(
+            evidence
+                .recheck(&before, Some(holder), &before, Some(holder))
+                .is_ok()
+        );
+        assert!(
+            CheckedLoanCallEvidence::runtime_mutex_transition(
+                &before,
+                other,
+                transition.clone(),
+                &held
+            )
+            .is_err()
+        );
+        assert!(
+            CheckedLoanCallEvidence::runtime_mutex_transition(
+                &before,
+                holder,
+                transition.clone(),
+                &before
+            )
+            .is_err()
+        );
+        assert!(
+            CheckedLoanCallEvidence::runtime_mutex_transition(&held, holder, transition, &held)
+                .is_err()
+        );
+        let (released, release) = held.release_with_transition(hold, holder).unwrap();
+        assert!(
+            CheckedLoanCallEvidence::runtime_mutex_transition(
+                &held,
+                holder,
+                release.clone(),
+                &released
+            )
+            .is_ok()
+        );
+        assert!(
+            CheckedLoanCallEvidence::runtime_mutex_transition(&held, holder, release, &before)
+                .is_err()
         );
     }
 

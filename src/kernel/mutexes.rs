@@ -103,6 +103,11 @@ pub(super) enum MutexProtocolMismatch {
 #[derive(Clone)]
 pub(super) struct MutexContext {
     state: CState,
+    runtime_loan_transition: Option<(
+        LoanLedger,
+        LoanParticipantId,
+        super::loans::CheckedLoanTransition,
+    )>,
 }
 
 #[derive(Clone)]
@@ -704,15 +709,43 @@ pub(super) fn automatic_storage_refusal(
 impl MutexContext {
     pub(super) fn new(mut state: CState) -> Self {
         state.mutex_ledger.get_or_insert_with(MutexLedger::new);
-        Self { state }
+        Self {
+            state,
+            runtime_loan_transition: None,
+        }
     }
 
     pub(super) fn state(&self) -> &CState {
         &self.state
     }
 
+    #[cfg(test)]
     pub(super) fn into_state(self) -> CState {
         self.state
+    }
+
+    pub(super) fn into_runtime_transition(
+        self,
+    ) -> (CState, super::loans::CheckedLoanCallEvidenceSequence) {
+        use super::loans::{
+            CheckedLoanCallEvidence, append_checked_loan_evidence,
+            empty_checked_loan_evidence_sequence,
+        };
+        let mut evidence = empty_checked_loan_evidence_sequence();
+        if let Some((before, holder, transition)) = self.runtime_loan_transition {
+            let checked = CheckedLoanCallEvidence::runtime_mutex_transition(
+                &before,
+                holder,
+                transition,
+                self.state
+                    .loan_ledger
+                    .as_ref()
+                    .expect("mutex loan successor"),
+            )
+            .expect("checked mutex loan transition");
+            evidence = append_checked_loan_evidence(&evidence, Some(Arc::new(checked)));
+        }
+        (self.state, evidence)
     }
 
     /// Initialize a mutex that transfers no Click resource at lock/unlock.
@@ -744,7 +777,10 @@ impl MutexContext {
                 invariant: None,
             },
         ));
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            runtime_loan_transition: None,
+        })
     }
 
     /// Deposit one folded, exclusive instance into an initialized mutex.
@@ -810,7 +846,10 @@ impl MutexContext {
                 invariant: Some(invariant),
             },
         ));
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            runtime_loan_transition: None,
+        })
     }
 
     /// Checked adapter staged ahead of surface `mutex_use` call transport.
@@ -868,7 +907,13 @@ impl MutexContext {
             })?;
         state.loan_ledger = Some(ledger);
         state.loan_participant = Some(participant);
-        Ok((Self { state }, loan))
+        Ok((
+            Self {
+                state,
+                runtime_loan_transition: None,
+            },
+            loan,
+        ))
     }
 
     fn owned_use_resource(
@@ -942,7 +987,13 @@ impl MutexContext {
                 MutexTransitionError::Refusal("mutex use child conflicts with current authority")
             })?;
         state.loan_ledger = Some(ledger);
-        Ok((Self { state }, loan))
+        Ok((
+            Self {
+                state,
+                runtime_loan_transition: None,
+            },
+            loan,
+        ))
     }
 
     #[allow(dead_code)]
@@ -981,7 +1032,10 @@ impl MutexContext {
                 MutexTransitionError::Refusal("returned mutex use conflicts with current authority")
             })?;
         state.loan_ledger = Some(ledger);
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            runtime_loan_transition: None,
+        })
     }
 
     /// Recovery returns only the escrowed owner, after all shares and holds
@@ -1020,12 +1074,14 @@ impl MutexContext {
                 )
             })?;
         state.loan_ledger = Some(ledger);
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            runtime_loan_transition: None,
+        })
     }
 
     /// This entry is intentionally not exposed as surface syntax until calls
     /// can transport use occurrences and returned guard dependencies.
-    #[allow(dead_code)]
     pub(super) fn acquire_using(
         &self,
         mutex: &Pointer,
@@ -1065,6 +1121,7 @@ impl MutexContext {
             }
             None => return Err(MutexTransitionError::NotInitialized),
         };
+        let mut runtime_loan_transition = None;
         let (loan_ledger, lifetime_hold) = if let Some(usage) = usage {
             self.owned_use_resource(usage)
                 .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
@@ -1077,9 +1134,15 @@ impl MutexContext {
                 .loan_ledger
                 .as_ref()
                 .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
-            let (loans, hold) = loans
-                .hold_mutex_use(usage, &initialization.resource_fact(mutex), participant)
+            let (next, hold, transition) = loans
+                .hold_mutex_use_with_transition(
+                    usage,
+                    &initialization.resource_fact(mutex),
+                    participant,
+                )
                 .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
+            runtime_loan_transition = Some((loans.clone(), participant, transition));
+            let loans = next;
             (Some(loans), Some((hold, participant)))
         } else {
             if !self
@@ -1127,7 +1190,10 @@ impl MutexContext {
             },
         ));
         Ok((
-            Self { state },
+            Self {
+                state,
+                runtime_loan_transition,
+            },
             MutexGuard {
                 mutex: mutex.clone(),
                 initialization,
@@ -1141,6 +1207,20 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
+        // The resource occurrence selects the loan; an address or a loan
+        // record alone is not authority. The checked acquisition validates
+        // possession and initialization identity before installing its hold.
+        if let Some(fact) = self.state.resources.mutex_use_at(mutex) {
+            let CResource::MutexUse(identity) = fact.resource() else {
+                unreachable!()
+            };
+            let usage = identity
+                .binding
+                .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
+            return self
+                .acquire_using(mutex, usage, assumptions)
+                .map(|(context, _)| context);
+        }
         self.acquire(mutex, assumptions).map(|(context, _)| context)
     }
 
@@ -1232,7 +1312,10 @@ impl MutexContext {
         state.resources = resources;
         let next = ledger.without(mutex);
         state.mutex_ledger = next.has_any_mutex().then_some(next);
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            runtime_loan_transition: None,
+        })
     }
 
     pub(super) fn release(
@@ -1299,6 +1382,7 @@ impl MutexContext {
             self.state.resources.clone()
         };
         let mut state = self.state.clone();
+        let mut runtime_loan_transition = None;
         if let Some((hold, participant)) = lifetime_hold {
             if state.loan_participant != Some(participant) {
                 return Err("mutex guard lifetime hold belongs to another participant".into());
@@ -1307,10 +1391,11 @@ impl MutexContext {
                 .loan_ledger
                 .as_ref()
                 .ok_or("missing mutex guard lifetime loan")?;
-            state.loan_ledger =
-                Some(loans.release(hold, participant).map_err(|_| {
-                    MutexTransitionError::Refusal("missing mutex guard lifetime hold")
-                })?);
+            let (next, transition) = loans
+                .release_with_transition(hold, participant)
+                .map_err(|_| MutexTransitionError::Refusal("missing mutex guard lifetime hold"))?;
+            runtime_loan_transition = Some((loans.clone(), participant, transition));
+            state.loan_ledger = Some(next);
         }
         state.resources = resources
             .without_fact_delaying_normalization(&guard_fact, assumptions)
@@ -1322,7 +1407,10 @@ impl MutexContext {
                 invariant: restored,
             },
         ));
-        Ok(Self { state })
+        Ok(Self {
+            state,
+            runtime_loan_transition,
+        })
     }
 }
 
@@ -3895,6 +3983,186 @@ mod tests {
         MutexContext::new(
             CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(fact)),
         )
+    }
+
+    fn runtime_mutex_call(
+        state: &CState,
+        address: &Pointer,
+        name: &str,
+    ) -> Result<CState, super::super::CRuntimeError> {
+        use super::super::*;
+        let environment = CExecutionEnvironment::new().with_modeled_pthread_binding(Some(
+            crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
+        ));
+        let statement = CStatement::Call {
+            function_name: name.into(),
+            arguments: vec![CExpression::Value(CValue::pointer(address.clone()))],
+        };
+        let paths = eval::execute_c_statement_paths(
+            state,
+            &statement,
+            &PureFactContext::new(),
+            &environment,
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+        let path = paths.into_iter().next().unwrap();
+        if let CStatementOutcome::Normal(after) = &path.outcome {
+            if state.loan_ledger != after.loan_ledger {
+                let before = state.loan_ledger.as_ref().unwrap();
+                let holder = state.loan_participant.unwrap();
+                assert_eq!(path.loan_evidence.len(), 1);
+                assert!(path.loan_evidence.is_valid());
+                assert_eq!(
+                    path.loan_evidence
+                        .recovered_ledger_for(before, holder, false),
+                    after.loan_ledger
+                );
+            } else {
+                assert!(path.loan_evidence.is_empty());
+            }
+        }
+        match path.outcome {
+            CStatementOutcome::Normal(state) => Ok(state),
+            CStatementOutcome::RuntimeError(error) => Err(error),
+            other => panic!("unexpected mutex call outcome: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn runtime_acquisition_uses_owned_loan_and_pins_it_until_unlock() {
+        let assumptions = PureFactContext::new();
+        let (state, address) = automatic_holder();
+        let payload = invariant(1, 0);
+        let state = state
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(payload.clone()));
+        let initialized = MutexContext::new(state)
+            .publish(address.clone(), payload.clone(), &assumptions, 40)
+            .unwrap();
+        let owner = live_resource(initialized.state(), &address, false).unwrap();
+        let (lent, root) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (child, loan) = lent.reborrow_use(root.usage, &assumptions).unwrap();
+        let use_fact = child.owned_use_resource(loan.usage).unwrap();
+        let locked = MutexContext::new(
+            runtime_mutex_call(child.state(), &address, "pthread_mutex_lock").unwrap(),
+        );
+        assert!(
+            locked
+                .state
+                .resources
+                .satisfies_fact(&payload, &assumptions)
+        );
+        assert!(
+            locked
+                .state
+                .resources
+                .satisfies_fact(&use_fact, &assumptions)
+        );
+        assert!(!locked.state.resources.satisfies_fact(&owner, &assumptions));
+        assert!(locked.end_use_reborrow(&loan, &assumptions).is_err());
+        assert!(locked.recover_use(&root, &assumptions).is_err());
+        assert!(runtime_mutex_call(locked.state(), &address, "pthread_mutex_destroy").is_err());
+        let unlocked = MutexContext::new(
+            runtime_mutex_call(locked.state(), &address, "pthread_mutex_unlock").unwrap(),
+        );
+        assert!(
+            !unlocked
+                .state
+                .resources
+                .satisfies_fact(&payload, &assumptions)
+        );
+        let parent = unlocked.end_use_reborrow(&loan, &assumptions).unwrap();
+        let recovered = parent.recover_use(&root, &assumptions).unwrap();
+        assert!(
+            recovered
+                .state
+                .resources
+                .satisfies_fact(&owner, &assumptions)
+        );
+        let destroyed =
+            runtime_mutex_call(recovered.state(), &address, "pthread_mutex_destroy").unwrap();
+        assert!(destroyed.resources.satisfies_fact(&payload, &assumptions));
+    }
+
+    #[test]
+    fn runtime_use_acquisition_rejects_descriptions_and_stale_initializations() {
+        let assumptions = PureFactContext::new();
+        let (state, address) = automatic_holder();
+        let initialized = MutexContext::new(state.clone())
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let fact = lent.owned_use_resource(loan.usage).unwrap();
+        let mut missing = lent.state().clone();
+        missing.resources = missing.resources.without_fact(&fact, &assumptions).unwrap();
+        assert!(runtime_mutex_call(&missing, &address, "pthread_mutex_lock").is_err());
+        missing.resources =
+            missing
+                .resources
+                .unchecked_with_fact(CResourceFact::own(CResource::MutexUse(
+                    super::super::MutexUseIdentity {
+                        binding: None,
+                        mutex: address.clone(),
+                    },
+                )));
+        assert!(matches!(
+            runtime_mutex_call(&missing, &address, "pthread_mutex_lock"),
+            Err(super::super::CRuntimeError::MissingMutexUse { .. })
+        ));
+        let replacement = MutexContext::new(state)
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let mut stale = lent.state().clone();
+        stale.mutex_ledger = replacement.state.mutex_ledger;
+        assert!(matches!(
+            runtime_mutex_call(&stale, &address, "pthread_mutex_lock"),
+            Err(super::super::CRuntimeError::MissingMutexUse { .. })
+        ));
+        let mut frozen = lent.state().clone();
+        frozen.preserves_mutex_protocols = true;
+        assert!(
+            matches!(runtime_mutex_call(&frozen, &address, "pthread_mutex_lock"), Err(super::super::CRuntimeError::FunctionContract(message)) if message.contains("cannot change mutex protocols"))
+        );
+    }
+
+    #[test]
+    fn automatic_use_acquisition_does_not_scan_the_resource_frame() {
+        let assumptions = PureFactContext::new();
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let mut context = MutexContext::new(CState::new())
+                .initialize_empty(mutex(0), 40)
+                .unwrap();
+            let (lent, _) = context.lend_use(&mutex(0), &assumptions).unwrap();
+            context = lent;
+            for index in 0..size {
+                context.state.resources =
+                    context
+                        .state
+                        .resources
+                        .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                            name: format!("frame{index}"),
+                            arguments: vec![].into(),
+                        }));
+            }
+            let ((result, work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .acquire_current(&mutex(0), &assumptions)
+                        .map(MutexContext::into_runtime_transition)
+                })
+            });
+            assert!(result.is_ok());
+            samples.push((work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].0 <= pair[0].0 * 2 + 1 && pair[1].1 <= pair[0].1 * 2 + 1,
+                "use acquisition scans the frame: {samples:?}"
+            );
+        }
     }
 
     #[test]

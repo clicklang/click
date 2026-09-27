@@ -777,6 +777,28 @@ acquire/release, guard outputs, and occurrence binding inside initially hidden
 wrappers still need checked transition rules. This checkpoint supplies identity
 preservation required by those rules; it does not enable lock/unlock in helpers.
 
+## Runtime acquisition selects checked use authority
+
+The modeled `pthread_mutex_lock` transition now selects an owned `mutex_use`
+occurrence when present, validates its participant, live share, and exact
+initialization, and attaches a lifetime hold to the new guard. Otherwise the
+existing lifecycle-owner path applies. An unbound description, a missing owned
+occurrence, or a permission from an earlier initialization cannot authorize it.
+Unlock consumes the guard, restores the invariant, and releases the hold.
+The use loan cannot end or recover lifecycle ownership while the guard remains.
+
+These runtime calls now retain their hold/release transitions in the checked
+loan-call evidence chain. They transfer no ordinary call inputs and keep the
+current participant. The evidence must connect the exact predecessor and
+successor; an equivalent-looking restored state cannot replace that successor.
+C-operation regressions check acquisition, invariant exchange, recovery refusal,
+unlock, and destruction, plus stale authority and deterministic scaling.
+
+This closes the runtime dispatch and certificate connection; it does not remove
+the abstract-contract protocol freeze. The surface spelling is unchanged.
+Abstract invariant descriptions, acquisition outputs, and escaping-guard call
+recovery remain separate work before helpers can perform these transitions.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

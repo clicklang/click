@@ -897,6 +897,7 @@ fn execute_modeled_pthread_mutex_paths(
         budget,
         Some(environment),
     )? {
+        let mut loan_evidence = empty_checked_loan_evidence_sequence();
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 CFunctionOutcome::UndefinedBehavior(error) => {
@@ -951,14 +952,13 @@ fn execute_modeled_pthread_mutex_paths(
                         )
                         .map(CRuntimeError::LoanRefusal)
                 });
-            let transition: Result<CState, CRuntimeError> = if let Some(error) = storage_refusal {
+            let transition = if let Some(error) = storage_refusal {
                 Err(error)
             } else if initializing {
                 let selected = environment.selected_call_binders.as_ref();
                 if selected.is_none() {
                     super::mutexes::MutexContext::new(state.clone())
                         .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
-                        .map(|context| context.into_state())
                         .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 } else {
                     let identity = selected
@@ -988,7 +988,6 @@ fn execute_modeled_pthread_mutex_paths(
                         let fact = CResourceFact::own(CResource::Instance(instance.clone()));
                         super::mutexes::MutexContext::new(state.clone())
                             .publish(expected, fact, &current, binding.mutex_storage_bytes)
-                            .map(|context| context.into_state())
                     })
                     .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 }
@@ -997,22 +996,21 @@ fn execute_modeled_pthread_mutex_paths(
                 if function_name == binding.mutex_lock_name {
                     context
                         .acquire_current(mutex.pointer(), &current)
-                        .map(|context| context.into_state())
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))
                 } else if function_name == binding.mutex_unlock_name {
                     context
                         .release_current(mutex.pointer(), &current)
-                        .map(|context| context.into_state())
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))
                 } else {
                     context
                         .destroy(mutex.pointer(), &current)
-                        .map(|context| context.into_state())
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))
                 }
             };
             match transition {
-                Ok(mut next) => {
+                Ok(context) => {
+                    let (mut next, evidence) = context.into_runtime_transition();
+                    loan_evidence = evidence;
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
                     {
@@ -1057,7 +1055,7 @@ fn execute_modeled_pthread_mutex_paths(
             outcome,
             facts: path.facts,
             obligations: path.obligations,
-            loan_evidence: empty_checked_loan_evidence_sequence(),
+            loan_evidence,
         });
     }
     budget.check_path_width(paths.len())?;
