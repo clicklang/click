@@ -1012,4 +1012,4 @@ Each call selects the actual named authority, derives a scoped callee permission
 and restores the caller's original name after recovery. The permission alone
 gives no protected payload ownership.
 See [the complete contract design](mutex-resource-contracts.md) for the supported
-subset and remaining resource-parameter, storage, and protected-state work.
+subset and remaining association, storage, and protected-state work.

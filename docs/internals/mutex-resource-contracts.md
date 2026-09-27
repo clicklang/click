@@ -1,8 +1,8 @@
 # Mutex operations as resource contracts
 
 Status: design with an implemented named lifecycle checkpoint described below.
-The complete transfer scheme remains the design direction; resource-parameter
-notation and storage binding syntax still need implementation.
+The complete transfer scheme remains the design direction; protected-state
+transport and storage binding syntax still need implementation.
 
 Mutexes should behave like resources described by ordinary Click contracts.
 Their runtime implementation needs trusted rules, but their proof inputs and
@@ -62,18 +62,17 @@ independently of its callers must know this association before it can acquire
 protected state. A call must check the association against the supplied
 initialization; matching the printed mutex address is insufficient.
 
-The proposed general interface is now described in
-[General proof parameters and resource contracts](resource-parameters.md):
+The revised direction is described in
+[Resource arguments and mutex associations](resource-parameters.md). Pass
+resources using existing proof arguments and named call maps. Derive the
+protected assertion from the checked input authority; do not require a
+separate description argument or add angle-bracket resource parameters.
 
-```text
-owns access: mutex_use<counter_state(counter)>(&counter->mu);
-```
-
-It uses the same `<P: Resource>` proof parameter as an ordinary resource or
-contract. Both lifecycle and use authority carry P. This supersedes the earlier
-candidate second ordinary argument; it is a proposal, not implemented syntax.
-The new document also proposes normalizing named-contract instance binders,
-named memory authority, and the precise `guarded_by(P, mu)` requirement.
+In the sketches below, `P` remains explanatory notation for that recorded
+assertion. The unary `mutex_live(mu)` and `mutex_use(mu)` spellings retain the
+association internally. How an independent helper exposes the associated
+payload in its contract must be established before enabling those outputs;
+an opaque input must not be treated as a known concrete payload.
 
 ## The four runtime contracts
 
@@ -96,7 +95,7 @@ clauses.
 ```text
 consumes storage: Storage(mu);
 consumes state: P;
-produces lifetime: mutex_live<P>(mu);
+produces lifetime: mutex_live(mu);
 ```
 
 The resource definition's `guarded_by` declaration must identify this mutex.
@@ -116,7 +115,7 @@ return duplicate storage ownership nor lose allocation-lifetime protection.
 ### Acquisition
 
 ```text
-owns access: mutex_use<P>(mu);
+owns access: mutex_use(mu);
 produces guard: mutex_guard(mu);
 produces state: P;
 ```
@@ -137,7 +136,7 @@ contract transfer, not a source-level continuity witness.
 ### Release
 
 ```text
-owns access: mutex_use<P>(mu);
+owns access: mutex_use(mu);
 consumes guard: mutex_guard(mu);
 consumes state: P;
 ```
@@ -155,7 +154,7 @@ Likewise, renaming a local binder has no effect on acquisition identity.
 ### Destruction
 
 ```text
-consumes lifetime: mutex_live<P>(mu);
+consumes lifetime: mutex_live(mu);
 produces storage: Storage(mu);
 produces state: P;
 ```
@@ -260,10 +259,10 @@ Requires owns counter_state(counter)
 Requires owns mutex_live(mu)
 ```
 
-For a proposed typed use clause, an association mismatch should name the full
-required assertion, for example
-`Requires owns mutex_use<counter_state(counter)>(mu)`, and show the supplied
-resource if useful. Matching by address must not suppress this failure.
+An association mismatch should identify the supplied authority and its
+protected resource, alongside the required resource such as
+`counter_state(counter)`. Matching by address must not suppress this failure,
+and a separate description argument must not be offered as a repair.
 
 Where a supplied occurrence is incompatible, identify it and its source: the
 required entry guard versus the newly acquired guard, or the lifetime whose
@@ -311,9 +310,10 @@ their corresponding kernel transfer is implemented.
 
 Implement the design in this order:
 
-1. Settle the general representation and surface notation for resource
-   assertion parameters and named primitive/memory resources. Write all four
-   standard contracts using it before extending the runtime dispatcher.
+1. Use existing resource arguments and named binders, deriving the protected
+   assertion from checked inputs. Establish how independent helper contracts
+   retain that association before enabling protected-state outputs. Do not make
+   a general parameter syntax a prerequisite.
 2. Route runtime contract inputs and outputs through ordinary binder checking.
    Validate missing, extra, unowned, and incorrectly typed inputs exactly as
    for user-defined contracts. Remove the special initialization key.
