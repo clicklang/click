@@ -1075,6 +1075,39 @@ fn explicit_transport_scales_near_linearly_with_unrelated_ambient_facts() {
     assert_near_linear_scaling("explicit transport with unrelated facts", &samples);
 }
 
+/// A read of a file-scope array at a symbolic index the facts place inside
+/// it is one read of the array's entry run, not a case per element: the
+/// split per element recursed once per cell (a thousand elements overflowed
+/// the stack) and asked each case again of the cells left. What remains
+/// linear in the length is the per-statement collection of the run's slot
+/// variables, which a run over a block no variable names still visits slot
+/// by slot.
+#[test]
+fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length() {
+    let samples = [512, 1024, 2048, 4096]
+        .into_iter()
+        .map(|size| {
+            let c_source =
+                format!("int32 table[{size}];\nint32 get(int32 i) {{ return table[i]; }}\n");
+            let click_source = format!(
+                "verifying \"table.c\";\nint32 get(int32 i) {{\n    requires 0 <= i;\n    requires i < {size};\n    requires table[i] == 7;\n    ensures result == 7 by auto;\n}}\n"
+            );
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("table.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} symbolic-index table fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+
+    assert_near_linear_scaling("symbolic index into a file-scope array", &samples);
+}
+
 #[test]
 fn same_kernel_fact_with_many_surface_forms_scales_near_linearly() {
     let samples = [4, 8, 16, 32]

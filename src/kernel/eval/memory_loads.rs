@@ -260,8 +260,98 @@ fn has_pending_reallocation_for_pointer(memory: &CMemory, pointer: &Pointer) -> 
 /// them. It is also the only correct answer under a binder: a fold body is
 /// evaluated once for every item of its range at once, and "this item aliases
 /// the cell the program just wrote" is not a fact about any particular item.
+///
+/// Each undecided cell splits off its aliasing case and leaves the distinct
+/// case, the same load over the memory without that cell, to the next turn
+/// of this loop. The cases are the ones a recursion per cell produced, in
+/// the same order, on one stack frame.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_c_memory_load_paths_with_alias_cache(
+    memory: &CMemory,
+    pointer: Pointer,
+    value_type: CType,
+    facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    has_external_read_resource: bool,
+    purpose: LoadPurpose,
+    alias_cache: &mut MemoryLoadAliasCache,
+    source: Option<&LoadSourceId>,
+    byte_order: Option<ByteOrder>,
+) -> Vec<CExpressionPath> {
+    let mut distinct_case = None;
+    let mut paths = evaluate_c_memory_load_case(
+        memory,
+        pointer.clone(),
+        value_type,
+        facts,
+        obligations,
+        assumptions,
+        has_external_read_resource,
+        purpose,
+        alias_cache,
+        source,
+        byte_order,
+        true,
+        &mut distinct_case,
+    );
+    // The fact set a transported case reads under, kept in place while its
+    // id scope is entered: the scope registers its address.
+    let mut case_assumptions: Option<PureFactContext> = None;
+    while let Some(case) = distinct_case.take() {
+        let DistinctLoadCase {
+            memory,
+            facts,
+            obligations,
+            assumptions: transported,
+        } = case;
+        if transported.is_some() {
+            case_assumptions = transported;
+        }
+        let _case_assumptions_id_scope = case_assumptions
+            .as_ref()
+            .map(PureFactContext::enter_id_scope);
+        // A memory of many undecided cells yields a case per cell, and each
+        // carries every earlier case's distinctness facts. Past the budget the
+        // remaining case stops splitting: its load term over the memory it
+        // reached is the value every further case agrees on, so it stands for
+        // them soundly while the pending limit fails the step.
+        let splits = !crate::kernel::assumptions::reasoning_interrupted();
+        paths.extend(evaluate_c_memory_load_case(
+            &memory,
+            pointer.clone(),
+            value_type,
+            facts,
+            obligations,
+            case_assumptions.as_ref().unwrap_or(assumptions),
+            has_external_read_resource,
+            purpose,
+            alias_cache,
+            source,
+            byte_order,
+            splits,
+            &mut distinct_case,
+        ));
+    }
+    paths
+}
+
+/// The case of a load an undecided cell leaves once its aliasing case is
+/// split off: the load over `memory`, which no longer holds that cell, under
+/// the case's facts, and under `assumptions` when a transport built a fact
+/// set of its own for the load (otherwise the one the load was read under).
+struct DistinctLoadCase {
+    memory: CMemory,
+    facts: Vec<ExecutionPureFact>,
+    obligations: Vec<ProofObligation>,
+    assumptions: Option<PureFactContext>,
+}
+
+/// One turn of [`evaluate_c_memory_load_paths_with_alias_cache`]: the paths
+/// this memory decides, with the distinct case of an undecided cell left in
+/// `distinct_case` for the caller.
+#[allow(clippy::too_many_arguments)]
+fn evaluate_c_memory_load_case(
     memory: &CMemory,
     pointer: Pointer,
     value_type: CType,
@@ -273,8 +363,10 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
     alias_cache: &mut MemoryLoadAliasCache,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
+    splits: bool,
+    distinct_case: &mut Option<DistinctLoadCase>,
 ) -> Vec<CExpressionPath> {
-    let branches_on_unresolved_aliases = purpose == LoadPurpose::Program;
+    let branches_on_unresolved_aliases = splits && purpose == LoadPurpose::Program;
     let use_symbolic_pointer_identity =
         should_use_symbolic_pointer_identity(memory, &pointer, value_type);
     let mut facts = facts;
@@ -700,6 +792,48 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
         }];
     }
 
+    // A symbolic index into a run of seeded cells reads the run's slot at
+    // that index, whichever slot it is. When the facts place every value of
+    // the index on live slots, the value is the run's own load at the
+    // index: each slot holds the load of its address in the run's source,
+    // and the pointer is one of those addresses. Asking slot by slot instead
+    // split the load once per element, recursively, which overflowed the
+    // stack for a file-scope array of a thousand elements.
+    if let Some(value) = symbolic_index_run_load(
+        &memory,
+        &pointer,
+        value_type,
+        &mut facts,
+        assumptions,
+        use_symbolic_pointer_identity,
+        source,
+    ) {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::Value(value),
+            facts,
+            obligations,
+        }];
+    }
+    // A run the load indexes symbolically is never split slot by slot. Its
+    // slots are one family of cells the facts did not place the index on; a
+    // case per slot would only enumerate the array, and the load term over
+    // this snapshot is already the value every such case agrees on.
+    let symbolically_indexed_runs = memory
+        .cells
+        .candidate_runs(&AliasCandidates::of_block(&pointer.block))
+        .filter(|run| {
+            matches!(
+                crate::kernel::reasoning::memory_resolution::run_access(run, &pointer),
+                crate::kernel::reasoning::memory_resolution::RunAccess::Scaled { .. }
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let in_symbolically_indexed_run = |stored_pointer: &Pointer| {
+        symbolically_indexed_runs
+            .iter()
+            .any(|run| run.live_slot_index(stored_pointer).is_some())
+    };
     // A load that does not split has nothing to learn from an undecided
     // alias, so it does not pay for the scan that looks for one either.
     let unresolved = branches_on_unresolved_aliases
@@ -717,6 +851,7 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
                         .iter()
                         .find_map(|(stored_pointer, stored_value)| {
                             (stored_pointer != &pointer
+                                && !in_symbolically_indexed_run(stored_pointer)
                                 && !alias_cache.resolution_distinct(
                                     &pointer,
                                     stored_pointer,
@@ -791,19 +926,15 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
         )
         .is_some()
         {
-            paths.extend(evaluate_c_memory_load_paths_with_alias_cache(
-                &memory.without_cell(&stored_pointer),
-                pointer,
-                value_type,
-                distinct_facts,
+            // The distinct case is this same load over the memory without
+            // that cell. The caller's loop evaluates it next, so a memory
+            // with many undecided cells costs one frame, not one per cell.
+            *distinct_case = Some(DistinctLoadCase {
+                memory: memory.without_cell(&stored_pointer),
+                facts: distinct_facts,
                 obligations,
-                assumptions,
-                has_external_read_resource,
-                purpose,
-                alias_cache,
-                source,
-                byte_order,
-            ));
+                assumptions: load_assumptions.clone(),
+            });
         }
 
         return paths;
@@ -1025,6 +1156,82 @@ fn should_use_symbolic_pointer_identity(
         && value_type.is_pointer()
         && memory.known_union_value(pointer, value_type).is_none()
         && memory.known_value(pointer).is_none()
+}
+
+/// The value of a load at `pointer` that indexes a run of `memory`
+/// symbolically, when the facts place every value of the index on the run's
+/// live slots: the load of `pointer` in the run's source, which is what the
+/// slot at each such index holds.
+///
+/// The access must step by the run's element width from a slot boundary and
+/// read the run's own element type. Every index the facts' interval admits
+/// must be a live slot, so no hole, whose cell may hold a later store or
+/// nothing at all, is read through the source. A live slot is the only cell
+/// at its address (a store makes a hole of every slot it may meet), which is
+/// the same rule that lets the equal-cell scan take an exact slot's value.
+/// `None` sends the load on to the ordinary scans.
+#[allow(clippy::too_many_arguments)]
+fn symbolic_index_run_load(
+    memory: &CMemory,
+    pointer: &Pointer,
+    value_type: CType,
+    facts: &mut Vec<ExecutionPureFact>,
+    assumptions: &PureFactContext,
+    use_symbolic_identity: bool,
+    source: Option<&LoadSourceId>,
+) -> Option<CValue> {
+    use crate::kernel::reasoning::memory_resolution::{RunAccess, run_access};
+    let run = memory
+        .cells
+        .candidate_runs(&AliasCandidates::of_block(&pointer.block))
+        .find(|run| {
+            crate::instrumentation::record_deterministic_work(1);
+            let RunAccess::Scaled {
+                index,
+                scale,
+                shift,
+            } = run_access(run, pointer)
+            else {
+                return false;
+            };
+            let width = i64::from(run.element_width());
+            if run.element_type() != value_type
+                || width == 0
+                || scale != width
+                || shift.rem_euclid(width) != 0
+            {
+                return false;
+            }
+            let first_element = shift.div_euclid(width);
+            let Some((low, high)) = assumptions.signed_interval(&index) else {
+                return false;
+            };
+            let (Some(first), Some(last)) = (
+                low.checked_add(first_element),
+                high.checked_add(first_element),
+            ) else {
+                return false;
+            };
+            let (Ok(first), Ok(last)) = (u32::try_from(first), u32::try_from(last)) else {
+                return false;
+            };
+            last < run.count()
+                && run
+                    .live_intervals()
+                    .intervals()
+                    .iter()
+                    .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
+        })?
+        .clone();
+    canonicalized_symbolic_load_value_with_identity(
+        run.source().memory(),
+        pointer,
+        value_type,
+        facts,
+        assumptions,
+        use_symbolic_identity,
+        source,
+    )
 }
 
 fn canonicalized_symbolic_load_value_with_identity(
@@ -3800,5 +4007,62 @@ mod tests {
         let transported = fact.clone().with_proposition(replacement);
         assert!(transported.generated_load_binding().is_none());
         assert!(transported.generated_load_source_events().is_empty());
+    }
+
+    /// A symbolic index over many concrete cells splits into a case per cell
+    /// on one stack frame. The split used to recurse once per cell, and a
+    /// file-scope array of a thousand elements overflowed the main thread's
+    /// stack; a few hundred cells do the same on this small one.
+    #[test]
+    fn a_symbolic_load_over_many_undecided_cells_splits_without_recursing() {
+        const CELLS: u32 = 400;
+        let paths = std::thread::Builder::new()
+            .stack_size(1 << 20)
+            .spawn(|| {
+                let block = PointerBlock::from("global:split_table");
+                let mut memory = CMemory::new().with_block(block.clone(), CELLS * 4);
+                for index in 0..CELLS {
+                    memory = memory.store(
+                        Pointer {
+                            block: block.clone(),
+                            offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
+                        },
+                        int32(index),
+                    );
+                }
+                let pointer = Pointer {
+                    block,
+                    offset: PointerOffsetTerm::scale_int32(
+                        Bitvector32Term::Variable(Variable(841)),
+                        4,
+                    ),
+                };
+                evaluate_c_memory_load_paths(
+                    &memory,
+                    pointer,
+                    CType::Int32,
+                    Vec::new(),
+                    Vec::new(),
+                    &PureFactContext::new(),
+                    false,
+                    None,
+                    None,
+                )
+                .into_iter()
+                .map(|path| path.outcome)
+                .collect::<Vec<_>>()
+            })
+            .expect("spawn the small-stack load")
+            .join()
+            .expect("the split must not overflow a small stack");
+        // One aliasing case per cell, in cell order, then the case distinct
+        // from every cell.
+        assert_eq!(paths.len(), CELLS as usize + 1, "{:?}", paths.last());
+        for (index, outcome) in paths.iter().take(CELLS as usize).enumerate() {
+            assert_eq!(
+                outcome,
+                &CExpressionOutcome::Value(int32(u32::try_from(index).unwrap()))
+            );
+        }
     }
 }
