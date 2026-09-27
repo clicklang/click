@@ -835,6 +835,20 @@ impl CellStore {
         self.runs.values()
     }
 
+    /// The runs on which the two stores' run maps differ, as `(held here,
+    /// held in other)` per differing key, ascending; see
+    /// [`SnapshotMap::diff`], which skips shared subtrees and charges one
+    /// unit per difference.
+    pub(crate) fn run_diff<'a>(
+        &'a self,
+        other: &'a Self,
+    ) -> impl Iterator<Item = (Option<&'a CellRun>, Option<&'a CellRun>)> + 'a {
+        self.runs.diff(&other.runs).map(move |change| {
+            let key = change.key();
+            (self.runs.get(key), other.runs.get(key))
+        })
+    }
+
     /// How many runs the store holds.
     #[cfg(test)]
     pub(crate) fn run_count(&self) -> usize {

@@ -2732,7 +2732,7 @@ pub(crate) fn collect_bitvector_variables(
                 && let Some((memory, pointer)) =
                     crate::kernel::eval::registered_load_for_variable(variable)
             {
-                collect_memory_bitvector_variables(&memory, variables);
+                collect_shared_memory_bitvector_variables(&memory, variables);
                 collect_pointer_bitvector_variables(&pointer, variables);
             }
         }
@@ -2825,7 +2825,7 @@ pub(crate) fn collect_bitvector_variables(
             }
         }
         Bitvector32Term::MemoryLoad(memory, pointer) => {
-            collect_memory_bitvector_variables(memory, variables);
+            collect_shared_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
         }
         Bitvector32Term::PointerAddress(pointer) => {
@@ -4893,6 +4893,243 @@ fn collect_cell_run_bitvector_variables(
     }
 }
 
+/// How many of a snapshot's entries (blocks, concrete cells, runs, union
+/// cells) mention each variable. Persistent, so a snapshot's counts share
+/// every unchanged node with its derivation base's.
+type VariableCounts = crate::persistent::PersistentMap<Variable, u32>;
+
+thread_local! {
+    /// The variables each interned snapshot mentions, by arena identity, for
+    /// the whole verification session, as counts per entry.
+    ///
+    /// A snapshot's cells hold loads of earlier snapshots, directly or
+    /// through load variables, so the snapshots a collection reaches are a
+    /// DAG, and a later snapshot holds every cell of the history before it.
+    /// Walking each reached snapshot whole per collection made a collection
+    /// cost the whole memory, and walking the DAG as a tree cost every path
+    /// to each snapshot. Here a snapshot's counts are its derivation base's
+    /// adjusted by the entries the two differ on, which the persistent maps'
+    /// diffs visit without the shared rest, so a store or an allocation costs
+    /// what it changed, and each snapshot is counted once per session.
+    ///
+    /// The answer is a function of the snapshot's content and of the load
+    /// registry, which never renames or drops a load variable within a
+    /// session, and arena identities are never reused, so remembered counts
+    /// cannot go stale. [`clear_shared_memory_variables`] empties the table
+    /// at every outermost [`crate::kernel::VerificationSession`] entry, which
+    /// also clears the registry and starts a fresh arena.
+    static SHARED_MEMORY_VARIABLES: std::cell::RefCell<
+        std::collections::HashMap<(u32, u32), VariableCounts>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Forgets every snapshot's remembered variables; see
+/// [`SHARED_MEMORY_VARIABLES`].
+pub(in crate::kernel) fn clear_shared_memory_variables() {
+    SHARED_MEMORY_VARIABLES.with(|table| table.borrow_mut().clear());
+}
+
+fn remembered_memory_variables(memory: &SharedCMemory) -> Option<VariableCounts> {
+    SHARED_MEMORY_VARIABLES.with(|table| table.borrow().get(&memory.arena_id()).cloned())
+}
+
+/// [`collect_memory_bitvector_variables`] of an interned snapshot, counted
+/// once per verification session from its derivation base's counts. Counting
+/// charges one unit per entry and per derivation step it visits; a snapshot
+/// already counted is an indexed lookup plus the variables it hands back.
+pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
+    memory: &SharedCMemory,
+    variables: &mut BTreeSet<Variable>,
+) {
+    variables.extend(shared_memory_variable_counts(memory).keys().copied());
+}
+
+fn shared_memory_variable_counts(memory: &SharedCMemory) -> VariableCounts {
+    if let Some(counts) = remembered_memory_variables(memory) {
+        return counts;
+    }
+    // The uncounted derivation ancestors, nearest first, up to one already
+    // counted or with no recorded base. The walk is cut at the snapshot's own
+    // size: past that, counting the snapshot whole costs less than counting
+    // its history.
+    let limit = memory_entry_count(memory.memory());
+    let mut chain = vec![memory.clone()];
+    let mut counted_base = None;
+    while chain.len() <= limit {
+        let Some(derivation) = chain
+            .last()
+            .expect("the chain starts nonempty")
+            .derivation()
+        else {
+            break;
+        };
+        let base = derivation.base().clone();
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(counts) = remembered_memory_variables(&base) {
+            counted_base = Some((base, counts));
+            break;
+        }
+        chain.push(base);
+    }
+    if counted_base.is_none() && chain.len() > limit {
+        // Too long a history: count this snapshot alone, whole.
+        chain.truncate(1);
+    }
+    // Oldest first: each snapshot is counted from the one before it.
+    let mut previous = counted_base;
+    for snapshot in chain.into_iter().rev() {
+        let counts = match &previous {
+            Some((base, counts)) => {
+                counts_from_base(counts.clone(), base.memory(), snapshot.memory())
+            }
+            None => counts_whole(snapshot.memory()),
+        };
+        SHARED_MEMORY_VARIABLES.with(|table| {
+            table
+                .borrow_mut()
+                .insert(snapshot.arena_id(), counts.clone());
+        });
+        previous = Some((snapshot, counts));
+    }
+    previous.expect("the chain counts at least the snapshot").1
+}
+
+fn memory_entry_count(memory: &CMemory) -> usize {
+    memory.blocks.len() + memory.cells.representation_len() + memory.union_cells.len()
+}
+
+fn add_counts(counts: &mut VariableCounts, mentioned: BTreeSet<Variable>, sign: i64) {
+    for variable in mentioned {
+        let held = i64::from(counts.get(&variable).copied().unwrap_or(0));
+        let count = held + sign;
+        debug_assert!(
+            count >= 0,
+            "an entry's variables are counted before removal"
+        );
+        if count <= 0 {
+            counts.remove(&variable);
+        } else {
+            counts.insert(
+                variable,
+                u32::try_from(count).expect("entry counts fit in u32"),
+            );
+        }
+    }
+}
+
+fn block_variables(block: &PointerBlock, contents: &CBlock) -> BTreeSet<Variable> {
+    let mut variables = BTreeSet::new();
+    match block {
+        PointerBlock::Symbolic(variable)
+        | PointerBlock::FunctionSymbolic(variable)
+        | PointerBlock::ExternalObject(variable) => {
+            variables.insert(*variable);
+        }
+        PointerBlock::Concrete(_)
+        | PointerBlock::StringLiteral { .. }
+        | PointerBlock::Function(_)
+        | PointerBlock::ExternalArgument
+        | PointerBlock::Heap(_)
+        | PointerBlock::Temporary(_) => {}
+    }
+    // A memory-havoc marker spells the identity it was minted with in its
+    // block name instead of carrying it in a term, so a scan of the
+    // state's terms alone does not see it. Reserving it here is what lets
+    // every caller that must avoid what a state already mentions -- a
+    // branch join's abstraction, a loop head's stream, a constructor
+    // witness -- see it without harvesting block names by hand.
+    for prefix in ["havoc:", "call-havoc:"] {
+        if let Some(index) = block
+            .strip_prefix(prefix)
+            .and_then(|index| index.parse::<u64>().ok())
+        {
+            variables.insert(Variable(index));
+        }
+    }
+    collect_bitvector_variables(contents.size(), &mut variables);
+    variables
+}
+
+fn cell_variables(pointer: &Pointer, value: &CValue) -> BTreeSet<Variable> {
+    let mut variables = BTreeSet::new();
+    collect_pointer_bitvector_variables(pointer, &mut variables);
+    collect_c_value_bitvector_variables(value, &mut variables);
+    variables
+}
+
+fn run_variables(run: &crate::kernel::primitives::CellRun) -> BTreeSet<Variable> {
+    let mut variables = BTreeSet::new();
+    collect_cell_run_bitvector_variables(run, &mut variables);
+    variables
+}
+
+/// A snapshot's counts from all of its entries; one unit per entry.
+fn counts_whole(memory: &CMemory) -> VariableCounts {
+    crate::instrumentation::record_deterministic_work(memory_entry_count(memory));
+    let mut counts = VariableCounts::default();
+    for (block, contents) in memory.blocks.iter() {
+        add_counts(&mut counts, block_variables(block, contents), 1);
+    }
+    for (pointer, value) in memory.cells.concrete().iter() {
+        add_counts(&mut counts, cell_variables(pointer, value), 1);
+    }
+    for run in memory.cells.runs() {
+        add_counts(&mut counts, run_variables(run), 1);
+    }
+    for ((pointer, _), value) in memory.union_cells.iter() {
+        add_counts(&mut counts, cell_variables(pointer, value), 1);
+    }
+    counts
+}
+
+/// `memory`'s counts from `base`'s: each entry the two differ on leaves with
+/// its old variables and arrives with its new ones. The diffs charge one unit
+/// per difference.
+fn counts_from_base(
+    mut counts: VariableCounts,
+    base: &CMemory,
+    memory: &CMemory,
+) -> VariableCounts {
+    for change in base.blocks.diff(&memory.blocks) {
+        let block = change.key();
+        if let Some(contents) = base.blocks.get(block) {
+            add_counts(&mut counts, block_variables(block, contents), -1);
+        }
+        if let Some(contents) = memory.blocks.get(block) {
+            add_counts(&mut counts, block_variables(block, contents), 1);
+        }
+    }
+    for change in base.cells.concrete().diff(memory.cells.concrete()) {
+        let pointer = change.key();
+        if let Some(value) = base.cells.concrete().get(pointer) {
+            add_counts(&mut counts, cell_variables(pointer, value), -1);
+        }
+        if let Some(value) = memory.cells.concrete().get(pointer) {
+            add_counts(&mut counts, cell_variables(pointer, value), 1);
+        }
+    }
+    for (before, after) in base.cells.run_diff(&memory.cells) {
+        if let Some(run) = before {
+            add_counts(&mut counts, run_variables(run), -1);
+        }
+        if let Some(run) = after {
+            add_counts(&mut counts, run_variables(run), 1);
+        }
+    }
+    for change in base.union_cells.diff(&memory.union_cells) {
+        let key = change.key();
+        if let Some(value) = base.union_cells.get(key) {
+            add_counts(&mut counts, cell_variables(&key.0, value), -1);
+        }
+        if let Some(value) = memory.union_cells.get(key) {
+            add_counts(&mut counts, cell_variables(&key.0, value), 1);
+        }
+    }
+    counts
+}
+
+/// An interned snapshot a cell's load reaches is walked through
+/// [`collect_shared_memory_bitvector_variables`], once per session.
 pub(in crate::kernel) fn collect_memory_bitvector_variables(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,

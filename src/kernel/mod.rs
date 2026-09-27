@@ -286,6 +286,7 @@ impl VerificationSession {
             assumptions::clear_frame_expansion_memo();
             api::clear_context_free_forall_cache();
             api::clear_borrowed_input_root_memo();
+            reasoning::variable_collection::clear_shared_memory_variables();
         }
         Self { fresh: outermost }
     }

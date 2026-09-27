@@ -1065,6 +1065,15 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
 /// `unfold` names the cells it exposes and the C then loads through them, one
 /// nesting level per unfolded child.
 fn nested_snapshot_load(depth: usize) -> Bitvector32Term {
+    nested_snapshot_load_named(depth, |load| load)
+}
+
+/// [`nested_snapshot_load`] with each cell holding `name(load)`: the load
+/// itself, or the load variable that names it.
+fn nested_snapshot_load_named(
+    depth: usize,
+    name: impl Fn(Bitvector32Term) -> Bitvector32Term,
+) -> Bitvector32Term {
     let block = PointerBlock::Concrete("snapshot-chain".to_string());
     let at = |offset: i64| Pointer {
         block: block.clone(),
@@ -1089,6 +1098,7 @@ fn nested_snapshot_load(depth: usize) -> Bitvector32Term {
             crate::kernel::intern_c_memory(memory),
             Box::new(at(offset)),
         );
+        let load = name(load);
         memory = level_memory(CellStore::from_iter([
             (at(offset), CValue::Int32(load.clone())),
             (at(offset + 4), CValue::Int32(load)),
@@ -1098,6 +1108,90 @@ fn nested_snapshot_load(depth: usize) -> Bitvector32Term {
         crate::kernel::intern_c_memory(memory),
         Box::new(at(8 * depth as i64)),
     )
+}
+
+/// Collecting the variables of a load counts each snapshot the load reaches
+/// once, not once per path to it. Each level of the DAG is reached through
+/// two cells of the level above, so walking it as a tree visited `2^depth`
+/// snapshots, uncharged; depth 32 did not finish.
+#[test]
+fn variable_collection_walks_a_shared_snapshot_dag_once() {
+    let samples = [8usize, 16, 32, 64].map(|depth| {
+        let load = nested_snapshot_load(depth);
+        crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut variables = BTreeSet::new();
+            crate::kernel::reasoning::collect_bitvector_variables(&load, &mut variables);
+        });
+        (depth, work)
+    });
+    for (depth, work) in samples {
+        assert!(work >= depth, "counting a snapshot is charged: {samples:?}");
+    }
+    for pair in samples.windows(2) {
+        let ((_, work), (_, next_work)) = (pair[0], pair[1]);
+        assert!(
+            next_work <= 2 * work + 8,
+            "collection should be linear in the DAG depth: {samples:?}"
+        );
+    }
+}
+
+/// A snapshot one store past a counted one is counted from that one's
+/// variables by the entries the store changed, not by walking every cell:
+/// collecting the variables of a load after the store costs the same beside
+/// 16 to 1024 unrelated cells. Counting each reached snapshot whole made the
+/// collection linear in the unrelated cells, which is what made a round
+/// trip's extra copy grow with the unrelated allocations beside it.
+#[test]
+fn variable_collection_after_a_store_costs_the_store() {
+    let block = PointerBlock::Concrete("counted-history".to_string());
+    let at = |offset: i64| Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(offset),
+    };
+    let samples = [16usize, 64, 256, 1024].map(|cells| {
+        let mut memory = CMemory::new().with_block("counted-history", 4 * cells as u32 + 8);
+        for index in 0..cells {
+            memory = memory.store(
+                at(4 * index as i64),
+                CValue::Int32(Bitvector32Term::Variable(Variable(
+                    7_000_000 + index as u64,
+                ))),
+            );
+        }
+        let before = crate::kernel::intern_c_memory(memory.clone());
+        crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
+        let mut variables = BTreeSet::new();
+        crate::kernel::reasoning::collect_bitvector_variables(
+            &Bitvector32Term::MemoryLoad(before, Box::new(at(0))),
+            &mut variables,
+        );
+        assert_eq!(variables.len(), cells);
+        let after = memory.store(
+            at(0),
+            CValue::Int32(Bitvector32Term::Variable(Variable(7_900_000))),
+        );
+        let load =
+            Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(at(4)));
+        let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut variables = BTreeSet::new();
+            crate::kernel::reasoning::collect_bitvector_variables(&load, &mut variables);
+            variables
+        });
+        assert!(variables.contains(&Variable(7_900_000)));
+        assert!(
+            !variables.contains(&Variable(7_000_000)),
+            "the overwritten cell's variable leaves"
+        );
+        assert_eq!(variables.len(), cells);
+        (cells, work)
+    });
+    let (_, first) = samples[0];
+    assert!(
+        samples.iter().all(|(_, work)| *work <= first + 4),
+        "a store's collection grows with unrelated cells: {samples:?}"
+    );
 }
 
 /// How many snapshots the named `substitution: snapshot rewrite` operation
