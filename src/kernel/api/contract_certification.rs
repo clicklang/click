@@ -1391,6 +1391,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                     CResource::Token { name, .. } => format!("token {name}"),
                     CResource::MutexGuard(_) => "mutex guard".to_string(),
                     CResource::MutexLive(_) => "mutex lifetime".to_string(),
+                    CResource::MutexUse(_) => "mutex use".to_string(),
                     CResource::Instance(instance) => format!("instance {}", instance.name()),
                     CResource::Iterated(iterated) => {
                         format!("iterated ownership of {}", iterated.owner())
@@ -1429,6 +1430,7 @@ pub(super) fn c_function_contract_certification_assumptions(
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
         let Some(count) = entry_state.counted_population(name, arguments) else {

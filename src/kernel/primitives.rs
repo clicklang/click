@@ -5740,6 +5740,8 @@ pub enum CResource {
     MutexGuard(MutexIdentity),
     /// Exclusive lifecycle authority for one initialized mutex.
     MutexLive(MutexIdentity),
+    /// Owned permission to use one checked loan share of an initialized mutex.
+    MutexUse(MutexUseIdentity),
     /// Iterated guarded ownership: one fact for every element of a bounded
     /// index range whose guard cell holds (`iterated.rs`).
     Iterated(Arc<CIteratedMemory>),
@@ -5756,6 +5758,21 @@ pub struct MutexIdentity {
     /// Concrete addresses are immutable diagnostic provenance; only an
     /// abstract authority's address participates in substitution.
     pub(in crate::kernel) mutex: Pointer,
+}
+
+/// Opaque identity of one use-share resource occurrence. The pointer is
+/// diagnostic provenance, not a constructor for loan authority. Substitution
+/// must preserve this identity just as it preserves a concrete acquisition.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct MutexUseIdentity {
+    pub(in crate::kernel) binding: super::loans::MutexUseBinding,
+    pub(in crate::kernel) mutex: Pointer,
+}
+
+impl MutexUseIdentity {
+    pub(crate) fn mutex(&self) -> &Pointer {
+        &self.mutex
+    }
 }
 
 impl MutexIdentity {
@@ -5874,7 +5891,7 @@ pub(super) trait ResourceFamilyAlgebra {
             ));
         }
         match self.family() {
-            ResourceFamily::MutexGuard | ResourceFamily::MutexLive => {
+            ResourceFamily::MutexGuard | ResourceFamily::MutexLive | ResourceFamily::MutexUse => {
                 if spec.access != CResourceAccessMode::Own {
                     return Err(CResourceSpecError::InvalidAccess {
                         family: self.family(),
@@ -5984,6 +6001,9 @@ struct TokenResourceAlgebra;
 /// observation laws by the Click proof layer.
 struct CompositeResourceAlgebra;
 struct InstanceResourceAlgebra;
+struct MutexUseResourceAlgebra;
+static MUTEX_USE_RESOURCE_ALGEBRA: MutexUseResourceAlgebra = MutexUseResourceAlgebra;
+
 struct MutexLiveResourceAlgebra;
 static MUTEX_LIVE_RESOURCE_ALGEBRA: MutexLiveResourceAlgebra = MutexLiveResourceAlgebra;
 
@@ -6011,6 +6031,7 @@ pub enum ResourceFamily {
     Instance,
     MutexGuard,
     MutexLive,
+    MutexUse,
     /// Iterated guarded ownership (`CResource::Iterated`).
     Iterated,
 }
@@ -6384,7 +6405,8 @@ impl CResourceSpec {
             | ResourceFamily::Instance
             | ResourceFamily::Iterated
             | ResourceFamily::MutexGuard
-            | ResourceFamily::MutexLive => {
+            | ResourceFamily::MutexLive
+            | ResourceFamily::MutexUse => {
                 return Err(CResourceSpecError::InvalidNestedTerm(
                     "only composite and token families have declared resource terms".into(),
                 ));

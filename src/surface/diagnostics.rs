@@ -973,7 +973,7 @@ pub(super) fn describe_runtime_error(
         }
         crate::kernel::CRuntimeError::MissingResource { resource } => {
             let fact = describe_resource_fact(resource, parameters, arguments);
-            if matches!(resource.resource(), CResource::MutexGuard(_) | CResource::MutexLive(_)) {
+            if matches!(resource.resource(), CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)) {
                 format!("Requires {fact}")
             } else {
                 format!("missing resource fact `{fact}`")
@@ -1262,6 +1262,12 @@ pub(super) fn describe_resource_fact(
             if resource.is_own() { "owns" } else { "views" },
             describe_mutex_pointer(identity.mutex(), parameters, arguments)
         ),
+        CResourceFact::Own(CResource::MutexUse(identity), _)
+        | CResourceFact::View(CResource::MutexUse(identity)) => format!(
+            "{} mutex_use({})",
+            if resource.is_own() { "owns" } else { "views" },
+            describe_mutex_pointer(identity.mutex(), parameters, arguments)
+        ),
         CResourceFact::Own(CResource::Instance(instance), _)
         | CResourceFact::View(CResource::Instance(instance)) => format!(
             "{} instance {}#{}",
@@ -1392,6 +1398,10 @@ fn describe_c_resource(
         ),
         CResource::MutexLive(identity) => format!(
             "mutex_live({})",
+            describe_mutex_pointer(identity.mutex(), parameters, arguments)
+        ),
+        CResource::MutexUse(identity) => format!(
+            "mutex_use({})",
             describe_mutex_pointer(identity.mutex(), parameters, arguments)
         ),
         CResource::Iterated(iterated) => describe_iterated_memory(iterated, parameters, arguments),

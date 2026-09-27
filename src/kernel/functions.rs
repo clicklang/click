@@ -6547,6 +6547,16 @@ impl<'a> OwnedFootprintDerivation<'a> {
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
             CResource::Token { .. } => {}
+            CResource::MutexUse(identity) => {
+                if let Some(bytes) = self.mutex_storage_bytes {
+                    self.ranges.push(CMemoryRange::new_with_element_width(
+                        identity.mutex.clone(),
+                        0u32.into(),
+                        bytes.into(),
+                        1,
+                    ));
+                }
+            }
             CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(CMemoryRange::new_with_element_width(
@@ -13435,6 +13445,7 @@ fn evaluate_resource_population_body_resources(
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
         let Some(definition) = definitions
@@ -13889,7 +13900,7 @@ fn spec_contains_mutex_authority(
 ) -> bool {
     matches!(
         spec.family(),
-        ResourceFamily::MutexGuard | ResourceFamily::MutexLive
+        ResourceFamily::MutexGuard | ResourceFamily::MutexLive | ResourceFamily::MutexUse
     ) || spec.contained_definition_name().is_some_and(|name| {
         interface
             .composite_resource_definition(name)
@@ -13918,6 +13929,7 @@ pub(crate) fn guard_contract_refusal(
                     ResourceFamily::Instance
                         | ResourceFamily::MutexGuard
                         | ResourceFamily::MutexLive
+                        | ResourceFamily::MutexUse
                 ) || spec.role() != CResourceTransferRole::Borrow
                     || spec.is_view())
         })
@@ -15641,6 +15653,7 @@ fn counted_population_quantities(
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
         if name == CResourceFact::ALLOCATION_RESOURCE_NAME {
@@ -17909,7 +17922,8 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 ResourceFamily::Memory
                 | ResourceFamily::Iterated
                 | ResourceFamily::MutexGuard
-                | ResourceFamily::MutexLive => true,
+                | ResourceFamily::MutexLive
+                | ResourceFamily::MutexUse => true,
                 ResourceFamily::Composite | ResourceFamily::Token => {
                     matches!(body.quantity(), CResourceQuantity::One)
                 }
@@ -19060,6 +19074,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_) => continue,
         };
         let Some(quantity) = fact.owned_quantity_term() else {
@@ -22054,6 +22069,7 @@ fn resource_clause_supply_with_fact(
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
                 | CResource::Iterated(_) => {}
             }
         }
@@ -22892,6 +22908,7 @@ fn evaluate_function_declared_resource_spec(
         | ResourceFamily::Instance
         | ResourceFamily::MutexGuard
         | ResourceFamily::MutexLive
+        | ResourceFamily::MutexUse
         | ResourceFamily::Iterated => {
             return Ok(Err(CRuntimeError::FunctionContract(
                 "declared resources cannot use the raw memory family".to_string(),
@@ -22914,6 +22931,7 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_),
             _,
         ) => 2,

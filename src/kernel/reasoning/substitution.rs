@@ -141,6 +141,49 @@ mod resource_frame_substitution_tests {
     }
 
     #[test]
+    fn use_substitution_preserves_exact_share_and_diagnostic_address() {
+        let variable = Variable(71_900);
+        let address = Pointer {
+            block: PointerBlock::Symbolic(variable),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(Bitvector32Term::Variable(variable)),
+                byte_width: 1,
+            },
+        };
+        let live = CResourceFact::own(CResource::MutexLive(MutexIdentity {
+            epoch: Some(123),
+            mutex: address,
+        }));
+        let resources = ResourceContext::new()
+            .try_compose_with_fact(live.clone(), &PureFactContext::new())
+            .unwrap();
+        let support = resources.unique_owned_occurrence_for_fact(&live).unwrap().0;
+        let ledger = crate::kernel::loans::LoanLedger::new();
+        let participant = ledger.fresh_participant().unwrap();
+        let (ledger, loan) = ledger
+            .lend_mutex_use(participant, participant, support, live)
+            .unwrap();
+        let fact = ledger.mutex_use_resource(loan.usage, participant).unwrap();
+        let resource = fact.resource();
+        assert_eq!(
+            substitute_pointer_variable_in_c_resource(
+                resource,
+                variable,
+                &Pointer::symbolic(Variable(71_901))
+            ),
+            *resource
+        );
+        assert_eq!(
+            substitute_bitvector_variable_in_c_resource(
+                resource,
+                variable,
+                &Bitvector32Term::Constant(4)
+            ),
+            *resource
+        );
+    }
+
+    #[test]
     fn unrelated_binder_preserves_nested_offset_snapshot() {
         let base = CMemory::new();
         let metadata = Pointer {
@@ -1531,6 +1574,7 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
 
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
+        CResource::MutexUse(_) => {}
         CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
@@ -3913,6 +3957,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
     to: &Bitvector32Term,
 ) -> CResource {
     match resource {
+        CResource::MutexUse(_) => resource.clone(),
         CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -6564,6 +6609,7 @@ fn substitute_pointer_variable_in_c_resource(
     to: &Pointer,
 ) -> CResource {
     match resource {
+        CResource::MutexUse(_) => resource.clone(),
         CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {

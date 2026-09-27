@@ -643,6 +643,32 @@ join, or returned guards. Ordinary C calls continue to require `mutex_live`,
 and abstract protocol transitions remain frozen. The next boundary is binding
 these permissions to resource occurrences and carrying them through contracts.
 
+## Owned use-resource kernel checkpoint
+
+Concrete use permission now has an ordinary owned resource occurrence, printed
+as `owns mutex_use(mu)`. Its identity includes the exact loan and share; two
+shares for the same printed address are not interchangeable. It has unit,
+exclusive ownership, no view or persistent core, no memory permission, and no
+`Count` observation. Ordinary exact resource matching, framing, and consumption
+apply. Substitution preserves the concrete identity and its diagnostic address.
+
+Lending exchanges the concrete `mutex_live` occurrence for this use resource.
+Reborrowing exchanges the parent occurrence for a child occurrence; closing the
+child restores the exact parent. Recovery consumes the root use occurrence and
+returns the escrowed owner. Acquisition requires both the owned resource and a
+live loan binding held by the current participant. A loan entry alone cannot
+replace a missing resource, and a leftover resource cannot revive an ended or
+pinned share. Outstanding guards still prevent closure and recovery.
+
+Hostile tests cover missing occurrences, stale children, pinned parent facts,
+duplicate ownership, invalid quantities, and attempted views. The existing
+multi-size mutex round-trip test now exercises these resource exchanges too.
+This remains internal kernel support: there is no accepted `mutex_use` surface
+term, automatic contract lending, or worker transport yet. Thread confinement
+explicitly rejects use resources until moving an occurrence also checks share
+custody and guard dependencies. The next boundary is abstract use bindings and
+checked contract transport, followed by worker return and escaping guards.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.
@@ -655,7 +681,8 @@ hostile certificate tests:
    bytes resist ordinary writes, including through abstract contract inputs.
    Scope exit now checks concrete initializations and conservatively refuses
    ambiguous symbolic ones. Concrete kernel use lending, reborrowing, and guard holds are
-   implemented. `mutex_use` still needs resource-occurrence and contract transport,
+   implemented, including owned use-resource occurrences. `mutex_use` still needs
+   contract transport,
    worker-join recovery, and escaping guards that retain the loan.
    The current heap refusal is a conservative dependency check, not this
    resource protocol.

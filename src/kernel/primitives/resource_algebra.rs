@@ -454,7 +454,7 @@ impl ResourceContextIndex {
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
         if matches!(
             fact.resource(),
-            CResource::MutexGuard(_) | CResource::MutexLive(_)
+            CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)
         ) {
             let identity = fact.resource();
             if !fact.has_valid_exclusive_access() {
@@ -603,7 +603,7 @@ impl ResourceContextIndex {
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
         if matches!(
             fact.resource(),
-            CResource::MutexGuard(_) | CResource::MutexLive(_)
+            CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)
         ) {
             let identity = fact.resource();
             if !fact.has_valid_exclusive_access() {
@@ -1087,7 +1087,9 @@ impl ResourceContext {
         &self,
         fact: &CResourceFact,
     ) -> Option<ResourceContextValidityError> {
-        if let CResource::MutexGuard(_) | CResource::MutexLive(_) = fact.resource() {
+        if let CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) =
+            fact.resource()
+        {
             if !fact.has_valid_exclusive_access() {
                 return Some(ResourceContextValidityError::InvalidExclusiveAccess(
                     fact.clone(),
@@ -3625,7 +3627,7 @@ impl ResourceContext {
 
     fn direct_match_candidate_positions(&self, fact: &CResourceFact) -> Option<&ResourceEntryIds> {
         match fact.resource() {
-            CResource::MutexGuard(_) | CResource::MutexLive(_) => {
+            CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) => {
                 self.storage.index.by_resource.get(fact.resource())
             }
             CResource::Instance(instance) => self.storage.index.instances.get(&instance.identity),
@@ -5488,7 +5490,10 @@ impl ResourceNormalizationIndex {
             CResource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
-            CResource::Iterated(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) => {}
+            CResource::Iterated(_)
+            | CResource::MutexGuard(_)
+            | CResource::MutexLive(_)
+            | CResource::MutexUse(_) => {}
             CResource::Memory(range) => {
                 keys.push(ResourceNormalizationKey::MemoryStart(
                     memory_base_root(range.base()),
@@ -5561,7 +5566,10 @@ impl ResourceNormalizationIndex {
             CResource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
-            CResource::Iterated(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) => {}
+            CResource::Iterated(_)
+            | CResource::MutexGuard(_)
+            | CResource::MutexLive(_)
+            | CResource::MutexUse(_) => {}
             CResource::Memory(range) => {
                 let mut roots = related_memory_base_roots(range.base(), assumptions);
                 for alias in assumptions.exact_pointer_aliases(range.base()) {
@@ -5669,6 +5677,7 @@ fn resource_family_algebra(family: ResourceFamily) -> &'static dyn ResourceFamil
         ResourceFamily::Instance => &INSTANCE_RESOURCE_ALGEBRA,
         ResourceFamily::MutexGuard => &MUTEX_GUARD_RESOURCE_ALGEBRA,
         ResourceFamily::MutexLive => &MUTEX_LIVE_RESOURCE_ALGEBRA,
+        ResourceFamily::MutexUse => &MUTEX_USE_RESOURCE_ALGEBRA,
         ResourceFamily::Iterated => &ITERATED_RESOURCE_ALGEBRA,
     };
     debug_assert_eq!(algebra.family(), family);
@@ -6522,6 +6531,57 @@ impl ResourceFamilyAlgebra for MutexLiveResourceAlgebra {
     }
 }
 
+impl ResourceFamilyAlgebra for MutexUseResourceAlgebra {
+    fn family(&self) -> ResourceFamily {
+        ResourceFamily::MutexUse
+    }
+    fn pair_validity_error(
+        &self,
+        left: &CResourceFact,
+        right: &CResourceFact,
+        _: &PureFactContext,
+    ) -> Option<ResourceContextValidityError> {
+        match (left.resource(), right.resource()) {
+            (CResource::MutexUse(a), CResource::MutexUse(b)) if a == b => Some(
+                ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
+            ),
+            _ => None,
+        }
+    }
+    fn entails(
+        &self,
+        available: &CResourceFact,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        matches!((available,required),(CResourceFact::Own(_,a),CResourceFact::Own(_,b)) if a.as_const()==Some(1) && b.as_const()==Some(1))
+            && exact_resources_proven_equal(available.resource(), required.resource(), assumptions)
+    }
+    fn consume(
+        &self,
+        available: &CResourceFact,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceFactConsumption> {
+        self.entails(available, required, assumptions)
+            .then(|| ResourceFactConsumption::Replace(vec![]))
+    }
+    fn normalize_pair(
+        &self,
+        _: &CResourceFact,
+        _: &CResourceFact,
+        _: &PureFactContext,
+    ) -> Option<CResourceFact> {
+        None
+    }
+    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
+        None
+    }
+    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
+        vec![]
+    }
+}
+
 impl ResourceFamilyAlgebra for IteratedResourceAlgebra {
     fn family(&self) -> ResourceFamily {
         ResourceFamily::Iterated
@@ -6633,6 +6693,7 @@ fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRang
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_),
         )
         | CResourceFact::Own(..) => None,
@@ -6678,6 +6739,7 @@ fn memory_resource_fact_permits_write(
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_),
             _,
         )
@@ -6971,6 +7033,7 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_),
             _,
         )
@@ -6980,6 +7043,7 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_),
         ) => None,
     }
@@ -7408,6 +7472,7 @@ impl CResource {
             Self::Instance(_) => ResourceFamily::Instance,
             Self::MutexGuard(_) => ResourceFamily::MutexGuard,
             Self::MutexLive(_) => ResourceFamily::MutexLive,
+            Self::MutexUse(_) => ResourceFamily::MutexUse,
             Self::Iterated(_) => ResourceFamily::Iterated,
         }
     }
@@ -7417,7 +7482,10 @@ impl CResourceFact {
     fn has_valid_exclusive_access(&self) -> bool {
         !matches!(
             self.resource(),
-            CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_)
+            CResource::Instance(_)
+                | CResource::MutexGuard(_)
+                | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
         ) || matches!(self, Self::Own(_, quantity) if quantity.as_const() == Some(1))
     }
 
@@ -7500,7 +7568,7 @@ impl CResourceFact {
                 |argument| matches!(argument, AlgebraicValue::C(CValue::Pointer(pointer)) if &pointer.block == block),
             ),
             CResource::Iterated(iterated) => iterated.blocks().contains(&block),
-            CResource::Token { .. } | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) => false,
+            CResource::Token { .. } | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) => false,
         }
     }
 
@@ -7580,7 +7648,10 @@ impl CResourceFact {
     pub fn core_with_assumptions(&self, assumptions: &PureFactContext) -> Option<Self> {
         if matches!(
             self.resource(),
-            CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_)
+            CResource::Instance(_)
+                | CResource::MutexGuard(_)
+                | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
         ) {
             return None;
         }
@@ -7604,6 +7675,7 @@ impl CResourceFact {
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
                 | CResource::Iterated(_),
                 _,
             )
@@ -7620,6 +7692,7 @@ impl CResourceFact {
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
                 | CResource::Iterated(_),
             )
             | Self::Own(..) => None,
@@ -7637,6 +7710,7 @@ impl CResourceFact {
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
                 | CResource::Iterated(_),
                 _,
             )
@@ -7646,6 +7720,7 @@ impl CResourceFact {
                 | CResource::Instance(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
+                | CResource::MutexUse(_)
                 | CResource::Iterated(_),
             ) => None,
         }

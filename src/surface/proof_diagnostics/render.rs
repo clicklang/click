@@ -1176,6 +1176,11 @@ impl Renderer<'_> {
         match resource {
             CResource::MutexGuard(_) => self.push("mutex-guard"),
             CResource::MutexLive(_) => self.push("mutex-live"),
+            CResource::MutexUse(identity) => {
+                self.push("mutex_use(");
+                self.pointer(identity.mutex());
+                self.push(")");
+            }
             CResource::Memory(range) => {
                 self.push("memory-resource(");
                 self.pointer(range.base());
@@ -1213,6 +1218,11 @@ impl Renderer<'_> {
         match resource {
             CResource::MutexGuard(_) => self.push("mutex-guard"),
             CResource::MutexLive(_) => self.push("mutex-live"),
+            CResource::MutexUse(identity) => {
+                self.push("mutex_use(");
+                self.pointer(identity.mutex());
+                self.push(")");
+            }
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 self.push(name);
                 self.push("(");

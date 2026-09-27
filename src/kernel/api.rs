@@ -2478,7 +2478,7 @@ pub(crate) fn c_state_with_assumed_mutex_inputs(mut state: CState) -> CState {
     if state.resources.facts().iter().any(|fact| {
         matches!(
             fact.resource(),
-            CResource::MutexGuard(_) | CResource::MutexLive(_)
+            CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)
         )
     }) {
         state.preserves_mutex_protocols = true;
@@ -4844,6 +4844,7 @@ pub fn prove_owned_resource_count_lower_bound(
         | CResource::Instance(_)
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
+        | CResource::MutexUse(_)
         | CResource::Iterated(_) => return None,
     };
     let count = match state.counted_population(name, arguments) {
@@ -4915,6 +4916,7 @@ fn describe_contract_reuse_premise(premise: &Proposition) -> String {
             CResource::Memory(_) => "memory",
             CResource::MutexGuard(_) => "mutex guard",
             CResource::MutexLive(_) => "mutex lifetime",
+            CResource::MutexUse(_) => "mutex use",
             CResource::Instance(instance) => instance.name(),
             CResource::Iterated(iterated) => iterated.owner(),
         }

@@ -25,7 +25,9 @@ pub(super) fn propagate_thread_confinement(definitions: &mut [CCompositeResource
             .any(|spec| {
                 matches!(
                     spec.family(),
-                    super::ResourceFamily::MutexGuard | super::ResourceFamily::MutexLive
+                    super::ResourceFamily::MutexGuard
+                        | super::ResourceFamily::MutexLive
+                        | super::ResourceFamily::MutexUse
                 )
             });
         definition.thread_confined |= definition.contains_mutex_authority;
@@ -86,6 +88,9 @@ pub(super) fn confined_resource_name<'a>(
     definitions: &[CCompositeResourceDefinition],
 ) -> Option<&'a str> {
     let name = match fact {
+        // Moving the atom alone does not transfer its loan share/hold custody.
+        CResourceFact::Own(CResource::MutexUse(_), _)
+        | CResourceFact::View(CResource::MutexUse(_)) => return Some("mutex use"),
         CResourceFact::Own(CResource::MutexLive(_), _)
         | CResourceFact::View(CResource::MutexLive(_)) => return Some("mutex lifetime"),
         CResourceFact::Own(CResource::MutexGuard(_), _)

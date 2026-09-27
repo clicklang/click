@@ -95,7 +95,7 @@ impl StableViewDescription {
 /// Identity and possession of one live loan share. This establishes a lifetime
 /// dependency only: it grants no resource description, memory access, escrow
 /// ownership, or close/recovery right. Every use rechecks the current ledger.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 struct LoanAuthorityBinding {
     loan: LoanId,
     scope: LoanScopeId,
@@ -106,7 +106,7 @@ struct LoanAuthorityBinding {
 /// An opaque use permission for one initialized mutex. Unlike a view binding,
 /// it carries no readable resource description. Possession is checked against
 /// the current ledger whenever it is used.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) struct MutexUseBinding(LoanAuthorityBinding);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2496,6 +2496,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
             CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
+            | CResource::MutexUse(_)
             | CResource::Iterated(_) => {
                 return Err(StableViewPlanError::Loan(LoanRefusal::UnsupportedResource));
             }
@@ -3762,6 +3763,62 @@ impl LoanLedger {
             .ok_or(LoanRefusal::MissingLoanBinding)
     }
 
+    /// Describing the occurrence grants no ownership. The mutex adapter must
+    /// insert or consume it as part of the checked loan/state exchange.
+    pub(crate) fn mutex_use_resource(
+        &self,
+        usage: MutexUseBinding,
+        holder: LoanParticipantId,
+    ) -> Result<CResourceFact, LoanRefusal> {
+        let owner = self.mutex_use_owner(usage, holder)?;
+        let CResource::MutexLive(identity) = owner.resource() else {
+            return Err(LoanRefusal::MissingLoanBinding);
+        };
+        Ok(CResourceFact::own(CResource::MutexUse(
+            super::MutexUseIdentity {
+                binding: usage,
+                mutex: identity.mutex.clone(),
+            },
+        )))
+    }
+
+    /// End first, then describe the exact parent share the End transition
+    /// restored. Neither the child receipt nor an equal pointer selects it.
+    pub(crate) fn end_mutex_reborrow_with_parent(
+        &self,
+        opening: &MutexUseLoan,
+        holder: LoanParticipantId,
+    ) -> Result<(Self, CResourceFact), LoanRefusal> {
+        let ended = self.end_mutex_reborrow(opening, holder)?;
+        let child = self
+            .storage
+            .data
+            .scopes
+            .get(&opening.scope)
+            .ok_or(LoanRefusal::MissingScope)?;
+        let parent_scope = child.parent.ok_or(LoanRefusal::MissingScope)?;
+        let parent = self
+            .storage
+            .data
+            .scopes
+            .get(&parent_scope)
+            .ok_or(LoanRefusal::MissingScope)?;
+        let record = self
+            .storage
+            .data
+            .loans
+            .get(&parent.loan)
+            .ok_or(LoanRefusal::MissingLoan)?;
+        let usage = MutexUseBinding(LoanAuthorityBinding {
+            loan: parent.loan,
+            scope: parent_scope,
+            share: child.parent_share.ok_or(LoanRefusal::MissingShare)?,
+            support: record.support,
+        });
+        let resource = ended.mutex_use_resource(usage, holder)?;
+        Ok((ended, resource))
+    }
+
     pub(crate) fn reborrow_mutex_use(
         &self,
         parent: MutexUseBinding,
@@ -4905,6 +4962,7 @@ impl LoanLedger {
                     CResource::Composite { .. }
                     | CResource::Instance(_)
                     | CResource::MutexGuard(_)
+                    | CResource::MutexUse(_)
                     | CResource::Iterated(_) => {
                         return Err(LoanRefusal::UnsupportedResource);
                     }
