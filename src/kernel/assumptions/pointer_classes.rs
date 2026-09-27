@@ -180,6 +180,25 @@ pub(in crate::kernel) struct CanonicalPointer {
     pub(in crate::kernel) offset: AffineOffset,
 }
 
+/// A pointer's normal form under the recorded equalities and load
+/// congruence: its base is either a class representative, or, for a loaded
+/// pointer no equality places in a class, the load it is the value of,
+/// itself in normal form. Two pointers with one normal form are equal.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub(in crate::kernel) struct NormalPointer {
+    base: NormalBase,
+    offset: AffineOffset,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum NormalBase {
+    Class(PointerBlock),
+    Load(SharedCMemory, Box<NormalPointer>),
+}
+
+/// How many nested loads a normal form looks through.
+const LOAD_CONGRUENCE_DEPTH: usize = 4;
+
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct PointerClasses {
     /// For every block that is not its class's representative: the
@@ -190,6 +209,13 @@ pub(in crate::kernel) struct PointerClasses {
     members: crate::persistent::PersistentMap<
         PointerBlock,
         crate::persistent::PersistentMap<PointerBlock, AffineOffset>,
+    >,
+    /// The classed blocks that are loaded pointers, by the snapshot their
+    /// load read. Load congruence consults only the loads of the queried
+    /// load's own snapshot. Blocks never leave a class, so this only grows.
+    classed_loads: crate::persistent::PersistentMap<
+        SharedCMemory,
+        crate::persistent::PersistentSet<PointerBlock>,
     >,
 }
 
@@ -214,15 +240,82 @@ impl PointerClasses {
         })
     }
 
-    /// Whether the recorded equalities prove the two pointers equal.
+    /// Whether the recorded equalities, with load congruence, prove the two
+    /// pointers equal.
     pub(in crate::kernel) fn proves_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         if left == right {
             return true;
         }
-        match (self.canonical(left), self.canonical(right)) {
+        if let (Some(left), Some(right)) = (self.canonical(left), self.canonical(right))
+            && left == right
+        {
+            return true;
+        }
+        match (
+            self.normal(left, LOAD_CONGRUENCE_DEPTH),
+            self.normal(right, LOAD_CONGRUENCE_DEPTH),
+        ) {
             (Some(left), Some(right)) => left == right,
             _ => false,
         }
+    }
+
+    /// The load a block is the identity of, when it is a loaded pointer's.
+    fn loaded_block_load(block: &PointerBlock) -> Option<(SharedCMemory, Pointer)> {
+        let PointerBlock::Symbolic(variable) = block else {
+            return None;
+        };
+        if !crate::kernel::is_load_variable(variable) {
+            return None;
+        }
+        crate::kernel::registered_load_for_variable(variable)
+    }
+
+    /// A pointer's normal form. A loaded pointer outside every class is the
+    /// load it names: two loads of one snapshot at pointers with one normal
+    /// form are one value (load congruence). When such a load is also the
+    /// load a classed loaded pointer names, the pointer joins that class.
+    pub(in crate::kernel) fn normal(
+        &self,
+        pointer: &Pointer,
+        depth: usize,
+    ) -> Option<NormalPointer> {
+        let offset = AffineOffset::of(&pointer.offset)?;
+        let (representative, delta) = self.find(&pointer.block);
+        let class_form = |representative: PointerBlock, delta: AffineOffset| {
+            Some(NormalPointer {
+                base: NormalBase::Class(representative),
+                offset: delta.checked_add(&offset)?,
+            })
+        };
+        if depth == 0 || self.is_classed(&pointer.block) {
+            return class_form(representative, delta);
+        }
+        let Some((memory, address)) = Self::loaded_block_load(&pointer.block) else {
+            return class_form(representative, delta);
+        };
+        let Some(address) = self.normal(&address, depth - 1) else {
+            return class_form(representative, delta);
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let key = (memory, address);
+        // A classed loaded pointer naming the same load puts this one in its
+        // class. Only the classed loads of this snapshot are candidates.
+        if let Some(candidates) = self.classed_loads.get(&key.0) {
+            for member in candidates.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some((_, member_address)) = Self::loaded_block_load(member)
+                    && self.normal(&member_address, depth - 1).as_ref() == Some(&key.1)
+                {
+                    let (member_representative, member_delta) = self.find(member);
+                    return class_form(member_representative, member_delta);
+                }
+            }
+        }
+        Some(NormalPointer {
+            base: NormalBase::Load(key.0, Box::new(key.1)),
+            offset,
+        })
     }
 
     fn class_size(&self, representative: &PointerBlock) -> usize {
@@ -336,6 +429,15 @@ impl PointerClasses {
         // any other index; what grows is the rest of a moved class, and that
         // is what union by size keeps to `log2 n` moves per block.
         crate::instrumentation::record_deterministic_work(deltas.len() - 1);
+        for block in std::iter::once(&kept).chain(deltas.iter().map(|(member, _)| member)) {
+            if let Some((memory, _)) = Self::loaded_block_load(block) {
+                let loads = self.classed_loads.get(&memory).cloned().unwrap_or_default();
+                if !loads.contains(block) {
+                    self.classed_loads
+                        .insert(memory, loads.with_value(block.clone()));
+                }
+            }
+        }
         let mut kept_members = self.members.get(&kept).cloned().unwrap_or_default();
         for (member, delta) in deltas {
             self.parent
@@ -496,6 +598,39 @@ mod tests {
     }
 
     #[test]
+    fn loads_at_equal_pointers_of_one_snapshot_are_one_value() {
+        let memory = crate::kernel::intern_c_memory(
+            crate::kernel::CMemory::new().with_block(symbolic(51), 16),
+        );
+        // A later snapshot where the cell `p` addresses was written.
+        let other_memory = crate::kernel::intern_c_memory(memory.memory().clone().store(
+            at(symbolic(41), 0),
+            CValue::Int32(Bitvector32Term::Constant(7)),
+        ));
+        let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
+            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                memory, &address, 8, memory,
+            ))
+        };
+        let through_p = name(&memory, at(symbolic(41), 0));
+        let through_q = name(&memory, at(symbolic(42), 0));
+        let through_p_later = name(&other_memory, at(symbolic(41), 0));
+        let through_r = name(&memory, at(symbolic(43), 0));
+        let mut classes = PointerClasses::default();
+        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_q.clone(), 8)));
+        classes.assume_equal(&at(symbolic(41), 0), &at(symbolic(42), 0));
+        assert!(classes.proves_equal(&at(through_p.clone(), 8), &at(through_q.clone(), 8)));
+        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_q, 0)));
+        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_p_later, 8)));
+        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_r.clone(), 8)));
+        // A loaded pointer an equality puts in a class brings the loads
+        // congruent to it along.
+        classes.assume_equal(&at(through_r.clone(), 0), &at(symbolic(60), 0));
+        let through_r_again = name(&memory, at(symbolic(43), 0));
+        assert!(classes.proves_equal(&at(through_r_again, 4), &at(symbolic(60), 4)));
+    }
+
+    #[test]
     fn a_branch_extends_its_own_copy() {
         let mut trunk = PointerClasses::default();
         trunk.assume_equal(&at(symbolic(1), 0), &at(symbolic(2), 0));
@@ -503,6 +638,46 @@ mod tests {
         branch.assume_equal(&at(symbolic(2), 0), &at(symbolic(3), 0));
         assert!(branch.proves_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
         assert!(!trunk.proves_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
+    }
+
+    /// Load congruence for one query visits only the classed loads of the
+    /// queried load's own snapshot: the work is the same beside 16 or 256
+    /// classed loads read from other snapshots.
+    #[test]
+    fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
+        let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
+            PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                memory, &address, 8, memory,
+            ))
+        };
+        let mut costs = Vec::new();
+        for unrelated in [16u64, 64, 256] {
+            let mut classes = PointerClasses::default();
+            for index in 0..unrelated {
+                let memory = crate::kernel::intern_c_memory(
+                    crate::kernel::CMemory::new()
+                        .with_block(symbolic(70_000 + index), 16)
+                        .store(
+                            at(symbolic(70_000 + index), 0),
+                            CValue::Int32(Bitvector32Term::Constant(index as u32)),
+                        ),
+                );
+                let loaded = name(&memory, at(symbolic(70_000 + index), 0));
+                classes.assume_equal(&at(loaded, 0), &at(symbolic(80_000 + index), 0));
+            }
+            let memory = crate::kernel::intern_c_memory(
+                crate::kernel::CMemory::new().with_block(symbolic(90_000), 16),
+            );
+            classes.assume_equal(&at(symbolic(90_001), 0), &at(symbolic(90_002), 0));
+            let left = name(&memory, at(symbolic(90_001), 0));
+            let right = name(&memory, at(symbolic(90_002), 0));
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                classes.proves_equal(&at(left.clone(), 8), &at(right.clone(), 8))
+            });
+            assert!(equal);
+            costs.push(work);
+        }
+        assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
     }
 
     /// Relabelling work along a chain of `n` equalities is `O(n log n)`:
