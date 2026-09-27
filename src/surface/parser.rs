@@ -3933,6 +3933,9 @@ impl Parser {
         if resource_name == "mutex_live" {
             return Err(self.error("named mutex_live binders are not supported yet"));
         }
+        if resource_name == "mutex_use" {
+            return Err(self.error("named mutex_use binders are not supported yet"));
+        }
         if resource_name == "mutex_guard" {
             return Err(self.error("named mutex_guard binders are not supported yet"));
         }

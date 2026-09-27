@@ -54,9 +54,9 @@ exclusive declared-resource body. Folding consumes the owner; unfolding returns
 it. Preserving helpers retain the entry initialization and cannot change mutex
 protocols. Missing authority is reported as `Requires owns mutex_live(mu)`.
 
-This is the lifecycle ownership layer, not a complete storage-lifetime proof.
-Initialization storage checks, protection against ordinary writes,
-`mutex_use` loans, worker transfer, named primitive binders, and lifecycle
+Initialization requires owned, aligned storage and reserves it against ordinary
+writes until destruction. Synchronous helpers can borrow lifetime permission
+through `mutex_use`. Worker transfer, named primitive binders, and lifecycle
 `consumes`/`produces` contracts remain unsupported.
 
 Automatic objects containing initialized mutexes cannot leave scope until
@@ -66,6 +66,31 @@ refused conservatively rather than assumed separate from local storage.
 
 **Verified use:** [`mdtests/mutex_live_wrapper.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_live_wrapper.md)
 and [`mdtests/mutex_live_contract.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_live_contract.md).
+
+## Borrowed mutex lifetime
+
+### `mutex_use`
+
+```click
+abstract resource mutex_use(mutex: void*);
+```
+
+**Meaning:** An owned permission to use an initialized mutex while its caller
+retains lifecycle responsibility. Use `owns mutex_use(mu);` in a preserving
+helper contract. Calls borrow an available `mutex_live(mu)` owner or reborrow
+an existing use permission; returning restores that exact source. A helper's
+input grants neither lifecycle ownership nor protected-memory access.
+
+The current implementation supports synchronous preserving helpers and nested
+calls, including contracts with ordinary owned memory and stable views. It
+retains the protocol freeze: initialization, destruction, acquisition, and
+release inside these helpers remain unsupported. `views`, quantities, named
+primitive binders, consumed/produced use permissions, and worker transfer are
+also unsupported. Missing call-site authority is reported as
+`Requires owns mutex_use(mu)`.
+
+**Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_use_contract.md)
+and [`mdtests/mutex_use_mixed.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_use_mixed.md).
 
 ## Allocation authority
 

@@ -15,6 +15,10 @@ The modeled-runtime resource `mutex_live` is verified in
 [`mutex_live_wrapper.md`](mutex_live_wrapper.md) and
 [`mutex_live_contract.md`](mutex_live_contract.md).
 
+The modeled-runtime resource `mutex_use` is verified in
+[`mutex_use_contract.md`](mutex_use_contract.md) and
+[`mutex_use_mixed.md`](mutex_use_mixed.md).
+
 ```c filename=stdlib_every_symbol.c
 int32 docs_identity(int32 value) {
     return value;

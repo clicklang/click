@@ -620,7 +620,7 @@ impl LoanRecord {
             LoanOrigin::Escrowed(_) if self.assumed_mutex.is_none() => self
                 .escrow
                 .as_ref()
-                .filter(|owner| is_concrete_mutex_owner(owner)),
+                .filter(|owner| is_mutex_lifetime_owner(owner)),
             LoanOrigin::BorrowedContractInput if self.escrow.is_none() => {
                 self.assumed_mutex.as_ref().filter(|owner| {
                     matches!(owner,
@@ -1530,6 +1530,8 @@ pub(crate) struct StableViewTransferPlan {
     pub(crate) reserved_ownership_supports: Vec<(CResourceFact, ResourceOccurrenceId)>,
     pub(crate) ledger: LoanLedger,
     pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) mutex_uses: Vec<mutex_calls::MutexUseCallTransfer>,
+    pub(crate) mutex_use_requirements: BTreeMap<CResourceFact, CResourceFact>,
     callee_view_bindings: LoanViewBindings,
     parent_view_bindings: LoanViewBindings,
     parent_ledger: LoanLedger,
@@ -2400,12 +2402,57 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
     };
     let mut reserved_ownership_supports = Vec::new();
     let mut canonical_transferred_ownership = Vec::new();
+    let mut planned_ledger = ledger.clone();
+    let mut entry_transitions = Vec::new();
+    let mut mutex_uses = Vec::new();
+    let mut mutex_use_requirements = BTreeMap::new();
     // Reserve exclusive requirements first. This makes the partition stable
     // under source reordering and prevents a view from hiding a later write.
     for requirement in requirements
         .iter()
         .filter(|requirement| requirement.fact.is_own())
     {
+        if let CResource::MutexUse(identity) = requirement.fact.resource() {
+            if split_reborrowed_views || requirement.role != CResourceTransferRole::Borrow {
+                return Err(StableViewPlanError::InvalidRequirement);
+            }
+            let source = residual
+                .mutex_use_at(&identity.mutex)
+                .cloned()
+                .or_else(|| residual.mutex_live_at(&identity.mutex).cloned())
+                .ok_or_else(|| StableViewPlanError::MissingResource(requirement.fact.clone()))?;
+            if identity.binding.is_some() && source != requirement.fact {
+                return Err(StableViewPlanError::MissingResource(
+                    requirement.fact.clone(),
+                ));
+            }
+            let use_plan = mutex_calls::MutexUseCallTransfer::prepare(
+                &planned_ledger,
+                caller,
+                callee,
+                &residual,
+                &source,
+                assumptions,
+            )
+            .map_err(|error| match error {
+                mutex_calls::MutexUseCallError::Loan(error) => StableViewPlanError::Loan(error),
+                _ => StableViewPlanError::MissingResource(requirement.fact.clone()),
+            })?;
+            let fact = use_plan.ledger.mutex_use_resource(use_plan.usage, callee)?;
+            callee_resources = callee_resources
+                .try_compose_with_fact(fact.clone(), assumptions)
+                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+            mutex_use_requirements.insert(requirement.fact.clone(), fact.clone());
+            let mut checked = requirement.clone();
+            checked.fact = fact;
+            transferred_ownership.push(checked);
+            canonical_transferred_ownership.push(None);
+            residual = use_plan.caller_resources.clone();
+            planned_ledger = use_plan.ledger.clone();
+            entry_transitions.push(use_plan.entry_transition.clone());
+            mutex_uses.push(use_plan);
+            continue;
+        }
         // The occurrence this reservation is taken out of, read before the
         // removal below: the transferred hold and the effect provenance both
         // name the residual entry that actually supplied the requirement, not
@@ -2466,8 +2513,6 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
     let mut adapter_restorations = BTreeMap::<LoanId, Vec<CResourceFact>>::new();
     let mut escrowed_owners = Vec::new();
     let mut escrowed_holds = Vec::new();
-    let mut planned_ledger = ledger.clone();
-    let mut entry_transitions = Vec::new();
     let mut grouped = BTreeMap::<ResourceOccurrenceId, Vec<(usize, CCheckedResourceFact)>>::new();
     let mut rebound = BTreeMap::<
         LoanViewBinding,
@@ -3070,6 +3115,8 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
         reserved_ownership_supports,
         ledger: planned_ledger,
         entry_transitions,
+        mutex_uses,
+        mutex_use_requirements,
         callee_view_bindings,
         parent_view_bindings: parent_view_bindings.clone(),
         parent_ledger: ledger.clone(),
@@ -3523,6 +3570,21 @@ impl StableViewTransferPlan {
                 recovered_escrows.push((escrow, None));
             }
         }
+        for use_plan in self.mutex_uses.iter().rev() {
+            let returned = use_plan
+                .finish_checked_ledger(ledger, &use_plan.callee_resources, assumptions)
+                .map_err(|error| match error {
+                    mutex_calls::MutexUseCallError::Loan(error) => StableViewPlanError::Loan(error),
+                    _ => StableViewPlanError::InvalidResidual,
+                })?;
+            ledger = returned.ledger;
+            transitions.extend(returned.exit_transitions);
+            let source = use_plan.source_resource().clone();
+            resources = resources
+                .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
+                .map_err(|_| StableViewPlanError::InvalidResidual)?;
+            recovered_escrows.push((source, None));
+        }
         // Every scope in loan_roots that this plan ended has just passed End
         // and Recover. End checks its indexed dependency set, so a registered
         // child would have refused before this checkpoint. When nothing
@@ -3605,9 +3667,9 @@ fn concrete_memory_union(left: &CMemoryRange, right: &CMemoryRange) -> Option<CM
     ))
 }
 
-fn is_concrete_mutex_owner(fact: &CResourceFact) -> bool {
-    matches!(fact, CResourceFact::Own(CResource::MutexLive(identity), quantity)
-        if identity.epoch.is_some() && quantity.as_const() == Some(1))
+fn is_mutex_lifetime_owner(fact: &CResourceFact) -> bool {
+    matches!(fact, CResourceFact::Own(CResource::MutexLive(_), quantity)
+        if quantity.as_const() == Some(1))
 }
 
 impl LoanLedger {
@@ -3745,7 +3807,7 @@ impl LoanLedger {
         support: ResourceOccurrenceId,
         escrow: CResourceFact,
     ) -> Result<(Self, MutexUseLoan, CheckedLoanTransition), LoanRefusal> {
-        if !is_concrete_mutex_owner(&escrow) {
+        if !is_mutex_lifetime_owner(&escrow) {
             return Err(LoanRefusal::UnsupportedResource);
         }
         let scope = LoanScopeId {
@@ -3833,7 +3895,7 @@ impl LoanLedger {
         };
         Ok(CResourceFact::own(CResource::MutexUse(
             super::MutexUseIdentity {
-                binding: usage,
+                binding: Some(usage),
                 mutex: identity.mutex.clone(),
             },
         )))
@@ -3880,7 +3942,6 @@ impl LoanLedger {
     /// initialization's lifetime, but retains all closing and recovery rights.
     /// Call sites must lend/reborrow instead. The entry builder supplies the
     /// principal clause occurrence and installs the resulting use resource.
-    #[allow(dead_code)] // Staged contract-entry adapter; surface wiring follows.
     pub(crate) fn borrowed_mutex_use_input(
         &self,
         holder: LoanParticipantId,
@@ -3922,9 +3983,21 @@ impl LoanLedger {
         ))
     }
 
+    pub(crate) fn check_assumed_mutex_use_return(
+        &self,
+        usage: MutexUseBinding,
+        holder: LoanParticipantId,
+        resources: &ResourceContext,
+    ) -> Result<(), LoanRefusal> {
+        self.check_mutex_use_input_return(
+            &MutexUseContractInput { usage, holder },
+            holder,
+            resources,
+        )
+    }
+
     /// A preserving helper must return the exact input occurrence, with its
     /// complete share and no escaping child or guard. It cannot close the root.
-    #[allow(dead_code)] // Staged contract-exit adapter; surface wiring follows.
     pub(crate) fn check_mutex_use_input_return(
         &self,
         input: &MutexUseContractInput,
@@ -4051,7 +4124,7 @@ impl LoanLedger {
         if opening.scope != authority.scope
             || opening.loan != authority.loan
             || record.mutex_root != Some(opening.loan)
-            || !record.escrow.as_ref().is_some_and(is_concrete_mutex_owner)
+            || !record.escrow.as_ref().is_some_and(is_mutex_lifetime_owner)
             || !record.permitted.is_empty()
             || !record.memory_backing.is_empty()
         {
@@ -5098,7 +5171,7 @@ impl LoanLedger {
                 if !matches!(
                     escrow.resource(),
                     CResource::Memory(_) | CResource::Token { .. }
-                ) && !is_concrete_mutex_owner(escrow)
+                ) && !is_mutex_lifetime_owner(escrow)
                 {
                     return Err(LoanRefusal::UnsupportedResource);
                 }
@@ -5153,11 +5226,11 @@ impl LoanLedger {
                     *loan,
                     LoanRecord {
                         scope: *scope,
-                        mutex_root: is_concrete_mutex_owner(escrow).then_some(*loan),
+                        mutex_root: is_mutex_lifetime_owner(escrow).then_some(*loan),
                         assumed_mutex: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
-                        permitted: if is_concrete_mutex_owner(escrow) {
+                        permitted: if is_mutex_lifetime_owner(escrow) {
                             Vec::new()
                         } else {
                             vec![CResourceFact::View(escrow.resource().clone())]
@@ -7113,9 +7186,15 @@ mod tests {
         assert!(ledger.recover_mutex_use(&forged_receipt, holder).is_err());
         assert!(ledger.end_mutex_reborrow(&forged_receipt, holder).is_err());
         assert!(
-            ledger
-                .lend_mutex_use(holder, holder, backing(&description), description.clone())
-                .is_err()
+            mutex_calls::MutexUseCallTransfer::prepare(
+                &ledger,
+                holder,
+                holder,
+                &resources,
+                &description,
+                &PureFactContext::new()
+            )
+            .is_err()
         );
         assert!(
             ledger
@@ -7721,7 +7800,6 @@ mod tests {
     fn mutex_use_rejects_invented_owners_receipts_and_certificates() {
         let (ledger, owner, reader) = participants();
         for escrow in [
-            mutex_owner(None),
             memory(0, 1, true),
             owned("token"),
             CResourceFact::Own(
@@ -7780,17 +7858,17 @@ mod tests {
                 )
                 .is_err()
         );
-        // A hostile certificate cannot replace a concrete initialization with
-        // an abstract owner, even if it also substitutes its structural seal.
+        // A hostile certificate cannot replace lifetime ownership with a
+        // view, even if it also substitutes its structural seal.
         let mut invalid = opening.transition;
         let LoanTransitionEvidence::Lend { escrow, .. } = &mut invalid.evidence else {
             panic!("lend")
         };
-        *escrow = mutex_owner(None);
+        *escrow = CResourceFact::View(mutex_owner(None).resource().clone());
         invalid.checked_evidence = invalid.evidence.clone();
         assert_eq!(
             ledger.apply_evidence(&invalid.evidence),
-            Err(LoanRefusal::UnsupportedResource)
+            Err(LoanRefusal::NotOwnership)
         );
     }
 

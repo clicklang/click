@@ -535,6 +535,7 @@ fn recover_candidate_stable_view_resources(
     // borrowing composite (its hold is released) or produced one (its
     // borrow must be backed, which no loan of this call can do).
     if !plan.has_stable_views()
+        && plan.mutex_uses.is_empty()
         && plan.transferred_holds.is_empty()
         && transfer.produced_borrowing_pieces.is_empty()
     {
@@ -662,6 +663,14 @@ fn recover_candidate_stable_view_resources(
         })?;
     let recovered_ledger = recovery.ledger;
     let mut residual = return_resources;
+    for fact in plan.mutex_use_requirements.values() {
+        residual = residual
+            .without_fact_delaying_normalization(fact, assumptions)
+            .ok_or_else(|| CRuntimeError::MissingResource {
+                resource: fact.clone(),
+            })?;
+    }
+
     // A return view can only survive the call scope when it is one of the
     // checked child views that entered the call, when the caller already held
     // a checked outer view that entails it, or when the return published it as
@@ -14708,7 +14717,16 @@ fn prepare_contract_resource_transfer(
     let borrowed_inputs = checked_required_resources
         .iter()
         .filter(|checked| checked.role == CResourceTransferRole::Borrow)
-        .cloned()
+        .map(|checked| {
+            let mut checked = checked.clone();
+            if let Some(fact) = stable_view_plan
+                .as_ref()
+                .and_then(|plan| plan.mutex_use_requirements.get(&checked.fact))
+            {
+                checked.fact = fact.clone();
+            }
+            checked
+        })
         .collect();
     let consumed_inputs = checked_required_resources
         .iter()
@@ -19749,6 +19767,24 @@ pub(super) fn function_return_resources_definitionally_established(
     ) else {
         return false;
     };
+    for fact in expected.facts() {
+        if let CResource::MutexUse(identity) = fact.resource() {
+            let Some(binding) = identity.binding else {
+                return false;
+            };
+            let (Some(ledger), Some(holder)) =
+                (return_state.loan_ledger(), return_state.loan_participant())
+            else {
+                return false;
+            };
+            if ledger
+                .check_assumed_mutex_use_return(binding, holder, claim_return_state.resources())
+                .is_err()
+            {
+                return false;
+            }
+        }
+    }
     expected.facts().iter().all(|fact| {
         resource_context_satisfies_definitional_fact(
             claim_return_state.resources(),
@@ -22427,6 +22463,32 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         }
                     }),
             )
+        }
+        CResourceTerm::MutexUse { mutex, snapshot } => {
+            let selected = match snapshot {
+                CResourceSnapshot::Entry => entry_state,
+                _ => state,
+            };
+            let value = evaluate_loop_effect_segment_value(
+                selected,
+                mutex,
+                assumptions,
+                "mutex lifetime pointer",
+                budget,
+            )?;
+            let Ok(CValue::Pointer(pointer)) = value else {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "mutex_use expects a mutex pointer".into(),
+                )));
+            };
+            let initialization_state = match resource.snapshot() {
+                CResourceSnapshot::Entry => entry_state,
+                _ => state,
+            };
+            Ok(Ok(super::mutexes::use_resource(
+                initialization_state,
+                pointer.pointer(),
+            )))
         }
         CResourceTerm::Instance {
             identity,

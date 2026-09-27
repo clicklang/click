@@ -2502,6 +2502,10 @@ pub(crate) fn c_mutex_live_resource(
     crate::kernel::mutexes::live_resource(state, mutex, abstract_entry)
 }
 
+pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
+    crate::kernel::mutexes::use_resource(state, mutex)
+}
+
 pub fn c_function_entry_state(
     caller_state: &CState,
     function: &CFunction,
@@ -2562,6 +2566,50 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
     } else {
         state.clone()
     };
+    // Root only actual primitive input occurrences. A description alone is
+    // never authority at an executing call site.
+    let use_inputs = rooted.resources().facts().iter().filter(|fact|
+        matches!(fact.resource(), CResource::MutexUse(identity) if identity.binding.is_none()))
+        .cloned().collect::<Vec<_>>();
+    if !use_inputs.is_empty() {
+        let mut ledger = rooted
+            .loan_ledger()
+            .cloned()
+            .unwrap_or_else(LoanLedger::new);
+        let holder = match rooted.loan_participant() {
+            Some(holder) => holder,
+            None => ledger
+                .fresh_participant()
+                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?,
+        };
+        for fact in use_inputs {
+            let CResource::MutexUse(identity) = fact.resource() else {
+                unreachable!()
+            };
+            let (support, _) = rooted
+                .resources()
+                .unique_owned_occurrence_for_fact(&fact)
+                .ok_or_else(|| {
+                    LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
+                })?;
+            let (next, input) = ledger
+                .borrowed_mutex_use_input(holder, support, identity.mutex.clone())
+                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+            let bound = next
+                .mutex_use_resource(input.usage, holder)
+                .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+            rooted.resources = rooted
+                .resources
+                .clone()
+                .without_fact_delaying_normalization(&fact, assumptions)
+                .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?
+                .try_compose_with_facts_delaying_normalization([bound], assumptions)
+                .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+            ledger = next;
+        }
+        rooted.loan_ledger = Some(ledger);
+        rooted.loan_participant = Some(holder);
+    }
     if state.preserves_mutex_protocols && state.mutex_ledger.is_none() {
         rooted.mutex_input_reservations =
             crate::kernel::functions::assumed_mutex_input_reservations(

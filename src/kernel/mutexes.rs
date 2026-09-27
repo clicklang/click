@@ -432,6 +432,20 @@ pub(super) fn live_resource(
     }
 }
 
+/// A description is not authority: only a rooted owned occurrence permits use.
+pub(super) fn use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
+    state
+        .resources
+        .mutex_use_at(mutex)
+        .cloned()
+        .unwrap_or_else(|| {
+            CResourceFact::own(CResource::MutexUse(super::MutexUseIdentity {
+                binding: None,
+                mutex: mutex.clone(),
+            }))
+        })
+}
+
 /// Describe an acquisition without establishing ownership. Abstract entry
 /// assumptions are inputs; execution still requires checked resource transfer.
 pub(super) fn guard_resource(

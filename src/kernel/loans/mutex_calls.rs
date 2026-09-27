@@ -42,8 +42,6 @@ pub(crate) struct MutexUseCallReturn {
     pub(crate) exit_transitions: Vec<CheckedLoanTransition>,
 }
 
-// These checked components are staged for the contract resource planner.
-#[allow(dead_code)]
 impl MutexUseCallTransfer {
     pub(crate) fn prepare(
         ledger: &LoanLedger,
@@ -61,10 +59,18 @@ impl MutexUseCallTransfer {
                 ledger.lend_mutex_use_with_transition(caller, callee, support, source.clone())?
             }
             CResource::MutexUse(identity) => {
-                if ledger.mutex_use_resource(identity.binding, caller)? != *source {
+                if ledger.mutex_use_resource(
+                    identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                    caller,
+                )? != *source
+                {
                     return Err(LoanRefusal::MissingLoanBinding.into());
                 }
-                ledger.reborrow_mutex_use_with_transition(identity.binding, caller, callee)?
+                ledger.reborrow_mutex_use_with_transition(
+                    identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                    caller,
+                    callee,
+                )?
             }
             _ => return Err(LoanRefusal::UnsupportedResource.into()),
         };
@@ -89,6 +95,11 @@ impl MutexUseCallTransfer {
         })
     }
 
+    pub(super) fn source_resource(&self) -> &CResourceFact {
+        &self.source
+    }
+
+    #[cfg(test)]
     pub(crate) fn recheck_entry(&self, predecessor: &LoanLedger) -> Result<(), LoanRefusal> {
         let checked = predecessor.apply(&self.entry_transition)?;
         if checked != self.ledger {
@@ -100,6 +111,7 @@ impl MutexUseCallTransfer {
     /// The body must already be certified. Its explicit loan deltas connect
     /// this exact entry to the returned ledger; a sibling ledger is insufficient.
     /// Assumed roots belong only to modular entry, never an executing call.
+    #[cfg(test)]
     pub(crate) fn finish(
         &self,
         returned_ledger: &LoanLedger,
@@ -126,6 +138,16 @@ impl MutexUseCallTransfer {
         if ledger != *returned_ledger {
             return Err(LoanRefusal::InvalidEvidence.into());
         }
+        self.finish_checked_ledger(ledger, returned_resources, assumptions)
+    }
+
+    /// Used only inside the common planner's checked entry/recovery chain.
+    pub(super) fn finish_checked_ledger(
+        &self,
+        mut ledger: LoanLedger,
+        returned_resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Result<MutexUseCallReturn, MutexUseCallError> {
         let expected = ledger.mutex_use_resource(self.usage, self.callee)?;
         if returned_resources
             .unique_owned_occurrence_for_fact(&expected)
@@ -151,9 +173,10 @@ impl MutexUseCallTransfer {
                 exit_transitions.push(recovery);
                 owner
             }
-            CResource::MutexUse(identity) => {
-                ledger.mutex_use_resource(identity.binding, self.caller)?
-            }
+            CResource::MutexUse(identity) => ledger.mutex_use_resource(
+                identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?,
+                self.caller,
+            )?,
             _ => return Err(LoanRefusal::UnsupportedResource.into()),
         };
         if restored != self.source {
@@ -653,6 +676,96 @@ mod tests {
             assert!(
                 pair[1].1 <= pair[0].1 * 3 && pair[1].2 <= pair[0].2 * 3,
                 "return recheck exceeds explicit delta growth: {samples:?}"
+            );
+        }
+    }
+    #[test]
+    fn integrated_use_planner_reserves_and_recovers_without_scanning_the_frame() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let ledger = LoanLedger::new();
+            let caller = ledger.fresh_participant().unwrap();
+            let callee = ledger.fresh_participant().unwrap();
+            let mut resources = ResourceContext::new().unchecked_with_fact(owner());
+            for index in 0..size {
+                resources = resources.unchecked_with_fact(token(&format!("frame {index}")));
+            }
+            let required = CCheckedResourceFact {
+                fact: CResourceFact::own(CResource::MutexUse(crate::kernel::MutexUseIdentity {
+                    binding: None,
+                    mutex: Pointer::symbolic(Variable(100)),
+                })),
+                role: CResourceTransferRole::Borrow,
+                snapshot: CResourceSnapshot::Entry,
+                clause_position: None,
+                section_index: Some(0),
+            };
+            let assumptions = PureFactContext::new();
+            let ((recovered, work), persistent) =
+                crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        let plan =
+                            plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+                                &resources,
+                                std::slice::from_ref(&required),
+                                &assumptions,
+                                &ledger,
+                                caller,
+                                callee,
+                                &LoanViewBindings::default(),
+                                &BTreeMap::new(),
+                                false,
+                            )
+                            .unwrap();
+                        plan.recheck_entry(&ledger).unwrap();
+                        let entry = plan.ledger.clone();
+                        let recovered = plan
+                            .recover_stable_views(&assumptions, &BTreeMap::new(), &[])
+                            .unwrap();
+                        assert_eq!(
+                            recovered.recheck_transitions(&entry, caller).unwrap(),
+                            recovered.terminal_ledger
+                        );
+                        recovered
+                    })
+                });
+            assert_eq!(recovered.ledger, ledger);
+            assert!(recovered.resources.satisfies_fact(&owner(), &assumptions));
+            assert_eq!(recovered.resources.facts().len(), size + 1);
+            assert!(
+                plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+                    &resources,
+                    &[required.clone(), required.clone()],
+                    &assumptions,
+                    &ledger,
+                    caller,
+                    callee,
+                    &LoanViewBindings::default(),
+                    &BTreeMap::new(),
+                    false
+                )
+                .is_err()
+            );
+            assert!(
+                plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+                    &resources,
+                    &[required],
+                    &assumptions,
+                    &ledger,
+                    caller,
+                    callee,
+                    &LoanViewBindings::default(),
+                    &BTreeMap::new(),
+                    true
+                )
+                .is_err()
+            );
+            samples.push((size, work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 2 && pair[1].2 <= pair[0].2 * 2,
+                "integrated use planner scans unrelated frame: {samples:?}"
             );
         }
     }

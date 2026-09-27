@@ -5397,6 +5397,7 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
+    pub(super) mutex_uses: PersistentMap<(ResourceFamily, Pointer), ResourceEntryIds>,
     pub(super) exact_shapes: PersistentMap<(ResourceFamily, String, usize), ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Iterated guarded-ownership facts keyed by both blocks their
@@ -5765,7 +5766,7 @@ pub struct MutexIdentity {
 /// must preserve this identity just as it preserves a concrete acquisition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
-    pub(in crate::kernel) binding: super::loans::MutexUseBinding,
+    pub(in crate::kernel) binding: Option<super::loans::MutexUseBinding>,
     pub(in crate::kernel) mutex: Pointer,
 }
 
@@ -6061,6 +6062,10 @@ pub enum CResourceTerm {
         mutex: Box<CExpression>,
         snapshot: CResourceSnapshot,
     },
+    MutexUse {
+        mutex: Box<CExpression>,
+        snapshot: CResourceSnapshot,
+    },
     Composite {
         name: String,
         arguments: Vec<CExpression>,
@@ -6207,6 +6212,7 @@ impl CResourceTerm {
             Self::Memory(_) => ResourceFamily::Memory,
             Self::MutexGuard { .. } => ResourceFamily::MutexGuard,
             Self::MutexLive { .. } => ResourceFamily::MutexLive,
+            Self::MutexUse { .. } => ResourceFamily::MutexUse,
             Self::Composite { .. } => ResourceFamily::Composite,
             Self::Token { .. } => ResourceFamily::Token,
             Self::Instance { .. } => ResourceFamily::Instance,

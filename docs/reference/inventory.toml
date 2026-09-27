@@ -3249,3 +3249,7 @@ path = "reference/library/index.md#mutex_guard"
 [[item]]
 id = "stdlib.resource.mutex_live"
 path = "reference/library/index.md#mutex_live"
+
+[[item]]
+id = "stdlib.resource.mutex_use"
+path = "reference/library/index.md#mutex_use"

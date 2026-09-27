@@ -1424,7 +1424,9 @@ fn collect_c_resource_spec_bound_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+        CResourceTerm::MutexGuard { mutex, .. }
+        | CResourceTerm::MutexLive { mutex, .. }
+        | CResourceTerm::MutexUse { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
         }
         CResourceTerm::Memory(segment) => {
@@ -1454,7 +1456,9 @@ fn collect_c_resource_term_bound_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+        CResourceTerm::MutexGuard { mutex, .. }
+        | CResourceTerm::MutexLive { mutex, .. }
+        | CResourceTerm::MutexUse { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
         }
         CResourceTerm::Memory(segment) => {
@@ -1574,7 +1578,11 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
 
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
-        CResource::MutexUse(_) => {}
+        CResource::MutexUse(identity) => {
+            if identity.binding.is_none() {
+                collect_pointer_bound_variables(&identity.mutex, variables);
+            }
+        }
         CResource::MutexGuard(identity) | CResource::MutexLive(identity) => {
             if identity.epoch.is_none() {
                 let pointer = &identity.mutex;
@@ -3957,7 +3965,14 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
     to: &Bitvector32Term,
 ) -> CResource {
     match resource {
-        CResource::MutexUse(_) => resource.clone(),
+        CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
+            binding: identity.binding,
+            mutex: if identity.binding.is_none() {
+                substitute_bitvector_variable_in_pointer(&identity.mutex, from, to)
+            } else {
+                identity.mutex.clone()
+            },
+        }),
         CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -4273,6 +4288,12 @@ fn substitute_bitvector_variable_in_resource_term(
             snapshot: *snapshot,
         },
         CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
+            mutex: Box::new(substitute_bitvector_variable_in_c_expression(
+                mutex, from, to,
+            )),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::MutexUse { mutex, snapshot } => CResourceTerm::MutexUse {
             mutex: Box::new(substitute_bitvector_variable_in_c_expression(
                 mutex, from, to,
             )),
@@ -6609,7 +6630,14 @@ fn substitute_pointer_variable_in_c_resource(
     to: &Pointer,
 ) -> CResource {
     match resource {
-        CResource::MutexUse(_) => resource.clone(),
+        CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
+            binding: identity.binding,
+            mutex: if identity.binding.is_none() {
+                substitute_pointer_variable_in_pointer(&identity.mutex, from, to)
+            } else {
+                identity.mutex.clone()
+            },
+        }),
         CResource::MutexGuard(identity) => CResource::MutexGuard(MutexIdentity {
             epoch: identity.epoch,
             mutex: if identity.epoch.is_none() {
@@ -7818,6 +7846,10 @@ fn substitute_pointer_variable_in_resource_term(
             snapshot: *snapshot,
         },
         CResourceTerm::MutexLive { mutex, snapshot } => CResourceTerm::MutexLive {
+            mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
+            snapshot: *snapshot,
+        },
+        CResourceTerm::MutexUse { mutex, snapshot } => CResourceTerm::MutexUse {
             mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
             snapshot: *snapshot,
         },

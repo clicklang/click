@@ -1599,6 +1599,16 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
                 });
             }
+            if name == "mutex_use" {
+                let [CValue::Pointer(mutex)] = resource_values.as_slice() else {
+                    return Err(ClickError::new("mutex_use expects one mutex pointer"));
+                };
+                let guard = crate::kernel::c_mutex_use_resource(state, mutex.pointer());
+                return Ok(match access {
+                    ResourceAccessMode::Own => guard,
+                    ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
+                });
+            }
             let resource = match kind {
                 ResourceKind::Composite => CResource::Composite {
                     name: name.clone(),

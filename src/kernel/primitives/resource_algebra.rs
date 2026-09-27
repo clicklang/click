@@ -411,6 +411,20 @@ impl ResourceContextIndex {
 
     fn with_inserted(&self, entry: ResourceEntryId, fact: &CResourceFact) -> Self {
         let mut result = self.clone();
+        if let CResource::MutexUse(identity) = fact.resource() {
+            result.mutex_uses = insert_resource_index_entry(
+                &result.mutex_uses,
+                (ResourceFamily::MutexUse, identity.mutex.clone()),
+                entry,
+            );
+        }
+        if let CResource::MutexLive(identity) = fact.resource() {
+            result.mutex_uses = insert_resource_index_entry(
+                &result.mutex_uses,
+                (ResourceFamily::MutexLive, identity.mutex.clone()),
+                entry,
+            );
+        }
         if let CResource::Instance(instance) = fact.resource() {
             result.instances =
                 insert_resource_index_entry(&result.instances, instance.identity, entry);
@@ -554,6 +568,20 @@ impl ResourceContextIndex {
 
     fn without_entry(&self, entry: ResourceEntryId, fact: &CResourceFact) -> Self {
         let mut result = self.clone();
+        if let CResource::MutexUse(identity) = fact.resource() {
+            result.mutex_uses = remove_resource_index_entry(
+                &result.mutex_uses,
+                &(ResourceFamily::MutexUse, identity.mutex.clone()),
+                entry,
+            );
+        }
+        if let CResource::MutexLive(identity) = fact.resource() {
+            result.mutex_uses = remove_resource_index_entry(
+                &result.mutex_uses,
+                &(ResourceFamily::MutexLive, identity.mutex.clone()),
+                entry,
+            );
+        }
         if let CResource::Instance(instance) = fact.resource() {
             result.instances =
                 remove_resource_index_entry(&result.instances, &instance.identity, entry);
@@ -2363,6 +2391,32 @@ impl ResourceContext {
     /// Select an exact owned occurrence for a fact-only API. Equal owned
     /// facts are distinct authorities, so callers that need to attach a
     /// projection must reject an ambiguous value-only lookup.
+    pub(crate) fn mutex_use_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+        let entries = self
+            .storage
+            .index
+            .mutex_uses
+            .get(&(ResourceFamily::MutexUse, pointer.clone()))?;
+        if entries.len() != 1 {
+            return None;
+        }
+        let fact = self.fact(*entries.iter().next()?);
+        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+    }
+
+    pub(crate) fn mutex_live_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+        let entries = self
+            .storage
+            .index
+            .mutex_uses
+            .get(&(ResourceFamily::MutexLive, pointer.clone()))?;
+        if entries.len() != 1 {
+            return None;
+        }
+        let fact = self.fact(*entries.iter().next()?);
+        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+    }
+
     pub(crate) fn unique_owned_occurrence_for_fact(
         &self,
         required: &CResourceFact,

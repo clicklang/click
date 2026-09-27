@@ -1,6 +1,6 @@
 # Concurrency contracts and failure explanations
 
-Status: proposal for human review, not an implemented language specification.
+Status: evolving design; implemented surface forms and remaining proposals are marked below.
 
 The human review boundary is the C source, its contract, and an explanation of
 each unproved requirement. A reviewer should not need to understand the mutex
@@ -39,7 +39,7 @@ required `separate(...)` fact. Destruction removes this dependency; unlocking
 does not. Abstract preserving contracts now derive reservation dependencies
 from their owned inputs and require separation before allocation retirement.
 This retirement check adds no surface syntax. Initialization storage checks
-and write reservations are described below; use loans remain unimplemented.
+and write reservations are described below; synchronous use loans are implemented.
 Automatic-storage expiry is now checked as described below.
 
 The first lifecycle ownership layer now implements `owns mutex_live(mu)` in
@@ -51,8 +51,9 @@ generation's resource cannot substitute for the owner. Missing ownership reports
 `Requires owns mutex_live(mu)`. This resource supplies neither `held(mu)` nor
 memory access. It cannot be viewed, counted, or transferred to workers yet.
 
-This is an ownership checkpoint, **not a complete lifetime proof**. It does not
-yet implement `mutex_use` loans and their guard and worker dependencies. Preserving lifecycle contracts
+Synchronous preserving `owns mutex_use(mu)` contracts now borrow lifecycle
+ownership or reborrow use authority. Guard and worker transport remain pending.
+Preserving lifecycle contracts
 retain the same conservative transition freeze as preserving guard contracts;
 `consumes`/`produces` and named primitive lifecycle binders remain unsupported.
 
@@ -131,7 +132,7 @@ footprints permit adjacent payload writes and separated allocation retirement;
 missing evidence reports `Requires separate(...)`. No surface syntax is added.
 
 Preserving contracts still freeze mutex protocol transitions. Lifecycle outputs
-and `mutex_use` lending remain future work.
+remain future work; preserving `mutex_use` lending is implemented.
 
 The surface status is:
 
@@ -143,7 +144,7 @@ The surface status is:
 | Direct named guard clauses, such as `owns g: mutex_guard(mu);` | Extend contract support; not supported today | The function receives and returns the same guard occurrence. |
 | `consumes` and `produces` for guards | Extend existing clause semantics; not supported today | The function can surrender an acquisition or return a newly established one. |
 | `mutex_live(mu)` | Implemented for direct preserving `owns` clauses and resource bodies | Lifecycle ownership of this initialized mutex, including responsibility for destruction. |
-| `mutex_use(mu)` | Agreed name for a proposed new built-in resource | Permission to use this initialization while its lifetime is guaranteed. It gives no payload access. |
+| `mutex_use(mu)` | Implemented for direct synchronous preserving `owns` clauses | Permission to use this initialization while its lifetime is guaranteed. It gives no payload access. |
 | Acquisition numbers, protocol generations, ledger annotations | Keep internal | Source contracts should not need to name checker bookkeeping. |
 | A new `uses` clause or general effect language | Do not add initially | Use ordinary `owns`, `views`, `consumes`, and `produces` clauses; preserve their distinctions. |
 
@@ -527,8 +528,8 @@ obligations, not claims that the tutorial already proves Click's design.
 
 The current design direction is:
 
-1. Use the names `mutex_live` and `mutex_use`. `mutex_live` is implemented;
-   `mutex_use` remains a proposed language addition.
+1. Use the names `mutex_live` and `mutex_use`. Both have implemented preserving
+   contract forms; mutable protocol transitions remain future work.
 2. Keep the existing ownership-clause vocabulary. Do not introduce a `uses`
    keyword or a general protocol-effect annotation.
 3. Permit automatic checked lending and reborrowing, provided a failure prints
@@ -727,6 +728,33 @@ loan evidence, and report missing resources using Click syntax. Abstract mutex
 operations, returned guards, and worker transport remain separate boundaries;
 the current protocol freeze is unchanged.
 
+## Preserving use contracts are wired
+
+The accepted surface form is `owns mutex_use(mu);`. A helper receives and
+returns that permission, without receiving lifecycle ownership or an acquisition.
+A synchronous caller supplies it by lending an owned `mutex_live(mu)` or
+reborrowing an owned `mutex_use(mu)`. The ordinary contract planner performs the
+checked exchange, retains entry and recovery evidence, and restores the original
+source. Nested helpers and repeated calls compose with owned memory and stable
+views. Abstract lifecycle owners can be lent too: their exact assumed identity
+is escrowed and restored, never replaced by a concrete initialization.
+
+Independent proof entry binds each primitive use input to a caller-supplied root.
+An unbound surface description is not executable authority. Preserving returns
+check the exact input resource and its complete share with no guard or child
+scope remaining. The ordinary contract return checker verifies the returned use
+occurrences before recovery discards them. Missing authority is reported as
+`Requires owns mutex_use(mu)`.
+
+This exposes no acquisition numbers or continuity witnesses. Named primitive
+binders, `views`, counts, consumed/produced use permissions, worker transfer,
+and abstract acquire/release transitions remain unsupported. The existing
+protocol freeze is retained. The direct-clause surface is the supported path;
+transport hidden inside declared wrappers still needs occurrence-aware binding.
+Tests cover nested and mixed contracts, precise missing resources, invalid
+access, lifecycle/acquisition non-implication, and storage reservations. The
+integrated planner has deterministic scaling coverage over unrelated frames.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.
@@ -740,8 +768,8 @@ hostile certificate tests:
    Scope exit now checks concrete initializations and conservatively refuses
    ambiguous symbolic ones. Concrete kernel use lending, reborrowing, and guard holds are
    implemented, including owned use-resource occurrences. `mutex_use` still needs
-   contract transport (caller-supplied input roots and preserving return checks
-   and synchronous resource transfer are implemented in the kernel), worker-join recovery, and escaping guards that retain the loan.
+   wrapper transport, worker-join recovery, and escaping guards that retain the loan.
+   Direct preserving contracts now have checked entry, call, and return transport.
    The current heap refusal is a conservative dependency check, not this
    resource protocol.
 2. **Abstract guard transitions.** Contracts need generative initialization and
