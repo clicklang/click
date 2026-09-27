@@ -3763,6 +3763,7 @@ fn the_entry_partition_pairs_a_transferred_clause_only_with_a_borrowed_one() {
         snapshot: CResourceSnapshot::Entry,
         clause_position: None,
         section_index: None,
+        selected_mutex_source: None,
     };
     let separation = |left: &CMemoryRange, right: &CMemoryRange| Proposition::CResourceSeparate {
         left: CResource::Memory(left.clone()),

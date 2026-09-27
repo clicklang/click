@@ -7431,6 +7431,7 @@ fn resource_clause_to_resource_spec_with_metadata(
                 inner.term(),
                 crate::kernel::CResourceTerm::MutexGuard { .. }
                     | crate::kernel::CResourceTerm::MutexLive { .. }
+                    | crate::kernel::CResourceTerm::MutexUse { .. }
             ) {
                 return inner
                     .with_mutex_authority_binding(binding.identity, binding.name.clone())

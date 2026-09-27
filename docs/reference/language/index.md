@@ -2134,8 +2134,17 @@ accepted. See the [checked lifecycle example](https://github.com/lacker/click/bl
 A preserving helper may declare `owns lifetime: mutex_live(mu)` or
 `owns guard: mutex_guard(mu)` and receive the named authority through an
 ordinary call map. These names preserve the exact initialization or acquisition,
-not just the pointer. They have no model fields or body to unfold. Named use
-permissions, named primitive children and theorem parameters, and general
+not just the pointer. They have no model fields or body to unfold.
+
+A helper may also declare `owns access: mutex_use(mu)`. A call such as
+`step(helper(mu), { access: life });` can lend a named `mutex_live` authority or
+reborrow a named `mutex_use` authority. The map selects that exact permission;
+the helper receives a scoped use permission, and the caller recovers its original
+authority and name when the helper returns. Nested helper calls follow the same
+rule. Unary `mutex_use` permits balanced locking without granting protected
+payload ownership. See the [checked nested example](https://github.com/lacker/click/blob/master/mdtests/mutex_use_named_nested_call.md).
+
+Named primitive children and theorem parameters, and general
 consuming/producing primitive helper clauses remain unsupported. The complete
 [mutex contract design](../../internals/mutex-resource-contracts.md) distinguishes
 these supported forms from the planned protected-state and storage outputs.

@@ -305,8 +305,14 @@ name only to the same returned authority. Old lifecycle names fail after
 destruction and reinitialization at the same address.
 
 Direct unary preserving `mutex_use` contracts support balanced opaque
-lock/unlock, exposing no protected state. Named use inputs, general
-consuming/producing helper contracts, named storage, fresh protected-state
+lock/unlock, exposing no protected state. Named use inputs are supported:
+`owns access: mutex_use(mu)` accepts an explicit named use or lifecycle authority.
+The call borrows the selected authority, binds a scoped callee use permission,
+and restores the caller's original authority and name after checked recovery.
+Nested reborrows select the same exact source; matching only the mutex address
+cannot substitute a sibling permission.
+
+General consuming/producing helper contracts, named storage, fresh protected-state
 outputs, and escaping guards remain pending. Concrete lock still retrieves the
 escrowed instance; calls without named runtime maps retain their prior checked
 behavior. The contract sketches above describe the complete target, not the

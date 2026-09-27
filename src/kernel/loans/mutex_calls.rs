@@ -28,6 +28,7 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) entry_transition: CheckedLoanTransition,
     pub(crate) usage: MutexUseBinding,
     source: CResourceFact,
+    selected_alias: Option<Variable>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
     loan: MutexUseLoan,
     caller: LoanParticipantId,
@@ -95,6 +96,7 @@ impl MutexUseCallTransfer {
             ledger,
             usage: loan.usage,
             source: source.clone(),
+            selected_alias: None,
             interface: None,
             loan,
             entry_transition,
@@ -136,6 +138,19 @@ impl MutexUseCallTransfer {
 
     pub(crate) fn source_resource(&self) -> &CResourceFact {
         &self.source
+    }
+
+    pub(crate) fn with_selected_alias(mut self, alias: Variable) -> Self {
+        self.selected_alias = Some(alias);
+        self
+    }
+
+    pub(crate) fn selected_alias(&self) -> Option<Variable> {
+        self.selected_alias
+    }
+
+    pub(crate) fn callee_resource(&self) -> Result<CResourceFact, LoanRefusal> {
+        self.ledger.mutex_use_resource(self.usage, self.callee)
     }
 
     #[cfg(test)]
@@ -278,6 +293,85 @@ mod tests {
         )
         .unwrap();
         (before, plan)
+    }
+
+    #[test]
+    fn named_use_plan_selects_exact_sibling_share_and_rejects_stale_generation() {
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let callee = ledger.fresh_participant().unwrap();
+        let live = owner();
+        let support = ResourceContext::new()
+            .unchecked_with_fact(live.clone())
+            .unique_owned_occurrence_for_fact(&live)
+            .unwrap()
+            .0;
+        let (ledger, root) = ledger
+            .lend_mutex_use(caller, caller, support, live)
+            .unwrap();
+        let (split, first_share, second_share) = ledger
+            .split(root.usage.0.share, caller, caller, caller)
+            .unwrap();
+        let ledger = ledger.apply(&split).unwrap();
+        let first = MutexUseBinding(LoanAuthorityBinding {
+            share: first_share,
+            ..root.usage.0
+        });
+        let second = MutexUseBinding(LoanAuthorityBinding {
+            share: second_share,
+            ..root.usage.0
+        });
+        let first_fact = ledger.mutex_use_resource(first, caller).unwrap();
+        let second_fact = ledger.mutex_use_resource(second, caller).unwrap();
+        assert_ne!(first_fact, second_fact);
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(first_fact.clone())
+            .unchecked_with_fact(second_fact.clone());
+        let CResourceFact::Own(CResource::MutexUse(first_identity), _) = &first_fact else {
+            unreachable!()
+        };
+        let evaluated_requirement = first_identity.clone();
+        let mut required = CCheckedResourceFact {
+            fact: CResourceFact::own(CResource::MutexUse(evaluated_requirement)),
+            role: CResourceTransferRole::Borrow,
+            snapshot: CResourceSnapshot::Entry,
+            clause_position: None,
+            section_index: Some(0),
+            selected_mutex_source: Some(Arc::new((Variable(500), second_fact.clone()))),
+        };
+        // A generic lookup is ambiguous here. The selected proof name picks
+        // the second share even when the evaluated clause picked its sibling.
+        let plan = plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+            &resources,
+            std::slice::from_ref(&required),
+            &PureFactContext::new(),
+            &ledger,
+            caller,
+            callee,
+            &LoanViewBindings::default(),
+            &BTreeMap::new(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(plan.mutex_uses[0].source_resource(), &second_fact);
+        assert_eq!(plan.mutex_uses[0].selected_alias(), Some(Variable(500)));
+        let mut stale = first_identity.clone();
+        stale.initialization = Some(u64::MAX);
+        required.fact = CResourceFact::own(CResource::MutexUse(stale));
+        assert!(matches!(
+            plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+                &resources,
+                std::slice::from_ref(&required),
+                &PureFactContext::new(),
+                &ledger,
+                caller,
+                callee,
+                &LoanViewBindings::default(),
+                &BTreeMap::new(),
+                false,
+            ),
+            Err(StableViewPlanError::MissingResource(_))
+        ));
     }
 
     #[test]
@@ -747,6 +841,7 @@ mod tests {
                 snapshot: CResourceSnapshot::Entry,
                 clause_position: None,
                 section_index: Some(0),
+                selected_mutex_source: None,
             };
             let assumptions = PureFactContext::new();
             let ((recovered, work), persistent) =

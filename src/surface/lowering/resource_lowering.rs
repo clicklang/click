@@ -1358,7 +1358,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             )?;
             if matches!(
                 lowered.resource(),
-                CResource::MutexGuard(_) | CResource::MutexLive(_)
+                CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_)
             ) {
                 // This lowering constructs the independent precondition. The
                 // kernel subsequently binds its name to the rooted occurrence.

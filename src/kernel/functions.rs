@@ -823,6 +823,9 @@ pub(crate) struct CCheckedResourceFact {
     /// Index of this leaf in the normalized resource section, when it was
     /// evaluated from a contract. Distinct leaves may share a source clause.
     pub(crate) section_index: Option<usize>,
+    /// Caller-selected exact named authority for a mutex-use loan. The
+    /// planner must consume this source, never select by address instead.
+    pub(crate) selected_mutex_source: Option<std::sync::Arc<(Variable, CResourceFact)>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3344,7 +3347,9 @@ fn execute_verified_function_applications_with_suspension(
         return_state.mutex_ledger = post_state.mutex_ledger.clone();
         return_state.mutex_input_reservations = post_state.mutex_input_reservations.clone();
         return_state.opaque_mutex_acquisitions = post_state.opaque_mutex_acquisitions.clone();
-        return_state.named_mutex_authorities = post_state.named_mutex_authorities.clone();
+        // A callee's proof names are scoped to that call. Its checked return
+        // restores the caller's names against the recovered occurrences below.
+        return_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
         if let Some(bindings) = selected_bindings.as_ref() {
             for resource in interface.resource_ensures() {
                 let Some((formal, binder)) = resource.mutex_authority_binding() else {
@@ -3775,7 +3780,35 @@ fn prepare_verified_function_call<'a>(
             )?;
             let error = match expected {
                 Ok(expected)
-                    if caller_state.resolve_named_mutex_authority(*actual) == Some(&expected) =>
+                    if caller_state.resolve_named_mutex_authority(*actual) == Some(&expected)
+                        || (matches!(expected.resource(), CResource::MutexUse(_))
+                            && caller_state
+                                .resolve_named_mutex_authority(*actual)
+                                .is_some_and(|source| {
+                                    match (source.resource(), expected.resource()) {
+                                        (
+                                            CResource::MutexLive(live),
+                                            CResource::MutexUse(usage),
+                                        ) => {
+                                            live.mutex == usage.mutex
+                                                && live.epoch.is_some()
+                                                && usage.initialization.is_none_or(|generation| {
+                                                    live.epoch == Some(generation)
+                                                })
+                                        }
+                                        (
+                                            CResource::MutexUse(selected),
+                                            CResource::MutexUse(usage),
+                                        ) => {
+                                            selected.mutex == usage.mutex
+                                                && selected.initialization.is_some()
+                                                && usage.initialization.is_none_or(|generation| {
+                                                    selected.initialization == Some(generation)
+                                                })
+                                        }
+                                        _ => false,
+                                    }
+                                })) =>
                 {
                     None
                 }
@@ -3840,10 +3873,41 @@ fn prepare_verified_function_call<'a>(
         }
     };
     entry_state = callee_state_with_resource_transfer(entry_state, &transfer);
-    // Transfer inserts a new owned occurrence for each selected raw mutex
-    // authority. Keep the proof name attached only to the same exact atom.
+    // The checked loan plan identifies each selected use source and its
+    // derived callee share. Move only those names, then rebind unchanged raw
+    // authorities to their newly inserted occurrences.
+    if let Some(plan) = transfer.stable_view_plan.as_ref() {
+        for use_plan in &plan.mutex_uses {
+            let Some(actual) = use_plan.selected_alias() else {
+                continue;
+            };
+            let derived = match use_plan.callee_resource() {
+                Ok(derived) => derived,
+                Err(_) => {
+                    return Ok(Err(resource_call_failure(
+                        "selected mutex use has no checked callee share",
+                    )));
+                }
+            };
+            entry_state = match entry_state.transport_named_mutex_use(
+                actual,
+                use_plan.source_resource(),
+                &derived,
+            ) {
+                Ok(transferred) => transferred,
+                Err(_) => {
+                    return Ok(Err(resource_call_failure(
+                        "transferred mutex use is not the selected owned occurrence",
+                    )));
+                }
+            };
+        }
+    }
     if let Some(selected) = resource_application {
         for parameter in selected.parameters.iter() {
+            if matches!(parameter.term(), CResourceTerm::MutexUse { .. }) {
+                continue;
+            }
             let Some((formal, binder)) = parameter.mutex_authority_binding() else {
                 continue;
             };
@@ -14202,7 +14266,7 @@ fn prepare_contract_resource_transfer(
             .composite_resource_definitions()
             .iter()
             .any(CCompositeResourceDefinition::is_recursive);
-    let (required_resources, checked_required_resources) =
+    let (required_resources, mut checked_required_resources) =
         match super::assumptions::capture_implicit_reasoning_provenance(|| {
             evaluate_function_resource_context_with_metadata(
                 callee_state,
@@ -14215,6 +14279,37 @@ fn prepare_contract_resource_transfer(
             Ok(resources) => resources,
             Err(error) => return Ok(Err(error)),
         };
+    // Keep a named mutex-use requirement tied to the exact caller occurrence
+    // selected by its call map. The ordinary planner may choose an anonymous
+    // use by address, but a written alias must never be silently redirected.
+    for checked in &mut checked_required_resources {
+        let Some(index) = checked.section_index else {
+            continue;
+        };
+        let Some(spec) = interface.resource_requires().get(index) else {
+            continue;
+        };
+        let Some((formal, _)) = spec.mutex_authority_binding() else {
+            continue;
+        };
+        if !matches!(checked.fact.resource(), CResource::MutexUse(_)) {
+            continue;
+        }
+        let Some(actual) = callee_state
+            .resource_bindings
+            .as_ref()
+            .and_then(|bindings| bindings.get(&formal))
+            .copied()
+        else {
+            continue;
+        };
+        let Some(source) = caller_state.resolve_named_mutex_authority(actual) else {
+            return Ok(Err(CRuntimeError::MissingResource {
+                resource: checked.fact.clone(),
+            }));
+        };
+        checked.selected_mutex_source = Some(std::sync::Arc::new((actual, source.clone())));
+    }
     // Role is section semantics, not a decoration on the access mode.  A
     // viewed fact can only be borrowed, while an owned fact may be either a
     // consumed transfer or an entry borrow returned by the contract.  A
@@ -15095,6 +15190,7 @@ mod entry_borrow_return_tests {
                 snapshot: CResourceSnapshot::Entry,
                 clause_position: None,
                 section_index: Some(index),
+                selected_mutex_source: None,
             })
             .collect::<Vec<_>>();
         // Neither field has a materialized cell. Re-evaluating either return
@@ -20639,6 +20735,7 @@ fn evaluate_resource_clauses_against_whole_section(
                 snapshot: resources[index].snapshot(),
                 clause_position: resources[index].clause_position(),
                 section_index: Some(index),
+                selected_mutex_source: None,
             })
         })
         .collect()))

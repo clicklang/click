@@ -3628,6 +3628,7 @@ impl Parser {
             };
             if let Some(expected) = &declaration.family
                 && family != *expected
+                && !(expected == "mutex_use" && family == "mutex_live")
                 && !self.child_slot_identities.contains(&identity)
             {
                 return Err(self.error(format!(
@@ -3991,14 +3992,13 @@ impl Parser {
         else {
             return Err(self.error("named ownership requires a field-bearing declared resource"));
         };
-        if resource_name == "mutex_use" {
-            return Err(self.error("named mutex_use binders are not supported yet"));
-        }
-        if matches!(resource_name.as_str(), "mutex_live" | "mutex_guard")
-            && (!self.in_function_block
-                || self.in_contract_definition
-                || self.in_resource_definition
-                || rebinding)
+        if matches!(
+            resource_name.as_str(),
+            "mutex_live" | "mutex_guard" | "mutex_use"
+        ) && (!self.in_function_block
+            || self.in_contract_definition
+            || self.in_resource_definition
+            || rebinding)
         {
             return Err(self.error(format!("named {resource_name} is currently supported only in preserving C function contracts")));
         }

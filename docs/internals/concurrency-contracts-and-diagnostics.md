@@ -158,9 +158,9 @@ The surface status is:
 
 The examples below are proposed contract sketches. They are not passing Click
 fixtures or promises that the current parser accepts every spelling. In
-particular, named primitive guard/lifecycle/use binders need a precise extension
-of the current contract interface; existing named declared-resource binders do
-not by themselves implement this feature.
+particular, consuming/producing primitive clauses and protected-state outputs
+still need the transfer rules described below. Preserving named primitive
+binders are implemented as summarized at the end of this document.
 
 No C implementation changes are required by this proposal.
 
@@ -1006,5 +1006,10 @@ maps. Names are checked references to raw owned authority, not field-bearing
 composite instances. Preservation requires the same initialization/acquisition,
 including across repeated helper calls. Missing ownership, wrong mutex inputs,
 stale lifecycle names, and attempted primitive unfold are covered by regressions.
+Named preserving `mutex_use` inputs also use ordinary maps. A named lifetime
+can supply a checked use loan, and a named use can supply a checked reborrow.
+Each call selects the actual named authority, derives a scoped callee permission,
+and restores the caller's original name after recovery. The permission alone
+gives no protected payload ownership.
 See [the complete contract design](mutex-resource-contracts.md) for the supported
 subset and remaining resource-parameter, storage, and protected-state work.

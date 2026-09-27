@@ -3714,6 +3714,7 @@ mod tests {
                 snapshot: CResourceSnapshot::Entry,
                 clause_position: None,
                 section_index: None,
+                selected_mutex_source: None,
             }],
             &assumptions,
         )

@@ -15,7 +15,7 @@ use super::primitives::{
 use super::reasoning::signed_bitvector_constant;
 use super::{
     Bitvector32Term, CMemoryRange, CResource, CResourceFact, CResourceSnapshot,
-    CResourceTransferRole, PureFactContext, ResourceContext, ResourceOccurrenceId,
+    CResourceTransferRole, PureFactContext, ResourceContext, ResourceOccurrenceId, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -2472,17 +2472,47 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
             if split_reborrowed_views || requirement.role != CResourceTransferRole::Borrow {
                 return Err(StableViewPlanError::InvalidRequirement);
             }
-            let source = residual
-                .mutex_use_at(&identity.mutex)
-                .cloned()
-                .or_else(|| residual.mutex_live_at(&identity.mutex).cloned())
-                .ok_or_else(|| StableViewPlanError::MissingResource(requirement.fact.clone()))?;
-            if identity.binding.is_some() && source != requirement.fact {
+            let source = if let Some(selected) = &requirement.selected_mutex_source {
+                let selected_source = &selected.1;
+                let (selected_mutex, selected_initialization) = match selected_source.resource() {
+                    CResource::MutexLive(identity) => (&identity.mutex, identity.epoch),
+                    CResource::MutexUse(identity) => (&identity.mutex, identity.initialization),
+                    _ => {
+                        return Err(StableViewPlanError::MissingResource(
+                            requirement.fact.clone(),
+                        ));
+                    }
+                };
+                if selected_mutex != &identity.mutex
+                    || selected_initialization.is_none()
+                    || identity
+                        .initialization
+                        .is_some_and(|generation| selected_initialization != Some(generation))
+                    || residual
+                        .unique_owned_occurrence_for_fact(selected_source)
+                        .is_none()
+                {
+                    return Err(StableViewPlanError::MissingResource(
+                        requirement.fact.clone(),
+                    ));
+                }
+                selected_source.clone()
+            } else {
+                residual
+                    .mutex_use_at(&identity.mutex)
+                    .cloned()
+                    .or_else(|| residual.mutex_live_at(&identity.mutex).cloned())
+                    .ok_or_else(|| StableViewPlanError::MissingResource(requirement.fact.clone()))?
+            };
+            if requirement.selected_mutex_source.is_none()
+                && identity.binding.is_some()
+                && source != requirement.fact
+            {
                 return Err(StableViewPlanError::MissingResource(
                     requirement.fact.clone(),
                 ));
             }
-            let use_plan = mutex_calls::MutexUseCallTransfer::prepare(
+            let mut use_plan = mutex_calls::MutexUseCallTransfer::prepare(
                 &planned_ledger,
                 caller,
                 callee,
@@ -2494,6 +2524,9 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
                 mutex_calls::MutexUseCallError::Loan(error) => StableViewPlanError::Loan(error),
                 _ => StableViewPlanError::MissingResource(requirement.fact.clone()),
             })?;
+            if let Some(selected) = &requirement.selected_mutex_source {
+                use_plan = use_plan.with_selected_alias(selected.0);
+            }
             let fact = use_plan.ledger.mutex_use_resource(use_plan.usage, callee)?;
             callee_resources = callee_resources
                 .try_compose_with_fact(fact.clone(), assumptions)
@@ -9470,6 +9503,7 @@ mod tests {
             snapshot: CResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
+            selected_mutex_source: None,
         }
     }
 
@@ -9840,6 +9874,7 @@ mod tests {
                         snapshot: CResourceSnapshot::Entry,
                         clause_position: None,
                         section_index: None,
+                        selected_mutex_source: None,
                     },
                     checked(view.clone()),
                 ],
@@ -10558,6 +10593,7 @@ mod tests {
                 snapshot: CResourceSnapshot::Entry,
                 clause_position: None,
                 section_index: None,
+                selected_mutex_source: None,
             },
         ];
         assert!(matches!(
@@ -10584,6 +10620,7 @@ mod tests {
             snapshot: CResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
+            selected_mutex_source: None,
         };
         let read = checked(memory(0, 4, false));
         let left = plan_stable_view_transfer(
@@ -10644,6 +10681,7 @@ mod tests {
             snapshot: CResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
+            selected_mutex_source: None,
         };
         let reverse_view = checked(memory(6, 8, false));
         let reverse = plan_stable_view_transfer(
@@ -10684,6 +10722,7 @@ mod tests {
                 snapshot: CResourceSnapshot::Entry,
                 clause_position: None,
                 section_index: None,
+                selected_mutex_source: None,
             },
         ];
         assert_eq!(
@@ -11103,6 +11142,7 @@ mod local_storage_tests {
             snapshot: CResourceSnapshot::Entry,
             clause_position: None,
             section_index: None,
+            selected_mutex_source: None,
         }
     }
 

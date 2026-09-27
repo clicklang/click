@@ -1306,7 +1306,7 @@ fn expand_declared_resource_clause(
                     "named ownership requires a declared resource",
                 ));
             };
-            if matches!(name.as_str(), "mutex_live" | "mutex_guard") {
+            if matches!(name.as_str(), "mutex_live" | "mutex_guard" | "mutex_use") {
                 if binding.fold_fields.is_some() || binding.child_bindings.is_some() {
                     return Err(ClickError::new(
                         "mutex authority has no fields or resource body to fold or unfold",

@@ -4334,6 +4334,20 @@ impl CState {
         self.named_mutex_authorities = Some(Arc::new(next));
         Ok(self)
     }
+    pub(in crate::kernel) fn transport_named_mutex_use(
+        mut self,
+        identity: Variable,
+        source: &CResourceFact,
+        derived: &CResourceFact,
+    ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
+        let current = self
+            .named_mutex_authorities
+            .as_ref()
+            .ok_or(super::super::named_authority::NamedMutexAuthorityError::NotBound)?;
+        let next = current.transport_checked_use(identity, source, derived, &self)?;
+        self.named_mutex_authorities = Some(Arc::new(next));
+        Ok(self)
+    }
     pub fn new() -> Self {
         Self::default()
     }

@@ -173,6 +173,67 @@ impl NamedMutexAuthorities {
                 .with_inserted(occurrence, binder),
         })
     }
+
+    /// A checked synchronous call may lend a live authority or reborrow a use
+    /// share, giving its callee a different use atom under the same proof name.
+    /// The caller supplies the checked loan transition; this map only verifies
+    /// the selected source and new uniquely owned occurrence.
+    pub(in crate::kernel) fn transport_checked_use(
+        &self,
+        binder: Variable,
+        source: &CResourceFact,
+        derived: &CResourceFact,
+        state: &CState,
+    ) -> Result<Self, NamedMutexAuthorityError> {
+        let previous = self
+            .aliases
+            .get(&binder)
+            .ok_or(NamedMutexAuthorityError::NotBound)?;
+        if &previous.fact != source {
+            return Err(NamedMutexAuthorityError::MismatchedAuthority);
+        }
+        let (source_mutex, source_initialization) = match source.resource() {
+            CResource::MutexLive(identity) => (&identity.mutex, identity.epoch),
+            CResource::MutexUse(identity) => (&identity.mutex, identity.initialization),
+            _ => return Err(NamedMutexAuthorityError::NotMutexAuthority),
+        };
+        let CResource::MutexUse(target) = derived.resource() else {
+            return Err(NamedMutexAuthorityError::NotMutexAuthority);
+        };
+        if source_mutex != &target.mutex
+            || source_initialization.is_none()
+            || source_initialization != target.initialization
+        {
+            return Err(NamedMutexAuthorityError::MismatchedAuthority);
+        }
+        let (occurrence, _) = state
+            .resources
+            .unique_owned_occurrence_for_fact(derived)
+            .ok_or(NamedMutexAuthorityError::NotUniquelyOwned)?;
+        if self
+            .occupied
+            .get(&occurrence)
+            .is_some_and(|owner| *owner != binder)
+        {
+            return Err(NamedMutexAuthorityError::AlreadyNamed);
+        }
+        let identity = fresh_identity();
+        Ok(Self {
+            identity,
+            logical_bindings_identity: identity,
+            aliases: self.aliases.with_inserted(
+                binder,
+                NamedMutexAuthority {
+                    fact: derived.clone(),
+                    occurrence,
+                },
+            ),
+            occupied: self
+                .occupied
+                .without_key(&previous.occurrence)
+                .with_inserted(occurrence, binder),
+        })
+    }
 }
 
 impl PartialEq for NamedMutexAuthorities {
@@ -200,13 +261,68 @@ impl Hash for NamedMutexAuthorities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MutexIdentity, Pointer, ResourceContext};
+    use crate::kernel::{MutexIdentity, MutexUseIdentity, Pointer, ResourceContext};
 
     fn authority(epoch: u64) -> CResourceFact {
         CResourceFact::own(CResource::MutexLive(MutexIdentity {
             epoch: Some(epoch),
             mutex: Pointer::symbolic(Variable(400)),
         }))
+    }
+
+    fn use_authority(epoch: u64, mutex: Variable) -> CResourceFact {
+        CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+            binding: None,
+            initialization: Some(epoch),
+            mutex: Pointer::symbolic(mutex),
+        }))
+    }
+
+    #[test]
+    fn checked_use_transport_requires_the_named_source_and_exact_derived_share() {
+        let source = authority(1);
+        let other = authority(2);
+        let derived = use_authority(1, Variable(400));
+        let mut state = CState::new();
+        state.resources = ResourceContext::new().unchecked_with_fact(source.clone());
+        let named = NamedMutexAuthorities::new()
+            .bind(Variable(1), &source, &state)
+            .unwrap();
+        state.resources = ResourceContext::new().unchecked_with_fact(derived.clone());
+        assert_eq!(
+            named.transport_checked_use(Variable(1), &other, &derived, &state),
+            Err(NamedMutexAuthorityError::MismatchedAuthority)
+        );
+        assert_eq!(
+            named.transport_checked_use(
+                Variable(1),
+                &source,
+                &use_authority(2, Variable(400)),
+                &state,
+            ),
+            Err(NamedMutexAuthorityError::MismatchedAuthority)
+        );
+        assert_eq!(
+            named.transport_checked_use(
+                Variable(1),
+                &source,
+                &use_authority(1, Variable(401)),
+                &state,
+            ),
+            Err(NamedMutexAuthorityError::MismatchedAuthority)
+        );
+        let moved = named
+            .transport_checked_use(Variable(1), &source, &derived, &state)
+            .unwrap();
+        assert_eq!(moved.resolve(Variable(1), &state), Some(&derived));
+        assert_ne!(moved, named);
+        assert!(!moved.same_logical_bindings(&named));
+        state.resources = ResourceContext::new();
+        assert_eq!(moved.resolve(Variable(1), &state), None);
+        assert_eq!(
+            named.transport_checked_use(Variable(1), &source, &derived, &state),
+            Err(NamedMutexAuthorityError::NotUniquelyOwned)
+        );
     }
 
     #[test]
