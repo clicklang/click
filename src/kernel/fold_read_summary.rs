@@ -1,6 +1,6 @@
 //! Checked read summaries for `Integer`-valued range-fold functions, and the
 //! explicit application-framing rule they support
-//! (`design/dfs-gaps/fold-read-range-inference.md`, delivery steps 1 and 2).
+//! (`docs/internals/fold-read-ranges.md`).
 //!
 //! An `Integer` function over an `int32[]` argument is an opaque application
 //! whose array argument names a whole-block snapshot. A fact about

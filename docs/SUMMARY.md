@@ -67,6 +67,7 @@
 - [Byte representation](internals/byte-representation.md)
 - [Memory derivation DAG](internals/memory-dag.md)
   - [The resource tracker](internals/resource-tracker.md)
+  - [Fold read ranges](internals/fold-read-ranges.md)
 - [Mathematical integers](internals/mathematical-integers.md)
 - [Canonicalization](internals/canonicalization.md)
 - [Equality closure (proposal)](internals/equality-closure.md)

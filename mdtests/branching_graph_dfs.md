@@ -1,6 +1,6 @@
 # A cyclic, two-successor graph search
 
-The C is the graph search from `design/dfs-gaps/branching_graph_dfs.md`, unchanged.
+The C is the original two-successor graph search, unchanged.
 Both successor arrays are bounded and read-only; `visited` is mutable. The
 number of unmarked cells ranks both recursive calls, including the right call
 after the left call may have marked additional nodes. The recursive contract

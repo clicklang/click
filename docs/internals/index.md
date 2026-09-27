@@ -15,6 +15,7 @@ name differ, user-facing documentation uses the Surface Click name.
 - [Byte representation](byte-representation.md)
 - [Memory derivation DAG](memory-dag.md)
 - [The resource tracker](resource-tracker.md)
+- [Fold read ranges](fold-read-ranges.md)
 - [Mathematical integers](mathematical-integers.md)
 
 ## Engineering constraints

@@ -482,7 +482,7 @@ pub(in crate::surface) fn register_kernel_pure_function_definitions(
 
 /// Records each declared `Integer`-valued function's body with the kernel,
 /// once per verification, so the kernel can decide whether it admits a
-/// checked read summary (`design/dfs-gaps/fold-read-range-inference.md`).
+/// checked read summary (`docs/internals/fold-read-ranges.md`).
 ///
 /// This registers program data only. The body is lowered by the same
 /// annotation lowering an `unfold` of the function uses, with the parameters

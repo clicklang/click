@@ -67,7 +67,6 @@ Soundness and kernel shape:
 Program import and execution:
 
 - [Verify a concurrency demo with threads, mutexes, and publication](concurrency-demo.md)
-- [Verify a pointer-chasing search over an index array](dfs.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. The unchanged
