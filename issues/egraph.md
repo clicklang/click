@@ -189,6 +189,38 @@ Each stage lands green with its regressions and scaling curves:
 5. Tactics modulo the closure, plus a kernel-checked equality rule for
    `rewrite`.
 
+## Migration discipline
+
+Each kind of thing moves onto the e-graph on its own, and every step lands
+green. A step replaces a private mechanism with an e-graph query and
+deletes the old code. It does not leave the old code running beside the
+new.
+
+The loaded-pointer encoding is the one change that cannot be split by
+kind, because the whole kernel shares it. It is made small by doing the
+risky part first:
+
+1. **All producers through one constructor.** Done: `Pointer::loaded`.
+2. **All consumers through one decoder.** `Pointer::as_loaded` answers which
+   load a pointer is the value of. Each consumer that pattern-matches the
+   storage-relative form moves onto it, one subsystem per commit, while that
+   form is still in place. Candidates:
+   - the naming decoders in `eval/memory_loads.rs`;
+   - `resolve_minted_load_pointer`;
+   - `observe` projections;
+   - frame transport;
+   - `rewrite` through a loaded pointer;
+   - diagnostics.
+
+   Step 2 is done when a trial flip breaks nothing that the flip itself does
+   not explain.
+3. **Flip the encoding inside the constructor and decoder** to the opaque
+   form, and add reuse at load time: a load whose cell the path proves
+   unchanged since an earlier named load takes that name.
+
+If this stalls, a different representation of loaded pointers is on the
+table; the constructor and decoder are what make trying one cheap.
+
 ## Open questions (from the design note)
 
 - **How `rewrite` is checked.** Its substitution is built in surface code, and
