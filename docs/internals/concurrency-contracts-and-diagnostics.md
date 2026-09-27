@@ -852,6 +852,26 @@ at calls (including existing guard ownership), connecting declared invariant
 interfaces, and handling escaping guards. No syntax or continuity witness is
 added by this checkpoint.
 
+## Checked protected-resource interfaces
+
+Runtime publication now uses a shared kernel check for the installed
+`guarded_by` declaration, its resource parameter, and the exact mutex field.
+The resulting interface records the resource family, parameters, field schema,
+and mutex address. It deliberately excludes the instance binder and observed
+field values: two observations of the same protected assertion describe the
+same interface even when their values differ.
+
+Publication additionally requires actual folded ownership of the selected
+instance before moving it into escrow. A declaration or interface description
+alone grants no payload authority. The C runtime dispatcher uses this checked
+entry; the raw escrow operation is private to the mutex module.
+
+This adds no surface syntax and preserves existing publication behavior. It
+provides a reusable declaration boundary, not yet a contract association with a
+particular initialization. Abstract helper acquisition still needs that
+association, fresh observations, and checked call effects before it can expose
+protected state.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

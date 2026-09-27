@@ -12,6 +12,7 @@
 // Checked abstract transitions are staged until contract effects are available.
 #[allow(dead_code)]
 mod assumed_protocol;
+mod invariant_interface;
 
 use std::cmp::Ordering as CmpOrdering;
 use std::hash::{Hash, Hasher};
@@ -859,10 +860,39 @@ impl MutexContext {
         })
     }
 
+    /// Select the protected assertion through its installed declaration and
+    /// actual folded ownership. A declaration alone cannot publish authority.
+    pub(super) fn publish_declared(
+        &self,
+        mutex: &Pointer,
+        identity: super::Variable,
+        declarations: &std::collections::BTreeMap<String, super::CMutexGuardDeclaration>,
+        assumptions: &PureFactContext,
+        storage_bytes: u32,
+    ) -> Result<Self, &'static str> {
+        let instance = self
+            .state
+            .resources
+            .owned_instance(identity)
+            .ok_or("selected mutex invariant is not held folded")?;
+        let interface = invariant_interface::MutexInvariantInterface::check(
+            instance,
+            mutex,
+            declarations,
+            assumptions,
+        )?;
+        self.publish(
+            interface.mutex().clone(),
+            CResourceFact::own(CResource::Instance(instance.clone())),
+            assumptions,
+            storage_bytes,
+        )
+    }
+
     /// Deposit one folded, exclusive instance into an initialized mutex.
     /// The C binder will check that `mutex` is the field declared by this
     /// resource's `guarded_by` clause.
-    pub(super) fn publish(
+    fn publish(
         &self,
         mutex: Pointer,
         invariant: CResourceFact,

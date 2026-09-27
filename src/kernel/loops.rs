@@ -970,24 +970,11 @@ fn execute_modeled_pthread_mutex_paths(
                         .and_then(|transport| transport.bindings.get(&Variable(u64::MAX - 1)));
                     identity
                     .ok_or("mutex init requires `step(pthread_mutex_init(...), { invariant: instance })`")
-                    .and_then(|identity| state.resources.owned_instance(*identity)
-                        .ok_or("selected mutex invariant is not held folded"))
-                    .and_then(|instance| {
-                        let guard = environment.modeled_mutex_guards.get(instance.name())
-                            .ok_or("selected resource has no `guarded_by` mutex field")?;
-                        let Some(AlgebraicValue::C(CValue::Pointer(base))) =
-                            instance.arguments().get(guard.parameter_index) else {
-                            return Err("guarded resource parameter is not a pointer");
-                        };
-                        let expected = base.pointer().offset_by_bytes(guard.field_offset_bytes);
-                        if !super::reasoning::pointers_proven_equal_for_memory_resolution(
-                            &expected, mutex.pointer(), &current,
-                        ) {
-                            return Err("selected resource is guarded by a different mutex");
-                        }
-                        let fact = CResourceFact::own(CResource::Instance(instance.clone()));
-                        super::mutexes::MutexContext::new(state.clone())
-                            .publish(expected, fact, &current, binding.mutex_storage_bytes)
+                    .and_then(|identity| {
+                        super::mutexes::MutexContext::new(state.clone()).publish_declared(
+                            mutex.pointer(), *identity, &environment.modeled_mutex_guards,
+                            &current, binding.mutex_storage_bytes,
+                        )
                     })
                     .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 }
