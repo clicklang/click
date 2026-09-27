@@ -7,6 +7,7 @@
 
 pub(crate) mod arithmetic_special;
 mod branches;
+pub(crate) mod equality_rewrite;
 mod execution;
 // `kernel::reasoning` and `kernel::api` reach the snapshot-aware alpha
 // identity here for the range-fold congruences, the same way they reach

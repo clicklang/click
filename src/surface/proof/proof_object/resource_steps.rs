@@ -834,14 +834,10 @@ impl<'a> Proof<'a> {
                     // different surface nodes but denote the same typed call.
                     // Use the checked defining equality on the kernel goal and
                     // discard stale presentation after a successful rewrite.
-                    match rewrite_proposition_by_exact_equality(
-                        goal.kernel(),
-                        &equality,
-                        std::slice::from_ref(&equality),
-                    ) {
+                    match facts.check_equality_rewrite(goal.kernel(), &equality) {
                         Ok(rewritten) => {
                             original_surface = None;
-                            rewritten
+                            rewritten.proposition().clone()
                         }
                         Err(_) => goal.kernel().clone(),
                     }

@@ -1886,35 +1886,48 @@ impl<'a> Proof<'a> {
         surface: Option<ClickProposition>,
         witness_refinement: bool,
     ) -> OpenBranch {
-        let outcome = match self.focused_obligation() {
+        let outcome = self.refinement_outcome();
+        let presentation =
+            self.refinement_presentation(surface, witness_refinement.then(|| kernel.clone()));
+        let obligation = match outcome {
+            Some(outcome) => PropositionObligation::at_outcome(kernel, presentation, outcome),
+            None => PropositionObligation::new(kernel, presentation),
+        };
+        OpenBranch::new(Obligation::Proposition(obligation), state)
+    }
+
+    fn refinement_outcome(&self) -> Option<Arc<OutcomeProofData>> {
+        match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => goal.outcome.clone(),
             Some(Obligation::FunctionOutcome(goal)) => Some(goal.data.clone()),
             _ => None,
-        };
+        }
+    }
+
+    fn refinement_presentation(
+        &self,
+        surface: Option<ClickProposition>,
+        witness_refinement_kernel: Option<Proposition>,
+    ) -> PropositionPresentation {
         // A refinement replaces the claim, so the head chain the lowering
         // recorded no longer describes it; the goal-local binders and the
         // antecedents its own introductions retained still do, because the
         // refinement changed neither the binder scope nor the fact context.
-        let presentation = match self.focused_obligation() {
+        match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => PropositionPresentation {
                 surface: surface.map(Arc::new),
                 surface_bindings: goal.surface_bindings.clone(),
                 introductions: GoalIntroductions::default(),
                 introduced_antecedents: goal.introduced_antecedents.clone(),
                 both_children: None,
-                witness_refinement_kernel: witness_refinement.then(|| kernel.clone()),
+                witness_refinement_kernel,
             },
             _ => PropositionPresentation {
                 surface: surface.map(Arc::new),
-                witness_refinement_kernel: witness_refinement.then(|| kernel.clone()),
+                witness_refinement_kernel,
                 ..PropositionPresentation::default()
             },
-        };
-        let obligation = match outcome {
-            Some(outcome) => PropositionObligation::at_outcome(kernel, presentation, outcome),
-            None => PropositionObligation::new(kernel, presentation),
-        };
-        OpenBranch::new(Obligation::Proposition(obligation), state)
+        }
     }
 
     /// The execution proof's per-proof context, when this is one.

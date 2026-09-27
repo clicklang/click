@@ -188,21 +188,35 @@ to that representation, migrate resource indexes, or complete milestone B.
   merge tests extend to 4096 blocks. These do not yet establish a bound for
   every growing symbolic affine-delta pattern or resource-index migration.
 
-The rewrite audit traced certificate checking through `ProofStep::Rewrite`, `finish_rewrite`,
-and `refined_proposition`: the surface checker constructs the rewritten goal;
-the generic kernel focused-result publisher checks the open branch and accepts
-that transition. There is no independent equality-substitution check on that
-path. A binder guard now refuses substitution under `forall`/`exists` when it
-would shadow an equality variable or capture its replacement. Direct checker
-regressions exercise both cases, including a variable hidden in a pure-function
-argument. Capture collection uses the bounded, snapshot-opaque kernel walker
-and stays flat as unrelated snapshot contents grow; a source-level probe did
-not demonstrate a reachable exploit. This guard does **not** finish the kernel evidence API.
+The rewrite audit traced certificate checking through `ProofStep::Rewrite`,
+`finish_rewrite`, and the generic focused-result publisher. Equality substitution
+now lives in `kernel/proof/equality_rewrite.rs`. `ProofFacts::check_equality_rewrite`
+checks the cited equality (or its reverse) against the persistent exact premise
+index and constructs a private `CheckedEqualityRewrite`. Only the kernel can
+change its semantic result or turn it into a proposition obligation. A proposed
+surface spelling must pass the existing checked, corresponding-leaf load
+transport before replacing that result. Smart planning can still construct
+candidates over an explicit premise slice; those candidates have no proof
+authority and the certificate path does not use their premise search.
 
-Next: define and implement that checked transition boundary, settle same-block
-offset/atom updates, and make the constructor/decoder representation change
-coherent through mandatory consumers. Then integrate indexed read/fold lookup
-and complete the full milestone-B regressions before a broad consumer handoff.
+The binder guard refuses substitution under `forall`/`exists` when it would
+shadow an equality variable or capture its replacement. Its bounded collector
+sees pure-function arguments and treats snapshots as opaque. Direct kernel
+regressions cover missing and reversed premises, sibling-context isolation,
+forged presentation rejection, capture, and flat work as unrelated premises
+and snapshot contents grow. The source-level probe did not demonstrate an
+exploit. Goal lowering/unfolding and the generic publisher remain their existing
+trust boundaries; this change gives equality substitution its own checked rule,
+not a migration of every proof transition.
+
+Next: settle same-block offset/atom updates and make the constructor/decoder
+representation change coherent through mandatory consumers. Before that switch,
+resolve the current load registry's sharing of names across access widths;
+pointer-load interpretation must be part of its identity. The design selects a
+distinct pointer-load name and explicit loaded-pointer block variant so scalar
+walkers cannot silently treat it as a bitvector variable. Then integrate
+indexed read/fold lookup and complete the full milestone-B regressions before
+a broad consumer handoff.
 
 ## Why the migration changes
 

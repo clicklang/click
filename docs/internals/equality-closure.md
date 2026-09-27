@@ -74,6 +74,23 @@ interpretation (sort/width and any other distinctions required by memory
 semantics). Existing external registries may supply this information during
 migration; the semantic key must be explicit in the design.
 
+The pointer migration will use a distinct pointer-load name and an explicit
+loaded-pointer block variant, rather than hiding another sort in the scalar
+load-variable range. Its key is the assumption-free canonical snapshot,
+address, and pointer interpretation (object-pointer value, eight-byte access).
+Pointee type remains on the C value and is not key material. Live origin/epoch
+metadata is separate from that defining key. The old widthless scalar load
+registry can remain during this pointer phase; its mutable maximum-width field
+must not decide membership in the new pointer-load application index.
+
+Do not emit a scalar equality between a pointer-load name and a widthless
+`MemoryLoad`. The pointer registry defines the pointer-valued application;
+scalar bit views need their own checked conversion. A materialized pointer cell
+already contains its value: reuse that value, including a retained value across
+havoc only through the existing checked retention rule. Constructor, decoder,
+substitution, variable collection, provenance, and rendering must all handle
+the explicit loaded-pointer variant before the representation switch lands.
+
 Equal addresses at one snapshot imply equal compatible loads. This must hold
 whether the loads were registered before or after the address equality, and
 whether either load already belongs to another explicit class. For example:
@@ -201,17 +218,21 @@ Where an explicit certificate needs equality evidence, provide a shareable
 explanation DAG or an equivalent checked derivation without repeatedly
 expanding a long chain.
 
-The rewrite audit found that certificate checking calls the surface
-`finish_rewrite` checker, which constructs a new goal and publishes it through
-`refined_proposition`. The generic kernel publisher validates an open branch
-but does not independently check equality substitution. The surface rewrite
-checker is therefore part of this transition's trusted boundary today.
-Its outer quantifier walk now refuses binder collisions, using the bounded
-carrier-aware collector that treats snapshots as opaque and follows explicit
-function arguments. Direct regressions cover shadowing, capture, and ambient
-snapshot scaling, but source-level exploit reachability was not established. A kernel-checked equality transition/evidence API is still required
-before declaring the foundation complete. The binder guard alone is not that
-API.
+Equality substitution now has a kernel-owned checked rule in
+`proof/equality_rewrite.rs`. It admits the cited equality through the persistent
+exact premise index, computes the substitution, and returns a private checked
+result. That result constructs the proposition obligation; surface code supplies
+presentation data, not a replacement semantic goal. A different load spelling
+must pass the kernel's corresponding-leaf transport check first. The candidate
+helper used by smart planning has no proof authority.
+
+The outer quantifier walk refuses binder collisions with the bounded,
+carrier-aware variable collector, which treats snapshots as opaque. Direct
+regressions cover unavailable/reversed premises, sibling-context isolation,
+forged presentation, shadowing, capture, and ambient premise/snapshot scaling.
+Source-level exploit reachability was not established. Goal lowering/unfolding
+and other transitions through the generic publisher remain separate trust
+boundaries; they were not migrated by extracting this equality rule.
 
 Soundness tests include unproved aliases, snapshot changes, incompatible load
 interpretations, branch leakage, restricted-premise leakage, offset wrapping,

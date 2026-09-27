@@ -2278,20 +2278,13 @@ impl<'a> Proof<'a> {
         // pure theorem, which has no C parameters.
         names: (&[syntax::C0Parameter], &[CExpression]),
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let admitted = self.facts().materialization_available(&equality)
-            || reverse_kernel_equality(equality.as_ref().clone())
-                .as_ref()
-                .is_some_and(|reverse| self.facts().materialization_available(reverse));
-        let available = if admitted {
-            std::slice::from_ref(equality.as_ref())
-        } else {
-            &[]
-        };
         // Name both sides: a rewrite that finds nothing to replace is
         // almost always an equality whose left side lowered to a different
         // term than the goal's (a load of another width, a value where the
         // goal has a load), which only the two lowered forms show.
-        let mut rewritten = rewrite_proposition_by_exact_equality(&goal, &equality, available)
+        let mut rewritten = self
+            .facts()
+            .check_equality_rewrite(&goal, &equality)
             .map_err(|message| {
                 let spelled_equality = crate::surface::diagnostics::describe_pure_fact_spelled(
                     &equality, names.0, names.1,
@@ -2337,30 +2330,24 @@ impl<'a> Proof<'a> {
                 }
                 self.step_error(message)
             })?;
-        let mut facts = self.facts().clone();
         let surface_goal = self.surface_goal().and_then(|surface_goal| {
             let candidate =
                 rewrite_click_proposition_by_surface_equality(surface_goal, surface_equality)?;
             self.lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
                 .ok()
-                .filter(|lowered| {
-                    if lowered == &rewritten {
-                        return true;
-                    }
-                    if let Some(checked) = facts.with_checked_rewritten_loads(&rewritten, lowered) {
-                        facts = checked;
-                        rewritten = lowered.clone();
-                        true
-                    } else {
-                        false
-                    }
-                })
+                .filter(|lowered| rewritten.try_present_as(lowered))
                 .map(|_| candidate)
         });
-        let context = self.refined_branch_state(facts);
+        let presentation = self.refinement_presentation(surface_goal, None);
+        let (obligation, facts) =
+            rewritten.into_obligation(presentation, self.refinement_outcome());
+        let branch = OpenBranch::new(
+            Obligation::Proposition(obligation),
+            self.refined_branch_state(facts),
+        );
         Ok(CheckedFocusedTransition::replacing(
             self.state().locals().clone(),
-            Some(self.refined_proposition(context, rewritten, surface_goal, false)),
+            Some(branch),
             Vec::new(),
             Vec::new(),
         ))
