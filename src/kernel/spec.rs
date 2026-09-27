@@ -5488,10 +5488,8 @@ fn lower_spec_predicate_proposition_at_state_in(
                     );
                 };
                 if state.preserves_mutex_protocols && state.mutex_ledger.is_none() {
-                    let guard = CResourceFact::own(CResource::MutexGuard(MutexIdentity {
-                        epoch: None,
-                        mutex: mutex.pointer().clone(),
-                    }));
+                    let guard = super::mutexes::guard_resource(state, mutex.pointer(), true)
+                        .expect("abstract guard description");
                     if state.resources.satisfies_fact(&guard, assumptions) {
                         return SpecPropositionPath {
                             introductions: Vec::new(),

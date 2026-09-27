@@ -755,6 +755,28 @@ Tests cover nested and mixed contracts, precise missing resources, invalid
 access, lifecycle/acquisition non-implication, and storage reservations. The
 integrated planner has deterministic scaling coverage over unrelated frames.
 
+## Direct guard inputs have acquisition identities
+
+Independent proof entry now binds each direct `owns mutex_guard(mu)` input to
+one fresh internal acquisition identity. A preserving return selects the entry
+identity, so another guard at the same address cannot discharge that obligation.
+The same identity allocator serves runtime acquisitions and assumed inputs;
+these namespaces cannot accidentally collide. Describing a guard still grants
+no ownership, lifecycle permission, or ability to release it.
+
+The binding requires an actual, unique, unit owned occurrence. Views, duplicate
+occurrences, and execution states cannot be used to create assumed authority.
+The entry binding stays available when a wrapper hides the guard, so unfolding
+restores the same acquisition. Its description alone cannot establish `held(mu)`;
+that still requires the actual owned guard. Indexed selection and immutable
+binding identities avoid scanning unrelated resources during lookup and state
+comparison, with deterministic lookup scaling coverage.
+
+This changes no contract spelling. The protocol freeze remains: abstract
+acquire/release, guard outputs, and occurrence binding inside initially hidden
+wrappers still need checked transition rules. This checkpoint supplies identity
+preservation required by those rules; it does not enable lock/unlock in helpers.
+
 ## Remaining semantic implementation boundaries
 
 The heap-retirement checkpoint does not make the remaining migration mechanical.

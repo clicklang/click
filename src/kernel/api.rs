@@ -2618,6 +2618,8 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
                 assumptions,
             );
     }
+    rooted = crate::kernel::mutexes::bind_assumed_guard_inputs(rooted, assumptions)
+        .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
     BORROWED_INPUT_ROOTS.with(|roots| {
         roots
             .borrow_mut()

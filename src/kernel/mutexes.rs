@@ -352,22 +352,54 @@ fn ledger_storage_write_refusal(
 }
 
 /// Immutable storage dependencies of an independently assumed contract input.
-/// This ledger is used only as a footprint index: it grants no live owner or
-/// guard and is never consulted by a runtime mutex transition.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+/// Also retains descriptions of direct input acquisitions across folding.
+/// These descriptions grant no authority; runtime transitions do not consult them.
+#[derive(Clone, Debug)]
 pub(super) struct MutexInputReservations {
+    identity: u64,
     ledger: MutexLedger,
     unnamed: bool,
+    guards: PersistentMap<Pointer, CResourceFact>,
+}
+
+// Input descriptions are immutable after entry. Compare their identity, not
+// every unrelated input, when checking state or loop continuity.
+impl PartialEq for MutexInputReservations {
+    fn eq(&self, other: &Self) -> bool {
+        self.identity == other.identity
+    }
+}
+impl Eq for MutexInputReservations {}
+impl PartialOrd for MutexInputReservations {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for MutexInputReservations {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.identity.cmp(&other.identity)
+    }
+}
+impl Hash for MutexInputReservations {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.identity.hash(state);
+    }
 }
 
 impl MutexInputReservations {
+    fn empty() -> Self {
+        Self {
+            identity: MutexLedger::fresh_identity(),
+            ledger: MutexLedger::new(),
+            unnamed: false,
+            guards: PersistentMap::default(),
+        }
+    }
+
     pub(super) fn from_ranges(
         ranges: impl IntoIterator<Item = super::CMemoryRange>,
     ) -> Option<Self> {
-        let mut result = Self {
-            ledger: MutexLedger::new(),
-            unnamed: false,
-        };
+        let mut result = Self::empty();
         for range in ranges {
             if range.is_unnamed_footprint() {
                 result.unnamed = true;
@@ -400,6 +432,62 @@ pub(super) struct MutexGuard {
     mutex: Pointer,
     initialization: MutexInitialization,
     epoch: u64,
+}
+
+fn fresh_acquisition_epoch() -> Result<u64, MutexTransitionError> {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |epoch| {
+        epoch.checked_add(1)
+    })
+    .map_err(|_| MutexTransitionError::Refusal("mutex acquisition identity space exhausted"))
+}
+
+/// Bind actual direct guard inputs at independent proof entry. This does not
+/// initialize a mutex or make a transition executable. Hidden wrapper inputs
+/// remain under the protocol freeze until their occurrences can be bound too.
+pub(super) fn bind_assumed_guard_inputs(
+    mut state: CState,
+    assumptions: &PureFactContext,
+) -> Result<CState, super::loans::LoanRefusal> {
+    use super::loans::LoanRefusal;
+    let inputs = state.resources.facts().iter().filter(|fact|
+        matches!(fact.resource(), CResource::MutexGuard(identity) if identity.epoch.is_none()))
+        .cloned().collect::<Vec<_>>();
+    if !inputs.is_empty() && (!state.preserves_mutex_protocols || state.mutex_ledger.is_some()) {
+        return Err(LoanRefusal::InvalidEvidence);
+    }
+    for fact in inputs {
+        state
+            .resources
+            .unique_owned_occurrence_for_fact(&fact)
+            .ok_or(LoanRefusal::MissingBacking)?;
+        let CResource::MutexGuard(identity) = fact.resource() else {
+            unreachable!()
+        };
+        // Reject ambiguous or non-unit ownership before allocating an identity.
+        if state.resources.mutex_guard_at(&identity.mutex) != Some(&fact) {
+            return Err(LoanRefusal::MissingBacking);
+        }
+        let bound = CResourceFact::own(CResource::MutexGuard(super::MutexIdentity {
+            epoch: Some(fresh_acquisition_epoch().map_err(|_| LoanRefusal::InvalidEvidence)?),
+            mutex: identity.mutex.clone(),
+        }));
+        let inputs = state
+            .mutex_input_reservations
+            .get_or_insert_with(MutexInputReservations::empty);
+        if inputs.guards.contains_key(&identity.mutex) {
+            return Err(LoanRefusal::InvalidEvidence);
+        }
+        inputs.identity = MutexLedger::fresh_identity();
+        inputs.guards.insert(identity.mutex.clone(), bound.clone());
+        state.resources = state
+            .resources
+            .without_fact_delaying_normalization(&fact, assumptions)
+            .ok_or(LoanRefusal::MissingBacking)?
+            .try_compose_with_facts_delaying_normalization([bound], assumptions)
+            .map_err(|_| LoanRefusal::MissingBacking)?;
+    }
+    Ok(state)
 }
 
 impl MutexGuard {
@@ -455,6 +543,16 @@ pub(super) fn guard_resource(
 ) -> Option<CResourceFact> {
     if let Some(ledger) = &state.mutex_ledger {
         return ledger.guard_resource(mutex);
+    }
+    if let Some(guard) = state
+        .mutex_input_reservations
+        .as_ref()
+        .and_then(|inputs| inputs.guards.get(mutex))
+    {
+        return Some(guard.clone());
+    }
+    if let Some(guard) = state.resources.mutex_guard_at(mutex) {
+        return Some(guard.clone());
     }
     (abstract_entry || state.preserves_mutex_protocols).then(|| {
         CResourceFact::own(CResource::MutexGuard(super::MutexIdentity {
@@ -1006,14 +1104,7 @@ impl MutexContext {
         } else {
             self.state.resources.clone()
         };
-        static NEXT_EPOCH: AtomicU64 = AtomicU64::new(1);
-        let epoch = NEXT_EPOCH
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |epoch| {
-                epoch.checked_add(1)
-            })
-            .map_err(|_| {
-                MutexTransitionError::Refusal("mutex acquisition identity space exhausted")
-            })?;
+        let epoch = fresh_acquisition_epoch()?;
         let mut state = self.state.clone();
         state.loan_ledger = loan_ledger;
         let guard = MutexGuard {
@@ -1677,6 +1768,108 @@ mod tests {
         )
         .unwrap()
         .unwrap()
+    }
+
+    fn assumed_guard_state(address: &Pointer) -> CState {
+        let mut state = CState::new();
+        state.preserves_mutex_protocols = true;
+        let description = guard_resource(&state, address, true).unwrap();
+        state.resources = state.resources.unchecked_with_fact(description);
+        state
+    }
+
+    #[test]
+    fn assumed_guard_inputs_are_generative_and_preserve_entry_identity() {
+        use super::super::CResourceSnapshot;
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let input = assumed_guard_state(&address);
+        let first = bind_assumed_guard_inputs(input.clone(), &assumptions).unwrap();
+        let second = bind_assumed_guard_inputs(input.clone(), &assumptions).unwrap();
+        let required = evaluate_guard(&first, &second, address.clone(), CResourceSnapshot::Entry);
+        let replacement =
+            evaluate_guard(&first, &second, address.clone(), CResourceSnapshot::Current);
+        assert_ne!(required, replacement);
+        assert!(!second.resources.satisfies_fact(&required, &assumptions));
+        assert!(!input.resources.satisfies_fact(&required, &assumptions));
+        assert!(first.resources.satisfies_fact(&required, &assumptions));
+        assert!(first.mutex_ledger.is_none());
+        assert!(live_resource(&first, &address, false).is_some());
+        assert!(!first.resources.satisfies_fact(
+            &live_resource(&first, &address, false).unwrap(),
+            &assumptions
+        ));
+        let unchanged = bind_assumed_guard_inputs(first.clone(), &assumptions).unwrap();
+        assert_eq!(guard_resource(&unchanged, &address, false), Some(required));
+        let concrete = MutexContext::new(CState::new())
+            .initialize_empty(address.clone(), 40)
+            .unwrap()
+            .acquire_current(&address, &assumptions)
+            .unwrap();
+        assert_ne!(
+            guard_resource(concrete.state(), &address, false),
+            guard_resource(&first, &address, false)
+        );
+        assert!(
+            MutexContext::new(first)
+                .release_current(&address, &assumptions)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn assumed_guard_binding_rejects_invalid_occurrences_and_execution_states() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let input = assumed_guard_state(&address);
+        let fact = input.resources.mutex_guard_at(&address).unwrap().clone();
+        let mut duplicate = input.clone();
+        duplicate.resources = duplicate.resources.unchecked_with_fact(fact.clone());
+        assert!(bind_assumed_guard_inputs(duplicate, &assumptions).is_err());
+        let mut viewed = input.clone();
+        viewed.resources = super::super::ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::View(fact.resource().clone()));
+        assert!(bind_assumed_guard_inputs(viewed, &assumptions).is_err());
+        let mut executing = input.clone();
+        executing.preserves_mutex_protocols = false;
+        assert!(bind_assumed_guard_inputs(executing, &assumptions).is_err());
+        let mut concrete = input;
+        concrete.mutex_ledger = Some(MutexLedger::new());
+        assert!(bind_assumed_guard_inputs(concrete, &assumptions).is_err());
+    }
+
+    #[test]
+    fn assumed_guard_lookup_does_not_scan_unrelated_resources() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let mut state =
+                bind_assumed_guard_inputs(assumed_guard_state(&address), &assumptions).unwrap();
+            let expected = guard_resource(&state, &address, false).unwrap();
+            for index in 0..size {
+                state.resources =
+                    state
+                        .resources
+                        .unchecked_with_fact(CResourceFact::own(CResource::Token {
+                            name: format!("unrelated{index}"),
+                            arguments: vec![].into(),
+                        }));
+            }
+            let ((found, work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    guard_resource(&state, &address, false)
+                })
+            });
+            assert_eq!(found, Some(expected));
+            samples.push((work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].0 <= pair[0].0 * 2 + 1 && pair[1].1 <= pair[0].1 * 2 + 1,
+                "guard lookup scans unrelated resources: {samples:?}"
+            );
+        }
     }
 
     #[test]

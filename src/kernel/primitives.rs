@@ -5397,7 +5397,7 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
-    pub(super) mutex_uses: PersistentMap<(ResourceFamily, Pointer), ResourceEntryIds>,
+    pub(super) mutex_authorities: PersistentMap<(ResourceFamily, Pointer), ResourceEntryIds>,
     pub(super) exact_shapes: PersistentMap<(ResourceFamily, String, usize), ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// Iterated guarded-ownership facts keyed by both blocks their
@@ -5750,11 +5750,11 @@ pub enum CResource {
 
 /// Opaque identity for one mutex initialization or acquisition. The resource
 /// variant distinguishes these namespaces. Copying syntax never duplicates ownership.
-/// Concrete epochs are generative; abstract identities describe an unchanged
-/// contract input and are valid only while protocol transitions are prohibited.
+/// Epochs are generative for concrete transitions and rooted direct guard inputs.
+/// Unbound descriptions are valid only while protocol transitions are prohibited.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexIdentity {
-    /// `None` is the unchanged authority assumed at abstract contract entry.
+    /// `None` is an unbound description at abstract contract entry.
     pub(in crate::kernel) epoch: Option<u64>,
     /// Concrete addresses are immutable diagnostic provenance; only an
     /// abstract authority's address participates in substitution.
