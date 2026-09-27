@@ -100,6 +100,7 @@ struct PendingCreateAuthority {
     mutex_ledger: Option<super::mutexes::MutexLedger>,
     mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
     opaque_mutex_acquisitions: Option<super::mutexes::OpaqueMutexAcquisitions>,
+    named_mutex_authorities: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
 }
 
 impl PendingCreateAuthority {
@@ -112,6 +113,7 @@ impl PendingCreateAuthority {
             mutex_ledger: state.mutex_ledger.clone(),
             mutex_input_reservations: state.mutex_input_reservations.clone(),
             opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
+            named_mutex_authorities: state.named_mutex_authorities.clone(),
         }
     }
 
@@ -123,6 +125,7 @@ impl PendingCreateAuthority {
         state.mutex_ledger = self.mutex_ledger.clone();
         state.mutex_input_reservations = self.mutex_input_reservations.clone();
         state.opaque_mutex_acquisitions = self.opaque_mutex_acquisitions.clone();
+        state.named_mutex_authorities = self.named_mutex_authorities.clone();
     }
 }
 
@@ -197,6 +200,7 @@ impl PendingThreadCreate {
                     mutex_ledger: storage.success.mutex_ledger.clone(),
                     mutex_input_reservations: storage.success.mutex_input_reservations.clone(),
                     opaque_mutex_acquisitions: storage.success.opaque_mutex_acquisitions.clone(),
+                    named_mutex_authorities: storage.success.named_mutex_authorities.clone(),
                 },
                 failure: PendingCreateAuthority {
                     resources: storage.failure.resources.clone(),
@@ -206,6 +210,7 @@ impl PendingThreadCreate {
                     mutex_ledger: storage.failure.mutex_ledger.clone(),
                     mutex_input_reservations: storage.failure.mutex_input_reservations.clone(),
                     opaque_mutex_acquisitions: storage.failure.opaque_mutex_acquisitions.clone(),
+                    named_mutex_authorities: storage.failure.named_mutex_authorities.clone(),
                 },
                 deltas: storage.deltas.with_inserted(storage.next_delta, delta),
                 next_delta: storage.next_delta + 1,
@@ -230,6 +235,7 @@ impl PendingThreadCreate {
             mutex_ledger: authority.mutex_ledger.clone(),
             mutex_input_reservations: authority.mutex_input_reservations.clone(),
             opaque_mutex_acquisitions: authority.opaque_mutex_acquisitions.clone(),
+            named_mutex_authorities: authority.named_mutex_authorities.clone(),
         };
         let mut deltas = PersistentMap::default();
         for (index, delta) in &storage.deltas {

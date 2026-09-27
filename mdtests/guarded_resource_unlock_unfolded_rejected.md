@@ -25,7 +25,7 @@ void wrong(struct cell *cell) {
     requires aligned(&cell->mu, 8);
     owns state: cell_state(cell);
 } by {
-    step(pthread_mutex_init(&cell->mu, 0), { invariant: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&cell->mu, 0), { state: state });
     step();
     unfold(state);
     step();

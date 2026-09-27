@@ -467,6 +467,7 @@ struct Parser {
     /// Set while a `contract` block's embedded function block is parsed: its
     /// signature names an interface, not a callable C function.
     in_contract_definition: bool,
+    in_function_block: bool,
 }
 
 /// One `owns`, `consumes`, or `produces` instance binder of a C function
@@ -474,11 +475,13 @@ struct Parser {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CalleeResourceBinder {
     identity: Variable,
-    family: String,
+    // None denotes a supplied resource assertion parameter. Its concrete
+    // family is checked by the instantiated runtime contract in the kernel.
+    family: Option<String>,
     /// The named resource clause as written by the callee. A call output needs
     /// this richer target, not just the family used for binder transport, so
     /// later `unfold(name)` can recover the resource body and its arguments.
-    resource: ResourceClause,
+    resource: Option<ResourceClause>,
     /// C parameter names in declaration order, used to instantiate the
     /// resource arguments with the call's actual expressions.
     parameter_names: Vec<String>,
@@ -724,6 +727,7 @@ impl Parser {
             proof_let_restores: Vec::new(),
             callee_resource_binders: BTreeMap::new(),
             in_contract_definition: false,
+            in_function_block: false,
             integer_literal_context: false,
         })
     }
@@ -833,6 +837,7 @@ impl Parser {
                 if thread_runtime.is_some() {
                     return Err(self.error("a Click file declares more than one `runtime`"));
                 }
+                self.record_runtime_resource_binders(runtime);
                 thread_runtime = Some(runtime);
             } else if self.peek_ident() == Some("spec") {
                 algebraic_type_definitions.push(self.parse_algebraic_type_definition()?);
@@ -2238,6 +2243,7 @@ impl Parser {
     }
 
     fn parse_function_block(&mut self, external: bool) -> Result<FunctionBlock, ClickError> {
+        let previous_function_block = std::mem::replace(&mut self.in_function_block, true);
         let previous_resource_targets = std::mem::replace(
             &mut self.current_resource_targets,
             self.contract_resource_parameters.clone(),
@@ -2706,6 +2712,7 @@ impl Parser {
             &mut self.current_parameter_struct_casts,
             previous_parameter_struct_casts,
         );
+        self.in_function_block = previous_function_block;
         self.current_resource_bindings = previous_resource_bindings;
         self.current_resource_targets = previous_resource_targets;
         self.current_aggregate_objects = previous_aggregate_objects;
@@ -3602,31 +3609,6 @@ impl Parser {
             self.expect(Token::Colon)?;
             let instance = self.expect_ident("caller resource instance")?;
             crate::instrumentation::record_deterministic_work(1);
-            if callee == "pthread_mutex_init" {
-                if binder != "invariant" {
-                    return Err(
-                        self.error("`pthread_mutex_init` call map requires `invariant: instance`")
-                    );
-                }
-                if !bound.insert(binder.clone()) {
-                    return Err(self.error("duplicate `invariant` in the mutex init call map"));
-                }
-                let Some((identity, _)) = self.current_resource_bindings.get(&instance).cloned()
-                else {
-                    return Err(self.error(format!("unknown resource instance `{instance}`")));
-                };
-                binders.push(CallBinderBinding {
-                    binder,
-                    binder_identity: Variable(u64::MAX - 1),
-                    instance,
-                    identity,
-                });
-                if self.peek() != Some(&Token::Comma) {
-                    break;
-                }
-                self.position += 1;
-                continue;
-            }
             let Some(declaration) = declared.get(&binder) else {
                 return Err(self.error(format!(
                     "`{callee}` declares no resource instance binder `{binder}`"
@@ -3644,10 +3626,12 @@ impl Parser {
             else {
                 return Err(self.error(format!("unknown resource instance `{instance}`")));
             };
-            if family != declaration.family && !self.child_slot_identities.contains(&identity) {
+            if let Some(expected) = &declaration.family
+                && family != *expected
+                && !self.child_slot_identities.contains(&identity)
+            {
                 return Err(self.error(format!(
-                    "binder `{binder}` expects resource `{}`, but `{instance}` is `{family}`",
-                    declaration.family
+                    "binder `{binder}` expects resource `{expected}`, but `{instance}` is `{family}`"
                 )));
             }
             if !instances.insert(identity) {
@@ -3667,9 +3651,6 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RBrace)?;
-        if callee == "pthread_mutex_init" && !bound.contains("invariant") {
-            return Err(self.error("`pthread_mutex_init` call map requires `invariant: instance`"));
-        }
         if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
             entry.kind == CalleeResourceBinderKind::Supplied && !bound.contains(*name)
         }) {
@@ -3796,9 +3777,24 @@ impl Parser {
         {
             return Err(self.error("produced instance conflicts with a C or pure binding"));
         }
+        let family = declaration.family.as_ref().ok_or_else(|| {
+            self.error("produced resource assertion parameter has not been instantiated")
+        })?;
+        let resource = declaration.resource.as_ref().ok_or_else(|| {
+            self.error("produced resource assertion parameter has no instantiated target")
+        })?;
+        if matches!(family.as_str(), "mutex_live" | "mutex_use" | "mutex_guard")
+            && self.current_resource_bindings.contains_key(name)
+        {
+            return Err(self.error(format!(
+                "produced mutex authority requires a fresh name; `{name}` is already bound"
+            )));
+        }
         let identity = match self.current_resource_bindings.get(name) {
             Some((identity, family)) => {
-                if *family != declaration.family && !self.child_slot_identities.contains(identity) {
+                if Some(family) != declaration.family.as_ref()
+                    && !self.child_slot_identities.contains(identity)
+                {
                     return Err(self.error("produced instance changes the named resource family"));
                 }
                 *identity
@@ -3810,14 +3806,14 @@ impl Parser {
             }
         };
         self.current_resource_bindings
-            .insert(name.to_string(), (identity, declaration.family.clone()));
+            .insert(name.to_string(), (identity, family.clone()));
         let substitutions = declaration
             .parameter_names
             .iter()
             .zip(arguments.iter())
             .map(|(parameter, argument)| (parameter.clone(), argument.clone()))
             .collect::<BTreeMap<_, _>>();
-        let target = substitute_resource_clause_bindings(&declaration.resource, &substitutions)
+        let target = substitute_resource_clause_bindings(resource, &substitutions)
             .map_err(|message| self.error(message))?;
         let ResourceClause::Named { binding, resource } = target else {
             return Err(self.error(format!(
@@ -3847,6 +3843,71 @@ impl Parser {
         })
     }
 
+    /// Runtime specifications supply their binders to the same call-map
+    /// checker as sidecar declarations. Unsupported schema entries are not
+    /// installed until their ordinary authority transport is implemented.
+    fn record_runtime_resource_binders(
+        &mut self,
+        runtime: crate::languages::c::thread_runtime::CThreadRuntime,
+    ) {
+        use crate::languages::c::thread_runtime::{
+            CThreadRuntime, MutexBinderMode, MutexOperation, MutexResourceRole,
+        };
+        if runtime != CThreadRuntime::ModeledPthread {
+            return;
+        }
+        for operation in MutexOperation::ALL {
+            let contract = operation.descriptor();
+            let binders = self
+                .callee_resource_binders
+                .entry(contract.function_name.to_string())
+                .or_default();
+            for binder in contract.implemented_binders() {
+                let family = match binder.role {
+                    MutexResourceRole::Lifetime => Some("mutex_live"),
+                    MutexResourceRole::Access => Some("mutex_use"),
+                    MutexResourceRole::Guard => Some("mutex_guard"),
+                    MutexResourceRole::State | MutexResourceRole::Storage => None,
+                };
+                let resource = family.map(|family| ResourceClause::Named {
+                    binding: ResourceInstanceBinding {
+                        name: binder.name().to_string(),
+                        identity: Variable(binder.identity),
+                        children: vec![],
+                        schema: None,
+                        fields: None,
+                        fold_fields: None,
+                        child_bindings: None,
+                    },
+                    resource: Box::new(ResourceClause::Declared {
+                        access: ResourceAccessMode::Own,
+                        kind: ResourceKind::Token,
+                        name: family.to_string(),
+                        arguments: vec![ContractExpression::CFragment(CExpression::Variable(
+                            "mutex".to_string(),
+                        ))],
+                        parameter_types: vec![C0Type::VoidPointer],
+                    }),
+                });
+                binders.insert(
+                    binder.name().to_string(),
+                    CalleeResourceBinder {
+                        identity: Variable(binder.identity),
+                        family: family.map(str::to_string),
+                        resource,
+                        parameter_names: vec!["mutex".to_string(), "attributes".to_string()],
+                        kind: match binder.mode {
+                            MutexBinderMode::Own | MutexBinderMode::Consume => {
+                                CalleeResourceBinderKind::Supplied
+                            }
+                            MutexBinderMode::Produce => CalleeResourceBinderKind::Produced,
+                        },
+                    },
+                );
+            }
+        }
+    }
+
     /// Records one instance binder of the C function block being parsed, so a
     /// later `step(callee(...), { ... })` can bind it by name. Contract blocks
     /// name an interface rather than a callable function and are skipped.
@@ -3874,11 +3935,11 @@ impl Parser {
                 binding.name.clone(),
                 CalleeResourceBinder {
                     identity: binding.identity,
-                    family: family.clone(),
-                    resource: ResourceClause::Named {
+                    family: Some(family.clone()),
+                    resource: Some(ResourceClause::Named {
                         binding: binding.clone(),
                         resource: resource.clone(),
-                    },
+                    }),
                     parameter_names: parameter_names.to_vec(),
                     kind,
                 },
@@ -3930,14 +3991,16 @@ impl Parser {
         else {
             return Err(self.error("named ownership requires a field-bearing declared resource"));
         };
-        if resource_name == "mutex_live" {
-            return Err(self.error("named mutex_live binders are not supported yet"));
-        }
         if resource_name == "mutex_use" {
             return Err(self.error("named mutex_use binders are not supported yet"));
         }
-        if resource_name == "mutex_guard" {
-            return Err(self.error("named mutex_guard binders are not supported yet"));
+        if matches!(resource_name.as_str(), "mutex_live" | "mutex_guard")
+            && (!self.in_function_block
+                || self.in_contract_definition
+                || self.in_resource_definition
+                || rebinding)
+        {
+            return Err(self.error(format!("named {resource_name} is currently supported only in preserving C function contracts")));
         }
         let identity = match rebound {
             Some((identity, family)) => {

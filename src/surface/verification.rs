@@ -7427,6 +7427,15 @@ fn resource_clause_to_resource_spec_with_metadata(
                 role,
                 snapshot,
             )?;
+            if matches!(
+                inner.term(),
+                crate::kernel::CResourceTerm::MutexGuard { .. }
+                    | crate::kernel::CResourceTerm::MutexLive { .. }
+            ) {
+                return inner
+                    .with_mutex_authority_binding(binding.identity, binding.name.clone())
+                    .map_err(|error| ClickError::new(error.to_string()));
+            }
             CResourceSpec::instance(
                 binding.identity,
                 binding.name.clone(),
@@ -8031,7 +8040,7 @@ mod modeled_pthread_binding_tests {
             .modeled_pthread_binding
             .as_ref()
             .unwrap();
-        assert_eq!(binding.specification_version, 7);
+        assert_eq!(binding.specification_version, 8);
         assert_eq!(binding.mutex_storage_alignment, 8);
         assert_eq!(binding.mutex_storage_bytes, 40);
         assert_eq!(binding.target, CTarget::X86_64LinuxUserspace);

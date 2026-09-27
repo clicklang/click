@@ -1,10 +1,8 @@
-# A guarded resource crosses a modeled C mutex boundary
+# Initialization accepts a differently named local state
 
-The folded counter resource moves into a modeled mutex at initialization.
-Locking retrieves it so the C body can read the counter. Unlocking requires
-that resource folded again, and destroying the mutex returns it to the caller.
+The contract binder is `state`; the caller's folded resource instance is named `initial`.
 
-```c filename=guarded_resource_mutex_flow.c
+```c filename=runtime_mutex_contract_renamed_state.c
 #include <pthread.h>
 struct counter { pthread_mutex_t mu; int value; };
 
@@ -30,20 +28,20 @@ resource counter_state(counter: struct counter*) {
     fact counter->value == value;
 }
 
-verifying "guarded_resource_mutex_flow.c";
+verifying "runtime_mutex_contract_renamed_state.c";
 
 int32 read_counter(struct counter *counter) {
     owns &counter->mu;
     requires aligned(&counter->mu, 8);
-    owns state: counter_state(counter);
-    ensures result == state.value;
+    owns initial: counter_state(counter);
+    ensures result == initial.value;
 } by {
     step();
-    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: initial });
     step();
-    unfold(state);
+    unfold(initial);
     step();
-    fold(state);
+    fold(initial);
     step();
     step();
     step();
@@ -54,3 +52,4 @@ int32 read_counter(struct counter *counter) {
 ```expect
 pass
 ```
+

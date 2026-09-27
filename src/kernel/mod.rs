@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 33;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 34;
 
 pub(crate) mod assumptions;
 mod eval;
@@ -52,6 +52,7 @@ mod memory_provenance;
 pub(crate) mod model_fields;
 #[allow(dead_code)]
 mod mutexes;
+mod named_authority;
 mod nat_integer;
 pub(crate) use nat_integer::{check_nat_integer_law, is_conversion_nat_type};
 mod primitives;

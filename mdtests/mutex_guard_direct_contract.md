@@ -52,7 +52,7 @@ int32 read_counter(struct counter *counter) {
     ensures result == state.value;
 } by {
     step();
-    step(pthread_mutex_init(&counter->mu, 0), { invariant: state });
+    let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&counter->mu, 0), { state: state });
     step();
     step(read_locked(counter), { state: state });
     step();

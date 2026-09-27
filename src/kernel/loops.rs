@@ -871,13 +871,42 @@ fn execute_modeled_pthread_mutex_paths(
         .expect("selected runtime");
     let initializing = function_name == binding.mutex_init_name;
     let expected_arity = if initializing { 2 } else { 1 };
+    use crate::languages::c::thread_runtime::{MutexOperation, MutexResourceRole};
+    let selected = environment.selected_call_binders.as_ref();
+    let selected_contract = selected.and_then(|_| {
+        MutexOperation::for_function_name(function_name).map(MutexOperation::descriptor)
+    });
+    let selected_is_valid = match (selected, selected_contract) {
+        (None, _) => true,
+        (Some(transport), Some(contract))
+            if matches!(
+                MutexOperation::for_function_name(function_name),
+                Some(MutexOperation::Init | MutexOperation::Destroy)
+            ) =>
+        {
+            transport.function.as_ref() == contract.function_name
+                && transport.arity == contract.arity
+                && transport.bindings.len() == contract.implemented_binders().count()
+                && contract
+                    .implemented_binders()
+                    .all(|binder| transport.bindings.contains_key(&Variable(binder.identity)))
+                && transport
+                    .bindings
+                    .values()
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len()
+                    == transport.bindings.len()
+        }
+        _ => false,
+    };
     let refusal = |message: &str| {
         CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(message.to_string()))
     };
     if state.pending_thread_create.is_some()
         || environment.selected_call_contract.is_some()
         || arguments.len() != expected_arity
-        || (!initializing && environment.selected_call_binders.is_some())
+        || !selected_is_valid
     {
         return Ok(vec![CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
@@ -955,21 +984,20 @@ fn execute_modeled_pthread_mutex_paths(
             let transition = if let Some(error) = storage_refusal {
                 Err(error)
             } else if initializing {
-                let selected = environment.selected_call_binders.as_ref();
                 let context = if selected.is_none() {
                     super::mutexes::MutexContext::new(state.clone())
                         .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
                         .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 } else {
-                    let identity = selected
-                        .filter(|transport| {
-                            transport.function.as_ref() == function_name
-                                && transport.arity == expected_arity
-                                && transport.bindings.len() == 1
-                        })
-                        .and_then(|transport| transport.bindings.get(&Variable(u64::MAX - 1)));
+                    let contract = MutexOperation::Init.descriptor();
+                    let state_binder = contract
+                        .binder_by_role(MutexResourceRole::State)
+                        .expect("initialization declares its state input");
+                    let identity = selected.and_then(|transport| {
+                        transport.bindings.get(&Variable(state_binder.identity))
+                    });
                     identity
-                    .ok_or("mutex init requires `step(pthread_mutex_init(...), { invariant: instance })`")
+                    .ok_or("mutex init requires `step(pthread_mutex_init(...), { state: instance })`")
                     .and_then(|identity| {
                         super::mutexes::MutexContext::new(state.clone()).publish_declared(
                             mutex.pointer(), *identity, &environment.modeled_mutex_guards,
@@ -978,7 +1006,26 @@ fn execute_modeled_pthread_mutex_paths(
                     })
                     .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 };
-                context.map(super::mutexes::MutexContext::into_runtime_transition)
+                context.and_then(|context| {
+                    let (next, evidence) = context.into_runtime_transition();
+                    let Some(transport) = selected else {
+                        return Ok((next, evidence));
+                    };
+                    let lifetime = MutexOperation::Init
+                        .descriptor()
+                        .binder_by_role(MutexResourceRole::Lifetime)
+                        .expect("initialization declares its lifetime output");
+                    let output = transport.bindings[&Variable(lifetime.identity)];
+                    let live = super::mutexes::live_resource(&next, mutex.pointer(), false)
+                        .expect("successful initialization establishes lifetime authority");
+                    next.bind_named_mutex_authority(output, &live)
+                        .map(|next| (next, evidence))
+                        .map_err(|_| {
+                            CRuntimeError::FunctionContract(
+                                "mutex lifetime output could not bind its owned authority".into(),
+                            )
+                        })
+                })
             } else if state.preserves_mutex_protocols
                 && (function_name == binding.mutex_lock_name
                     || function_name == binding.mutex_unlock_name)
@@ -1004,9 +1051,30 @@ fn execute_modeled_pthread_mutex_paths(
                         .release_current(mutex.pointer(), &current)
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))
                 } else {
-                    context
-                        .destroy(mutex.pointer(), &current)
-                        .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                    let selected_live = selected.map(|transport| {
+                        let lifetime = MutexOperation::Destroy
+                            .descriptor()
+                            .binder_by_role(MutexResourceRole::Lifetime)
+                            .expect("destruction declares its lifetime input");
+                        transport.bindings[&Variable(lifetime.identity)]
+                    });
+                    if selected_live.is_some_and(|identity| {
+                        !matches!(
+                            (
+                                state.resolve_named_mutex_authority(identity),
+                                super::mutexes::live_resource(state, mutex.pointer(), false)
+                            ),
+                            (Some(actual), Some(expected)) if actual == &expected
+                        )
+                    }) {
+                        Err(CRuntimeError::MissingMutexLive {
+                            mutex: mutex.pointer().clone(),
+                        })
+                    } else {
+                        context
+                            .destroy(mutex.pointer(), &current)
+                            .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                    }
                 };
                 result.map(super::mutexes::MutexContext::into_runtime_transition)
             };
@@ -1320,6 +1388,8 @@ fn execute_modeled_pthread_create_paths(
                                         success.mutex_input_reservations.clone();
                                     neutral.opaque_mutex_acquisitions =
                                         success.opaque_mutex_acquisitions.clone();
+                                    neutral.named_mutex_authorities =
+                                        success.named_mutex_authorities.clone();
                                     neutral = modeled_pthread_indeterminate_handle(
                                         neutral,
                                         output_slot,
@@ -2325,6 +2395,19 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
     if top_state.opaque_mutex_acquisitions != next_state.opaque_mutex_acquisitions {
         changed.push("opaque mutex acquisitions");
+    }
+    let same_named_authorities = match (
+        &top_state.named_mutex_authorities,
+        &next_state.named_mutex_authorities,
+    ) {
+        (None, None) => true,
+        (Some(top), Some(next)) => top.same_logical_bindings(next),
+        _ => false,
+    };
+    // Checked preserving calls may refresh occurrence indexes. The raw
+    // resource/protocol checks still require the same authority at the edge.
+    if !same_named_authorities {
+        changed.push("named mutex authority bindings");
     }
     if top_state.mutex_input_reservations != next_state.mutex_input_reservations {
         changed.push("mutex input storage reservations");

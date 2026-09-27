@@ -5107,6 +5107,9 @@ pub struct CState {
     pub(super) mutex_input_reservations: Option<super::mutexes::MutexInputReservations>,
     /// Exact local receipts for opaque acquisitions; no payload authority.
     pub(super) opaque_mutex_acquisitions: Option<super::mutexes::OpaqueMutexAcquisitions>,
+    /// Proof names for exact owned mutex authority occurrences. Names never
+    /// contribute ownership and are checked against resources on resolution.
+    pub(super) named_mutex_authorities: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
     /// One unresolved modeled pthread creation. The visible state carries
     /// only authority safe in either outcome; this record selects the exact
     /// checked delta when a C condition establishes the returned status.
@@ -6156,6 +6159,9 @@ pub enum CResourceSnapshot {
 #[derive(Clone, Debug)]
 pub struct CResourceSpec {
     term: CResourceTerm,
+    /// A proof binder for one raw mutex authority. This does not change the
+    /// resource family or turn the authority into a composite instance.
+    mutex_authority_binding: Option<Arc<(Variable, String)>>,
     access: CResourceAccessMode,
     quantity: CResourceQuantity,
     quantity_snapshot: CResourceSnapshot,
@@ -6307,6 +6313,7 @@ impl CResourceSpec {
     ) -> Result<Self, CResourceSpecError> {
         let spec = Self {
             term,
+            mutex_authority_binding: None,
             access,
             quantity,
             quantity_snapshot: CResourceSnapshot::Current,
@@ -6514,6 +6521,50 @@ impl CResourceSpec {
         &self.term
     }
 
+    pub fn with_mutex_authority_binding(
+        mut self,
+        identity: Variable,
+        binder: String,
+    ) -> Result<Self, CResourceSpecError> {
+        if !matches!(
+            self.term,
+            CResourceTerm::MutexGuard { .. }
+                | CResourceTerm::MutexLive { .. }
+                | CResourceTerm::MutexUse { .. }
+        ) || self.access != CResourceAccessMode::Own
+            || self.quantity != CResourceQuantity::One
+            || self.mutex_authority_binding.is_some()
+        {
+            return Err(CResourceSpecError::InvalidNestedTerm(
+                "named mutex authority requires one owned, unbound mutex resource".into(),
+            ));
+        }
+        self.mutex_authority_binding = Some(Arc::new((identity, binder)));
+        Ok(self)
+    }
+
+    pub fn mutex_authority_binding(&self) -> Option<(Variable, &str)> {
+        self.mutex_authority_binding
+            .as_ref()
+            .map(|entry| (entry.0, entry.1.as_str()))
+    }
+
+    pub fn without_mutex_authority_binding(&self) -> Self {
+        let mut unnamed = self.clone();
+        unnamed.mutex_authority_binding = None;
+        unnamed
+    }
+
+    pub fn binding_name(&self) -> Option<&str> {
+        self.instance_binder()
+            .or_else(|| self.mutex_authority_binding().map(|(_, name)| name))
+    }
+
+    pub fn binding_identity(&self) -> Option<Variable> {
+        self.instance_identity()
+            .or_else(|| self.mutex_authority_binding().map(|(identity, _)| identity))
+    }
+
     pub fn access(&self) -> CResourceAccessMode {
         self.access
     }
@@ -6700,6 +6751,7 @@ impl CResourceSpec {
 impl PartialEq for CResourceSpec {
     fn eq(&self, other: &Self) -> bool {
         self.term == other.term
+            && self.mutex_authority_binding == other.mutex_authority_binding
             && self.access == other.access
             && self.quantity == other.quantity
             && self.quantity_snapshot == other.quantity_snapshot
@@ -6714,6 +6766,7 @@ impl Eq for CResourceSpec {}
 impl Hash for CResourceSpec {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.term.hash(state);
+        self.mutex_authority_binding.hash(state);
         self.access.hash(state);
         self.quantity.hash(state);
         self.quantity_snapshot.hash(state);
@@ -6727,19 +6780,23 @@ impl Ord for CResourceSpec {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (
             &self.term,
+            &self.mutex_authority_binding,
             self.access,
             &self.quantity,
             self.quantity_snapshot,
             self.role,
             self.snapshot,
+            &self.guard,
         )
             .cmp(&(
                 &other.term,
+                &other.mutex_authority_binding,
                 other.access,
                 &other.quantity,
                 other.quantity_snapshot,
                 other.role,
                 other.snapshot,
+                &other.guard,
             ))
     }
 }
@@ -6747,6 +6804,114 @@ impl Ord for CResourceSpec {
 impl PartialOrd for CResourceSpec {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod named_mutex_authority_spec_tests {
+    use super::*;
+
+    fn authority(term: CResourceTerm) -> CResourceSpec {
+        CResourceSpec::new(
+            term,
+            CResourceAccessMode::Own,
+            CResourceQuantity::One,
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Current,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn raw_mutex_authority_bindings_are_typed_and_retained() {
+        let mutex = Box::new(CExpression::Value(CValue::pointer(Pointer::symbolic(
+            Variable(700),
+        ))));
+        for term in [
+            CResourceTerm::MutexLive {
+                mutex: mutex.clone(),
+                snapshot: CResourceSnapshot::Current,
+            },
+            CResourceTerm::MutexUse {
+                mutex: mutex.clone(),
+                snapshot: CResourceSnapshot::Current,
+            },
+            CResourceTerm::MutexGuard {
+                mutex: mutex.clone(),
+                snapshot: CResourceSnapshot::Current,
+            },
+        ] {
+            let unnamed = authority(term);
+            let named = unnamed
+                .clone()
+                .with_mutex_authority_binding(Variable(9), "guard".into())
+                .unwrap();
+            assert_eq!(named.term(), unnamed.term());
+            assert_eq!(named.family(), unnamed.family());
+            assert_eq!(named.binding_identity(), Some(Variable(9)));
+            assert_eq!(named.instance_identity(), None);
+            assert_eq!(
+                named.mutex_authority_binding(),
+                Some((Variable(9), "guard"))
+            );
+            assert_ne!(named, unnamed);
+            assert_ne!(named.cmp(&unnamed), std::cmp::Ordering::Equal);
+            assert_eq!(
+                named
+                    .clone()
+                    .with_role(CResourceTransferRole::Consume)
+                    .with_snapshot(CResourceSnapshot::Entry)
+                    .mutex_authority_binding(),
+                Some((Variable(9), "guard"))
+            );
+            assert!(
+                named
+                    .with_mutex_authority_binding(Variable(10), "another".into())
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn non_mutex_and_non_exclusive_specs_cannot_be_named_authority() {
+        let token = CResourceSpec::token(CResourceAccessMode::Own, "token".into(), vec![], vec![]);
+        assert!(
+            token
+                .with_mutex_authority_binding(Variable(1), "token".into())
+                .is_err()
+        );
+        let composite =
+            CResourceSpec::composite(CResourceAccessMode::Own, "state".into(), vec![], vec![]);
+        assert!(
+            composite
+                .with_mutex_authority_binding(Variable(1), "state".into())
+                .is_err()
+        );
+        let mutex = Box::new(CExpression::Value(CValue::pointer(Pointer::symbolic(
+            Variable(701),
+        ))));
+        let viewed = CResourceSpec::new(
+            CResourceTerm::MutexGuard {
+                mutex: mutex.clone(),
+                snapshot: CResourceSnapshot::Current,
+            },
+            CResourceAccessMode::View,
+            CResourceQuantity::One,
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Current,
+        );
+        assert!(viewed.is_err());
+        let counted = CResourceSpec::new(
+            CResourceTerm::MutexGuard {
+                mutex,
+                snapshot: CResourceSnapshot::Current,
+            },
+            CResourceAccessMode::Own,
+            CResourceQuantity::Count(CExpression::Value(int32(2))),
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Current,
+        );
+        assert!(counted.is_err());
     }
 }
 

@@ -3889,6 +3889,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_state(
         mutex_ledger: state.mutex_ledger.clone(),
         mutex_input_reservations: state.mutex_input_reservations.clone(),
         opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
+        named_mutex_authorities: state.named_mutex_authorities.clone(),
         preserves_mutex_protocols: state.preserves_mutex_protocols,
         population_access: state.population_access.clone(),
         pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {
@@ -4249,7 +4250,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
     from: Variable,
     to: &Bitvector32Term,
 ) -> CResourceSpec {
-    CResourceSpec::new(
+    let substituted = CResourceSpec::new(
         substitute_bitvector_variable_in_resource_term(resource.term(), from, to),
         resource.access(),
         match resource.quantity() {
@@ -4261,7 +4262,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
         resource.role(),
         resource.snapshot(),
     )
-    .expect("bitvector substitution preserves resource validity")
+    .expect("bitvector substitution preserves resource validity");
+    match resource.mutex_authority_binding() {
+        Some((identity, binder)) => substituted
+            .with_mutex_authority_binding(identity, binder.to_string())
+            .expect("bitvector substitution preserves mutex authority binding"),
+        None => substituted,
+    }
 }
 
 fn substitute_bitvector_variable_in_resource_term(
@@ -6563,6 +6570,7 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
         mutex_ledger: state.mutex_ledger.clone(),
         mutex_input_reservations: state.mutex_input_reservations.clone(),
         opaque_mutex_acquisitions: state.opaque_mutex_acquisitions.clone(),
+        named_mutex_authorities: state.named_mutex_authorities.clone(),
         preserves_mutex_protocols: state.preserves_mutex_protocols,
         population_access: state.population_access.clone(),
         pending_thread_create: state.pending_thread_create.as_ref().map(|pending| {
@@ -7811,7 +7819,7 @@ fn substitute_pointer_variable_in_resource_spec(
     from: Variable,
     to: &Pointer,
 ) -> CResourceSpec {
-    CResourceSpec::new(
+    let substituted = CResourceSpec::new(
         substitute_pointer_variable_in_resource_term(resource.term(), from, to),
         resource.access(),
         match resource.quantity() {
@@ -7823,7 +7831,13 @@ fn substitute_pointer_variable_in_resource_spec(
         resource.role(),
         resource.snapshot(),
     )
-    .expect("pointer substitution preserves resource validity")
+    .expect("pointer substitution preserves resource validity");
+    match resource.mutex_authority_binding() {
+        Some((identity, binder)) => substituted
+            .with_mutex_authority_binding(identity, binder.to_string())
+            .expect("pointer substitution preserves mutex authority binding"),
+        None => substituted,
+    }
 }
 
 fn substitute_pointer_variable_in_resource_term(

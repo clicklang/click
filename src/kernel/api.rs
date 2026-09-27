@@ -2622,6 +2622,34 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
         .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
     rooted = crate::kernel::mutexes::bind_assumed_lifetime_inputs(rooted, assumptions)
         .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
+    // Bind names only after primitive inputs have generative initialization
+    // and acquisition identities. A name cannot manufacture its authority.
+    if function
+        .resource_requires()
+        .iter()
+        .any(|spec| spec.mutex_authority_binding().is_some())
+    {
+        let entry = c_function_entry_state(&rooted, function, arguments)
+            .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        let mut budget = ExecutionBudget::beside_live_state();
+        for spec in function.resource_requires() {
+            let Some((identity, _)) = spec.mutex_authority_binding() else {
+                continue;
+            };
+            let fact = super::functions::evaluate_function_resource_spec_with_entry(
+                &entry,
+                &entry,
+                &spec.without_mutex_authority_binding(),
+                assumptions,
+                &mut budget,
+            )
+            .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
+            .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+            rooted = rooted
+                .bind_named_mutex_authority(identity, &fact)
+                .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        }
+    }
     BORROWED_INPUT_ROOTS.with(|roots| {
         roots
             .borrow_mut()

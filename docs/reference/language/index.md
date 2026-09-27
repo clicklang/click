@@ -2121,6 +2121,25 @@ let { left: l, right: r } = step(make_pair(left, right), {});
 
 A produced binder that no output pattern introduces is an error.
 
+The selected `modeled-pthread` runtime declares named mutex binders too.
+Initialization takes `state` and produces `lifetime`; destruction takes
+`lifetime`. For example, initialization can be written
+`let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });`
+and destruction as
+`step(pthread_mutex_destroy(mu), { lifetime: life });`.
+The input/output names belong to the runtime declaration; `life` and `initial`
+are caller names. The former initialization key `invariant` is no longer
+accepted. See the [checked lifecycle example](https://github.com/lacker/click/blob/master/mdtests/mutex_lifetime_named_runtime.md).
+
+A preserving helper may declare `owns lifetime: mutex_live(mu)` or
+`owns guard: mutex_guard(mu)` and receive the named authority through an
+ordinary call map. These names preserve the exact initialization or acquisition,
+not just the pointer. They have no model fields or body to unfold. Named use
+permissions, named primitive children and theorem parameters, and general
+consuming/producing primitive helper clauses remain unsupported. The complete
+[mutex contract design](../../internals/mutex-resource-contracts.md) distinguishes
+these supported forms from the planned protected-state and storage outputs.
+
 On a callee that declares no `produces` binder, the same `let` names the
 call's scalar result:
 

@@ -268,6 +268,10 @@ pub(in crate::surface) fn check_resource_field_schemas(
                     "named ownership requires a declared resource",
                 ));
             };
+            if matches!(name.as_str(), "mutex_live" | "mutex_guard") {
+                bindings.insert(binding.identity, binding.clone());
+                continue;
+            }
             let schema = schemas
                 .get(name)
                 .ok_or_else(|| ClickError::new("named resource has no checked fields"))?;

@@ -4261,6 +4261,7 @@ impl CState {
             && self.preserves_mutex_protocols == other.preserves_mutex_protocols
             && self.mutex_input_reservations == other.mutex_input_reservations
             && self.opaque_mutex_acquisitions == other.opaque_mutex_acquisitions
+            && self.named_mutex_authorities == other.named_mutex_authorities
             && self.population_access == other.population_access
             && self.pending_thread_create == other.pending_thread_create
             && (std::sync::Arc::ptr_eq(&self.counted_populations, &other.counted_populations)
@@ -4295,6 +4296,43 @@ impl CState {
             None => identity,
         };
         self.resources.owned_instance(actual)
+    }
+    pub(crate) fn resolve_named_mutex_authority(
+        &self,
+        identity: Variable,
+    ) -> Option<&CResourceFact> {
+        self.named_mutex_authorities
+            .as_ref()?
+            .resolve(identity, self)
+    }
+
+    pub(in crate::kernel) fn bind_named_mutex_authority(
+        mut self,
+        identity: Variable,
+        fact: &CResourceFact,
+    ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
+        let current = self
+            .named_mutex_authorities
+            .as_ref()
+            .map(|aliases| aliases.as_ref().clone())
+            .unwrap_or_else(super::super::named_authority::NamedMutexAuthorities::new);
+        let next = current.bind(identity, fact, &self)?;
+        self.named_mutex_authorities = Some(Arc::new(next));
+        Ok(self)
+    }
+
+    pub(in crate::kernel) fn rebind_named_mutex_authority(
+        mut self,
+        identity: Variable,
+        expected: &CResourceFact,
+    ) -> Result<Self, super::super::named_authority::NamedMutexAuthorityError> {
+        let current = self
+            .named_mutex_authorities
+            .as_ref()
+            .ok_or(super::super::named_authority::NamedMutexAuthorityError::NotBound)?;
+        let next = current.rebind_existing_exact(identity, expected, &self)?;
+        self.named_mutex_authorities = Some(Arc::new(next));
+        Ok(self)
     }
     pub fn new() -> Self {
         Self::default()

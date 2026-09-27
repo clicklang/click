@@ -10,6 +10,13 @@ impl<'a> Proof<'a> {
         resource: &ResourceClause,
         unfold: bool,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if let ResourceClause::Named { resource, .. } = resource
+            && let ResourceClause::Declared { name, .. } = resource.as_ref()
+            && matches!(name.as_str(), "mutex_live" | "mutex_guard" | "mutex_use")
+        {
+            let operation = if unfold { "unfold" } else { "fold" };
+            return Err(self.step_error(format!("`{name}` has no resource body to {operation}")));
+        }
         if !binding.children.is_empty() {
             return Err(self.step_error("parent-qualified resource handles are not supported; use `let { slot: child } = unfold(parent)` and the independent child name"));
         }

@@ -3,6 +3,235 @@
 
 use sha2::{Digest, Sha256};
 
+/// The resource interface planned for the four selected pthread mutex calls.
+/// This describes contract binders; it does not implement a `CFunction`
+/// contract or authorize any resource transfer in the verifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MutexOperation {
+    Init,
+    Lock,
+    Unlock,
+    Destroy,
+}
+
+impl MutexOperation {
+    pub const ALL: [Self; 4] = [Self::Init, Self::Lock, Self::Unlock, Self::Destroy];
+
+    pub fn for_function_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|operation| operation.descriptor().function_name == name)
+    }
+
+    pub const fn descriptor(self) -> &'static MutexContractDescriptor {
+        match self {
+            Self::Init => &MUTEX_INIT_CONTRACT,
+            Self::Lock => &MUTEX_LOCK_CONTRACT,
+            Self::Unlock => &MUTEX_UNLOCK_CONTRACT,
+            Self::Destroy => &MUTEX_DESTROY_CONTRACT,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MutexResourceRole {
+    Storage,
+    Lifetime,
+    Access,
+    Guard,
+    State,
+}
+
+impl MutexResourceRole {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Storage => "storage",
+            Self::Lifetime => "lifetime",
+            Self::Access => "access",
+            Self::Guard => "guard",
+            Self::State => "state",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MutexBinderMode {
+    Own,
+    Consume,
+    Produce,
+}
+
+/// Stable identities for contract-local binders. The init state identity
+/// preserves the binder already used by the current publication transport.
+pub const MUTEX_INIT_STORAGE_BINDER_ID: u64 = u64::MAX - 2;
+pub const MUTEX_INIT_STATE_BINDER_ID: u64 = u64::MAX - 1;
+pub const MUTEX_INIT_LIFETIME_BINDER_ID: u64 = u64::MAX - 3;
+pub const MUTEX_LOCK_ACCESS_BINDER_ID: u64 = u64::MAX - 4;
+pub const MUTEX_LOCK_GUARD_BINDER_ID: u64 = u64::MAX - 5;
+pub const MUTEX_LOCK_STATE_BINDER_ID: u64 = u64::MAX - 6;
+pub const MUTEX_UNLOCK_ACCESS_BINDER_ID: u64 = u64::MAX - 7;
+pub const MUTEX_UNLOCK_GUARD_BINDER_ID: u64 = u64::MAX - 8;
+pub const MUTEX_UNLOCK_STATE_BINDER_ID: u64 = u64::MAX - 9;
+pub const MUTEX_DESTROY_LIFETIME_BINDER_ID: u64 = u64::MAX - 10;
+pub const MUTEX_DESTROY_STORAGE_BINDER_ID: u64 = u64::MAX - 11;
+pub const MUTEX_DESTROY_STATE_BINDER_ID: u64 = u64::MAX - 12;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MutexResourceBinder {
+    pub identity: u64,
+    pub role: MutexResourceRole,
+    pub mode: MutexBinderMode,
+    /// Only implemented binders may participate in current named transport.
+    /// Other entries describe the planned contract without enabling it.
+    pub implemented: bool,
+}
+
+impl MutexResourceBinder {
+    pub const fn name(self) -> &'static str {
+        self.role.name()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MutexContractDescriptor {
+    pub function_name: &'static str,
+    pub arity: usize,
+    pub binders: &'static [MutexResourceBinder],
+}
+
+impl MutexContractDescriptor {
+    pub fn binder_by_name(&self, name: &str) -> Option<&MutexResourceBinder> {
+        self.binders.iter().find(|binder| binder.name() == name)
+    }
+
+    pub fn binder_by_id(&self, identity: u64) -> Option<&MutexResourceBinder> {
+        self.binders
+            .iter()
+            .find(|binder| binder.identity == identity)
+    }
+
+    pub fn binder_by_role(&self, role: MutexResourceRole) -> Option<&MutexResourceBinder> {
+        self.binders.iter().find(|binder| binder.role == role)
+    }
+
+    /// The staged projection accepted by ordinary named-binder validation.
+    /// Currently initialization's consumed `state` and produced `lifetime`,
+    /// and destruction's consumed `lifetime`, are implemented.
+    pub fn implemented_binders(&self) -> impl Iterator<Item = &MutexResourceBinder> {
+        self.binders.iter().filter(|binder| binder.implemented)
+    }
+
+    pub fn implemented_binder_by_name(&self, name: &str) -> Option<&MutexResourceBinder> {
+        self.binder_by_name(name)
+            .filter(|binder| binder.implemented)
+    }
+}
+
+const INIT_BINDERS: [MutexResourceBinder; 3] = [
+    MutexResourceBinder {
+        identity: MUTEX_INIT_STORAGE_BINDER_ID,
+        role: MutexResourceRole::Storage,
+        mode: MutexBinderMode::Consume,
+        implemented: false,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_INIT_STATE_BINDER_ID,
+        role: MutexResourceRole::State,
+        mode: MutexBinderMode::Consume,
+        implemented: true,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_INIT_LIFETIME_BINDER_ID,
+        role: MutexResourceRole::Lifetime,
+        mode: MutexBinderMode::Produce,
+        implemented: true,
+    },
+];
+
+const LOCK_BINDERS: [MutexResourceBinder; 3] = [
+    MutexResourceBinder {
+        identity: MUTEX_LOCK_ACCESS_BINDER_ID,
+        role: MutexResourceRole::Access,
+        mode: MutexBinderMode::Own,
+        implemented: false,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_LOCK_GUARD_BINDER_ID,
+        role: MutexResourceRole::Guard,
+        mode: MutexBinderMode::Produce,
+        implemented: false,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_LOCK_STATE_BINDER_ID,
+        role: MutexResourceRole::State,
+        mode: MutexBinderMode::Produce,
+        implemented: false,
+    },
+];
+
+const UNLOCK_BINDERS: [MutexResourceBinder; 3] = [
+    MutexResourceBinder {
+        identity: MUTEX_UNLOCK_ACCESS_BINDER_ID,
+        role: MutexResourceRole::Access,
+        mode: MutexBinderMode::Own,
+        implemented: false,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_UNLOCK_GUARD_BINDER_ID,
+        role: MutexResourceRole::Guard,
+        mode: MutexBinderMode::Consume,
+        implemented: false,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_UNLOCK_STATE_BINDER_ID,
+        role: MutexResourceRole::State,
+        mode: MutexBinderMode::Consume,
+        implemented: false,
+    },
+];
+
+const DESTROY_BINDERS: [MutexResourceBinder; 3] = [
+    MutexResourceBinder {
+        identity: MUTEX_DESTROY_LIFETIME_BINDER_ID,
+        role: MutexResourceRole::Lifetime,
+        mode: MutexBinderMode::Consume,
+        implemented: true,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_DESTROY_STORAGE_BINDER_ID,
+        role: MutexResourceRole::Storage,
+        mode: MutexBinderMode::Produce,
+        implemented: false,
+    },
+    MutexResourceBinder {
+        identity: MUTEX_DESTROY_STATE_BINDER_ID,
+        role: MutexResourceRole::State,
+        mode: MutexBinderMode::Produce,
+        implemented: false,
+    },
+];
+
+pub const MUTEX_INIT_CONTRACT: MutexContractDescriptor = MutexContractDescriptor {
+    function_name: "pthread_mutex_init",
+    arity: 2,
+    binders: &INIT_BINDERS,
+};
+pub const MUTEX_LOCK_CONTRACT: MutexContractDescriptor = MutexContractDescriptor {
+    function_name: "pthread_mutex_lock",
+    arity: 1,
+    binders: &LOCK_BINDERS,
+};
+pub const MUTEX_UNLOCK_CONTRACT: MutexContractDescriptor = MutexContractDescriptor {
+    function_name: "pthread_mutex_unlock",
+    arity: 1,
+    binders: &UNLOCK_BINDERS,
+};
+pub const MUTEX_DESTROY_CONTRACT: MutexContractDescriptor = MutexContractDescriptor {
+    function_name: "pthread_mutex_destroy",
+    arity: 1,
+    binders: &DESTROY_BINDERS,
+};
+
 /// Retained identity of the selected pthread declarations and trusted
 /// modeled specification. A verifier attaches this only after checking
 /// declaration provenance and call shapes.
@@ -30,7 +259,7 @@ impl ModeledPthreadBinding {
     pub fn builtin() -> Self {
         Self {
             target: super::target::CTarget::X86_64LinuxUserspace,
-            specification_version: 7,
+            specification_version: 8,
             header_digest: Sha256::digest(include_str!("modeled_pthread.h").as_bytes()).into(),
             specification_digest: Sha256::digest(
                 include_str!("modeled_pthread_spec.md").as_bytes(),
@@ -127,6 +356,107 @@ impl CThreadRuntime {
             Self::ModeledPthread => Some(
                 "modeled-pthread v2: pthread create/join and single-thread mutex calls obey the trusted Click specification; native runtime binding unvalidated",
             ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod mutex_contract_tests {
+    use super::{MutexBinderMode as Mode, MutexOperation as Op, MutexResourceRole as Role, *};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn planned_contracts_have_stable_distinct_binders() {
+        let expected: [(Op, &str, usize, &[(Role, Mode, u64)]); 4] = [
+            (
+                Op::Init,
+                "pthread_mutex_init",
+                2,
+                &[
+                    (Role::Storage, Mode::Consume, u64::MAX - 2),
+                    (Role::State, Mode::Consume, MUTEX_INIT_STATE_BINDER_ID),
+                    (Role::Lifetime, Mode::Produce, u64::MAX - 3),
+                ],
+            ),
+            (
+                Op::Lock,
+                "pthread_mutex_lock",
+                1,
+                &[
+                    (Role::Access, Mode::Own, u64::MAX - 4),
+                    (Role::Guard, Mode::Produce, u64::MAX - 5),
+                    (Role::State, Mode::Produce, u64::MAX - 6),
+                ],
+            ),
+            (
+                Op::Unlock,
+                "pthread_mutex_unlock",
+                1,
+                &[
+                    (Role::Access, Mode::Own, u64::MAX - 7),
+                    (Role::Guard, Mode::Consume, u64::MAX - 8),
+                    (Role::State, Mode::Consume, u64::MAX - 9),
+                ],
+            ),
+            (
+                Op::Destroy,
+                "pthread_mutex_destroy",
+                1,
+                &[
+                    (Role::Lifetime, Mode::Consume, u64::MAX - 10),
+                    (Role::Storage, Mode::Produce, u64::MAX - 11),
+                    (Role::State, Mode::Produce, u64::MAX - 12),
+                ],
+            ),
+        ];
+        let mut identities = BTreeSet::new();
+        for (operation, function_name, arity, binders) in expected {
+            let descriptor = operation.descriptor();
+            assert_eq!(Op::for_function_name(function_name), Some(operation));
+            assert_eq!(descriptor.function_name, function_name);
+            assert_eq!(descriptor.arity, arity);
+            assert_eq!(descriptor.binders.len(), binders.len());
+            for &(role, mode, identity) in binders {
+                let binder = descriptor.binder_by_role(role).unwrap();
+                assert_eq!(
+                    (binder.role, binder.mode, binder.identity),
+                    (role, mode, identity)
+                );
+                assert_eq!(descriptor.binder_by_name(role.name()), Some(binder));
+                assert_eq!(descriptor.binder_by_id(identity), Some(binder));
+                assert!(identities.insert(identity));
+            }
+        }
+        assert_eq!(Op::for_function_name("pthread_create"), None);
+    }
+
+    #[test]
+    fn staged_named_transport_exposes_only_supported_lifecycle_binders() {
+        for operation in Op::ALL {
+            let descriptor = operation.descriptor();
+            let implemented = descriptor
+                .implemented_binders()
+                .map(|binder| (binder.role, binder.mode, binder.identity))
+                .collect::<Vec<_>>();
+            let expected = match operation {
+                Op::Init => vec![
+                    (Role::State, Mode::Consume, MUTEX_INIT_STATE_BINDER_ID),
+                    (Role::Lifetime, Mode::Produce, MUTEX_INIT_LIFETIME_BINDER_ID),
+                ],
+                Op::Destroy => vec![(
+                    Role::Lifetime,
+                    Mode::Consume,
+                    MUTEX_DESTROY_LIFETIME_BINDER_ID,
+                )],
+                Op::Lock | Op::Unlock => vec![],
+            };
+            assert_eq!(implemented, expected);
+            for binder in descriptor.binders {
+                assert_eq!(
+                    descriptor.implemented_binder_by_name(binder.name()),
+                    binder.implemented.then_some(binder)
+                );
+            }
         }
     }
 }

@@ -2231,7 +2231,7 @@ fn selected_call_binder_application(
     let parameters = interface
         .resource_requires()
         .iter()
-        .filter(|resource| resource.is_instance())
+        .filter(|resource| resource.binding_identity().is_some())
         .cloned()
         .collect::<Vec<_>>();
     ResourceCallApplication::bind(parameters, transport.bindings.clone(), caller_state).map(Some)
@@ -2512,17 +2512,14 @@ fn execute_verified_function_applications_with_suspension(
                     .iter()
                     .chain(application.interface.resource_ensures())
                     .find(|resource| {
-                        resource.instance_identity().is_some_and(|identity| {
+                        resource.binding_identity().is_some_and(|identity| {
                             !bindings.is_some_and(|bindings| bindings.contains_key(&identity))
                         })
                     })
                     .map(|resource| {
                         (
                             application.name.to_string(),
-                            resource
-                                .instance_binder()
-                                .unwrap_or("<unnamed>")
-                                .to_string(),
+                            resource.binding_name().unwrap_or("<unnamed>").to_string(),
                         )
                     })
             })
@@ -3347,6 +3344,38 @@ fn execute_verified_function_applications_with_suspension(
         return_state.mutex_ledger = post_state.mutex_ledger.clone();
         return_state.mutex_input_reservations = post_state.mutex_input_reservations.clone();
         return_state.opaque_mutex_acquisitions = post_state.opaque_mutex_acquisitions.clone();
+        return_state.named_mutex_authorities = post_state.named_mutex_authorities.clone();
+        if let Some(bindings) = selected_bindings.as_ref() {
+            for resource in interface.resource_ensures() {
+                let Some((formal, binder)) = resource.mutex_authority_binding() else {
+                    continue;
+                };
+                if resource.role() != CResourceTransferRole::Borrow {
+                    continue;
+                }
+                let Some(actual) = bindings.get(&formal).copied() else {
+                    paths.push(resource_call_failure(&format!(
+                        "call map omits returned mutex authority binder `{binder}`"
+                    )));
+                    continue 'arguments;
+                };
+                let Some(fact) = caller_state.resolve_named_mutex_authority(actual) else {
+                    paths.push(resource_call_failure(&format!(
+                        "Requires owns mutex authority `{binder}`"
+                    )));
+                    continue 'arguments;
+                };
+                return_state = match return_state.rebind_named_mutex_authority(actual, fact) {
+                    Ok(rebound) => rebound,
+                    Err(_) => {
+                        paths.push(resource_call_failure(&format!(
+                            "returned mutex authority `{binder}` does not preserve the selected acquisition or initialization"
+                        )));
+                        continue 'arguments;
+                    }
+                };
+            }
+        }
         return_state.population_access = post_state.population_access.clone();
         return_state.counted_populations = post_state.counted_populations;
         return_state.next_local_frame = post_state.next_local_frame;
@@ -3730,6 +3759,38 @@ fn prepare_verified_function_call<'a>(
                 loan_evidence: empty_checked_loan_evidence_sequence(),
             }));
         }
+        for parameter in application.parameters.iter() {
+            let Some((formal, _)) = parameter.mutex_authority_binding() else {
+                continue;
+            };
+            let Some(actual) = application.bindings.get(&formal) else {
+                continue;
+            };
+            let expected = evaluate_function_resource_spec_with_entry(
+                &entry_state,
+                &entry_state,
+                parameter,
+                &path_assumptions,
+                budget,
+            )?;
+            let error = match expected {
+                Ok(expected)
+                    if caller_state.resolve_named_mutex_authority(*actual) == Some(&expected) =>
+                {
+                    None
+                }
+                Ok(expected) => Some(CRuntimeError::MissingResource { resource: expected }),
+                Err(error) => Some(error),
+            };
+            if let Some(error) = error {
+                return Ok(Err(CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(error),
+                    facts: arguments_path.facts,
+                    obligations: argument_obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                }));
+            }
+        }
     }
     let mut facts = arguments_path.facts;
     let selected_instance_facts = selected_resource_instance_case_facts(
@@ -3779,6 +3840,33 @@ fn prepare_verified_function_call<'a>(
         }
     };
     entry_state = callee_state_with_resource_transfer(entry_state, &transfer);
+    // Transfer inserts a new owned occurrence for each selected raw mutex
+    // authority. Keep the proof name attached only to the same exact atom.
+    if let Some(selected) = resource_application {
+        for parameter in selected.parameters.iter() {
+            let Some((formal, binder)) = parameter.mutex_authority_binding() else {
+                continue;
+            };
+            let Some(actual) = selected.bindings.get(&formal).copied() else {
+                return Ok(Err(resource_call_failure(&format!(
+                    "call map omits mutex authority binder `{binder}`"
+                ))));
+            };
+            let Some(fact) = caller_state.resolve_named_mutex_authority(actual) else {
+                return Ok(Err(resource_call_failure(&format!(
+                    "Requires owns mutex authority `{binder}`"
+                ))));
+            };
+            entry_state = match entry_state.rebind_named_mutex_authority(actual, fact) {
+                Ok(rebound) => rebound,
+                Err(_) => {
+                    return Ok(Err(resource_call_failure(&format!(
+                        "transferred mutex authority `{binder}` is not the selected owned occurrence"
+                    ))));
+                }
+            };
+        }
+    }
     let entry_contract_state =
         with_contract_interface_argument_views(&entry_state, contract_interface, &argument_values);
     // The callee's pure preconditions are read in the state its entry will
@@ -4548,13 +4636,20 @@ impl ResourceCallApplication {
         let mut actuals = BTreeSet::new();
         for parameter in &parameters {
             crate::instrumentation::record_deterministic_work(1);
-            let Some(identity) = parameter.instance_identity() else {
+            let Some(identity) = parameter.binding_identity() else {
                 return Err("resource proof parameter must be an exclusive instance");
             };
             let Some(actual) = bindings.get(&identity) else {
                 continue;
             };
-            if caller_state.owned_resource_instance(*actual).is_none() {
+            let owned = if parameter.mutex_authority_binding().is_some() {
+                caller_state
+                    .resolve_named_mutex_authority(*actual)
+                    .is_some()
+            } else {
+                caller_state.owned_resource_instance(*actual).is_some()
+            };
+            if !owned {
                 return Err("resource proof argument is not owned");
             }
             if !actuals.insert(*actual) {
@@ -11836,6 +11931,7 @@ pub(super) fn bind_c_function_arguments(
     callee_state.mutex_ledger = caller_state.mutex_ledger.clone();
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
+    callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
     callee_state.preserves_mutex_protocols = caller_state.preserves_mutex_protocols
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
@@ -11956,6 +12052,7 @@ fn bind_c_contract_arguments(
     callee_state.mutex_ledger = caller_state.mutex_ledger.clone();
     callee_state.mutex_input_reservations = caller_state.mutex_input_reservations.clone();
     callee_state.opaque_mutex_acquisitions = caller_state.opaque_mutex_acquisitions.clone();
+    callee_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
     callee_state.preserves_mutex_protocols =
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
@@ -23901,6 +23998,7 @@ fn function_outcome_from_body_with_resource_transfer(
     return_state.mutex_ledger = state.mutex_ledger.clone();
     return_state.mutex_input_reservations = state.mutex_input_reservations.clone();
     return_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
+    return_state.named_mutex_authorities = state.named_mutex_authorities.clone();
     return_state.population_access = state.population_access.clone();
     return_state.counted_populations = state.counted_populations;
     return_state.next_local_frame = state.next_local_frame;
@@ -24321,6 +24419,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
             caller_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
+            caller_state.named_mutex_authorities = state.named_mutex_authorities.clone();
             if return_resources.is_none() {
                 caller_state.instance_field_scope = state.instance_field_scope;
             }
@@ -24362,6 +24461,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
             caller_state.opaque_mutex_acquisitions = state.opaque_mutex_acquisitions.clone();
+            caller_state.named_mutex_authorities = state.named_mutex_authorities.clone();
             if function.has_inline_body() {
                 let memory = caller_state.memory.clone();
                 caller_state.sync_scalar_locals_from_memory(&memory);

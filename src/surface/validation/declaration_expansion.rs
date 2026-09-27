@@ -1306,6 +1306,29 @@ fn expand_declared_resource_clause(
                     "named ownership requires a declared resource",
                 ));
             };
+            if matches!(name.as_str(), "mutex_live" | "mutex_guard") {
+                if binding.fold_fields.is_some() || binding.child_bindings.is_some() {
+                    return Err(ClickError::new(
+                        "mutex authority has no fields or resource body to fold or unfold",
+                    ));
+                }
+                let info = declared_resource_info(&name, arguments.len(), resource_definitions)?;
+                return Ok(ResourceClause::Named {
+                    binding,
+                    resource: Box::new(ResourceClause::Declared {
+                        access: ResourceAccessMode::Own,
+                        kind: info.kind,
+                        name,
+                        arguments: arguments
+                            .into_iter()
+                            .map(|arg| {
+                                expand_declared_resource_expression(arg, resource_definitions)
+                            })
+                            .collect::<Result<_, _>>()?,
+                        parameter_types: info.parameter_types,
+                    }),
+                });
+            }
             let info = declared_resource_info_with_fields(
                 &name,
                 arguments.len(),

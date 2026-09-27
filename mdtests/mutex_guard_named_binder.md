@@ -1,4 +1,4 @@
-# Named primitive guard binders have an explicit support boundary
+# Named guard authority preserves the entry acquisition
 
 Changing a C parameter does not change which acquisition the contract returns.
 
@@ -22,5 +22,5 @@ void change_local(struct counter *counter, struct counter *other) {
 ```
 
 ```expect
-fail: named mutex_guard binders are not supported yet
+pass
 ```

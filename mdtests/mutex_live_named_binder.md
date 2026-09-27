@@ -1,4 +1,4 @@
-# mutex live rejects named binder
+# Named lifecycle authority preserves its initialization
 
 ```c filename=mutex_live_rejects_named_binder.c
 #include <pthread.h>
@@ -14,5 +14,5 @@ void keep(struct holder *holder) { owns life: mutex_live(&holder->mu); } by { ex
 ```
 
 ```expect
-fail: named mutex_live binders are not supported yet
+pass
 ```

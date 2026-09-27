@@ -61,7 +61,7 @@ fn unsupported_shared_mutex_worker_is_an_internal_error() {
         } by {
             step();
             step();
-            step(pthread_mutex_init(&box->mu, 0), { invariant: state });
+            let { lifetime: mutex_lifetime } = step(pthread_mutex_init(&box->mu, 0), { state: state });
             step();
         }
     "#;

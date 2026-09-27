@@ -1,8 +1,8 @@
 # Mutex operations as resource contracts
 
-Status: proposed design, not implemented surface syntax. The naming and transfer
-scheme below is the design direction; resource-parameter notation and the
-storage binding syntax still need to be settled before implementation.
+Status: design with an implemented named lifecycle checkpoint described below.
+The complete transfer scheme remains the design direction; resource-parameter
+notation and storage binding syntax still need implementation.
 
 Mutexes should behave like resources described by ordinary Click contracts.
 Their runtime implementation needs trusted rules, but their proof inputs and
@@ -229,11 +229,11 @@ remain available, but its interaction with explicit named input maps must be
 specified. It must select supplied authority rather than search for a
 convenient matching instance, and an escaping guard must retain the loan.
 
-The current initialization spelling
-`step(pthread_mutex_init(mu, 0), { invariant: initial })` is a hard-coded
-selection hook. Replace it with the declared contract inputs above when the
-ordinary binder machinery supports them; merely renaming its magic key to
-`state` would not complete the migration.
+The former initialization spelling
+`step(pthread_mutex_init(mu, 0), { invariant: initial })` was a hard-coded
+selection hook. It has been replaced by schema-declared state input and lifetime
+output transport. The complete storage transfer and protected-state association
+remain pending; renaming the key alone would not complete the migration.
 
 ## Preserving, replacing, and packaging resources
 
@@ -288,13 +288,30 @@ not expose those implementation structures.
 
 ## Current boundary and implementation sequence
 
-At this design checkpoint, direct unary preserving `mutex_use` contracts can
-perform balanced opaque lock/unlock. Their checked transitions expose no
-protected state. Preserving guard and lifecycle contracts exist, but named
-primitive binders, general consuming/producing transitions, and escaping guards
-are not implemented. Concrete publication still uses the special `invariant`
-input and concrete lock retrieves the escrowed instance. None of the proposed
-syntax in this document is a passing fixture yet.
+The runtime now declares one shared binder schema for all four operations.
+Implemented projections pass through the ordinary parser's supplied/produced
+binder checks. Initialization's named form is:
+
+```text
+let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });
+step(pthread_mutex_destroy(mu), { lifetime: life });
+```
+
+The kernel independently checks those maps and binds the output to the actual
+owned initialization. Named preserving `owns life: mutex_live(mu)` and
+`owns g: mutex_guard(mu)` helpers are implemented. Names select exact authority;
+they have no fields or body to unfold. Checked preserving calls reconnect each
+name only to the same returned authority. Old lifecycle names fail after
+destruction and reinitialization at the same address.
+
+Direct unary preserving `mutex_use` contracts support balanced opaque
+lock/unlock, exposing no protected state. Named use inputs, general
+consuming/producing helper contracts, named storage, fresh protected-state
+outputs, and escaping guards remain pending. Concrete lock still retrieves the
+escrowed instance; calls without named runtime maps retain their prior checked
+behavior. The contract sketches above describe the complete target, not the
+currently supported subset. New runtime projections must be enabled only when
+their corresponding kernel transfer is implemented.
 
 Implement the design in this order:
 

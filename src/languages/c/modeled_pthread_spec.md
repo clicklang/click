@@ -1,4 +1,4 @@
-# Modeled pthread create/join and mutex specification, version 7
+# Modeled pthread create/join and mutex specification, version 8
 
 This trusted specification is an explicit assumption of a conditional Click
 client proof. It does not certify an operating system's pthread implementation.
@@ -93,3 +93,17 @@ scalar local work and an owner-authorized store to disjoint external memory
 before its status test, and a checked join after the status selects success.
 Other intervening operations and additional pending creates are refused until
 their guarded authority can be represented and checked.
+
+The runtime declares the mutex operation binder schemas centrally. The current
+named projection consumes initialization's `state` and produces `lifetime`:
+`let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: instance })`.
+Destruction accepts `step(pthread_mutex_destroy(mu), { lifetime: life })`.
+The ordinary call-map checker validates these declarations, including missing,
+unknown, and duplicate binders. The kernel independently validates the selected
+binder identities and owned resources. A lifecycle name denotes the exact
+initialization, not merely its address; destruction and reinitialization cannot
+revive an old name. Named preserving lifecycle and guard helper contracts use
+the same call maps and preserve their selected authority through checked
+occurrence transfers. The remaining declared storage, use, guard-output, and
+protected-state-output binders are staged metadata, not accepted named runtime
+transitions or additional authority.

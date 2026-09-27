@@ -1356,6 +1356,14 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 allow_symbolic_resource_arguments,
                 base_assumptions,
             )?;
+            if matches!(
+                lowered.resource(),
+                CResource::MutexGuard(_) | CResource::MutexLive(_)
+            ) {
+                // This lowering constructs the independent precondition. The
+                // kernel subsequently binds its name to the rooted occurrence.
+                return Ok(lowered);
+            }
             let CResourceFact::Own(CResource::Composite { name, arguments }, _) = lowered else {
                 return Err(ClickError::new(
                     "named instance requires an owned resource definition",

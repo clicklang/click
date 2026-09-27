@@ -11,10 +11,11 @@ It refines the [resource-invariant design](resource-invariants.md)
 and the [shared-counter protocol](https://github.com/lacker/click/blob/master/design/concurrency-probes/mutex-shared-protocol.md). Existing failure
 classification is described in [proof-failure triage](../concepts/proof-failure-triage.md).
 
-The proposed uniform interfaces for initialization, lock, unlock, and destruction
+The uniform target interfaces for initialization, lock, unlock, and destruction
 are specified together in [Mutex operations as resource contracts](mutex-resource-contracts.md).
-That proposal replaces the special initialization binder with ordinary contract
-inputs and outputs; its syntax is not implemented yet.
+Its named lifecycle checkpoint replaces the special initialization binder with
+declared state input and lifetime output transport; the complete interface is
+still being implemented.
 
 ## What exists and what would change
 
@@ -148,7 +149,7 @@ The surface status is:
 | `guarded_by counter->mutex;` | Keep the existing spelling | This resource assertion is the one this mutex protects. |
 | `owns mutex_guard(mu)` in a resource body | Keep the existing spelling | This resource contains ownership of a current acquisition, not merely knowledge that the mutex is locked. |
 | Direct `owns mutex_guard(mu);` clauses | Implemented for preserving helpers | Receives and returns the entry acquisition; all mutex transitions remain prohibited. |
-| Direct named guard clauses, such as `owns g: mutex_guard(mu);` | Extend contract support; not supported today | The function receives and returns the same guard occurrence. |
+| Direct named guard clauses, such as `owns g: mutex_guard(mu);` | Implemented for preserving helpers | The function receives and returns the same guard occurrence. |
 | `consumes` and `produces` for guards | Extend existing clause semantics; not supported today | The function can surrender an acquisition or return a newly established one. |
 | `mutex_live(mu)` | Implemented for direct preserving `owns` clauses and resource bodies | Lifecycle ownership of this initialized mutex, including responsibility for destruction. |
 | `mutex_use(mu)` | Implemented for direct synchronous preserving `owns` clauses | Permission to use this initialization while its lifetime is guaranteed. It gives no payload access. |
@@ -991,3 +992,19 @@ Once these transition rules and adversarial examples are fixed, declaration
 plumbing, precise binder/source diagnostics, documentation, and regression
 coverage are suitable bounded implementation tasks. The whole concurrency
 migration is not yet a routine implementation handoff.
+
+## Declared runtime binders and named primitive authority
+
+Runtime mutex binder schemas now supply names and transfer roles to ordinary
+call-map validation. Initialization consumes the named `state` input and
+produces `lifetime`; destruction accepts that lifecycle name. The kernel checks
+the exact supported schema independently of parsing. Old `invariant` input maps
+are rejected as unknown binders.
+
+Preserving named `mutex_live` and `mutex_guard` helpers now use ordinary call
+maps. Names are checked references to raw owned authority, not field-bearing
+composite instances. Preservation requires the same initialization/acquisition,
+including across repeated helper calls. Missing ownership, wrong mutex inputs,
+stale lifecycle names, and attempted primitive unfold are covered by regressions.
+See [the complete contract design](mutex-resource-contracts.md) for the supported
+subset and remaining resource-parameter, storage, and protected-state work.
