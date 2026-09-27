@@ -3547,6 +3547,10 @@ pub enum CRuntimeError {
     MissingMutexLive {
         mutex: Pointer,
     },
+    /// An operation requires a use loan for this mutex initialization.
+    MissingMutexUse {
+        mutex: Pointer,
+    },
     /// An operation requires an acquisition that is not available as owned authority.
     MissingMutexGuard {
         mutex: Pointer,

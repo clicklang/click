@@ -1197,3 +1197,30 @@ fn a_conditional_term_spells_its_unsigned_guard() {
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
     assert!(!rendered.contains('^'), "{rendered}");
 }
+
+#[test]
+fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
+    let mutex = crate::kernel::Pointer {
+        block: "selected_mutex".into(),
+        offset: crate::kernel::PointerOffsetTerm::Constant(0),
+    };
+    let rendered = super::diagnostics::describe_runtime_error(
+        &crate::kernel::CRuntimeError::MissingMutexUse {
+            mutex: mutex.clone(),
+        },
+        &[],
+        &[],
+    );
+    let owner = super::diagnostics::describe_runtime_error(
+        &crate::kernel::CRuntimeError::MissingMutexLive { mutex },
+        &[],
+        &[],
+    );
+    assert_eq!(rendered, owner.replace("mutex_live", "mutex_use"));
+    assert!(
+        rendered.starts_with("Requires owns mutex_use("),
+        "{rendered}"
+    );
+    assert!(rendered.contains("selected_mutex"), "{rendered}");
+    assert!(!rendered.contains("Loan"), "{rendered}");
+}

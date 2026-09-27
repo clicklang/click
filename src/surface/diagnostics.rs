@@ -950,6 +950,10 @@ pub(super) fn describe_runtime_error(
             "Requires owns mutex_live({})",
             describe_mutex_pointer(mutex, parameters, arguments)
         ),
+        crate::kernel::CRuntimeError::MissingMutexUse { mutex } => format!(
+            "Requires owns mutex_use({})",
+            describe_mutex_pointer(mutex, parameters, arguments)
+        ),
         crate::kernel::CRuntimeError::MissingMutexInvariant { resource } => {
             let required = match resource.resource() {
                 CResource::Instance(instance) => format!(

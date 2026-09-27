@@ -847,6 +847,9 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
         CRuntimeError::MissingMutexLive { .. } => {
             "a required mutex_live resource is not available".to_string()
         }
+        CRuntimeError::MissingMutexUse { .. } => {
+            "a required mutex_use resource is not available".to_string()
+        }
         CRuntimeError::MissingMutexInvariant { .. } => {
             "the protected resource selected at mutex initialization must be restored".to_string()
         }

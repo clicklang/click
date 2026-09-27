@@ -14,6 +14,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use super::loans::{LoanHoldId, LoanLedger, LoanParticipantId, MutexUseBinding, MutexUseLoan};
 use crate::persistent::PersistentMap;
 
 use super::{CResource, CResourceFact, CState, ConditionTerm, Pointer, PureFactContext};
@@ -23,6 +24,7 @@ pub(super) enum MutexTransitionError {
     NotInitialized,
     MissingGuard(Pointer),
     MissingLive(Pointer),
+    MissingUse(Pointer),
     MissingInvariant(CResourceFact),
     Refusal(&'static str),
 }
@@ -40,6 +42,7 @@ impl MutexTransitionError {
                 mutex: mutex.clone(),
             },
             Self::MissingLive(mutex) => super::CRuntimeError::MissingMutexLive { mutex },
+            Self::MissingUse(mutex) => super::CRuntimeError::MissingMutexUse { mutex },
             Self::MissingGuard(mutex) => super::CRuntimeError::MissingMutexGuard { mutex },
             Self::MissingInvariant(resource) => {
                 super::CRuntimeError::MissingMutexInvariant { resource }
@@ -59,6 +62,7 @@ enum MutexEntry {
         initialization: MutexInitialization,
         invariant: Option<CResourceFact>,
         epoch: u64,
+        lifetime_hold: Option<(LoanHoldId, LoanParticipantId)>,
     },
 }
 
@@ -697,9 +701,115 @@ impl MutexContext {
         Ok(Self { state })
     }
 
+    /// Checked adapter staged ahead of surface `mutex_use` call transport.
+    /// The owner is removed here, rather than trusting a caller-supplied fact.
+    #[allow(dead_code)]
+    pub(super) fn lend_use(
+        &self,
+        mutex: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, MutexUseLoan), MutexTransitionError> {
+        if self.state.preserves_mutex_protocols {
+            return Err("preserving mutex contracts cannot lend mutex authority".into());
+        }
+        let live = self
+            .state
+            .mutex_ledger
+            .as_ref()
+            .and_then(|ledger| ledger.live_resource(mutex))
+            .ok_or(MutexTransitionError::NotInitialized)?;
+        let (support, _) = self
+            .state
+            .resources
+            .unique_owned_occurrence_for_fact(&live)
+            .ok_or_else(|| MutexTransitionError::MissingLive(mutex.clone()))?;
+        let resources = self
+            .state
+            .resources
+            .clone()
+            .without_fact_delaying_normalization(&live, assumptions)
+            .ok_or_else(|| MutexTransitionError::MissingLive(mutex.clone()))?;
+        let ledger = self
+            .state
+            .loan_ledger
+            .clone()
+            .unwrap_or_else(LoanLedger::new);
+        let participant = match self.state.loan_participant {
+            Some(participant) => participant,
+            None => ledger.fresh_participant().map_err(|_| {
+                MutexTransitionError::Refusal("cannot establish mutex loan participant")
+            })?,
+        };
+        let (ledger, loan) = ledger
+            .lend_mutex_use(participant, participant, support, live)
+            .map_err(|_| MutexTransitionError::Refusal("cannot lend mutex lifetime authority"))?;
+        let mut state = self.state.clone();
+        state.resources = resources;
+        state.loan_ledger = Some(ledger);
+        state.loan_participant = Some(participant);
+        Ok((Self { state }, loan))
+    }
+
+    /// Recovery returns only the escrowed owner, after all shares and holds
+    /// are back. No guarded payload or acquisition is manufactured here.
+    #[allow(dead_code)]
+    pub(super) fn recover_use(
+        &self,
+        loan: &MutexUseLoan,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, MutexTransitionError> {
+        if self.state.preserves_mutex_protocols {
+            return Err("preserving mutex contracts cannot recover mutex authority".into());
+        }
+        let ledger = self
+            .state
+            .loan_ledger
+            .as_ref()
+            .ok_or("missing mutex loan ledger")?;
+        let participant = self
+            .state
+            .loan_participant
+            .ok_or("missing mutex loan participant")?;
+        let (ledger, owner) = ledger.recover_mutex_use(loan, participant).map_err(|_| {
+            MutexTransitionError::Refusal("mutex use loan still has outstanding shares or guards")
+        })?;
+        let mut state = self.state.clone();
+        state.resources = state
+            .resources
+            .try_compose_with_facts_delaying_normalization([owner], assumptions)
+            .map_err(|_| {
+                MutexTransitionError::Refusal(
+                    "recovered mutex owner conflicts with current authority",
+                )
+            })?;
+        state.loan_ledger = Some(ledger);
+        Ok(Self { state })
+    }
+
+    /// This entry is intentionally not exposed as surface syntax until calls
+    /// can transport use occurrences and returned guard dependencies.
+    #[allow(dead_code)]
+    pub(super) fn acquire_using(
+        &self,
+        mutex: &Pointer,
+        usage: MutexUseBinding,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, MutexGuard), MutexTransitionError> {
+        self.acquire_with_use(mutex, Some(usage), assumptions)
+    }
+
     pub(super) fn acquire(
         &self,
         mutex: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, MutexGuard), MutexTransitionError> {
+        self.acquire_with_use(mutex, None, assumptions)
+    }
+
+    fn acquire_with_use(
+        &self,
+        mutex: &Pointer,
+        usage: Option<MutexUseBinding>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
         if self.state.preserves_mutex_protocols {
@@ -718,13 +828,30 @@ impl MutexContext {
             }
             None => return Err(MutexTransitionError::NotInitialized),
         };
-        if !self
-            .state
-            .resources
-            .satisfies_fact(&initialization.resource_fact(mutex), assumptions)
-        {
-            return Err(MutexTransitionError::MissingLive(mutex.clone()));
-        }
+        let (loan_ledger, lifetime_hold) = if let Some(usage) = usage {
+            let participant = self
+                .state
+                .loan_participant
+                .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
+            let loans = self
+                .state
+                .loan_ledger
+                .as_ref()
+                .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
+            let (loans, hold) = loans
+                .hold_mutex_use(usage, &initialization.resource_fact(mutex), participant)
+                .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
+            (Some(loans), Some((hold, participant)))
+        } else {
+            if !self
+                .state
+                .resources
+                .satisfies_fact(&initialization.resource_fact(mutex), assumptions)
+            {
+                return Err(MutexTransitionError::MissingLive(mutex.clone()));
+            }
+            (self.state.loan_ledger.clone(), None)
+        };
         let resources = if let Some(invariant) = &invariant {
             self.state
                 .resources
@@ -747,6 +874,7 @@ impl MutexContext {
                 MutexTransitionError::Refusal("mutex acquisition identity space exhausted")
             })?;
         let mut state = self.state.clone();
+        state.loan_ledger = loan_ledger;
         let guard = MutexGuard {
             mutex: mutex.clone(),
             initialization,
@@ -763,6 +891,7 @@ impl MutexContext {
                 initialization,
                 invariant,
                 epoch,
+                lifetime_hold,
             },
         ));
         Ok((
@@ -797,6 +926,7 @@ impl MutexContext {
                 invariant,
                 initialization,
                 epoch,
+                ..
             }) => (invariant, *initialization, *epoch),
             _ => return Err(MutexTransitionError::MissingGuard(mutex.clone())),
         };
@@ -892,12 +1022,15 @@ impl MutexContext {
             return Err("preserving mutex contracts cannot change mutex protocols".into());
         }
         let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
-        let previous = match ledger.get(&guard.mutex) {
+        let (previous, lifetime_hold) = match ledger.get(&guard.mutex) {
             Some(MutexEntry::Locked {
                 invariant,
                 initialization,
                 epoch,
-            }) if *initialization == guard.initialization && *epoch == guard.epoch => invariant,
+                lifetime_hold,
+            }) if *initialization == guard.initialization && *epoch == guard.epoch => {
+                (invariant, *lifetime_hold)
+            }
             _ => return Err("mutex guard does not match the current holder".into()),
         };
         let guard_fact = guard.resource_fact();
@@ -934,6 +1067,19 @@ impl MutexContext {
             self.state.resources.clone()
         };
         let mut state = self.state.clone();
+        if let Some((hold, participant)) = lifetime_hold {
+            if state.loan_participant != Some(participant) {
+                return Err("mutex guard lifetime hold belongs to another participant".into());
+            }
+            let loans = state
+                .loan_ledger
+                .as_ref()
+                .ok_or("missing mutex guard lifetime loan")?;
+            state.loan_ledger =
+                Some(loans.release(hold, participant).map_err(|_| {
+                    MutexTransitionError::Refusal("missing mutex guard lifetime hold")
+                })?);
+        }
         state.resources = resources
             .without_fact_delaying_normalization(&guard_fact, assumptions)
             .ok_or("mutex guard cannot be consumed")?;
@@ -1261,14 +1407,16 @@ impl MutexLedger {
                     Some(MutexEntry::Locked {
                         invariant: left,
                         epoch: left_epoch,
+                        lifetime_hold: left_hold,
                         ..
                     }),
                     Some(MutexEntry::Locked {
                         invariant: right,
                         epoch: right_epoch,
+                        lifetime_hold: right_hold,
                         ..
                     }),
-                ) if left == right && left_epoch == right_epoch => {}
+                ) if left == right && left_epoch == right_epoch && left_hold == right_hold => {}
                 (None, None) => {}
                 _ => return Err(MutexProtocolMismatch::State),
             }
@@ -3347,6 +3495,280 @@ mod tests {
         MutexContext::new(
             CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(fact)),
         )
+    }
+
+    #[test]
+    fn use_loan_escrows_owner_and_guard_blocks_recovery_until_release() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let payload = invariant(1, 0);
+        let updated = invariant(1, 1);
+        let initialized = context(payload.clone())
+            .publish(address.clone(), payload.clone(), &assumptions, 40)
+            .unwrap();
+        let owner = live_resource(initialized.state(), &address, false).unwrap();
+        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        assert!(!lent.state.resources.satisfies_fact(&owner, &assumptions));
+        assert!(!lent.state.resources.satisfies_fact(&payload, &assumptions));
+        assert!(lent.lend_use(&address, &assumptions).is_err());
+        assert!(lent.acquire(&address, &assumptions).is_err());
+        assert!(lent.destroy(&address, &assumptions).is_err());
+        let (mut held, guard) = lent
+            .acquire_using(&address, loan.usage, &assumptions)
+            .unwrap();
+        assert!(held.state.resources.satisfies_fact(&payload, &assumptions));
+        assert!(held.recover_use(&loan, &assumptions).is_err());
+        assert!(held.destroy(&address, &assumptions).is_err());
+        assert!(
+            held.acquire_using(&address, loan.usage, &assumptions)
+                .is_err()
+        );
+        // Keep the program's actual protected-state update: lending does not
+        // freeze the payload or require its historical field value on release.
+        held.state.resources = held
+            .state
+            .resources
+            .clone()
+            .without_fact(&payload, &assumptions)
+            .unwrap()
+            .try_compose_with_fact(updated.clone(), &assumptions)
+            .unwrap();
+        assert!(
+            held.release(
+                MutexGuard {
+                    mutex: guard.mutex.clone(),
+                    initialization: guard.initialization,
+                    epoch: guard.epoch
+                },
+                payload.clone(),
+                &assumptions
+            )
+            .is_err()
+        );
+        assert!(held.recover_use(&loan, &assumptions).is_err());
+        let released = held.release(guard, updated.clone(), &assumptions).unwrap();
+        assert!(
+            !released
+                .state
+                .resources
+                .satisfies_fact(&updated, &assumptions)
+        );
+        assert!(
+            !released
+                .state
+                .resources
+                .satisfies_fact(&owner, &assumptions)
+        );
+        let (held_again, _) = released
+            .acquire_using(&address, loan.usage, &assumptions)
+            .unwrap();
+        assert!(
+            held_again
+                .state
+                .resources
+                .satisfies_fact(&updated, &assumptions)
+        );
+        let released = held_again.release_current(&address, &assumptions).unwrap();
+        let recovered = released.recover_use(&loan, &assumptions).unwrap();
+        assert!(
+            recovered
+                .state
+                .resources
+                .satisfies_fact(&owner, &assumptions)
+        );
+        assert!(recovered.recover_use(&loan, &assumptions).is_err());
+        assert!(
+            recovered
+                .acquire_using(&address, loan.usage, &assumptions)
+                .is_err()
+        );
+        let destroyed = recovered.destroy(&address, &assumptions).unwrap();
+        assert!(
+            destroyed
+                .state
+                .resources
+                .satisfies_fact(&updated, &assumptions)
+        );
+    }
+
+    #[test]
+    fn use_loan_rejects_other_mutex_initialization_participant_and_stale_guard() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let other = mutex(1);
+        let initialized = MutexContext::new(CState::new())
+            .initialize_empty(address.clone(), 40)
+            .unwrap()
+            .initialize_empty(other.clone(), 40)
+            .unwrap();
+        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        assert_eq!(
+            lent.acquire_using(&other, loan.usage, &assumptions).err(),
+            Some(MutexTransitionError::MissingUse(other))
+        );
+        let mut foreign = lent.clone();
+        foreign.state.loan_participant = Some(
+            foreign
+                .state
+                .loan_ledger
+                .as_ref()
+                .unwrap()
+                .fresh_participant()
+                .unwrap(),
+        );
+        assert_eq!(
+            foreign
+                .acquire_using(&address, loan.usage, &assumptions)
+                .err(),
+            Some(MutexTransitionError::MissingUse(address.clone()))
+        );
+        assert!(foreign.recover_use(&loan, &assumptions).is_err());
+        let (held, old_guard) = lent
+            .acquire_using(&address, loan.usage, &assumptions)
+            .unwrap();
+        let released = held.release_current(&address, &assumptions).unwrap();
+        let (held, _) = released
+            .acquire_using(&address, loan.usage, &assumptions)
+            .unwrap();
+        assert!(
+            held.release_with_invariant(old_guard, None, &assumptions)
+                .is_err()
+        );
+        assert!(held.recover_use(&loan, &assumptions).is_err());
+        let recovered = held
+            .release_current(&address, &assumptions)
+            .unwrap()
+            .recover_use(&loan, &assumptions)
+            .unwrap();
+        let reinitialized = MutexContext::new(
+            recovered
+                .destroy(&address, &assumptions)
+                .unwrap()
+                .into_state(),
+        )
+        .initialize_empty(address.clone(), 40)
+        .unwrap();
+        assert_eq!(
+            reinitialized
+                .acquire_using(&address, loan.usage, &assumptions)
+                .err(),
+            Some(MutexTransitionError::MissingUse(address.clone()))
+        );
+        // An active old loan is also insufficient for a new initialization,
+        // even if a hostile state substitutes its mutex registry.
+        let mut substituted = lent;
+        substituted.state.mutex_ledger = reinitialized.state.mutex_ledger;
+        assert_eq!(
+            substituted
+                .acquire_using(&address, loan.usage, &assumptions)
+                .err(),
+            Some(MutexTransitionError::MissingUse(address))
+        );
+    }
+
+    #[test]
+    fn use_guard_cannot_release_without_its_loan_state_or_holder() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let initialized = MutexContext::new(CState::new())
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (held, _) = lent
+            .acquire_using(&address, loan.usage, &assumptions)
+            .unwrap();
+        let mut no_hold = held.clone();
+        no_hold.state.loan_ledger = lent.state.loan_ledger.clone();
+        assert!(no_hold.release_current(&address, &assumptions).is_err());
+        let mut no_ledger = held.clone();
+        no_ledger.state.loan_ledger = None;
+        assert!(no_ledger.release_current(&address, &assumptions).is_err());
+        let mut wrong_holder = held.clone();
+        wrong_holder.state.loan_participant = Some(
+            held.state
+                .loan_ledger
+                .as_ref()
+                .unwrap()
+                .fresh_participant()
+                .unwrap(),
+        );
+        assert!(
+            wrong_holder
+                .release_current(&address, &assumptions)
+                .is_err()
+        );
+        let mut frozen = lent.clone();
+        frozen.state.preserves_mutex_protocols = true;
+        assert!(
+            frozen
+                .acquire_using(&address, loan.usage, &assumptions)
+                .is_err()
+        );
+        assert!(frozen.recover_use(&loan, &assumptions).is_err());
+        assert!(frozen.lend_use(&address, &assumptions).is_err());
+        assert!(
+            held.release_current(&address, &assumptions)
+                .unwrap()
+                .recover_use(&loan, &assumptions)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn preserving_protocol_cannot_forget_a_guards_lifetime_hold() {
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let initialized = MutexContext::new(CState::new())
+            .initialize_empty(address.clone(), 40)
+            .unwrap();
+        let (lent, loan) = initialized.lend_use(&address, &assumptions).unwrap();
+        let (held, _) = lent
+            .acquire_using(&address, loan.usage, &assumptions)
+            .unwrap();
+        let ledger = held.state.mutex_ledger.as_ref().unwrap();
+        let mut entry = ledger.get(&address).unwrap().clone();
+        let MutexEntry::Locked { lifetime_hold, .. } = &mut entry else {
+            panic!("locked")
+        };
+        assert!(lifetime_hold.take().is_some());
+        let without_hold = ledger.with_inserted(address, entry);
+        assert_eq!(
+            ledger.check_protocol_state_since(&without_hold),
+            Err(MutexProtocolMismatch::State)
+        );
+    }
+
+    #[test]
+    fn use_loan_round_trip_does_not_scan_unrelated_mutexes() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let assumptions = PureFactContext::new();
+            let mut initialized = MutexContext::new(CState::new());
+            for index in 0..size {
+                initialized = initialized.initialize_empty(mutex(index), 40).unwrap();
+            }
+            let ((recovered, work), persistent_work) =
+                crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        let (lent, loan) = initialized.lend_use(&mutex(0), &assumptions).unwrap();
+                        let (held, _) = lent
+                            .acquire_using(&mutex(0), loan.usage, &assumptions)
+                            .unwrap();
+                        held.release_current(&mutex(0), &assumptions)
+                            .unwrap()
+                            .recover_use(&loan, &assumptions)
+                            .unwrap()
+                    })
+                });
+            assert!(recovered.destroy(&mutex(0), &assumptions).is_ok());
+            samples.push((size, work, persistent_work));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 2 && pair[1].2 <= pair[0].2 * 2,
+                "one mutex loan scans unrelated initializations: {samples:?}"
+            );
+        }
     }
 
     #[test]

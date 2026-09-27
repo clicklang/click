@@ -574,13 +574,43 @@ these operations. The hold transition itself carries no stable-read assertion.
 Tests cover mixed identities, transferred and split shares, pinned reborrows,
 ended scopes, forged certificates, and deterministic scaling over loan counts.
 
-This is shared kernel infrastructure, not yet `mutex_use` support. The next
-adapter must escrow the exact `mutex_live` initialization, authorize use without
-a memory description, and attach a lifetime hold to each acquired guard.
-Surface calls and worker joins must then transport and recover that authority.
-Until those adapters exist, acquiring still requires `mutex_live`, and abstract
-contract protocol transitions remain frozen. No surface syntax changes in this
-checkpoint.
+The concrete mutex adapter below builds on this shared infrastructure. Neither
+checkpoint exposes `mutex_use` in the surface language yet.
+
+## Concrete use-loan kernel checkpoint
+
+The kernel can now lend one concrete initialization's `mutex_live` owner into
+the existing loan ledger. The mutex adapter selects the exact owned occurrence
+and removes it from the current resource context before installing the loan.
+The resulting opaque use binding names loan/share authority; it supplies no
+stable view, payload memory, lifecycle ownership, or destruction right.
+Ordinary stable-view lending still rejects mutex owners.
+
+Acquisition through a use binding checks the current participant, live share,
+and exact mutex initialization. It opens the protected assertion as usual and
+places a lifetime hold in the acquisition's mutex-ledger entry. Release checks
+the current guard and restored assertion before removing that hold. Updated
+protected state is permitted: the loan does not freeze its bytes or values.
+A failed release does not discharge the dependency. Protocol comparisons also
+compare the guard's lifetime hold.
+
+Recovery requires the matching loan receipt, the whole root share, the lender's
+close/recovery rights, and no outstanding hold. It returns the escrowed owner
+once. Splitting and transferring use shares use the existing checked share
+transitions; collecting all shares still cannot close the loan while a guard
+holds it. Another mutex, another initialization at the same address, another
+participant, an ended loan, or a stale guard cannot substitute for the required
+authority. Missing use authority has a structured diagnostic rendered as
+`Requires owns mutex_use(mu)`.
+
+This is a staged kernel adapter, exercised by transition and hostile-evidence
+tests; ordinary C calls still acquire through `mutex_live`. The entry methods
+remain internal until resource occurrences can carry use bindings through
+contracts and workers. There is no new accepted surface syntax, implicit call
+lending, use reborrowing, worker-join integration, or escaping-guard transport
+in this checkpoint. Abstract contract protocol transitions remain frozen.
+Deterministic scaling tests check one lend/acquire/release/recover operation
+against increasing numbers of unrelated mutexes.
 
 ## Remaining semantic implementation boundaries
 
@@ -593,9 +623,11 @@ hostile certificate tests:
    Initialization now establishes live, exclusive storage, and initialized
    bytes resist ordinary writes, including through abstract contract inputs.
    Scope exit now checks concrete initializations and conservatively refuses
-   ambiguous symbolic ones. `mutex_use` needs checked lending from `mutex_live`, reborrowing, worker join
-   recovery, and returned guards that keep their lender alive. The current heap
-   refusal is a conservative dependency check, not this resource protocol.
+   ambiguous symbolic ones. Concrete kernel use lending and guard holds are
+   implemented. `mutex_use` still needs resource-occurrence and contract transport,
+   reborrowing, worker-join recovery, and escaping guards that retain the loan.
+   The current heap refusal is a conservative dependency check, not this
+   resource protocol.
 2. **Abstract guard transitions.** Contracts need generative initialization and
    acquisition bindings, preserving versus consuming/producing occurrences,
    and sound instantiation at calls. Named primitive binders should use that
