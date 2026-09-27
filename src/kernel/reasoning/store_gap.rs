@@ -228,8 +228,12 @@ fn anchor_byte_form_cancels(anchor: &PointerOffsetTerm) -> bool {
     })
 }
 
-/// Whether the constants folded inside the anchor are small, so the atom
-/// and shift split every cell's byte test reads cannot overflow.
+/// Whether the constant summands of the anchor are small, so the atom and
+/// shift split every cell's byte test reads cannot overflow. The anchor's
+/// scaled values are variables ([`anchor_is_normal`]), and the split keeps
+/// every non-constant scaled index whole, so the anchor's atoms are the same
+/// for each cell `Add(anchor, Constant(c))` and the store, and the cells'
+/// shifts differ from the store's by exactly `c - k`.
 fn anchor_shift_is_small(anchor: &PointerOffsetTerm) -> bool {
     let (_, shift) = super::memory_resolution::offset_atoms_and_constant(anchor);
     shift.abs() <= CONSTANT_LIMIT

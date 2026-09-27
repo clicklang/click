@@ -2747,7 +2747,21 @@ pub(in crate::kernel) fn havoc_marker_blocks(
 }
 
 /// Splits a pointer offset into its non-constant atoms and total constant
-/// byte shift, folding constants nested inside scaled indices.
+/// byte shift.
+///
+/// The offset is an exact sum, so its summands are what may be separated:
+/// every `Constant` summand joins the shift, and so does an `int32` scaled
+/// index whose value is a constant, at its signed value times the width.
+/// A scaled index that is not a constant is one atom, *whole*. Its value is
+/// a 32-bit word, and `Int32Scaled { i + c }` is `sext(i + c) * w`, which is
+/// `sext(i) * w + c * w` only when `i + c` does not wrap. A signed C index
+/// cannot wrap there, but an index converted from an unsigned sum
+/// (`(int32)(u + 2147483648u)`) wraps by definition, and reading its
+/// constant into the shift placed the access `2^32` elements from where it
+/// is: a store the facts kept inside a run was judged to miss every slot.
+/// This split has no facts to prove the sum does not wrap, so it never
+/// takes the sum apart; pairs such as `i` and `i + 1` are decided by the
+/// fact-reading ladders instead, which compare the words themselves.
 pub(in crate::kernel) fn offset_atoms_and_constant(
     offset: &PointerOffsetTerm,
 ) -> (Vec<PointerOffsetTerm>, i64) {
@@ -2759,20 +2773,11 @@ pub(in crate::kernel) fn offset_atoms_and_constant(
                 collect(right, atoms, shift);
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                if let Some((base, constant)) = value.add_const_parts() {
-                    *shift += (constant as i32 as i64) * *byte_width;
-                    atoms.push(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(base),
-                        byte_width: *byte_width,
-                    });
-                } else if let Some((base, constant)) = value.subtract_const_parts() {
-                    *shift -= (constant as i32 as i64) * *byte_width;
-                    atoms.push(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(base),
-                        byte_width: *byte_width,
-                    });
-                } else {
-                    atoms.push(offset.clone());
+                match signed_bitvector_constant(value)
+                    .and_then(|value| value.checked_mul(*byte_width))
+                {
+                    Some(bytes) => *shift += bytes,
+                    None => atoms.push(offset.clone()),
                 }
             }
             other => atoms.push(other.clone()),

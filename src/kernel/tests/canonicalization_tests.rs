@@ -1503,3 +1503,108 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         "a byte pointer scaled by four is not what a typed load of the cell produces"
     );
 }
+
+// --- a scaled index is one atom whole ---------------------------------------
+// See `mdtests/a_converted_unsigned_index_sum_is_not_split.md`.
+
+/// `Int32Scaled { i + c }` is `sext(i + c) * w`, not `sext(i) * w + c * w`:
+/// the split keeps a non-constant scaled index whole, and only a constant
+/// scaled index (at its signed value) or a `Constant` summand joins the shift.
+#[test]
+fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
+    let u = Bitvector32Term::Variable(Variable(7_960_000));
+    let scaled = |value: Bitvector32Term| PointerOffsetTerm::Int32Scaled {
+        value: Box::new(value),
+        byte_width: 4,
+    };
+    let wrapping = scaled(Bitvector32Term::Add(
+        Box::new(u.clone()),
+        Box::new(Bitvector32Term::Constant(0x8000_0000)),
+    ));
+    let offset = PointerOffsetTerm::Add(
+        Box::new(wrapping.clone()),
+        Box::new(PointerOffsetTerm::Constant(8)),
+    );
+    assert_eq!(
+        crate::kernel::reasoning::offset_atoms_and_constant(&offset),
+        (vec![wrapping], 8),
+        "the sum inside the scaled index stays one atom"
+    );
+    assert_eq!(
+        crate::kernel::reasoning::offset_atoms_and_constant(&scaled(Bitvector32Term::Constant(
+            (-3i32) as u32
+        ))),
+        (Vec::new(), -12),
+        "a constant scaled index is its signed value times the width"
+    );
+}
+
+/// A run of eight `int32` slots and a store at `a[w]` whose word `w` is
+/// `u + 2^31`, bounded to `0 <= w < 8`. The split read the store as the atom
+/// `u` (interval `[INT_MIN, INT_MAX]`) plus `INT_MIN` elements, whose whole
+/// window lies below the run, and kept every slot; `w` may be any element.
+/// The signed neighbour `i + 1`, bounded by its own facts, still places the
+/// store off element 0.
+#[test]
+fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
+    use crate::kernel::primitives::{AliasCandidates, SlotSet};
+    let block = PointerBlock::Symbolic(Variable(7_960_100));
+    let source = crate::kernel::intern_c_memory(CMemory::new().with_block("wrap-source", 64));
+    let base = Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_seeded_cells(base, 4, CType::Int32, 0, 8, source);
+    let run = memory
+        .cells
+        .candidate_runs(&AliasCandidates::of_block(&block))
+        .next()
+        .expect("the seeded run")
+        .clone();
+    let bounded = |word: &Bitvector32Term, low: u32| {
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(low), word.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(word.clone(), Bitvector32Term::Constant(8)),
+                true,
+            )
+    };
+    let store_at = |word: &Bitvector32Term| Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(word.clone()),
+            byte_width: 4,
+        },
+    };
+
+    let wrapping = Bitvector32Term::Add(
+        Box::new(Bitvector32Term::Variable(Variable(7_960_101))),
+        Box::new(Bitvector32Term::Constant(0x8000_0000)),
+    );
+    let (kept, _) = crate::kernel::reasoning::run_slots_kept_by_store(
+        &run,
+        &store_at(&wrapping),
+        4,
+        &bounded(&wrapping, 0),
+    );
+    assert_eq!(kept, SlotSet::AskWithin(0, 8), "no slot is kept unasked");
+
+    let neighbour = Bitvector32Term::Add(
+        Box::new(Bitvector32Term::Variable(Variable(7_960_102))),
+        Box::new(Bitvector32Term::Constant(1)),
+    );
+    let (kept, _) = crate::kernel::reasoning::run_slots_kept_by_store(
+        &run,
+        &store_at(&neighbour),
+        4,
+        &bounded(&neighbour, 1),
+    );
+    assert_eq!(
+        kept,
+        SlotSet::AskWithin(1, 8),
+        "element 0 is kept by the bound"
+    );
+}
