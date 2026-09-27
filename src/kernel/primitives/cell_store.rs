@@ -29,10 +29,13 @@
 //! share their runs' persistent nodes are compared, hashed and diffed in the
 //! work of what they do not share. The key orders the run's source memory by
 //! its content hash before its structure, so no key comparison walks a
-//! memory unless two sources' hashes collide. Equality, hashing and ordering
-//! read only the concrete map and the run map, never the lookup bound
-//! `CellStore::run_span` or the cached counts, so a store's identity does
-//! not depend on the order its runs were added in.
+//! memory unless two sources' hashes collide. A run based at a constant
+//! offset is also filed by the bytes its slots span, in
+//! `CellStore::constant_cover`, so a constant pointer finds exactly the
+//! runs whose span holds it. Equality, hashing and ordering read only the
+//! concrete map and the run map, never that cover or the cached counts,
+//! which are functions of the run map, so a store's identity does not
+//! depend on the order its runs were added in.
 use super::alias_candidates::BlockKeyed;
 use super::{
     AliasCandidates, CType, CValue, Pointer, PointerBlock, PointerOffsetTerm, SharedCMemory,
@@ -791,11 +794,13 @@ impl CellRun {
 pub(crate) struct CellStore {
     concrete: SnapshotMap<Pointer, CValue>,
     runs: SnapshotMap<RunKey, CellRun>,
-    /// An upper bound on every held run's [`CellRun::span`]: a constant
-    /// pointer can be a slot only of a run based at most this many bytes
-    /// below it. Lookup bookkeeping, not content: it only grows, and it is
-    /// left out of equality, hashing and ordering.
-    run_span: u64,
+    /// The held runs based at a constant offset, by the bytes from their
+    /// first slot to their last: each block's covered bytes cut into
+    /// disjoint segments, keyed by block and first byte, each naming the runs
+    /// whose span covers it in key order. Adjacent touching segments name
+    /// different runs, so there are at most two per run. A function of the
+    /// run map, left out of equality, hashing and ordering.
+    constant_cover: imbl::OrdMap<(PointerBlock, i64), CoverSegment>,
     /// The live slots of every run together; a function of the runs.
     run_cells: u64,
     /// The logical cell map, built on first need when there are runs. A
@@ -810,6 +815,24 @@ thread_local! {
     /// scaling regressions' measure of a lookup, which positions in the run
     /// map without charging work.
     static RUNS_VISITED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// The bytes `[start, end)` of one block covered by exactly these runs'
+/// spans; see `CellStore::constant_cover`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CoverSegment {
+    end: i64,
+    runs: Vec<RunKey>,
+}
+
+/// The bytes a run based at a constant offset spans, first slot to last,
+/// as `[start, end)`; `None` for any other run.
+fn constant_span(run: &CellRun) -> Option<(i64, i64)> {
+    let PointerOffsetTerm::Constant(base) = run.base.offset else {
+        return None;
+    };
+    let span = i64::try_from(run.span()).unwrap_or(i64::MAX);
+    Some((base, base.saturating_add(span).saturating_add(1)))
 }
 
 /// One held run's slot at a pointer.
@@ -905,18 +928,14 @@ impl CellStore {
     /// Every held run that has a slot, live or not, spelled exactly
     /// `pointer`, in key order. Only runs anchored where such a slot can be
     /// are visited: a constant pointer is a slot only of a run based at a
-    /// constant at most `run_span` bytes below it, and any other
-    /// pointer only of a run based at the pointer's own offset or at the
-    /// offset it adds a constant to.
+    /// constant whose span holds it, which the constant cover names exactly,
+    /// and any other pointer only of a run based at the pointer's own offset
+    /// or at the offset it adds a constant to.
     fn slots_at<'a>(&'a self, pointer: &'a Pointer) -> impl Iterator<Item = SlotAt<'a>> + 'a {
         let block = &pointer.block;
-        let (first, second) = match &pointer.offset {
+        let (covering, first, second) = match &pointer.offset {
             PointerOffsetTerm::Constant(offset) => {
-                let low = offset.saturating_sub(i64::try_from(self.run_span).unwrap_or(i64::MAX));
-                (
-                    Some((RunAnchor::Constant(low), RunAnchor::Constant(*offset))),
-                    None,
-                )
+                (self.constant_runs_covering(block, *offset), None, None)
             }
             offset => {
                 let own = RunAnchor::Symbolic(offset.clone());
@@ -928,15 +947,20 @@ impl CellStore {
                     _ => None,
                 };
                 (
+                    Vec::new(),
                     Some((own.clone(), own)),
                     shifted.map(|anchor| (anchor.clone(), anchor)),
                 )
             }
         };
-        first
+        covering
             .into_iter()
-            .chain(second)
-            .flat_map(move |(low, high)| self.runs_anchored(block, low, high))
+            .chain(
+                first
+                    .into_iter()
+                    .chain(second)
+                    .flat_map(move |(low, high)| self.runs_anchored(block, low, high)),
+            )
             .filter_map(move |run| {
                 // Positioning in the run map is a persistent-map lookup, as a
                 // concrete cell's is, and is not charged; a visited run that
@@ -963,14 +987,173 @@ impl CellStore {
     /// Replaces the run at `key` with `run`, or removes it: a run with no
     /// live slot is retired rather than held.
     fn set_run(&mut self, key: &RunKey, run: Option<CellRun>) {
-        if let Some(old) = self.runs.remove(key) {
+        let old = self.runs.remove(key);
+        if let Some(old) = &old {
             self.run_cells -= old.live_count();
         }
-        if let Some(run) = run.filter(|run| run.live_count() > 0) {
-            self.run_span = self.run_span.max(run.span());
+        let run = run.filter(|run| run.live_count() > 0);
+        // A run's key fixes its slots, so the cover changes only when a key
+        // arrives or leaves.
+        match (&old, &run) {
+            (Some(old), None) => self.uncover(key, old),
+            (None, Some(run)) => self.cover(key, run),
+            _ => {}
+        }
+        if let Some(run) = run {
             self.run_cells += run.live_count();
             self.runs.insert(key.clone(), run);
         }
+    }
+
+    /// The held runs based at a constant offset whose span holds `offset`,
+    /// in key order: one lookup of the cover segment holding it.
+    fn constant_runs_covering<'a>(&'a self, block: &PointerBlock, offset: i64) -> Vec<&'a CellRun> {
+        let Some(((segment_block, _), segment)) = self
+            .constant_cover
+            .range(..=(block.clone(), offset))
+            .next_back()
+        else {
+            return Vec::new();
+        };
+        if segment_block != block || segment.end <= offset {
+            return Vec::new();
+        }
+        segment
+            .runs
+            .iter()
+            .map(|key| self.runs.get(key).expect("a covering run is held"))
+            .collect()
+    }
+
+    /// Splits the cover segment of `block` holding `offset`, if one does
+    /// and starts below it, so that a segment starts there.
+    fn split_cover_at(&mut self, block: &PointerBlock, offset: i64) {
+        let Some(((segment_block, start), segment)) = self
+            .constant_cover
+            .range(..(block.clone(), offset))
+            .next_back()
+            .map(|(key, segment)| (key.clone(), segment.clone()))
+        else {
+            return;
+        };
+        if segment_block != *block || segment.end <= offset {
+            return;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        self.constant_cover.insert(
+            (block.clone(), start),
+            CoverSegment {
+                end: offset,
+                runs: segment.runs.clone(),
+            },
+        );
+        self.constant_cover.insert((block.clone(), offset), segment);
+    }
+
+    /// Joins the segment of `block` ending at `offset` with the one starting
+    /// there when they name the same runs.
+    fn join_cover_at(&mut self, block: &PointerBlock, offset: i64) {
+        let Some(after) = self.constant_cover.get(&(block.clone(), offset)).cloned() else {
+            return;
+        };
+        let Some(((before_block, before_start), before)) = self
+            .constant_cover
+            .range(..(block.clone(), offset))
+            .next_back()
+            .map(|(key, segment)| (key.clone(), segment.clone()))
+        else {
+            return;
+        };
+        if before_block != *block || before.end != offset || before.runs != after.runs {
+            return;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        self.constant_cover.remove(&(block.clone(), offset));
+        self.constant_cover.insert(
+            (block.clone(), before_start),
+            CoverSegment {
+                end: after.end,
+                runs: before.runs,
+            },
+        );
+    }
+
+    /// Files a newly held run under the bytes it spans, if it is based at a
+    /// constant offset. Costs the segments its span meets.
+    fn cover(&mut self, key: &RunKey, run: &CellRun) {
+        let Some((start, end)) = constant_span(run) else {
+            return;
+        };
+        let block = &run.base.block;
+        self.split_cover_at(block, start);
+        self.split_cover_at(block, end);
+        let met = self
+            .constant_cover
+            .range((block.clone(), start)..(block.clone(), end))
+            .map(|((_, segment_start), segment)| (*segment_start, segment.clone()))
+            .collect::<Vec<_>>();
+        crate::instrumentation::record_deterministic_work(met.len() + 1);
+        let mut cursor = start;
+        for (segment_start, mut segment) in met {
+            if cursor < segment_start {
+                self.constant_cover.insert(
+                    (block.clone(), cursor),
+                    CoverSegment {
+                        end: segment_start,
+                        runs: vec![key.clone()],
+                    },
+                );
+            }
+            let position = segment
+                .runs
+                .binary_search(key)
+                .expect_err("a newly held run is in no segment");
+            segment.runs.insert(position, key.clone());
+            cursor = segment.end;
+            self.constant_cover
+                .insert((block.clone(), segment_start), segment);
+        }
+        if cursor < end {
+            self.constant_cover.insert(
+                (block.clone(), cursor),
+                CoverSegment {
+                    end,
+                    runs: vec![key.clone()],
+                },
+            );
+        }
+        self.join_cover_at(block, start);
+        self.join_cover_at(block, end);
+    }
+
+    /// Withdraws a run no longer held from the bytes it spans. Costs the
+    /// segments its span meets.
+    fn uncover(&mut self, key: &RunKey, run: &CellRun) {
+        let Some((start, end)) = constant_span(run) else {
+            return;
+        };
+        let block = &run.base.block;
+        let met = self
+            .constant_cover
+            .range((block.clone(), start)..(block.clone(), end))
+            .map(|((_, segment_start), segment)| (*segment_start, segment.clone()))
+            .collect::<Vec<_>>();
+        crate::instrumentation::record_deterministic_work(met.len() + 1);
+        for (segment_start, mut segment) in met {
+            let position = segment
+                .runs
+                .binary_search(key)
+                .expect("a held run is in every segment of its span");
+            segment.runs.remove(position);
+            if segment.runs.is_empty() {
+                self.constant_cover.remove(&(block.clone(), segment_start));
+            } else {
+                self.constant_cover
+                    .insert((block.clone(), segment_start), segment);
+            }
+        }
+        self.join_cover_at(block, start);
+        self.join_cover_at(block, end);
     }
 
     /// Applies each `(key, run)` replacement, after a walk that collected
@@ -1486,10 +1669,7 @@ impl CellStore {
         // Only the candidate runs survive, so the run map is rebuilt from
         // them alone, as the concrete map is.
         let candidate_runs = self.visited_runs(Some(candidates));
-        let mut kept_runs = Self {
-            run_span: self.run_span,
-            ..Self::default()
-        };
+        let mut kept_runs = Self::default();
         for (key, mut run) in candidate_runs {
             visited += 1;
             let (decision, answer) = run_rule(&run);
@@ -1505,6 +1685,7 @@ impl CellStore {
         }
         if kept_runs.runs != self.runs {
             self.runs = kept_runs.runs;
+            self.constant_cover = kept_runs.constant_cover;
             self.run_cells = kept_runs.run_cells;
         }
         visited
@@ -1604,10 +1785,7 @@ impl CellStore {
         mut map: impl FnMut(&Pointer, &CValue) -> (Pointer, CValue),
         mut singled_out: impl FnMut(&CellRun) -> Option<u32>,
     ) -> Self {
-        let mut result = Self {
-            run_span: self.run_span,
-            ..Self::default()
-        };
+        let mut result = Self::default();
         let mut rewritten = Vec::new();
         for (key, run) in self.runs.iter() {
             // The singled-out slot is set aside before the rest is asked as a
@@ -1746,7 +1924,7 @@ impl CellStore {
         Self {
             concrete,
             runs: self.runs.clone(),
-            run_span: self.run_span,
+            constant_cover: self.constant_cover.clone(),
             run_cells: self.run_cells,
             logical: OnceLock::new(),
         }
@@ -2110,6 +2288,11 @@ mod tests {
                 assert_eq!(logical_model(&store), model, "seed {seed_value}");
                 assert_eq!(store.len(), model.len());
                 assert!(store.runs().all(|run| run.live_count() > 0));
+                assert_eq!(
+                    store.constant_cover,
+                    cover_of_runs(&store),
+                    "seed {seed_value}: the cover is a function of the runs"
+                );
                 for pointer in &pointers {
                     assert_eq!(store.get(pointer), model.get(pointer).cloned());
                 }
@@ -2265,6 +2448,59 @@ mod tests {
         assert_eq!(
             left.differing_pointers(&right),
             model_diff(&left_model, &right_model)
+        );
+    }
+
+    /// The constant cover built afresh from `store`'s runs alone.
+    fn cover_of_runs(store: &CellStore) -> imbl::OrdMap<(PointerBlock, i64), CoverSegment> {
+        let mut fresh = CellStore::new();
+        for run in store.runs() {
+            fresh.set_run(&run.key(), Some(run.clone()));
+        }
+        fresh.constant_cover
+    }
+
+    /// One run spanning a million slots beside 1 to 1000 small runs of the
+    /// same block: a constant load of a small run's slot, or of a byte no
+    /// run spans, visits only the runs whose span holds it. Before the
+    /// cover, a constant pointer was looked up among every constant-based
+    /// run of its block starting at most the largest held span below it,
+    /// which the one long run made every small run beneath the probe.
+    #[test]
+    fn a_long_run_does_not_widen_constant_lookups() {
+        let block = PointerBlock::Concrete("cell-store-long-run".to_string());
+        let source = source(11);
+        let samples = [1usize, 10, 100, 1000].map(|small| {
+            // No two of these runs share a slot, so each is added whole.
+            let mut store = CellStore::new();
+            for index in 0..small {
+                store.add_run(run(constant(&block, 8 * index as i64), 4, 1, &source));
+            }
+            store.add_run(run(
+                constant(&block, 8 * small as i64),
+                4,
+                1_000_000,
+                &source,
+            ));
+            let probe = constant(&block, 8 * (small / 2) as i64);
+            let gap = constant(&block, 8 * (small / 2) as i64 + 4);
+            let long_slot = constant(&block, 8 * small as i64 + 4 * 500_000);
+            let visited = work(|| {
+                for _ in 0..16 {
+                    assert!(store.get(&probe).is_some());
+                    assert!(store.get(&gap).is_none());
+                    assert!(store.get(&long_slot).is_some());
+                }
+            });
+            (small, visited)
+        });
+        let (_, visited) = samples[0];
+        // Each round visits at most the probe's run and the long run, a few
+        // times each.
+        assert!(visited <= 16 * 5, "{samples:?}");
+        assert!(
+            samples.iter().all(|(_, sample)| *sample == visited),
+            "constant lookups grow with the small runs: {samples:?}"
         );
     }
 
