@@ -4880,7 +4880,9 @@ pub(crate) fn count_cells_collected<R>(operation: impl FnOnce() -> R) -> (R, usi
 /// names, so a caller relating two terms by shared variables still meets
 /// them through the variables every slot has. Where the slots have no such
 /// shared variable — a run over a block no variable names — or are named at
-/// different memories, every slot is visited.
+/// different memories, every slot is visited, except in a symbolic
+/// static-storage run, whose slots are never visited to collect its
+/// variables ([`symbolic_storage_run_shared_variables`]).
 ///
 /// [`run_shape_representatives`]: crate::kernel::reasoning::memory_resolution::run_shape_representatives
 fn collect_cell_run_bitvector_variables(
@@ -4915,6 +4917,9 @@ fn collect_run_slot_bitvector_variables(
 fn run_representative_variables(
     run: &crate::kernel::primitives::CellRun,
 ) -> Option<BTreeSet<Variable>> {
+    if run.value_mode() == crate::kernel::primitives::RunValueMode::SymbolicStorage {
+        return Some(symbolic_storage_run_shared_variables(run));
+    }
     let representatives =
         crate::kernel::reasoning::memory_resolution::run_shape_representatives(run)?;
     let mut shared = BTreeSet::new();
@@ -4925,6 +4930,40 @@ fn run_representative_variables(
         .iter()
         .any(|variable| !crate::kernel::is_load_variable(variable))
         .then_some(shared)
+}
+
+/// The variables every slot of a symbolic static-storage run mentions
+/// besides its own load variable, found without naming any slot.
+///
+/// Slot `i` holds the entry value of storage the function knows nothing
+/// about ([`crate::kernel::eval::symbolic_storage_cell_value`]): its own load
+/// of the slot's pointer in the run's source, which holds only the storage's
+/// block, spelled as a load variable (or a symbolic pointer named by one).
+/// What such a value mentions is that load variable and, through it, the
+/// source and the slot's pointer; every slot's pointer is the base plus a
+/// constant, so the base's variables and the source's are what every slot
+/// shares. They are returned here, and the slots' own load variables are
+/// left out, for the reasons [`collect_cell_run_bitvector_variables`] gives
+/// for a run's non-representative slots: they are in the reserved load
+/// range, so no caller avoiding what a memory mentions can collide with one,
+/// and a substitution of one finds its slot by the registry
+/// (`run_slot_named_by_load_variable`), not by these variables. Unlike a
+/// representative-backed run, a global array's slots often share no variable
+/// at all, so a premise search that grows its premises by shared variables
+/// does not reach this memory from a fact about one element; such a search
+/// only chooses premises, so it can miss a proof but not admit one. Naming each
+/// slot to collect its variable instead made every collection over a
+/// million-element global array mint a million load identities, exhausting
+/// the load registry at function entry, and cost the array's length per
+/// collection. A slot's identity is minted when the slot is first read.
+fn symbolic_storage_run_shared_variables(
+    run: &crate::kernel::primitives::CellRun,
+) -> BTreeSet<Variable> {
+    crate::instrumentation::record_deterministic_work(1);
+    let mut shared = BTreeSet::new();
+    collect_pointer_bitvector_variables(run.base(), &mut shared);
+    collect_shared_memory_bitvector_variables(run.source(), &mut shared);
+    shared
 }
 
 /// How many of a snapshot's entries (blocks, concrete cells, runs, union

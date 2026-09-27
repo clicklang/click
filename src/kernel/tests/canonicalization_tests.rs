@@ -1195,9 +1195,10 @@ fn variable_collection_after_a_store_costs_the_store() {
 }
 
 /// The same for a store into a symbolic static array: its elements are one
-/// run whose slots mention no variable but their own load variables, so the
-/// run's variables are counted slot by slot, and a store changes the counts
-/// by the one slot it writes rather than by the whole run.
+/// run whose slots mention no variable but their own load variables, and a
+/// collection leaves those out rather than naming every slot to find them,
+/// so neither a collection nor a store's collection grows with the array or
+/// mints a load identity. The stored value's variable arrives with the store.
 #[test]
 fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
     let block = PointerBlock::Concrete("symbolic-array-history".to_string());
@@ -1205,7 +1206,8 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(offset),
     };
-    let samples = [16u32, 64, 256, 1024].map(|elements| {
+    let samples = [16u32, 64, 256, 1024, 1_000_000].map(|elements| {
+        let _session = crate::kernel::VerificationSession::enter();
         let size = 4 * elements;
         let source = crate::kernel::intern_c_memory(
             CMemory::new().with_block_without_derivation(block.clone(), size),
@@ -1216,44 +1218,51 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         else {
             panic!("a symbolic array over a fresh block is one run");
         };
-        let own_variable = |index: i64| match memory.cells.get(&at(4 * index)) {
-            Some(CValue::Int32(Bitvector32Term::Variable(variable))) => variable,
-            other => panic!("an element holds its load variable, not {other:?}"),
-        };
         let before = crate::kernel::intern_c_memory(memory.clone());
-        crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
-        let mut variables = BTreeSet::new();
-        crate::kernel::reasoning::collect_bitvector_variables(
-            &Bitvector32Term::MemoryLoad(before, Box::new(at(0))),
-            &mut variables,
+        let registered = crate::kernel::eval::load_variable_registry_len();
+        let (variables, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut variables = BTreeSet::new();
+            crate::kernel::reasoning::collect_bitvector_variables(
+                &Bitvector32Term::MemoryLoad(before, Box::new(at(0))),
+                &mut variables,
+            );
+            variables
+        });
+        assert!(
+            variables.is_empty(),
+            "an unread element contributes no variable: {variables:?}"
         );
-        assert_eq!(variables.len(), elements as usize);
-        let overwritten = own_variable(0);
-        let last = own_variable(i64::from(elements) - 1);
+        assert_eq!(
+            crate::kernel::eval::load_variable_registry_len(),
+            registered,
+            "collecting a symbolic array's variables names none of its elements"
+        );
         let after = memory.clone().store(
             at(0),
             CValue::Int32(Bitvector32Term::Variable(Variable(7_900_000))),
         );
         let load =
             Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(at(4)));
-        let (variables, work) = crate::instrumentation::measure_deterministic_work(|| {
+        let registered = crate::kernel::eval::load_variable_registry_len();
+        let (variables, store_work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = BTreeSet::new();
             crate::kernel::reasoning::collect_bitvector_variables(&load, &mut variables);
             variables
         });
-        assert!(variables.contains(&Variable(7_900_000)));
-        assert!(
-            !variables.contains(&overwritten),
-            "the overwritten element's variable leaves"
+        assert_eq!(variables, BTreeSet::from([Variable(7_900_000)]));
+        assert_eq!(
+            crate::kernel::eval::load_variable_registry_len(),
+            registered,
+            "a store's collection names none of the array's elements"
         );
-        assert!(variables.contains(&last));
-        assert_eq!(variables.len(), elements as usize);
-        (elements, work)
+        (elements, entry_work, store_work)
     });
-    let (_, first) = samples[0];
+    let (_, first_entry, first_store) = samples[0];
     assert!(
-        samples.iter().all(|(_, work)| *work <= first + 4),
-        "a store's collection grows with the array's other elements: {samples:?}"
+        samples
+            .iter()
+            .all(|(_, entry, store)| *entry == first_entry && *store == first_store),
+        "a collection grows with the array's other elements: {samples:?}"
     );
 }
 

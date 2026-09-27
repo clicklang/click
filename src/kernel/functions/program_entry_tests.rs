@@ -398,3 +398,81 @@ fn a_symbolic_global_array_entry_costs_the_same_whatever_its_length() {
         );
     }
 }
+
+/// Entering a function over a global array, collecting the variables its
+/// entry state mentions, and one statement's store into an element and read
+/// of another cost the same whatever the array's length, and name exactly the
+/// elements read. Collecting the entry state's variables used to name every
+/// element to find its load variable, so a one-million-element array minted
+/// a million load identities at function entry and exhausted the load
+/// registry before the first statement.
+#[test]
+fn a_symbolic_global_array_names_only_the_elements_a_function_reads() {
+    for element_type in [CType::UInt8, CType::Int32, CType::Int32Pointer] {
+        let width = i64::from(element_type.byte_width());
+        let samples = [8u32, 1_000, 1_000_000].map(|length| {
+            // Each sample is its own verification, so none reuses another's
+            // named loads or memoized answers.
+            let _session = crate::kernel::VerificationSession::enter();
+            let function = function_with_global_array(element_type, length);
+            let registered = crate::kernel::eval::load_variable_registry_len;
+            let before_entry = registered();
+            let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
+                let entry = initialize_c_function_globals(&CState::new(), &function);
+                let mut variables = std::collections::BTreeSet::new();
+                crate::kernel::reasoning::collect_c_state_bitvector_variables(
+                    &entry,
+                    &mut variables,
+                );
+                entry
+            });
+            let entry_named = registered() - before_entry;
+            let base = CMemory::global_pointer("buf");
+            let element = |index: i64| Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Constant(index * width),
+            };
+            let before_statement = registered();
+            let (read, statement_work) = crate::instrumentation::measure_deterministic_work(|| {
+                let stored = entry
+                    .memory()
+                    .clone()
+                    .store(element(5), zero_element(element_type));
+                let read = stored.load(&element(6));
+                let mut variables = std::collections::BTreeSet::new();
+                crate::kernel::reasoning::collect_memory_bitvector_variables(
+                    &stored,
+                    &mut variables,
+                );
+                read
+            });
+            assert!(
+                matches!(read, CExpressionOutcome::Value(_)),
+                "{element_type:?}[{length}] element 6 reads its entry value: {read:?}"
+            );
+            let statement_named = registered() - before_statement;
+            (
+                length,
+                entry_work,
+                entry_named,
+                statement_work,
+                statement_named,
+            )
+        });
+        let (_, entry_work, entry_named, statement_work, statement_named) = samples[0];
+        assert!(
+            samples
+                .iter()
+                .all(|sample| (sample.1, sample.2, sample.3, sample.4)
+                    == (entry_work, entry_named, statement_work, statement_named)),
+            "{element_type:?} entry or statement cost depends on the array's length \
+             (length, entry work, identities named at entry, statement work, identities \
+             named by the statement): {samples:?}"
+        );
+        assert!(
+            statement_named <= 2,
+            "{element_type:?} a statement reading one element names at most its load \
+             and the stored cell's: {samples:?}"
+        );
+    }
+}
