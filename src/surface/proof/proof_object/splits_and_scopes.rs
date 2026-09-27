@@ -443,8 +443,18 @@ impl<'a> Proof<'a> {
         &self,
         both: &ProofBoth,
     ) -> Result<Self, ClickError> {
-        self.try_authoritative_linear_script(&[ProofTactic::Both(both.clone())])?
-            .ok_or_else(|| self.step_error("`both` requires complete proofs of both conjuncts"))
+        // The `both` sits at this proof's own site, the claim's source tactic
+        // its driver attributed, so each arm tactic is addressed inside it
+        // (`tactic 3 > left arm tactic 1`) exactly as a `both` written in a
+        // block addresses its arms. Re-addressing it as the first tactic of
+        // a block would drop the claim-level position and leave the arms
+        // without a source path.
+        self.try_addressed_linear_script(
+            &[ProofTactic::Both(both.clone())],
+            std::slice::from_ref(self.site()),
+            &mut None,
+        )?
+        .ok_or_else(|| self.step_error("`both` requires complete proofs of both conjuncts"))
     }
 
     pub(in crate::surface::proof) fn split_focused_both(

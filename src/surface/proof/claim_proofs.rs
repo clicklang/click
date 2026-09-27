@@ -3101,6 +3101,13 @@ pub(super) fn finish_ordered_proof<'a>(
                                     ) => None,
                                 };
                                 let mut retained_certificate = None;
+                                // A `both` that closes no goal and was refused
+                                // for exactly one goal reports that refusal,
+                                // which names the arm tactic by its source
+                                // path. With several candidate goals no one
+                                // refusal is the reader's, so the summary
+                                // below stands.
+                                let mut both_errors = Vec::new();
                                 for (claim_index, claim) in claims.iter().enumerate() {
                                     if closures[claim_index].is_closed() {
                                         continue;
@@ -3190,7 +3197,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &rewritten_claim_proofs[claim_index]
                                     {
                                         match if let PostExecutionTactic::Both(both) = post_tactic {
-                                            rewritten.apply_both_source(both)
+                                            rewritten
+                                                .at_source_tactic(*source_index)
+                                                .apply_both_source(both)
                                         } else {
                                             rewritten.apply_step(normalization_step.clone())
                                         } {
@@ -3206,7 +3215,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     );
                                                 closed_any = true;
                                             }
-                                            Err(_) => check_verification_deadline()?,
+                                            Err(error) => {
+                                                check_verification_deadline()?;
+                                                if matches!(
+                                                    post_tactic,
+                                                    PostExecutionTactic::Both(_)
+                                                ) {
+                                                    both_errors.push(error);
+                                                }
+                                            }
                                         }
                                         continue;
                                     }
@@ -3225,7 +3242,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                         let candidate = if let PostExecutionTactic::Both(both) =
                                             post_tactic
                                         {
-                                            focused.apply_both_source(both)
+                                            focused
+                                                .at_source_tactic(*source_index)
+                                                .apply_both_source(both)
                                         } else if let PostExecutionTactic::ArithmeticUsing(
                                             surface_premises,
                                         ) = post_tactic
@@ -3363,12 +3382,21 @@ pub(super) fn finish_ordered_proof<'a>(
                                             closed_any = true;
                                         }
                                         None => {
-                                            drop(last_error);
                                             check_verification_deadline()?;
+                                            if matches!(post_tactic, PostExecutionTactic::Both(_))
+                                                && let Some(error) = last_error
+                                            {
+                                                both_errors.push(error);
+                                            }
                                         }
                                     }
                                 }
                                 if !closed_any {
+                                    if both_errors.len() == 1
+                                        && let Some(error) = both_errors.pop()
+                                    {
+                                        return Err(error);
+                                    }
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `{closer_name}` did not prove any current proposition goal"
                                     )));
