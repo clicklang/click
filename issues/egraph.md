@@ -221,6 +221,32 @@ risky part first:
 If this stalls, a different representation of loaded pointers is on the
 table; the constructor and decoder are what make trying one cheap.
 
+### Provenance is a class attribute, not a spelling
+
+The storage-relative form did two jobs at once: it named a loaded pointer,
+and through its block it asserted where the pointer could point. That second
+job was manufactured from the spelling it was read through, which is also why
+it was inconsistent across spellings. An opaque identity asserts nothing, so
+the trial flip lost every separation that rested on that implicit claim.
+
+Provenance belongs to the value, so equality transmits it, and it is derived
+from facts rather than from spelling. The rule it rests on:
+
+> A pointer value obtained at snapshot S cannot point into an object whose
+> address first became reachable after S.
+
+- **Birth snapshot.** Recorded when a load is named: the snapshot it was read
+  at. The class of equal pointers takes the earliest birth snapshot of its
+  members, the stronger true claim.
+- **Distinctness consults it.** A heap allocation, temporary, or local that
+  did not exist at S is distinct from a pointer born at S. A local whose
+  address is never taken is distinct from every pointer (landed: the
+  never-address-taken case of this rule).
+- **What it does not cover.** Code that finds facts, effects, or resources by
+  exact block (the loop effect summary that `transport` no longer finds, for
+  instance) needs lookup by pointer class, not provenance. The trial
+  checklist is sorted into those two kinds.
+
 ## Open questions (from the design note)
 
 - **How `rewrite` is checked.** Its substitution is built in surface code, and
