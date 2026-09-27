@@ -698,6 +698,41 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// An unclosed goal shows the facts bearing on it: the chain through `j`
+    /// to the constant is listed, the fact about the unrelated `y` is not,
+    /// and the whole-context section a step refusal carries stays hidden.
+    #[test]
+    fn an_unclosed_goal_shows_the_facts_bearing_on_it() {
+        let directory =
+            std::env::temp_dir().join(format!("click-goal-proof-context-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("goal.c"),
+            "int32 bump(int32 x, int32 j, int32 y) { return x + 1; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("goal.click");
+        fs::write(
+            &sidecar,
+            "verifying \"goal.c\";\nint32 bump(int32 x, int32 j, int32 y) {\n    requires 0 <= x and x <= j;\n    requires j < 10;\n    requires y > 3;\n    ensures result == x + 2;\n} by { execute(); simp(); }\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("\n  proof context\n  pure facts: [0 <= x, x <= j, j < 10]"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("y > 3") && !error.contains("3 < y"),
+            "{error}"
+        );
+        assert!(!error.contains("resource facts: []"), "{error}");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn trace_verifies_only_the_named_function() {
         let directory = std::env::temp_dir().join(format!(

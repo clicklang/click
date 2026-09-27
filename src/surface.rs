@@ -6742,6 +6742,40 @@ impl VerifiedPureTheorem {
     }
 }
 
+/// The reason with its proof context taken out, and the context lines the
+/// command line shows.
+///
+/// A refusal's whole-context `proof context:` section is dropped with
+/// everything after it, as it always was: it lists the entire ambient context
+/// in kernel spellings. An unclosed goal's section
+/// ([`diagnostics::GOAL_PROOF_CONTEXT_HEADER`]) lists only the facts bearing
+/// on the goal, so its non-empty lists are shown. What follows the lists is
+/// the enclosing failure's own premise and search report, which the full
+/// report and `--trace-proof` carry; it is dropped here as before.
+fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
+    let whole = reason.find("\nproof context:");
+    let goal_header = format!("\n{}", diagnostics::GOAL_PROOF_CONTEXT_HEADER);
+    let goal = reason.find(&goal_header);
+    match (whole, goal) {
+        (Some(whole), goal) if goal.is_none_or(|goal| whole < goal) => {
+            (&reason[..whole], Vec::new())
+        }
+        (_, Some(goal)) => {
+            let lists = reason[goal + goal_header.len()..]
+                .lines()
+                .map(str::trim)
+                .skip_while(|line| line.is_empty())
+                .take_while(|line| {
+                    line.starts_with("pure facts: ") || line.starts_with("resource facts: ")
+                })
+                .filter(|line| !line.ends_with(": []"))
+                .collect();
+            (&reason[..goal], lists)
+        }
+        _ => (reason, Vec::new()),
+    }
+}
+
 /// Split only diagnostic context separators, not colons in Click binders,
 /// quoted source, or nested expressions.
 fn concise_error_segments(reason: &str) -> Vec<&str> {
@@ -6956,7 +6990,7 @@ impl ClickError {
             .map_or(self.message.as_str(), |diagnostic| {
                 diagnostic.reason.as_str()
             });
-        let reason = reason.split("\nproof context:").next().unwrap_or(reason);
+        let (reason, proof_context) = split_proof_context(reason);
         let requirement_reason = self
             .missing_tactic_requirement
             .as_ref()
@@ -7005,6 +7039,16 @@ impl ClickError {
                 .map(str::trim)
                 .filter(|line| !line.is_empty())
             {
+                report.push_str("\n  ");
+                report.push_str(line);
+            }
+        }
+        // The facts the refusal was checked against, as the library message
+        // lists them: each list is already bounded by the diagnostic item
+        // limit, and an empty list says nothing the reader can use.
+        if !proof_context.is_empty() {
+            report.push_str("\n  proof context");
+            for line in proof_context {
                 report.push_str("\n  ");
                 report.push_str(line);
             }

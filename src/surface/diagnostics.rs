@@ -641,6 +641,95 @@ contract claims are closed.
     .to_string()
 }
 
+/// The pure facts relevant to `goal`: those sharing a variable with it,
+/// directly or through a chain of facts that share variables (`i <= j` and
+/// `j < 1000` both bear on a goal about `i`), in their original order. A
+/// conjunction is listed as its conjuncts, each judged on its own, so a
+/// `requires` that joins a relevant bound with an unrelated one lists the
+/// bound alone and spells it as the condition it is.
+///
+/// A fact over none of the goal's variables cannot have been the missing
+/// premise of a closure that failed on it, so listing it only pushes the
+/// relevant ones past the item limit. The walk is over a variable-to-fact
+/// index, so it reads each fact's variables once.
+fn pure_facts_relevant_to(goal: &Proposition, facts: &[Proposition]) -> Vec<Proposition> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let variables_of = |proposition: &Proposition| {
+        let mut variables = BTreeSet::new();
+        crate::kernel::planning_api::collect_proposition_bitvector_variables(
+            proposition,
+            &mut variables,
+        );
+        variables
+    };
+    let mut conjuncts = Vec::new();
+    let mut pending_facts = facts.iter().rev().collect::<Vec<_>>();
+    while let Some(fact) = pending_facts.pop() {
+        match fact {
+            Proposition::And(left, right) => {
+                pending_facts.push(right);
+                pending_facts.push(left);
+            }
+            other => conjuncts.push(other),
+        }
+    }
+    let facts = conjuncts;
+    let fact_variables = facts
+        .iter()
+        .map(|fact| variables_of(fact))
+        .collect::<Vec<_>>();
+    let mut facts_by_variable = BTreeMap::<crate::kernel::Variable, Vec<usize>>::new();
+    for (index, variables) in fact_variables.iter().enumerate() {
+        for variable in variables {
+            facts_by_variable.entry(*variable).or_default().push(index);
+        }
+    }
+    let mut reached = variables_of(goal);
+    let mut pending = reached.iter().copied().collect::<Vec<_>>();
+    let mut included = BTreeSet::new();
+    while let Some(variable) = pending.pop() {
+        for index in facts_by_variable.get(&variable).into_iter().flatten() {
+            if included.insert(*index) {
+                for next in &fact_variables[*index] {
+                    if reached.insert(*next) {
+                        pending.push(*next);
+                    }
+                }
+            }
+        }
+    }
+    included
+        .into_iter()
+        .map(|index| facts[index].clone())
+        .collect()
+}
+
+/// The header of the proof context an unclosed goal lists: the facts bearing
+/// on that goal (`pure_facts_relevant_to`). Unlike the whole-context
+/// `proof context:` other refusals carry, the command line shows it.
+pub(crate) const GOAL_PROOF_CONTEXT_HEADER: &str = "proof context for the goal:";
+
+/// The proof context of an unclosed goal: the pure facts bearing on `goal`
+/// (every fact when the goal has no kernel form) and the held resources,
+/// each list bounded by the diagnostic item limit.
+pub(super) fn describe_goal_proof_context(
+    goal: Option<&Proposition>,
+    pure_facts: &[Proposition],
+    resource_facts: &[CResourceFact],
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let relevant = match goal {
+        Some(goal) => pure_facts_relevant_to(goal, pure_facts),
+        None => pure_facts.to_vec(),
+    };
+    format!(
+        "{GOAL_PROOF_CONTEXT_HEADER}\n  pure facts: {}\n  resource facts: {}",
+        describe_context_pure_and_execution_facts(&relevant, &[], parameters, arguments),
+        describe_resource_facts(resource_facts, parameters, arguments)
+    )
+}
+
 pub(super) fn describe_proof_context(
     pure_facts: &[Proposition],
     resource_facts: &[CResourceFact],

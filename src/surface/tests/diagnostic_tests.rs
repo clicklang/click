@@ -1030,7 +1030,7 @@ fn identical_load_renders_name_distinct_snapshot_loads() {
         message.contains("`old(p[0])` reads function entry"),
         "{message}"
     );
-    assert!(message.contains("proof context:"), "{message}");
+    assert!(message.contains("proof context for the goal:"), "{message}");
     assert!(
         message.contains("resource facts: [owns p[0..2]"),
         "{message}"
