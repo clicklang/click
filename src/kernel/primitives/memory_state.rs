@@ -4790,6 +4790,32 @@ pub(crate) fn clear_never_address_taken_locals() {
 }
 
 #[cfg(test)]
+mod hidden_local_distinctness_tests {
+    use super::*;
+
+    /// A pointer value of any provenance is distinct from a local whose
+    /// address is never taken, and still not from one whose address is.
+    #[test]
+    fn a_pointer_value_never_reaches_a_local_whose_address_is_never_taken() {
+        set_never_address_taken_locals(BTreeSet::from(["hidden".to_string()]));
+        let hidden: PointerBlock = "local:hidden".into();
+        let taken: PointerBlock = "local:taken".into();
+        for value in [
+            PointerBlock::Symbolic(Variable(7)),
+            PointerBlock::FunctionSymbolic(Variable(8)),
+            PointerBlock::ExternalObject(Variable(9)),
+            PointerBlock::ExternalArgument,
+        ] {
+            assert!(value.proven_distinct(&hidden), "{value:?}");
+            assert!(hidden.proven_distinct(&value), "{value:?}");
+        }
+        assert!(!PointerBlock::Symbolic(Variable(7)).proven_distinct(&taken));
+        clear_never_address_taken_locals();
+        assert!(!PointerBlock::Symbolic(Variable(7)).proven_distinct(&hidden));
+    }
+}
+
+#[cfg(test)]
 mod contract_retirement_tests {
     use super::*;
 

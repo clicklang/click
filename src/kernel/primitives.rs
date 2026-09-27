@@ -550,6 +550,25 @@ impl PointerBlock {
     /// object the verifier introduced for a value the C abstract machine
     /// creates without naming it.
     pub(in crate::kernel) fn proven_distinct(&self, other: &Self) -> bool {
+        // A local whose address the function never takes is reachable by no
+        // pointer value at all: no symbolic, external, or function pointer
+        // can point into it, whatever the facts say, because no expression
+        // ever produced its address. This holds before the symbolic rule
+        // below, which is about where a pointer value may point.
+        let pointer_value_versus_hidden_local = |value: &Self, local: &Self| {
+            matches!(
+                value,
+                Self::Symbolic(_)
+                    | Self::FunctionSymbolic(_)
+                    | Self::ExternalArgument
+                    | Self::ExternalObject(_)
+            ) && super::primitives::block_is_never_address_taken_local(local)
+        };
+        if pointer_value_versus_hidden_local(self, other)
+            || pointer_value_versus_hidden_local(other, self)
+        {
+            return true;
+        }
         // A symbolic block is a logic variable that later facts may constrain
         // to any address, including a heap block named below (a contract
         // postcondition such as `result == destination` does exactly that).
