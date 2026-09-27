@@ -1,286 +1,222 @@
-# Equality closure (proposal)
+# Equality closure design
 
-Status: proposal, 2026-09-26. Nothing here is implemented. It inventories how
-the kernel and the tactics handle equality today, names the defect class the
-rbtree insert proof keeps hitting, and proposes replacing the per-site alias
-handling with one congruence-closure structure in the kernel.
+Status: revised plan, 2026-09-27. Persistent affine pointer classes and several
+consumer repairs exist; the unified closure described here is not yet built.
+The repository's `issues/egraph.md` owns milestones, regressions, the
+handoff checklist, and historical implementation anchors.
 
-## The defect class
+## Problem and scope
 
-A proof establishes that two terms are equal, most often two spellings of one
-pointer: a proof-arm binding `cid` and the C local `parent`, or `id` and the
-parameter `p`. The kernel then files facts, owned cells, and load names under
-whichever spelling produced them, and each lookup site decides for itself how
-much of the equality to consult. Four gaps in the rbtree campaign are this one
-class at four sites:
+A proved equality must have the same meaning at every kernel consumer.
+Currently facts, cells, and loads are indexed under particular spellings, and
+consumers recover different subsets of the known equalities through alias
+retries, graph walks, or local normalization. The rbtree insert proof exposed
+this at read permission, fold body facts, ownership consumption, and loads
+after stores. Local repairs now cover some fixtures but do not establish the
+general invariant.
 
-| Gap | Site | Local repair |
-|---|---|---|
-| 72 | read permission through an alias | `pointer_spellings` tries up to three spellings |
-| 74 | a fold's body fact lowered under the other spelling | substitute one pointer variable by one exact alias and retry |
-| open | fold consumption of cells owned under the other spelling | none; `without_fact_incrementally` never consults aliases |
-| open | `have id->word == 5` after `p->word = 5` with `p == id` | none; load variables are keyed by exact pointer spelling |
+Build one persistent equality service in the kernel, using congruence closure
+without saturation. Hypotheses, checked proof steps, and execution contribute
+equalities; congruence propagates them through registered applications. The
+service does not invent rewrite rules or search arithmetic identities.
 
-Each repair is local, one hop, and different. The next proof that reaches a
-new site, or a two-hop or displaced alias (`id + 8` against `p + 8`), finds
-the gap again.
+The first complete fragment is pointers and typed loads. Bitvector/integer
+applications, algebraic constructors, and pure-function applications follow
+as separately reviewed theory extensions. Ordering, general arithmetic, and
+cross-snapshot frame derivation remain outside the closure. A checked theorem
+from one of those procedures can contribute an equality to it.
 
-## Inventory
+## Semantic boundaries
 
-### Where equalities are stored
+### Stable names, contextual equality
 
-Everything lives in `PureFactContext` (`src/kernel/primitives.rs`, methods in
-`src/kernel/assumptions.rs` and `src/kernel/assumptions/`). Contexts are
-persistent (path-copying AVL maps in `src/persistent.rs`) and cloned at every
-branch. One entry point, `assume_condition`, files a condition fact into every
-index. There are about eight separate equality structures, split by sort:
+Term IDs identify assumption-free syntax or an established assumption-free
+canonical form. Hash-cons nodes using stable child IDs, sorts, and operator
+payloads rather than repeatedly comparing deep terms. Global load naming
+cannot use one proof path's equalities: the registry is shared across paths.
+Two names may be distinct while their values are equal in a particular path.
 
-- **Pointer blocks.** `pointer_block_aliases` (and a by-offset copy) record
-  true cross-block `PointerEqual` facts, keyed by the exact full pointer,
-  offset included. `exact_pointer_aliases` is deliberately one hop.
-- **Pointer offsets.** `pointer_offset_aliases` (and a by-root copy) record
-  same-block `PointerOffsetEqual` facts, one hop.
-- **Pointer equality walks.** `has_indexed_pointer_equality_path` and
-  `pointer_equality_component` search both alias indexes breadth-first. A
-  third walk, `has_pointer_equality_path` (`condition_reasoning/order_paths.rs`),
-  is not indexed. It rescans every condition fact at each frontier node, and
-  it is the only place with a displacement rule (`a + d == b + d` from
-  `a == b`). `simp`'s pointer decider and memory resolution use it.
-- **32-bit equalities.** Three structures:
-  - a lazy adjacency graph, `bitvector_equality_facts`, searched depth-first.
-    It is discarded on every `assume_condition`, so the first query after an
-    insertion rebuilds it from every condition fact.
-  - `ConstantClasses`, the one union-find-like structure: union by size, with
-    constants propagated to compound users. It grows only, and a withdrawn
-    fact triggers a rebuild.
-  - `exact_constant_equalities`, one hop.
-- **64-bit equalities.** A separate persistent adjacency map,
-  `bitvector64_equality_facts`, with a recursive walk capped at depth 128.
-- **Algebraic equalities.** Constructor injectivity and no-confusion indexes,
-  one hop. `AlgebraicEqual` is decided by exact lookup only, with no
-  transitivity.
-- **Ad-hoc congruence.** `bitvector_terms_equal_for_transport` and
-  `pointer_offset_terms_equal_for_transport` recurse operand-wise over
-  matching operators.
+Union-find state, application signatures, parent-use lists, derived class
+attributes, and equality-sensitive resource indexes belong to the persistent
+path context. Forking shares the prefix; adding an equality to a branch must
+not change its parent or sibling. Adding equalities must never invalidate a
+previous equality answer.
 
-### Where terms are named
+### Pointer values and address offsets
 
-- **Load variables.** `mint_load_variable_identity` and the load-variable
-  registry key a load by `(memory, pointer)` with the exact pointer spelling.
-  `load(M, id + 8)` and `load(M, p + 8)` get two variables, with no equality
-  stated between them. That is the `have id->word` gap.
-- **Canonical forms.** `canonical_term` / `canonical_condition` are
-  assumption-free and structural, so "equal canonical forms" means "same
-  spelling".
-- **Naming epochs.** `last_same_point` in the resource tracker is also
-  assumption-free, and keyed by the exact pointer.
-- **Minted pointers.** `resolve_minted_load_pointer` rewrites load variables in
-  a pointer's offset back to loads by scanning every proposition fact on every
-  call. It runs inside `pointer_spellings`, so on every resource read and
-  write lookup.
+A loaded pointer denotes the stored value independently of the storage address
+used to obtain it. Replace the current storage-relative encoding with an opaque
+value identity. Constructor and decoder must change coherently: expose the
+load identity/origin and any subsequent pointer displacement through a semantic
+API. Consumers must not reconstruct a storage block plus scaled integer load.
+Pointee width determines subsequent C pointer arithmetic, not the identity of
+the pointer value just read.
 
-### Where lookups miss a proved-equal spelling
+The existing weighted pointer classes are useful groundwork:
+`base(member) = base(representative) + delta`. Exact affine normalization can
+relate displaced spellings such as `p + 8` and `(p + 4) + 4`. Preserve signedness,
+bit width, wrapping, and definedness obligations of the supported C semantics;
+do not distribute arithmetic through a wrapped index as if it were an
+unbounded integer.
 
-- **Resource consumption.** In `without_fact_incrementally`, candidates come
-  from `concrete_memory_start_candidates`, `direct_match_candidate_positions`
-  (memory keyed by `base.block`, instances by identity), and
-  `consume_fact_without_normalizing`. No step consults an alias. A comment
-  states the assumption: "Snapshot-insensitive matching cannot change a pointer
-  block". Composite and token arguments are compared up to proof;
-  instance identity and memory bases are not.
-- **Read and write permission.** These use the three `pointer_spellings`,
-  then a full scan per spelling.
-- **One-hop alias users.** Every caller of `exact_pointer_aliases` on its own:
-  loans, heap retirement, memory resolution, validity checks. All of them miss
-  two-hop and displaced aliases.
-- **Load naming.** The load-variable registry, `known_value`, and
-  `materialized_pointer_cell_load_variable` all use exact spellings.
+The representation must also handle same-block offset equalities and changes
+to the classes of offset atoms. The current block union-find ignores equations
+inside one class, so it is not the whole pointer theory. Specify how these
+relations notify application and resource indexes before adopting an API.
+Account for affine expression size when describing merge cost.
 
-### How tactics consume equality
+### Loads and memory snapshots
 
-- **`rewrite`, `assumption`, `normalize() using`, `apply ... using`.** These
-  match premises exactly, up to orientation, canonical load form, and
-  snapshot-blind buckets. None of them is transitive.
-- **Known limits.** `normalize() using { a == b; b == c; }` cannot close
-  `a == c`. That limit is documented in `examples/rbtree-model/README.md` and
-  in the rbtree issue's pure-proof limits.
-- **`simp`.** Transitivity exists only in `simp` and its kernel deciders, and
-  only per sort: the pointer walk, the bitvector graph, and `ConstantClasses`.
-  Only the algebraic constructor rules do anything congruence-like.
-- **Kernel rules.** `PropositionDerivationRule` has no equality-substitution
-  or transitivity rule. `rewrite` builds its new goal in surface code
-  (`src/surface/checking/simp.rs`) and installs it with `refined_proposition`;
-  I found no kernel re-check of the substitution. Whether a later certificate
-  check re-derives it is an open question below.
+Model a load as an application keyed by its snapshot, address, and access
+interpretation (sort/width and any other distinctions required by memory
+semantics). Existing external registries may supply this information during
+migration; the semantic key must be explicit in the design.
 
-### Conflicts with the efficiency contract
+Equal addresses at one snapshot imply equal compatible loads. This must hold
+whether the loads were registered before or after the address equality, and
+whether either load already belongs to another explicit class. For example:
 
-`docs/internals/verification-efficiency.md` asks that a simple tactic not scan
-unrelated proof state and that derived relations be maintained incrementally.
-Four structures above do not meet that:
-- `has_pointer_equality_path`, which is O(facts × component);
-- the equality graph, rebuilt after every insertion once it is queried;
-- `resolve_minted_load_pointer`, which scans every proposition fact on every
-  resource lookup;
-- memo keys that clone whole terms.
+```text
+p == q
+load(M, p) == x
+load(M, q) == y
+----------------
+x == y
+```
 
-## Proposal: one congruence closure in the kernel
+The answer must survive extra facts and all insertion orders. Nested loads
+must obey the same rule without a fixed nesting-depth limit.
 
-An e-graph without saturation:
-- hash-consed terms with stable ids;
-- a persistent union-find over those ids;
-- congruence closure: when two classes merge, parent applications whose
-  arguments are now pairwise equal merge too.
+Different snapshots do not become equal merely because addresses match.
+Execution may preserve a load name through its existing checked unchanged-cell
+rule. Additional frame reasoning belongs to explicit transport or the checked
+execution rule that needs it, and contributes justified equalities to the
+path. Equality comparison must not walk memory history or call a frame prover.
+Do not scan all earlier loads to choose a convenient existing name.
 
-There are no rewrite rules and no saturation. Classes merge only on equalities
-the proof has established (hypotheses, `have`, executed assignments). A user
-who wants another equation states it with `have`. Standard congruence closure
-is O(n log n) over the merges on a path, which fits the efficiency contract.
-Each query is a `find`.
+### Provenance and separation
 
-### What goes in the graph
+Value identity and proof of separation are different information. An opaque
+pointer alone does not establish which allocation it can reach. Preserve
+separation using evidence justified by supported C semantics, ownership, and
+lifetime/reachability rules. Equal values must have consistent provenance
+information, but mere inequality of term IDs proves no separation.
 
-- **Pointers as a union-find with offsets.** A pointer is a block and an
-  offset in exact affine normal form. Plain congruence would not relate
-  `id + 8` to `p + 8` from `id == p`, because a normalized `id + 8` is not an
-  application over `id`. So the pointer sort is a union-find with offsets
-  instead: each block's base is stated relative to its class representative,
-  `base(block) = base(rep) + delta`. Two pointers are equal when their blocks
-  share a representative and `delta + offset` normalizes alike, so chains and
-  displaced spellings are two lookups. Loads keyed by that canonical pointer
-  then get congruence (`load(M, id + 8) ≅ load(M, p + 8)`). The first part is
-  built: `src/kernel/assumptions/pointer_classes.rs`.
-- **Loads as applications.** A load is `load(M, ptr)` with the memory snapshot
-  as an argument. Congruence holds only within one snapshot. Carrying a load
-  across a write stays frame reasoning (`transport`, the memory derivation DAG), which is
-  explicit and outside the graph.
-- **Bitvector and integer terms.** Operators are applications, so congruence
-  subsumes the operand-wise "equal for transport" recursion. Each class
-  carries its known constant, which subsumes `ConstantClasses` and
-  `exact_constant_equalities`.
-- **Algebraic constructors.** Constructors are applications. Merging two
-  applications of one constructor merges their fields (injectivity). Merging
-  two different constructors is a contradiction (no-confusion). Algebraic
-  transitivity then comes free.
-- **Pure function applications.** Applications of pure Click functions are
-  ordinary applications, so `rb_parent_is(t, cid) ≅ rb_parent_is(t, parent)`
-  holds by congruence. Gap 74's repair then becomes unnecessary.
+Do not infer a pointer's provenance from the spelling of the cell that held
+it. Do not infer an allocation's birth from a contract allocation claim or
+from absence in a projected snapshot. The existing special rules for hidden
+locals and later-declared locals need their exact preconditions retained.
+Any broader rule needs its own positive and negative tests.
 
-### What stays out
+Snapshots form a DAG. A proposed class attribute such as "earliest birth"
+needs a semantic ordering and evidence valid in the current path; snapshot IDs
+or unrelated branch timestamps do not provide that ordering. Representation
+migration is not authorization to add an unreviewed provenance theory.
 
-- **Ordering, arithmetic, and disequality.** Ordering facts and arithmetic
-  identities stay out: `a + 1 == b + 1` does not give `a == b`, and
-  `(x & 1) & 1 == x & 1` is a normalization, not an equality. Disequalities
-  are kept as a set of distinct class pairs, checked on merge.
-- **Cross-snapshot equality.** Frame reasoning stays explicit, as above.
+## Incremental closure and indexing
 
-### Persistence and removal
+Maintain an application-signature table and parent-use lists alongside the
+persistent equivalence relation. When child classes merge, reconsider affected
+parent applications, merge signature collisions, and continue until the pending
+work is complete. Queries may register their explicit terms, but must observe
+a closed state before returning. Batching is allowed only if it preserves this
+boundary and charges the actual maintenance work.
 
-Contexts fork at every branch, so the union-find, the use lists, and the
-application table must be persistent, using the same path-copying maps the
-context already uses. The graph is append-only. The inventory found fact
-removal rare:
-- `without_exact_fact`;
-- `restricted_to_facts`, which planner premise selection and loans call about
-  ten times in total.
+The current `PointerClasses::normal` is transitional: it recurses through loads
+with a depth cap, stops at an explicitly classed block, and scans loads in a
+snapshot. Replace that mechanism with maintained congruence. Merely increasing
+the depth or narrowing the scan to one snapshot does not meet the invariant.
 
-A restricted context rebuilds its graph from the selected facts, at a cost
-proportional to the selection. Facts about loads name their snapshot and stay
-true after writes, so execution never needs to un-merge.
+Resource lookup needs indexed equality-aware addresses, including displacement.
+Specify how resources registered before a merge remain discoverable after the
+representative changes. Resolving a query's ID with `find` alone does not move
+entries still stored under an old representative. Possible implementations
+include persistent per-class payload indexes merged by size, or explicit
+reindexing of affected entries; choose and measure one in the foundation.
 
-### Canonical keys
+Read and fold consumers are the first integration examples. A lookup must not
+enumerate every spelling in a class. Equality indexing narrows candidates;
+permission quantities, range containment, ownership reservation, and ordering
+still require their own checked judgments and complete candidate indexes.
 
-Every index that is keyed by a term today moves to class ids:
-- resource consumption by base class;
-- read and write permission by base class;
-- load-variable minting by `(snapshot, class)`;
-- condition-fact indexes by the classes of their sides.
+## Persistence and cost
 
-A class's representative changes when it merges, so the indexes are keyed by
-term id and resolved with `find` at query time. Alternatively, merges could
-re-file the smaller class, which is n log n in total.
+Follow the [verification-efficiency contract](verification-efficiency.md):
+explicit checking is approximately linear up to logarithmic indexing factors
+in the selected source, proof, and required output. Incremental closure is a
+proposed means to meet that contract, not a blanket complexity guarantee.
 
-### Trust
+In particular, measure signature maintenance, persistent map updates, affine
+payloads, explanation construction, resource reindexing, and repeated branch
+extensions. Do not claim a whole-verifier bound from union-by-size alone.
+Avoid whole-state clones, deep structural cache keys, repeated same-snapshot
+load scans, and alias enumeration on each resource access.
 
-The closure becomes part of the trusted kernel, as a decision procedure. It
-must stay small and obviously correct: a classic congruence closure is a few
-hundred lines. Wherever a certificate must justify an equality, the closure can
-produce explanations: proof-producing congruence closure yields the chain of
-input equalities and congruence steps. Adding a kernel equality rule that
-checks such a chain would also close the open question about how `rewrite` is
-checked.
+Restricted contexts rebuild from the selected premises and required term DAG.
+They must not inherit ambient merges or explanations. Fact withdrawal likewise
+must invalidate every consequence that depended on the withdrawn fact; either
+rebuild the affected context under a documented bound or use a justified
+persistent strategy. Execution writes do not withdraw facts about old snapshots.
 
-### What it replaces
+Deterministic regressions vary multiple input sizes along these axes:
 
-These would be deleted, not kept alongside:
-- the pointer alias indexes and their one-hop accessors;
-- the three pointer-equality walks;
-- `pointer_spellings`;
-- `resolve_symbolic_pointer_alias`;
-- the lazy bitvector equality graph and the 64-bit adjacency map;
-- `ConstantClasses` and `exact_constant_equalities`;
-- the load-variable bridge DFS;
-- gap 74's alias retry;
-- the "equal for transport" recursions.
+- chains, balanced merges, late merges, and repeated equality queries;
+- nested loads and many unrelated loads within one snapshot;
+- repeated loads across a growing store history;
+- resource lookup through growing classes and resources present before merges;
+- many branches extending a large common prefix; and
+- restricted contexts beside growing unrelated ambient facts.
 
-`resolve_minted_load_pointer`'s scan also goes: a minted load variable is
-simply a member of its load's class.
+Count total work as well as query work so moving a scan from query to insertion
+does not hide it. Ordinary verification must pass before profiling or expansion.
 
-### How tactics change
+## Evidence and trust
 
-- **Exact tactics.** `assumption`, `apply ... using`, `normalize() using`,
-  folds, and `have` goals match premises modulo the closure. A premise matches
-  when its atoms are in the right classes.
-- **`rewrite`.** It remains useful for directing a normal form, but it is no
-  longer needed just to make two spellings meet.
-- **Proof scripts.** The rbtree proofs lose most of their bookkeeping of the
-  form `have parent == cid`, and `rewrite(X == c.model)` chains.
-- **Behaviour change.** Some goals that fail today will pass. Diagnostics that
-  print "not an available fact" should then name the two classes that did not
-  meet.
+The closure is a kernel decision procedure. Every non-definitional merge must
+have a checked source: an admitted hypothesis, an execution rule, another
+checked derivation, or a congruence/theory consequence of such sources.
+Certificates and selected-premise tactics must use only their allowed context.
+Where an explicit certificate needs equality evidence, provide a shareable
+explanation DAG or an equivalent checked derivation without repeatedly
+expanding a long chain.
 
-## Staging
+Resolve the existing `rewrite` trust question during the foundation: trace the
+current certificate path, identify the kernel substitution check, and add a
+checked equality rule if one is missing. The earlier inventory's uncertainty
+is not itself proof of a soundness defect. Do not postpone this investigation
+until every consumer already depends on the new equality API.
 
-Each stage lands green, with its regressions and scaling tests at several
-input sizes, as the efficiency contract requires for representation changes.
+Soundness tests include unproved aliases, snapshot changes, incompatible load
+interpretations, branch leakage, restricted-premise leakage, offset wrapping,
+and tampered equality explanations. Later constructor support must address
+injectivity, no-confusion, and cyclic equations under the declared value
+semantics. Distinct constants of the same sort produce a contradiction;
+constants in different sorts must not be merged at all.
 
-1. **Pointer closure.** Hash-consed pointer and offset terms and the persistent
-   union-find. Replace the pointer alias indexes, the three walks,
-   `pointer_spellings`, and `resolve_symbolic_pointer_alias`. Key resource
-   consumption and permission by class. Regressions: the fold-at-arm-binding
-   case from the rbtree insert frontier's `Right`-frame leaf, a two-hop alias,
-   and a displaced alias.
-2. **Loads.** Loads become applications. Load variables are minted per
-   `(snapshot, class)`. Regression: `have id->word == 5` after `p->word = 5`.
-3. **Bitvector terms.** Subsume the equality graph, the 64-bit map, constant
-   classes, and the transport recursions.
-4. **Algebraic terms and pure function applications.** Injectivity,
-   no-confusion, and congruence through Click function calls. Delete gap 74's
-   retry.
-5. **Tactics and certificates.** Premise matching modulo the closure, a kernel
-   equality rule for `rewrite` if the open question below says one is missing,
-   and removal of the surface-side bridges.
+## Migration and deletion
 
-Stage 1 alone unblocks the rbtree insert frontier's last left-left leaves.
+The issue defines four milestones: contract/regressions, integrated pointer/load
+foundation, remaining pointer consumers, then theory/tactic extensions. The
+historical non-green loaded-pointer trial is evidence about dependencies, not
+the implementation plan. Use isolated worktrees and integrate only coherent
+green commits. Preserve the original C regressions.
 
-## Open questions
+Delete old mechanisms as their responsibilities migrate:
 
-- **How `rewrite` is checked.** Is the rewritten goal re-checked by the kernel
-  anywhere, for example when a certificate is checked? If not, that is a trust gap
-  independent of this proposal.
-- **Offset normal form.** Congruence closure knows no arithmetic. `p + 8` and
-  `(p + 4) + 4`, or `4*i + 8` and `8 + 4*i`, are different nodes unless
-  something merges them. Then `load(M, p + 8)` and `load(M, (p + 4) + 4)` would
-  not meet. The intended answer is to normalize every offset to one affine
-  form at insertion: constants folded, terms reassociated and sorted by atom.
-  That is sound under wrapping pointer arithmetic, and it composes with
-  congruence: once `i ≅ j`, `4*i + 8` and `4*j + 8` merge. The open part is
-  only whether `canonical_offset_term`, which today canonicalizes the loads
-  inside an offset, already reaches a full affine normal form or needs
-  extending.
-- **Scaling.** How large do graphs get on the rbtree fixtures and the corpus,
-  and does per-branch persistence cost stay within the contract? Stage 1 should
-  measure this before the representation change spreads.
-- **Diagnostics.** When a goal fails modulo the closure, what should the
-  message show? Probably the two classes, with a representative member of
-  each.
+| Responsibility | Mechanisms to retire |
+|---|---|
+| Pointer equality and permission lookup | Alias indexes, equality walks, `pointer_spellings`, `resolve_symbolic_pointer_alias` |
+| Load identity/equality | Minted-load scans, recursive load normalizer, comparison-time frame search, spelling retries |
+| Scalar equality | Lazy bitvector graph, 64-bit adjacency map, `ConstantClasses`, exact constant aliases |
+| Algebraic/function congruence | Gap-74 alias retry and duplicated operand-wise equality recursion |
+| Tactic matching | Surface bridges made redundant by checked closure queries |
+
+An intermediate consumer may retain its legacy implementation until migrated,
+but a migrated consumer must not quietly fall back to a second equality
+relation. Full deletion is an acceptance criterion, not optional cleanup.
+
+The first substantial handoff is after the pointer/load representation and
+closure work through real read/fold consumers, with checked evidence, scaling
+regressions, and the full gate passing. That creates bounded consumer migrations
+against stable APIs. Bitvectors, algebraic terms, provenance changes, and
+certificate changes still require design review when reached.

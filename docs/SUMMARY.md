@@ -70,7 +70,7 @@
   - [Fold read ranges](internals/fold-read-ranges.md)
 - [Mathematical integers](internals/mathematical-integers.md)
 - [Canonicalization](internals/canonicalization.md)
-- [Equality closure (proposal)](internals/equality-closure.md)
+- [Equality closure design](internals/equality-closure.md)
 - [Verification efficiency](internals/verification-efficiency.md)
 - [Testing](internals/testing.md)
 - [Contributing](internals/contributing.md)
