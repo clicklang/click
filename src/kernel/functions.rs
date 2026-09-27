@@ -3528,7 +3528,7 @@ pub(super) fn retained_population_call_partition(
     {
         if !partition.contains_exact_representation(fact) {
             partition = partition
-                .try_compose_with_fact(fact.clone(), assumptions)
+                .try_compose_with_facts_delaying_normalization([fact.clone()], assumptions)
                 .ok()?;
         }
     }
@@ -19824,6 +19824,9 @@ fn evaluate_resource_clauses_against_whole_section(
     let mut evaluated: Vec<Option<CResourceFact>> = vec![None; resources.len()];
     let mut active = vec![true; resources.len()];
     let mut supplied: Vec<CResourceFact> = Vec::new();
+    // Each successful clause extends a shared persistent prefix. Rebuilding
+    // every earlier clause for each new one makes a flat contract quadratic.
+    let mut evaluation_resources = state.resources().clone();
     let mut failures: Vec<Option<CRuntimeError>> = vec![None; resources.len()];
     let mut dependencies: Vec<Vec<CResourceFact>> = vec![Vec::new(); resources.len()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -19836,12 +19839,9 @@ fn evaluate_resource_clauses_against_whole_section(
             }
             Err(error) => return Ok(Err(error)),
         }
-        let evaluation_state = state.clone().with_resource_context(
-            state
-                .resources()
-                .clone()
-                .unchecked_with_facts(supplied.iter().cloned()),
-        );
+        let evaluation_state = state
+            .clone()
+            .with_resource_context(evaluation_resources.clone());
         let (outcome, missing) = evaluate_resource_clause_with_dependencies(
             entry_state,
             &evaluation_state,
@@ -19852,6 +19852,7 @@ fn evaluate_resource_clauses_against_whole_section(
         )?;
         match outcome {
             Ok(resource) => {
+                evaluation_resources = evaluation_resources.unchecked_with_fact(resource.clone());
                 supplied.push(resource.clone());
                 evaluated[index] = Some(resource);
             }

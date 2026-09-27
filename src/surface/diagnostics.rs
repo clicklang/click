@@ -838,6 +838,8 @@ pub(super) fn describe_runtime_error(
                     left: CResource::Memory(allocation.clone()),
                     right: CResource::Memory(storage.clone()),
                 }, parameters, arguments)),
+        crate::kernel::CRuntimeError::MissingMutexStorageAlignment { mutex, alignment } =>
+            format!("Requires aligned({}, {alignment})", describe_mutex_pointer(mutex, parameters, arguments)),
         crate::kernel::CRuntimeError::UnsupportedMutexStorageRetirement =>
             "Click does not yet support freeing or reallocating storage in a preserving guard contract; checked mutex lifetime authority is required".into(),
         crate::kernel::CRuntimeError::MissingMutexGuard { mutex } => format!(

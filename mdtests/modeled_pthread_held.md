@@ -19,6 +19,8 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_held.c";
 
 int32 run(struct holder *holder) {
+    owns &holder->mu;
+    requires aligned(&holder->mu, 8);
     ensures result == 0;
 } by {
     step();

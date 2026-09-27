@@ -24,6 +24,10 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_reinitialized_loop.c";
 
 int32 run(struct holder *holder, int32 n) {
+    owns &holder->anchor;
+    requires aligned(&holder->anchor, 8);
+    owns &holder->mu;
+    requires aligned(&holder->mu, 8);
     requires n >= 0 and n <= 1000;
     ensures result == 0;
 } by {

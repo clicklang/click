@@ -3456,6 +3456,10 @@ pub enum CRuntimeError {
         allocation: CMemoryRange,
         storage: CMemoryRange,
     },
+    MissingMutexStorageAlignment {
+        mutex: Pointer,
+        alignment: u32,
+    },
     UnsupportedMutexStorageRetirement,
     /// The automatic object cannot expire while initialized mutex storage
     /// is known (or may be constrained) to lie in it.
@@ -5242,6 +5246,13 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Constant byte spans of owned memory, normalized by additive base.
+    /// A predecessor query selects an access's containing span without
+    /// scanning other fields, ranges, or parameters in the same block.
+    pub(super) owned_byte_spans: PersistentMap<(Pointer, i64, i64), ResourceEntryIds>,
+    /// Nonconstant spans require explicit bounds reasoning. Kept apart so
+    /// a missing constant access never scans unrelated constant ranges.
+    pub(super) symbolic_owned_byte_spans: PersistentMap<Pointer, ResourceEntryIds>,
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a

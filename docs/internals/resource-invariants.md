@@ -293,8 +293,17 @@ A separate persistent index tracks symbolic initializations that might alias
 any local, so absence from the concrete block's index cannot imply separation.
 Those ambiguous cases are conservatively refused; unrelated concrete mutexes
 are never scanned. Destruction removes the dependency, even when the object
-contains several mutexes. This does not yet reserve mutex bytes against writes
-or validate their storage at initialization.
+contains several mutexes.
+
+Initialization now checks the full writable storage footprint and ABI alignment
+before minting lifetime authority or moving a protected invariant. Ordinary
+memory ownership authorizes external storage; live automatic objects supply
+implicit storage ownership. Stable views do not authorize this operation, and
+active storage loans block it. The transition forgets the previous byte values
+of the footprint. Addressed opaque union fields can supply ordinary byte
+ownership with `owns &holder->mu`. An indexed byte-span query selects constant
+owned storage without scanning unrelated fields. Reservation against overlapping
+initializations and later writes remains unimplemented.
 
 The lifecycle owner now lives in the same resource context as guards, as
 `CResource::MutexLive`. Initialization mints exactly one owned atom; destruction

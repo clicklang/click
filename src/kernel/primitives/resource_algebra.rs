@@ -275,6 +275,77 @@ fn related_memory_base_roots(
     roots
 }
 
+/// Separate an additive address's constant byte displacement from its
+/// symbolic base. Overflow leaves the query unindexed, never wraps an address.
+fn access_base_and_offset(pointer: &Pointer) -> Option<(Pointer, i64)> {
+    let mut pending = vec![&pointer.offset];
+    let mut displacement = 0i64;
+    let mut symbolic = None;
+    while let Some(offset) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(value) = offset.as_const() {
+            displacement = displacement.checked_add(value)?;
+        } else if let PointerOffsetTerm::Add(left, right) = offset {
+            pending.push(right);
+            pending.push(left);
+        } else {
+            symbolic = Some(match symbolic {
+                None => offset.clone(),
+                Some(base) => PointerOffsetTerm::add(base, offset.clone()),
+            });
+        }
+    }
+    Some((
+        Pointer {
+            block: pointer.block.clone(),
+            offset: symbolic.unwrap_or(PointerOffsetTerm::Constant(0)),
+        },
+        displacement,
+    ))
+}
+
+/// Known spellings of a storage address, including displacement from a
+/// returned pointer whose base has an exact alias. This visits only indexed
+/// aliases of that address/base, never unrelated resources or path facts.
+pub(in crate::kernel) fn storage_pointer_spellings(
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
+) -> Vec<Pointer> {
+    let mut pointers = vec![pointer.clone()];
+    let minted = crate::kernel::reasoning::resolve_minted_load_pointer(pointer, assumptions);
+    if !pointers.contains(&minted) {
+        pointers.push(minted.clone());
+    }
+    let resolved = crate::kernel::reasoning::resolve_symbolic_pointer_alias(&minted, assumptions);
+    if !pointers.contains(&resolved) {
+        pointers.push(resolved.clone());
+    }
+    if let Some((base, offset)) = access_base_and_offset(&resolved) {
+        let aliased = crate::kernel::reasoning::resolve_symbolic_pointer_alias(&base, assumptions);
+        if aliased != base {
+            let shifted = Pointer {
+                block: aliased.block,
+                offset: PointerOffsetTerm::add(aliased.offset, PointerOffsetTerm::Constant(offset)),
+            };
+            if !pointers.contains(&shifted) {
+                pointers.push(shifted);
+            }
+        }
+    }
+    pointers
+}
+
+fn owned_byte_span_key(range: &CMemoryRange) -> Option<(Pointer, i64, i64)> {
+    let (base, offset) = access_base_and_offset(range.base())?;
+    let (Some(start), Some(end)) = signed_range_endpoints(range) else {
+        return None;
+    };
+    let width = i64::from(range.element_width());
+    let start = offset.checked_add(start.checked_mul(width)?)?;
+    let end = offset.checked_add(end.checked_mul(width)?)?;
+    (start < end).then_some((base, start, end))
+}
+
 /// A range's two endpoints as the signed `int32` numbers they are, present
 /// only when both are constant.
 ///
@@ -406,6 +477,19 @@ impl ResourceContextIndex {
             result.memory_by_base =
                 insert_resource_index_entry(&result.memory_by_base, range.base().clone(), entry);
             if mode {
+                if fact
+                    .owned_quantity_term()
+                    .and_then(Bitvector32Term::as_const)
+                    == Some(0)
+                {
+                    // Zero ownership is the resource identity, not a storage span.
+                } else if let Some(key) = owned_byte_span_key(range) {
+                    result.owned_byte_spans =
+                        insert_resource_index_entry(&result.owned_byte_spans, key, entry);
+                } else if let Some((base, _)) = access_base_and_offset(range.base()) {
+                    result.symbolic_owned_byte_spans =
+                        insert_resource_index_entry(&result.symbolic_owned_byte_spans, base, entry);
+                }
                 result.owned_memory_by_root = insert_resource_index_entry(
                     &result.owned_memory_by_root,
                     memory_base_root(range.base()),
@@ -546,6 +630,22 @@ impl ResourceContextIndex {
             result.memory_by_base =
                 remove_resource_index_entry(&result.memory_by_base, range.base(), entry);
             if mode {
+                if fact
+                    .owned_quantity_term()
+                    .and_then(Bitvector32Term::as_const)
+                    == Some(0)
+                {
+                    // Zero ownership is the resource identity, not a storage span.
+                } else if let Some(key) = owned_byte_span_key(range) {
+                    result.owned_byte_spans =
+                        remove_resource_index_entry(&result.owned_byte_spans, &key, entry);
+                } else if let Some((base, _)) = access_base_and_offset(range.base()) {
+                    result.symbolic_owned_byte_spans = remove_resource_index_entry(
+                        &result.symbolic_owned_byte_spans,
+                        &base,
+                        entry,
+                    );
+                }
                 result.owned_memory_by_root = remove_resource_index_entry(
                     &result.owned_memory_by_root,
                     &memory_base_root(range.base()),
@@ -4488,7 +4588,10 @@ impl ResourceContext {
             "kernel",
             "resource satisfaction",
             "resource satisfaction: normalization fallback",
-            || self.clone().normalized(assumptions),
+            || {
+                self.clone()
+                    .normalized_around_facts(std::slice::from_ref(fact), assumptions)
+            },
         );
         normalized.storage.facts.len() < self.storage.facts.len()
             && normalized
@@ -4599,6 +4702,65 @@ impl ResourceContext {
             };
             if pointer_has_structural_range_base(pointer, range.base())
                 && memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Bounded owner lookup for a storage operation. Constant spans use a
+    /// predecessor index; the resource entailment check remains authoritative.
+    /// A single symbolic span at the selected base can use bounds facts;
+    /// ambiguous symbolic partitions require a directly stated footprint.
+    /// This is an authority query, not an implicit resource-normalization search.
+    pub(in crate::kernel) fn owns_storage_access(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        for pointer in storage_pointer_spellings(pointer, assumptions) {
+            let Some((base, offset)) = access_base_and_offset(&pointer) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(i64::from(bytes)) else {
+                continue;
+            };
+            let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer.clone(),
+                0u32.into(),
+                bytes.into(),
+                1,
+            ));
+            let entails = |entry: &ResourceEntryId| {
+                let available = self.fact(*entry);
+                available
+                    .owned_quantity_term()
+                    .is_some_and(|quantity| resource_quantity_is_positive(quantity, assumptions))
+                    && resource_fact_entails(available, &required, assumptions)
+            };
+            let Some(after_start) = offset.checked_add(1) else {
+                continue;
+            };
+            if let Some(((candidate_base, start, limit), entries)) = self
+                .storage
+                .index
+                .owned_byte_spans
+                .get_less_than(&(base.clone(), after_start, i64::MIN))
+                && candidate_base == &base
+                && *start <= offset
+                && end <= *limit
+                && entries.iter().any(entails)
+            {
+                return true;
+            }
+            if let Some(entries) = self.storage.index.symbolic_owned_byte_spans.get(&base)
+                && entries.len() == 1
+                && entries.iter().any(|entry| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    entails(entry)
+                })
             {
                 return true;
             }
@@ -4849,7 +5011,11 @@ impl ResourceContext {
                 continue;
             }
             for entry in entries.iter() {
-                self.remove_entry(*entry);
+                // Removing an owner also removes its supported projections,
+                // which can already be members of this selected bucket.
+                if self.storage.facts.contains_key(entry) {
+                    self.remove_entry(*entry);
+                }
             }
             for fact in normalized {
                 let occurrence = fact

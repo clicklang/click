@@ -34,6 +34,8 @@ void keep(struct holder *holder) {
     simp();
 }
 int32 run(struct holder *holder) {
+    owns &holder->mu;
+    requires aligned(&holder->mu, 8);
     ensures result == 0;
 } by {
     step();

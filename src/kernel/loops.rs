@@ -893,7 +893,20 @@ fn execute_modeled_pthread_mutex_paths(
                 &path.facts,
                 &path.obligations,
             );
-            let transition: Result<CState, CRuntimeError> = if initializing {
+            let storage_refusal = (initializing && !state.preserves_mutex_protocols)
+                .then(|| {
+                    super::mutexes::initialization_storage_refusal(
+                        state,
+                        mutex.pointer(),
+                        binding.mutex_storage_bytes,
+                        binding.mutex_storage_alignment,
+                        &current,
+                    )
+                })
+                .flatten();
+            let transition: Result<CState, CRuntimeError> = if let Some(error) = storage_refusal {
+                Err(error)
+            } else if initializing {
                 let selected = environment.selected_call_binders.as_ref();
                 if selected.is_none() {
                     super::mutexes::MutexContext::new(state.clone())
@@ -953,6 +966,25 @@ fn execute_modeled_pthread_mutex_paths(
             };
             match transition {
                 Ok(mut next) => {
+                    if initializing {
+                        let storage =
+                            super::primitives::storage_pointer_spellings(mutex.pointer(), &current)
+                                .pop()
+                                .expect("storage spelling");
+                        let footprint = CMemoryRange::new_with_element_width(
+                            storage,
+                            0u32.into(),
+                            binding.mutex_storage_bytes.into(),
+                            1,
+                        );
+                        let identity = budget.allocate_kernel_variable()?;
+                        let memory = next.memory.clone().with_storage_memory_havoc(
+                            identity,
+                            &[footprint],
+                            &current,
+                        );
+                        next.set_memory(memory);
+                    }
                     if target.is_some_and(|target| {
                         assign_call_result(
                             &mut next,

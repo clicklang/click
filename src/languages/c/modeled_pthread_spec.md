@@ -1,4 +1,4 @@
-# Modeled pthread create/join and mutex specification, version 4
+# Modeled pthread create/join and mutex specification, version 5
 
 This trusted specification is an explicit assumption of a conditional Click
 client proof. It does not certify an operating system's pthread implementation.
@@ -23,6 +23,11 @@ client proof. It does not certify an operating system's pthread implementation.
   deposits that resource in the mutex. This model treats the mutex bytes as
   opaque and creates one exclusive `mutex_live` resource for this initialization.
   Initialization without a selected protected resource creates that owner too.
+  Both forms require the complete 40-byte writable storage and 8-byte alignment.
+  Local automatic objects provide implicit ownership within their live bounds;
+  other storage requires an ordinary owned memory range. A stable view cannot
+  authorize initialization, and an active storage loan prevents it. Initialization
+  forgets previous values of the mutex bytes while preserving disjoint memory.
 - `pthread_mutex_lock` requires the current initialization's available
   `mutex_live` owner. It succeeds for an unlocked mutex and gives
   the current path its escrowed resource. `pthread_mutex_unlock` succeeds only
@@ -52,8 +57,10 @@ while it contains any initialized mutex: the mutex must be destroyed before
 normal or abrupt scope exit, including function return. Folding its owner into
 a resource does not remove this storage dependency. Unresolved symbolic mutex
 storage conservatively blocks expiry when it might alias the local object.
-Storage validity at initialization and ordinary writes to the mutex
-representation remain separate implementation gaps.
+Initialization now checks storage ownership, known lifetime expiry, read-only
+storage, alignment, and stable loans. It does not yet reserve its footprint
+against another overlapping initialization or ordinary writes after initialization;
+those checks belong to the remaining storage-reservation boundary.
 
 The C client still owes its worker proof, creation failure paths, ownership
 separation, parent access checks, and every source-level continuation. The

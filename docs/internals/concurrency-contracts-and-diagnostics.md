@@ -38,8 +38,9 @@ an allocation with a different block identity. Unresolved overlap reports the
 required `separate(...)` fact. Destruction removes this dependency; unlocking
 does not. Abstract preserving-guard contracts conservatively refuse allocation
 retirement until checked lifecycle inputs can describe their dependencies.
-This adds no surface syntax. Initialization validity, writes to mutex bytes,
-and use loans remain unimplemented. Automatic-storage expiry is now checked
+This retirement check adds no surface syntax. Initialization storage checks
+are described below; reservation against later writes and use loans remain
+unimplemented. Automatic-storage expiry is now checked
 as described below.
 
 The first lifecycle ownership layer now implements `owns mutex_live(mu)` in
@@ -52,8 +53,7 @@ generation's resource cannot substitute for the owner. Missing ownership reports
 memory access. It cannot be viewed, counted, or transferred to workers yet.
 
 This is an ownership checkpoint, **not a complete lifetime proof**. It does not
-yet check storage validity on initialization or reserve bytes against ordinary
-writes. `mutex_use` loans and their guard and worker dependencies are not
+yet reserve bytes against ordinary writes or overlapping initializations. `mutex_use` loans and their guard and worker dependencies are not
 implemented. Preserving lifecycle contracts
 retain the same conservative transition freeze as preserving guard contracts;
 `consumes`/`produces` and named primitive lifecycle binders remain unsupported.
@@ -76,6 +76,37 @@ C program as coverage. Kernel tests exercise all scope-leaving outcomes.
 Uninitialized stack structs now need only their storage layout, so containing
 an opaque pthread union does not require typed-copy support; unsupported
 aggregate copies remain rejected.
+
+Initialization now requires the full mutex storage and its ABI alignment.
+For an external struct parameter, the contract can say:
+
+<!-- verified-example: mdtests/modeled_pthread_empty_mutex.md -->
+```click
+owns &holder->mu;
+requires aligned(&holder->mu, 8);
+```
+
+`owns &holder->mu` now supports an opaque union field as byte storage; this is
+an extension of an existing resource spelling, not a new resource kind. Its
+extent comes from the C layout, including the field's storage padding, so the
+contract does not hard-code the 40-byte size. It does not provide typed union
+copying. `views` never supplies initialization ownership. A local automatic
+object has implicit storage ownership; a sufficiently large allocation supplies
+ordinary memory ownership and allocator alignment. An address alone is not
+permission to initialize. Failures name the missing owned range or
+`Requires aligned(..., 8)`.
+
+Initialization checks known read-only and ended storage and active stable loans
+before moving an invariant or creating `mutex_live`. It forgets old byte values
+in the initialized footprint; adjacent cells remain available. Constant owned
+spans are indexed in byte units, so unrelated fields of the same object do not
+make each initialization scan the whole resource context. Nonconstant bounds
+can be proved for a single owned span at the selected base; this checker does
+not search an ambiguous symbolic partition or implicitly join separate ranges.
+
+This is still a storage-access checkpoint. Reserving bytes throughout the
+initialized lifetime, excluding overlapping initializations, and use lending
+remain required before the mutex lifecycle model is complete.
 
 The surface status is:
 

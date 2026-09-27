@@ -1722,8 +1722,9 @@ fn call_havoc_keeps_cell(
     mutable_ranges: &[CMemoryRange],
     assumptions: &PureFactContext,
     kept: Option<&CallKeptOwnership>,
+    preserve_local_slots: bool,
 ) -> CallHavocCellRule {
-    if pointer.block.starts_with("local:") {
+    if preserve_local_slots && pointer.block.starts_with("local:") {
         return if mutable_ranges.iter().all(|range| {
             range.base().block == pointer.block
                 || !pointers_proven_equal_for_memory_resolution(range.base(), pointer, assumptions)
@@ -2835,12 +2836,35 @@ impl CMemory {
         Ok(self)
     }
 
+    /// A runtime operation writes the declared storage itself, including
+    /// automatic storage. Ordinary contract calls separately preserve their
+    /// caller-local variable slots; that convention does not apply here.
+    pub(in crate::kernel) fn with_storage_memory_havoc(
+        self,
+        variable: Variable,
+        mutable_ranges: &[CMemoryRange],
+        assumptions: &PureFactContext,
+    ) -> Self {
+        self.with_memory_havoc(variable, mutable_ranges, assumptions, None, false)
+    }
+
     pub(in crate::kernel) fn with_call_memory_havoc(
+        self,
+        variable: Variable,
+        mutable_ranges: &[CMemoryRange],
+        assumptions: &PureFactContext,
+        kept: Option<&CallKeptOwnership>,
+    ) -> Self {
+        self.with_memory_havoc(variable, mutable_ranges, assumptions, kept, true)
+    }
+
+    fn with_memory_havoc(
         mut self,
         variable: Variable,
         mutable_ranges: &[CMemoryRange],
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
+        preserve_local_slots: bool,
     ) -> Self {
         let base = Some(intern_derivation_base(&mut self));
         let mut flat_hits = Vec::new();
@@ -2853,6 +2877,7 @@ impl CMemory {
                 mutable_ranges,
                 assumptions,
                 kept,
+                preserve_local_slots,
             ) {
                 CallHavocCellRule::Separate => true,
                 // The cached value is dropped as before; the edge records
@@ -2878,6 +2903,7 @@ impl CMemory {
                 mutable_ranges,
                 assumptions,
                 kept,
+                preserve_local_slots,
             ) {
                 CallHavocCellRule::Separate => true,
                 CallHavocCellRule::KeptByCaller(range) => {
@@ -2967,7 +2993,7 @@ impl CMemory {
         let mut dropped_cells = Vec::new();
         for (pointer, value) in before.cells.candidate_logical_entries(&candidates) {
             visited += 1;
-            match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept) {
+            match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept, true) {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
@@ -2980,7 +3006,7 @@ impl CMemory {
         let mut dropped_union_cells = Vec::new();
         for (key, value) in candidates.entries(&before.union_cells) {
             visited += 1;
-            match call_havoc_keeps_cell(&key.0, value, mutable_ranges, assumptions, kept) {
+            match call_havoc_keeps_cell(&key.0, value, mutable_ranges, assumptions, kept, true) {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);

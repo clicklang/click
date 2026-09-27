@@ -54,6 +54,8 @@ fn unsupported_shared_mutex_worker_is_an_internal_error() {
         verifying "mutex.c";
         void *idle(void *arg) { ensures result == 0; } by { execute(); simp(); }
         void start(struct box *box) {
+            owns &box->mu;
+            requires aligned(&box->mu, 8);
             owns state: box_state(box);
             ensures 0 == 0;
         } by {

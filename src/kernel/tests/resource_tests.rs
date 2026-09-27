@@ -3373,9 +3373,12 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
                 )
         });
         assert!(installed.is_ok());
-        assert_eq!(
-            work, 0,
-            "installing a certified size-{size} group rechecked its internal pairs"
+        // Inserting each span and recording its normalization touches its
+        // constant base once each. Permit those two linear indexing passes,
+        // but no internal pair comparisons (which would grow quadratically).
+        assert!(
+            work <= 2 * size,
+            "installing a certified size-{size} group rechecked its internal pairs: {work}"
         );
     }
 }

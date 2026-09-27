@@ -22,6 +22,8 @@ runtime "modeled-pthread";
 verifying "modeled_pthread_unbalanced_loop_rejected.c";
 
 int32 run(struct holder *holder, int32 n) {
+    owns &holder->mu;
+    requires aligned(&holder->mu, 8);
     requires n >= 0 and n <= 1000;
     ensures result == 0;
 } by {

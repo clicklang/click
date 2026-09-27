@@ -21,6 +21,8 @@ resource cell_state(cell: struct cell*) {
 }
 verifying "guarded_resource_unlock_unfolded_rejected.c";
 void wrong(struct cell *cell) {
+    owns &cell->mu;
+    requires aligned(&cell->mu, 8);
     owns state: cell_state(cell);
 } by {
     step(pthread_mutex_init(&cell->mu, 0), { invariant: state });

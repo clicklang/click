@@ -222,6 +222,63 @@ pub(super) fn guard_resource(
     })
 }
 
+/// Preconditions for the C initialization operation, before any invariant
+/// or lifecycle authority moves. Owning bytes does not require initialized
+/// byte values. Automatic objects have implicit storage ownership; all other
+/// objects require ordinary explicit memory ownership.
+pub(super) fn initialization_storage_refusal(
+    state: &CState,
+    mutex: &Pointer,
+    bytes: u32,
+    alignment: u32,
+    assumptions: &PureFactContext,
+) -> Option<super::CRuntimeError> {
+    let resolved = super::primitives::storage_pointer_spellings(mutex, assumptions)
+        .pop()
+        .expect("storage spelling");
+    let range =
+        super::CMemoryRange::new_with_element_width(mutex.clone(), 0u32.into(), bytes.into(), 1);
+    let automatic =
+        resolved.block.starts_with("local:") && state.memory.access_in_bounds(&resolved, bytes);
+    if bytes == 0
+        || state.memory.is_read_only_block(&resolved.block)
+        || state.memory.is_ended_local_address(&resolved)
+        || state
+            .memory
+            .deallocated_heap_allocation_holding(&resolved, assumptions)
+            .is_some()
+        || (!automatic
+            && !state
+                .resources
+                .owns_storage_access(mutex, bytes, assumptions))
+    {
+        return Some(super::CRuntimeError::MissingResource {
+            resource: CResourceFact::own_memory(range),
+        });
+    }
+    if assumptions.decide(&ConditionTerm::pointer_aligned(
+        mutex.clone(),
+        u64::from(alignment),
+    )) != Some(true)
+        && assumptions.decide(&ConditionTerm::pointer_aligned(
+            resolved.clone(),
+            u64::from(alignment),
+        )) != Some(true)
+    {
+        return Some(super::CRuntimeError::MissingMutexStorageAlignment {
+            mutex: mutex.clone(),
+            alignment,
+        });
+    }
+    state
+        .stable_loan_memory_access_refusal(
+            &range,
+            assumptions,
+            super::LoanRefusalOperation::MemoryAccess,
+        )
+        .map(super::CRuntimeError::LoanRefusal)
+}
+
 /// A storage release must not leave a live initialization behind. Abstract
 /// guard contracts lack checked lifecycle inputs for deciding this dependency;
 /// refuse retirement there until the lifetime-loan model can discharge it.
@@ -1858,6 +1915,242 @@ mod tests {
             assert!(
                 *unrelated <= absent + allowance && *overlapping <= present + allowance,
                 "scope query work must be logarithmic: {samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn initialization_requires_the_complete_owned_storage_and_alignment() {
+        use super::super::*;
+        let pointer = Pointer::symbolic(Variable(91_000));
+        let aligned = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+        let state_for = |bytes, owned| {
+            let range = allocation_range(pointer.clone(), bytes);
+            CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
+                if owned {
+                    CResourceFact::own_memory(range)
+                } else {
+                    CResourceFact::view_memory(range)
+                },
+            ))
+        };
+        for state in [CState::new(), state_for(39, true), state_for(40, false)] {
+            assert!(matches!(
+                initialization_storage_refusal(&state, &pointer, 40, 8, &aligned),
+                Some(CRuntimeError::MissingResource { .. })
+            ));
+        }
+        let state = state_for(40, true);
+        assert_eq!(
+            initialization_storage_refusal(&state, &pointer, 40, 8, &PureFactContext::new()),
+            Some(CRuntimeError::MissingMutexStorageAlignment {
+                mutex: pointer.clone(),
+                alignment: 8
+            })
+        );
+        assert!(initialization_storage_refusal(&state, &pointer, 40, 8, &aligned).is_none());
+        // A larger owned range can supply the full footprint at an interior address.
+        let state = state_for(64, true);
+        assert!(
+            initialization_storage_refusal(&state, &pointer.offset_by_bytes(8), 40, 8, &aligned)
+                .is_none()
+        );
+        assert!(matches!(
+            initialization_storage_refusal(&state, &pointer.offset_by_bytes(1), 40, 8, &aligned),
+            Some(CRuntimeError::MissingMutexStorageAlignment { .. })
+        ));
+    }
+
+    #[test]
+    fn initialization_rejects_read_only_and_expired_automatic_storage() {
+        use super::super::*;
+        let (state, pointer) = automatic_holder();
+        register_block_alignment(&pointer.block, 8);
+        assert!(
+            initialization_storage_refusal(&state, &pointer, 40, 8, &PureFactContext::new())
+                .is_none()
+        );
+        let ended = state
+            .clone()
+            .with_memory(state.memory().clone().without_local_block(&pointer.block));
+        assert!(matches!(
+            initialization_storage_refusal(&ended, &pointer, 40, 8, &PureFactContext::new()),
+            Some(CRuntimeError::MissingResource { .. })
+        ));
+        let read_only =
+            state.with_memory(CMemory::new().with_read_only_block(pointer.block.clone(), 48));
+        assert!(matches!(
+            initialization_storage_refusal(&read_only, &pointer, 40, 8, &PureFactContext::new()),
+            Some(CRuntimeError::MissingResource { .. })
+        ));
+    }
+
+    #[test]
+    fn initialization_forgets_old_representation_and_preserves_adjacent_cells() {
+        use super::super::*;
+        let (state, pointer) = automatic_holder();
+        register_block_alignment(&pointer.block, 8);
+        let prefix = state.locals().slot("holder").unwrap().clone();
+        let state = state.clone().with_memory(
+            state
+                .memory()
+                .clone()
+                .store(pointer.clone(), int8(17))
+                .store(prefix.clone(), int32(23)),
+        );
+        let environment = CExecutionEnvironment::new().with_modeled_pthread_binding(Some(
+            crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin(),
+        ));
+        let statement = CStatement::Call {
+            function_name: "pthread_mutex_init".into(),
+            arguments: vec![
+                CExpression::Value(CValue::pointer(pointer.clone())),
+                c_int32_literal(0),
+            ],
+        };
+        let paths = eval::execute_c_statement_paths(
+            &state,
+            &statement,
+            &PureFactContext::new(),
+            &environment,
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        let CStatementOutcome::Normal(after) = &paths[0].outcome else {
+            panic!("{paths:?}")
+        };
+        assert_ne!(
+            after.memory().load(&pointer),
+            CExpressionOutcome::Value(int8(17))
+        );
+        assert_eq!(
+            after.memory().load(&prefix),
+            CExpressionOutcome::Value(int32(23))
+        );
+        assert!(live_resource(after, &pointer, false).is_some());
+    }
+
+    #[test]
+    fn initialization_cannot_overwrite_an_active_local_storage_loan() {
+        use super::super::*;
+        use crate::kernel::loans::{LoanLedger, plan_stable_view_transfer};
+        use crate::kernel::prelude::CCheckedResourceFact;
+        let (state, pointer) = automatic_holder();
+        register_block_alignment(&pointer.block, 8);
+        let viewed = CResourceFact::view_memory(allocation_range(pointer.clone(), 40));
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let callee = ledger.fresh_participant().unwrap();
+        let assumptions = PureFactContext::new();
+        let mut plan = plan_stable_view_transfer(
+            &ResourceContext::new(),
+            &[],
+            &assumptions,
+            &ledger,
+            caller,
+            callee,
+        )
+        .unwrap();
+        plan.lend_local_views(
+            state.memory(),
+            &[CCheckedResourceFact {
+                fact: viewed,
+                role: CResourceTransferRole::Borrow,
+                snapshot: CResourceSnapshot::Entry,
+                clause_position: None,
+                section_index: None,
+            }],
+            &assumptions,
+        )
+        .unwrap();
+        let state = state
+            .with_loan_ledger(Some(plan.ledger.clone()))
+            .with_loan_participant(Some(caller));
+        assert!(matches!(
+            initialization_storage_refusal(&state, &pointer, 40, 8, &assumptions),
+            Some(CRuntimeError::LoanRefusal(_))
+        ));
+    }
+
+    #[test]
+    fn initialization_does_not_reuse_consumed_or_zero_storage_authority() {
+        use super::super::*;
+        let pointer = Pointer {
+            block: PointerBlock::Heap(91_003),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let range = allocation_range(pointer.clone(), 40);
+        let fact = CResourceFact::own_memory(range.clone());
+        let assumptions = PureFactContext::new();
+        let resources = ResourceContext::new().unchecked_with_fact(fact.clone());
+        assert!(resources.owns_storage_access(&pointer, 40, &assumptions));
+        let resources = resources.without_fact(&fact, &assumptions).unwrap();
+        assert!(!resources.owns_storage_access(&pointer, 40, &assumptions));
+        let zero = resources.unchecked_with_fact(CResourceFact::own_quantity(
+            CResource::Memory(range),
+            0u32.into(),
+        ));
+        assert!(!zero.owns_storage_access(&pointer, 40, &assumptions));
+        let overlapping_zero = zero.unchecked_with_fact(fact);
+        assert!(overlapping_zero.owns_storage_access(&pointer, 40, &assumptions));
+    }
+
+    #[test]
+    fn initialization_storage_lookup_is_indexed_within_one_object() {
+        use super::super::*;
+        let base = Pointer {
+            block: PointerBlock::Heap(91_001),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut samples = vec![];
+        for size in [16usize, 64, 256, 1024] {
+            let mut resources = ResourceContext::new();
+            for index in 0..size {
+                // Alternate units, so the index must compare bytes, not element indices.
+                let width = if index % 2 == 0 { 1 } else { 8 };
+                resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                    CMemoryRange::new_with_element_width(
+                        base.clone(),
+                        ((index * 64) as u32 / width).into(),
+                        ((index * 64 + 40) as u32 / width).into(),
+                        width,
+                    ),
+                ));
+            }
+            let state = CState::new().with_resource_context(resources);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in [0, size / 2, size - 1] {
+                    let pointer = base.offset_by_bytes((index * 64) as u32);
+                    assert!(
+                        initialization_storage_refusal(
+                            &state,
+                            &pointer,
+                            40,
+                            8,
+                            &PureFactContext::new()
+                        )
+                        .is_none()
+                    );
+                    assert!(
+                        initialization_storage_refusal(
+                            &state,
+                            &pointer.offset_by_bytes(40),
+                            40,
+                            8,
+                            &PureFactContext::new()
+                        )
+                        .is_some()
+                    );
+                }
+            });
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1] <= pair[0] + 160,
+                "storage query must be logarithmic: {samples:?}"
             );
         }
     }

@@ -7189,6 +7189,18 @@ impl Parser {
                             "pointer field `{field_name}` requires an explicit range for its contents or `&` for its storage"
                         )));
                     }
+                    // Address ownership covers opaque union storage in ABI byte units.
+                    // It does not authorize reading or copying a typed union value.
+                    let field = if address && field.union_name.is_some() {
+                        ResolvedField {
+                            c_type: C0Type::UInt8,
+                            byte_width: 1,
+                            union_name: None,
+                            ..field
+                        }
+                    } else {
+                        field
+                    };
                     self.validate_field_place(&field)?;
                     let mut segment = Self::field_segment_from_metadata(
                         base,
@@ -7222,6 +7234,18 @@ impl Parser {
                             "pointer field `{field_name}` requires an explicit range for its contents or `&` for its storage"
                         )));
                     }
+                    // Address ownership covers opaque union storage in ABI byte units.
+                    // It does not authorize reading or copying a typed union value.
+                    let field = if address && field.union_name.is_some() {
+                        ResolvedField {
+                            c_type: C0Type::UInt8,
+                            byte_width: 1,
+                            union_name: None,
+                            ..field
+                        }
+                    } else {
+                        field
+                    };
                     self.validate_field_place(&field)?;
                     let mut segment = Self::field_segment_from_metadata(
                         base,

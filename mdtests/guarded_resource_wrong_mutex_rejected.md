@@ -17,6 +17,8 @@ resource cell_state(cell: struct cell*) {
 }
 verifying "guarded_resource_wrong_mutex_rejected.c";
 void wrong(struct cell *cell) {
+    owns &cell->other;
+    requires aligned(&cell->other, 8);
     owns state: cell_state(cell);
 } by {
     step(pthread_mutex_init(&cell->other, 0), { invariant: state });
