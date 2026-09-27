@@ -6312,6 +6312,53 @@ fn common_base_offset_distinctness_handles_the_unoffset_base() {
     ));
 }
 
+/// A pointer that is its own block, such as one loaded from memory, indexes
+/// with bare offsets: `p[i]` and `p[j]` add nothing else to the block, so the
+/// whole offsets are the indices the common-base ladder compares.
+#[test]
+fn common_base_offset_distinctness_compares_bare_offsets_of_one_block() {
+    let block = PointerBlock::Symbolic(Variable(93_200));
+    let element = |index: Bitvector32Term| Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let i = Bitvector32Term::Variable(Variable(93_201));
+    let j = Bitvector32Term::Variable(Variable(93_202));
+    let ordered = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::Bitvector32SignedLessThan(Box::new(i.clone()), Box::new(j.clone())),
+        true,
+    ));
+
+    assert!(pointer_offsets_with_common_base_proven_distinct(
+        &element(i.clone()),
+        &element(j.clone()),
+        &ordered,
+    ));
+    assert!(!pointer_offsets_with_common_base_proven_distinct(
+        &element(i.clone()),
+        &element(j),
+        &PureFactContext::new(),
+    ));
+    let first = Pointer {
+        block: block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let second = Pointer {
+        block,
+        offset: PointerOffsetTerm::Constant(4),
+    };
+    assert!(pointer_offsets_with_common_base_proven_distinct(
+        &first,
+        &second,
+        &PureFactContext::new(),
+    ));
+    assert!(!pointer_offsets_with_common_base_proven_distinct(
+        &first,
+        &first,
+        &PureFactContext::new(),
+    ));
+}
+
 #[test]
 fn consistent_order_context_scales_near_linearly() {
     let samples = [16, 32, 64, 128]

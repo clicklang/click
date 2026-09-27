@@ -3,8 +3,8 @@
 This is `arena_init` from `examples/arena`, its C unchanged, with only the
 resources its own contract names. `consumes object(arena)` gives the
 function-entry fact `aligned(arena, 8)`. Expanding the `simp()` that closes
-the loop's `preserve` proof cites that fact as a premise read at function
-entry.
+the loop's `preserve` proof once cited that fact as a premise read at
+function entry.
 
 The fact is `address(arena) & 7u64 == 0u64` inside, and the expansion wrote
 it with each side read at entry, as
@@ -12,7 +12,11 @@ it with each side read at entry, as
 Click has no cast spelling for a pointer's address, so the rewrite did not
 parse and `click audit examples/arena` failed at that site while
 `click verify` accepted the proof. A snapshot-read alignment fact now renders
-as `at(function.entry, aligned(arena, 8))`. The loop also follows a
+as `at(function.entry, aligned(arena, 8))`, which
+`snapshot_read_alignment_fact_renders_as_aligned` in
+`src/surface/tests/surface_syntax.rs` checks directly. The expansion no longer
+needs the fact at all: the loop's store `occupied[i - 1]` and an earlier cell
+`occupied[k]` are separated by `k < i - 1` alone. The loop also follows a
 proof-level `branch`, the shape `loop_after_proof_branch_expands.md` reduces.
 The expansion regression in `src/surface/tests/expansion_tests.rs` expands
 the site and re-verifies the rewrite, and the audit regression in

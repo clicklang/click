@@ -936,12 +936,20 @@ enum AlphaPointerOffsetKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaPointerBlockKey {
     Concrete(String),
-    StringLiteral { identity: String, bytes: Vec<u8> },
+    StringLiteral {
+        identity: String,
+        bytes: Vec<u8>,
+    },
     Function(String),
     FunctionSymbolic(AlphaVariableKey),
     ExternalArgument,
     ExternalObject(AlphaVariableKey),
     Symbolic(AlphaVariableKey),
+    /// A pointer loaded from memory is its own block, named by the load
+    /// variable; like a load at an offset position, it is keyed by the
+    /// snapshot and address it reads, so a binder inside that address
+    /// renames.
+    RegisteredLoad(AlphaRegisteredLoadId),
     Heap(u64),
     Temporary(u64),
 }
@@ -1736,6 +1744,15 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 &bindings.bitvector,
             )?)
+        }
+        PointerBlock::Symbolic(variable)
+            if bindings.snapshot_aware
+                && crate::kernel::is_load_variable(variable)
+                && !bindings.bitvector.contains_key(variable) =>
+        {
+            AlphaPointerBlockKey::RegisteredLoad(alpha_registered_load_pointer_with_bindings::<
+                ALLOW_LOADS,
+            >(*variable, bindings, next_binder)?)
         }
         PointerBlock::Symbolic(variable) => {
             AlphaPointerBlockKey::Symbolic(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
@@ -3738,6 +3755,54 @@ mod snapshot_alpha_tests {
 
         assert_eq!(before_key, renamed_before_key);
         assert_ne!(before_key, after_key);
+    }
+
+    /// A pointer loaded from memory is its own block, named by its load
+    /// variable, so `forall k { p[k] == 1 }` for a loaded `p` reads a cell
+    /// whose block is a load. Renaming `k` renames the address inside the
+    /// cell's load, and the key must follow it there as it does at an
+    /// offset position; the load naming the block keeps its identity.
+    #[test]
+    fn snapshot_alpha_renames_a_binder_under_a_loaded_pointer_block() {
+        let block = "loaded-pointer-block-alpha";
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block, 16));
+        let field = |offset: i64| Pointer {
+            block: block.into(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let loaded =
+            crate::kernel::load_variable_for_cell_with_origin(&memory, &field(0), 8, &memory);
+        let other =
+            crate::kernel::load_variable_for_cell_with_origin(&memory, &field(8), 8, &memory);
+        let every_element_is_one = |base: Variable, binder: Variable| {
+            let element = Pointer {
+                block: PointerBlock::Symbolic(base),
+                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(binder), 4),
+            };
+            let element_load =
+                crate::kernel::load_variable_for_cell_with_origin(&memory, &element, 4, &memory);
+            Proposition::ForAll {
+                var: binder,
+                sort: Sort::CInt32,
+                body: Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(element_load)),
+                        Box::new(Bitvector32Term::Constant(1)),
+                    ),
+                    true,
+                )),
+            }
+        };
+
+        let key = proposition_identity_key(&every_element_is_one(loaded, Variable(315_000)))
+            .expect("a loaded pointer block should resolve to an exact key");
+        let renamed = proposition_identity_key(&every_element_is_one(loaded, Variable(315_001)))
+            .expect("a renamed binder should resolve to an exact key");
+        let other_base = proposition_identity_key(&every_element_is_one(other, Variable(315_001)))
+            .expect("another loaded pointer should resolve to an exact key");
+
+        assert_eq!(key, renamed);
+        assert_ne!(key, other_base);
     }
 
     #[test]

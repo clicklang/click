@@ -2053,6 +2053,16 @@ fn common_base_index_offsets(
         (left, PointerOffsetTerm::Add(index, base)) if left == base.as_ref() => {
             Some((&zero, index.as_ref()))
         }
+        // Neither address adds anything to its block: the common base is
+        // the block itself, and the whole offsets are the indices. This is
+        // `p[i]` against `p[j]` for a pointer that is its own block, such as
+        // one loaded from memory.
+        (left, right)
+            if !matches!(left, PointerOffsetTerm::Add(..))
+                && !matches!(right, PointerOffsetTerm::Add(..)) =>
+        {
+            Some((left, right))
+        }
         _ => None,
     };
     let (left_index, right_index) = index_pair?;

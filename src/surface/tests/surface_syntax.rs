@@ -4363,3 +4363,20 @@ fn whole_struct_view_requires_a_declared_resource() {
         );
     }
 }
+
+/// A function-entry alignment fact cited after execution is qualified side
+/// by side, `at(S, address(p) & 7u64) == at(S, 0u64)`. Click has no cast
+/// spelling for the address inside, so it renders as the `aligned` sugar
+/// read at that snapshot rather than as an unparseable `(uint64)p`.
+#[test]
+fn snapshot_read_alignment_fact_renders_as_aligned() {
+    let source = "theorem entry_alignment(arena: int32*) { \
+        requires at(function.entry, address(arena) & 7u64) == at(function.entry, 0u64); \
+        ensures 0 == 0; }";
+    let file = parser::parse_file_items(source).expect("the alignment fact should parse");
+    let fact = file.theorem_definitions()[0].requires()[0]
+        .theorem_proposition()
+        .expect("the requirement should be a proposition");
+    let rendered = diagnostics::describe_click_proposition(&fact);
+    assert_eq!(rendered, "at(function.entry, aligned(arena, 8))");
+}

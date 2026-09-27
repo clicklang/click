@@ -698,19 +698,17 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
 }
 
-/// A function-entry alignment fact cited after the loop renders as
-/// `at(function.entry, aligned(arena, 8))`, not as a pointer cast Click
-/// cannot parse.
+/// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
+/// in parseable source spelling. It once cited the function-entry alignment
+/// fact, rendered as a pointer cast Click cannot parse; it now separates the
+/// loop's store from the earlier cells by their indices alone, and
+/// `snapshot_read_alignment_fact_renders_as_aligned` covers the rendering.
 #[test]
 fn entry_alignment_premise_expands_in_source_spelling() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/entry_alignment_premise_expands.md",
         "simp();\n        }\n    }\n    have i == capacity",
         0,
-    );
-    assert!(
-        expanded.contains("at(function.entry, aligned(arena, 8));"),
-        "{expanded}"
     );
     assert!(!expanded.contains("(uint64)arena"), "{expanded}");
 }

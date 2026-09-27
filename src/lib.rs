@@ -4,6 +4,10 @@
 // warnings in CI and local development.
 #![allow(clippy::large_enum_variant)]
 #![allow(clippy::result_large_err)]
+// Alpha keys and interned registered loads refer to each other through `Arc`,
+// and proving the resulting cycle `Sync` takes the trait solver past the
+// default depth.
+#![recursion_limit = "256"]
 #![allow(clippy::too_many_arguments)]
 // Interned kernel terms carry `Arc`-shared memo cells, so every set and map
 // keyed by a term looks mutable to Clippy. The cells are content-derived
