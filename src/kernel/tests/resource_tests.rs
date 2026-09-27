@@ -6463,6 +6463,102 @@ fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
     );
 }
 
+/// Owned pieces over displaced spellings of one symbolic base, the shape a
+/// call on `x + 1` or `x + i` returns, rejoin their neighbours over `x` when
+/// restated over `x` they abut exactly.
+#[test]
+fn owned_pieces_over_displaced_bases_rejoin_where_they_abut() {
+    let x = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(88_100)), 4),
+    };
+    let i = Bitvector32Term::Variable(Variable(88_101));
+    let own = |base: &Pointer, start: Bitvector32Term, end: Bitvector32Term| {
+        CResourceFact::own_memory(CMemoryRange::new(base.clone(), start, end))
+    };
+    let constant = Bitvector32Term::Constant;
+    let assumptions = PureFactContext::new();
+
+    let constant_pieces = ResourceContext::new()
+        .unchecked_with_facts([
+            own(&x, constant(0), constant(1)),
+            own(&x, constant(2), constant(4)),
+            own(&x.offset_by_bytes(4), constant(0), constant(1)),
+        ])
+        .normalized(&assumptions);
+    assert_eq!(constant_pieces.facts(), [own(&x, constant(0), constant(4))]);
+
+    let symbolic_pieces = ResourceContext::new()
+        .unchecked_with_facts([
+            own(&x, constant(0), i.clone()),
+            own(
+                &x.offset_by_int32_elements(i.clone()),
+                constant(0),
+                constant(1),
+            ),
+        ])
+        .normalized(&assumptions);
+    assert_eq!(
+        symbolic_pieces.facts(),
+        [own(
+            &x,
+            constant(0),
+            Bitvector32Term::add(i.clone(), constant(1))
+        )]
+    );
+}
+
+/// A displaced piece stays apart from a neighbour it may not abut: a gap, an
+/// overlap, or a restated start that is exact only while `i + 1` does not
+/// wrap all leave the pieces as they were.
+#[test]
+fn owned_pieces_over_displaced_bases_that_may_not_abut_stay_apart() {
+    let x = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(88_200)), 4),
+    };
+    let i = Bitvector32Term::Variable(Variable(88_201));
+    let own = |base: &Pointer, start: Bitvector32Term, end: Bitvector32Term| {
+        CResourceFact::own_memory(CMemoryRange::new(base.clone(), start, end))
+    };
+    let constant = Bitvector32Term::Constant;
+    let assumptions = PureFactContext::new();
+    for pieces in [
+        // A gap: `x[1..2]` is held by no one.
+        [
+            own(&x, constant(0), constant(1)),
+            own(&x.offset_by_bytes(8), constant(0), constant(1)),
+        ],
+        // An overlap at `x[1..2]`.
+        [
+            own(&x, constant(0), constant(2)),
+            own(&x.offset_by_bytes(4), constant(0), constant(1)),
+        ],
+        // `(x + i)[1..2]` is `x[i + 1..i + 2]` only while `i + 1` does not wrap.
+        [
+            own(
+                &x,
+                constant(0),
+                Bitvector32Term::add(i.clone(), constant(1)),
+            ),
+            own(
+                &x.offset_by_int32_elements(i.clone()),
+                constant(1),
+                constant(2),
+            ),
+        ],
+    ] {
+        let normalized = ResourceContext::new()
+            .unchecked_with_facts(pieces.clone())
+            .normalized(&assumptions);
+        let mut facts = normalized.facts().to_vec();
+        let mut expected = pieces.to_vec();
+        facts.sort();
+        expected.sort();
+        assert_eq!(facts, expected);
+    }
+}
+
 /// The frame check opens each owned composite of a published composition
 /// exactly one level, the boundary a composite lend uses. A cell in the
 /// frontier is framed by ownership; a cell below it, inside a nested

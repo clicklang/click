@@ -5440,6 +5440,11 @@ enum ResourceNormalizationKey {
 /// term, which remains the only form the symbolic adjacency comparison can
 /// use. The two forms never collide: a concrete key is always a constant and
 /// a retained term never is.
+///
+/// A symbolic base keeps element units, counted from its root (the base
+/// without its displacement), so a piece a call returns over `x + i` or
+/// `x + 1` meets the pieces of `x` it abuts. The key only proposes a pair;
+/// [`merge_memory_ranges`] decides it exactly.
 fn memory_normalization_position(range: &CMemoryRange, bound: &Bitvector32Term) -> Bitvector32Term {
     let byte_position = || -> Option<Bitvector32Term> {
         let base = range.base().offset.as_const()?;
@@ -5447,7 +5452,28 @@ fn memory_normalization_position(range: &CMemoryRange, bound: &Bitvector32Term) 
         let byte = base.checked_add(elements.checked_mul(i64::from(range.element_width()))?)?;
         Some(Bitvector32Term::Constant(i32::try_from(byte).ok()? as u32))
     };
-    byte_position().unwrap_or_else(|| bound.clone())
+    let root_position = || -> Option<Bitvector32Term> {
+        let (block, atom) = memory_base_root(range.base());
+        let root = Pointer {
+            block,
+            offset: atom?,
+        };
+        if range.base() == &root {
+            return None;
+        }
+        let delta =
+            range
+                .base()
+                .exact_element_delta_from_base(&root, range.element_width(), None)?;
+        let constant = i32::try_from(delta.constant).ok()? as u32;
+        Some(Bitvector32Term::add(
+            Bitvector32Term::add(delta.index, bound.clone()),
+            Bitvector32Term::Constant(constant),
+        ))
+    };
+    byte_position()
+        .or_else(root_position)
+        .unwrap_or_else(|| bound.clone())
 }
 
 #[derive(Default)]
@@ -7723,7 +7749,14 @@ fn merge_memory_ranges(
         return merge_memory_ranges(&left, right, assumptions);
     }
     if left.base() != right.base() {
-        return None;
+        // Pieces over two spellings of one block, such as the residue of
+        // `owns x[0..4]` and the `owns (x + i)[0..1]` a call returns, meet
+        // over whichever base the other can be restated on exactly.
+        if let Some(right) = memory_range_rebased(right, left.base(), assumptions) {
+            return merge_memory_ranges(left, &right, assumptions);
+        }
+        let left = memory_range_rebased(left, right.base(), assumptions)?;
+        return merge_memory_ranges(&left, right, assumptions);
     }
     if left.end() == right.start()
         || bitvector_terms_proven_equal(left.end(), right.start(), assumptions)
@@ -7746,6 +7779,48 @@ fn merge_memory_ranges(
         ));
     }
     None
+}
+
+/// `range` restated over `base`, naming exactly the same elements.
+///
+/// Only a range with constant bounds is restated, and only onto a base it
+/// sits an exact number of elements from
+/// ([`crate::kernel::reasoning::ExactElementDelta`]). A range's
+/// first element is the signed value of its start and its length the
+/// wrapping difference of its bounds, so the restated start must be exact: a
+/// constant that fits `int32`, or the delta's symbolic index itself with no
+/// constant beside it, since `i + k` is `sext(i) + k` only while it does not
+/// wrap. The restated end is the start plus the same length, which the
+/// wrapping difference preserves.
+fn memory_range_rebased(
+    range: &CMemoryRange,
+    base: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<CMemoryRange> {
+    let (start, count) = constant_range_extent(range)?;
+    let delta = range.base().exact_element_delta_from_base(
+        base,
+        range.element_width(),
+        Some(assumptions),
+    )?;
+    let offset = delta.constant.checked_add(start)?;
+    let start = if delta.is_constant() {
+        Bitvector32Term::Constant(i32::try_from(offset).ok()? as u32)
+    } else if offset == 0 {
+        delta.index
+    } else {
+        return None;
+    };
+    let end = Bitvector32Term::add(
+        start.clone(),
+        Bitvector32Term::Constant(i32::try_from(count).ok()? as u32),
+    );
+    Some(CMemoryRange::new_with_element_width(
+        base.clone(),
+        start,
+        end,
+        range.element_width(),
+    ))
 }
 
 fn bitvector_terms_proven_equal(

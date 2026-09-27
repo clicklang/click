@@ -1140,7 +1140,8 @@ the caller. When the helper returns `p[0..1]`, adjacent write ranges are
 normalized back into `p[0..2]`.
 
 The same mechanism works for symbolic one-cell subranges when current facts
-prove the subrange is covered.
+prove the subrange is covered, and for a range returned over a displaced
+pointer such as `x + i`, which rejoins its neighbours over `x`.
 
 ## Element width
 

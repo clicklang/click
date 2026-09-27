@@ -1979,7 +1979,12 @@ subrange is covered. Two held ranges are adjacent when one ends where the
 other starts as written or by an exact equality premise, so `p[0..n]` and
 `p[m..4]` under `n == m` rejoin into `p[0..4]`; a gap between them is never
 bridged (`mdtests/fold_joins_ranges_abutting_by_proved_equality.md`,
-`mdtests/fold_join_needs_the_endpoint_equality.md`). Viewed and owned memory elements also make the covered
+`mdtests/fold_join_needs_the_endpoint_equality.md`). A range held over a
+displaced base, such as the `owns (x + i)[0..1]` a call on `x + i` returns, is
+compared in the coordinates of the base it sits an exact number of elements
+from, so it rejoins `x[0..i]` and `x[i + 1..4]`
+(`mdtests/owned_pieces_returned_over_interior_pointers_rejoin.md`,
+`mdtests/owned_pieces_that_may_not_abut_do_not_rejoin.md`). Viewed and owned memory elements also make the covered
 range viewable for symbolic execution, so ordinary external reads and writes
 do not need a separate `viewable(...)` requirement for the same range.
 
