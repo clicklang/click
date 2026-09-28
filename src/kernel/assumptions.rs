@@ -2845,9 +2845,9 @@ impl PureFactContext {
         }
     }
 
-    /// Rebuilds the graph's pointer and offset fragments from the exact alias indexes. A union-find
+    /// Rebuilds all graph fragments from their exact equality indexes. A union-find
     /// cannot forget one equality, so a withdrawal refiles the equalities
-    /// that remain: work in the pointer equalities held, not in the facts.
+    /// that remain: work in the equalities held, not in unrelated facts.
     fn rebuild_equality_graph(&mut self) {
         let mut classes = EqualityGraph::default();
         for (left, aliases) in self.pointer_block_aliases.iter() {
@@ -2864,7 +2864,42 @@ impl PureFactContext {
                 }
             }
         }
+        for ((left, right), _) in self.int32_graph_equalities.iter() {
+            classes.add_int32_equality(left.value(), right.value());
+        }
         self.equality_graph = classes;
+    }
+
+    fn adjust_int32_graph_equality(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+            return;
+        };
+        if !value {
+            return;
+        }
+        // Count exact premises under the canonical edge rather than interning
+        // raw MemoryLoad payloads. Raw interning can compare whole snapshots
+        // across verification arenas. Counts preserve independent spellings
+        // that canonicalize to the same edge when one premise is withdrawn.
+        let edge = (
+            super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(left)),
+            super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(right)),
+        );
+        let count = self.int32_graph_equalities.get(&edge).copied().unwrap_or(0);
+        if insert {
+            self.int32_graph_equalities.insert(edge, count + 1);
+            self.equality_graph.add_int32_equality(left, right);
+        } else if count > 1 {
+            self.int32_graph_equalities.insert(edge, count - 1);
+        } else {
+            self.int32_graph_equalities.remove(&edge);
+            self.rebuild_equality_graph();
+        }
     }
 
     fn adjust_pointer_offset_alias(
@@ -3161,6 +3196,7 @@ impl PureFactContext {
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
+        self.int32_graph_equalities = crate::persistent::PersistentMap::default();
         self.pointer_offset_aliases = crate::persistent::PersistentMap::default();
         self.pointer_offset_aliases_by_root = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
@@ -3168,6 +3204,7 @@ impl PureFactContext {
             self.adjust_condition_match_indexes(condition, *value, true);
             self.adjust_pointer_block_alias(condition, *value, true);
             self.adjust_pointer_offset_alias(condition, *value, true);
+            self.adjust_int32_graph_equality(condition, *value, true);
         }
     }
 
@@ -4533,6 +4570,7 @@ impl PureFactContext {
             self.adjust_null_pointer_offset(&condition, old, false);
             self.adjust_pointer_block_alias(&condition, old, false);
             self.adjust_pointer_offset_alias(&condition, old, false);
+            self.adjust_int32_graph_equality(&condition, old, false);
             self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), old));
         }
         self.adjust_stated_proposition_index(
@@ -4544,6 +4582,7 @@ impl PureFactContext {
         self.adjust_null_pointer_offset(&condition, value, true);
         self.adjust_pointer_block_alias(&condition, value, true);
         self.adjust_pointer_offset_alias(&condition, value, true);
+        self.adjust_int32_graph_equality(&condition, value, true);
         self.adjust_bitvector64_equality(&condition, value, true);
         self.adjust_exact_constant_equality(&condition, value, true);
         self.adjust_condition_match_indexes(&condition, value, true);
@@ -4751,6 +4790,7 @@ impl PureFactContext {
         self.adjust_null_pointer_offset(condition, assumed, false);
         self.adjust_pointer_block_alias(condition, assumed, false);
         self.adjust_pointer_offset_alias(condition, assumed, false);
+        self.adjust_int32_graph_equality(condition, assumed, false);
         self.rebuild_memory_load_condition_facts();
         self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), assumed));
     }

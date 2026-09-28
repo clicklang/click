@@ -181,6 +181,17 @@ equalities arrive after the addition terms. It adds no arithmetic solver or
 cancellation rule, and no ownership or framing consumers have been migrated
 to it.
 
+The graph now also admits explicit int32 equalities. Normalization uses their
+transitive closure for equality leaves and conditional guards through the same
+query traversal. Typed scalar nodes share the offset fragment's persistent
+term-class engine; no separate scalar union-find was added. Regressions cover
+branch isolation, sort and snapshot separation, withdrawal and restriction,
+expansion/rechecking, and multi-size indexed insertion/fork work. Canonical
+edge support counts avoid raw-load interning across verification arenas; a
+multi-size regression rejects the whole-snapshot comparisons that exposed. Scalar
+arithmetic congruence and propagation from equal scalar indices into scaled
+offsets remain separate future chunks.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

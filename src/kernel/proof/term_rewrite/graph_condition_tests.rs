@@ -49,7 +49,31 @@ fn graph_condition_reduction_keeps_unknown_equalities_and_branches_isolated() {
 
 #[test]
 fn graph_condition_reduction_preserves_all_binder_bodies() {
-    let graph = graph();
+    check_binder_bodies(false);
+    check_binder_bodies(true);
+}
+
+fn check_binder_bodies(scalar: bool) {
+    let guard = || {
+        if scalar {
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(51)),
+                Bitvector32Term::Variable(Variable(52)),
+            )
+        } else {
+            guard()
+        }
+    };
+    let choice = || Bitvector32Term::If {
+        condition: Box::new(guard()),
+        then_term: Box::new(Bitvector32Term::Constant(7)),
+        else_term: Box::new(Bitvector32Term::Constant(0)),
+    };
+    let mut graph = graph();
+    graph.add_int32_equality(
+        &Bitvector32Term::Variable(Variable(51)),
+        &Bitvector32Term::Variable(Variable(52)),
+    );
     let cited = HashMap::from([(guard(), true)]);
     let empty = HashMap::new();
     let machine_fold = Bitvector32Term::RangeFold {
@@ -166,5 +190,65 @@ fn graph_condition_reduction_scales_with_the_expression_not_ambient_facts() {
         });
         assert_eq!(output, expected);
         assert!(work < 100 * size, "size={size}, expression work={work}");
+    }
+}
+
+#[test]
+fn int32_graph_conditions_do_not_cross_sorts_or_admit_disequality() {
+    let a = Bitvector32Term::Variable(Variable(81));
+    let b = Bitvector32Term::Variable(Variable(82));
+    let c = Bitvector32Term::Variable(Variable(83));
+    let context = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(a.clone(), b.clone()), true)
+        .assume_condition(ConditionTerm::equal(b.clone(), c.clone()), false);
+    let empty = HashMap::new();
+    let mut rewrite = TermRewrite::for_conditions_with_graph(&empty, &context.equality_graph);
+    assert_eq!(
+        rewrite.condition(&ConditionTerm::equal(a.clone(), b.clone())),
+        ConditionTerm::Constant(true)
+    );
+    for condition in [
+        ConditionTerm::equal(b.clone(), c),
+        ConditionTerm::Bitvector64Equal(Box::new(a.clone()), Box::new(b.clone())),
+        ConditionTerm::IntegerEqual(
+            IntegerTerm::from_machine(MachineIntegerType::Int32, a)
+                .unwrap()
+                .into(),
+            IntegerTerm::from_machine(MachineIntegerType::Int32, b)
+                .unwrap()
+                .into(),
+        ),
+    ] {
+        assert_eq!(rewrite.condition(&condition), condition);
+    }
+}
+
+#[test]
+fn int32_guard_queries_ignore_unrelated_graph_equalities() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let var = |id| Bitvector32Term::Variable(Variable(id));
+        let mut graph = EqualityGraph::default();
+        graph.add_int32_equality(&var(1), &var(2));
+        for i in 0..size {
+            graph.add_int32_equality(&var(100 + 2 * i), &var(101 + 2 * i));
+        }
+        let choice = Bitvector32Term::If {
+            condition: Box::new(ConditionTerm::equal(var(1), var(2))),
+            then_term: Box::new(Bitvector32Term::Constant(7)),
+            else_term: Box::new(Bitvector32Term::Constant(0)),
+        };
+        let empty = HashMap::new();
+        let ((output, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                TermRewrite::for_conditions_with_graph(&empty, &graph).bits(&choice)
+            })
+        });
+        assert_eq!(output, Bitvector32Term::Constant(7));
+        assert!(work < 100, "size={size}, work={work}");
+        assert!(
+            map_work < 100 * (size.ilog2() as usize + 1),
+            "size={size}, map work={map_work}"
+        );
     }
 }

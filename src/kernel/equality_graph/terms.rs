@@ -1,4 +1,6 @@
-//! Explicit offset equality and addition congruence inside the trusted graph.
+//! Typed term classes inside the trusted graph: offset addition congruence and
+//! explicit int32 equality. Scalar terms are opaque; their operands do not
+//! participate in congruence yet.
 //! Addition signatures use operand classes; parent-use indexes propagate late
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
@@ -8,6 +10,7 @@ use crate::persistent::{PersistentMap, PersistentSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
+    Int32(MachineAtom),
     Constant(i64),
     Variable(Variable),
     Add(u64, u64),
@@ -16,7 +19,7 @@ enum Node {
 }
 
 #[derive(Clone, Default)]
-pub(super) struct OffsetClasses {
+pub(super) struct TermClasses {
     nodes: PersistentMap<Node, u64>,
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
@@ -29,7 +32,7 @@ pub(super) struct OffsetClasses {
     addition_signatures: PersistentMap<u64, (u64, u64)>,
 }
 
-impl OffsetClasses {
+impl TermClasses {
     fn intern(&mut self, term: &PointerOffsetTerm) -> u64 {
         enum Work<'a> {
             Term(&'a PointerOffsetTerm),
@@ -79,24 +82,53 @@ impl OffsetClasses {
                     ),
                 },
             };
-            let id = match self.nodes.get(&node) {
-                Some(id) => *id,
-                None => {
-                    let id = self.nodes.len() as u64;
-                    let operands = match &node {
-                        Node::Add(left, right) => Some((*left, *right)),
-                        _ => None,
-                    };
-                    self.nodes.insert(node, id);
-                    if let Some(operands) = operands {
-                        self.register_addition(id, operands);
-                    }
-                    id
-                }
-            };
+            let id = self.intern_node(node);
             values.push(id);
         }
         values.pop().expect("offset term")
+    }
+
+    fn intern_node(&mut self, node: Node) -> u64 {
+        if let Some(id) = self.nodes.get(&node) {
+            return *id;
+        }
+        let id = self.nodes.len() as u64;
+        let operands = match &node {
+            Node::Add(left, right) => Some((*left, *right)),
+            _ => None,
+        };
+        self.nodes.insert(node, id);
+        if let Some(operands) = operands {
+            self.register_addition(id, operands);
+        }
+        id
+    }
+
+    fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
+        self.intern_node(Node::Int32(MachineAtom::int32(
+            crate::kernel::canonical_term(term),
+        )))
+    }
+
+    pub(super) fn are_int32_equal(
+        &mut self,
+        left: &crate::kernel::Bitvector32Term,
+        right: &crate::kernel::Bitvector32Term,
+    ) -> bool {
+        let left = self.intern_int32(left);
+        let right = self.intern_int32(right);
+        // Reflexivity needs no class traversal, even when this node was merged.
+        left == right || self.root(left) == self.root(right)
+    }
+
+    pub(super) fn add_int32_equality(
+        &mut self,
+        left: &crate::kernel::Bitvector32Term,
+        right: &crate::kernel::Bitvector32Term,
+    ) -> bool {
+        let left = self.intern_int32(left);
+        let right = self.intern_int32(right);
+        left != right && self.close(vec![(left, right)])
     }
 
     fn root(&self, mut id: u64) -> u64 {

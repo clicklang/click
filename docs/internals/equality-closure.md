@@ -18,7 +18,9 @@ whether a class merge occurred, not validation of the supplied premise.
 Pointer operations keep pointer-typed operands; `add_offset_equality` and
 `are_offsets_equal` accept whole pointer-offset terms. Supported pointer-load
 applications and offset terms register on demand during insertion and queries.
-Further term sorts and consumers will be added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
+`add_int32_equality` and `are_int32_equal` admit and query explicit int32
+equalities and their transitive closure. Further sorts and consumers will be
+added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
 
 Kernel rules may trust the graph's answers in their own proof context. There
@@ -32,7 +34,7 @@ The larger typed-pointer migration remains an unmerged reference draft in
 `codex/egraph-foundation`; this refactor imports none of its behavior changes.
 
 `normalize() using { ... }` queries this existing graph while reducing
-pointer-equality conditions, including guards of conditional expressions.
+pointer and int32 equality conditions, including guards of conditional expressions.
 Successful queries replace equality conditions with true; unsuccessful queries
 leave them unknown. The same traversal handles equality leaves and nested
 conditions. Graph queries may use ambient graph facts; the `using` list
@@ -40,7 +42,10 @@ restricts the additional conditions used for reduction. All cited premises must 
 supported. Other ambient facts, quantified bodies, and cross-snapshot frame
 search remain outside this operation. Expansion retains the simple step and
 rechecks it in the same proof context, without an explanation API or a
-per-tactic graph rebuild. Explicit pointer-offset equalities also enter the
+per-tactic graph rebuild. Restricted `simp() using` planning checks a
+normalization candidate against only its selected context before emitting the
+simple step; omitted ambient equalities do not participate in that search.
+Explicit pointer-offset equalities also enter the
 same graph and are available to this normalization check. This covers ordinary
 C pointer parameters, which lower to offsets in a shared block, without
 changing their representation.
@@ -52,9 +57,19 @@ propagate late merges through nested additions with an iterative worklist;
 only parents of the lighter class are revisited. It preserves widths,
 signedness, and machine-term snapshot identity, and adds no arithmetic solver
 or cancellation rule. Queries and additions use indexed access. Existing
-context restriction and equality-withdrawal rebuilds retain both graph
-fragments from their remaining exact alias indexes. Ownership and framing
+context restriction and equality-withdrawal rebuilds retain all graph
+fragments from their remaining exact equality indexes. Ownership and framing
 consumers do not query the new offset fragment.
+
+Explicit int32 equalities use typed opaque nodes in the same term-class engine
+as offsets. The graph preserves canonical machine-term identity, including
+memory snapshots. It does not infer scalar arithmetic congruence, 64-bit or
+mathematical-integer equality, or equality of scaled offsets from scalar
+equality. Exact scalar premises are counted under shallow canonical edge keys so
+withdrawal preserves other premises that support the same edge. `MemoryLoad`
+expressions are not separately interned for support tracking: that would allow
+cross-arena snapshot comparisons to traverse unrelated memory. This is an additive consumer migration; legacy scalar reasoning outside
+normalization has not changed.
 
 ## Problem and scope
 

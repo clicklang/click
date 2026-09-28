@@ -3541,6 +3541,7 @@ impl<'a> TermRewrite<'a> {
         } else if self.equality_graph.is_some_and(|graph| match &result {
             ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
             ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
+            ConditionTerm::Bitvector32Equal(left, right) => graph.are_int32_equal(left, right),
             _ => false,
         }) {
             ConditionTerm::Constant(true)

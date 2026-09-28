@@ -5210,6 +5210,10 @@ impl<'a> Proof<'a> {
                 return Some(closed);
             }
         }
+        let restricted = premise_pairs
+            .iter()
+            .map(|(kernel, _)| kernel.clone())
+            .collect::<Vec<_>>();
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)
             || !crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(goal).is_empty()
         {
@@ -5218,17 +5222,28 @@ impl<'a> Proof<'a> {
                 .filter(|&(kernel, _surface)| !condition_polarity_forms(kernel).is_empty())
                 .map(|(_kernel, surface)| surface.clone())
                 .collect::<Vec<_>>();
+            let condition_kernels = premise_pairs
+                .iter()
+                .filter(|(kernel, _)| !condition_polarity_forms(kernel).is_empty())
+                .map(|(kernel, _)| kernel.clone())
+                .collect::<Vec<_>>();
+            // NormalizeUsing can query its ambient graph. Restricted search
+            // must first establish that this candidate works in the selected
+            // context, just as its other planners use `restricted` below.
+            // Build only from the explicit input; never scan ambient facts.
             if !conditions.is_empty()
+                && crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                    goal,
+                    &condition_kernels,
+                    &crate::kernel::proof::ProofFacts::from_ordered(&restricted),
+                )
+                .is_ok()
                 && let Ok(closed) = proof.apply_step(ProofStep::NormalizeUsing(conditions))
                 && closed.is_complete()
             {
                 return Some(closed);
             }
         }
-        let restricted = premise_pairs
-            .iter()
-            .map(|(kernel, _)| kernel.clone())
-            .collect::<Vec<_>>();
         // A definedness goal is left to the typed candidates and the
         // `int32_defined` / `int64_defined` closer below, so an
         // operand-specific theorem application keeps its priority.

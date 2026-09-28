@@ -6,7 +6,7 @@
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
 //! The current supported fragment is pointers, affine byte offsets, and
-//! registered same-snapshot pointer loads, plus explicit whole-offset equality.
+//! registered same-snapshot pointer loads, plus explicit whole-offset and int32 equality.
 //! Pointer and offset queries are typed separately; the offset fragment only
 //! supports stated equalities and congruence of offset addition. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.
@@ -47,10 +47,13 @@
 
 use super::prelude::*;
 
-mod offsets;
+#[cfg(test)]
+mod int32_tests;
+mod terms;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
-/// ID; the original term is retained only for legacy spelling reconstruction.
+/// ID; the original term is retained for exact premise support and spelling
+/// reconstruction.
 #[derive(Clone)]
 pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm);
 
@@ -58,7 +61,10 @@ impl MachineAtom {
     fn new(ty: crate::kernel::MachineIntegerType, value: Bitvector32Term) -> Self {
         Self(crate::kernel::SharedMachineIntegerTerm::intern(ty, value))
     }
-    fn value(&self) -> &Bitvector32Term {
+    pub(in crate::kernel) fn int32(value: Bitvector32Term) -> Self {
+        Self::new(crate::kernel::MachineIntegerType::Int32, value)
+    }
+    pub(in crate::kernel) fn value(&self) -> &Bitvector32Term {
         self.0.value()
     }
 }
@@ -288,9 +294,9 @@ pub(in crate::kernel) struct CanonicalPointer {
     pub(in crate::kernel) offset: AffineOffset,
 }
 
-/// Closed, persistent pointer and offset equality state. Query registration
+/// Closed, persistent pointer, offset, and int32 equality state. Query registration
 /// adds only terms and definitional load applications; hypotheses enter through
-/// `add_equality` and `add_offset_equality`.
+/// `add_equality`, `add_offset_equality`, and `add_int32_equality`.
 /// Cloning copies the persistent roots into a new lock, never a shared mutable
 /// graph. The lock preserves `PureFactContext`'s Send/Sync contract.
 #[derive(Default)]
@@ -342,7 +348,7 @@ enum OffsetPart {
 
 #[derive(Clone, Default)]
 struct EqualityGraphState {
-    offsets: offsets::OffsetClasses,
+    terms: terms::TermClasses,
     parent: crate::persistent::PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
     members: crate::persistent::PersistentMap<
         PointerBlock,
@@ -398,8 +404,35 @@ impl EqualityGraph {
         self.state
             .lock()
             .expect("equality graph")
-            .offsets
+            .terms
             .are_equal(left, right)
+    }
+
+    /// Query stated int32 equality and transitivity. A false answer is unknown.
+    /// Scalar operations are opaque; no arithmetic congruence is inferred.
+    pub(in crate::kernel) fn are_int32_equal(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .are_int32_equal(left, right)
+    }
+
+    /// Admit an already established int32 equality in this proof context.
+    pub(in crate::kernel) fn add_int32_equality(
+        &mut self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        self.state
+            .get_mut()
+            .expect("equality graph")
+            .terms
+            .add_int32_equality(left, right)
     }
 
     /// Admit an already established offset equality in this proof context.
@@ -411,7 +444,7 @@ impl EqualityGraph {
         self.state
             .get_mut()
             .expect("equality graph")
-            .offsets
+            .terms
             .add_equality(left, right)
     }
 

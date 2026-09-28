@@ -4808,7 +4808,7 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
 }
 
 #[test]
-fn restricted_simp_expands_to_explicit_equality_rewrites() {
+fn restricted_simp_expands_to_graph_normalization() {
     let click_source = r#"
             theorem equality_transitive(x: int32, y: int32, z: int32) {
                 requires x == y;
@@ -4850,12 +4850,17 @@ fn restricted_simp_expands_to_explicit_equality_rewrites() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("restricted simp should expand");
-    assert!(expanded.contains("rewrite(x == y);"), "{expanded}");
-    assert!(expanded.contains("rewrite(y == z);"), "{expanded}");
-    assert!(expanded.contains("normalize();"), "{expanded}");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
+    assert!(expanded.contains("x == y;"), "{expanded}");
+    assert!(expanded.contains("y == z;"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[]).expect("explicit equality certificate should check");
+    for premise in ["requires x == y;", "requires y == z;"] {
+        let missing = expanded.replace(premise, "");
+        assert_ne!(missing, expanded);
+        assert!(verify_c0_sources(&missing, &[]).is_err());
+    }
 }
 
 #[test]
@@ -4995,15 +5000,23 @@ fn restricted_simp_after_unfold_expands_explicit_conjunction_extraction() {
             .unwrap_or(0)
         + 1;
 
+    verify_c0_sources(click_source, &[]).expect("conjunction elimination should verify");
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("conjunction elimination should have an explicit expansion");
     assert!(expanded.contains("extract(x == y);"), "{expanded}");
     assert!(expanded.contains("extract(y == z);"), "{expanded}");
-    assert!(expanded.contains("rewrite(x == y);"), "{expanded}");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
     assert!(!expanded.contains("simp() using"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &[])
         .expect("explicit conjunction-elimination certificate should check");
+    // Delete the supporting equality itself: removing an extract step alone
+    // leaves the true conjunction available in the checked context.
+    for retained in ["x == y", "y == z"] {
+        let missing = expanded.replace("x == y and y == z", retained);
+        assert_ne!(missing, expanded);
+        assert!(verify_c0_sources(&missing, &[]).is_err());
+    }
 }
 
 #[test]
@@ -7409,7 +7422,7 @@ fn restricted_simp_composes_equality_rewrites_with_adjacent_order() {
 }
 
 #[test]
-fn restricted_simp_inside_have_expands_to_explicit_equality_rewrites() {
+fn restricted_simp_inside_have_expands_to_graph_normalization() {
     let c_source = r#"
             int32 identity(int32 x, int32 y, int32 z) {
                 return x;
@@ -7448,20 +7461,28 @@ fn restricted_simp_inside_have_expands_to_explicit_equality_rewrites() {
             .unwrap_or(0)
         + 1;
 
+    verify_c0_sources(click_source, &[("identity.c", c_source)])
+        .expect("restricted have should verify");
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("identity.c", c_source)], line, column)
             .expect("restricted simp have should expand");
     let expanded_have =
         &expanded[expanded.find("have x == z").unwrap()..expanded.find("execute();").unwrap()];
+    assert!(expanded_have.contains("x == y;"), "{expanded_have}");
     assert!(
-        expanded_have.contains("rewrite(x == y);"),
+        expanded_have.contains("normalize() using"),
         "{expanded_have}"
     );
-    assert!(expanded_have.contains("normalize();"), "{expanded_have}");
+    assert!(expanded_have.contains("y == z;"), "{expanded_have}");
     assert!(!expanded_have.contains("simp() using"), "{expanded_have}");
     assert!(!expanded_have.contains("derive using"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("explicit equality have certificate should check");
+    for premise in ["requires x == y;", "requires y == z;"] {
+        let missing = expanded.replace(premise, "");
+        assert_ne!(missing, expanded);
+        assert!(verify_c0_sources(&missing, &[("identity.c", c_source)]).is_err());
+    }
 }
 
 #[test]
@@ -7687,11 +7708,19 @@ fn post_execution_restricted_simp_expands_without_derive() {
             .unwrap_or(0)
         + 1;
     let sources = [("identity.c", c_source)];
+    verify_c0_sources(click_source, &sources).expect("restricted simp should verify");
     let expanded = expand_c0_tactic_source_at(click_source, &sources, line, column).unwrap();
     let selected = &expanded[offset..];
-    assert!(selected.contains("rewrite((x + 1) == y);"), "{selected}");
+    assert!(selected.contains("normalize() using"), "{selected}");
+    assert!(selected.contains("(x + 1) == y;"), "{selected}");
+    assert!(selected.contains("y == z;"), "{selected}");
     assert!(!selected.contains("derive using"), "{selected}");
     verify_c0_sources(&expanded, &sources).expect("explicit post-execution proof should check");
+    for premise in ["requires x + 1 == y;", "requires y == z;"] {
+        let missing = expanded.replace(premise, "");
+        assert_ne!(missing, expanded);
+        assert!(verify_c0_sources(&missing, &sources).is_err());
+    }
 }
 
 #[test]
@@ -16183,9 +16212,85 @@ fn normalize_using_graph_conditions_expands_and_rechecks() {
     let negated = source.replace("== b + 1 { 7 } else { 0 }", "!= b + 1 { 0 } else { 7 }");
     verify_c0_sources(&negated, &c_sources)
         .expect("known equality should also decide a negated guard");
-    let uncited = source.replace("using { x == 0; }", "using { }");
+    let uncited = source.replace("using { x < 0; }", "using { }");
     assert!(
         verify_c0_sources(&uncited, &c_sources).is_err(),
-        "uncited scalar conditions stay unavailable"
+        "uncited order conditions stay unavailable"
     );
+}
+
+#[test]
+fn normalize_using_int32_equality_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_int32_equality.md");
+    let text = std::fs::read_to_string(&path).expect("read int32 equality fixture");
+    let fixture = crate::cli::parse_mdtest(&path, &text).expect("parse int32 equality fixture");
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().expect("Click source");
+    verify_c0_sources(source, &c_sources).expect("int32 transitivity and guards should verify");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("int32 transitivity should expand");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
+    verify_c0_sources(&expanded, &c_sources).expect("expanded int32 equality should recheck");
+    let (keep, _) = expanded
+        .split_once("theorem choose")
+        .expect("choose retained");
+    for missing in ["requires a == b;", "requires b == c;"] {
+        assert!(verify_c0_sources(&keep.replace(missing, ""), &c_sources).is_err());
+    }
+    verify_c0_sources(
+        &source.replace("ensures a == c;", "ensures c == a;"),
+        &c_sources,
+    )
+    .expect("symmetry");
+    assert!(
+        verify_c0_sources(
+            &keep.replace("ensures a == c;", "ensures a != c;"),
+            &c_sources
+        )
+        .is_err()
+    );
+    let unavailable = source.replacen("using { }", "using { a == c; }", 1);
+    assert_ne!(unavailable, source);
+    assert!(
+        verify_c0_sources(&unavailable, &c_sources).is_err(),
+        "a graph consequence is not an exactly available cited premise"
+    );
+    let (_, choose) = source.split_once("theorem choose").unwrap();
+    let choose = format!("theorem choose{choose}");
+    let unknown = choose.replace("requires b == c;", "");
+    assert!(verify_c0_sources(&unknown, &[]).is_err());
+    assert!(verify_c0_sources(&unknown.replace(") == 7", ") == 0"), &[]).is_err());
+    verify_c0_sources(
+        &choose.replace("c == a { 7 } else { 0 }", "c != a { 0 } else { 7 }"),
+        &[],
+    )
+    .expect("negated equality guard");
+}
+
+#[test]
+fn restricted_simp_does_not_borrow_the_ambient_equality_graph() {
+    let source = r#"
+        theorem restricted(a: int32, b: int32, c: int32) {
+            requires a == b;
+            requires b == c;
+            ensures a == c by { simp() using { a == b; } }
+        }
+    "#;
+    for source in [source.to_string(), source.replace("int32", "int32*")] {
+        for goal in ["a == c", "(if a == c { 7 } else { 0 }) == 7"] {
+            let omitted = source.replace("ensures a == c", &format!("ensures {goal}"));
+            assert!(verify_c0_sources(&omitted, &[]).is_err());
+            let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
+            verify_c0_sources(&selected, &[]).expect("the selected graph establishes transitivity");
+            // The simple tactic deliberately has broader ambient semantics.
+            let ambient = omitted.replace("simp()", "normalize()");
+            verify_c0_sources(&ambient, &[])
+                .expect("explicit normalization may use the ambient graph");
+        }
+    }
 }
