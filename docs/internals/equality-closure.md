@@ -147,6 +147,13 @@ same-snapshot loads therefore certify without searching the legacy fact index;
 changed snapshots and withdrawn premises still fail. This affects scalar
 equality claims, not pointer-offset certification.
 
+Certification of call- and loop-havoc mutable-range lists now uses the typed
+int32 value rule for each start and end, after separate width and pointer-base
+checks. The general range-endpoint helper also serves scaled pointer offsets;
+it has not been changed to accept wrapping graph equality as exact address
+equality. Regressions cover same-snapshot loads, changed snapshots, withdrawn
+premises, width mismatch, and multi-size queries without the legacy fact index.
+
 For a range pair already selected for composition, endpoint comparison uses
 the graph-backed int32 condition decision. The composition helper no longer
 repeats a separate legacy fact-path walk after that decision. Candidate

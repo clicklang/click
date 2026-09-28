@@ -296,6 +296,12 @@ cover same-snapshot graph congruence, overwrite and withdrawal boundaries, and
 multi-size certification without the legacy fact index. Pointer-offset
 certification remains separate.
 
+Call- and loop-havoc mutable-range list certification now compares int32
+start/end values through the typed graph helper after width and pointer-base
+checks. The shared range-endpoint helper also compares scaled pointer offsets
+and remains unchanged. Regressions cover snapshot and withdrawal boundaries,
+width mismatch, and multi-size queries without the legacy fact index.
+
 Selected range-composition candidates now rely on the graph-backed int32
 condition decision for endpoint equality, without a redundant second legacy
 fact-path walk. A direct join regression checks graph-congruent endpoints and
