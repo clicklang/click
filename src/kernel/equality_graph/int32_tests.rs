@@ -130,6 +130,98 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
 }
 
 #[test]
+fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() {
+    let _session = VerificationSession::enter();
+    let pointer = Pointer {
+        block: "resolved-int32".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let (a, b) = (var(31), var(32));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let before = intern_c_memory(
+        CMemory::new()
+            .with_block("resolved-int32", 4)
+            .store(pointer.clone(), CValue::Int32(sum(a.clone()))),
+    );
+    let after = intern_c_memory(
+        before
+            .memory()
+            .clone()
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
+    );
+    let byte_memory = intern_c_memory(
+        CMemory::new()
+            .with_block("resolved-int32", 1)
+            .store(pointer.clone(), CValue::UInt8(sum(a.clone()))),
+    );
+    let load = |memory: &SharedCMemory| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory, &pointer, 4, memory,
+        ))
+    };
+    let old_load = load(&before);
+    let new_load = load(&after);
+    let byte_load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+        &byte_memory,
+        &pointer,
+        1,
+        &byte_memory,
+    ));
+    let target = sum(b.clone());
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    assert_eq!(
+        branch.resolve_memory_load_term(&old_load),
+        Some(sum(a.clone()))
+    );
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(branch.memory_loads_proven_equal(&old_load, &target));
+    assert!(branch.memory_loads_proven_equal(&target, &old_load));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!branch.memory_loads_proven_equal(&new_load, &target));
+    assert_eq!(branch.resolve_memory_load_term(&byte_load), Some(sum(a)));
+    assert!(!branch.memory_loads_proven_equal(&byte_load, &target));
+    assert!(!parent.memory_loads_proven_equal(&old_load, &target));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(!withdrawn.memory_loads_proven_equal(&old_load, &target));
+}
+
+#[test]
+fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let pointer = Pointer {
+            block: "resolved-int32-scale".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let memory = intern_c_memory(
+            CMemory::new()
+                .with_block("resolved-int32-scale", 4)
+                .store(pointer.clone(), CValue::Int32(sum(var(0)))),
+        );
+        let load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            &memory, &pointer, 4, &memory,
+        ));
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
+        }
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                assert!(context.memory_loads_proven_equal(&load, &sum(var(index))));
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 250 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     let _session = VerificationSession::enter();
     let before = intern_c_memory(CMemory::new().with_block("int32", 16));

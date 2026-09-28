@@ -289,6 +289,13 @@ fact-path walk. A direct join regression checks graph-congruent endpoints and
 withdrawal. Candidate indexing remains narrower: normalization does not yet
 select every pair whose endpoints are related only by graph congruence.
 
+Resolved four-byte scalar loads now compare their established values through
+the int32 graph before the legacy fact-path lookup. Memory resolution remains
+the authority for the load's value and snapshot; this adds no read or frame
+permission. Other widths keep the existing path. Regressions cover both
+directions, overwritten and withdrawn evidence, a one-byte load, and multi-size
+queries without building the legacy fact index.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

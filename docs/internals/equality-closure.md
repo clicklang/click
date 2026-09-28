@@ -138,6 +138,14 @@ repeats a separate legacy fact-path walk after that decision. Candidate
 selection remains its own index boundary: normalization does not yet discover
 every pair whose endpoints become equal only through graph congruence.
 
+After the existing memory resolver establishes a four-byte scalar load's
+value, load equality can compare that value through the int32 graph before
+using the legacy fact-path lookup. Resolution still supplies the value in the
+load's snapshot; graph equality neither resolves stores nor grants read or
+frame permission. Other load widths keep their existing comparison path.
+Regressions cover both comparison directions, a changed snapshot, withdrawn
+premises, a one-byte load, and multi-size query work.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads
