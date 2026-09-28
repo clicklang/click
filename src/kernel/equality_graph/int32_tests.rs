@@ -26,6 +26,29 @@ fn int32_equality_is_transitive_symmetric_and_branch_local() {
 }
 
 #[test]
+fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
+    let (a, b) = (var(1), var(2));
+    let plus_one =
+        |value| Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    assert_eq!(
+        branch.decide_bitvector_equality_shallow(&plus_one(a.clone()), &plus_one(b.clone())),
+        Some(true)
+    );
+    assert_ne!(
+        parent.decide_bitvector_equality_shallow(&plus_one(a.clone()), &plus_one(b.clone())),
+        Some(true)
+    );
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert_ne!(
+        withdrawn.decide_bitvector_equality_shallow(&plus_one(a), &plus_one(b)),
+        Some(true)
+    );
+}
+
+#[test]
 fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();
@@ -283,7 +306,7 @@ fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
 }
 
 #[test]
-fn offset_premise_graph_insertion_and_forks_scale() {
+fn offset_premise_shallow_decision_and_forks_scale() {
     let add = |v| Bitvector32Term::Add(Box::new(v), Box::new(Bitvector32Term::Constant(1)));
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -301,24 +324,21 @@ fn offset_premise_graph_insertion_and_forks_scale() {
                     );
                 }
                 for i in 1..=size {
-                    assert!(
-                        parent
-                            .equality_graph
-                            .are_int32_equal(&add(var(0)), &add(var(i)))
+                    assert_eq!(
+                        parent.decide_bitvector_equality_shallow(&add(var(0)), &add(var(i))),
+                        Some(true)
                     );
                 }
                 let branch = parent
                     .clone()
                     .assume_condition(eq(&var(size), &var(size + 1)), true);
-                assert!(
-                    branch
-                        .equality_graph
-                        .are_int32_equal(&add(var(0)), &add(var(size + 1)))
+                assert_eq!(
+                    branch.decide_bitvector_equality_shallow(&add(var(0)), &add(var(size + 1))),
+                    Some(true)
                 );
-                assert!(
-                    !parent
-                        .equality_graph
-                        .are_int32_equal(&add(var(0)), &add(var(size + 1)))
+                assert_ne!(
+                    parent.decide_bitvector_equality_shallow(&add(var(0)), &add(var(size + 1))),
+                    Some(true)
                 );
             })
         });

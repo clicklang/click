@@ -929,7 +929,7 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> Option<bool> {
-        if left == right || self.bitvector_terms_equal_from_facts(left, right) {
+        if left == right || self.equality_graph.are_int32_equal(left, right) {
             return Some(true);
         }
         if let Some(value) =

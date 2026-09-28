@@ -249,6 +249,12 @@ integration. The same tests show that nonwrapping equalities still work at
 element widths 1, 4, and 8. The broader scalar-query migration remains future
 work because its other consumers still need review.
 
+The shallow Boolean int32 equality decision now uses the shared graph. This
+brings addition and registered same-snapshot load congruence into that one
+consumer while retaining the exact-offset guard at its memory-resolution
+caller. Branch, snapshot, wrapping-offset, and multi-size regressions cover
+the migration; the broader legacy fact-path helper remains in use elsewhere.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

@@ -77,8 +77,8 @@ when multiplication fits i64. This does not infer congruence for other scalar op
 64-bit or mathematical-integer equality, or general injectivity of offset constructors. Exact scalar premises are counted under shallow canonical edge keys so
 withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
-cross-arena snapshot comparisons to traverse unrelated memory. This is an additive consumer migration; legacy scalar reasoning outside
-normalization has not changed.
+cross-arena snapshot comparisons to traverse unrelated memory. This is an
+additive consumer migration.
 
 True offset premises also feed the shared graph through the existing checked
 int32 element-index interpretation: four-byte scaling, aligned constants, and
@@ -96,8 +96,14 @@ positive residue equality can prove an offset equality; unequal residues can
 still refute one. The regression
 `wrapped_index_sum_does_not_decide_pointer_offsets_equal` and direct
 memory-resolution tests protect that boundary for explicit scalar facts and
-multiple element widths. Keep the graph-query migration separate from this
-repair and audit its other consumers before replacing the legacy query.
+multiple element widths. Audit each remaining consumer before replacing the
+legacy query throughout the kernel.
+
+The shallow int32 equality decision now queries the trusted graph directly.
+It can use int32 addition and registered same-snapshot load congruence without
+building the legacy fact-path index. Its offset callers still use the exactness
+check above before affirming byte-offset equality. Other callers of the legacy
+scalar fact-path helper remain separate migration candidates.
 
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
