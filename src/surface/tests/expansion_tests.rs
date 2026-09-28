@@ -16070,3 +16070,28 @@ fn conditional_algebraic_universal_expands_and_reverifies() {
             .expect("printed quantified haves retain their source mapping");
     verify_c0_sources(&expanded_again, &sources).expect("reexpanded universal certifies");
 }
+
+#[test]
+fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_ambient_pointer_equality.md");
+    let text = std::fs::read_to_string(&path).expect("read ambient equality fixture");
+    let fixture = crate::cli::parse_mdtest(&path, &text).expect("parse ambient equality fixture");
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().expect("Click source");
+    verify_c0_sources(source, &c_sources).expect("ambient graph should close normalization");
+    let position = expansion::position_at_offset(source, source.find("normalize() using").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &c_sources, position.line, position.column)
+        .expect("ambient equality should expand");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
+    verify_c0_sources(&expanded, &c_sources).expect("expanded equality should recheck");
+    let missing = expanded.replace("b == c implies", "b == b implies");
+    assert!(
+        verify_c0_sources(&missing, &c_sources).is_err(),
+        "expanded query must still depend on its ambient equality premises"
+    );
+}

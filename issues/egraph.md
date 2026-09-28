@@ -167,6 +167,12 @@ behavior-preserving interface refactor; additional equality sorts and consumer
 migrations follow one green commit at a time. The broad unmerged
 `codex/egraph-foundation` draft is reference material, not the next merge target.
 
+The first additional consumer is `normalize() using`: after validating and
+reducing its cited conditions, it can close a pointer-equality leaf through
+the current trusted equality graph. Ambient equality is deliberately available;
+other uncited conditions are not. This preserves the current term representation
+and adds no frame search, proof explanation, or separate equality index.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
@@ -350,11 +356,14 @@ consumer migrations:
    injectivity, no-confusion, scoped binders, and the chosen finite-value
    semantics for cyclic constructor equalities. Delete the gap-74 retry.
 3. Premise matching for `assumption`, `apply ... using`, and `normalize() using`
-   modulo the closure of their permitted premises. A selected-premise check
-   must not borrow ambient equality evidence. Rebuild restricted contexts in
-   work proportional to the selection and required term DAG.
-4. Finish `rewrite`, explanations, diagnostics, and surface bridge removal
-   using the kernel evidence boundary established in A/B.
+   modulo the closure of their permitted premises. `normalize() using` now
+   deliberately permits the current equality graph for pointer-equality goals;
+   other selected-premise operations retain their existing restrictions until
+   explicitly migrated. Any restricted context must be built in work
+   proportional to the selection and required term DAG.
+4. Finish `rewrite`, diagnostics, and surface bridge removal using the trusted
+   kernel boundary. Explanations are optional future work for a concrete
+   consumer, not a requirement for certificate expansion.
 
 Each theory extension gets its own design review, soundness negatives,
 certificate/expansion checks, and scaling curves before broad migration.

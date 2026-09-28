@@ -136,7 +136,9 @@ pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bo
     crate::kernel::spec::proposition_as_single_condition(proposition).is_some()
 }
 
-/// Reduce only checked, explicitly cited conditions; never search ambient facts.
+/// Reduce checked, explicitly cited conditions, then close the resulting
+/// leaf by context-free normalization or the current trusted equality graph.
+/// Graph queries use the maintained context; they never scan ambient facts.
 pub(crate) fn normalize_using_conditions(
     goal: &Proposition,
     premises: &[Proposition],
@@ -239,7 +241,13 @@ pub(crate) fn normalize_using_conditions(
         }
     }
     let reduced = super::term_rewrite::TermRewrite::for_conditions(&conditions).proposition(goal);
-    normalizes_context_free_leaf(&reduced)
+    let closes = normalizes_context_free_leaf(&reduced)
+        || matches!(
+            crate::kernel::spec::proposition_as_single_condition(&reduced),
+            Some((ConditionTerm::PointerEqual(left, right), true))
+                if facts.assumptions().equality_graph.are_equal(&left, &right)
+        );
+    closes
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
 }
@@ -2107,6 +2115,7 @@ fn separations_equal_modulo_proven_snapshots(
 #[cfg(test)]
 mod integer_reflexivity_tests {
     use super::*;
+    use crate::kernel::proof::ProofFacts;
     use crate::kernel::{
         Bitvector32Term, CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
         Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm, Variable,
@@ -2246,6 +2255,119 @@ mod integer_reflexivity_tests {
             Some(true)
         );
         assert!(normalizes_context_free(&equality));
+    }
+
+    fn normalization_pointer_equality(left: &Pointer, right: &Pointer) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(left.clone(), right.clone()),
+            true,
+        )
+    }
+
+    #[test]
+    fn normalize_using_queries_ambient_graph_but_validates_cited_premises() {
+        let a = Pointer::symbolic(Variable(96_100));
+        let b = Pointer::symbolic(Variable(96_101));
+        let c = Pointer::symbolic(Variable(96_102));
+        let ab = normalization_pointer_equality(&a, &b);
+        let bc = normalization_pointer_equality(&b, &c);
+        let goal = normalization_pointer_equality(&a.offset_by_bytes(8), &c.offset_by_bytes(8));
+        let parent = ProofFacts::from_ordered(std::slice::from_ref(&ab));
+        let branch = parent.with_fact(bc.clone());
+        assert!(normalize_using_conditions(&goal, &[], &branch).is_ok());
+        assert!(normalize_using_conditions(&goal, &[ab], &branch).is_ok());
+        assert!(matches!(
+            normalize_using_conditions(&goal, &[], &parent),
+            Err(ConditionalNormalizationError::DoesNotNormalize)
+        ));
+        let missing = Proposition::ConditionIs(ConditionTerm::Variable(Variable(96_103)), true);
+        assert!(matches!(
+            normalize_using_conditions(&goal, &[missing], &branch),
+            Err(ConditionalNormalizationError::UnavailablePremise(0))
+        ));
+        let compound = Proposition::And(Box::new(bc.clone()), Box::new(bc));
+        let branch = branch.with_fact(compound.clone());
+        assert!(matches!(
+            normalize_using_conditions(&goal, &[compound], &branch),
+            Err(ConditionalNormalizationError::UnsupportedPremise(0))
+        ));
+        assert!(
+            normalize_using_conditions(&Proposition::Not(Box::new(goal)), &[], &branch).is_err()
+        );
+    }
+
+    #[test]
+    fn normalize_using_graph_keeps_load_snapshots_and_binders_distinct() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = Pointer::symbolic(Variable(96_110));
+        let b = Pointer::symbolic(Variable(96_111));
+        let before =
+            crate::kernel::intern_c_memory(CMemory::new().with_block("normalize-graph", 8));
+        let after = crate::kernel::intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(a.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+        );
+        let load = |memory: &crate::kernel::SharedCMemory, address: &Pointer| {
+            Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
+                memory, address, 8, memory,
+            ))
+        };
+        let left = load(&before, &a);
+        let right = load(&before, &b);
+        let changed = load(&after, &b);
+        let facts = ProofFacts::from_ordered(&[normalization_pointer_equality(&a, &b)]);
+        assert!(
+            normalize_using_conditions(&normalization_pointer_equality(&left, &right), &[], &facts)
+                .is_ok()
+        );
+        assert!(
+            normalize_using_conditions(
+                &normalization_pointer_equality(&left, &changed),
+                &[],
+                &facts
+            )
+            .is_err()
+        );
+        let quantified = Proposition::ForAll {
+            var: Variable(96_110),
+            sort: Sort::CPointer(CType::Int32Pointer),
+            body: Box::new(normalization_pointer_equality(&a, &b)),
+        };
+        assert!(normalize_using_conditions(&quantified, &[], &facts).is_err());
+    }
+
+    #[test]
+    fn normalize_using_graph_work_ignores_unrelated_ambient_equalities() {
+        let a = Pointer::symbolic(Variable(96_120));
+        let b = Pointer::symbolic(Variable(96_121));
+        let c = Pointer::symbolic(Variable(96_122));
+        let goal = normalization_pointer_equality(&a, &c);
+        let mut curve = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut facts = ProofFacts::from_ordered(&[
+                normalization_pointer_equality(&a, &b),
+                normalization_pointer_equality(&b, &c),
+            ]);
+            for i in 0..size {
+                facts = facts.with_fact(normalization_pointer_equality(
+                    &Pointer::symbolic(Variable(100_000 + i * 2)),
+                    &Pointer::symbolic(Variable(100_001 + i * 2)),
+                ));
+            }
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &[], &facts)
+            });
+            assert!(result.is_ok());
+            curve.push(work);
+        }
+        assert!(curve[0] > 0);
+        assert!(
+            curve.iter().all(|work| *work == curve[0]),
+            "ambient equality work: {curve:?}"
+        );
     }
 
     #[test]

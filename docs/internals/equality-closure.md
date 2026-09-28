@@ -31,6 +31,18 @@ persistent storage while keeping subsequent additions branch-local.
 The larger typed-pointer migration remains an unmerged reference draft in
 `codex/egraph-foundation`; this refactor imports none of its behavior changes.
 
+`normalize() using { ... }` now queries this existing graph for a positive
+pointer-equality leaf after reducing its cited conditions. Its equality query
+may use ambient graph facts; the `using` list restricts the additional
+conditions used for reduction. All cited premises must still be available and
+supported. Other ambient facts, quantified bodies, and cross-snapshot frame
+search remain outside this operation. Expansion retains the simple step and
+rechecks it in the same proof context, without an explanation API or a
+per-tactic graph rebuild. This covers the graph's existing symbolic-pointer
+fragment, including introduced pointer binders. Ordinary C pointer parameters
+still lower to offsets in a shared block; their offset equalities are not yet
+part of this graph and gain no new transitive reasoning from this change.
+
 ## Problem and scope
 
 A proved equality must have the same meaning at every kernel consumer.
