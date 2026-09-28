@@ -26,6 +26,110 @@ fn int32_equality_is_transitive_symmetric_and_branch_local() {
 }
 
 #[test]
+fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
+    let (a, b) = (var(1), var(2));
+    let plus_one =
+        |value| Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    assert_eq!(
+        branch.decide_bitvector_equality_shallow(&plus_one(a.clone()), &plus_one(b.clone())),
+        Some(true)
+    );
+    assert_eq!(
+        branch.decide(&eq(&plus_one(a.clone()), &plus_one(b.clone()))),
+        Some(true)
+    );
+    assert_ne!(
+        parent.decide_bitvector_equality_shallow(&plus_one(a.clone()), &plus_one(b.clone())),
+        Some(true)
+    );
+    assert_ne!(
+        parent.decide(&eq(&plus_one(a.clone()), &plus_one(b.clone()))),
+        Some(true)
+    );
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert_ne!(
+        withdrawn.decide_bitvector_equality_shallow(&plus_one(a), &plus_one(b)),
+        Some(true)
+    );
+}
+
+#[test]
+fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
+    let (a, b, limit) = (var(1), var(2), var(3));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let source = ConditionTerm::signed_less_than(sum(a.clone()), limit.clone());
+    let target = ConditionTerm::signed_less_than(sum(b.clone()), limit);
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new().assume_condition(source.clone(), true);
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(branch.condition_matches(&source, &target));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!parent.condition_matches(&source, &target));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(!withdrawn.condition_matches(&source, &target));
+}
+
+#[test]
+fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
+    let _session = VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new().with_block("int32", 16));
+    let pointer = |index| Pointer {
+        block: "int32".into(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let load = |memory: &SharedCMemory, index| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory,
+            &pointer(index),
+            4,
+            memory,
+        ))
+    };
+    let (a, b) = (var(11), var(12));
+    let after = intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let left = load(&before, a.clone());
+    let right = load(&before, b.clone());
+    let later = load(&after, b.clone());
+    let fact = ConditionTerm::signed_less_than(left, Bitvector32Term::Constant(20));
+    let target = ConditionTerm::signed_less_than(right, Bitvector32Term::Constant(20));
+    let later_target = ConditionTerm::signed_less_than(later, Bitvector32Term::Constant(20));
+    let context = PureFactContext::new().assume_condition(eq(&a, &b), true);
+    assert!(context.condition_matches(&fact, &target));
+    assert!(!context.condition_matches(&fact, &later_target));
+}
+
+#[test]
+fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
+        }
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let source = ConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                let target = ConditionTerm::signed_less_than(sum(var(index)), var(size + 2));
+                assert!(context.condition_matches(&source, &target));
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 200 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();
@@ -283,7 +387,7 @@ fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
 }
 
 #[test]
-fn offset_premise_graph_insertion_and_forks_scale() {
+fn offset_premise_shallow_decision_and_forks_scale() {
     let add = |v| Bitvector32Term::Add(Box::new(v), Box::new(Bitvector32Term::Constant(1)));
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -301,24 +405,22 @@ fn offset_premise_graph_insertion_and_forks_scale() {
                     );
                 }
                 for i in 1..=size {
-                    assert!(
-                        parent
-                            .equality_graph
-                            .are_int32_equal(&add(var(0)), &add(var(i)))
+                    assert_eq!(
+                        parent.decide_bitvector_equality_shallow(&add(var(0)), &add(var(i))),
+                        Some(true)
                     );
+                    assert_eq!(parent.decide(&eq(&var(0), &var(i))), Some(true));
                 }
                 let branch = parent
                     .clone()
                     .assume_condition(eq(&var(size), &var(size + 1)), true);
-                assert!(
-                    branch
-                        .equality_graph
-                        .are_int32_equal(&add(var(0)), &add(var(size + 1)))
+                assert_eq!(
+                    branch.decide_bitvector_equality_shallow(&add(var(0)), &add(var(size + 1))),
+                    Some(true)
                 );
-                assert!(
-                    !parent
-                        .equality_graph
-                        .are_int32_equal(&add(var(0)), &add(var(size + 1)))
+                assert_ne!(
+                    parent.decide_bitvector_equality_shallow(&add(var(0)), &add(var(size + 1))),
+                    Some(true)
                 );
             })
         });

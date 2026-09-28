@@ -39,6 +39,39 @@ fn int32_load_congruence_handles_early_and_late_offsets_and_scalar_parents() {
 }
 
 #[test]
+fn shallow_scalar_decision_uses_only_registered_loads_in_one_snapshot() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = memory();
+    let left = load(&before, &address(1), 4);
+    let right = load(&before, &address(2), 4);
+    let after = intern_c_memory(
+        before
+            .memory()
+            .clone()
+            .store(address(1), CValue::Int32(Bitvector32Term::Constant(9))),
+    );
+    let changed = load(&after, &address(2), 4);
+    let context =
+        PureFactContext::new().assume_condition(ConditionTerm::equal(var(1), var(2)), true);
+    assert_eq!(
+        context.decide_bitvector_equality_shallow(&left, &right),
+        Some(true)
+    );
+    assert_eq!(
+        context.decide(&ConditionTerm::equal(left.clone(), right.clone())),
+        Some(true)
+    );
+    assert_ne!(
+        context.decide_bitvector_equality_shallow(&left, &changed),
+        Some(true)
+    );
+    assert_ne!(
+        context.decide(&ConditionTerm::equal(left, changed)),
+        Some(true)
+    );
+}
+
+#[test]
 fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();

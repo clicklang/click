@@ -77,8 +77,8 @@ when multiplication fits i64. This does not infer congruence for other scalar op
 64-bit or mathematical-integer equality, or general injectivity of offset constructors. Exact scalar premises are counted under shallow canonical edge keys so
 withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
-cross-arena snapshot comparisons to traverse unrelated memory. This is an additive consumer migration; legacy scalar reasoning outside
-normalization has not changed.
+cross-arena snapshot comparisons to traverse unrelated memory. This is an
+additive consumer migration.
 
 True offset premises also feed the shared graph through the existing checked
 int32 element-index interpretation: four-byte scaling, aligned constants, and
@@ -90,9 +90,34 @@ infer exact offset equality from equal wrapping residues.
 The legacy Boolean scalar query is not interchangeable with the graph yet.
 Some callers use it while reasoning about exact pointer offsets, where a
 wrapping int32 equality is insufficient. Migrating those callers requires an
-explicit distinction between residue equality and exact-offset equality. The
-regression `wrapped_index_sum_does_not_decide_pointer_offsets_equal` protects
-that boundary. Keep this migration separate from admitting checked premises.
+explicit distinction between residue equality and exact-offset equality.
+Memory resolution now checks that both rebuilt indices are exact before a
+positive residue equality can prove an offset equality; unequal residues can
+still refute one. The regression
+`wrapped_index_sum_does_not_decide_pointer_offsets_equal` and direct
+memory-resolution tests protect that boundary for explicit scalar facts and
+multiple element widths. Audit each remaining consumer before replacing the
+legacy query throughout the kernel.
+
+The shallow int32 equality decision now queries the trusted graph directly.
+It can use int32 addition and registered same-snapshot load congruence without
+building the legacy fact-path index. Its offset callers still use the exactness
+check above before affirming byte-offset equality. Other callers of the legacy
+scalar fact-path helper remain separate migration candidates.
+
+The full `Bitvector32Equal` condition decision now uses the same graph query
+before memory resolution and its other arithmetic rules when the graph has
+established term equivalences. An empty graph skips interning unrelated scalar
+queries; structural and memory rules still run. Explicit premises, other
+checked scalar rules, and negative decisions keep their existing paths. The
+legacy fact-path helper still serves transport, memory, and resource consumers.
+
+Int32 fact transport now asks that graph first when it has joined term classes.
+This covers congruent sums and registered same-snapshot loads in order-fact
+matching without building the legacy fact-path index. Its existing structural
+rules and fact-path lookup still handle unsupported term forms. Transport is a
+value-equality consumer; exact pointer-offset decisions retain their separate
+guard against wrapping int32 equalities.
 
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact

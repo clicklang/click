@@ -1022,21 +1022,45 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         }
     }
     if let Some(element_width) = common_pointer_offset_element_width(left, right)
-        && let (Some(left), Some(right)) = (
+        && let (Some(left_index), Some(right_index)) = (
             element_index_from_offset_with_facts(left, element_width, assumptions),
             element_index_from_offset_with_facts(right, element_width, assumptions),
         )
     {
+        // The rebuilt indices are residues modulo 2^32. Unequal residues
+        // refute exact offset equality, but equal residues affirm it only
+        // when both rebuilds are proved not to wrap. Keep this check at the
+        // offset boundary so every scalar equality source obeys it.
+        let exact = std::cell::OnceCell::new();
+        let exact = || {
+            *exact.get_or_init(|| {
+                assumptions.element_index_rebuild_is_exact_for_width(left, element_width)
+                    && assumptions.element_index_rebuild_is_exact_for_width(right, element_width)
+            })
+        };
         if let (Some(left), Some(right)) = (
-            crate::kernel::assumptions::exact_signed_constant(&left, assumptions),
-            crate::kernel::assumptions::exact_signed_constant(&right, assumptions),
+            crate::kernel::assumptions::exact_signed_constant(&left_index, assumptions),
+            crate::kernel::assumptions::exact_signed_constant(&right_index, assumptions),
         ) {
-            return Some(left == right);
+            if left != right {
+                return Some(false);
+            }
+            if exact() {
+                return Some(true);
+            }
         }
-        if bitvector_terms_proven_equal_for_memory_resolution(&left, &right, assumptions) {
+        if bitvector_terms_proven_equal_for_memory_resolution(
+            &left_index,
+            &right_index,
+            assumptions,
+        ) && exact()
+        {
             return Some(true);
         }
-        if let Some(equal) = assumptions.decide_bitvector_equality_shallow(&left, &right) {
+        if let Some(equal) =
+            assumptions.decide_bitvector_equality_shallow(&left_index, &right_index)
+            && (!equal || exact())
+        {
             return Some(equal);
         }
         // An element index whose recorded constant bounds exclude a constant
@@ -1055,7 +1079,19 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
                 .indexed_constant_interval(symbolic)
                 .is_some_and(|(low, high)| constant < low || high < constant)
         };
-        return (excluded(&left, &right) || excluded(&right, &left)).then_some(false);
+        if excluded(&left_index, &right_index) || excluded(&right_index, &left_index) {
+            return Some(false);
+        }
+    }
+    // Addition of equal exact byte offsets preserves equality even when
+    // folding the whole sum into an int32 index would wrap. Reach this only
+    // after cheaper scalar comparisons have failed to decide the question.
+    if let (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) =
+        (left, right)
+        && pointer_offsets_proven_equal_for_memory_resolution(left_a, right_a, assumptions)
+        && pointer_offsets_proven_equal_for_memory_resolution(left_b, right_b, assumptions)
+    {
+        return Some(true);
     }
     match (left.as_const(), right.as_const()) {
         (Some(left), Some(right)) => Some(left == right),
@@ -3788,4 +3824,82 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
         "{samples:?}"
     );
+}
+
+#[cfg(test)]
+#[test]
+fn offset_resolution_does_not_promote_wrapped_index_equality() {
+    let i = Bitvector32Term::Variable(Variable(90_001));
+    let j = Bitvector32Term::Variable(Variable(90_002));
+    let k = Bitvector32Term::Variable(Variable(90_003));
+    let scaled = |index: Bitvector32Term| PointerOffsetTerm::scale_int32(index, 4);
+    let sum = PointerOffsetTerm::Add(Box::new(scaled(i.clone())), Box::new(scaled(j.clone())));
+    let other = scaled(k.clone());
+    let index_sum = Bitvector32Term::add(i.clone(), j.clone());
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(index_sum.clone(), k.clone()), true)
+        .assume_condition(
+            ConditionTerm::equal(i.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::equal(j.clone(), Bitvector32Term::Constant(1)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(i32::MIN as u32)),
+            true,
+        );
+    assert_eq!(
+        assumptions.decide(&ConditionTerm::equal(index_sum, k)),
+        Some(true)
+    );
+    assert_ne!(
+        pointer_offsets_equal_for_memory_resolution(&sum, &other, &assumptions),
+        Some(true)
+    );
+    assert_ne!(
+        assumptions.decide(&ConditionTerm::pointer_offset_equal(sum, other)),
+        Some(true)
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn offset_resolution_accepts_exact_index_equalities_at_each_width() {
+    let i = Bitvector32Term::Variable(Variable(90_011));
+    let j = Bitvector32Term::Variable(Variable(90_012));
+    let k = Bitvector32Term::Variable(Variable(90_013));
+    let index_sum = Bitvector32Term::add(i.clone(), j.clone());
+    let fact = ConditionTerm::equal(index_sum, k.clone());
+    let symbolic = PureFactContext::new().assume_condition(fact.clone(), true);
+    let exact = symbolic
+        .clone()
+        .assume_condition(
+            ConditionTerm::equal(i.clone(), Bitvector32Term::Constant(2)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::equal(j.clone(), Bitvector32Term::Constant(3)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(5)),
+            true,
+        );
+    for width in [1, 4, 8] {
+        let scaled = |index: Bitvector32Term| PointerOffsetTerm::scale_int32(index, width);
+        let sum = PointerOffsetTerm::Add(Box::new(scaled(i.clone())), Box::new(scaled(j.clone())));
+        let other = scaled(k.clone());
+        assert_ne!(
+            pointer_offsets_equal_for_memory_resolution(&sum, &other, &symbolic),
+            Some(true),
+            "an index equality alone cannot prove the exact offset at width {width}"
+        );
+        assert_eq!(
+            pointer_offsets_equal_for_memory_resolution(&sum, &other, &exact),
+            Some(true),
+            "a proven nonwrapping sum should retain offset equality at width {width}"
+        );
+    }
 }

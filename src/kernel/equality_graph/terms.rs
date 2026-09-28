@@ -74,6 +74,10 @@ pub(super) struct TermClasses {
 }
 
 impl TermClasses {
+    pub(super) fn has_equivalences(&self) -> bool {
+        !self.parents.is_empty()
+    }
+
     fn intern(&mut self, term: &PointerOffsetTerm) -> u64 {
         enum Work<'a> {
             Term(&'a PointerOffsetTerm),

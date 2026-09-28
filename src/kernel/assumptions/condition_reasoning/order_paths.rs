@@ -106,8 +106,8 @@ impl PureFactContext {
                         match (left_index, right_index) {
                             (Some(left_index), Some(right_index)) => exact_or_unequal(
                                 self.decide(&ConditionTerm::equal(left_index, right_index)),
-                                self.rebuilt_offset_is_exact(left, false)
-                                    && self.rebuilt_offset_is_exact(right, false),
+                                self.rebuilt_offset_is_exact(left, 4, false)
+                                    && self.rebuilt_offset_is_exact(right, 4, false),
                             ),
                             _ => {
                                 let left_bytes = byte_offset_from_pointer_offset(left);
@@ -115,8 +115,8 @@ impl PureFactContext {
                                 match (left_bytes, right_bytes) {
                                     (Some(left_bytes), Some(right_bytes)) => exact_or_unequal(
                                         self.decide(&ConditionTerm::equal(left_bytes, right_bytes)),
-                                        self.rebuilt_offset_is_exact(left, true)
-                                            && self.rebuilt_offset_is_exact(right, true),
+                                        self.rebuilt_offset_is_exact(left, 4, true)
+                                            && self.rebuilt_offset_is_exact(right, 4, true),
                                     ),
                                     _ => None,
                                 }
@@ -146,9 +146,7 @@ impl PureFactContext {
                     return Some(equal);
                 }
 
-                if self.bitvector_terms_equal_from_facts(&left, &right)
-                    || self
-                        .has_condition_fact(ConditionTerm::equal(left.clone(), right.clone()), true)
+                if self.has_condition_fact(ConditionTerm::equal(left.clone(), right.clone()), true)
                     || self
                         .has_condition_fact(ConditionTerm::equal(right.clone(), left.clone()), true)
                     || self.memory_loads_proven_equal(&left, &right)
@@ -1748,15 +1746,24 @@ fn exact_or_unequal(decided: Option<bool>, exact: bool) -> Option<bool> {
 }
 
 impl PureFactContext {
-    /// [`Self::rebuilt_offset_is_exact`] on the element path, for the one
-    /// caller outside this module: the path-fact recorder, which turns a
-    /// decided pointer-offset equality into a statement about element
-    /// indices and owes this premise for the negative direction.
+    /// [`Self::rebuilt_offset_is_exact`] on the four-byte element path. The
+    /// path-fact recorder needs this for negative offset premises; memory
+    /// resolution uses the width-specific form for positive index equality.
     pub(in crate::kernel) fn element_index_rebuild_is_exact(
         &self,
         offset: &crate::kernel::PointerOffsetTerm,
     ) -> bool {
-        self.rebuilt_offset_is_exact(offset, false)
+        self.element_index_rebuild_is_exact_for_width(offset, 4)
+    }
+
+    /// Whether the offset's index at this element width is exact rather than
+    /// merely its 32-bit residue.
+    pub(in crate::kernel) fn element_index_rebuild_is_exact_for_width(
+        &self,
+        offset: &crate::kernel::PointerOffsetTerm,
+        element_width: u32,
+    ) -> bool {
+        self.rebuilt_offset_is_exact(offset, element_width, false)
     }
 
     /// Whether the index or byte term the offset rebuilders produce for
@@ -1768,6 +1775,7 @@ impl PureFactContext {
     fn rebuilt_offset_is_exact(
         &self,
         offset: &crate::kernel::PointerOffsetTerm,
+        element_width: u32,
         byte_path: bool,
     ) -> bool {
         use crate::kernel::PointerOffsetTerm;
@@ -1775,26 +1783,23 @@ impl PureFactContext {
             if byte_path {
                 byte_offset_from_pointer_offset(offset)
             } else {
-                int32_element_index_from_offset(offset)
+                crate::kernel::reasoning::element_index_from_offset(offset, element_width)
             }
         };
         match offset {
             PointerOffsetTerm::Constant(_) => true,
-            // A 64-bit index is not an element index: `element_index_from_offset`
-            // refuses it, so the element rebuilder produces nothing for an
-            // offset that mentions one and this can only be reached on the
-            // byte path. Saying so, rather than returning `true` for both
-            // paths, keeps the affirmative half of `exact_or_unequal` from
-            // resting on a rebuild that did not happen.
+            // A 64-bit index contributes an exact element index only when a
+            // 64-bit fact pins it to a signed int32 value. The plain element
+            // rebuilder still refuses an unpinned 64-bit index.
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
             } => {
-                if !byte_path {
+                if !byte_path && *byte_width != i64::from(element_width) {
                     return false;
                 }
-                if *byte_width == 0 {
+                if byte_path && *byte_width == 0 {
                     return true;
                 }
                 // An `Int64Scaled` scales its *sixty-four-bit* value, and the
@@ -1820,6 +1825,9 @@ impl PureFactContext {
                 ) else {
                     return false;
                 };
+                if !byte_path {
+                    return i32::try_from(value).is_ok();
+                }
                 value
                     .checked_mul(*byte_width)
                     .is_some_and(|bytes| i32::try_from(bytes).is_ok())
@@ -1839,16 +1847,16 @@ impl PureFactContext {
             PointerOffsetTerm::Add(left, right)
                 if left.as_ref() == &PointerOffsetTerm::Constant(0) =>
             {
-                self.rebuilt_offset_is_exact(right, byte_path)
+                self.rebuilt_offset_is_exact(right, element_width, byte_path)
             }
             PointerOffsetTerm::Add(left, right)
                 if right.as_ref() == &PointerOffsetTerm::Constant(0) =>
             {
-                self.rebuilt_offset_is_exact(left, byte_path)
+                self.rebuilt_offset_is_exact(left, element_width, byte_path)
             }
             PointerOffsetTerm::Add(left, right) => {
-                if !(self.rebuilt_offset_is_exact(left, byte_path)
-                    && self.rebuilt_offset_is_exact(right, byte_path))
+                if !(self.rebuilt_offset_is_exact(left, element_width, byte_path)
+                    && self.rebuilt_offset_is_exact(right, element_width, byte_path))
                 {
                     return false;
                 }

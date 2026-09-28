@@ -242,6 +242,34 @@ graph proves. The existing wrapped-index regression caught this boundary;
 the broader replacement was discarded. A future consumer migration must make
 the exact-offset versus residue-equality contract explicit first.
 
+Memory resolution now applies the existing exact-index rebuild check when it
+uses a scalar equality to affirm an offset equality. This closes a preexisting
+hole for explicitly asserted wrapping scalar equalities, independent of graph
+integration. The same tests show that nonwrapping equalities still work at
+element widths 1, 4, and 8. The broader scalar-query migration remains future
+work because its other consumers still need review.
+
+The shallow Boolean int32 equality decision now uses the shared graph. This
+brings addition and registered same-snapshot load congruence into that one
+consumer while retaining the exact-offset guard at its memory-resolution
+caller. Branch, snapshot, wrapping-offset, and multi-size regressions cover
+the migration; the broader legacy fact-path helper remains in use elsewhere.
+
+The full int32 equality condition decision now also queries a graph with
+established term equivalences before memory resolution and its other arithmetic
+rules. An empty graph skips interning unrelated terms. Regressions cover
+addition, same-snapshot loads, branch scope, wrapped offset refusal, resource
+quantity work, and multi-size decisions without building the legacy fact
+index. Transport, memory, and resource consumers of that index remain future
+slices.
+
+Int32 fact transport now checks the graph before its legacy fact-path lookup
+when the graph has established equivalences. Order-fact matching can use
+congruent sums and registered same-snapshot loads without building that index.
+The old lookup and structural transport remain for term forms outside the
+graph; memory and resource consumers have not moved. Branch withdrawal,
+snapshot separation, and multi-size query work have direct regressions.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
