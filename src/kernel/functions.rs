@@ -3522,6 +3522,7 @@ fn execute_verified_function_applications_with_suspension(
                 worker_effects,
                 facts,
                 post_state.mutex_ledger.clone(),
+                population_transition.worker_counts,
             ));
             // The internal caller checks there is exactly one completion.
             // No worker guarantee or ownership is published as a call return.
@@ -12729,6 +12730,8 @@ pub(super) fn bind_c_function_arguments(
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
     callee_state.counted_populations = caller_state.counted_populations.clone();
+    Arc::make_mut(&mut callee_state.population_effects).pending_counts =
+        caller_state.population_effects.pending_counts.clone();
     // A function entry is a lexical/frame rebind, not an authority reset.
     // Preserve an already-active candidate loan through calls whose resource
     // interface is empty; the resource-transfer planner may replace these
@@ -12850,6 +12853,8 @@ fn bind_c_contract_arguments(
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
     callee_state.counted_populations = caller_state.counted_populations.clone();
+    Arc::make_mut(&mut callee_state.population_effects).pending_counts =
+        caller_state.population_effects.pending_counts.clone();
     callee_state.loan_ledger = caller_state.loan_ledger.clone();
     callee_state.loan_participant = caller_state.loan_participant;
     callee_state.loan_view_bindings = caller_state.loan_view_bindings.clone();
@@ -16916,8 +16921,8 @@ mod committed_population_return_tests {
                 .with_resource_context(ResourceContext::new().unchecked_with_fact(
                     CResourceFact::own_quantity(head.clone(), Bitvector32Term::Constant(2)),
                 ));
-            returned
-                .committed_population_consumptions
+            Arc::make_mut(&mut returned.population_effects)
+                .committed_consumptions
                 .insert(CCountedPopulation {
                     name: "remaining".into(),
                     arguments: vec![].into(),
@@ -17121,6 +17126,7 @@ struct CCountedPopulationTransition {
     retained_body_allocations: Vec<(Pointer, Bitvector32Term)>,
     population_facts: Vec<Proposition>,
     postcondition_obligations: Vec<ProofObligation>,
+    worker_counts: Vec<super::threads::WorkerPopulationCount>,
 }
 
 fn apply_counted_population_transition_resources(
@@ -17248,6 +17254,16 @@ fn apply_counted_population_transitions_with_interface(
     let mut transition = CCountedPopulationTransition::default();
     let mut transition_guaranteed_facts = Vec::new();
     for (name, arguments) in keys {
+        if caller_state
+            .population_effects
+            .pending_counts
+            .get(&name, &arguments, false)
+            .is_some()
+        {
+            return Ok(Err(CRuntimeError::FunctionContract(format!(
+                "Requires joining the worker using {name}(...) before another population transfer"
+            ))));
+        }
         let declared_population_definition = interface
             .composite_resource_definitions()
             .iter()
@@ -17279,6 +17295,19 @@ fn apply_counted_population_transitions_with_interface(
                         visible_count,
                     );
                 }
+            }
+            if let Some(after) = post_state.counted_population(&name, &arguments) {
+                transition
+                    .worker_counts
+                    .push(super::threads::WorkerPopulationCount {
+                        name: name.clone(),
+                        arguments: arguments.clone(),
+                        before: caller_state
+                            .counted_population(&name, &arguments)
+                            .cloned()
+                            .unwrap_or(Bitvector32Term::Constant(0)),
+                        after: after.clone(),
+                    });
             }
             // Equal quantities preserve the population's lifetime, not its
             // bytes. A call may havoc the body even when it returns every
@@ -17379,11 +17408,23 @@ fn apply_counted_population_transitions_with_interface(
                 total
             }
         };
+        transition
+            .worker_counts
+            .push(super::threads::WorkerPopulationCount {
+                name: name.clone(),
+                arguments: arguments.clone(),
+                before: caller_state
+                    .counted_population(&name, &arguments)
+                    .cloned()
+                    .unwrap_or(Bitvector32Term::Constant(0)),
+                after: new_count.clone(),
+            });
         // An early close has already spent this function's one-unit effect.
         // Reconcile with the contract's entry-based total; never overwrite a
         // different current total and thereby hide a second consumption.
         if post_state
-            .committed_population_consumptions
+            .population_effects
+            .committed_consumptions
             .get(&name, &arguments, false)
             .is_some()
             && !post_state

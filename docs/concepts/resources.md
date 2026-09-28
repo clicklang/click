@@ -376,6 +376,15 @@ covers early closure, reopening for a read, branches, nested calls, and exact
 two contributions. The [scope-close design](https://github.com/lacker/click/blob/master/design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
 records the obligations and remaining concurrency work.
 
+For an ordinary abstract population transferred to a pthread worker, a successful
+create reserves its Count until the matching join. Current Count expressions
+that include that population cannot be evaluated in the meantime. Joining
+commits the worker's checked resource effect once; a failed create preserves
+the original total. Calls preserve this restriction. The initial rule permits
+independent populations to run concurrently, but requires joining before another
+transfer of the same population. Stateful populations still need mutex body
+custody before they can cross a worker boundary.
+
 Inside `count(...)`, `_` is a wildcard over one resource argument. For example,
 `count(pool_object(pool, _))` sums all exact object populations for `pool`.
 

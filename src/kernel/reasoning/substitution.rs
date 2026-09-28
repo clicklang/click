@@ -3807,7 +3807,36 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
     }
 }
 
-pub(in crate::kernel) fn substitute_bitvector_variable_in_c_state(
+pub(in crate::kernel) fn substitute_bitvector_variable_in_population_counts(
+    populations: &crate::kernel::primitives::CountedPopulations,
+    from: Variable,
+    to: &Bitvector32Term,
+) -> crate::kernel::primitives::CountedPopulations {
+    populations
+        .iter()
+        .map(|population| CCountedPopulation {
+            name: population.name.clone(),
+            arguments: population
+                .arguments
+                .iter()
+                .map(|argument| {
+                    substitute_bitvector_variable_in_algebraic_value(argument, from, to)
+                })
+                .collect(),
+            count: match substitute_bitvector_variable_in_c_value(
+                &CValue::Int32(population.count.clone()),
+                from,
+                to,
+            ) {
+                CValue::Int32(count) => count,
+                _ => unreachable!("an int32 population count remains int32"),
+            },
+            family_observation_marker: population.family_observation_marker,
+        })
+        .collect()
+}
+
+fn substitute_bitvector_variable_in_c_state(
     state: &CState,
     from: Variable,
     to: &Bitvector32Term,
@@ -3921,57 +3950,29 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_state(
                 |pointer| substitute_bitvector_variable_in_pointer(pointer, from, to),
                 |value| substitute_bitvector_variable_in_c_value(value, from, to),
                 |memory| substitute_bitvector_variable_in_memory(memory, from, to),
+                |counts| substitute_bitvector_variable_in_population_counts(counts, from, to),
             )
         }),
         next_local_frame: state.next_local_frame,
         next_local_lifetime: state.next_local_lifetime,
         enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
-        counted_populations: state
-            .counted_populations
-            .iter()
-            .map(|population| CCountedPopulation {
-                name: population.name.clone(),
-                arguments: population
-                    .arguments
-                    .iter()
-                    .map(|argument| {
-                        substitute_bitvector_variable_in_algebraic_value(argument, from, to)
-                    })
-                    .collect(),
-                count: match substitute_bitvector_variable_in_c_value(
-                    &CValue::Int32(population.count.clone()),
-                    from,
-                    to,
-                ) {
-                    CValue::Int32(count) => count,
-                    _ => unreachable!("an int32 population count remains int32"),
-                },
-                family_observation_marker: population.family_observation_marker,
-            })
-            .collect(),
-        committed_population_consumptions: state
-            .committed_population_consumptions
-            .iter()
-            .map(|population| CCountedPopulation {
-                name: population.name.clone(),
-                arguments: population
-                    .arguments
-                    .iter()
-                    .map(|argument| {
-                        substitute_bitvector_variable_in_algebraic_value(argument, from, to)
-                    })
-                    .collect(),
-                count: match substitute_bitvector_variable_in_c_value(
-                    &CValue::Int32(population.count.clone()),
-                    from,
-                    to,
-                ) {
-                    CValue::Int32(count) => count,
-                    _ => unreachable!("an int32 population count remains int32"),
-                },
-                family_observation_marker: population.family_observation_marker,
-            })
-            .collect(),
+        counted_populations: substitute_bitvector_variable_in_population_counts(
+            &state.counted_populations,
+            from,
+            to,
+        ),
+        population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
+            committed_consumptions: substitute_bitvector_variable_in_population_counts(
+                &state.population_effects.committed_consumptions,
+                from,
+                to,
+            ),
+            pending_counts: substitute_bitvector_variable_in_population_counts(
+                &state.population_effects.pending_counts,
+                from,
+                to,
+            ),
+        }),
     }
 }
 
@@ -6534,6 +6535,26 @@ fn substitute_pointer_variable_in_c_function_outcome(
     }
 }
 
+fn substitute_pointer_variable_in_population_counts(
+    populations: &crate::kernel::primitives::CountedPopulations,
+    from: Variable,
+    to: &Pointer,
+) -> crate::kernel::primitives::CountedPopulations {
+    populations
+        .iter()
+        .map(|population| CCountedPopulation {
+            name: population.name.clone(),
+            arguments: population
+                .arguments
+                .iter()
+                .map(|argument| substitute_pointer_variable_in_algebraic_value(argument, from, to))
+                .collect(),
+            count: population.count.clone(),
+            family_observation_marker: population.family_observation_marker,
+        })
+        .collect()
+}
+
 fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &Pointer) -> CState {
     let bindings = std::sync::Arc::new(
         state
@@ -6654,43 +6675,29 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
                 |pointer| substitute_pointer_variable_in_pointer(pointer, from, to),
                 |value| substitute_pointer_variable_in_c_value(value, from, to),
                 |memory| substitute_pointer_variable_in_memory(memory, from, to),
+                |counts| substitute_pointer_variable_in_population_counts(counts, from, to),
             )
         }),
         next_local_frame: state.next_local_frame,
         next_local_lifetime: state.next_local_lifetime,
         enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
-        counted_populations: state
-            .counted_populations
-            .iter()
-            .map(|population| CCountedPopulation {
-                name: population.name.clone(),
-                arguments: population
-                    .arguments
-                    .iter()
-                    .map(|argument| {
-                        substitute_pointer_variable_in_algebraic_value(argument, from, to)
-                    })
-                    .collect(),
-                count: population.count.clone(),
-                family_observation_marker: population.family_observation_marker,
-            })
-            .collect(),
-        committed_population_consumptions: state
-            .committed_population_consumptions
-            .iter()
-            .map(|population| CCountedPopulation {
-                name: population.name.clone(),
-                arguments: population
-                    .arguments
-                    .iter()
-                    .map(|argument| {
-                        substitute_pointer_variable_in_algebraic_value(argument, from, to)
-                    })
-                    .collect(),
-                count: population.count.clone(),
-                family_observation_marker: population.family_observation_marker,
-            })
-            .collect(),
+        counted_populations: substitute_pointer_variable_in_population_counts(
+            &state.counted_populations,
+            from,
+            to,
+        ),
+        population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
+            committed_consumptions: substitute_pointer_variable_in_population_counts(
+                &state.population_effects.committed_consumptions,
+                from,
+                to,
+            ),
+            pending_counts: substitute_pointer_variable_in_population_counts(
+                &state.population_effects.pending_counts,
+                from,
+                to,
+            ),
+        }),
     }
 }
 

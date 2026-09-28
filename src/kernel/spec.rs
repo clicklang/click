@@ -5978,6 +5978,134 @@ mod aggregate_value_tests {
     }
 }
 
+/// Keep the optional Count-state selection off the recursive expression
+/// evaluator's stack. Ordinary expressions do not need an owned CState.
+fn evaluate_resource_count_paths(
+    state: &CState,
+    name: &str,
+    arguments: &[Option<SpecExpression>],
+    loop_entry_state: Option<&CState>,
+    assumptions: &PureFactContext,
+    algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    let observed_state = state.count_observation_state(assumptions);
+    let state = observed_state.as_ref();
+    let mut argument_paths = vec![(Vec::<Option<AlgebraicValue>>::new(), Vec::new(), Vec::new())];
+    for argument in arguments {
+        let mut next = Vec::new();
+        for (values, facts, obligations) in argument_paths {
+            let Some(argument) = argument else {
+                let mut next_values = values;
+                next_values.push(None);
+                next.push((next_values, facts, obligations));
+                continue;
+            };
+            let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
+            for argument_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                state,
+                argument,
+                loop_entry_state,
+                &path_assumptions,
+                algebraic_bindings,
+                budget,
+            )? {
+                let Some((merged_facts, merged_obligations)) =
+                    merge_execution_pure_facts_and_obligations(
+                        &facts,
+                        &obligations,
+                        &argument_path.facts,
+                        &argument_path.obligations,
+                        assumptions,
+                    )
+                else {
+                    continue;
+                };
+                let mut next_values = values.clone();
+                next_values.push(Some(AlgebraicValue::C(argument_path.value)));
+                next.push((next_values, merged_facts, merged_obligations));
+            }
+        }
+        argument_paths = next;
+    }
+    argument_paths
+        .into_iter()
+        .map(|(arguments, facts, mut obligations)| {
+            let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
+            let mut total: Option<Bitvector32Term> = None;
+            let indexed =
+                state.indexed_counted_population_matches(name, &arguments, &path_assumptions);
+            let fallback_limit = if indexed.is_some() { 0 } else { usize::MAX };
+            let matching = indexed
+                .iter()
+                .flat_map(|matches| matches.iter().copied())
+                .chain(
+                    state
+                        .counted_populations()
+                        .take(fallback_limit)
+                        .filter(|population| {
+                            population.name == name
+                                && population.arguments.len() == arguments.len()
+                                && population.arguments.iter().zip(&arguments).all(
+                                    |(actual, pattern)| {
+                                        pattern.as_ref().is_none_or(|expected| {
+                                            crate::kernel::resource_arguments_proven_equal(
+                                                actual,
+                                                expected,
+                                                &path_assumptions,
+                                            )
+                                        })
+                                    },
+                                )
+                        }),
+                );
+            for population in matching {
+                if state
+                    .population_effects
+                    .pending_counts
+                    .get(&population.name, &population.arguments, false)
+                    .is_some()
+                {
+                    // There is no current Count observation while the
+                    // worker may be changing this population. Refuse
+                    // evaluation, including tautologies about Count.
+                    return Err(ExecutionLimit::ResourceCountPendingWorker);
+                }
+                total = Some(if let Some(current) = total {
+                    let overflow = ConditionTerm::signed_add_overflows(
+                        current.clone(),
+                        population.count.clone(),
+                    );
+                    // A bare condition: the exact fact index, the
+                    // intrinsic rule, and the frozen condition checker
+                    // may still discharge it. Nothing else does; the
+                    // remainder becomes an explicit obligation.
+                    let discharged = path_assumptions
+                        .proves_exact(&Proposition::ConditionIs(overflow.clone(), false))
+                        || PureFactContext::decide_intrinsically(&overflow) == Some(false)
+                        || !path_assumptions.should_defer_non_exact_condition_reasoning()
+                            && path_assumptions.decide(&overflow) == Some(false);
+                    let no_overflow = Proposition::ConditionIs(overflow, false);
+                    if !discharged {
+                        obligations.push(
+                            ProofObligation::verification_condition(no_overflow)
+                                .with_context("resource pattern count fits in int32"),
+                        );
+                    }
+                    Bitvector32Term::add(current, population.count.clone())
+                } else {
+                    population.count.clone()
+                });
+            }
+            Ok(SpecExpressionPath {
+                value: CValue::Int32(total.unwrap_or(Bitvector32Term::Constant(0))),
+                facts,
+                obligations,
+            })
+        })
+        .collect::<ExecutionResult<Vec<_>>>()
+}
+
 fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
     state: &CState,
     expression: &SpecExpression,
@@ -6304,113 +6432,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             evaluate_c_expression_paths(state, expression, assumptions, budget)?,
             budget,
         ),
-        SpecExpression::CountedResourceCount { name, arguments } => {
-            let mut argument_paths =
-                vec![(Vec::<Option<AlgebraicValue>>::new(), Vec::new(), Vec::new())];
-            for argument in arguments {
-                let mut next = Vec::new();
-                for (values, facts, obligations) in argument_paths {
-                    let Some(argument) = argument else {
-                        let mut next_values = values;
-                        next_values.push(None);
-                        next.push((next_values, facts, obligations));
-                        continue;
-                    };
-                    let path_assumptions =
-                        assumptions_with_path_context(assumptions, &facts, &obligations);
-                    for argument_path in evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                        state,
-                        argument,
-                        loop_entry_state,
-                        &path_assumptions,
-                        algebraic_bindings,
-                        budget,
-                    )? {
-                        let Some((merged_facts, merged_obligations)) =
-                            merge_execution_pure_facts_and_obligations(
-                                &facts,
-                                &obligations,
-                                &argument_path.facts,
-                                &argument_path.obligations,
-                                assumptions,
-                            )
-                        else {
-                            continue;
-                        };
-                        let mut next_values = values.clone();
-                        next_values.push(Some(AlgebraicValue::C(argument_path.value)));
-                        next.push((next_values, merged_facts, merged_obligations));
-                    }
-                }
-                argument_paths = next;
-            }
-            argument_paths
-                .into_iter()
-                .map(|(arguments, facts, mut obligations)| {
-                    let path_assumptions =
-                        assumptions_with_path_context(assumptions, &facts, &obligations);
-                    let mut total: Option<Bitvector32Term> = None;
-                    let indexed = state.indexed_counted_population_matches(
-                        name,
-                        &arguments,
-                        &path_assumptions,
-                    );
-                    let fallback_limit = if indexed.is_some() { 0 } else { usize::MAX };
-                    let matching = indexed
-                        .iter()
-                        .flat_map(|matches| matches.iter().copied())
-                        .chain(state.counted_populations().take(fallback_limit).filter(
-                            |population| {
-                                population.name == *name
-                                    && population.arguments.len() == arguments.len()
-                                    && population.arguments.iter().zip(&arguments).all(
-                                        |(actual, pattern)| {
-                                            pattern.as_ref().is_none_or(|expected| {
-                                                crate::kernel::resource_arguments_proven_equal(
-                                                    actual,
-                                                    expected,
-                                                    &path_assumptions,
-                                                )
-                                            })
-                                        },
-                                    )
-                            },
-                        ));
-                    for population in matching {
-                        total = Some(if let Some(current) = total {
-                            let overflow = ConditionTerm::signed_add_overflows(
-                                current.clone(),
-                                population.count.clone(),
-                            );
-                            // A bare condition: the exact fact index, the
-                            // intrinsic rule, and the frozen condition checker
-                            // may still discharge it. Nothing else does; the
-                            // remainder becomes an explicit obligation.
-                            let discharged = path_assumptions
-                                .proves_exact(&Proposition::ConditionIs(overflow.clone(), false))
-                                || PureFactContext::decide_intrinsically(&overflow) == Some(false)
-                                || !path_assumptions.should_defer_non_exact_condition_reasoning()
-                                    && path_assumptions.decide(&overflow) == Some(false);
-                            let no_overflow = Proposition::ConditionIs(overflow, false);
-                            if !discharged {
-                                obligations.push(
-                                    ProofObligation::verification_condition(no_overflow)
-                                        .with_context("resource pattern count fits in int32"),
-                                );
-                            }
-                            Bitvector32Term::add(current, population.count.clone())
-                        } else {
-                            population.count.clone()
-                        });
-                    }
-                    SpecExpressionPath {
-                        value: CValue::Int32(total.unwrap_or(Bitvector32Term::Constant(0))),
-                        facts,
-                        obligations,
-                    }
-                })
-                .collect()
-        }
+        SpecExpression::CountedResourceCount { name, arguments } => evaluate_resource_count_paths(
+            state,
+            name,
+            arguments,
+            loop_entry_state,
+            assumptions,
+            algebraic_bindings,
+            budget,
+        )?,
         SpecExpression::Add(left, right) => evaluate_spec_add_paths_in(
             state,
             left,

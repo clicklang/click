@@ -2236,6 +2236,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::ExecutionIdentityBesideLiveState => {
             "internal: execution identity requested beside a live state".to_string()
         }
+        ExecutionLimit::ResourceCountPendingWorker => {
+            "count(...) requires joining its outstanding worker".to_string()
+        }
         // The kernel knows the identity is absent; it does not know the name
         // the reader wrote for it. A caller that has the source expression
         // says which field and which repair instead of printing this.

@@ -27,7 +27,8 @@ pub(super) fn prepare(
         return Err("consuming close requires an open population body".into());
     }
     if before
-        .committed_population_consumptions
+        .population_effects
+        .committed_consumptions
         .get(&name, &arguments, false)
         .is_some()
     {
@@ -108,8 +109,8 @@ pub(super) fn prepare(
         .clone()
         .with_resource_context(resources)
         .with_counted_population(name.clone(), arguments.clone(), next_count);
-    candidate
-        .committed_population_consumptions
+    Arc::make_mut(&mut candidate.population_effects)
+        .committed_consumptions
         .insert(CCountedPopulation {
             name,
             arguments,

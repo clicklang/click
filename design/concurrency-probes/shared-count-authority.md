@@ -247,6 +247,29 @@ as observing the wrapper's own population. Supporting foreign-population facts
 must preserve the same authenticated population across acquisitions and must
 not manufacture its total from the locally visible units.
 
+## Join accounting prerequisite
+
+A reduced abstract-ticket example exposed a stale total: after joining a worker
+that consumed the only ticket, the parent could still prove Count was one.
+Worker completion returned resources but did not update the population total.
+
+The first checked join rule now retains each observed population's contract
+total in its unique completion right. Successful create reserves that population
+until join. Neither current Count evaluation nor another transfer of the same
+population is supported while the worker is outstanding; calls inherit this
+restriction without acquiring the caller's completion rights. Failure preserves
+the original count. Join checks the reservation and unchanged baseline, commits
+only this worker's totals, and removes the reservation. Independent populations
+can complete in either order without restoring a saved parent population ledger.
+Even neutral contracts reserve Count: matching entry and exit quantities do not
+promise that every intermediate quantity is unchanged.
+
+This is an abstract-resource prerequisite, not the shared mutex solution.
+Stateful populations remain thread confined. Overlapping workers for one
+population still require authenticated body custody and an aggregate of checked
+net effects, rather than independently installing entry-derived final totals.
+The reduced C regressions are separate from the unchanged mutex counter.
+
 ## Subsequent obligations, not yet demonstrated by the probes
 
 - **Compose consumption with unlock.** Early consumption now works sequentially.

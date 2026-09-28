@@ -3686,6 +3686,9 @@ pub enum ExecutionLimit {
     /// taken the instance away, and a reader needs to be told *that* rather
     /// than which counter the evaluation was holding at the time.
     ResourceFieldInstanceUnavailable,
+    /// A worker may still change this total. No current observation is
+    /// available until the checked completion right is joined.
+    ResourceCountPendingWorker,
 }
 
 impl ExecutionLimit {
@@ -3717,6 +3720,9 @@ impl ExecutionLimit {
             }
             Self::ExecutionIdentityBesideLiveState => {
                 "an internal request for an execution identity beside a live state".to_string()
+            }
+            Self::ResourceCountPendingWorker => {
+                "count(...) requires joining its outstanding worker".to_string()
             }
             Self::ResourceFieldInstanceUnavailable => {
                 "a model field of a resource instance this state does not hold".to_string()
@@ -5083,6 +5089,15 @@ pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(super) struct PopulationEffects {
+    /// Function-local consumption committed at closure; callee binding resets it.
+    pub(super) committed_consumptions: CountedPopulations,
+    /// Current Count is unavailable until the corresponding worker joins.
+    /// Calls inherit this restriction without acquiring join rights.
+    pub(super) pending_counts: CountedPopulations,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CState {
     /// Lexical field values for scratch resource-body evaluation only.
     /// This is not ownership and is never populated by unfolding a resource.
@@ -5125,10 +5140,9 @@ pub struct CState {
     pub(super) pending_thread_create: Option<super::threads::PendingThreadCreate>,
     pub(super) population_access: super::population_access::PopulationAccess,
     pub(super) counted_populations: CountedPopulations,
-    /// Function-local consumption already committed while closing a body.
-    /// Entries currently record exactly one unit. Callee binding starts empty;
-    /// returning to a caller preserves that caller's independent obligations.
-    pub(super) committed_population_consumptions: CountedPopulations,
+    /// Shared persistent roots keep population effect accounting to one word
+    /// in each execution state, including recursive specification evaluation.
+    pub(super) population_effects: Arc<PopulationEffects>,
     /// Monotonic identity source for stack frames created by nested calls.
     /// Keeping this in the symbolic state makes frame identities deterministic
     /// and ensures recursive calls cannot reuse a caller's stack slots.

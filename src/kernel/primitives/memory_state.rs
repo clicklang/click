@@ -4268,6 +4268,10 @@ impl CState {
                 .counted_populations
                 .shares_storage_with(&other.counted_populations)
                 || (self.counted_populations.is_empty() && other.counted_populations.is_empty()))
+            && self
+                .population_effects
+                .pending_counts
+                .shares_storage_with(&other.population_effects.pending_counts)
             && self.next_local_frame == other.next_local_frame
             && self.next_local_lifetime == other.next_local_lifetime
             && self.enclosing_frame_holds_locals == other.enclosing_frame_holds_locals
@@ -4767,6 +4771,22 @@ impl CState {
         )
     }
 
+    /// Count sees the selected create outcome even before the next C step.
+    /// This changes only observation restrictions, never memory or join rights.
+    pub(in crate::kernel) fn count_observation_state(
+        &self,
+        assumptions: &PureFactContext,
+    ) -> std::borrow::Cow<'_, Self> {
+        let Some(pending) = &self.pending_thread_create else {
+            return std::borrow::Cow::Borrowed(self);
+        };
+        let reservations = pending.count_authority(assumptions);
+        let mut state = self.clone();
+        Arc::make_mut(&mut state.population_effects).pending_counts = reservations.clone();
+        state.pending_thread_create = None;
+        std::borrow::Cow::Owned(state)
+    }
+
     /// The total of every ledger entry this pattern names, or `None` where
     /// that total is not a count.
     ///
@@ -4783,7 +4803,9 @@ impl CState {
         arguments: &[Option<AlgebraicValue>],
         assumptions: &PureFactContext,
     ) -> Option<Bitvector32Term> {
-        self.counted_populations
+        let state = self.count_observation_state(assumptions);
+        state
+            .counted_populations
             .iter()
             .filter(|population| {
                 !population.family_observation_marker
@@ -4804,6 +4826,14 @@ impl CState {
                         })
             })
             .try_fold(Bitvector32Term::Constant(0), |total, population| {
+                if state
+                    .population_effects
+                    .pending_counts
+                    .get(&population.name, &population.arguments, false)
+                    .is_some()
+                {
+                    return None;
+                }
                 crate::kernel::primitives::resource_algebra::population_quantity_sum(
                     &total,
                     &population.count,
@@ -4864,6 +4894,11 @@ impl CState {
             .collect();
         Self {
             counted_populations,
+            population_effects: Arc::new(PopulationEffects {
+                pending_counts: self.population_effects.pending_counts.clone(),
+                ..PopulationEffects::default()
+            }),
+            pending_thread_create: self.pending_thread_create.clone(),
             ..Self::new()
         }
     }
