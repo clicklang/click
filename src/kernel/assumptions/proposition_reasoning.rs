@@ -2963,7 +2963,12 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        if self.bitvector_terms_equal_from_facts(left, right)
+        // Transport compares int32 values, so wrapping equality from the
+        // trusted graph is sufficient here. Check it before the legacy fact
+        // walk; an empty graph should not intern unrelated transport terms.
+        if self.equality_graph.has_term_equivalences()
+            && self.equality_graph.are_int32_equal(left, right)
+            || self.bitvector_terms_equal_from_facts(left, right)
             || self.bitvector_terms_proven_equal(left, right)
         {
             return true;

@@ -263,6 +263,13 @@ quantity work, and multi-size decisions without building the legacy fact
 index. Transport, memory, and resource consumers of that index remain future
 slices.
 
+Int32 fact transport now checks the graph before its legacy fact-path lookup
+when the graph has established equivalences. Order-fact matching can use
+congruent sums and registered same-snapshot loads without building that index.
+The old lookup and structural transport remain for term forms outside the
+graph; memory and resource consumers have not moved. Branch withdrawal,
+snapshot separation, and multi-size query work have direct regressions.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

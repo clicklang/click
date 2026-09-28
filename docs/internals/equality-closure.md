@@ -112,6 +112,13 @@ queries; structural and memory rules still run. Explicit premises, other
 checked scalar rules, and negative decisions keep their existing paths. The
 legacy fact-path helper still serves transport, memory, and resource consumers.
 
+Int32 fact transport now asks that graph first when it has joined term classes.
+This covers congruent sums and registered same-snapshot loads in order-fact
+matching without building the legacy fact-path index. Its existing structural
+rules and fact-path lookup still handle unsupported term forms. Transport is a
+value-equality consumer; exact pointer-offset decisions retain their separate
+guard against wrapping int32 equalities.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads
