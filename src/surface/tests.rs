@@ -2628,3 +2628,64 @@ fn resource_parameters_are_references_separate_from_ownership() {
         assert!(parser::parse(&invalid).is_err(), "accepted {invalid}");
     }
 }
+
+#[test]
+fn mutex_use_accepts_resource_type_without_owned_instance() {
+    let source = r#"
+        resource counter_state(p: int32*) { field value: int32; }
+        void worker(int32* mu, int32* p) {
+            owns access: mutex_use(mu, counter_state(p));
+        }
+    "#;
+    let file = parser::parse(source).unwrap();
+    let Requirement::Resource(resource) = &file.function_blocks()[0].requires()[0] else {
+        panic!()
+    };
+    assert_eq!(
+        crate::surface::validation::describe_resource_clause(resource),
+        "access: mutex_use(mu, counter_state(p))"
+    );
+    let ResourceClause::Named { resource, .. } = resource else {
+        panic!()
+    };
+    let ResourceClause::Declared {
+        resource_type_arguments,
+        ..
+    } = resource.as_ref()
+    else {
+        panic!()
+    };
+    let [
+        ResourceClause::Declared {
+            name,
+            type_schema: Some(schema),
+            ..
+        },
+    ] = resource_type_arguments.as_slice()
+    else {
+        panic!()
+    };
+    assert_eq!(name, "counter_state");
+    assert_eq!(schema.fields().len(), 1);
+}
+
+#[test]
+fn mutex_use_resource_type_checks_its_dependent_argument() {
+    let source = r#"
+        resource counter_state(p: int32*) { field value: int32; }
+        void worker(int32* mu) {
+            owns access: mutex_use(mu, counter_state(1));
+        }
+    "#;
+    let error = parser::parse(source).unwrap_err();
+    assert!(
+        error.message().contains("counter_state"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        error.message().contains("argument 0"),
+        "{}",
+        error.message()
+    );
+}

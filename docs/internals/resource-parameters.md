@@ -1,8 +1,63 @@
 # Resource arguments and mutex associations
 
-Status: revised design direction. Explicit resource-description parameters are
-not part of the concurrency plan. The earlier angle-bracket proposal is
-withdrawn; its syntax was never accepted by the parser.
+Status: resource types are accepted as mutex-use arguments. The earlier
+angle-bracket proposal is withdrawn; its syntax was never accepted by the parser.
+
+## Resource types in mutex contracts
+
+The accepted surface terminology is **resource type**. `counter_state(p)` is a
+resource type; an owned instance has that type and currently observed fields.
+A resource type carries no ownership and no field observations. Resource types
+can be used as arguments without a separate function proof parameter:
+
+<!-- verified-example: mdtests/mutex_use_resource_type.md -->
+```click
+owns access: mutex_use(mu, counter_state(p));
+```
+
+This contract shape is implemented for modeled mutex use. No new keyword,
+angle-bracket parameter, or function header is required. At an executing call,
+the supplied permission must authenticate the required resource type against
+the actual initialization or an already checked typed input. A unary
+`mutex_use(mu)` cannot establish the stronger requirement.
+
+Acquisition uses the existing named runtime contract outputs:
+
+<!-- verified-example: mdtests/mutex_use_resource_type.md -->
+```click
+let { guard: guard, state: state } =
+    step(pthread_mutex_lock(mu), { access: access });
+unfold(state);
+step();
+let restored = fold(counter_state(p), { value: p->value });
+step(pthread_mutex_unlock(mu), {
+    access: access, guard: guard, state: restored
+});
+```
+
+The acquired instance has fresh field observations. Unlock requires an owned,
+folded instance of the protected type; it may be a replacement instance. A
+summary call using the typed permission also forgets the concrete escrow's
+old fields and memory observations. Neither passing the type nor retaining an
+old instance name supplies current ownership.
+
+Initial implementation boundaries: the protected type must be a declared,
+field-bearing, unconditional leaf resource with `guarded_by`; its memory
+footprint must not depend on changing model fields. Model fields currently
+support C and integer types. Nested type/reference arguments, owned children,
+and resource-type parameters on user-defined resource constructors remain
+unsupported and are rejected. As with the concrete mutex path, unlock currently
+requires outstanding memory loans to have returned. Named lock/unlock payload transport currently
+applies to independent typed-use contracts; the existing implicit concrete
+mutex path remains available. This implements the contract and synchronous
+helper boundary. The unchanged worker now verifies in
+`design/concurrency-probes/mutex_counter.click` and the
+`mdtests/mutex_counter_worker.md` regression; the parent and exact final-count
+accounting remain unproved.
+
+The older named-instance argument work below remains supported. It identifies
+an occurrence, whereas a resource type permits replacement occurrences. The
+proposed extra worker proof parameter is superseded by the nested type above.
 
 ## Pass resources through existing proof interfaces
 
@@ -239,7 +294,7 @@ owned input instances; transporting a reference to escrowed state requires a
 separate change to contract entry and refinement checking. Mutex permissions
 have not yet been connected to this mechanism.
 
-## Shared-worker counter: first concrete contract decision
+## Earlier worker proposal (superseded by resource types)
 
 Status: resource-valued arguments accepted. Implementation is in progress;
 the worker contract below remains a target, not a verified example.

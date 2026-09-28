@@ -1284,6 +1284,11 @@ pub enum ResourceClause {
         kind: ResourceKind,
         name: String,
         arguments: Vec<ContractExpression>,
+        /// Checked field shape when this declaration is used as a resource type.
+        /// This does not name an occurrence or provide any field observations.
+        type_schema: Option<crate::kernel::ResourceFieldSchema>,
+        /// Resource types passed as arguments, independently of named instances.
+        resource_type_arguments: Vec<ResourceClause>,
         resource_arguments: Vec<ResourceInstanceBinding>,
         parameter_types: Vec<C0Type>,
     },
@@ -1889,9 +1894,16 @@ fn collect_current_resource_clause_variables(
             collect_current_contract_expression_variables(quantity, names);
             collect_current_resource_clause_variables(resource, names);
         }
-        ResourceClause::Declared { arguments, .. } => {
+        ResourceClause::Declared {
+            arguments,
+            resource_type_arguments,
+            ..
+        } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);
+            }
+            for resource in resource_type_arguments {
+                collect_current_resource_clause_variables(resource, names);
             }
         }
         ResourceClause::Iterated(clause) => {
@@ -6520,6 +6532,8 @@ fn substitute_resource_clause_bindings(
             )?),
         },
         ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -6527,6 +6541,11 @@ fn substitute_resource_clause_bindings(
             arguments,
             parameter_types,
         } => ResourceClause::Declared {
+            type_schema: type_schema.clone(),
+            resource_type_arguments: resource_type_arguments
+                .iter()
+                .map(|resource| substitute_resource_clause_bindings(resource, substitutions))
+                .collect::<Result<_, _>>()?,
             resource_arguments: resource_arguments.clone(),
             access: *access,
             kind: *kind,

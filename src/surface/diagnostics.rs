@@ -1262,9 +1262,9 @@ pub(super) fn describe_resource_fact(
         ),
         CResourceFact::Own(CResource::MutexUse(identity), _)
         | CResourceFact::View(CResource::MutexUse(identity)) => format!(
-            "{} mutex_use({})",
+            "{} {}",
             if resource.is_own() { "owns" } else { "views" },
-            describe_mutex_pointer(identity.mutex(), parameters, arguments)
+            format_mutex_use(identity, parameters, arguments)
         ),
         CResourceFact::Own(CResource::Instance(instance), _)
         | CResourceFact::View(CResource::Instance(instance)) => format!(
@@ -1410,10 +1410,7 @@ fn describe_c_resource(
             "mutex_live({})",
             describe_mutex_pointer(identity.mutex(), parameters, arguments)
         ),
-        CResource::MutexUse(identity) => format!(
-            "mutex_use({})",
-            describe_mutex_pointer(identity.mutex(), parameters, arguments)
-        ),
+        CResource::MutexUse(identity) => format_mutex_use(identity, parameters, arguments),
         CResource::Iterated(iterated) => describe_iterated_memory(iterated, parameters, arguments),
     }
 }
@@ -1433,6 +1430,26 @@ fn describe_resource_subject(resource: &ResourceSubject) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
+    }
+}
+
+fn format_mutex_use(
+    identity: &crate::kernel::MutexUseIdentity,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    let mutex = describe_mutex_pointer(identity.mutex(), parameters, arguments);
+    match identity.protected_type() {
+        Some(resource_type) => format!(
+            "mutex_use({mutex}, {})",
+            format_declared_resource(
+                resource_type.family(),
+                resource_type.arguments(),
+                parameters,
+                arguments
+            )
+        ),
+        None => format!("mutex_use({mutex})"),
     }
 }
 

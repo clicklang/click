@@ -881,7 +881,12 @@ fn execute_modeled_pthread_mutex_paths(
         (Some(transport), Some(contract))
             if matches!(
                 MutexOperation::for_function_name(function_name),
-                Some(MutexOperation::Init | MutexOperation::Destroy)
+                Some(
+                    MutexOperation::Init
+                        | MutexOperation::Destroy
+                        | MutexOperation::Lock
+                        | MutexOperation::Unlock
+                )
             ) =>
         {
             transport.function.as_ref() == contract.function_name
@@ -1033,16 +1038,89 @@ fn execute_modeled_pthread_mutex_paths(
                     || state.resources.mutex_use_at(mutex.pointer()).is_some()
                     || state.opaque_mutex_acquisitions.is_some())
             {
-                super::mutexes::opaque_runtime_transition(
-                    state,
-                    mutex.pointer(),
-                    function_name == binding.mutex_lock_name,
-                    &current,
-                )
-                .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                let acquiring = function_name == binding.mutex_lock_name;
+                let operation = if acquiring {
+                    MutexOperation::Lock
+                } else {
+                    MutexOperation::Unlock
+                };
+                let selected_role = |role| {
+                    selected.map(|transport| {
+                        let binder = operation
+                            .descriptor()
+                            .binder_by_role(role)
+                            .expect("runtime binder role");
+                        transport.bindings[&Variable(binder.identity)]
+                    })
+                };
+                let usage = state.resources.mutex_use_at(mutex.pointer());
+                let access_matches =
+                    selected_role(MutexResourceRole::Access).is_none_or(|identity| {
+                        state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
+                    });
+                let guard_matches = acquiring
+                    || selected_role(MutexResourceRole::Guard).is_none_or(|identity| {
+                        matches!((state.resolve_named_mutex_authority(identity),
+                        super::mutexes::guard_resource(state, mutex.pointer(), false)),
+                        (Some(actual), Some(expected)) if actual == &expected)
+                    });
+                if !access_matches {
+                    Err(CRuntimeError::MissingMutexUse {
+                        mutex: mutex.pointer().clone(),
+                    })
+                } else if !guard_matches {
+                    Err(CRuntimeError::MissingMutexGuard {
+                        mutex: mutex.pointer().clone(),
+                    })
+                } else {
+                    let definition = usage
+                        .and_then(|fact| match fact.resource() {
+                            CResource::MutexUse(usage) => usage.protected.as_ref(),
+                            _ => None,
+                        })
+                        .and_then(|description| {
+                            environment
+                                .modeled_mutex_definitions
+                                .get(description.family())
+                        });
+                    super::mutexes::opaque_runtime_transition_with_payload(
+                        state,
+                        mutex.pointer(),
+                        acquiring,
+                        &current,
+                        definition,
+                        selected_role(MutexResourceRole::State),
+                        budget,
+                    )
+                    .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                    .and_then(|(next, evidence)| {
+                        if !acquiring {
+                            return Ok((next, evidence));
+                        }
+                        let Some(output) = selected_role(MutexResourceRole::Guard) else {
+                            return Ok((next, evidence));
+                        };
+                        let guard = super::mutexes::guard_resource(&next, mutex.pointer(), false)
+                            .expect("checked acquisition establishes its guard");
+                        next.bind_named_mutex_authority(output, &guard)
+                            .map(|next| (next, evidence))
+                            .map_err(|_| {
+                                CRuntimeError::FunctionContract(
+                                    "mutex guard output could not bind its owned authority".into(),
+                                )
+                            })
+                    })
+                }
             } else {
                 let context = super::mutexes::MutexContext::new(state.clone());
-                let result = if function_name == binding.mutex_lock_name {
+                let result = if selected.is_some()
+                    && (function_name == binding.mutex_lock_name
+                        || function_name == binding.mutex_unlock_name)
+                {
+                    Err(CRuntimeError::FunctionContract(
+                        "named mutex lock and unlock require an assumed mutex_use protocol".into(),
+                    ))
+                } else if function_name == binding.mutex_lock_name {
                     context
                         .acquire_current(mutex.pointer(), &current)
                         .map_err(|error| error.into_runtime_error(mutex.pointer()))

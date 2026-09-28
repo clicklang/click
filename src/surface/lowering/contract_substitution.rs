@@ -939,6 +939,8 @@ fn collect_resource_clause_binding_names(resource: &ResourceClause, names: &mut 
         }
         ResourceClause::Declared {
             arguments,
+            type_schema: _,
+            resource_type_arguments,
             resource_arguments,
             ..
         } => {
@@ -949,6 +951,9 @@ fn collect_resource_clause_binding_names(resource: &ResourceClause, names: &mut 
             );
             for argument in arguments {
                 collect_contract_expression_binding_names(argument, names);
+            }
+            for resource in resource_type_arguments {
+                collect_resource_clause_binding_names(resource, names);
             }
         }
         ResourceClause::Iterated(clause) => {
@@ -1300,6 +1305,8 @@ fn rewrite_resource_clause_exact(
             )
         }
         ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -1319,6 +1326,16 @@ fn rewrite_resource_clause_exact(
                 .collect();
             (
                 ResourceClause::Declared {
+                    type_schema: type_schema.clone(),
+                    resource_type_arguments: resource_type_arguments
+                        .iter()
+                        .map(|resource| {
+                            let (resource, resource_changed) =
+                                rewrite_resource_clause_exact(resource, source, target);
+                            changed |= resource_changed;
+                            resource
+                        })
+                        .collect(),
                     resource_arguments: resource_arguments.clone(),
                     access: *access,
                     kind: *kind,
@@ -1743,6 +1760,8 @@ pub(in crate::surface) fn apply_contract_lets_to_resource_clause(
             })
         }
         ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -1750,6 +1769,11 @@ pub(in crate::surface) fn apply_contract_lets_to_resource_clause(
             arguments,
             parameter_types,
         } => Ok(ResourceClause::Declared {
+            type_schema: type_schema.clone(),
+            resource_type_arguments: resource_type_arguments
+                .into_iter()
+                .map(|resource| apply_contract_lets_to_resource_clause(resource, bindings))
+                .collect::<Result<_, _>>()?,
             resource_arguments: resource_arguments.clone(),
             access,
             kind,
@@ -2717,6 +2741,8 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         ContractExpression::ResourceWildcard => Ok(expression.clone()),
         ContractExpression::ResourceCount(resource) => {
             let ResourceClause::Declared {
+                type_schema,
+                resource_type_arguments,
                 resource_arguments,
                 access,
                 kind,
@@ -2729,6 +2755,16 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             };
             Ok(ContractExpression::ResourceCount(Box::new(
                 ResourceClause::Declared {
+                    type_schema: type_schema.clone(),
+                    resource_type_arguments: resource_type_arguments
+                        .iter()
+                        .map(|resource| {
+                            crate::surface::verification::substitute_resource_clause_for_summary_in(
+                                resource,
+                                substitutions,
+                            )
+                        })
+                        .collect::<Result<_, _>>()?,
                     resource_arguments: resource_arguments.clone(),
                     access: *access,
                     kind: *kind,

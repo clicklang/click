@@ -153,19 +153,19 @@ const LOCK_BINDERS: [MutexResourceBinder; 3] = [
         identity: MUTEX_LOCK_ACCESS_BINDER_ID,
         role: MutexResourceRole::Access,
         mode: MutexBinderMode::Own,
-        implemented: false,
+        implemented: true,
     },
     MutexResourceBinder {
         identity: MUTEX_LOCK_GUARD_BINDER_ID,
         role: MutexResourceRole::Guard,
         mode: MutexBinderMode::Produce,
-        implemented: false,
+        implemented: true,
     },
     MutexResourceBinder {
         identity: MUTEX_LOCK_STATE_BINDER_ID,
         role: MutexResourceRole::State,
         mode: MutexBinderMode::Produce,
-        implemented: false,
+        implemented: true,
     },
 ];
 
@@ -174,19 +174,19 @@ const UNLOCK_BINDERS: [MutexResourceBinder; 3] = [
         identity: MUTEX_UNLOCK_ACCESS_BINDER_ID,
         role: MutexResourceRole::Access,
         mode: MutexBinderMode::Own,
-        implemented: false,
+        implemented: true,
     },
     MutexResourceBinder {
         identity: MUTEX_UNLOCK_GUARD_BINDER_ID,
         role: MutexResourceRole::Guard,
         mode: MutexBinderMode::Consume,
-        implemented: false,
+        implemented: true,
     },
     MutexResourceBinder {
         identity: MUTEX_UNLOCK_STATE_BINDER_ID,
         role: MutexResourceRole::State,
         mode: MutexBinderMode::Consume,
-        implemented: false,
+        implemented: true,
     },
 ];
 
@@ -431,7 +431,7 @@ mod mutex_contract_tests {
     }
 
     #[test]
-    fn staged_named_transport_exposes_only_supported_lifecycle_binders() {
+    fn staged_named_transport_exposes_supported_lifecycle_and_use_binders() {
         for operation in Op::ALL {
             let descriptor = operation.descriptor();
             let implemented = descriptor
@@ -448,7 +448,16 @@ mod mutex_contract_tests {
                     Mode::Consume,
                     MUTEX_DESTROY_LIFETIME_BINDER_ID,
                 )],
-                Op::Lock | Op::Unlock => vec![],
+                Op::Lock => vec![
+                    (Role::Access, Mode::Own, MUTEX_LOCK_ACCESS_BINDER_ID),
+                    (Role::Guard, Mode::Produce, MUTEX_LOCK_GUARD_BINDER_ID),
+                    (Role::State, Mode::Produce, MUTEX_LOCK_STATE_BINDER_ID),
+                ],
+                Op::Unlock => vec![
+                    (Role::Access, Mode::Own, MUTEX_UNLOCK_ACCESS_BINDER_ID),
+                    (Role::Guard, Mode::Consume, MUTEX_UNLOCK_GUARD_BINDER_ID),
+                    (Role::State, Mode::Consume, MUTEX_UNLOCK_STATE_BINDER_ID),
+                ],
             };
             assert_eq!(implemented, expected);
             for binder in descriptor.binders {

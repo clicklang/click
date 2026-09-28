@@ -2163,6 +2163,8 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
             access,
             name,
             arguments,
+            type_schema: _,
+            resource_type_arguments,
             resource_arguments,
             ..
         } => {
@@ -2176,6 +2178,7 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
                             .iter()
                             .map(|reference| reference.name.clone())
                     )
+                    .chain(resource_type_arguments.iter().map(describe_resource_clause))
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -3179,9 +3182,22 @@ pub(super) fn validate_resource_clause(
             name,
             arguments,
             parameter_types,
+            type_schema: _,
+            resource_type_arguments,
             resource_arguments,
             ..
         } => {
+            for resource in resource_type_arguments {
+                validate_resource_clause(
+                    resource,
+                    resources,
+                    recursive_resources,
+                    click_functions,
+                    click_function_types,
+                    variables,
+                    context,
+                )?;
+            }
             let Some(arity) = resources.get(name) else {
                 return Err(ClickError::new(format!(
                     "unknown resource `{name}` in {context}"

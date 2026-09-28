@@ -1,9 +1,8 @@
 //! Opaque mutex protocols supplied by an independent contract input.
 //!
-//! This boundary deliberately exposes no protected assertion. It permits a
-//! checked local acquisition and release while retaining the caller's lifetime
-//! obligation. The runtime adapter records exact local receipts; protected
-//! payload acquisition remains a separate contract boundary.
+//! A rooted use input authenticates its protected resource type. Acquisitions
+//! produce fresh folded state; releases consume an owned instance of that type
+//! while retaining the caller's lifetime obligation.
 
 use super::*;
 use crate::kernel::loans::{
@@ -28,6 +27,7 @@ pub(super) struct AssumedMutexGuard {
     protocol: AssumedMutexProtocol,
     fact: CResourceFact,
     hold: LoanHoldId,
+    payload: Option<crate::kernel::ResourceInstance>,
 }
 
 pub(super) struct AssumedMutexTransition {
@@ -109,6 +109,23 @@ impl AssumedMutexProtocol {
         state: &CState,
         assumptions: &PureFactContext,
     ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
+        self.acquire_with_payload(
+            state,
+            assumptions,
+            None,
+            None,
+            &mut crate::kernel::ExecutionBudget::beside_live_state(),
+        )
+    }
+
+    fn acquire_with_payload(
+        &self,
+        state: &CState,
+        assumptions: &PureFactContext,
+        definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+        output: Option<crate::kernel::Variable>,
+        budget: &mut crate::kernel::ExecutionBudget,
+    ) -> Result<(AssumedMutexTransition, AssumedMutexGuard), MutexTransitionError> {
         let loans = self.loans(state)?;
         // A hidden or removed guard still pins the scope. Do not decide local
         // heldness by merely searching the visible resource context.
@@ -129,6 +146,8 @@ impl AssumedMutexProtocol {
             epoch: Some(fresh_acquisition_epoch()?),
             mutex: self.mutex().clone(),
         }));
+        let (memory, payload) =
+            self.acquire_payload(state, assumptions, definition, output, budget)?;
         let resources = state
             .resources
             .clone()
@@ -138,7 +157,21 @@ impl AssumedMutexProtocol {
             })?;
         let evidence = self.evidence(loans, transition, &next)?;
         let mut state = state.clone();
-        state.resources = resources;
+        state.resources = if let Some(payload) = &payload {
+            resources
+                .try_compose_with_facts_delaying_normalization(
+                    [CResourceFact::own(CResource::Instance(payload.clone()))],
+                    assumptions,
+                )
+                .map_err(|_| {
+                    MutexTransitionError::Refusal(
+                        "protected resource conflicts with current ownership",
+                    )
+                })?
+        } else {
+            resources
+        };
+        state.memory = memory;
         state.loan_ledger = Some(next);
         Ok((
             AssumedMutexTransition { state, evidence },
@@ -146,8 +179,43 @@ impl AssumedMutexProtocol {
                 protocol: self.clone(),
                 fact,
                 hold,
+                payload,
             },
         ))
+    }
+
+    fn acquire_payload(
+        &self,
+        state: &CState,
+        assumptions: &PureFactContext,
+        definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+        output: Option<crate::kernel::Variable>,
+        budget: &mut crate::kernel::ExecutionBudget,
+    ) -> Result<
+        (
+            crate::kernel::CMemory,
+            Option<crate::kernel::ResourceInstance>,
+        ),
+        MutexTransitionError,
+    > {
+        let CResource::MutexUse(usage) = self.use_fact.resource() else {
+            unreachable!()
+        };
+        let Some(description) = &usage.protected else {
+            if output.is_some() {
+                return Err("mutex_use has no protected resource type".into());
+            }
+            return Ok((state.memory.clone(), None));
+        };
+        fresh_protected_payload(
+            state,
+            assumptions,
+            self.mutex(),
+            description,
+            definition,
+            output,
+            budget,
+        )
     }
 
     pub(super) fn release(
@@ -155,6 +223,16 @@ impl AssumedMutexProtocol {
         state: &CState,
         guard: &AssumedMutexGuard,
         assumptions: &PureFactContext,
+    ) -> Result<AssumedMutexTransition, MutexTransitionError> {
+        self.release_with_payload(state, guard, assumptions, None)
+    }
+
+    fn release_with_payload(
+        &self,
+        state: &CState,
+        guard: &AssumedMutexGuard,
+        assumptions: &PureFactContext,
+        selected: Option<crate::kernel::Variable>,
     ) -> Result<AssumedMutexTransition, MutexTransitionError> {
         if guard.protocol != *self {
             return Err(MutexTransitionError::MissingGuard(self.mutex().clone()));
@@ -167,6 +245,33 @@ impl AssumedMutexProtocol {
         {
             return Err(MutexTransitionError::MissingGuard(self.mutex().clone()));
         }
+        let restored = if let Some(acquired) = &guard.payload {
+            let CResource::MutexUse(usage) = self.use_fact.resource() else {
+                unreachable!()
+            };
+            let required = CResourceFact::own(CResource::Instance(acquired.clone()));
+            let current = match selected {
+                Some(identity) => state.owned_resource_instance(identity),
+                None => state.resources.owned_instance(acquired.identity()),
+            }
+            .ok_or_else(|| MutexTransitionError::MissingInvariant(required.clone()))?;
+            if !usage
+                .protected
+                .as_ref()
+                .is_some_and(|description| description.matches_instance(current, assumptions))
+            {
+                return Err(MutexTransitionError::MissingInvariant(required));
+            }
+            if loans.has_active_memory_loans() || state.loan_view_bindings.iter().next().is_some() {
+                return Err("protected mutex release requires returned memory loans".into());
+            }
+            Some(CResourceFact::own(CResource::Instance(current.clone())))
+        } else {
+            if selected.is_some() {
+                return Err("mutex_use has no protected resource type".into());
+            }
+            None
+        };
         let (next, transition) = loans
             .release_mutex_use_hold_with_transition(
                 self.usage,
@@ -180,6 +285,13 @@ impl AssumedMutexProtocol {
             .clone()
             .without_fact_delaying_normalization(&guard.fact, assumptions)
             .ok_or_else(|| MutexTransitionError::MissingGuard(self.mutex().clone()))?;
+        let resources = if let Some(restored) = restored {
+            resources
+                .without_fact_delaying_normalization(&restored, assumptions)
+                .ok_or_else(|| MutexTransitionError::MissingInvariant(restored))?
+        } else {
+            resources
+        };
         let evidence = self.evidence(loans, transition, &next)?;
         let mut state = state.clone();
         state.resources = resources;
@@ -267,11 +379,32 @@ impl Hash for OpaqueMutexAcquisitions {
     }
 }
 
+#[cfg(test)]
 pub(in crate::kernel) fn opaque_runtime_transition(
     state: &CState,
     mutex: &Pointer,
     acquire: bool,
     assumptions: &PureFactContext,
+) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+    opaque_runtime_transition_with_payload(
+        state,
+        mutex,
+        acquire,
+        assumptions,
+        None,
+        None,
+        &mut crate::kernel::ExecutionBudget::beside_live_state(),
+    )
+}
+
+pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
+    state: &CState,
+    mutex: &Pointer,
+    acquire: bool,
+    assumptions: &PureFactContext,
+    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    payload_identity: Option<crate::kernel::Variable>,
+    budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
     if !state.preserves_mutex_protocols {
         return Err("opaque mutex transitions require preserving use authority".into());
@@ -294,7 +427,13 @@ pub(in crate::kernel) fn opaque_runtime_transition(
         if let Some(ledger) = &state.mutex_ledger {
             ledger.check_use_acquisition(fact)?;
         }
-        let (mut transition, guard) = protocol.acquire(state, assumptions)?;
+        let (mut transition, guard) = protocol.acquire_with_payload(
+            state,
+            assumptions,
+            definition,
+            payload_identity,
+            budget,
+        )?;
         let mut holders = state
             .opaque_mutex_acquisitions
             .as_ref()
@@ -343,7 +482,10 @@ pub(in crate::kernel) fn opaque_runtime_transition(
             .receipts
             .get(mutex)
             .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
-        let mut transition = guard.protocol.release(state, guard, assumptions)?;
+        let mut transition =
+            guard
+                .protocol
+                .release_with_payload(state, guard, assumptions, payload_identity)?;
         let receipts = held.receipts.without_key(mutex);
         let holder = guard.protocol.holder;
         let count = held
@@ -367,6 +509,146 @@ pub(in crate::kernel) fn opaque_runtime_transition(
     }
 }
 
+pub(super) fn fresh_protected_payload(
+    state: &CState,
+    assumptions: &PureFactContext,
+    mutex: &Pointer,
+    description: &crate::kernel::ResourceDescription,
+    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    output: Option<crate::kernel::Variable>,
+    budget: &mut crate::kernel::ExecutionBudget,
+) -> Result<
+    (
+        crate::kernel::CMemory,
+        Option<crate::kernel::ResourceInstance>,
+    ),
+    MutexTransitionError,
+> {
+    use crate::kernel::{ResourceInstance, functions::ModelFieldMintSite, model_fields::ModelMint};
+    let definition =
+        definition.ok_or("protected mutex acquisition requires its resource declaration")?;
+    if definition.name() != description.family()
+        || definition.instance_field_schema() != Some(description.schema())
+        || definition.recursive
+        || definition.matched.is_some()
+        || definition.condition.is_some()
+        || !definition.witnesses.is_empty()
+        || !definition.children.is_empty()
+        || !definition.resource_parameters().is_empty()
+        || !description.resource_arguments().is_empty()
+    {
+        return Err("protected mutex acquisition requires an unconditional leaf resource".into());
+    }
+    let declaration = definition
+        .guarded_by
+        .as_ref()
+        .ok_or("protected resource requires a guarded_by declaration")?;
+    let Some(crate::kernel::AlgebraicValue::C(crate::kernel::CValue::Pointer(base))) =
+        description.arguments().get(declaration.parameter_index)
+    else {
+        return Err("guarded resource parameter is not a pointer".into());
+    };
+    let expected = base
+        .pointer()
+        .offset_by_bytes(declaration.field_offset_bytes);
+    if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+        &expected,
+        mutex,
+        assumptions,
+    ) {
+        return Err("protected resource is guarded by a different mutex".into());
+    }
+    let identity = match output {
+        Some(identity) => identity,
+        None => budget
+            .allocate_kernel_variable()
+            .map_err(|_| "protected resource identity allocation exceeded its budget")?,
+    };
+    let fields = crate::kernel::functions::arbitrary_resource_instance_fields(
+        description.schema(),
+        ModelFieldMintSite {
+            identity,
+            minted_by: &ModelMint::Produced {
+                callee: Arc::from("pthread_mutex_lock"),
+            },
+        },
+        budget,
+    )
+    .map_err(|_| "protected resource model allocation exceeded its budget")?;
+    let instance = ResourceInstance::new(
+        identity,
+        description.family().into(),
+        description.arguments().iter().cloned().collect(),
+        description.schema().clone(),
+        fields,
+    )
+    .ok_or("protected mutex type requires an exclusive resource")?;
+    let fact = CResourceFact::own(CResource::Instance(instance.clone()));
+    let ranges = crate::kernel::functions::checked_owned_memory_ranges(
+        &fact,
+        std::slice::from_ref(definition),
+        state,
+        assumptions,
+    )
+    .ok_or("protected mutex resource has no checked memory footprint")?;
+    // Resource types do not promise that an observed model controls a stable
+    // footprint. This bounded interface accepts only footprints unchanged
+    // under an independent arbitrary model instantiation.
+    let other_identity = budget
+        .allocate_kernel_variable()
+        .map_err(|_| "protected footprint checking exceeded its budget")?;
+    let other_fields = crate::kernel::functions::arbitrary_resource_instance_fields(
+        description.schema(),
+        ModelFieldMintSite {
+            identity: other_identity,
+            minted_by: &ModelMint::Produced {
+                callee: Arc::from("pthread_mutex_lock"),
+            },
+        },
+        budget,
+    )
+    .map_err(|_| "protected footprint checking exceeded its budget")?;
+    let other = ResourceInstance::new(
+        other_identity,
+        description.family().into(),
+        description.arguments().iter().cloned().collect(),
+        description.schema().clone(),
+        other_fields,
+    )
+    .ok_or("protected mutex type requires an exclusive resource")?;
+    let other_ranges = crate::kernel::functions::checked_owned_memory_ranges(
+        &CResourceFact::own(CResource::Instance(other)),
+        std::slice::from_ref(definition),
+        state,
+        assumptions,
+    )
+    .ok_or("protected mutex resource has no checked memory footprint")?;
+    if ranges != other_ranges {
+        return Err(
+            "protected mutex resource requires a model-independent memory footprint".into(),
+        );
+    }
+    if ranges
+        .iter()
+        .any(crate::kernel::CMemoryRange::is_unnamed_footprint)
+    {
+        return Err("protected mutex resource requires a bounded memory footprint".into());
+    }
+    let memory = if ranges.is_empty() {
+        state.memory.clone()
+    } else {
+        state.memory.clone().with_call_memory_havoc(
+            budget
+                .allocate_kernel_variable()
+                .map_err(|_| "protected memory acquisition exceeded its budget")?,
+            &ranges,
+            assumptions,
+            None,
+        )
+    };
+    Ok((memory, Some(instance)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,6 +657,7 @@ mod tests {
     fn input() -> (CState, AssumedMutexProtocol) {
         let mutex = Pointer::symbolic(Variable(765));
         let description = CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+            protected: None,
             binding: None,
             initialization: None,
             mutex: mutex.clone(),
@@ -396,6 +679,161 @@ mod tests {
         state.resources = ResourceContext::new().unchecked_with_fact(fact);
         let protocol = AssumedMutexProtocol::bind(&state, root.usage).unwrap();
         (state, protocol)
+    }
+
+    fn typed_input() -> (
+        CState,
+        AssumedMutexProtocol,
+        crate::kernel::CCompositeResourceDefinition,
+    ) {
+        use crate::kernel::*;
+        let schema =
+            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let mutex = Pointer::symbolic(Variable(765));
+        let description = ResourceDescription::new(
+            "counter_state".into(),
+            vec![CValue::pointer(mutex.clone()).into()].into(),
+            schema.clone(),
+        );
+        let fact = CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+            protected: Some(description.clone()),
+            binding: None,
+            initialization: None,
+            mutex: mutex.clone(),
+        }));
+        let resources = ResourceContext::new().unchecked_with_fact(fact.clone());
+        let (support, _) = resources.unique_owned_occurrence_for_fact(&fact).unwrap();
+        let ledger = LoanLedger::new();
+        let holder = ledger.fresh_participant().unwrap();
+        let (ledger, root) = ledger
+            .borrowed_mutex_use_input_with_protected(holder, support, mutex, Some(description))
+            .unwrap();
+        let fact = ledger.mutex_use_resource(root.usage, holder).unwrap();
+        let mut state = CState::new();
+        state.preserves_mutex_protocols = true;
+        state.loan_participant = Some(holder);
+        state.resources = ResourceContext::new().unchecked_with_fact(fact);
+        state.loan_ledger = Some(ledger);
+        let protocol = AssumedMutexProtocol::bind(&state, root.usage).unwrap();
+        let definition = CCompositeResourceDefinition::new(
+            "counter_state",
+            vec![CParameter::new("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![],
+            vec![],
+        )
+        .with_instance_schema(Some(schema))
+        .with_mutex_guard(Some(CMutexGuardDeclaration {
+            parameter_index: 0,
+            field_offset_bytes: 0,
+        }));
+        (state, protocol, definition)
+    }
+
+    #[test]
+    fn typed_acquisition_refreshes_fields_and_release_requires_owned_same_type() {
+        let (state, protocol, definition) = typed_input();
+        let assumptions = PureFactContext::new();
+        let mut budget = crate::kernel::ExecutionBudget::new();
+        let (first, guard) = protocol
+            .acquire_with_payload(
+                &state,
+                &assumptions,
+                Some(&definition),
+                Some(Variable(810)),
+                &mut budget,
+            )
+            .unwrap();
+        let payload = guard.payload.as_ref().unwrap();
+        assert!(
+            first
+                .state
+                .resources
+                .owned_instance(payload.identity())
+                .is_some()
+        );
+        let mut missing = first.state.clone();
+        missing.resources = missing
+            .resources
+            .without_fact_delaying_normalization(
+                &CResourceFact::own(CResource::Instance(payload.clone())),
+                &assumptions,
+            )
+            .unwrap();
+        assert!(protocol.release(&missing, &guard, &assumptions).is_err());
+        let replacement = crate::kernel::ResourceInstance::new(
+            Variable(812),
+            payload.name().into(),
+            payload.arguments().to_vec().into(),
+            payload.schema().clone(),
+            payload.fields().to_vec().into(),
+        )
+        .unwrap();
+        let mut replaced = missing.clone();
+        replaced.resources = replaced
+            .resources
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(replacement.clone())));
+        let restored = protocol
+            .release_with_payload(
+                &replaced,
+                &guard,
+                &assumptions,
+                Some(replacement.identity()),
+            )
+            .unwrap();
+        assert!(
+            restored
+                .state
+                .resources
+                .owned_instance(replacement.identity())
+                .is_none()
+        );
+        let wrong = crate::kernel::ResourceInstance::new(
+            Variable(813),
+            "different_type".into(),
+            payload.arguments().to_vec().into(),
+            payload.schema().clone(),
+            payload.fields().to_vec().into(),
+        )
+        .unwrap();
+        let mut wrong_state = missing.clone();
+        wrong_state.resources = wrong_state
+            .resources
+            .unchecked_with_fact(CResourceFact::own(CResource::Instance(wrong.clone())));
+        assert!(
+            protocol
+                .release_with_payload(&wrong_state, &guard, &assumptions, Some(wrong.identity()))
+                .is_err()
+        );
+        let released = protocol
+            .release(&first.state, &guard, &assumptions)
+            .unwrap();
+        assert!(
+            released
+                .state
+                .resources
+                .owned_instance(payload.identity())
+                .is_none()
+        );
+        let (_, second) = protocol
+            .acquire_with_payload(
+                &released.state,
+                &assumptions,
+                Some(&definition),
+                Some(Variable(811)),
+                &mut budget,
+            )
+            .unwrap();
+        assert_ne!(payload.fields(), second.payload.unwrap().fields());
+        let mut wrong = definition;
+        wrong.guarded_by.as_mut().unwrap().field_offset_bytes = 4;
+        assert!(
+            protocol
+                .acquire_with_payload(&state, &assumptions, Some(&wrong), None, &mut budget)
+                .is_err()
+        );
     }
 
     #[test]

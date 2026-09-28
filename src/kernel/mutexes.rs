@@ -10,7 +10,9 @@
 //! and initialization before a pthread call can use these transitions.
 
 mod assumed_protocol;
-pub(super) use assumed_protocol::{OpaqueMutexAcquisitions, opaque_runtime_transition};
+pub(super) use assumed_protocol::{
+    OpaqueMutexAcquisitions, opaque_runtime_transition_with_payload,
+};
 mod direct_loop_guard;
 #[cfg(test)]
 mod direct_loop_guard_tests;
@@ -95,6 +97,10 @@ pub(super) struct InitializedMutexInterface {
 }
 
 impl InitializedMutexInterface {
+    pub(super) fn description(&self) -> &super::ResourceDescription {
+        self.declaration.description()
+    }
+
     pub(super) fn matches_use(&self, fact: &CResourceFact) -> bool {
         matches!(fact.resource(), CResource::MutexUse(identity)
             if identity.initialization == Some(self.initialization.0)
@@ -707,6 +713,7 @@ pub(super) fn use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
         .cloned()
         .unwrap_or_else(|| {
             CResourceFact::own(CResource::MutexUse(super::MutexUseIdentity {
+                protected: None,
                 binding: None,
                 initialization: None,
                 mutex: mutex.clone(),
@@ -1793,6 +1800,72 @@ impl MutexLedger {
             return Err(());
         }
         Ok(binding)
+    }
+
+    /// Forget observations after an opaque helper may have acquired a typed use.
+    /// The checked call transfer supplies authority; this only weakens its escrow.
+    pub(super) fn havoc_protected_for_call(
+        state: &CState,
+        mutex: &Pointer,
+        definition: &super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+        budget: &mut super::ExecutionBudget,
+    ) -> Result<(CState, Vec<super::CMemoryRange>), MutexTransitionError> {
+        let Some(ledger) = state.mutex_ledger.as_ref() else {
+            return Ok((state.clone(), Vec::new()));
+        };
+        let Some(entry) = ledger.get(mutex) else {
+            return Ok((state.clone(), Vec::new()));
+        };
+        let MutexEntry::Unlocked {
+            initialization,
+            invariant: Some(invariant),
+            interface: Some(interface),
+        } = entry
+        else {
+            return Err("typed mutex call requires an unlocked protected resource".into());
+        };
+        let CResource::Instance(previous) = invariant.resource() else {
+            return Err("typed mutex call requires a folded protected resource".into());
+        };
+        let previous_ranges = super::functions::checked_owned_memory_ranges(
+            invariant,
+            std::slice::from_ref(definition),
+            state,
+            assumptions,
+        )
+        .ok_or("protected mutex resource has no checked memory footprint")?;
+        let (memory, payload) = assumed_protocol::fresh_protected_payload(
+            state,
+            assumptions,
+            mutex,
+            interface.description(),
+            Some(definition),
+            Some(previous.identity()),
+            budget,
+        )?;
+        let invariant = payload.map(|instance| CResourceFact::own(CResource::Instance(instance)));
+        let ranges = super::functions::checked_owned_memory_ranges(
+            invariant.as_ref().expect("protected payload"),
+            std::slice::from_ref(definition),
+            state,
+            assumptions,
+        )
+        .ok_or("protected mutex resource has no checked memory footprint")?;
+        if ranges != previous_ranges {
+            return Err("typed mutex call requires an unchanged protected memory footprint".into());
+        }
+        let mut next = state.clone();
+        next.memory = memory;
+        next.mutex_ledger = Some(ledger.with_inserted(
+            mutex.clone(),
+            MutexEntry::Unlocked {
+                initialization: *initialization,
+                invariant,
+                interface: Some(interface.clone()),
+            },
+        ));
+        Ok((next, ranges))
     }
 
     /// Visit the queried block and provenance buckets that can alias it.
@@ -4608,6 +4681,7 @@ mod tests {
                 .resources
                 .unchecked_with_fact(CResourceFact::own(CResource::MutexUse(
                     super::super::MutexUseIdentity {
+                        protected: None,
                         binding: None,
                         initialization: None,
                         mutex: address.clone(),

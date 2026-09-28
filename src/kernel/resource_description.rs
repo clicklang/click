@@ -137,6 +137,34 @@ impl ResourceReference {
 }
 
 impl ResourceDescription {
+    /// A resource type has no owned occurrence or observed field values.
+    pub fn new(family: String, arguments: ResourceArguments, schema: ResourceFieldSchema) -> Self {
+        Self(Arc::new(ResourceDescriptionData {
+            family,
+            arguments,
+            schema,
+            resource_arguments: Arc::from([]),
+        }))
+    }
+
+    pub(crate) fn map_values(&self, map: impl FnMut(&AlgebraicValue) -> AlgebraicValue) -> Self {
+        let reference = ResourceReference {
+            identity: Variable(0),
+            description: self.clone(),
+        };
+        ResourceReference::map_captured_values(&[reference], map)[0]
+            .description
+            .clone()
+    }
+
+    pub(crate) fn visit_values(&self, visit: impl FnMut(&AlgebraicValue)) {
+        let reference = ResourceReference {
+            identity: Variable(0),
+            description: self.clone(),
+        };
+        ResourceReference::visit_captured_values(&[reference], visit);
+    }
+
     /// Describe a checked exclusive instance without retaining its binder or
     /// the values observed in its fields.
     pub fn from_instance(instance: &ResourceInstance) -> Self {

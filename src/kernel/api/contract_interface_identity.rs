@@ -592,9 +592,17 @@ impl Names {
                 binder.clear();
                 self.resource_term(resource);
             }
-            CResourceTerm::MutexGuard { mutex, .. }
-            | CResourceTerm::MutexLive { mutex, .. }
-            | CResourceTerm::MutexUse { mutex, .. } => self.c(mutex),
+            CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
+                self.c(mutex)
+            }
+            CResourceTerm::MutexUse {
+                mutex, protected, ..
+            } => {
+                self.c(mutex);
+                if let Some(p) = protected {
+                    self.resource_spec(&mut p.resource);
+                }
+            }
             CResourceTerm::Memory(s) => self.segment(s),
             CResourceTerm::Composite { arguments, .. } | CResourceTerm::Token { arguments, .. } => {
                 for e in arguments {

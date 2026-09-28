@@ -272,6 +272,7 @@ mod tests {
 
     fn use_authority(epoch: u64, mutex: Variable) -> CResourceFact {
         CResourceFact::own(CResource::MutexUse(MutexUseIdentity {
+            protected: None,
             binding: None,
             initialization: Some(epoch),
             mutex: Pointer::symbolic(mutex),

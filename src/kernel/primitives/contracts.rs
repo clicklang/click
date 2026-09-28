@@ -2518,6 +2518,14 @@ impl CExecutionEnvironment {
         self
     }
 
+    pub(crate) fn with_modeled_mutex_definitions(
+        mut self,
+        definitions: BTreeMap<String, CCompositeResourceDefinition>,
+    ) -> Self {
+        self.modeled_mutex_definitions = std::sync::Arc::new(definitions);
+        self
+    }
+
     pub(crate) fn with_modeled_mutex_guards(
         mut self,
         guards: BTreeMap<String, CMutexGuardDeclaration>,

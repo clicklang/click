@@ -15,7 +15,8 @@ use super::primitives::{
 use super::reasoning::signed_bitvector_constant;
 use super::{
     Bitvector32Term, CMemoryRange, CResource, CResourceFact, CResourceSnapshot,
-    CResourceTransferRole, PureFactContext, ResourceContext, ResourceOccurrenceId, Variable,
+    CResourceTransferRole, PureFactContext, ResourceContext, ResourceDescription,
+    ResourceOccurrenceId, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -600,6 +601,7 @@ struct LoanRecord {
     mutex_root: Option<LoanId>,
     /// Identity promised by a modular input; this is never recoverable escrow.
     assumed_mutex: Option<CResourceFact>,
+    assumed_mutex_protected: Option<ResourceDescription>,
     support: ResourceOccurrenceId,
     escrow: Option<CResourceFact>,
     /// Every checked viewed projection authorized by this loan.  A composite
@@ -1208,6 +1210,7 @@ enum LoanTransitionEvidence {
         holder: LoanParticipantId,
         support: ResourceOccurrenceId,
         mutex: super::Pointer,
+        protected: Option<ResourceDescription>,
         initialization: super::mutexes::MutexInitializationId,
         scope: LoanScopeId,
         loan: LoanId,
@@ -2524,6 +2527,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
                 mutex_calls::MutexUseCallError::Loan(error) => StableViewPlanError::Loan(error),
                 _ => StableViewPlanError::MissingResource(requirement.fact.clone()),
             })?;
+            use_plan = use_plan.with_required_type(identity.protected.clone());
             if let Some(selected) = &requirement.selected_mutex_source {
                 use_plan = use_plan.with_selected_alias(selected.0);
             }
@@ -3972,6 +3976,24 @@ impl LoanLedger {
             .ok_or(LoanRefusal::MissingLoanBinding)
     }
 
+    /// Only the authenticated root's type is visible through reborrows.
+    /// A bare address or a caller's requested type cannot augment this promise.
+    pub(crate) fn mutex_use_protected_type(
+        &self,
+        usage: MutexUseBinding,
+        holder: LoanParticipantId,
+    ) -> Result<Option<&ResourceDescription>, LoanRefusal> {
+        self.mutex_use_identity_description(usage, holder)?;
+        let record = self.validate_authority_binding(usage.0, holder)?;
+        let root = self
+            .storage
+            .data
+            .loans
+            .get(&record.mutex_root.ok_or(LoanRefusal::MissingLoanBinding)?)
+            .ok_or(LoanRefusal::MissingLoan)?;
+        Ok(root.assumed_mutex_protected.as_ref())
+    }
+
     /// Describing the occurrence grants no ownership. The mutex adapter must
     /// insert or consume it as part of the checked loan/state exchange.
     pub(crate) fn mutex_use_resource(
@@ -3986,6 +4008,7 @@ impl LoanLedger {
         Ok(CResourceFact::own(CResource::MutexUse(
             super::MutexUseIdentity {
                 binding: Some(usage),
+                protected: self.mutex_use_protected_type(usage, holder)?.cloned(),
                 initialization: identity.epoch,
                 mutex: identity.mutex.clone(),
             },
@@ -4039,6 +4062,16 @@ impl LoanLedger {
         support: ResourceOccurrenceId,
         mutex: super::Pointer,
     ) -> Result<(Self, MutexUseContractInput), LoanRefusal> {
+        self.borrowed_mutex_use_input_with_protected(holder, support, mutex, None)
+    }
+
+    pub(crate) fn borrowed_mutex_use_input_with_protected(
+        &self,
+        holder: LoanParticipantId,
+        support: ResourceOccurrenceId,
+        mutex: super::Pointer,
+        protected: Option<ResourceDescription>,
+    ) -> Result<(Self, MutexUseContractInput), LoanRefusal> {
         let arena = self.storage.data.arena;
         let scope = LoanScopeId {
             arena,
@@ -4056,6 +4089,7 @@ impl LoanLedger {
             holder,
             support,
             mutex,
+            protected,
             initialization: super::mutexes::MutexInitializationId::fresh()
                 .map_err(|_| LoanRefusal::IdentitySpaceExhausted)?,
             scope,
@@ -5372,6 +5406,7 @@ impl LoanLedger {
                         scope: *scope,
                         mutex_root: is_mutex_lifetime_owner(escrow).then_some(*loan),
                         assumed_mutex: None,
+                        assumed_mutex_protected: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
                         permitted: if is_mutex_lifetime_owner(escrow) {
@@ -5495,6 +5530,7 @@ impl LoanLedger {
                         scope: *scope,
                         mutex_root: None,
                         assumed_mutex: None,
+                        assumed_mutex_protected: None,
                         support: *support,
                         escrow: Some(escrow.clone()),
                         permitted: std::iter::once(CResourceFact::View(escrow.resource().clone()))
@@ -5539,6 +5575,7 @@ impl LoanLedger {
                 holder,
                 support,
                 mutex,
+                protected,
                 initialization,
                 scope,
                 loan,
@@ -5589,6 +5626,7 @@ impl LoanLedger {
                         mutex_root: Some(*loan),
                         support: *support,
                         assumed_mutex: Some(initialization.description(mutex)),
+                        assumed_mutex_protected: protected.clone(),
                         escrow: None,
                         permitted: Vec::new(),
                         origin: LoanOrigin::BorrowedContractInput,
@@ -5685,6 +5723,7 @@ impl LoanLedger {
                         scope: *scope,
                         mutex_root: None,
                         assumed_mutex: None,
+                        assumed_mutex_protected: None,
                         support: *support,
                         escrow: None,
                         permitted,
@@ -5821,6 +5860,7 @@ impl LoanLedger {
                         scope: *scope,
                         mutex_root,
                         assumed_mutex: None,
+                        assumed_mutex_protected: None,
                         support: parent.support,
                         escrow: None,
                         permitted: permitted.clone(),
@@ -6285,6 +6325,9 @@ impl LoanLedger {
                 return false;
             };
             if loan.recovered && scope.active {
+                return false;
+            }
+            if loan.assumed_mutex_protected.is_some() && loan.assumed_mutex.is_none() {
                 return false;
             }
             if loan.assumed_mutex.is_some()
@@ -7620,6 +7663,7 @@ mod tests {
             holder,
             support: backing(&owned("input")),
             mutex: Pointer::symbolic(Variable(4321)),
+            protected: None,
             initialization: super::super::mutexes::MutexInitializationId::fresh().unwrap(),
             scope: LoanScopeId {
                 arena,

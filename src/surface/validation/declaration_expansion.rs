@@ -1035,6 +1035,8 @@ fn expand_declared_resource_tactic_with_expressions(
             Ok(ProofTactic::UnfoldResource(
                 expand_declared_resource_clause(
                     ResourceClause::Declared {
+                        type_schema: None,
+                        resource_type_arguments: Vec::new(),
                         resource_arguments: Vec::new(),
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
@@ -1317,6 +1319,8 @@ fn classify_function_decrease(
             Ok(CFunctionDecrease::Resource(
                 expand_declared_resource_clause(
                     ResourceClause::Declared {
+                        type_schema: None,
+                        resource_type_arguments: Vec::new(),
                         resource_arguments: Vec::new(),
                         access: ResourceAccessMode::View,
                         kind: ResourceKind::Token,
@@ -1364,6 +1368,8 @@ fn expand_declared_resource_clause(
                 access: ResourceAccessMode::Own,
                 name,
                 arguments,
+                type_schema,
+                resource_type_arguments,
                 resource_arguments,
                 ..
             } = *resource
@@ -1378,6 +1384,11 @@ fn expand_declared_resource_clause(
                         "mutex authority has no fields or resource body to fold or unfold",
                     ));
                 }
+                let resource_type_arguments = expand_resource_type_arguments(
+                    &name,
+                    resource_type_arguments,
+                    resource_definitions,
+                )?;
                 let info = declared_resource_info(
                     &name,
                     arguments.len() + resource_arguments.len(),
@@ -1393,6 +1404,8 @@ fn expand_declared_resource_clause(
                 return Ok(ResourceClause::Named {
                     binding,
                     resource: Box::new(ResourceClause::Declared {
+                        type_schema: type_schema.clone(),
+                        resource_type_arguments: resource_type_arguments.clone(),
                         resource_arguments: resource_arguments.clone(),
                         access: ResourceAccessMode::Own,
                         kind: info.kind,
@@ -1502,6 +1515,8 @@ fn expand_declared_resource_clause(
             Ok(ResourceClause::Named {
                 binding,
                 resource: Box::new(ResourceClause::Declared {
+                    type_schema: type_schema.clone(),
+                    resource_type_arguments: resource_type_arguments.clone(),
                     resource_arguments: resource_arguments.clone(),
                     access: ResourceAccessMode::Own,
                     kind: info.kind,
@@ -1525,6 +1540,8 @@ fn expand_declared_resource_clause(
             })
         }
         ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind: _,
@@ -1532,6 +1549,11 @@ fn expand_declared_resource_clause(
             arguments,
             parameter_types,
         } if parameter_types.is_empty() => {
+            let resource_type_arguments = expand_resource_type_arguments(
+                &name,
+                resource_type_arguments,
+                resource_definitions,
+            )?;
             let info = declared_resource_info(
                 &name,
                 arguments.len() + resource_arguments.len(),
@@ -1555,6 +1577,8 @@ fn expand_declared_resource_clause(
                 )));
             }
             Ok(ResourceClause::Declared {
+                type_schema: type_schema.clone(),
+                resource_type_arguments: resource_type_arguments.clone(),
                 resource_arguments: resource_arguments.clone(),
                 access,
                 kind: info.kind,
@@ -1570,6 +1594,46 @@ fn expand_declared_resource_clause(
         }
         resource => Ok(resource),
     }
+}
+
+fn expand_resource_type_arguments(
+    name: &str,
+    arguments: Vec<ResourceClause>,
+    definitions: &DeclaredResourceScope,
+) -> Result<Vec<ResourceClause>, ClickError> {
+    if arguments.is_empty() {
+        return Ok(arguments);
+    }
+    if name != "mutex_use" || arguments.len() != 1 {
+        return Err(ClickError::new(format!(
+            "resource `{name}` does not accept these resource type arguments"
+        )));
+    }
+    arguments.into_iter().map(|argument| {
+        let ResourceClause::Declared { access, name, arguments, resource_arguments, resource_type_arguments, .. } = argument else {
+            return Err(ClickError::new("expected a declared resource type"));
+        };
+        if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() || matches!(name.as_str(), "mutex_live" | "mutex_use" | "mutex_guard") {
+            return Err(ClickError::new("protected resource types currently require ordinary value arguments"));
+        }
+        let info = declared_resource_info_with_fields(&name, arguments.len(), definitions, true)?;
+        let mut fields = info.fields.iter().map(|(name, (index, ty))| {
+            let ty = match ty {
+                ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
+                ClickType::Integer => crate::kernel::ResourceFieldType::Integer,
+                _ => return Err(ClickError::new("protected resource types currently require C or integer model fields")),
+            };
+            Ok((*index, name.clone(), ty))
+        }).collect::<Result<Vec<_>, ClickError>>()?;
+        fields.sort_by_key(|(index, _, _)| *index);
+        let schema = crate::kernel::ResourceFieldSchema::new(fields.into_iter().map(|(_, name, ty)| (name, ty)).collect()).ok_or_else(|| ClickError::new("invalid protected resource field schema"))?;
+        Ok(ResourceClause::Declared {
+            type_schema: Some(schema),
+            access, name, kind: info.kind, parameter_types: info.parameter_types,
+            arguments: arguments.into_iter().map(|arg| expand_declared_resource_expression(arg, definitions)).collect::<Result<_,_>>()?,
+            resource_arguments, resource_type_arguments,
+        })
+    }).collect()
 }
 
 fn expand_declared_resource_subject(

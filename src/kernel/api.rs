@@ -12,6 +12,7 @@ pub(super) use super::memory_provenance::*;
 use super::prelude::*;
 pub(super) use super::resource_tracker::cell_source::*;
 use crate::instrumentation::ArtifactReuseRejection;
+use crate::kernel::ResourceDescription;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -2502,6 +2503,20 @@ pub(crate) fn c_mutex_live_resource(
     crate::kernel::mutexes::live_resource(state, mutex, abstract_entry)
 }
 
+/// Construct a contract requirement; this does not establish ownership.
+pub(crate) fn c_mutex_use_resource_with_type(
+    state: &CState,
+    mutex: &Pointer,
+    protected: ResourceDescription,
+) -> CResourceFact {
+    let fact = c_mutex_use_resource(state, mutex);
+    let CResource::MutexUse(mut identity) = fact.resource().clone() else {
+        unreachable!()
+    };
+    identity.protected = Some(protected);
+    CResourceFact::own(CResource::MutexUse(identity))
+}
+
 pub(crate) fn c_mutex_use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
@@ -2593,7 +2608,12 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
                     LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry)
                 })?;
             let (next, input) = ledger
-                .borrowed_mutex_use_input(holder, support, identity.mutex.clone())
+                .borrowed_mutex_use_input_with_protected(
+                    holder,
+                    support,
+                    identity.mutex.clone(),
+                    identity.protected.clone(),
+                )
                 .map_err(|e| e.diagnostic(LoanRefusalOperation::Entry))?;
             let bound = next
                 .mutex_use_resource(input.usage, holder)

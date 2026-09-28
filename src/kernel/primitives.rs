@@ -2978,6 +2978,8 @@ pub struct CExecutionEnvironment {
     /// Resource-definition metadata for selected modeled mutex calls. Named
     /// lookup avoids scanning unrelated project definitions at each call.
     pub(super) modeled_mutex_guards: std::sync::Arc<BTreeMap<String, CMutexGuardDeclaration>>,
+    pub(super) modeled_mutex_definitions:
+        std::sync::Arc<BTreeMap<String, CCompositeResourceDefinition>>,
     /// The selected target's byte order. It decides whether a one-byte C
     /// access inside a wider integer cell reads or updates that cell's
     /// representation; see `crate::kernel::eval::byte_view`.
@@ -3018,6 +3020,7 @@ impl std::fmt::Debug for CExecutionEnvironment {
             )
             .field("modeled_pthread_binding", &self.modeled_pthread_binding)
             .field("modeled_mutex_guards", &self.modeled_mutex_guards)
+            .field("modeled_mutex_definitions", &self.modeled_mutex_definitions)
             .field("byte_order", &self.byte_order)
             .field("verified_loop_rules", &self.verified_loop_rules)
             .field("recursion_anchor", &self.recursion_anchor)
@@ -3041,6 +3044,7 @@ impl PartialEq for CExecutionEnvironment {
             && self.verified_function_termination_rules == other.verified_function_termination_rules
             && self.modeled_pthread_binding == other.modeled_pthread_binding
             && self.modeled_mutex_guards == other.modeled_mutex_guards
+            && self.modeled_mutex_definitions == other.modeled_mutex_definitions
             && self.byte_order == other.byte_order
             && self.verified_loop_rules == other.verified_loop_rules
             && self.recursion_anchor == other.recursion_anchor
@@ -5781,6 +5785,7 @@ pub struct MutexIdentity {
 /// must preserve this identity just as it preserves a concrete acquisition.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct MutexUseIdentity {
+    pub(in crate::kernel) protected: Option<super::ResourceDescription>,
     pub(in crate::kernel) binding: Option<super::loans::MutexUseBinding>,
     pub(in crate::kernel) initialization: Option<u64>,
     pub(in crate::kernel) mutex: Pointer,
@@ -5815,6 +5820,9 @@ impl OpaqueResourceParameter {
 }
 
 impl MutexUseIdentity {
+    pub(crate) fn protected_type(&self) -> Option<&super::ResourceDescription> {
+        self.protected.as_ref()
+    }
     pub(crate) fn mutex(&self) -> &Pointer {
         &self.mutex
     }
@@ -6155,6 +6163,13 @@ pub enum CResourceAccessMode {
 /// quantity combinations are valid.  An instance's inner term is retained so
 /// its declaration identity and schema remain explicit without encoding them
 /// in vector position or in a memory-only variant.
+/// A declared resource type without an occurrence binder or field observations.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CResourceTypeSpec {
+    pub resource: Box<CResourceSpec>,
+    pub schema: ResourceFieldSchema,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResourceTerm {
     Memory(CMemorySegment),
@@ -6167,6 +6182,7 @@ pub enum CResourceTerm {
         snapshot: CResourceSnapshot,
     },
     MutexUse {
+        protected: Option<Box<CResourceTypeSpec>>,
         mutex: Box<CExpression>,
         snapshot: CResourceSnapshot,
     },
@@ -7008,6 +7024,7 @@ mod named_mutex_authority_spec_tests {
                 snapshot: CResourceSnapshot::Current,
             },
             CResourceTerm::MutexUse {
+                protected: None,
                 mutex: mutex.clone(),
                 snapshot: CResourceSnapshot::Current,
             },

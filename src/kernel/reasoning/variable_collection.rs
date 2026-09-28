@@ -1589,6 +1589,9 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
 ) {
     match resource {
         CResource::MutexUse(identity) => {
+            if let Some(p) = &identity.protected {
+                p.visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
+            }
             if identity.binding.is_none() {
                 collect_pointer_bitvector_variables(&identity.mutex, variables);
             }
@@ -1686,10 +1689,16 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. }
-        | CResourceTerm::MutexLive { mutex, .. }
-        | CResourceTerm::MutexUse { mutex, .. } => {
+        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bitvector_variables(mutex, variables)
+        }
+        CResourceTerm::MutexUse {
+            mutex, protected, ..
+        } => {
+            collect_c_expression_bitvector_variables(mutex, variables);
+            if let Some(p) = protected {
+                collect_resource_spec_bitvector_variables(&p.resource, variables);
+            }
         }
         CResourceTerm::Memory(segment) => {
             collect_c_expression_bitvector_variables(&segment.base, variables);
@@ -1724,10 +1733,16 @@ fn collect_resource_term_bitvector_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. }
-        | CResourceTerm::MutexLive { mutex, .. }
-        | CResourceTerm::MutexUse { mutex, .. } => {
+        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bitvector_variables(mutex, variables)
+        }
+        CResourceTerm::MutexUse {
+            mutex, protected, ..
+        } => {
+            collect_c_expression_bitvector_variables(mutex, variables);
+            if let Some(p) = protected {
+                collect_resource_spec_bitvector_variables(&p.resource, variables);
+            }
         }
         CResourceTerm::Memory(segment) => {
             collect_c_expression_bitvector_variables(&segment.base, variables);

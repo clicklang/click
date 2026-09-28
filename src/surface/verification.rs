@@ -2319,7 +2319,7 @@ fn verify_c0_sources_with_context(
             &click_function_environment,
             &resource_environment,
         )?;
-        let modeled_mutex_guards = if selected_thread_runtime
+        let modeled_mutex_definitions: BTreeMap<_, _> = if selected_thread_runtime
             == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
         {
             composite_resource_definitions(
@@ -2328,16 +2328,16 @@ fn verify_c0_sources_with_context(
                 &click_function_environment,
             )?
             .into_iter()
-            .filter_map(|definition| {
-                definition
-                    .mutex_guard()
-                    .cloned()
-                    .map(|guard| (definition.name().to_string(), guard))
-            })
+            .filter(|definition| definition.mutex_guard().is_some())
+            .map(|definition| (definition.name().to_string(), definition))
             .collect()
         } else {
             BTreeMap::new()
         };
+        let modeled_mutex_guards = modeled_mutex_definitions
+            .iter()
+            .map(|(name, definition)| (name.clone(), definition.mutex_guard().unwrap().clone()))
+            .collect();
         let mut function_environment = initial_function_environment
             .unwrap_or(built_function_environment)
             .with_modeled_pthread_binding(
@@ -2346,6 +2346,7 @@ fn verify_c0_sources_with_context(
                     .then(|| c_sources.modeled_pthread_binding()),
             )
             .with_modeled_mutex_guards(modeled_mutex_guards)
+            .with_modeled_mutex_definitions(modeled_mutex_definitions)
             .with_byte_order(selected_target.byte_order());
         // Contracts are declaration interfaces. A selected function receives
         // every well-formed callee contract as a scoped assumption, while its
@@ -7523,6 +7524,8 @@ fn resource_clause_to_resource_spec_with_metadata(
         )
         .map_err(|error| ClickError::new(error.to_string())),
         ResourceClause::Declared {
+            type_schema: _,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -7530,6 +7533,11 @@ fn resource_clause_to_resource_spec_with_metadata(
             arguments,
             parameter_types,
         } => {
+            if !resource_type_arguments.is_empty()
+                && (name != "mutex_use" || resource_type_arguments.len() != 1)
+            {
+                return Err(ClickError::new("unsupported resource type arguments"));
+            }
             let access = resource_access_to_kernel(*access);
             let lowered_arguments = arguments
                 .iter()
@@ -7585,6 +7593,16 @@ fn resource_clause_to_resource_spec_with_metadata(
                 };
                 return CResourceSpec::new(
                     crate::kernel::CResourceTerm::MutexUse {
+                        protected: resource_type_arguments.first().map(|resource| {
+                            let ResourceClause::Declared { type_schema: Some(schema), .. } = resource else { return Err(ClickError::new("protected resource type has no checked schema")); };
+                            Ok(Box::new(crate::kernel::CResourceTypeSpec {
+                                resource: Box::new(resource_clause_to_resource_spec_with_metadata(resource, parameters, result_type, role, snapshot)?.with_source_arguments(match resource {
+                                    ResourceClause::Declared { arguments, .. } => arguments.iter().map(crate::surface::diagnostics::describe_contract_expression).collect(),
+                                    _ => unreachable!(),
+                                })),
+                                schema: schema.clone(),
+                            }))
+                        }).transpose()?,
                         mutex: Box::new(mutex.clone()),
                         snapshot: argument_snapshots[0],
                     },
@@ -7685,6 +7703,8 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             })
         }
         ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -7692,6 +7712,11 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             arguments,
             parameter_types,
         } => Ok(ResourceClause::Declared {
+            type_schema: type_schema.clone(),
+            resource_type_arguments: resource_type_arguments
+                .iter()
+                .map(|resource| substitute_resource_clause_for_summary_in(resource, substitutions))
+                .collect::<Result<_, _>>()?,
             resource_arguments: resource_arguments
                 .iter()
                 .map(|binding| {

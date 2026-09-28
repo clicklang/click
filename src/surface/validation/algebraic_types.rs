@@ -241,6 +241,8 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 continue;
             }
             ResourceClause::Declared {
+                type_schema,
+                resource_type_arguments,
                 resource_arguments,
                 access: ResourceAccessMode::Own,
                 kind,
@@ -248,12 +250,19 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 arguments,
                 parameter_types,
             } => {
+                if !resource_type_arguments.is_empty() {
+                    return Err(ClickError::new(
+                        "resource type arguments in owned resource bodies are not supported yet",
+                    ));
+                }
                 if resources(name).is_some_and(|child| !child.fields().is_empty()) {
                     return Err(ClickError::new(format!(
                         "an owned `{name}` in a resource body needs a child name, because `{name}` has fields"
                     )));
                 }
                 contains.push(ResourceClause::Declared {
+                    type_schema: type_schema.clone(),
+                    resource_type_arguments: resource_type_arguments.clone(),
                     resource_arguments: resource_arguments.clone(),
                     access: ResourceAccessMode::Own,
                     kind: *kind,
@@ -267,6 +276,8 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 let ResourceClause::Declared {
                     name,
                     arguments,
+                    type_schema: _,
+                    resource_type_arguments,
                     resource_arguments,
                     ..
                 } = resource.as_ref()
@@ -275,7 +286,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                         "child ownership requires a declared resource",
                     ));
                 };
-                if !resource_arguments.is_empty() {
+                if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() {
                     return Err(ClickError::new(format!(
                         "owned child `{}` passes resource arguments; nested resource-argument child ownership is not supported yet",
                         binding.name

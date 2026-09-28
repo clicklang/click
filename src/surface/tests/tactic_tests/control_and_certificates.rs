@@ -696,6 +696,8 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     ));
     assert!(matches!(
         ProofTactic::FoldResource(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
             resource_arguments: Vec::new(),
             access: ResourceAccessMode::Own,
             kind: ResourceKind::Composite,

@@ -1432,10 +1432,16 @@ fn collect_c_resource_spec_bound_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. }
-        | CResourceTerm::MutexLive { mutex, .. }
-        | CResourceTerm::MutexUse { mutex, .. } => {
+        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
+        }
+        CResourceTerm::MutexUse {
+            mutex, protected, ..
+        } => {
+            collect_c_expression_bound_variables(mutex, variables);
+            if let Some(protected) = protected {
+                collect_c_resource_spec_bound_variables(&protected.resource, variables);
+            }
         }
         CResourceTerm::Memory(segment) => {
             collect_c_memory_segment_bound_variables(segment, variables)
@@ -1472,10 +1478,16 @@ fn collect_c_resource_term_bound_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
-        CResourceTerm::MutexGuard { mutex, .. }
-        | CResourceTerm::MutexLive { mutex, .. }
-        | CResourceTerm::MutexUse { mutex, .. } => {
+        CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
+        }
+        CResourceTerm::MutexUse {
+            mutex, protected, ..
+        } => {
+            collect_c_expression_bound_variables(mutex, variables);
+            if let Some(protected) = protected {
+                collect_c_resource_spec_bound_variables(&protected.resource, variables);
+            }
         }
         CResourceTerm::Memory(segment) => {
             collect_c_memory_segment_bound_variables(segment, variables)
@@ -1596,6 +1608,9 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
         CResource::MutexUse(identity) => {
+            if let Some(p) = &identity.protected {
+                p.visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
+            }
             if identity.binding.is_none() {
                 collect_pointer_bound_variables(&identity.mutex, variables);
             }
@@ -3995,6 +4010,13 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
 ) -> CResource {
     match resource {
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
+            protected: identity.protected.as_ref().map(|p| {
+                if identity.binding.is_none() {
+                    p.map_values(|v| substitute_bitvector_variable_in_algebraic_value(v, from, to))
+                } else {
+                    p.clone()
+                }
+            }),
             binding: identity.binding,
             initialization: identity.initialization,
             mutex: if identity.binding.is_none() {
@@ -4341,7 +4363,21 @@ fn substitute_bitvector_variable_in_resource_term(
             )),
             snapshot: *snapshot,
         },
-        CResourceTerm::MutexUse { mutex, snapshot } => CResourceTerm::MutexUse {
+        CResourceTerm::MutexUse {
+            mutex,
+            snapshot,
+            protected,
+        } => CResourceTerm::MutexUse {
+            protected: protected.as_ref().map(|p| {
+                Box::new(CResourceTypeSpec {
+                    resource: Box::new(substitute_bitvector_variable_in_resource_spec(
+                        &p.resource,
+                        from,
+                        to,
+                    )),
+                    schema: p.schema.clone(),
+                })
+            }),
             mutex: Box::new(substitute_bitvector_variable_in_c_expression(
                 mutex, from, to,
             )),
@@ -6681,6 +6717,13 @@ fn substitute_pointer_variable_in_c_resource(
 ) -> CResource {
     match resource {
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
+            protected: identity.protected.as_ref().map(|p| {
+                if identity.binding.is_none() {
+                    p.map_values(|v| substitute_pointer_variable_in_algebraic_value(v, from, to))
+                } else {
+                    p.clone()
+                }
+            }),
             binding: identity.binding,
             initialization: identity.initialization,
             mutex: if identity.binding.is_none() {
@@ -7918,7 +7961,21 @@ fn substitute_pointer_variable_in_resource_term(
             mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
             snapshot: *snapshot,
         },
-        CResourceTerm::MutexUse { mutex, snapshot } => CResourceTerm::MutexUse {
+        CResourceTerm::MutexUse {
+            mutex,
+            snapshot,
+            protected,
+        } => CResourceTerm::MutexUse {
+            protected: protected.as_ref().map(|p| {
+                Box::new(CResourceTypeSpec {
+                    resource: Box::new(substitute_pointer_variable_in_resource_spec(
+                        &p.resource,
+                        from,
+                        to,
+                    )),
+                    schema: p.schema.clone(),
+                })
+            }),
             mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),
             snapshot: *snapshot,
         },

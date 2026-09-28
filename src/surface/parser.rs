@@ -3643,7 +3643,7 @@ impl Parser {
         }
         self.expect(Token::RParen)?;
         self.expect(Token::Comma)?;
-        let declared = self
+        let mut declared = self
             .callee_resource_binders
             .get(&callee)
             .cloned()
@@ -3704,6 +3704,46 @@ impl Parser {
             entry.kind == CalleeResourceBinderKind::Supplied && !bound.contains(*name)
         }) {
             return Err(self.error(format!("call map omits `{callee}` binder `{missing}`")));
+        }
+        // Instantiate the runtime's ordinary state output from the resource
+        // type argument on the selected access input. This only names a type;
+        // the kernel authenticates the association and grants custody at lock.
+        if callee == "pthread_mutex_lock" {
+            let protected = binders
+                .iter()
+                .find(|b| b.binder == "access")
+                .and_then(|b| self.current_resource_targets.get(&b.instance))
+                .and_then(|target| match target {
+                    ResourceClause::Named { resource, .. } => match resource.as_ref() {
+                        ResourceClause::Declared {
+                            resource_type_arguments,
+                            ..
+                        } => resource_type_arguments.first(),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .cloned();
+            if let (Some(protected), Some(output)) = (protected, declared.get_mut("state"))
+                && let ResourceClause::Declared {
+                    name, type_schema, ..
+                } = &protected
+            {
+                output.family = Some(name.clone());
+                output.parameter_names.clear();
+                output.resource = Some(ResourceClause::Named {
+                    binding: ResourceInstanceBinding {
+                        name: "state".into(),
+                        identity: output.identity,
+                        children: vec![],
+                        schema: type_schema.clone(),
+                        fields: None,
+                        fold_fields: None,
+                        child_bindings: None,
+                    },
+                    resource: Box::new(protected),
+                });
+            }
         }
         let produced_declarations = declared
             .iter()
@@ -3929,6 +3969,8 @@ impl Parser {
                         child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
+                        type_schema: None,
+                        resource_type_arguments: Vec::new(),
                         resource_arguments: Vec::new(),
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
@@ -6214,6 +6256,8 @@ impl Parser {
         }
         self.expect(Token::RParen)?;
         Ok(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments: Vec::new(),
             resource_arguments: Vec::new(),
             access: ResourceAccessMode::Own,
             kind: ResourceKind::Token,
@@ -6227,7 +6271,25 @@ impl Parser {
         &mut self,
         access: ResourceAccessMode,
     ) -> Result<ResourceClause, ClickError> {
-        let (name, mut arguments) = self.parse_call_arguments("resource name")?;
+        let name = self.expect_ident("resource name")?;
+        self.expect(Token::LParen)?;
+        let mut arguments = Vec::new();
+        let mut resource_type_arguments = Vec::new();
+        if self.peek() != Some(&Token::RParen) {
+            loop {
+                if name == "mutex_use" && arguments.len() == 1 {
+                    resource_type_arguments.push(self.parse_declared_resource_call()?);
+                } else {
+                    arguments.push(self.parse_contract_expression()?);
+                }
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::RParen) => break,
+                    _ => return Err(self.error("expected `,` or `)` after resource argument")),
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
         let mut resource_arguments = Vec::new();
         let first_reference = arguments.iter().position(|argument| {
             matches!(argument, ContractExpression::CFragment(CExpression::Variable(name)) | ContractExpression::Binding(name)
@@ -6252,6 +6314,8 @@ impl Parser {
             }
         }
         Ok(ResourceClause::Declared {
+            type_schema: None,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind: ResourceKind::Token,

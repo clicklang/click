@@ -9,6 +9,7 @@ use super::loans::{
 use super::model_fields::{ModelFieldOrigin, ModelMint, algebraic_value_variable};
 use super::prelude::*;
 use super::thread_confinement::confined_resource_name;
+use crate::kernel::ResourceDescription;
 use std::sync::Arc;
 
 fn execute_c_function_body_paths(
@@ -2835,6 +2836,64 @@ fn execute_verified_function_applications_with_suspension(
         }
         let result = symbolic_contract_result(interface, result_identity);
         let mut post_state = entry_state.clone().with_memory(memory);
+        // A typed use permits the callee to modify the protected state. A
+        // summary must forget the concrete escrow's previous observations.
+        if let Some(plan) = &transfer.stable_view_plan {
+            let mut failure = None;
+            for use_plan in &plan.mutex_uses {
+                let required = use_plan.required_resource();
+                let CResource::MutexUse(usage) = required.resource() else {
+                    unreachable!()
+                };
+                let Some(protected) = &usage.protected else {
+                    continue;
+                };
+                let Some(definition) = environment
+                    .modeled_mutex_definitions
+                    .get(protected.family())
+                else {
+                    failure = Some(CRuntimeError::FunctionContract(
+                        "typed mutex call requires a guarded resource definition".into(),
+                    ));
+                    break;
+                };
+                let before = post_state.memory.clone();
+                match super::mutexes::MutexLedger::havoc_protected_for_call(
+                    &post_state,
+                    &usage.mutex,
+                    definition,
+                    &effective_assumptions,
+                    budget,
+                ) {
+                    Ok((fresh, ranges)) => {
+                        if !ranges.is_empty() {
+                            facts.push(
+                                ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                                    before,
+                                    after: fresh.memory.clone(),
+                                    mutable_ranges: ranges,
+                                })
+                                .into_certified(),
+                            );
+                        }
+                        post_state = fresh;
+                    }
+                    Err(error) => {
+                        failure = Some(error.into_runtime_error(&usage.mutex));
+                        break;
+                    }
+                }
+            }
+            if let Some(error) = failure {
+                paths.push(CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(error),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            }
+        }
         if interface.return_type() != CType::Void {
             set_contract_result(&mut post_state, interface, result.clone());
         }
@@ -14703,6 +14762,13 @@ fn prepare_contract_resource_transfer(
                         }
                     }
                 }
+                for use_plan in &plan.mutex_uses {
+                    if use_plan.check_protected_type(assumptions).is_err() {
+                        return Ok(Err(CRuntimeError::MissingResource {
+                            resource: use_plan.required_resource(),
+                        }));
+                    }
+                }
                 // Argument binding may have created a fresh by-value aggregate
                 // copy. Its views are backed by that checked entry allocation,
                 // which does not exist in the caller's earlier memory. The
@@ -22806,6 +22872,58 @@ pub(crate) fn evaluate_resource_reference_arguments(
         .collect()
 }
 
+/// Evaluate a resource type without selecting or manufacturing an owned instance.
+fn evaluate_resource_type(
+    entry: &CState,
+    state: &CState,
+    resource_type: &CResourceTypeSpec,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ResourceDescription, CRuntimeError>> {
+    let invalid = || {
+        CRuntimeError::FunctionContract("mutex_use requires a field-bearing resource type".into())
+    };
+    let spec = &resource_type.resource;
+    let schema = &resource_type.schema;
+    if !spec.resource_arguments().is_empty() {
+        return Ok(Err(invalid()));
+    }
+    let CResourceTerm::Composite {
+        name,
+        arguments,
+        argument_snapshots,
+        parameter_types,
+    } = spec.term()
+    else {
+        return Ok(Err(invalid()));
+    };
+    let fact = match evaluate_function_declared_resource_spec(
+        entry,
+        state,
+        CResourceAccessMode::Own,
+        ResourceFamily::Composite,
+        name,
+        arguments,
+        argument_snapshots,
+        parameter_types,
+        spec.source_arguments(),
+        &BTreeMap::new(),
+        assumptions,
+        budget,
+    )? {
+        Ok(fact) => fact,
+        Err(error) => return Ok(Err(error)),
+    };
+    let CResource::Composite { name, arguments } = fact.resource() else {
+        return Ok(Err(invalid()));
+    };
+    Ok(Ok(ResourceDescription::new(
+        name.clone(),
+        arguments.clone(),
+        schema.clone(),
+    )))
+}
+
 pub(super) fn evaluate_function_resource_spec(
     state: &CState,
     resource: &CResourceSpec,
@@ -23064,7 +23182,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     }),
             )
         }
-        CResourceTerm::MutexUse { mutex, snapshot } => {
+        CResourceTerm::MutexUse {
+            mutex,
+            snapshot,
+            protected,
+        } => {
             let selected = match snapshot {
                 CResourceSnapshot::Entry => entry_state,
                 _ => state,
@@ -23085,10 +23207,25 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 CResourceSnapshot::Entry => entry_state,
                 _ => state,
             };
-            Ok(Ok(super::mutexes::use_resource(
-                initialization_state,
-                pointer.pointer(),
-            )))
+            let mut fact = super::mutexes::use_resource(initialization_state, pointer.pointer());
+            if let Some(protected) = protected {
+                let description = match evaluate_resource_type(
+                    entry_state,
+                    state,
+                    protected,
+                    assumptions,
+                    budget,
+                )? {
+                    Ok(description) => description,
+                    Err(error) => return Ok(Err(error)),
+                };
+                let CResource::MutexUse(mut identity) = fact.resource().clone() else {
+                    unreachable!()
+                };
+                identity.protected = Some(description);
+                fact = CResourceFact::own(CResource::MutexUse(identity));
+            }
+            Ok(Ok(fact))
         }
         CResourceTerm::Instance {
             identity,

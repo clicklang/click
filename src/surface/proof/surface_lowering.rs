@@ -859,6 +859,8 @@ impl<'a> Proof<'a> {
         resource: &ResourceClause,
     ) -> Result<ResourceClause, ClickError> {
         let ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -870,6 +872,11 @@ impl<'a> Proof<'a> {
             return Ok(resource.clone());
         };
         Ok(ResourceClause::Declared {
+            type_schema: type_schema.clone(),
+            resource_type_arguments: resource_type_arguments
+                .iter()
+                .map(|resource| self.substitute_fixed_state_locals_in_resource_arguments(resource))
+                .collect::<Result<_, _>>()?,
             resource_arguments: resource_arguments.clone(),
             access: *access,
             kind: *kind,

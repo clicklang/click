@@ -30,6 +30,7 @@ pub(crate) struct MutexUseCallTransfer {
     source: CResourceFact,
     selected_alias: Option<Variable>,
     interface: Option<Arc<crate::kernel::mutexes::InitializedMutexInterface>>,
+    required_type: Option<ResourceDescription>,
     loan: MutexUseLoan,
     caller: LoanParticipantId,
     callee: LoanParticipantId,
@@ -98,6 +99,7 @@ impl MutexUseCallTransfer {
             source: source.clone(),
             selected_alias: None,
             interface: None,
+            required_type: None,
             loan,
             entry_transition,
             caller,
@@ -134,6 +136,59 @@ impl MutexUseCallTransfer {
         }
         self.interface = interface;
         Ok(())
+    }
+
+    pub(crate) fn with_required_type(mut self, protected: Option<ResourceDescription>) -> Self {
+        self.required_type = protected;
+        self
+    }
+
+    /// Validate the requested assertion against authenticated initialization or
+    /// entry evidence. Writing a stronger contract never supplies this evidence.
+    pub(in crate::kernel) fn check_protected_type(
+        &self,
+        assumptions: &PureFactContext,
+    ) -> Result<(), MutexUseCallError> {
+        let Some(required) = &self.required_type else {
+            return Ok(());
+        };
+        let actual = self
+            .interface
+            .as_ref()
+            .map(|interface| interface.description())
+            .or(self
+                .ledger
+                .mutex_use_protected_type(self.usage, self.callee)?);
+        let matches = actual.is_some_and(|actual| {
+            actual.family() == required.family()
+                && actual.schema() == required.schema()
+                && actual.resource_arguments() == required.resource_arguments()
+                && actual.arguments().len() == required.arguments().len()
+                && actual
+                    .arguments()
+                    .iter()
+                    .zip(required.arguments())
+                    .all(|(left, right)| {
+                        left == right
+                            || crate::kernel::resource_arguments_proven_equal(
+                                left,
+                                right,
+                                assumptions,
+                            )
+                    })
+        });
+        if !matches {
+            return Err(MutexUseCallError::MissingResource(self.source.clone()));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn required_resource(&self) -> CResourceFact {
+        let mut fact = self.callee_resource().expect("checked mutex use transfer");
+        if let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut fact {
+            identity.protected = self.required_type.clone();
+        }
+        fact
     }
 
     pub(crate) fn source_resource(&self) -> &CResourceFact {
@@ -267,6 +322,83 @@ mod tests {
             epoch: Some(91),
             mutex: Pointer::symbolic(Variable(100)),
         }))
+    }
+
+    fn protected_type(argument: u32) -> ResourceDescription {
+        let instance = crate::kernel::ResourceInstance::new(
+            Variable(800),
+            "counter_state".into(),
+            vec![crate::kernel::int32(argument).into()].into(),
+            crate::kernel::ResourceFieldSchema::new(vec![(
+                "value".into(),
+                crate::kernel::ResourceFieldType::C(crate::kernel::CType::Int32),
+            )])
+            .unwrap(),
+            vec![crate::kernel::int32(0).into()].into(),
+        )
+        .unwrap();
+        ResourceDescription::from_instance(&instance)
+    }
+
+    #[test]
+    fn typed_modular_use_reborrows_and_returns_the_same_protected_assertion() {
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let callee = ledger.fresh_participant().unwrap();
+        let resources = ResourceContext::new().unchecked_with_fact(owner());
+        let (support, _) = resources
+            .unique_owned_occurrence_for_fact(&owner())
+            .unwrap();
+        let protected = protected_type(1);
+        let (ledger, input) = ledger
+            .borrowed_mutex_use_input_with_protected(
+                caller,
+                support,
+                Pointer::symbolic(Variable(100)),
+                Some(protected.clone()),
+            )
+            .unwrap();
+        let source = ledger.mutex_use_resource(input.usage, caller).unwrap();
+        let resources = ResourceContext::new().unchecked_with_fact(source.clone());
+        let assumptions = PureFactContext::new();
+        let plan = MutexUseCallTransfer::prepare(
+            &ledger,
+            caller,
+            callee,
+            &resources,
+            &source,
+            &assumptions,
+        )
+        .unwrap()
+        .with_required_type(Some(protected));
+        plan.check_protected_type(&assumptions).unwrap();
+        let wrong = plan.clone().with_required_type(Some(protected_type(2)));
+        assert!(wrong.check_protected_type(&assumptions).is_err());
+        let restored = plan
+            .finish(
+                &plan.ledger,
+                callee,
+                &plan.callee_resources,
+                &[],
+                &assumptions,
+            )
+            .unwrap();
+        assert!(
+            restored
+                .caller_resources
+                .unique_owned_occurrence_for_fact(&source)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn bare_lifetime_authority_cannot_establish_a_protected_type() {
+        let (_, plan) = plan();
+        assert!(
+            plan.with_required_type(Some(protected_type(1)))
+                .check_protected_type(&PureFactContext::new())
+                .is_err()
+        );
     }
 
     fn token(name: &str) -> CResourceFact {
@@ -711,6 +843,7 @@ mod tests {
                 holder: plan.callee,
                 support,
                 mutex: Pointer::symbolic(Variable(200)),
+                protected: None,
                 initialization: crate::kernel::mutexes::MutexInitializationId::fresh().unwrap(),
                 scope: LoanScopeId {
                     arena,
@@ -834,6 +967,7 @@ mod tests {
             let required = CCheckedResourceFact {
                 fact: CResourceFact::own(CResource::MutexUse(crate::kernel::MutexUseIdentity {
                     binding: None,
+                    protected: None,
                     initialization: None,
                     mutex: Pointer::symbolic(Variable(100)),
                 })),

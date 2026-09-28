@@ -4766,6 +4766,8 @@ pub(super) fn instantiate_resource_clause(
             })
         }
         ResourceClause::Declared {
+            type_schema,
+            resource_type_arguments,
             resource_arguments,
             access,
             kind,
@@ -4773,6 +4775,11 @@ pub(super) fn instantiate_resource_clause(
             arguments,
             parameter_types,
         } => Ok(ResourceClause::Declared {
+            type_schema: type_schema.clone(),
+            resource_type_arguments: resource_type_arguments
+                .iter()
+                .map(|resource| instantiate_resource_clause(resource, substitutions))
+                .collect::<Result<_, _>>()?,
             resource_arguments: resource_arguments.clone(),
             access: *access,
             kind: *kind,

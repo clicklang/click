@@ -1111,6 +1111,8 @@ fn format_resource_call(resource: &ResourceClause) -> String {
     let ResourceClause::Declared {
         name,
         arguments,
+        type_schema: _,
+        resource_type_arguments,
         resource_arguments,
         ..
     } = resource
@@ -1127,6 +1129,7 @@ fn format_resource_call(resource: &ResourceClause) -> String {
                     .iter()
                     .map(|reference| reference.name.clone())
             )
+            .chain(resource_type_arguments.iter().map(format_resource_call))
             .collect::<Vec<_>>()
             .join(", ")
     )

@@ -1524,6 +1524,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
             Ok(CResourceFact::own_memory(range))
         }
         ResourceClause::Declared {
+            type_schema: _,
+            resource_type_arguments,
             resource_arguments: _,
             access,
             kind,
@@ -1531,6 +1533,11 @@ fn lower_resource_clause_with_values_mode_at_entry(
             arguments: resource_arguments,
             parameter_types,
         } => {
+            if !resource_type_arguments.is_empty()
+                && (name != "mutex_use" || resource_type_arguments.len() != 1)
+            {
+                return Err(ClickError::new("unsupported resource type arguments"));
+            }
             let assumptions = if allow_symbolic_resource_arguments {
                 base_assumptions
                     .clone()
@@ -1630,7 +1637,43 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 let [CValue::Pointer(mutex)] = resource_values.as_slice() else {
                     return Err(ClickError::new("mutex_use expects one mutex pointer"));
                 };
-                let guard = crate::kernel::c_mutex_use_resource(state, mutex.pointer());
+                let guard = if let Some(protected) = resource_type_arguments.first() {
+                    let ResourceClause::Declared {
+                        type_schema: Some(schema),
+                        ..
+                    } = protected
+                    else {
+                        return Err(ClickError::new(
+                            "protected resource type has no checked schema",
+                        ));
+                    };
+                    let fact = lower_resource_clause_with_values_mode_at_entry(
+                        protected,
+                        parameters,
+                        values,
+                        entry_state,
+                        state,
+                        result,
+                        allow_symbolic_resource_arguments,
+                        base_assumptions,
+                    )?;
+                    let CResource::Composite { name, arguments } = fact.resource() else {
+                        return Err(ClickError::new(
+                            "protected resource type must be a composite resource",
+                        ));
+                    };
+                    crate::kernel::c_mutex_use_resource_with_type(
+                        state,
+                        mutex.pointer(),
+                        crate::kernel::ResourceDescription::new(
+                            name.clone(),
+                            arguments.clone(),
+                            schema.clone(),
+                        ),
+                    )
+                } else {
+                    crate::kernel::c_mutex_use_resource(state, mutex.pointer())
+                };
                 return Ok(match access {
                     ResourceAccessMode::Own => guard,
                     ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
