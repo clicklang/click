@@ -9,13 +9,36 @@ A loop invariant is a fact that must hold:
 - at the start of every iteration,
 - and after one iteration preserves it.
 
-Under the modeled pthread runtime, `held(&object->mu)` states that the current
-execution path owns that mutex's guard. It is checked from the mutex state, so
-a proof can use it in `have` and in an invariant. A loop back edge must also
-restore the mutex ownership with which that loop head began; an invariant
-alone cannot discard a newly acquired guard. The current loop head represents
-one concrete mutex status, so a loop whose head alternates between held and
-unheld still needs a conditional mutex-state abstraction.
+A loop may declare conditional resources using the same `if` form as a
+resource body:
+
+<!-- verified-example: mdtests/mutex_parity_direct.md -->
+```click
+loop {
+    decreases n - i;
+    invariant 0 <= i and i <= n;
+    if i % 2 == 1 {
+        owns mutex_guard(&object->mutex);
+    }
+    owns mutex_live(&object->mutex);
+    owns &object->mutex;
+}
+```
+
+The condition is evaluated at entry, at an arbitrary iteration's start, and
+at each backedge. When it is true, the loop must own the stated resource.
+A branch proving the condition may use that ownership; proving the condition
+alone does not create ownership. The next iteration may carry a different
+mutex acquisition, but it must belong to the same initialization.
+
+An ordinary named resource with a conditional `owns` body remains an
+alternative when the abstraction is useful elsewhere. The direct form needs
+no extra model field or explicit folding and unfolding.
+
+The current symbolic case supports guards of empty mutexes with locally owned
+lifetimes. Other conditional `owns` and `views` clauses require their condition
+to be decided when the loop resource context is formed. Conditional named
+binders and nested conditional blocks are not supported yet.
 
 These checks prove that every finite iteration prefix is safe and that the
 invariant is available if the loop exits. They say nothing about whether the

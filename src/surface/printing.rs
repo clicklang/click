@@ -480,6 +480,10 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 line(output, &body_prefix, &format!("decreases {rendered};"));
             }
             for resource in loop_clause.resources() {
+                if matches!(resource, ResourceClause::Conditional { .. }) {
+                    line(output, &body_prefix, &format_resource_target(resource));
+                    continue;
+                }
                 let keyword = match resource_access(resource) {
                     ResourceAccessMode::Own => "owns",
                     ResourceAccessMode::View => "views",
@@ -1138,6 +1142,19 @@ pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> S
 
 fn format_resource_target(resource: &ResourceClause) -> String {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => format!(
+            "if {} {{ {} {}; }}",
+            source_click_proposition(condition),
+            if resource_access(resource) == ResourceAccessMode::Own {
+                "owns"
+            } else {
+                "views"
+            },
+            format_resource_target(resource)
+        ),
         ResourceClause::Named { binding, resource } => {
             format!("{}: {}", binding.name, format_resource_target(resource))
         }
@@ -1166,6 +1183,7 @@ fn format_resource_target(resource: &ResourceClause) -> String {
 
 fn resource_access(resource: &ResourceClause) -> ResourceAccessMode {
     match resource {
+        ResourceClause::Conditional { resource, .. } => resource_access(resource),
         ResourceClause::Named { .. } => ResourceAccessMode::Own,
         ResourceClause::Quantified { resource, .. } => resource_access(resource),
         ResourceClause::ViewMemory(_) => ResourceAccessMode::View,

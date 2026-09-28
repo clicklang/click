@@ -23,7 +23,9 @@ parities, and the largest positive value. A conditional resource owns
 field to `i % 2`. Each iteration returns the required ownership with a fresh
 acquisition when appropriate. The final conditional unlock and destruction
 verify as well. The normal example test gate checks the sidecar and pins the
-original C bytes.
+original C bytes. The [direct sidecar](mutex_held_parity_direct.click) verifies
+the same source using `if i % 2 == 1 { owns mutex_guard(&object->mutex); }`
+in the loop contract. Both forms remain checked by the normal gate.
 
 This first milestone covers an initialized empty mutex whose lifetime is owned
 locally. It does not demonstrate shared-worker interference or protected

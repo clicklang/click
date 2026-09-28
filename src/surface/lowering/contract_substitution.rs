@@ -914,6 +914,13 @@ fn collect_resource_subject_binding_names(
 
 fn collect_resource_clause_binding_names(resource: &ResourceClause, names: &mut BTreeSet<String>) {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => {
+            collect_click_proposition_binding_names(condition, names);
+            collect_resource_clause_binding_names(resource, names);
+        }
         ResourceClause::Named { binding, resource } => {
             names.insert(binding.name.clone());
             collect_resource_clause_binding_names(resource, names);
@@ -1234,6 +1241,22 @@ fn rewrite_resource_clause_exact(
     target: &ContractExpression,
 ) -> (ResourceClause, bool) {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => {
+            let (condition, condition_changed) =
+                rewrite_click_proposition_expression(condition, source, target);
+            let (resource, resource_changed) =
+                rewrite_resource_clause_exact(resource, source, target);
+            (
+                ResourceClause::Conditional {
+                    condition,
+                    resource: Box::new(resource),
+                },
+                condition_changed || resource_changed,
+            )
+        }
         ResourceClause::Named { binding, resource } => {
             let (resource, changed) = rewrite_resource_clause_exact(resource, source, target);
             (
@@ -1677,6 +1700,13 @@ pub(in crate::surface) fn apply_contract_lets_to_resource_clause(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceClause, String> {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => Ok(ResourceClause::Conditional {
+            condition: apply_contract_lets_to_proposition(condition, bindings)?,
+            resource: Box::new(apply_contract_lets_to_resource_clause(*resource, bindings)?),
+        }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
             binding,
             resource: Box::new(apply_contract_lets_to_resource_clause(*resource, bindings)?),

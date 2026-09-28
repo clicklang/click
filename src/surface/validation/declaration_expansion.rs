@@ -1292,6 +1292,16 @@ fn expand_declared_resource_clause(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceClause, ClickError> {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => Ok(ResourceClause::Conditional {
+            condition: expand_declared_resource_proposition(condition, resource_definitions)?,
+            resource: Box::new(expand_declared_resource_clause(
+                *resource,
+                resource_definitions,
+            )?),
+        }),
         ResourceClause::Named {
             mut binding,
             resource,

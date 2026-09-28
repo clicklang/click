@@ -1253,6 +1253,12 @@ pub enum Ensure {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceClause {
+    /// A resource owned or viewed exactly when its contract condition holds.
+    /// Initially exposed in loop contracts, using ordinary resource assertions.
+    Conditional {
+        condition: ClickProposition,
+        resource: Box<ResourceClause>,
+    },
     Named {
         binding: ResourceInstanceBinding,
         resource: Box<ResourceClause>,
@@ -1858,6 +1864,13 @@ fn collect_current_resource_clause_variables(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => {
+            collect_current_proposition_variables(condition, names);
+            collect_current_resource_clause_variables(resource, names);
+        }
         ResourceClause::Named { resource, .. } => {
             collect_current_resource_clause_variables(resource, names)
         }
@@ -6469,6 +6482,19 @@ fn substitute_resource_clause_bindings(
     substitutions: &BTreeMap<String, ContractExpression>,
 ) -> Result<ResourceClause, String> {
     Ok(match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => ResourceClause::Conditional {
+            condition: crate::surface::lowering::substitute_click_proposition(
+                condition,
+                substitutions,
+            )?,
+            resource: Box::new(substitute_resource_clause_bindings(
+                resource,
+                substitutions,
+            )?),
+        },
         ResourceClause::Named { binding, resource } => ResourceClause::Named {
             binding: binding.clone(),
             resource: Box::new(substitute_resource_clause_bindings(

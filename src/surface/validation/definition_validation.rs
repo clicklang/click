@@ -2848,6 +2848,7 @@ fn constant_c_expression_i64(expression: &CExpression) -> Option<i64> {
 
 fn declared_composite_resource_name(resource: &ResourceClause) -> Option<&str> {
     match resource {
+        ResourceClause::Conditional { resource, .. } => declared_composite_resource_name(resource),
         ResourceClause::Named { resource, .. } => declared_composite_resource_name(resource),
         ResourceClause::Declared {
             kind: ResourceKind::Composite,
@@ -2872,6 +2873,9 @@ fn reject_composite_resource_cycles(definitions: &[ResourceDefinition]) -> Resul
                 .into_iter()
                 .flat_map(CompositeResourceBody::contains)
                 .filter_map(|resource| match resource {
+                    ResourceClause::Conditional { resource, .. } => {
+                        declared_composite_resource_name(resource).map(str::to_string)
+                    }
                     ResourceClause::Named { resource, .. } => {
                         declared_composite_resource_name(resource).map(str::to_string)
                     }

@@ -2246,7 +2246,9 @@ pub(crate) fn c_loop_binder_state_components_match_at_back_edge(
     assumptions: &PureFactContext,
     definitions: &[CCompositeResourceDefinition],
 ) -> Result<(), String> {
-    let mut checked = Vec::new();
+    let (direct_next, mut checked) =
+        super::mutexes::normalize_direct_loop_guards(top, next, assumptions)?;
+    let next = &direct_next;
     for binder in binders {
         let Some(head) = top.resources().owned_instance(binder.identity) else {
             continue;
@@ -5344,11 +5346,59 @@ pub(super) fn prepare_loop_top_state(
             rebound_failures.push(message);
         }
     }
+    // A direct conditional clause uses the same ordinary folded ownership
+    // internally; its field captures the head expression, not a mutable local.
+    let mut ordinary_specs = Vec::new();
+    let mut direct_carriers = Vec::new();
+    let mut direct_mutexes = Vec::new();
+    for spec in resource_specs {
+        if spec.guard().is_some() && matches!(spec.term(), CResourceTerm::MutexGuard { .. }) {
+            let identity = variables.next_in(budget)?;
+            match super::mutexes::prepare_direct_loop_guard(
+                &entry_state,
+                &top_state,
+                spec,
+                identity,
+                assumptions,
+            ) {
+                Ok((updated, mutex)) => {
+                    let instance = updated
+                        .resources()
+                        .owned_instance(identity)
+                        .expect("checked direct loop preparation installs its carrier");
+                    direct_carriers.push(CResourceFact::own(CResource::Instance(instance.clone())));
+                    direct_mutexes.push(mutex);
+                    top_state = updated;
+                }
+                Err(message) => rebound_failures.push(message),
+            }
+        } else {
+            ordinary_specs.push(spec.clone());
+        }
+    }
+    top_state = super::mutexes::select_direct_loop_guards(&top_state, direct_mutexes);
     // The loop's declarations are evaluated where the loop starts, over the
     // head's models: the clause arguments are the ones at loop entry, and the
     // models are the fresh ones an arbitrary visit carries.
-    let (body_state, body_failures) =
-        loop_body_resource_context(&head_state, &top_state, resource_specs, assumptions, budget)?;
+    let (mut body_state, body_failures) = loop_body_resource_context(
+        &head_state,
+        &top_state,
+        &ordinary_specs,
+        assumptions,
+        budget,
+    )?;
+    if ordinary_specs.is_empty() && !direct_carriers.is_empty() {
+        body_state = body_state.with_resource_context(ResourceContext::new());
+    }
+    if !direct_carriers.is_empty() {
+        let missing = direct_carriers
+            .into_iter()
+            .filter(|fact| !body_state.resources().contains_exact_representation(fact))
+            .collect::<Vec<_>>();
+        body_state = body_state
+            .clone()
+            .with_resource_context(body_state.resources().clone().unchecked_with_facts(missing));
+    }
     // A declaring loop's body does not hold the frame's iterated ownership
     // facts, so a guard cell it writes escapes the store rule; the frame
     // loses any fact whose guard cells the loop may write.

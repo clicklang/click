@@ -2441,3 +2441,83 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
         );
     }
 }
+
+#[test]
+fn conditional_loop_resources_parse_print_and_resolve_scope() {
+    let source = r#"
+        verifying "conditional.c";
+        int32 conditional(int32 *p, int32 *q, int32 n) {
+            ensures result == 0;
+        } by {
+            loop {
+                decreases n;
+                if n > bound {
+                    owns p[0..1];
+                    views q[0..1];
+                }
+                invariant n >= 0;
+            }
+        }
+    "#;
+    let parsed = parse(source).expect("conditional loop resources parse");
+    let function = &parsed.function_blocks()[0];
+    let tactics = function.grouped_proof().unwrap().tactics().unwrap();
+    let ProofTactic::Loop(clause) = &tactics[0] else {
+        panic!("loop");
+    };
+    assert_eq!(clause.resources().len(), 2);
+    assert!(
+        matches!(&clause.resources()[0], ResourceClause::Conditional { resource, .. } if matches!(resource.as_ref(), ResourceClause::OwnMemory(_)))
+    );
+    assert!(
+        matches!(&clause.resources()[1], ResourceClause::Conditional { resource, .. } if matches!(resource.as_ref(), ResourceClause::ViewMemory(_)))
+    );
+    let printed = crate::surface::printing::format_partial_tactic_sequence(tactics);
+    let reparsed = parse(&format!(r#"verifying "conditional.c";
+        int32 conditional(int32 *p, int32 *q, int32 n) {{ ensures result == 0; }} by {{ {printed} }}"#)).unwrap();
+    assert_eq!(
+        reparsed.function_blocks()[0]
+            .grouped_proof()
+            .unwrap()
+            .tactics()
+            .unwrap(),
+        tactics
+    );
+    let scoped = clause.with_scope(BTreeMap::from([(
+        "bound".to_string(),
+        ContractExpression::CFragment(CExpression::Value(int32(4))),
+    )]));
+    let resolved = scoped.resolved().unwrap();
+    assert_ne!(resolved.resources(), clause.resources());
+    let ResourceClause::Conditional { condition, .. } = &resolved.resources()[0] else {
+        panic!("conditional");
+    };
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(condition),
+        "n > 4"
+    );
+}
+
+#[test]
+fn conditional_loop_resources_reject_unsupported_binding_and_body_items() {
+    for (body, expected) in [
+        (
+            "owns item: payload(p);",
+            "conditional loop resource binders are not supported",
+        ),
+        (
+            "invariant n >= 0;",
+            "conditional loop contracts accept `owns` or `views`",
+        ),
+        ("", "conditional loop contract must contain"),
+    ] {
+        let source = format!(
+            r#"verifying "conditional.c";
+            int32 conditional(int32 *p, int32 n) {{ ensures result == 0; }} by {{
+                loop {{ if n > 0 {{ {body} }} }}
+            }}"#
+        );
+        let error = parse(&source).expect_err("unsupported conditional declaration");
+        assert!(error.message().contains(expected), "{error:?}");
+    }
+}

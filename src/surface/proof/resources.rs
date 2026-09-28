@@ -1514,6 +1514,11 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         .resources()
         .directly_supporting_owned_entry(&abstract_resource, &assumptions);
     let (observed_quantity, counted_resource, explicit_quantity) = match resource {
+        ResourceClause::Conditional { .. } => {
+            return Err(ClickError::new(
+                "conditional resources cannot be observed without establishing their condition",
+            ));
+        }
         ResourceClause::Named { .. } => {
             return Err(ClickError::new(
                 "named resources do not have counted observations",
@@ -2048,6 +2053,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
 
 fn resource_clause_subject(resource: &ResourceClause) -> ResourceSubject {
     match resource {
+        ResourceClause::Conditional { resource, .. } => resource_clause_subject(resource),
         ResourceClause::Named { resource, .. } => resource_clause_subject(resource),
         ResourceClause::Quantified { resource, .. } => resource_clause_subject(resource),
         ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
@@ -4725,6 +4731,13 @@ pub(super) fn instantiate_resource_clause(
     substitutions: &BTreeMap<String, ContractExpression>,
 ) -> Result<ResourceClause, String> {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => Ok(ResourceClause::Conditional {
+            condition: substitute_click_proposition(condition, substitutions)?,
+            resource: Box::new(instantiate_resource_clause(resource, substitutions)?),
+        }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
             binding: binding.clone(),
             resource: Box::new(instantiate_resource_clause(resource, substitutions)?),
@@ -4815,6 +4828,7 @@ fn materialize_composite_resource_cells_from_snapshot(
     parameters: &[syntax::C0Parameter],
 ) -> CMemory {
     let Some((segment, range)) = (match resource_clause {
+        ResourceClause::Conditional { .. } => None,
         ResourceClause::Named { .. } => None,
         ResourceClause::ViewMemory(segment) => {
             lowered.memory_view_range().map(|range| (segment, range))

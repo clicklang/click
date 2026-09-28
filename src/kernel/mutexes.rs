@@ -11,8 +11,14 @@
 
 mod assumed_protocol;
 pub(super) use assumed_protocol::{OpaqueMutexAcquisitions, opaque_runtime_transition};
+mod direct_loop_guard;
+#[cfg(test)]
+mod direct_loop_guard_tests;
 mod invariant_interface;
 mod loop_protocol;
+pub(super) use direct_loop_guard::{
+    normalize_direct_loop_guards, prepare_direct_loop_guard, select_direct_loop_guards,
+};
 pub(super) use loop_protocol::abstract_loop_mutex;
 
 use std::cmp::Ordering as CmpOrdering;
@@ -206,6 +212,8 @@ impl StorageProvenance {
 struct MutexLedgerStorage {
     identity: u64,
     entries: PersistentMap<Pointer, MutexEntry>,
+    direct_loop_carriers: PersistentMap<Pointer, Arc<direct_loop_guard::DirectLoopGuard>>,
+    direct_loop_selection: Arc<Vec<Pointer>>,
     by_block: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
     reserved: MutexStorageIndex,
     by_provenance: PersistentMap<StorageProvenance, PersistentMap<Pointer, u32>>,
@@ -1365,6 +1373,9 @@ impl MutexContext {
         usage: Option<MutexUseBinding>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
+        if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
+            return opened.acquire_with_use(mutex, usage, assumptions);
+        }
         if let Some(concrete) = self.materialize_loop_mutex(mutex, assumptions)? {
             return concrete.acquire_with_use(mutex, usage, assumptions);
         }
@@ -1494,6 +1505,9 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
+        if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
+            return opened.release_current(mutex, assumptions);
+        }
         if let Some(concrete) = self.materialize_loop_mutex(mutex, assumptions)? {
             return concrete.release_current(mutex, assumptions);
         }
@@ -1545,6 +1559,9 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
+        if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
+            return opened.destroy(mutex, assumptions);
+        }
         if let Some(concrete) = self.materialize_loop_mutex(mutex, assumptions)? {
             return concrete.destroy(mutex, assumptions);
         }
@@ -1717,6 +1734,8 @@ impl MutexLedger {
             storage: Arc::new(MutexLedgerStorage {
                 identity: Self::fresh_identity(),
                 entries: PersistentMap::default(),
+                direct_loop_carriers: PersistentMap::default(),
+                direct_loop_selection: Arc::new(Vec::new()),
                 by_block: PersistentMap::default(),
                 reserved: MutexStorageIndex::default(),
                 by_provenance: PersistentMap::default(),
@@ -1902,6 +1921,8 @@ impl MutexLedger {
         Self {
             storage: Arc::new(MutexLedgerStorage {
                 identity: Self::fresh_identity(),
+                direct_loop_carriers: self.storage.direct_loop_carriers.clone(),
+                direct_loop_selection: self.storage.direct_loop_selection.clone(),
                 reserved: if self.get(&mutex).is_none() {
                     self.storage
                         .reserved
@@ -1977,6 +1998,8 @@ impl MutexLedger {
                     false,
                 ),
                 entries: self.storage.entries.without_key(mutex),
+                direct_loop_carriers: self.storage.direct_loop_carriers.without_key(mutex),
+                direct_loop_selection: self.storage.direct_loop_selection.clone(),
                 ambiguous_automatic_storage: if may_alias_automatic_storage(&mutex.block) {
                     self.storage.ambiguous_automatic_storage.without_key(mutex)
                 } else {

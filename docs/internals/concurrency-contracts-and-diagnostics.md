@@ -350,6 +350,21 @@ values, using a separate proof case for the skipped negative-input loop.
 Checked remainder arithmetic establishes parity after increment without
 changing the C source or treating a bounded unrolling as an induction proof.
 
+The direct loop clause `if i % 2 == 1 { owns mutex_guard(&object->mutex); }`
+also verifies the frozen source. Its private ordinary resource captures the
+head condition as a scalar field; a pointer-indexed lookup locates the owned
+instance for checked unfolding at a mutex operation. The lookup supplies no
+ownership. At each backedge, checked folding establishes the newly evaluated
+condition before the models are normalized for comparison. Changing the index
+without performing the required mutex transition therefore fails, even when
+the mutex ledger itself has not changed.
+
+This form currently accepts scalar comparisons over C values for mutex guards.
+Conditions such as `held(mutex)` cannot define their own ownership. Other
+conditional loop resource clauses use the ordinary decided-condition rules.
+The explicit named-resource form remains available and uses the same guard
+ownership checks.
+
 ## Failure explanations are part of the design
 
 Every implemented operation must have a corresponding human-facing failure

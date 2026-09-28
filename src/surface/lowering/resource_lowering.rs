@@ -445,6 +445,11 @@ fn materialize_symbolic_access_resource_cells(
             continue;
         };
         match resource {
+            ResourceClause::Conditional { .. } => {
+                return Err(ClickError::new(
+                    "conditional resource assertions are supported only in loop contracts",
+                ));
+            }
             ResourceClause::Named { .. } => {}
             ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
                 memory = materialize_access_segment_cells(memory, segment, parameters, arguments)?;
@@ -515,6 +520,7 @@ pub(in crate::surface) fn check_resource_segment_base_loadability(
             }
             ResourceClause::MemoryAggregate { segments, .. } => segments,
             ResourceClause::Named { .. }
+            | ResourceClause::Conditional { .. }
             | ResourceClause::Declared { .. }
             | ResourceClause::Quantified { .. }
             | ResourceClause::Iterated(_) => continue,
@@ -1345,6 +1351,9 @@ fn lower_resource_clause_with_values_mode_at_entry(
     base_assumptions: &PureFactContext,
 ) -> Result<CResourceFact, ClickError> {
     match resource {
+        ResourceClause::Conditional { .. } => Err(ClickError::new(
+            "conditional resource assertions require loop-contract lowering",
+        )),
         ResourceClause::Named { binding, resource } => {
             let lowered = lower_resource_clause_with_values_mode_at_entry(
                 resource,
@@ -2223,6 +2232,7 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
     state: &CState,
 ) -> Result<Option<Vec<CMemoryRange>>, ClickError> {
     let ranges = match resource {
+        ResourceClause::Conditional { .. } => return Ok(None),
         ResourceClause::Named { .. } => return Ok(None),
         ResourceClause::ViewMemory(_) | ResourceClause::OwnMemory(_) => {
             let lowered = lower_resource_clause_at_state(resource, parameters, arguments, state)?;
@@ -2336,6 +2346,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
     arguments: &[CExpression],
 ) -> Result<Vec<(String, ConcreteMemoryRangeSeed)>, ClickError> {
     let segments = match resource {
+        ResourceClause::Conditional { .. } => return Ok(vec![]),
         ResourceClause::Named { .. } => return Ok(vec![]),
         ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
             vec![segment]

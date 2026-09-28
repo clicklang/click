@@ -980,8 +980,12 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     // Loop-level resource declarations are lowered once, before the body, so
     // every loop reaches its footprint and its body resource context without
     // re-walking the contract.
-    let loop_resources =
-        loop_resource_declarations(function_block, parsed_function, resource_environment)?;
+    let loop_resources = loop_resource_declarations(
+        function_block,
+        parsed_function,
+        resource_environment,
+        &mut lowerer,
+    )?;
     lowerer.loop_resources = loop_resources;
     let parsed_kernel_function = parsed_function.to_kernel_function();
     let body = if parsed_function.prelowered_kernel_function().is_some() {
@@ -1902,6 +1906,7 @@ fn loop_resource_declarations(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
     resource_environment: &ResourceEnvironment,
+    lowerer: &mut AnnotationLowerer<'_>,
 ) -> Result<BTreeMap<usize, LoopResourceDeclaration>, ClickError> {
     let mut declarations: BTreeMap<usize, LoopResourceDeclaration> = BTreeMap::new();
     for clause in function_block.structural_clauses() {
@@ -1913,6 +1918,29 @@ fn loop_resource_declarations(
         }
         let declaration = declarations.entry(*loop_index).or_default();
         for resource in clause.resources() {
+            if let ResourceClause::Conditional {
+                condition,
+                resource,
+            } = resource
+            {
+                let guard = lowerer
+                    .click_proposition_to_spec_proposition(
+                        condition,
+                        &SpecElaborationContext::for_loop_invariant(*loop_index),
+                    )
+                    .map_err(ClickError::new)?;
+                let start = declaration.specs.len();
+                append_entry_resource_specs(
+                    resource,
+                    parsed_function.parameters(),
+                    resource_environment,
+                    &mut declaration.specs,
+                )?;
+                for spec in &mut declaration.specs[start..] {
+                    *spec = spec.clone().with_guard(guard.clone());
+                }
+                continue;
+            }
             let resource = &loop_resource_with_field_schema(resource, resource_environment)?;
             append_entry_resource_specs(
                 resource,

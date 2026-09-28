@@ -2529,6 +2529,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
 
 fn declared_resource_family(resource: &ResourceClause) -> Option<&str> {
     match resource {
+        ResourceClause::Conditional { resource, .. } => declared_resource_family(resource),
         ResourceClause::Named { resource, .. } | ResourceClause::Quantified { resource, .. } => {
             declared_resource_family(resource)
         }

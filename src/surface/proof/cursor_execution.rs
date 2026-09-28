@@ -346,7 +346,7 @@ fn resource_is_direct_observed_core(
             })?;
             let core = match child {
                 ResourceClause::Named { .. } => continue,
-                ResourceClause::Quantified { .. } => continue,
+                ResourceClause::Quantified { .. } | ResourceClause::Conditional { .. } => continue,
                 ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => {
                     ResourceClause::ViewMemory(segment)
                 }

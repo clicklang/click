@@ -2117,6 +2117,14 @@ pub(super) fn reject_duplicate_owned_declared_resource_clauses<'a>(
 
 pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) -> String {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => format!(
+            "if {} {{ {}; }}",
+            crate::surface::diagnostics::describe_click_proposition(condition),
+            describe_resource_clause(resource)
+        ),
         ResourceClause::Named { binding, resource } => {
             format!("{}: {}", binding.name, describe_resource_clause(resource))
         }
@@ -3089,6 +3097,26 @@ pub(super) fn validate_resource_clause(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => {
+            validate_proposition_expression_types(
+                condition,
+                variables,
+                click_function_types,
+                context,
+            )?;
+            validate_resource_clause(
+                resource,
+                resources,
+                recursive_resources,
+                click_functions,
+                click_function_types,
+                variables,
+                context,
+            )
+        }
         ResourceClause::Named { resource, .. } => validate_resource_clause(
             resource,
             resources,

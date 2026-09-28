@@ -5583,6 +5583,37 @@ impl Parser {
                 // A loop declares resources exactly as a contract does. They
                 // bound the body's authority and the loop's write footprint,
                 // so they are region declarations rather than proof items.
+                if self.peek_ident() == Some("if") {
+                    self.position += 1;
+                    let condition = self.parse_proposition()?;
+                    self.expect(Token::LBrace)?;
+                    let start = resources.len();
+                    while self.peek() != Some(&Token::RBrace) {
+                        let access = match self.expect_ident("conditional loop resource assertion")?.as_str() {
+                            "owns" => ResourceAccessMode::Own,
+                            "views" => ResourceAccessMode::View,
+                            _ => return Err(self.error("conditional loop contracts accept `owns` or `views` resource assertions")),
+                        };
+                        if self.peek_ident().is_some()
+                            && self.tokens.get(self.position + 1) == Some(&Token::Colon)
+                        {
+                            return Err(self.error("conditional loop resource binders are not supported; use an unnamed `owns` or `views` assertion"));
+                        }
+                        let resource = self.parse_resource_target(access)?;
+                        self.expect(Token::Semicolon)?;
+                        resources.push(ResourceClause::Conditional {
+                            condition: condition.clone(),
+                            resource: Box::new(resource),
+                        });
+                    }
+                    self.expect(Token::RBrace)?;
+                    if resources.len() == start {
+                        return Err(self.error(
+                            "conditional loop contract must contain an `owns` or `views` assertion",
+                        ));
+                    }
+                    continue;
+                }
                 if self.peek_ident() == Some("owns") {
                     self.position += 1;
                     let resource = self.parse_loop_resource_binding()?;

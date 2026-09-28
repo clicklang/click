@@ -7367,6 +7367,11 @@ fn resource_clause_to_resource_spec_for_body(
     result_type: Option<crate::kernel::CType>,
 ) -> Result<CResourceSpec, ClickError> {
     let role = match resource {
+        ResourceClause::Conditional { .. } => {
+            return Err(ClickError::new(
+                "conditional resource assertions are supported only in loop contracts",
+            ));
+        }
         ResourceClause::Named { .. } | ResourceClause::Quantified { .. } => {
             CResourceTransferRole::Consume
         }
@@ -7397,6 +7402,9 @@ fn resource_clause_to_resource_spec_with_metadata(
     snapshot: crate::kernel::CResourceSnapshot,
 ) -> Result<CResourceSpec, ClickError> {
     match resource {
+        ResourceClause::Conditional { .. } => Err(ClickError::new(
+            "conditional resource assertions require loop-contract lowering",
+        )),
         ResourceClause::Named { binding, resource } => {
             let inner = resource_clause_to_resource_spec_with_metadata(
                 resource,
@@ -7598,6 +7606,19 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ResourceClause, String> {
     match resource {
+        ResourceClause::Conditional {
+            condition,
+            resource,
+        } => Ok(ResourceClause::Conditional {
+            condition: crate::surface::lowering::substitute_click_proposition_in(
+                condition,
+                substitutions,
+            )?,
+            resource: Box::new(substitute_resource_clause_for_summary_in(
+                resource,
+                substitutions,
+            )?),
+        }),
         ResourceClause::Named { binding, resource } => Ok(ResourceClause::Named {
             binding: match substitutions.instance_rename(&binding.name, binding.identity) {
                 Some(name) => ResourceInstanceBinding {
