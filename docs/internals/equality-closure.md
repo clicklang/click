@@ -125,6 +125,13 @@ congruence or a joined scalar class even though the graph does not itself
 reorder addition. Other addend rules and the legacy fact-path lookup still
 cover forms outside this graph fragment.
 
+Direct memory-resource matching now queries graph equality for its int32 range
+start and end values before the legacy fact-path lookup. These fields are
+scalar values, not byte-offset equivalences; the resource base still follows
+its separate pointer check. Congruent sums and registered same-snapshot loads
+can therefore identify equal range endpoints, while changed snapshots and
+withdrawn premises remain distinct.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads

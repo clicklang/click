@@ -184,6 +184,13 @@ fn bitvectors_match_for_resource_check(
     if left == right {
         return true;
     }
+    // Memory-range endpoints are int32 values. Their equality does not
+    // identify byte offsets or grant access to either range.
+    if assumptions.equality_graph.has_term_equivalences()
+        && assumptions.equality_graph.are_int32_equal(left, right)
+    {
+        return true;
+    }
     if assumptions.bitvector_terms_equal_from_facts(left, right) {
         return true;
     }

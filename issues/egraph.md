@@ -277,6 +277,12 @@ candidate in the existing greedy matcher may still build it first. Tests cover
 changed snapshots, withdrawn premises, and multi-size reassociated matching;
 the graph itself still does not reorder addition.
 
+Direct memory-resource matching now asks the graph for equality of its int32
+range start and end values. The resource base still uses its pointer check;
+this does not turn wrapping index equality into exact byte-offset equality.
+Regressions cover same-snapshot load endpoints, a changed snapshot, premise
+withdrawal, and multi-size matching without building the legacy fact index.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
