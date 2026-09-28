@@ -132,12 +132,13 @@ its separate pointer check. Congruent sums and registered same-snapshot loads
 can therefore identify equal range endpoints, while changed snapshots and
 withdrawn premises remain distinct.
 
-Direct composite and token matching now also checks the graph for `Int32`
-resource argument values before the legacy scalar resolution path. This is a
-value comparison; byte-typed arguments and pointer arguments retain their
-separate rules. Registered loads in one snapshot may match as arguments, while
-changed snapshots and withdrawn premises do not. Multi-size regressions check
-that graph matches avoid building the legacy fact index.
+Direct composite, token, and instance matching now also checks the graph for
+`Int32` resource argument values and instance fields before the legacy scalar
+resolution path. These paths share one typed value rule; byte-typed arguments
+and pointer arguments retain their separate rules. Registered loads in one
+snapshot may match as values, while changed snapshots and withdrawn premises
+do not. Multi-size regressions check that graph matches avoid building the
+legacy fact index.
 
 For a range pair already selected for composition, endpoint comparison uses
 the graph-backed int32 condition decision. The composition helper no longer
