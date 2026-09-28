@@ -75,6 +75,15 @@ impl ResourceParameterSubstitution {
         let description = self
             .description(parameter)
             .ok_or(ResourceParameterError::UnknownParameter(parameter))?;
+        // This legacy description substitution has no reference-binder map.
+        // Refuse rather than silently turn a parameterized resource into a
+        // different assertion by dropping its reference arguments.
+        if !description.resource_arguments().is_empty() || !spec.resource_arguments().is_empty() {
+            return Err(ResourceParameterError::UnsupportedDescriptionArgument {
+                parameter,
+                index: description.arguments().len(),
+            });
+        }
         let mut arguments = Vec::with_capacity(description.arguments().len());
         let mut parameter_types = Vec::with_capacity(description.arguments().len());
         for (index, argument) in description.arguments().iter().enumerate() {
@@ -220,6 +229,31 @@ mod tests {
             resolved.instance_schema(),
             resolved_output.instance_schema()
         );
+    }
+
+    #[test]
+    fn legacy_description_substitution_cannot_erase_resource_arguments() {
+        use crate::kernel::{CResourceTransferRole, ResourceReference};
+        let target = instance(20, 7);
+        let wrapper = instance(21, 8)
+            .with_resource_arguments(vec![ResourceReference::from_instance(&target)]);
+        let substitution = ResourceParameterSubstitution::new(
+            &[Variable(1)],
+            &[ResourceDescription::from_instance(&wrapper)],
+        )
+        .unwrap();
+        let spec = CResourceSpec::parameter(
+            Variable(1),
+            Variable(10),
+            "item".into(),
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap();
+        assert!(matches!(
+            substitution.instantiate_spec(&spec),
+            Err(ResourceParameterError::UnsupportedDescriptionArgument { .. })
+        ));
     }
 
     #[test]

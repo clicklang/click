@@ -1129,6 +1129,10 @@ pub(in crate::surface) fn resource_context_from_requirements(
     state: &CState,
 ) -> Result<ResourceContext, ClickError> {
     let mut context = state.resources().clone();
+    // One section-local state, moved forward after each owning requirement.
+    // Later references can select earlier binders without cloning the state
+    // for every clause or introducing ownership beyond these requirements.
+    let mut lowering_state = state.clone();
     for requirement in requires {
         if let Requirement::Resource(resource) = requirement.inner() {
             // This lowering path has no proposition assumptions yet. It builds
@@ -1139,8 +1143,12 @@ pub(in crate::surface) fn resource_context_from_requirements(
             // the kernel section evaluator once all pure requirements and
             // clause supplies are available.
             context = context.unchecked_with_facts(lower_resource_clause_facts_at_state_for_entry(
-                resource, parameters, arguments, state,
+                resource,
+                parameters,
+                arguments,
+                &lowering_state,
             )?);
+            lowering_state = lowering_state.with_resource_context(context.clone());
         }
     }
     Ok(context)
@@ -1389,12 +1397,13 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 .map(|instance| instance.fields().to_vec().into())
                 .or_else(|| binding.fields.clone())
                 .ok_or_else(|| ClickError::new("resource instance has no symbolic field state"))?;
-            let instance = crate::kernel::ResourceInstance::new(
+            let instance = crate::kernel::ResourceInstance::new_with_resource_arguments(
                 binding.identity,
                 name,
                 arguments,
                 schema,
                 fields,
+                lower_resource_reference_arguments(resource, state)?,
             )
             .ok_or_else(|| {
                 ClickError::new("resource instance fields do not match the declared schema")
@@ -1515,6 +1524,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
             Ok(CResourceFact::own_memory(range))
         }
         ResourceClause::Declared {
+            resource_arguments: _,
             access,
             kind,
             name,
@@ -2847,6 +2857,32 @@ pub(in crate::surface) fn array_refs_for_parameters(
                     element_type,
                 },
             ))
+        })
+        .collect()
+}
+
+/// Capturing an argument preserves only its reference, never its current fields
+/// or ownership. The retained scope also contains already transferred instances.
+pub(in crate::surface) fn lower_resource_reference_arguments(
+    resource: &ResourceClause,
+    state: &CState,
+) -> Result<Vec<crate::kernel::ResourceReference>, ClickError> {
+    let ResourceClause::Declared {
+        resource_arguments, ..
+    } = resource
+    else {
+        return Ok(Vec::new());
+    };
+    resource_arguments
+        .iter()
+        .map(|binding| {
+            crate::instrumentation::record_deterministic_work(1);
+            state
+                .resource_instance_fields(binding.identity)
+                .map(crate::kernel::ResourceReference::from_instance)
+                .ok_or_else(|| {
+                    ClickError::new(format!("Requires resource reference `{}`", binding.name))
+                })
         })
         .collect()
 }

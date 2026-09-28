@@ -2785,6 +2785,9 @@ pub struct CPredicateUnfolding {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CCompositeResourceDefinition {
+    /// Typed resource-reference parameters. These describe arguments, not
+    /// owned ingredients; custody requires an explicit body clause.
+    pub(super) resource_parameters: Vec<CResourceSpec>,
     pub(super) instance_schema: Option<ResourceFieldSchema>,
     pub(super) guarded_by: Option<CMutexGuardDeclaration>,
     pub(super) matched: Option<CResourceMatchBody>,
@@ -5843,6 +5846,7 @@ pub struct ResourceInstance {
     pub(super) arguments: ResourceArguments,
     pub(super) schema: ResourceFieldSchema,
     pub(super) fields: ResourceArguments,
+    pub(super) resource_arguments: Arc<[super::ResourceReference]>,
 }
 
 impl ResourceInstance {
@@ -5852,6 +5856,19 @@ impl ResourceInstance {
         arguments: ResourceArguments,
         schema: ResourceFieldSchema,
         fields: ResourceArguments,
+    ) -> Option<Self> {
+        Self::new_with_resource_arguments(identity, name, arguments, schema, fields, Vec::new())
+    }
+
+    /// Construct an exclusive atom with proof-only arguments. As for `new`, a
+    /// countable schema is rejected; references do not change countability.
+    pub fn new_with_resource_arguments(
+        identity: Variable,
+        name: String,
+        arguments: ResourceArguments,
+        schema: ResourceFieldSchema,
+        fields: ResourceArguments,
+        resource_arguments: Vec<super::ResourceReference>,
     ) -> Option<Self> {
         if schema.is_countable() || schema.fields().len() != fields.len() {
             return None;
@@ -5875,11 +5892,22 @@ impl ResourceInstance {
             arguments,
             schema,
             fields,
+            resource_arguments: resource_arguments.into(),
         })
     }
 
     pub fn identity(&self) -> Variable {
         self.identity
+    }
+    /// Attach proof-only references. This constructs an opaque atom, not
+    /// evidence that the resource or any referenced resource is owned.
+    pub fn with_resource_arguments(mut self, arguments: Vec<super::ResourceReference>) -> Self {
+        self.resource_arguments = arguments.into();
+        self
+    }
+
+    pub fn resource_arguments(&self) -> &[super::ResourceReference] {
+        &self.resource_arguments
     }
     pub fn name(&self) -> &str {
         &self.name
@@ -6236,6 +6264,9 @@ pub enum CResourceSnapshot {
 
 #[derive(Clone, Debug)]
 pub struct CResourceSpec {
+    /// Actual resource-reference binders, separate from C-valued arguments.
+    /// Naming a binder here grants no ownership of its occurrence.
+    resource_arguments: Arc<[Variable]>,
     term: CResourceTerm,
     /// A proof binder for one raw mutex authority. This does not change the
     /// resource family or turn the authority into a composite instance.
@@ -6404,6 +6435,7 @@ impl CResourceSpec {
         let spec = Self {
             term,
             mutex_authority_binding: None,
+            resource_arguments: Arc::from([]),
             access,
             quantity,
             quantity_snapshot: CResourceSnapshot::Current,
@@ -6538,6 +6570,7 @@ impl CResourceSpec {
                 "named resource instances require an owned unit composite term".into(),
             ));
         }
+        let references = resource.resource_arguments.clone();
         Self::new(
             CResourceTerm::Instance {
                 identity,
@@ -6550,6 +6583,7 @@ impl CResourceSpec {
             role,
             snapshot,
         )
+        .map(|spec| spec.with_resource_arguments(references.to_vec()))
     }
 
     pub fn parameter(
@@ -6583,6 +6617,11 @@ impl CResourceSpec {
         role: CResourceTransferRole,
         snapshot: CResourceSnapshot,
     ) -> Result<Self, CResourceSpecError> {
+        if !resource.resource_arguments.is_empty() {
+            return Err(CResourceSpecError::InvalidNestedTerm(
+                "resource arguments require an exclusive instance, not a counted clause".into(),
+            ));
+        }
         if resource.access != CResourceAccessMode::Own {
             return Err(CResourceSpecError::InvalidAccess {
                 family: resource.family(),
@@ -6724,6 +6763,15 @@ impl CResourceSpec {
         self.clause_position
     }
 
+    pub fn with_resource_arguments(mut self, arguments: Vec<Variable>) -> Self {
+        self.resource_arguments = arguments.into();
+        self
+    }
+
+    pub fn resource_arguments(&self) -> &[Variable] {
+        &self.resource_arguments
+    }
+
     pub fn with_source_arguments(mut self, arguments: Vec<String>) -> Self {
         self.source_arguments = Some(arguments.into());
         self
@@ -6775,7 +6823,8 @@ impl CResourceSpec {
                 self.role,
                 self.snapshot,
             )
-            .expect("validated instance terms have valid owned unit bodies"),
+            .expect("validated instance terms have valid owned unit bodies")
+            .with_resource_arguments(self.resource_arguments().to_vec()),
         )
     }
 
@@ -6873,6 +6922,7 @@ impl CResourceSpec {
 impl PartialEq for CResourceSpec {
     fn eq(&self, other: &Self) -> bool {
         self.term == other.term
+            && self.resource_arguments == other.resource_arguments
             && self.mutex_authority_binding == other.mutex_authority_binding
             && self.access == other.access
             && self.quantity == other.quantity
@@ -6888,6 +6938,7 @@ impl Eq for CResourceSpec {}
 impl Hash for CResourceSpec {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.term.hash(state);
+        self.resource_arguments.hash(state);
         self.mutex_authority_binding.hash(state);
         self.access.hash(state);
         self.quantity.hash(state);
@@ -6902,6 +6953,7 @@ impl Ord for CResourceSpec {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (
             &self.term,
+            &self.resource_arguments,
             &self.mutex_authority_binding,
             self.access,
             &self.quantity,
@@ -6912,6 +6964,7 @@ impl Ord for CResourceSpec {
         )
             .cmp(&(
                 &other.term,
+                &other.resource_arguments,
                 &other.mutex_authority_binding,
                 other.access,
                 &other.quantity,

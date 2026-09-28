@@ -859,6 +859,7 @@ impl<'a> Proof<'a> {
         resource: &ResourceClause,
     ) -> Result<ResourceClause, ClickError> {
         let ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
@@ -869,6 +870,7 @@ impl<'a> Proof<'a> {
             return Ok(resource.clone());
         };
         Ok(ResourceClause::Declared {
+            resource_arguments: resource_arguments.clone(),
             access: *access,
             kind: *kind,
             name: name.clone(),

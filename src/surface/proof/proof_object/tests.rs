@@ -12607,6 +12607,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     );
 
     let marker_clause = ResourceClause::Declared {
+        resource_arguments: Vec::new(),
         access: ResourceAccessMode::Own,
         kind: ResourceKind::Token,
         name: "marker".to_string(),
@@ -12664,6 +12665,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     }
 
     let ready_clause = ResourceClause::Declared {
+        resource_arguments: Vec::new(),
         access: ResourceAccessMode::Own,
         kind: ResourceKind::Composite,
         name: "ready".to_string(),

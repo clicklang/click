@@ -3155,10 +3155,11 @@ fn abstract_loop_exit_binders(
             instances.push(instance.clone());
         }
         let base = instances[0].clone();
-        if instances[1..]
-            .iter()
-            .any(|instance| instance.name != base.name || instance.schema != base.schema)
-        {
+        if instances[1..].iter().any(|instance| {
+            instance.name != base.name
+                || instance.schema != base.schema
+                || instance.resource_arguments() != base.resource_arguments()
+        }) {
             return Err(format!(
                 "the exits hold different resources for loop binder `{}`",
                 binder.name
@@ -3181,12 +3182,13 @@ fn abstract_loop_exit_binders(
         if arguments == base.arguments && fields == base.fields {
             continue;
         }
-        let Some(joined) = ResourceInstance::new(
+        let Some(joined) = ResourceInstance::new_with_resource_arguments(
             binder.identity,
             base.name.clone(),
             arguments,
             base.schema.clone(),
             fields,
+            base.resource_arguments().to_vec(),
         ) else {
             return Err(format!(
                 "loop binder `{}` names an instance whose fields do not match its schema",
@@ -5681,6 +5683,8 @@ fn rebind_loop_binder_instances(
         let Some(inner) = spec.instance_resource_spec() else {
             continue;
         };
+        // Evaluate only the scalar shape here; references are checked separately below.
+        let inner = inner.with_resource_arguments(Vec::new());
         let (name, arguments) =
             match evaluate_function_resource_spec(&state, &inner, assumptions, budget)? {
                 Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity))
@@ -5699,12 +5703,20 @@ fn rebind_loop_binder_instances(
                     )));
                 }
             };
+        let references =
+            match crate::kernel::functions::evaluate_resource_reference_arguments(&state, spec) {
+                Ok(references) => references,
+                Err(_) => {
+                    return Ok(Err(format!(
+                        "loop binder `{binder}` requires its declared resource arguments"
+                    )));
+                }
+            };
         state = match rebind_one_loop_binder_instance(
             &state,
             identity,
             &binder,
-            &name,
-            &arguments,
+            (&name, &arguments, &references),
             &mut claimed,
             assumptions,
         ) {
@@ -5753,12 +5765,27 @@ pub(crate) fn c_loop_state_with_loop_binders_rebound(
                 (head.name.clone(), head.arguments.clone())
             }
         };
+        let references = match &binder.spec {
+            Some(spec) => {
+                crate::kernel::functions::evaluate_resource_reference_arguments(state, spec)
+                    .map_err(|_| {
+                        format!(
+                            "loop binder `{}` requires its declared resource arguments",
+                            binder.name
+                        )
+                    })?
+            }
+            None => loop_head_state
+                .resources()
+                .owned_instance(binder.identity)
+                .map(|head| head.resource_arguments().to_vec())
+                .unwrap_or_default(),
+        };
         rebound = rebind_one_loop_binder_instance(
             &rebound,
             binder.identity,
             &binder.name,
-            &name,
-            &arguments,
+            (&name, &arguments, &references),
             &mut claimed,
             assumptions,
         )?;
@@ -5777,13 +5804,18 @@ fn rebind_one_loop_binder_instance(
     state: &CState,
     identity: Variable,
     binder: &str,
-    name: &str,
-    arguments: &ResourceArguments,
+    resource: (
+        &str,
+        &ResourceArguments,
+        &[crate::kernel::ResourceReference],
+    ),
     claimed: &mut BTreeSet<Variable>,
     assumptions: &PureFactContext,
 ) -> Result<CState, String> {
+    let (name, arguments, references) = resource;
     let arguments_match = |instance: &ResourceInstance| {
-        instance.arguments.len() == arguments.len()
+        instance.resource_arguments() == references
+            && instance.arguments.len() == arguments.len()
             && instance
                 .arguments
                 .iter()
@@ -5820,12 +5852,13 @@ fn rebind_one_loop_binder_instance(
     }
     claimed.insert(identity);
     let held = CResourceFact::own(CResource::Instance(selected.clone()));
-    let Some(rebound) = ResourceInstance::new(
+    let Some(rebound) = ResourceInstance::new_with_resource_arguments(
         identity,
         selected.name.clone(),
         selected.arguments.clone(),
         selected.schema.clone(),
         selected.fields.clone(),
+        selected.resource_arguments().to_vec(),
     ) else {
         return Err(format!(
             "loop binder `{binder}` names an instance whose fields do not match its schema"
@@ -6057,12 +6090,13 @@ pub(crate) fn c_loop_state_with_head_binder_models(
         if held.fields == head.fields && held.arguments == head.arguments {
             continue;
         }
-        let Some(compared) = ResourceInstance::new(
+        let Some(compared) = ResourceInstance::new_with_resource_arguments(
             identity,
             held.name.clone(),
             head.arguments.clone(),
             held.schema.clone(),
             head.fields.clone(),
+            held.resource_arguments().to_vec(),
         ) else {
             continue;
         };
@@ -6113,12 +6147,13 @@ fn havoc_loop_binder_instance_fields(
             variables,
             budget,
         )?;
-        let Some(havoced) = ResourceInstance::new(
+        let Some(havoced) = ResourceInstance::new_with_resource_arguments(
             identity,
             instance.name.clone(),
             arguments,
             instance.schema.clone(),
             fields,
+            instance.resource_arguments().to_vec(),
         ) else {
             continue;
         };
@@ -6151,6 +6186,9 @@ fn loop_binder_declared_arguments(
     let Some(inner) = spec.instance_resource_spec() else {
         return Ok(None);
     };
+    // This helper returns scalar arguments only. Its callers retain and check
+    // reference arguments separately when selecting or reconstructing an instance.
+    let inner = inner.with_resource_arguments(Vec::new());
     Ok(
         match evaluate_function_resource_spec(state, &inner, assumptions, budget)? {
             Ok(CResourceFact::Own(CResource::Composite { name, arguments }, quantity))

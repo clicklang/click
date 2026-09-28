@@ -937,7 +937,16 @@ fn collect_resource_clause_binding_names(resource: &ResourceClause, names: &mut 
             collect_contract_expression_binding_names(quantity, names);
             collect_resource_clause_binding_names(resource, names);
         }
-        ResourceClause::Declared { arguments, .. } => {
+        ResourceClause::Declared {
+            arguments,
+            resource_arguments,
+            ..
+        } => {
+            names.extend(
+                resource_arguments
+                    .iter()
+                    .map(|binding| binding.name.clone()),
+            );
             for argument in arguments {
                 collect_contract_expression_binding_names(argument, names);
             }
@@ -1291,6 +1300,7 @@ fn rewrite_resource_clause_exact(
             )
         }
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
@@ -1309,6 +1319,7 @@ fn rewrite_resource_clause_exact(
                 .collect();
             (
                 ResourceClause::Declared {
+                    resource_arguments: resource_arguments.clone(),
                     access: *access,
                     kind: *kind,
                     name: name.clone(),
@@ -1732,12 +1743,14 @@ pub(in crate::surface) fn apply_contract_lets_to_resource_clause(
             })
         }
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
             arguments,
             parameter_types,
         } => Ok(ResourceClause::Declared {
+            resource_arguments: resource_arguments.clone(),
             access,
             kind,
             name,
@@ -2704,6 +2717,7 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         ContractExpression::ResourceWildcard => Ok(expression.clone()),
         ContractExpression::ResourceCount(resource) => {
             let ResourceClause::Declared {
+                resource_arguments,
                 access,
                 kind,
                 name,
@@ -2715,6 +2729,7 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             };
             Ok(ContractExpression::ResourceCount(Box::new(
                 ResourceClause::Declared {
+                    resource_arguments: resource_arguments.clone(),
                     access: *access,
                     kind: *kind,
                     name: name.clone(),

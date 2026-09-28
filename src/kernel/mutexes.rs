@@ -2216,6 +2216,7 @@ fn same_instance(previous: &Option<CResourceFact>, restored: &Option<CResourceFa
                 && previous.name() == restored.name()
                 && previous.arguments() == restored.arguments()
                 && previous.schema() == restored.schema()
+                && previous.resource_arguments() == restored.resource_arguments()
         }
         (None, None) => true,
         _ => false,

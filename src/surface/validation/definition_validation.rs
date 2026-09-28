@@ -161,7 +161,10 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             )));
         }
         if resources
-            .insert(definition.name().to_string(), definition.parameters().len())
+            .insert(
+                definition.name().to_string(),
+                definition.parameters().len() + definition.resource_parameters().len(),
+            )
             .is_some()
         {
             return Err(ClickError::new(format!(
@@ -1350,6 +1353,7 @@ fn resource_body_fields_as_parameters(
         .map_err(ClickError::new)?;
     Ok(Some(ResourceDefinition {
         name: definition.name.clone(),
+        resource_parameters: definition.resource_parameters.clone(),
         parameters,
         composite_body: Some(view),
         field_schema: definition.field_schema.clone(),

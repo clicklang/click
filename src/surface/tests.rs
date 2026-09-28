@@ -2571,3 +2571,60 @@ fn reports_syntax_and_type_failures_separately() {
         ClickErrorKind::Internal
     );
 }
+
+#[test]
+fn resource_parameters_are_references_separate_from_ownership() {
+    let source = r#"
+        resource marker(p: int32*) { field revision: int32; }
+        resource wrapper(p: int32*, cell: marker(p)) { field stamp: int32; }
+        int32 use(int32* p) {
+            owns cell: marker(p);
+            owns wrapped: wrapper(p, cell);
+            ensures result == 0;
+        }
+    "#;
+    let file = parser::parse(source).unwrap();
+    let wrapper = &file.resource_definitions()[1];
+    assert_eq!(wrapper.parameters().len(), 1);
+    assert_eq!(wrapper.resource_parameters().len(), 1);
+    assert!(wrapper.composite_body().unwrap().contains().is_empty());
+    let ResourceClause::Named {
+        binding: formal, ..
+    } = &wrapper.resource_parameters()[0]
+    else {
+        panic!()
+    };
+    assert_eq!(formal.name, "cell");
+    let owns_body = source.replace(
+        "field stamp: int32;",
+        "field stamp: int32; owns cell; fact cell.revision == stamp;",
+    );
+    let owned = parser::parse(&owns_body).unwrap();
+    let ResourceClause::Named { binding, .. } = &owned.resource_definitions()[1]
+        .composite_body()
+        .unwrap()
+        .contains()[0]
+    else {
+        panic!()
+    };
+    assert_eq!(binding.identity, formal.identity);
+
+    for invalid in [
+        source.replace(
+            "cell: marker(p)) { field stamp",
+            "cell: marker(p), n: int32) { field stamp",
+        ),
+        source.replace(
+            "cell: marker(p)) { field stamp",
+            "cell: marker(p), cell: marker(p)) { field stamp",
+        ),
+        source.replace("wrapper(p, cell)", "wrapper(p, missing)"),
+        source.replace(
+            "cell: marker(p)) { field stamp",
+            "p: marker(p)) { field stamp",
+        ),
+        source.replace("field stamp: int32;", ""),
+    ] {
+        assert!(parser::parse(&invalid).is_err(), "accepted {invalid}");
+    }
+}

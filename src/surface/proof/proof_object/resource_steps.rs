@@ -125,12 +125,13 @@ impl<'a> Proof<'a> {
             let identity = pre_state
                 .owned_resource_instance(binding.identity)
                 .map_or(binding.identity, |instance| instance.identity());
-            constructed = crate::kernel::ResourceInstance::new(
+            constructed = crate::kernel::ResourceInstance::new_with_resource_arguments(
                 identity,
                 name,
                 arguments,
                 schema.clone(),
                 proposed.into(),
+                crate::surface::lowering::lower_resource_reference_arguments(resource, before)?,
             )
             .ok_or_else(|| self.step_error("invalid fold fields"))?;
             &constructed

@@ -1380,6 +1380,15 @@ impl CPredicateUnfolding {
 }
 
 impl CCompositeResourceDefinition {
+    pub fn with_resource_parameters(mut self, parameters: Vec<CResourceSpec>) -> Self {
+        self.resource_parameters = parameters;
+        self
+    }
+
+    pub fn resource_parameters(&self) -> &[CResourceSpec] {
+        &self.resource_parameters
+    }
+
     pub(crate) fn with_mutex_guard(mut self, guarded_by: Option<CMutexGuardDeclaration>) -> Self {
         self.guarded_by = guarded_by;
         self
@@ -1420,6 +1429,7 @@ impl CCompositeResourceDefinition {
     ) -> Self {
         let fact_source_indices = (0..facts.len()).collect();
         Self {
+            resource_parameters: Vec::new(),
             instance_schema: None,
             guarded_by: None,
             matched: None,
@@ -1496,6 +1506,7 @@ impl CCompositeResourceDefinition {
         let fact_source_indices = (0..facts.len()).collect();
         let thread_confined = condition.is_some() || !contains.is_empty() || !facts.is_empty();
         Self {
+            resource_parameters: Vec::new(),
             instance_schema: None,
             guarded_by: None,
             matched: None,

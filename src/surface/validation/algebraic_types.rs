@@ -161,6 +161,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
             bindings,
             ResourceDefinition {
                 name: definition.name.clone(),
+                resource_parameters: definition.resource_parameters.clone(),
                 parameters,
                 composite_body: Some(body),
                 field_schema: definition.field_schema.clone(),
@@ -240,6 +241,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 continue;
             }
             ResourceClause::Declared {
+                resource_arguments,
                 access: ResourceAccessMode::Own,
                 kind,
                 name,
@@ -252,6 +254,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                     )));
                 }
                 contains.push(ResourceClause::Declared {
+                    resource_arguments: resource_arguments.clone(),
                     access: ResourceAccessMode::Own,
                     kind: *kind,
                     name: name.clone(),
@@ -262,13 +265,22 @@ pub(in crate::surface) fn resource_body_children<'b>(
             }
             ResourceClause::Named { binding, resource } => {
                 let ResourceClause::Declared {
-                    name, arguments, ..
+                    name,
+                    arguments,
+                    resource_arguments,
+                    ..
                 } = resource.as_ref()
                 else {
                     return Err(ClickError::new(
                         "child ownership requires a declared resource",
                     ));
                 };
+                if !resource_arguments.is_empty() {
+                    return Err(ClickError::new(format!(
+                        "owned child `{}` passes resource arguments; nested resource-argument child ownership is not supported yet",
+                        binding.name
+                    )));
+                }
                 (binding, name, arguments)
             }
             _ => {
@@ -454,6 +466,7 @@ pub(in crate::surface) fn resource_unmatched_body_scope<'b>(
     body.facts = facts;
     Ok(Some(ResourceDefinition {
         name: definition.name.clone(),
+        resource_parameters: definition.resource_parameters.clone(),
         parameters: definition.parameters.clone(),
         composite_body: Some(body),
         field_schema: definition.field_schema.clone(),

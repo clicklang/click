@@ -7,6 +7,7 @@ mod tests;
 struct DeclaredResourceInfo {
     fields: std::sync::Arc<BTreeMap<String, (usize, ClickType)>>,
     parameter_types: Vec<C0Type>,
+    resource_parameter_families: Vec<String>,
     kind: ResourceKind,
     has_fields: bool,
     /// Each matched-arm child slot of this resource and the resource that
@@ -31,6 +32,7 @@ struct DeclaredResourceScope {
     /// Names an unfold pattern bound to a scalar field's value. The parser
     /// allocated them an instance identity before the field was known.
     field_binders: std::cell::RefCell<BTreeSet<Variable>>,
+    unowned_resource_parameters: std::cell::RefCell<BTreeMap<Variable, String>>,
 }
 
 impl DeclaredResourceScope {
@@ -187,6 +189,11 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
                         .map(|(index, field)| (field.name().to_string(), (index, field.click_type().clone())))
                         .collect()),
                     has_fields: !definition.is_countable(),
+                    resource_parameter_families: definition.resource_parameters().iter().map(|parameter| {
+                        let ResourceClause::Named { resource, .. } = parameter else { unreachable!() };
+                        let ResourceClause::Declared { name, .. } = resource.as_ref() else { unreachable!() };
+                        name.clone()
+                    }).collect(),
                     parameter_types: definition
                         .parameters()
                         .iter()
@@ -215,6 +222,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
         .or_insert_with(|| DeclaredResourceInfo {
             fields: Default::default(),
             has_fields: false,
+            resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::Int32Pointer, C0Type::Int32],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -224,6 +232,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
         DeclaredResourceInfo {
             fields: Default::default(),
             has_fields: false,
+            resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -234,6 +243,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
         DeclaredResourceInfo {
             fields: Default::default(),
             has_fields: false,
+            resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -244,6 +254,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
         DeclaredResourceInfo {
             fields: Default::default(),
             has_fields: false,
+            resource_parameter_families: Vec::new(),
             parameter_types: vec![C0Type::VoidPointer],
             kind: ResourceKind::Token,
             child_slots: Default::default(),
@@ -254,6 +265,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
         children: Default::default(),
         instances: Default::default(),
         field_binders: Default::default(),
+        unowned_resource_parameters: Default::default(),
     };
 
     file.resource_definitions = file
@@ -376,11 +388,51 @@ fn expand_declared_resource_definition(
     mut definition: ResourceDefinition,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceDefinition, ClickError> {
+    if !definition.resource_parameters.is_empty() && definition.fields().is_empty() {
+        return Err(ClickError::new(
+            "resource parameters currently require a resource with fields",
+        ));
+    }
+    definition.resource_parameters = definition
+        .resource_parameters
+        .into_iter()
+        .map(|parameter| expand_declared_resource_clause(parameter, resource_definitions))
+        .collect::<Result<_, _>>()?;
     if let Some(composite_body) = definition.composite_body {
+        if !definition.resource_parameters.is_empty() && composite_body.matched.is_some() {
+            return Err(ClickError::new(
+                "resource parameters in matched resource bodies are not supported yet",
+            ));
+        }
+        let owned = composite_body
+            .contains
+            .iter()
+            .filter_map(|clause| match clause {
+                ResourceClause::Named { binding, .. } => Some(binding.identity),
+                _ => None,
+            })
+            .collect::<BTreeSet<_>>();
+        let unavailable = definition
+            .resource_parameters
+            .iter()
+            .filter_map(|parameter| {
+                let ResourceClause::Named { binding, .. } = parameter else {
+                    unreachable!()
+                };
+                (!owned.contains(&binding.identity))
+                    .then(|| (binding.identity, binding.name.clone()))
+            })
+            .collect();
+        let previous = resource_definitions
+            .unowned_resource_parameters
+            .replace(unavailable);
         definition.composite_body = Some(expand_declared_composite_resource_body(
             composite_body,
             resource_definitions,
         )?);
+        resource_definitions
+            .unowned_resource_parameters
+            .replace(previous);
     }
     Ok(definition)
 }
@@ -983,6 +1035,7 @@ fn expand_declared_resource_tactic_with_expressions(
             Ok(ProofTactic::UnfoldResource(
                 expand_declared_resource_clause(
                     ResourceClause::Declared {
+                        resource_arguments: Vec::new(),
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
                         name: application.name,
@@ -1264,6 +1317,7 @@ fn classify_function_decrease(
             Ok(CFunctionDecrease::Resource(
                 expand_declared_resource_clause(
                     ResourceClause::Declared {
+                        resource_arguments: Vec::new(),
                         access: ResourceAccessMode::View,
                         kind: ResourceKind::Token,
                         name: name.clone(),
@@ -1310,6 +1364,7 @@ fn expand_declared_resource_clause(
                 access: ResourceAccessMode::Own,
                 name,
                 arguments,
+                resource_arguments,
                 ..
             } = *resource
             else {
@@ -1323,10 +1378,22 @@ fn expand_declared_resource_clause(
                         "mutex authority has no fields or resource body to fold or unfold",
                     ));
                 }
-                let info = declared_resource_info(&name, arguments.len(), resource_definitions)?;
+                let info = declared_resource_info(
+                    &name,
+                    arguments.len() + resource_arguments.len(),
+                    resource_definitions,
+                )?;
+                validate_resource_reference_arguments(
+                    &name,
+                    &arguments,
+                    &resource_arguments,
+                    &info,
+                    resource_definitions,
+                )?;
                 return Ok(ResourceClause::Named {
                     binding,
                     resource: Box::new(ResourceClause::Declared {
+                        resource_arguments: resource_arguments.clone(),
                         access: ResourceAccessMode::Own,
                         kind: info.kind,
                         name,
@@ -1342,9 +1409,16 @@ fn expand_declared_resource_clause(
             }
             let info = declared_resource_info_with_fields(
                 &name,
-                arguments.len(),
+                arguments.len() + resource_arguments.len(),
                 resource_definitions,
                 true,
+            )?;
+            validate_resource_reference_arguments(
+                &name,
+                &arguments,
+                &resource_arguments,
+                &info,
+                resource_definitions,
             )?;
             if !info.has_fields {
                 return Err(ClickError::new(format!(
@@ -1428,6 +1502,7 @@ fn expand_declared_resource_clause(
             Ok(ResourceClause::Named {
                 binding,
                 resource: Box::new(ResourceClause::Declared {
+                    resource_arguments: resource_arguments.clone(),
                     access: ResourceAccessMode::Own,
                     kind: info.kind,
                     name,
@@ -1450,13 +1525,25 @@ fn expand_declared_resource_clause(
             })
         }
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind: _,
             name,
             arguments,
             parameter_types,
         } if parameter_types.is_empty() => {
-            let info = declared_resource_info(&name, arguments.len(), resource_definitions)?;
+            let info = declared_resource_info(
+                &name,
+                arguments.len() + resource_arguments.len(),
+                resource_definitions,
+            )?;
+            validate_resource_reference_arguments(
+                &name,
+                &arguments,
+                &resource_arguments,
+                &info,
+                resource_definitions,
+            )?;
             if (name == CResourceFact::ALLOCATION_RESOURCE_NAME
                 || name == "mutex_guard"
                 || name == "mutex_live"
@@ -1468,6 +1555,7 @@ fn expand_declared_resource_clause(
                 )));
             }
             Ok(ResourceClause::Declared {
+                resource_arguments: resource_arguments.clone(),
                 access,
                 kind: info.kind,
                 name,
@@ -1962,6 +2050,13 @@ fn expand_declared_resource_expression_node(
 ) -> Result<ContractExpression, ClickError> {
     match expression {
         ContractExpression::ResourceField(mut access) => {
+            if let Some(name) = resource_definitions
+                .unowned_resource_parameters
+                .borrow()
+                .get(&access.identity)
+            {
+                return Err(ClickError::new(format!("Requires owns {name}")));
+            }
             if resource_definitions
                 .field_binders
                 .borrow()
@@ -2194,7 +2289,7 @@ fn declared_resource_info_with_fields(
     let Some(info) = resource_definitions.get(name) else {
         return Err(ClickError::new(format!("unknown resource `{name}`")));
     };
-    let expected = info.parameter_types.len();
+    let expected = info.parameter_types.len() + info.resource_parameter_families.len();
     if expected != actual {
         return Err(ClickError::new(format!(
             "resource `{name}` expects {expected} argument(s), got {actual}"
@@ -2296,4 +2391,36 @@ pub(in crate::surface) fn standard_library_theorem_index(name: &str) -> Option<u
         })
         .get(name)
         .copied()
+}
+
+fn validate_resource_reference_arguments(
+    name: &str,
+    arguments: &[ContractExpression],
+    references: &[ResourceInstanceBinding],
+    info: &DeclaredResourceInfo,
+    definitions: &DeclaredResourceScope,
+) -> Result<(), ClickError> {
+    if arguments.len() != info.parameter_types.len()
+        || references.len() != info.resource_parameter_families.len()
+    {
+        return Err(ClickError::new(format!(
+            "resource `{name}` expects {} ordinary and {} named resource argument(s)",
+            info.parameter_types.len(),
+            info.resource_parameter_families.len()
+        )));
+    }
+    for (reference, expected) in references.iter().zip(&info.resource_parameter_families) {
+        let actual = definitions
+            .instance_resource(reference.identity)
+            .ok_or_else(|| {
+                ClickError::new(format!("unknown resource argument `{}`", reference.name))
+            })?;
+        if &actual != expected {
+            return Err(ClickError::new(format!(
+                "resource argument `{}` is `{actual}`, requires `{expected}`",
+                reference.name
+            )));
+        }
+    }
+    Ok(())
 }

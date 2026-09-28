@@ -1,3 +1,4 @@
+use super::ResourceReference;
 use super::loans::{
     CheckedLoanCallEvidence, CompositeLoanBacking, CompositeProjectionEvidence, LoanId, LoanLedger,
     LoanRefusal, LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
@@ -2871,6 +2872,9 @@ fn execute_verified_function_applications_with_suspension(
             let Some(instance_resource) = resource.instance_resource_spec() else {
                 continue;
             };
+            // This temporary clause evaluates C argument shape only. The
+            // original spec's reference arguments are captured separately.
+            let instance_resource = instance_resource.with_resource_arguments(Vec::new());
             let argument_state = produced_argument_state.get_or_insert_with(|| {
                 let views = transfer
                     .callee_resources
@@ -2930,10 +2934,29 @@ fn execute_verified_function_applications_with_suspension(
                 &mut variables,
                 budget,
             )?;
+            let references =
+                match evaluate_resource_reference_arguments(&entry_contract_state, resource) {
+                    Ok(references) => references,
+                    Err(error) => {
+                        return Ok(vec![CFunctionPath {
+                            outcome: CFunctionOutcome::RuntimeError(error),
+                            facts,
+                            obligations,
+                            loan_evidence: empty_checked_loan_evidence_sequence(),
+                        }]);
+                    }
+                };
             produced_instances.insert(
                 identity,
-                ResourceInstance::new(produced, name, arguments, schema.clone(), fields)
-                    .expect("fresh symbolic fields have their declared types"),
+                ResourceInstance::new_with_resource_arguments(
+                    produced,
+                    name,
+                    arguments,
+                    schema.clone(),
+                    fields,
+                    references,
+                )
+                .expect("fresh symbolic fields have their declared types"),
             );
         }
         let callee_resources = if produced_instances.is_empty() {
@@ -3033,14 +3056,9 @@ fn execute_verified_function_applications_with_suspension(
                     &mut variables,
                     budget,
                 )?;
-                ResourceInstance::new(
-                    before.identity,
-                    before.name.clone(),
-                    before.arguments.clone(),
-                    before.schema.clone(),
-                    fields,
-                )
-                .expect("fresh symbolic fields have their declared types")
+                let mut after = before.clone();
+                after.fields = fields;
+                after
             };
             post_state.resources = match post_state
                 .resources
@@ -5320,6 +5338,9 @@ fn evaluate_declared_resource_instances(
     let mut seen = BTreeSet::new();
     let mut declared = Vec::new();
     for spec in specs.iter().flat_map(|specs| specs.iter()) {
+        if !spec.resource_arguments().is_empty() {
+            return Ok(None);
+        }
         let Some(identity) = spec.instance_identity() else {
             continue;
         };
@@ -15370,10 +15391,14 @@ fn evaluate_contract_return_resource_context(
             };
             // A returned view or a clause with no checked entry borrow still
             // evaluates against the cells the contract makes readable.
-            let supply = state
-                .resources()
-                .clone()
-                .unchecked_with_facts(context.facts().iter().cloned());
+            let mut supply = state.resources().clone();
+            for fact in context.facts() {
+                if !matches!(fact.resource(), CResource::Instance(_))
+                    || !supply.contains_exact_representation(fact)
+                {
+                    supply = supply.unchecked_with_fact(fact.clone());
+                }
+            }
             let mut views = instance_arm_views(
                 &supply,
                 interface.composite_resource_definitions(),
@@ -17359,6 +17384,75 @@ pub(crate) fn arm_binding_program_spelling(
     Some(CValue::Pointer(aliased))
 }
 
+/// Reference type checking uses only the declaration and immutable reference
+/// identity/description. It never installs the referenced instance as owned.
+fn check_instance_resource_arguments(
+    evaluation: &CState,
+    instance: &ResourceInstance,
+    definition: &CCompositeResourceDefinition,
+    assumptions: &PureFactContext,
+) -> Result<(), ResourceRewriteRefusal> {
+    if instance.resource_arguments().len() != definition.resource_parameters().len() {
+        return Err("resource reference argument count does not match its declaration".into());
+    }
+    let mut formal_ids = BTreeSet::new();
+    let mut budget = ExecutionBudget::beside_live_state();
+    for (reference, formal) in instance
+        .resource_arguments()
+        .iter()
+        .zip(definition.resource_parameters())
+    {
+        if formal
+            .instance_identity()
+            .is_none_or(|identity| !formal_ids.insert(identity))
+        {
+            return Err("resource reference parameters require distinct named binders".into());
+        }
+        let schema = formal
+            .instance_schema()
+            .ok_or("resource reference parameter requires a named resource type")?;
+        let spec = formal
+            .instance_resource_spec()
+            .ok_or("resource reference parameter requires a named resource type")?;
+        if !spec.resource_arguments().is_empty() {
+            return Err("nested resource-reference parameter types are not supported yet".into());
+        }
+        let fact = evaluate_function_resource_spec(evaluation, &spec, assumptions, &mut budget)
+            .map_err(|_| "resource reference type evaluation exceeded its budget")?
+            .map_err(|_| "could not evaluate resource reference parameter type")?;
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact else {
+            return Err("resource reference parameter requires an exclusive resource type".into());
+        };
+        let description = reference.description();
+        if quantity.as_const() != Some(1)
+            || !description.resource_arguments().is_empty()
+            || description.family() != name
+            || description.schema() != schema
+            || description.arguments().len() != arguments.len()
+            || !description
+                .arguments()
+                .iter()
+                .zip(arguments.iter())
+                .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+        {
+            let binder = formal.binding_name().unwrap_or("resource");
+            let spelling = formal
+                .source_arguments()
+                .or_else(|| spec.source_arguments())
+                .map(|arguments| arguments.join(", "));
+            let required_type = match spelling {
+                Some(arguments) => format!("{name}({arguments})"),
+                None if arguments.is_empty() => format!("{name}()"),
+                None => format!("{name}(...)"),
+            };
+            return Err(ResourceRewriteRefusal::OwnedMessage(format!(
+                "Requires {binder}: {required_type}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn rewrite_resource_instance_selecting_children(
     state: &CState,
     instance: &ResourceInstance,
@@ -17399,6 +17493,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         return Err("fold result identity is already in use".into());
     }
     let mut evaluation = instance_body_evaluation(state, instance, definition)?;
+    check_instance_resource_arguments(&evaluation, instance, definition, assumptions)?;
     let mut budget = ExecutionBudget::beside_live_state();
     let mut algebraic_bindings = BTreeMap::new();
     let mut integer_bindings = BTreeMap::new();
@@ -17490,12 +17585,25 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         &mut budget,
     )
     .ok_or("instance fold/unfold requires a proved body guard case")?;
-    let explicit_children = selected_children.map(|children| {
-        children
-            .iter()
-            .map(|(name, identity)| (name.as_str(), *identity))
-            .collect::<BTreeMap<_, _>>()
-    });
+    let mut explicit_children = selected_children
+        .unwrap_or(&[])
+        .iter()
+        .map(|(name, identity)| (name.as_str(), *identity))
+        .collect::<BTreeMap<_, _>>();
+    if explicit_children.len() != selected_children.unwrap_or(&[]).len() {
+        return Err("child selection must name every selected arm child exactly once".into());
+    }
+    let reference_parameters = definition
+        .resource_parameters()
+        .iter()
+        .zip(instance.resource_arguments())
+        .map(|(formal, reference)| {
+            formal
+                .instance_identity()
+                .map(|identity| (identity, reference))
+                .ok_or("resource reference parameter requires a named binder")
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
     // The selected arm's children, or the unmatched body's.
     let body_children = if definition.matched.is_some() {
         selected.map_or(&[][..], |arm| arm.children.as_slice())
@@ -17503,26 +17611,31 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
         check_unmatched_instance_children(instance, definition, definitions)?;
         definition.children.as_slice()
     };
-    if explicit_children.is_none() && !body_children.is_empty() {
+    if selected_children.is_none()
+        && body_children
+            .iter()
+            .any(|child| !reference_parameters.contains_key(&child.binding))
+    {
         return Err("recursive children require explicit independent child selections".into());
     }
-    if let Some(children) = &explicit_children {
-        let supplied = selected_children.unwrap();
-        let expected = body_children;
-        let identities = supplied
-            .iter()
-            .map(|(_, identity)| *identity)
-            .collect::<BTreeSet<_>>();
-        if children.len() != supplied.len()
-            || identities.len() != supplied.len()
-            || identities.contains(&instance.identity)
-            || children.len() != expected.len()
-            || expected
-                .iter()
-                .any(|child| !children.contains_key(child.name.as_str()))
+    for child in body_children {
+        if let Some(reference) = reference_parameters.get(&child.binding)
+            && let Some(selected) =
+                explicit_children.insert(child.name.as_str(), reference.identity())
+            && selected != reference.identity()
         {
-            return Err("child selection must name every selected arm child exactly once".into());
+            return Err("selected child is not the resource argument".into());
         }
+    }
+    let identities = explicit_children.values().copied().collect::<BTreeSet<_>>();
+    if identities.len() != explicit_children.len()
+        || identities.contains(&instance.identity)
+        || explicit_children.len() != body_children.len()
+        || body_children
+            .iter()
+            .any(|child| !explicit_children.contains_key(child.name.as_str()))
+    {
+        return Err("child selection must name every selected arm child exactly once".into());
     }
     let mut body = evaluate_function_resource_context_with_normalization(
         &evaluation,
@@ -17632,10 +17745,12 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 .ok_or("invalid child field binding")
             })
             .collect::<Result<ResourceArguments, _>>()?;
-        let identity =
-            explicit_children.as_ref().expect("checked child selection")[child.name.as_str()];
+        let identity = explicit_children[child.name.as_str()];
         if unfold && state.resources.owned_instance(identity).is_some() {
             return Err("unfold child result identity is already in use".into());
+        }
+        if !child_definition.resource_parameters().is_empty() {
+            return Err("nested resource reference arguments require explicit bindings".into());
         }
         let mut child_instance = ResourceInstance::new(
             identity,
@@ -17657,6 +17772,11 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 })
         {
             return Err("recursive child arguments have invalid types".into());
+        }
+        if let Some(reference) = reference_parameters.get(&child.binding)
+            && !reference.matches_instance(&child_instance, assumptions)
+        {
+            return Err("owned child does not match the resource argument".into());
         }
         if !unfold {
             let actual = state
@@ -20706,7 +20826,15 @@ fn evaluate_resource_clauses_against_whole_section(
         )?;
         match outcome {
             Ok(resource) => {
-                evaluation_resources = evaluation_resources.unchecked_with_fact(resource.clone());
+                // The scratch prefix may already contain this exact owned
+                // instance. Repeating it makes identity lookup ambiguous;
+                // the final clause context still checks duplicate ownership.
+                if !matches!(resource.resource(), CResource::Instance(_))
+                    || !evaluation_resources.contains_exact_representation(&resource)
+                {
+                    evaluation_resources =
+                        evaluation_resources.unchecked_with_fact(resource.clone());
+                }
                 supplied.push(resource.clone());
                 evaluated[index] = Some(resource);
             }
@@ -21545,10 +21673,14 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
 ) -> ResourceContext {
-    let base = state
-        .resources()
-        .clone()
-        .unchecked_with_facts(supplied.iter().cloned());
+    let mut base = state.resources().clone();
+    for fact in supplied {
+        if !matches!(fact.resource(), CResource::Instance(_))
+            || !base.contains_exact_representation(fact)
+        {
+            base = base.unchecked_with_fact(fact.clone());
+        }
+    }
     if definitions.is_empty() {
         return base;
     }
@@ -22653,6 +22785,27 @@ fn resource_context_runtime_error(error: ResourceContextValidityError) -> CRunti
     }
 }
 
+/// Resolve reference arguments without requiring or granting ownership. The
+/// retained field scope may name a resource whose custody has moved elsewhere.
+pub(crate) fn evaluate_resource_reference_arguments(
+    state: &CState,
+    spec: &CResourceSpec,
+) -> Result<Vec<ResourceReference>, CRuntimeError> {
+    spec.resource_arguments()
+        .iter()
+        .map(|identity| {
+            state
+                .resource_instance_fields(*identity)
+                .map(ResourceReference::from_instance)
+                .ok_or_else(|| {
+                    CRuntimeError::FunctionContract(
+                        "resource argument does not name an available resource reference".into(),
+                    )
+                })
+        })
+        .collect()
+}
+
 pub(super) fn evaluate_function_resource_spec(
     state: &CState,
     resource: &CResourceSpec,
@@ -22828,6 +22981,13 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+    if !resource.resource_arguments().is_empty()
+        && !matches!(resource.term(), CResourceTerm::Instance { .. })
+    {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "resource reference arguments require an exclusive named instance".into(),
+        )));
+    }
     match resource.term() {
         CResourceTerm::Parameter { .. } => Ok(Err(CRuntimeError::FunctionContract(
             "resource description parameter is not instantiated".into(),
@@ -22975,7 +23135,12 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     "named instance requires an owned resource definition".into(),
                 )));
             };
-            if quantity.as_const() != Some(1)
+            let references = match evaluate_resource_reference_arguments(state, resource) {
+                Ok(references) => references,
+                Err(error) => return Ok(Err(error)),
+            };
+            if instance.resource_arguments() != references.as_slice()
+                || quantity.as_const() != Some(1)
                 || instance.name() != name
                 || instance.schema() != schema
                 || instance.arguments().len() != arguments.len()
@@ -27820,3 +27985,6 @@ mod retained_aggregate_resource_values_tests {
         assert!(work.windows(2).all(|pair| pair[0] == pair[1]), "{work:?}");
     }
 }
+
+#[cfg(test)]
+mod resource_reference_tests;

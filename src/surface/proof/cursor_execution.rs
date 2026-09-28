@@ -358,6 +358,7 @@ fn resource_is_direct_observed_core(
                     parameter_types,
                     ..
                 } => ResourceClause::Declared {
+                    resource_arguments: Vec::new(),
                     access: ResourceAccessMode::View,
                     kind,
                     name,

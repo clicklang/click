@@ -718,6 +718,7 @@ fn unmatched_instance_body(
     Some(SelectedInstanceArm {
         arm: ResourceDefinition {
             name: definition.name.clone(),
+            resource_parameters: definition.resource_parameters.clone(),
             parameters,
             composite_body: Some(scope),
             field_schema: definition.field_schema.clone(),
@@ -4765,12 +4766,14 @@ pub(super) fn instantiate_resource_clause(
             })
         }
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
             arguments,
             parameter_types,
         } => Ok(ResourceClause::Declared {
+            resource_arguments: resource_arguments.clone(),
             access: *access,
             kind: *kind,
             name: name.clone(),

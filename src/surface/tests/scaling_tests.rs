@@ -4379,3 +4379,40 @@ fn stores_to_chain_ordered_indices_are_quadratic_not_cubic() {
         );
     }
 }
+
+#[test]
+fn resource_reference_entry_setup_has_near_linear_work() {
+    let samples = [16, 64, 256].map(|count| {
+        let mut source = String::from(
+            "resource cell() { field revision: int32; }\n\
+             resource record(target: cell()) { field revision: int32; }\n\
+             void f() { owns target: cell();\n",
+        );
+        for index in 0..count {
+            source.push_str(&format!("owns r{index}: record(target);\n"));
+        }
+        source.push_str("}\n");
+        let file = parser::parse(&source).unwrap();
+        let ((context, work), persistent_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::lowering::resource_context_from_requirements(
+                    file.function_blocks()[0].requires(),
+                    &[],
+                    &[],
+                    &crate::kernel::CState::new(),
+                )
+                .unwrap()
+            })
+        });
+        assert_eq!(context.facts().len(), count + 1);
+        (count, work, persistent_work)
+    });
+    assert!(samples[0].1 > 0, "entry setup must be metered: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 4, "{samples:?}");
+        assert!(
+            pair[1].2 <= pair[0].2 * 6,
+            "persistent indexes: {samples:?}"
+        );
+    }
+}

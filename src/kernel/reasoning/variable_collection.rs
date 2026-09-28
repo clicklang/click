@@ -1603,6 +1603,12 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
             for value in instance.arguments.iter().chain(instance.fields.iter()) {
                 collect_algebraic_value_bitvector_variables(value, variables);
             }
+            crate::kernel::ResourceReference::visit_captured_values(
+                instance.resource_arguments(),
+                |value| {
+                    collect_algebraic_value_bitvector_variables(value, variables);
+                },
+            );
         }
         CResource::OpaqueParameter(_) => {}
         CResource::Memory(range) => collect_c_memory_range_bitvector_variables(range, variables),

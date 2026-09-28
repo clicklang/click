@@ -2163,6 +2163,7 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
             access,
             name,
             arguments,
+            resource_arguments,
             ..
         } => {
             let resource = format!(
@@ -2170,6 +2171,11 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
                 arguments
                     .iter()
                     .map(describe_contract_expression)
+                    .chain(
+                        resource_arguments
+                            .iter()
+                            .map(|reference| reference.name.clone())
+                    )
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -3173,6 +3179,7 @@ pub(super) fn validate_resource_clause(
             name,
             arguments,
             parameter_types,
+            resource_arguments,
             ..
         } => {
             let Some(arity) = resources.get(name) else {
@@ -3180,10 +3187,10 @@ pub(super) fn validate_resource_clause(
                     "unknown resource `{name}` in {context}"
                 )));
             };
-            if *arity != arguments.len() {
+            if *arity != arguments.len() + resource_arguments.len() {
                 return Err(ClickError::new(format!(
                     "resource `{name}` expects {arity} argument(s), got {} in {context}",
-                    arguments.len()
+                    arguments.len() + resource_arguments.len()
                 )));
             }
             if parameter_types.len() != arguments.len() {

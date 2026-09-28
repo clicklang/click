@@ -1433,8 +1433,22 @@ impl Parser {
         self.expect_ident_spelling("resource")?;
         let name = self.expect_ident("resource name")?;
         self.expect(Token::LParen)?;
-        let parsed_parameters = self.parse_click_parameters()?;
+        let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
+        let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
+        let (parsed_parameters, resource_parameters) = self.parse_resource_parameters()?;
         self.expect(Token::RParen)?;
+        for parameter in &resource_parameters {
+            let ResourceClause::Named { binding, .. } = parameter else {
+                unreachable!()
+            };
+            if parsed_parameters
+                .parameters
+                .iter()
+                .any(|ordinary| ordinary.name() == binding.name)
+            {
+                return Err(self.error(format!("duplicate resource parameter `{}`", binding.name)));
+            }
+        }
         let previous_struct_params = std::mem::replace(
             &mut self.current_struct_params,
             parsed_parameters.struct_params,
@@ -1447,8 +1461,6 @@ impl Parser {
             &mut self.current_algebraic_params,
             algebraic_parameter_types(&parsed_parameters.parameters),
         );
-        let previous_resource_bindings = std::mem::take(&mut self.current_resource_bindings);
-        let previous_resource_targets = std::mem::take(&mut self.current_resource_targets);
         let previous_contract_bindings = std::mem::take(&mut self.current_contract_bindings);
         let previous_definition = std::mem::replace(&mut self.in_resource_definition, true);
         let composite_body = match self.peek() {
@@ -1481,6 +1493,7 @@ impl Parser {
         Ok(ResourceDefinition {
             name,
             parameters: parsed_parameters.parameters,
+            resource_parameters,
             composite_body,
             field_schema: None,
         })
@@ -1913,38 +1926,86 @@ impl Parser {
     }
 
     fn parse_click_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
+        self.parse_parameters_with_resources(false)
+            .map(|(parameters, _)| parameters)
+    }
+
+    fn parse_resource_parameters(
+        &mut self,
+    ) -> Result<(ParsedParameters, Vec<ResourceClause>), ClickError> {
+        self.parse_parameters_with_resources(true)
+    }
+
+    fn parse_parameters_with_resources(
+        &mut self,
+        allow_resources: bool,
+    ) -> Result<(ParsedParameters, Vec<ResourceClause>), ClickError> {
+        let mut resource_parameters = Vec::new();
         let mut parameters = Vec::new();
         let mut struct_params = BTreeMap::new();
         let mut struct_array_params = BTreeSet::new();
         let mut declared_loadable_bytes = Vec::new();
         if self.peek() == Some(&Token::RParen) {
-            return Ok(ParsedParameters {
-                parameters,
-                struct_params,
-                struct_array_params,
-                declared_loadable_bytes,
-            });
+            return Ok((
+                ParsedParameters {
+                    parameters,
+                    struct_params,
+                    struct_array_params,
+                    declared_loadable_bytes,
+                },
+                resource_parameters,
+            ));
         }
 
         loop {
-            let name = self.expect_ident("Click parameter name")?;
-            if is_c_type_keyword(&name) {
-                return Err(
-                    self.error("Click-native binders use `name: type`, for example `value: int32`")
-                );
-            }
-            self.expect(Token::Colon)?;
-            let (click_type, parsed_c_type) = self.parse_click_type()?;
-            let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
-                if self.peek() == Some(&Token::LParen) {
-                    let (c_type, function_pointer_signature) =
-                        self.parse_abstract_function_pointer_type(parsed_type)?;
+            let resource_parameter = allow_resources
+                && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(name)) if !is_c_type_keyword(name))
+                && self.tokens.get(self.position + 3) == Some(&Token::LParen);
+            if resource_parameter {
+                let parameter = self.parse_owned_resource_binding()?;
+                if !matches!(parameter, ResourceClause::Named { .. }) {
+                    return Err(self.error("resource parameters use `name: resource(...)`"));
+                }
+                resource_parameters.push(parameter);
+            } else {
+                if !resource_parameters.is_empty() {
+                    return Err(self.error("ordinary parameters must precede resource parameters"));
+                }
+                let name = self.expect_ident("Click parameter name")?;
+                if is_c_type_keyword(&name) {
+                    return Err(self.error(
+                        "Click-native binders use `name: type`, for example `value: int32`",
+                    ));
+                }
+                self.expect(Token::Colon)?;
+                let (click_type, parsed_c_type) = self.parse_click_type()?;
+                let parsed_parameter = if let Some(parsed_type) = parsed_c_type {
+                    if self.peek() == Some(&Token::LParen) {
+                        let (c_type, function_pointer_signature) =
+                            self.parse_abstract_function_pointer_type(parsed_type)?;
+                        ParsedParameter {
+                            parameter: FunctionParameter {
+                                click_type: ClickType::C(c_type),
+                                name,
+                                struct_name: None,
+                                function_pointer_signature: Some(function_pointer_signature),
+                                constant: false,
+                                pointee_constant: false,
+                            },
+                            struct_name: None,
+                            declared_bytes: None,
+                            struct_array: false,
+                        }
+                    } else {
+                        self.parse_parameter_array_suffix(name, parsed_type)?
+                    }
+                } else {
                     ParsedParameter {
                         parameter: FunctionParameter {
-                            click_type: ClickType::C(c_type),
+                            click_type,
                             name,
                             struct_name: None,
-                            function_pointer_signature: Some(function_pointer_signature),
+                            function_pointer_signature: None,
                             constant: false,
                             pointee_constant: false,
                         },
@@ -1952,46 +2013,33 @@ impl Parser {
                         declared_bytes: None,
                         struct_array: false,
                     }
-                } else {
-                    self.parse_parameter_array_suffix(name, parsed_type)?
+                };
+                if let Some(struct_name) = parsed_parameter.struct_name {
+                    struct_params.insert(parsed_parameter.parameter.name.clone(), struct_name);
                 }
-            } else {
-                ParsedParameter {
-                    parameter: FunctionParameter {
-                        click_type,
-                        name,
-                        struct_name: None,
-                        function_pointer_signature: None,
-                        constant: false,
-                        pointee_constant: false,
-                    },
-                    struct_name: None,
-                    declared_bytes: None,
-                    struct_array: false,
+                if parsed_parameter.struct_array {
+                    struct_array_params.insert(parsed_parameter.parameter.name.clone());
                 }
-            };
-            if let Some(struct_name) = parsed_parameter.struct_name {
-                struct_params.insert(parsed_parameter.parameter.name.clone(), struct_name);
+                if let Some(bytes) = parsed_parameter.declared_bytes {
+                    declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
+                }
+                parameters.push(parsed_parameter.parameter);
             }
-            if parsed_parameter.struct_array {
-                struct_array_params.insert(parsed_parameter.parameter.name.clone());
-            }
-            if let Some(bytes) = parsed_parameter.declared_bytes {
-                declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
-            }
-            parameters.push(parsed_parameter.parameter);
 
             match self.peek() {
                 Some(Token::Comma) => {
                     self.position += 1;
                 }
                 Some(Token::RParen) => {
-                    return Ok(ParsedParameters {
-                        parameters,
-                        struct_params,
-                        struct_array_params,
-                        declared_loadable_bytes,
-                    });
+                    return Ok((
+                        ParsedParameters {
+                            parameters,
+                            struct_params,
+                            struct_array_params,
+                            declared_loadable_bytes,
+                        },
+                        resource_parameters,
+                    ));
                 }
                 Some(token) => {
                     return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
@@ -3881,6 +3929,7 @@ impl Parser {
                         child_bindings: None,
                     },
                     resource: Box::new(ResourceClause::Declared {
+                        resource_arguments: Vec::new(),
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
                         name: family.to_string(),
@@ -6165,6 +6214,7 @@ impl Parser {
         }
         self.expect(Token::RParen)?;
         Ok(ResourceClause::Declared {
+            resource_arguments: Vec::new(),
             access: ResourceAccessMode::Own,
             kind: ResourceKind::Token,
             name,
@@ -6177,8 +6227,32 @@ impl Parser {
         &mut self,
         access: ResourceAccessMode,
     ) -> Result<ResourceClause, ClickError> {
-        let (name, arguments) = self.parse_call_arguments("resource name")?;
+        let (name, mut arguments) = self.parse_call_arguments("resource name")?;
+        let mut resource_arguments = Vec::new();
+        let first_reference = arguments.iter().position(|argument| {
+            matches!(argument, ContractExpression::CFragment(CExpression::Variable(name)) | ContractExpression::Binding(name)
+                if self.current_resource_bindings.contains_key(name))
+        });
+        if let Some(first) = first_reference {
+            for argument in arguments.drain(first..) {
+                let reference =
+                    match argument {
+                        ContractExpression::CFragment(CExpression::Variable(name))
+                        | ContractExpression::Binding(name) => name,
+                        _ => return Err(self.error(
+                            "resource arguments must be named resources after ordinary arguments",
+                        )),
+                    };
+                let Some(ResourceClause::Named { binding, .. }) =
+                    self.current_resource_targets.get(&reference)
+                else {
+                    return Err(self.error(format!("unknown resource argument `{reference}`")));
+                };
+                resource_arguments.push(binding.clone());
+            }
+        }
         Ok(ResourceClause::Declared {
+            resource_arguments,
             access,
             kind: ResourceKind::Token,
             name,

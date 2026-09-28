@@ -245,6 +245,7 @@ fn parses_composite_resource_definition() {
         composite_body.contains(),
         &[
             ResourceClause::Declared {
+                resource_arguments: Vec::new(),
                 access: ResourceAccessMode::Own,
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
@@ -293,6 +294,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
         Some(
             [
                 ProofTactic::ObserveResource(ResourceClause::Declared {
+                    resource_arguments: Vec::new(),
                     access: ResourceAccessMode::View,
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
@@ -300,6 +302,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                     parameter_types: vec![C0Type::Int32Pointer],
                 }),
                 ProofTactic::UnfoldResource(ResourceClause::Declared {
+                    resource_arguments: Vec::new(),
                     access: ResourceAccessMode::Own,
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
@@ -308,6 +311,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
                 }),
                 ProofTactic::SmartExecute,
                 ProofTactic::FoldResource(ResourceClause::Declared {
+                    resource_arguments: Vec::new(),
                     access: ResourceAccessMode::Own,
                     kind: ResourceKind::Composite,
                     name: "uncalled".to_string(),
@@ -395,6 +399,7 @@ fn parses_resource_verb_function_clauses() {
                 },
             })),
             Requirement::Resource(ResourceClause::Declared {
+                resource_arguments: Vec::new(),
                 access: ResourceAccessMode::View,
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
@@ -402,6 +407,7 @@ fn parses_resource_verb_function_clauses() {
                 parameter_types: vec![C0Type::Int32],
             }),
             Requirement::Resource(ResourceClause::Declared {
+                resource_arguments: Vec::new(),
                 access: ResourceAccessMode::Own,
                 kind: ResourceKind::Token,
                 name: "socket_open".to_string(),
@@ -433,6 +439,7 @@ fn parses_resource_verb_function_clauses() {
             EnsureClause {
                 name: None,
                 ensure: Ensure::Resource(ResourceClause::Declared {
+                    resource_arguments: Vec::new(),
                     access: ResourceAccessMode::Own,
                     kind: ResourceKind::Token,
                     name: "socket_open".to_string(),

@@ -766,6 +766,8 @@ pub struct ClickFunctionDefinition {
 pub struct ResourceDefinition {
     name: String,
     parameters: Vec<FunctionParameter>,
+    /// Named resource references; declaration alone does not grant ownership.
+    resource_parameters: Vec<ResourceClause>,
     composite_body: Option<CompositeResourceBody>,
     field_schema: Option<crate::kernel::ResourceFieldSchema>,
 }
@@ -1282,6 +1284,7 @@ pub enum ResourceClause {
         kind: ResourceKind,
         name: String,
         arguments: Vec<ContractExpression>,
+        resource_arguments: Vec<ResourceInstanceBinding>,
         parameter_types: Vec<C0Type>,
     },
     /// `forall (k: int32) where lo <= k and k < hi { if g[k] == v { owns
@@ -5930,6 +5933,10 @@ impl ResourceDefinition {
         &self.parameters
     }
 
+    pub fn resource_parameters(&self) -> &[ResourceClause] {
+        &self.resource_parameters
+    }
+
     pub fn composite_body(&self) -> Option<&CompositeResourceBody> {
         self.composite_body.as_ref()
     }
@@ -6513,12 +6520,14 @@ fn substitute_resource_clause_bindings(
             )?),
         },
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
             arguments,
             parameter_types,
         } => ResourceClause::Declared {
+            resource_arguments: resource_arguments.clone(),
             access: *access,
             kind: *kind,
             name: name.clone(),

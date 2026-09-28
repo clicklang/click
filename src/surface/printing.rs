@@ -1109,7 +1109,10 @@ fn format_resource_call(resource: &ResourceClause) -> String {
         return binding.name.clone();
     }
     let ResourceClause::Declared {
-        name, arguments, ..
+        name,
+        arguments,
+        resource_arguments,
+        ..
     } = resource
     else {
         unreachable!("fold, unfold, and observe use declared resources")
@@ -1119,6 +1122,11 @@ fn format_resource_call(resource: &ResourceClause) -> String {
         arguments
             .iter()
             .map(describe_contract_expression)
+            .chain(
+                resource_arguments
+                    .iter()
+                    .map(|reference| reference.name.clone())
+            )
             .collect::<Vec<_>>()
             .join(", ")
     )

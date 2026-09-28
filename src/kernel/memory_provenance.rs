@@ -130,6 +130,7 @@ pub(crate) fn c_resources_directly_match(
             left.identity() == right.identity()
                 && left.name() == right.name()
                 && left.schema() == right.schema()
+                && left.resource_arguments() == right.resource_arguments()
                 && left.arguments().len() == right.arguments().len()
                 && left.fields().len() == right.fields().len()
                 && left

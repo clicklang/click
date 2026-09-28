@@ -28,10 +28,9 @@ use their existing named call maps, such as `step(helper(p), { item: s })`.
 Retain both implemented forms. A general contract-header migration is not a
 prerequisite for concurrency.
 
-These examples illustrate existing interfaces, not a newly accepted generic
-resource declaration syntax. A helper whose resource family is unknown may
-need further contract expressiveness. Establish that need with a concrete
-helper before choosing new syntax.
+These examples use concrete resource families. A helper whose resource family
+is unknown may need further contract expressiveness; that remains outside
+this extension.
 
 ## Descriptions remain internal metadata
 
@@ -118,12 +117,11 @@ regressions reject passing an instance after its ownership was given up.
 Therefore this declaration syntax is useful groundwork, not evidence that an
 unowned protected-state reference already crosses calls.
 
-Resource definitions currently parse their parameters with
-`parse_click_parameters`; those are value types, not the resource proof
-parameters recognized by named contracts. `ResourceFieldType` likewise has
-only C, integer, and algebraic cases. Reusing the existing binder or field
-notation may be possible, but requires general semantic support; changing
-only a mutex resource definition is not currently sufficient.
+Resource declarations now accept trailing resource-valued parameters using
+the same binder notation. Resource fields still have only C, integer, and
+algebraic types: passing a resource reference does not make it a model field.
+Changing only a mutex resource definition is still insufficient because
+reference-only contract transport remains to be implemented.
 
 Mutex authorities themselves are kernel resource atoms, not ordinary Click
 resource definitions with an inspectable protected-state child or field.
@@ -140,9 +138,9 @@ supply that state while it is escrowed, and unfolding would expose it without
 locking. Adding a tag naming the resource family would not authenticate the
 association with the actual initialization. Neither is an adequate workaround.
 
-The next design test is whether existing resource binder notation can support
-references independently of ownership, in ordinary resource definitions as
-well as contracts. Such a reference must not grant payload fields or memory
+The resource-argument implementation below establishes reference passing in
+ordinary resource definitions. Extending contract transport remains the next
+boundary. Such a reference must not grant payload fields or memory
 access, duplicate ownership, or preserve observations across acquisition.
 It must also support restoring a replacement instance satisfying the assertion:
 the present mutex semantics do not require the same occurrence on every
@@ -197,3 +195,96 @@ acquisition, checked replacement on release, and refusal to destroy while
 loans or guards survive. Scope and memory-effect checks must remain bounded
 and operate on explicit inputs and state changes, without copying whole resource
 environments or enumerating all concrete callers.
+
+
+## First implementation: ordinary resource arguments
+
+A resource declaration can take a named exclusive resource after its value
+parameters, using the same binder notation as contract proof parameters:
+
+```text
+resource revision_record(p: int32*, target: cell(p)) {
+    field revision: int32;
+}
+```
+
+`fold(revision_record(p, target), { revision: target.revision })` records a
+reference to `target`. It does not consume `target`. The reference retains its
+identity, family, captured arguments, and schema, but no observed field values.
+The expression reading `target.revision` still needs the existing field-access
+justification; passing the reference does not supply one.
+
+To own the argument, use the existing child-resource rules:
+
+```text
+resource revision_owner(p: int32*, target: cell(p)) {
+    field revision: int32;
+    owns target;
+    fact target.revision == revision;
+}
+```
+
+Folding checks and consumes that particular child. Unfolding restores it with
+the state described by the parent's current model. A reference captured before
+a child's field changed cannot restore the old observation. The ordinary rule
+requiring child fields to be related to parent fields still applies; this does
+not introduce implicit existential model packaging.
+
+The first implementation retains several explicit limits: declarations with
+resource parameters must have fields, reference parameters follow value
+parameters, matched resource bodies are not supported, and reference
+parameter types cannot themselves take resource arguments yet. The existing equivalence between a fieldless schema and a
+countable resource is preserved. Named-contract call transport still requires
+owned input instances; transporting a reference to escrowed state requires a
+separate change to contract entry and refinement checking. Mutex permissions
+have not yet been connected to this mechanism.
+
+## Shared-worker counter: first concrete contract decision
+
+Status: resource-valued arguments accepted. Implementation is in progress;
+the worker contract below remains a target, not a verified example.
+
+The frozen counter worker was tried with the existing requirement
+`owns access: mutex_use(&((struct mutex_counter *)argument)->mutex);`.
+Its lock succeeds, but its ordinary increment fails for missing read authority
+on the counter's `value` field. The declaration of `counter_state` with
+`guarded_by counter->mutex` cannot supply the missing association: an arbitrary
+caller could supply use authority for a different protected assertion at that
+same address.
+
+The agreed minimum extension is to let an ordinary resource argument appear
+in another resource's arguments. Reuse the existing resource-parameter binder
+notation; do not introduce angle parameters or a `protecting` modifier. A
+worker interface could state the following relationship (this sketch does not
+yet specify how a named contract is attached to the pthread worker):
+
+```text
+contract Increment(
+    state: counter_state((struct mutex_counter *)argument)
+) for void *(void *argument) {
+    owns access: mutex_use(&((struct mutex_counter *)argument)->mutex, state);
+    ensures result == 0;
+}
+```
+
+Here `state` is supplied through the existing proof-only resource interface.
+The worker does not own it on entry. The `mutex_use` requirement authenticates
+its association with the actual initialization. Lock supplies ownership and
+fresh observations; unlock consumes the restored resource. No field of
+`state` may be read merely because its name is available. The association must
+permit a replacement instance satisfying the same protected assertion, rather
+than pinning the occurrence supplied at initialization forever.
+
+This is a general resource-argument extension, not a second mutex-only input
+language. It changes the current rule that every passed instance must already
+be owned, so reference availability and ownership must be checked separately.
+The resource argument uses existing binder notation. How the worker's ordinary
+contract is selected at `pthread_create` still needs to be established without
+changing C.
+
+After that boundary, shared acquisition must freshen protected observations,
+use loans must split across outstanding workers, and destruction must wait for
+all uses to return. The exact final value additionally needs a checked
+conservation argument connecting each worker's update to the mutex's value.
+Two completed-worker tokens alone cannot establish that connection, and
+existing sequential `Count` must not be silently given shared semantics.

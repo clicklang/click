@@ -1610,6 +1610,12 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
             for value in instance.arguments.iter().chain(instance.fields.iter()) {
                 collect_algebraic_value_bound_variables(value, variables);
             }
+            crate::kernel::ResourceReference::visit_captured_values(
+                instance.resource_arguments(),
+                |value| {
+                    collect_algebraic_value_bound_variables(value, variables);
+                },
+            );
         }
         CResource::OpaqueParameter(parameter) => {
             variables.insert(parameter.parameter());
@@ -4025,6 +4031,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
                 .iter()
                 .map(|value| substitute_bitvector_variable_in_algebraic_value(value, from, to))
                 .collect();
+            result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
+                instance.resource_arguments(),
+                |value| substitute_bitvector_variable_in_algebraic_value(value, from, to),
+            );
             CResource::Instance(result)
         }
         CResource::OpaqueParameter(parameter) => CResource::OpaqueParameter(parameter.clone()),
@@ -4129,6 +4139,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
         .composite_resource_definitions()
         .iter()
         .map(|definition| CCompositeResourceDefinition {
+            resource_parameters: definition
+                .resource_parameters
+                .iter()
+                .map(|spec| substitute_bitvector_variable_in_resource_spec(spec, from, to))
+                .collect(),
             instance_schema: definition.instance_schema.clone(),
             guarded_by: definition.guarded_by.clone(),
             thread_confined: definition.thread_confined,
@@ -4284,7 +4299,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
         resource.role(),
         resource.snapshot(),
     )
-    .expect("bitvector substitution preserves resource validity");
+    .expect("bitvector substitution preserves resource validity")
+    .with_resource_arguments(resource.resource_arguments().to_vec());
     match resource.mutex_authority_binding() {
         Some((identity, binder)) => substituted
             .with_mutex_authority_binding(identity, binder.to_string())
@@ -6701,6 +6717,10 @@ fn substitute_pointer_variable_in_c_resource(
                 .iter()
                 .map(|value| substitute_pointer_variable_in_algebraic_value(value, from, to))
                 .collect();
+            result.resource_arguments = crate::kernel::ResourceReference::map_captured_values(
+                instance.resource_arguments(),
+                |value| substitute_pointer_variable_in_algebraic_value(value, from, to),
+            );
             CResource::Instance(result)
         }
         CResource::OpaqueParameter(parameter) => CResource::OpaqueParameter(parameter.clone()),
@@ -7700,6 +7720,11 @@ fn substitute_pointer_variable_in_c_function(
         .composite_resource_definitions()
         .iter()
         .map(|definition| CCompositeResourceDefinition {
+            resource_parameters: definition
+                .resource_parameters
+                .iter()
+                .map(|spec| substitute_pointer_variable_in_resource_spec(spec, from, to))
+                .collect(),
             instance_schema: definition.instance_schema.clone(),
             guarded_by: definition.guarded_by.clone(),
             thread_confined: definition.thread_confined,
@@ -7855,7 +7880,8 @@ fn substitute_pointer_variable_in_resource_spec(
         resource.role(),
         resource.snapshot(),
     )
-    .expect("pointer substitution preserves resource validity");
+    .expect("pointer substitution preserves resource validity")
+    .with_resource_arguments(resource.resource_arguments().to_vec());
     match resource.mutex_authority_binding() {
         Some((identity, binder)) => substituted
             .with_mutex_authority_binding(identity, binder.to_string())
@@ -9407,5 +9433,106 @@ mod integer_range_fold_substitution_tests {
             },
         );
         assert_eq!(result, Err(IntegerPureSubstitutionError::WorkLimitExceeded));
+    }
+}
+
+#[cfg(test)]
+mod resource_reference_substitution_tests {
+    use super::*;
+    use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceReference};
+
+    fn reference_resource() -> CResource {
+        let schema =
+            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let leaf = ResourceInstance::new(
+            Variable(200),
+            "cell".into(),
+            vec![
+                AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(Variable(100)))),
+                AlgebraicValue::C(CValue::pointer(Pointer::symbolic(Variable(101)))),
+            ]
+            .into(),
+            schema.clone(),
+            vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                Variable(102),
+            )))]
+            .into(),
+        )
+        .unwrap();
+        let middle = ResourceInstance::new(
+            Variable(201),
+            "middle".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![AlgebraicValue::C(int32(0))].into(),
+        )
+        .unwrap()
+        .with_resource_arguments(vec![ResourceReference::from_instance(&leaf)]);
+        CResource::Instance(
+            ResourceInstance::new(
+                Variable(202),
+                "wrapper".into(),
+                vec![].into(),
+                schema,
+                vec![AlgebraicValue::C(int32(0))].into(),
+            )
+            .unwrap()
+            .with_resource_arguments(vec![ResourceReference::from_instance(&middle)]),
+        )
+    }
+
+    #[test]
+    fn substitutions_reach_nested_reference_values_without_changing_occurrences() {
+        let source = reference_resource();
+        let replaced = substitute_bitvector_variable_in_c_resource(
+            &source,
+            Variable(100),
+            &Bitvector32Term::Constant(7),
+        );
+        let pointer = Pointer::symbolic(Variable(103));
+        let replaced =
+            substitute_pointer_variable_in_c_resource(&replaced, Variable(101), &pointer);
+        let CResource::Instance(instance) = replaced else {
+            unreachable!()
+        };
+        assert_eq!(instance.identity(), Variable(202));
+        let middle = &instance.resource_arguments()[0];
+        assert_eq!(middle.identity(), Variable(201));
+        let leaf = &middle.description().resource_arguments()[0];
+        assert_eq!(leaf.identity(), Variable(200));
+        assert_eq!(
+            leaf.description().arguments(),
+            &[
+                AlgebraicValue::C(int32(7)),
+                AlgebraicValue::C(CValue::pointer(pointer))
+            ]
+        );
+        let mut variables = BTreeSet::new();
+        collect_resource_bound_variables(&CResource::Instance(instance), &mut variables);
+        assert!(!variables.contains(&Variable(100)));
+        assert!(!variables.contains(&Variable(101)));
+        assert!(!variables.contains(&Variable(102)));
+        assert!(variables.contains(&Variable(103)));
+    }
+
+    #[test]
+    fn both_collectors_visit_captured_values_but_not_observed_fields_or_identities() {
+        let resource = reference_resource();
+        let mut bound = BTreeSet::new();
+        collect_resource_bound_variables(&resource, &mut bound);
+        let mut bitvectors = BTreeSet::new();
+        crate::kernel::reasoning::collect_c_resource_bitvector_variables(
+            &resource,
+            &mut bitvectors,
+        );
+        // Free scalar variables belong to the bitvector collector; the
+        // bound-variable collector includes symbolic pointer identities.
+        assert!(!bound.contains(&Variable(100)));
+        assert!(bound.contains(&Variable(101)));
+        assert!(bitvectors.contains(&Variable(100)));
+        assert!(!bound.contains(&Variable(102)));
+        assert!(!bitvectors.contains(&Variable(102)));
+        assert!(!bound.contains(&Variable(200)));
     }
 }

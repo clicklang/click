@@ -7239,6 +7239,24 @@ pub(in crate::surface) fn composite_resource_definitions(
                     facts,
                 )
             }
+            .with_resource_parameters(
+                definition
+                    .resource_parameters()
+                    .iter()
+                    .map(|parameter| {
+                        resource_clause_to_resource_specs_with_metadata(
+                            parameter,
+                            &definition_parameters,
+                            None,
+                            CResourceTransferRole::Borrow,
+                            CResourceSnapshot::Current,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+            )
             .with_witnesses(witnesses)
             .with_fact_source_indices(fact_source_indices)
             .with_fact_source_spellings(
@@ -7505,6 +7523,7 @@ fn resource_clause_to_resource_spec_with_metadata(
         )
         .map_err(|error| ClickError::new(error.to_string())),
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
@@ -7589,6 +7608,14 @@ fn resource_clause_to_resource_spec_with_metadata(
                 role,
                 snapshot,
             )
+            .map(|spec| {
+                spec.with_resource_arguments(
+                    resource_arguments
+                        .iter()
+                        .map(|reference| reference.identity)
+                        .collect(),
+                )
+            })
             .map_err(|error| ClickError::new(error.to_string()))
         }
     }
@@ -7658,12 +7685,25 @@ pub(in crate::surface) fn substitute_resource_clause_for_summary_in(
             })
         }
         ResourceClause::Declared {
+            resource_arguments,
             access,
             kind,
             name,
             arguments,
             parameter_types,
         } => Ok(ResourceClause::Declared {
+            resource_arguments: resource_arguments
+                .iter()
+                .map(|binding| {
+                    match substitutions.instance_rename(&binding.name, binding.identity) {
+                        Some(name) => ResourceInstanceBinding {
+                            name,
+                            ..binding.clone()
+                        },
+                        None => binding.clone(),
+                    }
+                })
+                .collect(),
             access: *access,
             kind: *kind,
             name: name.clone(),
