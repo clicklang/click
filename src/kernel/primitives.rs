@@ -43,8 +43,10 @@ pub use cell_store::CellRun;
 pub(crate) use cell_store::{
     CellStore, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, offset_stem_and_constant,
 };
+mod counted_populations;
 mod derivations;
 mod memory_state;
+pub(crate) use counted_populations::CountedPopulations;
 mod persistent_map;
 pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
@@ -5122,7 +5124,7 @@ pub struct CState {
     /// checked delta when a C condition establishes the returned status.
     pub(super) pending_thread_create: Option<super::threads::PendingThreadCreate>,
     pub(super) population_access: super::population_access::PopulationAccess,
-    pub(super) counted_populations: std::sync::Arc<Vec<CCountedPopulation>>,
+    pub(super) counted_populations: CountedPopulations,
     /// Monotonic identity source for stack frames created by nested calls.
     /// Keeping this in the symbolic state makes frame identities deterministic
     /// and ensures recursive calls cannot reuse a caller's stack slots.
@@ -5409,6 +5411,9 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
+    /// Presence of composite heads, independent of ownership mode/quantity.
+    /// Reuses the population alias index without granting count authority.
+    pub(super) population_heads: CountedPopulations,
     pub(super) mutex_authorities: PersistentMap<(ResourceFamily, Pointer), ResourceEntryIds>,
     pub(super) exact_shapes: PersistentMap<(ResourceFamily, String, usize), ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,

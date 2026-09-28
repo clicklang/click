@@ -18,6 +18,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+#[path = "population_initialization.rs"]
+mod population_initialization;
+
 #[cfg(test)]
 thread_local! {
     static MATCH_SCOPE_INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -713,6 +716,39 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 delta_proofs: Arc::new(Vec::new()),
             });
         }
+        let crate::kernel::CResource::Composite { name, .. } = selected.resource() else {
+            return Err("resource rewrite evidence requires a composite resource".to_string());
+        };
+        let definition = function
+            .composite_resource_definition(name)
+            .cloned()
+            .ok_or_else(|| {
+                "the rewritten composite definition is not registered on the function".to_string()
+            })?;
+
+        let crate::kernel::CResource::Composite { arguments, .. } = selected.resource() else {
+            unreachable!()
+        };
+        if let Some(checked) = population_initialization::check(
+            &definition,
+            before_state,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+        )? {
+            return Ok(Self {
+                before_state: before_state.clone(),
+                after_state: after_state.clone(),
+                before_facts: before_facts.clone(),
+                after_facts: after_facts.clone(),
+                definition,
+                instance: None,
+                selected_children: None,
+                load_equalities: load_equality_capture.finish(),
+                delta_proofs: Arc::new(checked),
+            });
+        }
         if before_state
             .resources()
             .directly_supporting_fact(selected, assumptions)
@@ -726,21 +762,6 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 "the rewritten composite is absent from both resource representations".to_string(),
             );
         }
-        let crate::kernel::CResource::Composite { name, .. } = selected.resource() else {
-            return Err("resource rewrite evidence requires a composite resource".to_string());
-        };
-        let definition = function
-            .composite_resource_definitions()
-            .iter()
-            .find(|definition| definition.name() == name)
-            .cloned()
-            .ok_or_else(|| {
-                "the rewritten composite definition is not registered on the function".to_string()
-            })?;
-
-        let crate::kernel::CResource::Composite { arguments, .. } = selected.resource() else {
-            unreachable!()
-        };
         let access_key = before_state
             .counted_population_proven_equal(name, arguments, assumptions)
             .map(|(name, arguments, _)| (name, arguments))

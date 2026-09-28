@@ -6350,21 +6350,33 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let path_assumptions =
                         assumptions_with_path_context(assumptions, &facts, &obligations);
                     let mut total: Option<Bitvector32Term> = None;
-                    for population in state.counted_populations().filter(|population| {
-                        population.name == *name
-                            && population.arguments.len() == arguments.len()
-                            && population.arguments.iter().zip(&arguments).all(
-                                |(actual, pattern)| {
-                                    pattern.as_ref().is_none_or(|expected| {
-                                        crate::kernel::resource_arguments_proven_equal(
-                                            actual,
-                                            expected,
-                                            &path_assumptions,
-                                        )
-                                    })
-                                },
-                            )
-                    }) {
+                    let indexed = state.indexed_counted_population_matches(
+                        name,
+                        &arguments,
+                        &path_assumptions,
+                    );
+                    let fallback_limit = if indexed.is_some() { 0 } else { usize::MAX };
+                    let matching = indexed
+                        .iter()
+                        .flat_map(|matches| matches.iter().copied())
+                        .chain(state.counted_populations().take(fallback_limit).filter(
+                            |population| {
+                                population.name == *name
+                                    && population.arguments.len() == arguments.len()
+                                    && population.arguments.iter().zip(&arguments).all(
+                                        |(actual, pattern)| {
+                                            pattern.as_ref().is_none_or(|expected| {
+                                                crate::kernel::resource_arguments_proven_equal(
+                                                    actual,
+                                                    expected,
+                                                    &path_assumptions,
+                                                )
+                                            })
+                                        },
+                                    )
+                            },
+                        ));
+                    for population in matching {
                         total = Some(if let Some(current) = total {
                             let overflow = ConditionTerm::signed_add_overflows(
                                 current.clone(),

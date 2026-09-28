@@ -5393,6 +5393,12 @@ pub(crate) fn counted_populations_definitionally_equal(
     if left.population_access != right.population_access {
         return false;
     }
+    if left
+        .counted_populations
+        .shares_storage_with(&right.counted_populations)
+    {
+        return true;
+    }
     let is_observable = |population: &CCountedPopulation| {
         population.family_observation_marker
             || definitions.iter().any(|definition| {

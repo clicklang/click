@@ -72,12 +72,14 @@ is part of this design.
 ## What actually verifies today
 
 `mdtests/counted_resource_contribution_counter.md` is a passing sequential
-control. Its three verified functions:
+control. Its four verified functions:
 
 1. Write zero and produce three `remaining` units by folding the memory body.
 2. Preserve one unit and consume another while incrementing the uint32 value.
 3. Call initialization and two contributions, unfold the final unit, and prove
    the returned value is exactly two.
+4. Initialize directly after the C assignment with `fold(3 of remaining(p))`,
+   call the two contributions, and again prove the returned value is two.
 
 The arithmetic proof explicitly establishes that subtracting one leaves at
 least one unit and preserves the body equality. Existing population transitions
@@ -99,25 +101,21 @@ uses existing syntax:
 fold(3 of remaining(counter));
 ```
 
-The surface operation proposes a population of three, but the trusted rewrite
-checker rejects it:
+This local initialization now verifies. `CheckedResourceRewrite` delegates the
+allocation to `src/kernel/proof/population_initialization.rs`; ordinary
+representation rewrites still require definitionally equal population states.
+The new rule checks a single fresh population, consumes its independently owned
+memory body, proves the invariant from input facts at the proposed count, and
+preserves the remaining execution state. Active borrows, existing populations
+(including zero-count entries), and existing resource heads prevent allocation.
+It does not interpret an absent population as an arbitrary entry count of zero.
 
-```text
-kernel rejected checked resource `fold`
-resource rewrite changed more than a definitional representation
-```
-
-The relevant boundary is `CheckedResourceRewrite` in
-`src/kernel/proof/execution.rs`, which requires observable populations to remain
-definitionally equal. The successful sequential control initializes through a
-`produces` function contract; this parent needs a checked local initialization.
-
-The fix must certify an actual population-allocation transition backed by the
-owned body and checked body facts. Do not weaken definitional equality checks,
-or equate an absent population entry with a global count of zero. Population
-identity and exclusive body custody must survive later transfers. A failed
-local allocation must report the unmet ownership/fact or unsupported operation,
-not merely this internal rewrite-checking message.
+The first supported slice is an unconditional, nonrecursive memory body with
+one pointer argument and nonempty fixed-size ranges. Unsupported alias contexts
+are refused conservatively. Initialization does not yet give a population
+cross-thread identity or synchronized body access. Persistent population and
+resource-head indices keep checks local to the changed population; deterministic
+scaling regressions cover unrelated populations, heads, and path facts.
 
 ### Population body beneath a mutex wrapper
 
@@ -164,8 +162,9 @@ the population when acquiring a wrapper.
 
 ## Implementation order and acceptance
 
-First implement and test checked local initialization/finalization of ordinary
-populations independently of concurrency. Then compose population-body access
+Checked local initialization is implemented for the memory-backed slice above.
+Next implement full-population finalization independently of concurrency, then
+compose population-body access
 with mutexes, commit guarded count transitions, and connect worker accounting.
 The original pthread C stays the end-to-end regression throughout.
 

@@ -4264,7 +4264,9 @@ impl CState {
             && self.named_mutex_authorities == other.named_mutex_authorities
             && self.population_access == other.population_access
             && self.pending_thread_create == other.pending_thread_create
-            && (std::sync::Arc::ptr_eq(&self.counted_populations, &other.counted_populations)
+            && (self
+                .counted_populations
+                .shares_storage_with(&other.counted_populations)
                 || (self.counted_populations.is_empty() && other.counted_populations.is_empty()))
             && self.next_local_frame == other.next_local_frame
             && self.next_local_lifetime == other.next_local_lifetime
@@ -4393,7 +4395,9 @@ impl CState {
             }
             && self.loan_participant == other.loan_participant
             && self.loan_view_bindings == other.loan_view_bindings
-            && std::sync::Arc::ptr_eq(&self.counted_populations, &other.counted_populations)
+            && self
+                .counted_populations
+                .shares_storage_with(&other.counted_populations)
     }
 
     pub fn with_local(mut self, name: impl Into<String>, value: CValue) -> Self {
@@ -4686,24 +4690,12 @@ impl CState {
         arguments: ResourceArguments,
         count: Bitvector32Term,
     ) -> Self {
-        let name = name.into();
-        if let Some(population) = std::sync::Arc::make_mut(&mut self.counted_populations)
-            .iter_mut()
-            .find(|population| {
-                !population.family_observation_marker
-                    && population.name == name
-                    && population.arguments == arguments
-            })
-        {
-            population.count = count;
-        } else {
-            std::sync::Arc::make_mut(&mut self.counted_populations).push(CCountedPopulation {
-                name,
-                arguments,
-                count,
-                family_observation_marker: false,
-            });
-        }
+        self.counted_populations.insert(CCountedPopulation {
+            name: name.into(),
+            arguments,
+            count,
+            family_observation_marker: false,
+        });
         self
     }
 
@@ -4713,12 +4705,7 @@ impl CState {
         arguments: &[AlgebraicValue],
     ) -> Option<&Bitvector32Term> {
         self.counted_populations
-            .iter()
-            .find(|population| {
-                !population.family_observation_marker
-                    && population.name == name
-                    && population.arguments.as_ref() == arguments
-            })
+            .get(name, arguments, false)
             .map(|population| &population.count)
     }
 
@@ -4728,11 +4715,13 @@ impl CState {
         arguments: &[AlgebraicValue],
         assumptions: &PureFactContext,
     ) -> Option<(String, ResourceArguments, Bitvector32Term)> {
-        self.counted_populations
-            .iter()
-            .find(|population| {
+        let indexed = self
+            .counted_populations
+            .indexed_unary_matches(name, arguments, assumptions);
+        let selected = match indexed {
+            Some(matches) => matches.into_iter().next(),
+            None => self.counted_populations.family(name).find(|population| {
                 !population.family_observation_marker
-                    && population.name == name
                     && population.arguments.len() == arguments.len()
                     && population
                         .arguments
@@ -4741,14 +4730,41 @@ impl CState {
                         .all(|(left, right)| {
                             crate::kernel::resource_arguments_proven_equal(left, right, assumptions)
                         })
-            })
-            .map(|population| {
-                (
-                    population.name.clone(),
-                    population.arguments.clone(),
-                    population.count.clone(),
-                )
-            })
+            }),
+        };
+        selected.map(|population| {
+            (
+                population.name.clone(),
+                population.arguments.clone(),
+                population.count.clone(),
+            )
+        })
+    }
+
+    pub(crate) fn has_counted_population_unary_pointer_alias(
+        &self,
+        name: &str,
+        arguments: &[AlgebraicValue],
+        assumptions: &PureFactContext,
+    ) -> Result<bool, &'static str> {
+        self.counted_populations
+            .has_unary_pointer_alias(name, arguments, assumptions)
+    }
+
+    pub(crate) fn indexed_counted_population_matches(
+        &self,
+        name: &str,
+        arguments: &[Option<AlgebraicValue>],
+        assumptions: &PureFactContext,
+    ) -> Option<Vec<&CCountedPopulation>> {
+        let [Some(argument)] = arguments else {
+            return None;
+        };
+        self.counted_populations.indexed_unary_matches(
+            name,
+            std::slice::from_ref(argument),
+            assumptions,
+        )
     }
 
     /// The total of every ledger entry this pattern names, or `None` where
@@ -4797,11 +4813,7 @@ impl CState {
     }
 
     pub fn without_counted_population(mut self, name: &str, arguments: &[AlgebraicValue]) -> Self {
-        std::sync::Arc::make_mut(&mut self.counted_populations).retain(|population| {
-            population.family_observation_marker
-                || population.name != name
-                || population.arguments.as_ref() != arguments
-        });
+        self.counted_populations.remove(name, arguments);
         self
     }
 
@@ -4814,7 +4826,7 @@ impl CState {
     pub fn with_observed_population_family(mut self, name: impl Into<String>) -> Self {
         let name = name.into();
         if !self.observes_population_family(&name) {
-            std::sync::Arc::make_mut(&mut self.counted_populations).push(CCountedPopulation {
+            self.counted_populations.insert(CCountedPopulation {
                 name,
                 arguments: std::sync::Arc::from([]),
                 count: Bitvector32Term::Constant(0),
@@ -4825,9 +4837,7 @@ impl CState {
     }
 
     pub fn observes_population_family(&self, name: &str) -> bool {
-        self.counted_populations
-            .iter()
-            .any(|population| population.family_observation_marker && population.name == name)
+        self.counted_populations.get(name, &[], true).is_some()
     }
 
     /// The logical resource-state component used to index predicate facts.
@@ -4853,7 +4863,7 @@ impl CState {
             .cloned()
             .collect();
         Self {
-            counted_populations: std::sync::Arc::new(counted_populations),
+            counted_populations,
             ..Self::new()
         }
     }
