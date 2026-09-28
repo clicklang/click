@@ -1,182 +1,225 @@
-# Shared counter accounting: next language boundary
+# Exact-two counter: a bounded completion pool
 
-Status: shelved proposal, not implemented syntax or verified code. First test
-the ordinary-resource approach; this document is not an implementation plan. The
-unchanged counter already verifies for safety. Its exact final value requires
-shared accounting that the current sequential population mechanism cannot
-supply.
+Status: proposed surface interface, awaiting review; not implemented syntax.
+The unchanged `mutex_counter.c` verifies for safety, but its exact-two result
+is not yet proved. This proposal supersedes the earlier two-population design
+in this file. It deliberately does not implement general shared `Count`.
 
-## Ordinary-resource experiment
+## Why ordinary resources stop short
 
-Existing syntax can express a bundle of credits:
+Ordinary quantities can express `owns n of increment_credit(p)`, package
+credits inside a resource, and transfer credits through a mutex. They do not
+establish a finite global supply. In the existing experiment, a worker needs
+`n + 1 <= 2`; knowing `n <= 2` and owning an external credit does not imply it.
+The authority could already contain two credits with another outside.
+`mdtests/mutex_resource_quantity_requires_conservation.md` records this failure.
 
-```click
-abstract resource increment_credit(p: struct mutex_counter*);
-resource credits(p: struct mutex_counter*) {
-    field amount: int32;
-    owns amount of increment_credit(p);
-}
-```
+The parent also needs to establish the supply from its memory-only entry
+contract. Assuming caller credits does not solve initialization. Existing
+`constructs` can authorize ordinary abstract-token creation, so arbitrary
+ordinary tokens cannot serve as authenticated receipts for increments.
 
-A scalar model field can supply the quantity. Folding consumes the actual
-credits and checks nonnegativity; unfolding an owned bundle recovers them.
-Flat ordinary tokens, including symbolic quantities, can also be ingredients
-of the mutex-protected resource. They add no memory footprint.
+The missing primitive is a conserved finite pool. Mutexes still provide only
+access to its authority; the pool supplies the arithmetic conservation law.
 
-The regressions `resource_model_quantity.md` and
-`mutex_use_preserves_resource_quantity.md` exercise these existing operations.
-No count-authority primitive or new surface notation is involved.
+## Proposed surface
 
-The attempted deposit invariant relates the C counter to the number of
-protected credits and bounds both by two. A worker consumes one external
-credit and deposits it while incrementing. It reaches the obligation
-`credits + 1 <= 2`, which does not follow from `credits <= 2` and ownership of
-one external credit. That contract allows two credits inside and another
-outside. `mutex_resource_quantity_requires_conservation.md` preserves this
-expected failure against the unchanged C.
-
-Abstract credits also need an initial source: verified code cannot freely
-mint them. Assuming two credits from a caller is a useful experiment, but
-does not discharge the original parent's memory-only precondition. These
-are the remaining conservation and initialization questions. This experiment
-does not establish that the interface proposed below is necessary; it remains
-shelved pending a smaller ordinary-resource solution.
-
-## Proposed resource interface
-
-Keep ordinary worker contracts:
+Use three built-in resource types and three explicit proof operations. These
+are language additions even though they require no new keywords or angle
+parameters. Names below are proposed, not accepted Click syntax.
 
 ```text
-consumes pending(p);
-produces completed(p);
-owns access: mutex_use(&p->mutex, counter_state(p));
-```
+abstract resource completion(p: struct mutex_counter*);
 
-Introduce one built-in resource type, `count_authority(R)`, where `R` is a
-resource type such as `completed(p)`. It owns the authoritative population
-state. An ordinary `completed(p)` unit is a fragment of that population.
-Passing either type as an argument grants no ownership. The initial primitive
-would support only bodyless resource families. Extending it to existing
-populations with shared bodies or allocation obligations is a separate design
-step.
-
-The protected assertion would own the authorities explicitly:
-
-```text
 resource counter_state(p: struct mutex_counter*) {
     field value: uint32;
     guarded_by p->mutex;
     owns p->value;
-    owns count_authority(pending(p));
-    owns count_authority(completed(p));
+    owns total: count_authority(completion(p));
+    fact total.capacity == 2;
+    fact value == total.completed;
     fact p->value == value;
-    fact value == count(completed(p));
-    fact count(pending(p)) <= 2;
-    fact count(completed(p)) <= 2;
-    fact count(pending(p)) + count(completed(p)) == 2;
 }
 ```
 
-The individual bounds make the conservation equality unambiguous under the
-current bounded count arithmetic. Do not silently treat a wrapping addition
-as mathematical addition.
+`completion(p)` identifies the application protocol. It grants no ownership.
+`count_authority(completion(p))` exclusively owns its capacity and completed
+count; `count_credit(completion(p))` authorizes one completion;
+`count_receipt(completion(p))` records one completion. Credits and receipts
+support ordinary quantities. An ordinary `completion(p)` token is neither.
 
-A Count expression observes authority; it does not create it. In particular,
-adding a fact mentioning `count(R)` must not give a second invariant another
-copy of R's authority. Keeping authority in `owns` makes this visible in the
-same resource interface as memory and guards.
+The authority exposes read-only model observations `capacity` and `completed`.
+They are bounded nonnegative integers, with completed no greater than capacity.
+The invariant's mixed integer/uint32 equality requires checked conversion,
+not a wrapping arithmetic shortcut. Naming an authority or knowing its type
+alone does not expose its current fields. Old observations remain snapshots.
+This uses the existing named-resource field idiom, but implementing these
+built-in fields and owned nested authority is part of the proposed extension.
 
-## Creation is a separate operation
-
-An authoritative state must exist even at total zero. It cannot be obtained
-by unfolding a positive unit, or by assuming an arbitrary entry total is zero.
-It also cannot be silently manufactured by ordinary `fold`, whose existing
-meaning is to package resources already owned.
-
-Proposed proof operation (name and surface form require review):
+The worker contract remains ordinary resource transfer:
 
 ```text
-let pending_total = create_count(pending(p));
-let completed_total = create_count(completed(p));
+consumes count_credit(completion((struct mutex_counter*)argument));
+produces count_receipt(completion((struct mutex_counter*)argument));
+owns access: mutex_use(
+    &((struct mutex_counter*)argument)->mutex,
+    counter_state((struct mutex_counter*)argument)
+);
 ```
 
-Each operation creates a fresh population identity, an owned authority, and
-an initial total of zero. This is ghost allocation, not a claim that every
-population with the same printed resource arguments has total zero.
-Authority and fragments retain the fresh identity through contracts, mutex
-escrow, and worker transfer. Distinct generations cannot be combined even
-when their resource types print identically. The initial slice should reject
-ambiguous same-type population selection rather than guess an identity.
-Contract instantiation must authenticate the worker's fragments against the
-population identities owned by the selected mutex assertion.
+Proposed operation shapes use ordinary named inputs and outputs:
 
-Generation selection across modular contracts remains an unresolved checking
-rule. The illustrative creation names above are not passed explicitly in later
-`pending(p)` or `count(pending(p))` expressions. The checker must connect the
-worker input, the mutex-owned authority, and the produced completed unit to
-the same generations; freshness and ambiguity rejection alone do not prove
-that connection. The proposed default is unique contextual selection through
-the typed mutex assertion, with an independently checked contract relationship.
+```text
+let { authority: total, credits: credits } = create_count(completion(p), 2);
+let { authority: updated, receipt: receipt } = complete_count({
+    authority: total, credit: credit
+});
+retire_count({ authority: total, credits: remaining, receipts: completed });
+```
 
-These identity requirements must be settled and implemented before this constructor is
-exposed. Existing `count(R)` keys alone are insufficient. If unique contextual
-selection proves inadequate, explicit population references would need a
-separate surface review; do not introduce them speculatively.
+Creation returns capacity many credits and authority at completed zero.
+Completion consumes one credit and the current authority, and returns the
+updated authority and one receipt. Retirement consumes the authority and a
+complete supply of credits/receipts. A zero quantity needs no resource token.
+Output maps do not introduce implicit C parameters. Ordinary `fold`,
+`unfold`, and `construct` do not mint these primitives or update their counts.
+No additional user-defined resource algebra interface is needed for this slice.
 
-## Updates and retirement
+## Conservation rule
 
-With the appropriate authority owned, use ordinary `fold(R)` and `unfold(R)`
-to create and consume membership units, updating the total at that proof step.
-This is a new checked interpretation for authority-backed populations, not a
-change that permits arbitrary abstract-resource minting. Without authority,
-fragments may be transferred but not created or destroyed. Fragment ownership
-implies a lower bound on the total, never exact equality with the local quantity.
+For a fresh pool identity g, write A(g,N,n) for its exclusive authority,
+P(g,p) for p pending credits, and D(g,d) for d completed receipts. Credits and
+receipts compose additively within a generation. Authority validity requires:
 
-Initialization creates two pending units and zero completed units, then folds
-the state and deposits both authorities in the mutex. The parent retains the
-pending units and gives one to each successful worker. A failed creation
-leaves its pending unit with the parent.
+```text
+0 <= n <= N
+0 <= p <= N - n
+0 <= d <= n
+```
 
-The worker acquires the authorities by locking and unfolding the protected
-state. It executes the existing C increment, consumes one pending unit, creates
-one completed unit, and restores the invariant before unlock. Its
-`consumes`/`produces` clauses check this net change; function return must not
-apply the change a second time.
+These bounds concern all composed fragments, including fragments held by other
+threads. Local ownership implies the corresponding lower bound; it never
+implies that no fragments exist elsewhere.
 
-Join returns only the child's completed unit. After both joins and destruction,
-the parent owns both authorities and two completed units. The fragment lower
-bound and invariant upper bound give total two, hence `p->value == 2`.
-Failure paths recover the authorities after joining any started worker and
-consume the pending and completed units actually present.
+The single update rule is:
 
-Authority retirement needs a checked operation requiring total zero and no
-outstanding fragments or borrows. Its surface name is part of the same review
-as creation. Merely dropping the authority must not let a later initialization
-reuse an outstanding fragment's identity.
+```text
+A(g,N,n) * P(g,1)  -->  A(g,N,n+1) * D(g,1)
+```
 
-## Implementation obligations
+It preserves every compatible frame. If other pending credits total p, then
+p + 1 <= N - n before the update, hence p <= N - (n + 1) afterward. If other
+receipts total d, then d <= n before, hence d + 1 <= n + 1 afterward.
+Possession of the consumed credit proves n < N, so the update cannot exceed
+the capacity. Capacity and addition are checked within the supported integer
+range. The exact-two example uses N = 2.
 
-- Add persistent authoritative population identities and indexed fragment
-  support, including zero totals and exact retirement checks.
-- Retain authority identity and conservation laws through mutex escrow while
-  freshening observations. The current childless scalar payload rule must be
-  extended to transport these owned resource ingredients.
-- Mint abstract modular authority/fragment relationships from the contract,
-  and authenticate those relationships at the call boundary.
-- Record explicit checked population update deltas. Check return contracts
-  against those deltas without double-applying their effect.
-- Keep shared counts out of sequential snapshot-copying paths. Creation and
-  join must not install a worker's saved global count state.
-- Reject new exact observations of the current total without authority,
-  mismatched population generations,
-  duplicate authority, fragment minting without authority, missing/wrong
-  increment, double completion, early retirement, and transport of old Count facts into
-  current-state equalities. Historical snapshot equalities remain valid.
-- Verify the unchanged C, creation-failure cleanup, reverse join order,
-  deterministic scaling, expansion/reverification, and the full gate.
+Dropping a fragment cannot forge a receipt or invalidate these inequalities.
+It can prevent the final exactness or retirement proof. No rule infers global
+absence from an empty local resource context.
 
-The alternative of deriving authority implicitly from `count(...)` would
-hide the central ownership condition in a pure-looking expression. The
-explicit built-in resource is preferable. No angle parameters or new
-language keyword are needed; a resource primitive and ghost lifecycle
-operations are genuine additions and should be reviewed as such.
+## Identity through modular contracts
+
+Printed resource arguments are not a pool identity. Each `create_count` makes
+a fresh generation, retained by authority, credits, and receipts. Reusing the
+same address after retirement creates a different generation.
+
+The proposed first slice elaborates a shared generation variable for matching
+pool occurrences in a contract. In the worker above, the credit, output receipt,
+and authority owned by the typed protected resource all refer to that variable.
+This is an independently checked contract relationship, not a search heuristic.
+
+- Entry verification assumes an arbitrary generation and arbitrary valid total.
+  It must not start that total at zero.
+- A caller instantiates that variable from actual resources and authenticates
+  every occurrence against it. Printed type or address equality is insufficient.
+- Folding records the owned authority's generation in the protected instance.
+  Mutex publication and typed use shares retain that association. Lock freshens
+  observations while preserving the association. Refolding and release must
+  match that same generation; a replacement protected instance cannot switch
+  the mutex to a different pool.
+- A worker launch checks its credit against that exact typed use association.
+  A join returns the receipt of that launched worker, exactly once.
+- A function summary transports resources and relationships; it does not apply
+  a sequential population count delta or install a child's snapshot.
+- Multiple candidate generations for the same protocol in one contract are
+  rejected in this slice. Supporting such contracts would require another design
+  decision; do not silently unify distinct generations.
+
+This deliberately limits the first implementation to an unconditional,
+uniquely bound pool ingredient in a fixed-footprint protected resource. Both
+independent contract verification and caller-side substitution need negative
+regressions. Unique selection alone is not authentication.
+
+## The unchanged counter proof
+
+The parent creates A(g,2,0) and two credits after writing zero. It folds the
+authority with the counter memory and publishes that ordinary resource through
+mutex initialization. Each successful thread creation transfers one credit;
+failed creation retains it. The C source remains unchanged.
+
+A worker locks, unfolds the protected state, and obtains authority plus its
+one credit. Their validity proves the completed count is below two. It executes
+the existing C increment, completes one credit, then folds the updated state
+and unlocks. The equality between the memory value and completed count checks
+the connection between ghost accounting and the C operation. A missing
+increment, duplicate increment, or duplicate completion fails this connection
+or lacks a credit. Consuming a credit alone cannot satisfy the receipt output.
+
+After joining every started worker and destroying the mutex, the parent
+recovers the authority. The following bounds prove every cleanup state:
+
+| Path | Returned/retained fragments | Completed count |
+| --- | --- | --- |
+| Mutex initialization fails | Two credits | Zero |
+| First thread creation fails | Two credits | Zero |
+| Second creation fails; first worker joined | One credit, one receipt | One |
+| Both workers joined | Two receipts | Two |
+
+For success, two receipts imply n >= 2 and capacity implies n <= 2. Thus
+n = 2 and the invariant gives the required `counter->value == 2`.
+Join order is irrelevant. The parent can retire each pool using the actual
+fragments in the table.
+
+Retirement requires p + d = N. Validity then forces p = N - n and d = n,
+so no positive fragment can remain in a compatible frame. It also requires
+that authority is actually owned and that normal loan recovery permits
+consuming every supplied authority, credit, and receipt. Full supply does not
+by itself discharge borrow obligations. It does
+not scan unrelated resources. It does not reset a population by printed name.
+
+## Scope and implementation acceptance
+
+Implement this as generation-bearing resource primitives, separate from
+sequential `(family, arguments)` population snapshots. Keep operations indexed
+by their actual inputs; do not scan project-wide state or copy all histories.
+The existing ordinary resource and mutex transfer paths should carry these
+primitives with their checked associations.
+
+Required checks:
+
+- Fresh creation, zero capacity, bounded arithmetic, split/combine quantities,
+  and the frame-preserving completion rule.
+- No ordinary token constructor, resource fold, contract output, or join can
+  manufacture a credit, receipt, authority, or second application of an update.
+- Duplicate authority, mixed generations, stale receipts after reinitialization,
+  missing/mismatched protected authority, replacement-pool publication,
+  double completion, and early retirement
+  are rejected with the missing resource or bound identified.
+- A Count observation or old authority field cannot become a new observation of
+  current state. Lock refreshes values without changing generation association.
+- The unchanged C verifies its exact-two success result, both create failures,
+  initialization failure, and reverse join order. Negative workers preserve the
+  original incorrect C as their regression.
+- Expansion produces a recheckable certificate; deterministic scaling tests cover
+  independent pools and long explicit proof sequences; `scripts/check.sh` passes.
+
+Do not add a general shared-population body, wildcard Count authority, resource
+parameters, or a mutex-specific completion operation. A fractional authoritative
+sum is another sound design direction, but introduces fragment shares and a
+full-share equality rule. For this milestone the bounded pool fits the existing
+quantity arithmetic and yields direct missing-credit/receipt diagnostics.
+
+This document does not claim the exact-two C proof is complete. Implementation
+is blocked on review of the proposed built-in resource and proof-operation
+interface, including the implicit generation relationship described above.
