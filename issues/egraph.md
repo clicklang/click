@@ -159,8 +159,16 @@ The detailed invariants and API boundaries are in
 
 ## Implementation progress (2026-09-27)
 
+The next integration slice exposes the existing implementation as
+`kernel::equality_graph::EqualityGraph`, with `add_equality` and `are_equal`.
+It remains trusted kernel code with pointer-typed operands and no `explain`
+requirement. Pointer spelling helpers remain explicitly separate. This is a
+behavior-preserving interface refactor; additional equality sorts and consumer
+migrations follow one green commit at a time. The broad unmerged
+`codex/egraph-foundation` draft is reference material, not the next merge target.
+
 The first implementation chunk replaces the bounded load normalizer in
-`pointer_classes.rs` with maintained same-snapshot application signatures and
+the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
 registered pointer-width load blocks. It does **not** yet change all C loads
 to that representation, migrate resource indexes, or complete milestone B.

@@ -7907,7 +7907,7 @@ pub struct PureFactContext {
     /// a transitive or displaced pointer equality is two lookups. Derived
     /// from the same true cross-block equalities; appended on insertion and
     /// rebuilt from the alias index on the rare withdrawal.
-    pub(super) pointer_classes: super::assumptions::PointerClasses,
+    pub(super) equality_graph: super::equality_graph::EqualityGraph,
     /// Normalized same-block pointer equalities, indexed under each offset.
     pub(super) pointer_offset_aliases: crate::persistent::PersistentMap<
         PointerOffsetTerm,

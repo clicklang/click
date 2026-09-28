@@ -24,9 +24,8 @@ mod condition_reasoning;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
 mod constant_classes;
-mod pointer_classes;
+use super::equality_graph::EqualityGraph;
 pub(in crate::kernel) use constant_classes::ConstantClasses;
-pub(in crate::kernel) use pointer_classes::PointerClasses;
 mod memory_reasoning;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
@@ -2840,25 +2839,25 @@ impl PureFactContext {
             };
         }
         if insert {
-            self.pointer_classes.assume_equal(left, right);
+            self.equality_graph.add_equality(left, right);
         } else {
-            self.rebuild_pointer_classes();
+            self.rebuild_equality_graph();
         }
     }
 
-    /// Rebuilds the pointer classes from the exact alias index. A union-find
+    /// Rebuilds the graph's current pointer fragment from the exact alias index. A union-find
     /// cannot forget one equality, so a withdrawal refiles the equalities
     /// that remain: work in the pointer equalities held, not in the facts.
-    fn rebuild_pointer_classes(&mut self) {
-        let mut classes = PointerClasses::default();
+    fn rebuild_equality_graph(&mut self) {
+        let mut classes = EqualityGraph::default();
         for (left, aliases) in self.pointer_block_aliases.iter() {
             for (right, _) in aliases.iter() {
                 if left < right {
-                    classes.assume_equal(left, right);
+                    classes.add_equality(left, right);
                 }
             }
         }
-        self.pointer_classes = classes;
+        self.equality_graph = classes;
     }
 
     fn adjust_pointer_offset_alias(
@@ -2988,7 +2987,7 @@ impl PureFactContext {
         // normal form alone would equate offsets whose loads are still named
         // by their exact spelling, which the load stage of the equality
         // closure has to change first.
-        if left.block != right.block && self.pointer_classes.proves_equal(left, right) {
+        if left.block != right.block && self.equality_graph.are_equal(left, right) {
             return true;
         }
         let matches = |candidate: &Pointer, expected: &Pointer| {
@@ -3139,7 +3138,7 @@ impl PureFactContext {
         self.order_condition_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
-        self.pointer_classes = PointerClasses::default();
+        self.equality_graph = EqualityGraph::default();
         self.pointer_offset_aliases = crate::persistent::PersistentMap::default();
         self.pointer_offset_aliases_by_root = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();

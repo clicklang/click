@@ -199,8 +199,8 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
             // stored value is this snapshot's value at the address. Only a
             // block the pointer classes put with others is retried.
             assumptions
-                .pointer_classes
-                .other_spellings(&pointer)
+                .equality_graph
+                .pointer_spellings(&pointer)
                 .into_iter()
                 .find_map(|spelling| {
                     let stored = memory.known_value(&spelling)?;

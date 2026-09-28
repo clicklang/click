@@ -1,4 +1,17 @@
-//! Equality classes of pointers, as a persistent union-find with offsets.
+//! Trusted kernel equality graph.
+//!
+//! This graph is part of the trusted kernel. Kernel rules may accept its
+//! equality answers directly in the current proof context; it does not emit
+//! a separate proof or run proof search. Only established equalities may be
+//! added. Branches clone persistent state so local assumptions do not leak.
+//!
+//! The current supported fragment is pointers, affine byte offsets, and
+//! registered same-snapshot pointer loads. The insertion and query API is
+//! intentionally still pointer-typed; adding another term sort is a separate
+//! change. Pointer spelling helpers serve legacy consumers and are not the
+//! general equality interface.
+//!
+//! The pointer fragment uses a persistent union-find with offsets.
 //!
 //! A pointer is a block and a byte offset, and its address is the block's
 //! base address plus the offset. A true pointer equality `p == q` between
@@ -32,7 +45,7 @@
 //! equality between two blocks already in one class adds nothing here: it
 //! relates offsets, not bases, and stays with the offset facts.
 
-use super::*;
+use super::prelude::*;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
 /// ID; the original term is retained only for legacy spelling reconstruction.
@@ -274,26 +287,26 @@ pub(in crate::kernel) struct CanonicalPointer {
 }
 
 /// The pointer fragment's closed, persistent state. Query registration adds only
-/// definitional load applications; hypotheses enter through `assume_equal`.
+/// definitional load applications; hypotheses enter through `add_equality`.
 /// Cloning copies the persistent roots into a new lock, never a shared mutable
 /// graph. The lock preserves `PureFactContext`'s Send/Sync contract.
 #[derive(Default)]
-pub(in crate::kernel) struct PointerClasses {
+pub(in crate::kernel) struct EqualityGraph {
     state: std::sync::Mutex<PointerClassState>,
 }
 
-impl Clone for PointerClasses {
+impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
-            state: std::sync::Mutex::new(self.state.lock().expect("pointer classes").clone()),
+            state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
     }
 }
 
-impl std::fmt::Debug for PointerClasses {
+impl std::fmt::Debug for EqualityGraph {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let state = self.state.lock().expect("pointer classes");
-        f.debug_struct("PointerClasses")
+        let state = self.state.lock().expect("equality graph");
+        f.debug_struct("EqualityGraph")
             .field("members", &state.parent.len())
             .field("loads", &state.loads.len())
             .finish()
@@ -344,12 +357,15 @@ struct PointerClassState {
     offset_parts: crate::persistent::PersistentMap<OffsetPart, u64>,
 }
 
-impl PointerClasses {
-    pub(in crate::kernel) fn proves_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+impl EqualityGraph {
+    /// Query the maintained closure, registering supported load applications
+    /// on demand. A false answer means equality is not established here,
+    /// not that the operands are unequal. No frame or heuristic search runs.
+    pub(in crate::kernel) fn are_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         if left == right {
             return true;
         }
-        let mut state = self.state.lock().expect("pointer classes");
+        let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([left.block.clone(), right.block.clone()]);
         // Different classes cannot meet by offset normalization. In
         // particular, do not traverse an unrelated allocation's offset just
@@ -368,25 +384,29 @@ impl PointerClasses {
         }
     }
 
-    pub(in crate::kernel) fn assume_equal(&mut self, left: &Pointer, right: &Pointer) -> bool {
-        let state = self.state.get_mut().expect("pointer classes");
+    /// Admit an equality already established in this proof context and
+    /// propagate its supported congruence consequences. Returns whether a
+    /// class merge occurred, not whether the supplied equality is valid.
+    pub(in crate::kernel) fn add_equality(&mut self, left: &Pointer, right: &Pointer) -> bool {
+        let state = self.state.get_mut().expect("equality graph");
         state.register_blocks([left.block.clone(), right.block.clone()]);
         state.close(vec![(left.clone(), right.clone())])
     }
+}
 
-    pub(in crate::kernel) fn is_classed(&self, block: &PointerBlock) -> bool {
-        let mut state = self.state.lock().expect("pointer classes");
+/// Pointer-specific compatibility queries for consumers not yet indexed by
+/// equality. These enumerate spellings separately from `are_equal`.
+impl EqualityGraph {
+    pub(in crate::kernel) fn pointer_is_classed(&self, block: &PointerBlock) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         state.parent.contains_key(block) || state.members.contains_key(block)
     }
 
     /// Transitional resource consumers still enumerate spellings. This is
     /// deliberately separate from congruence lookup, which never enumerates.
-    pub(in crate::kernel) fn class_blocks(
-        &self,
-        block: &PointerBlock,
-    ) -> Vec<(PointerBlock, AffineOffset)> {
-        let mut state = self.state.lock().expect("pointer classes");
+    fn pointer_class_members(&self, block: &PointerBlock) -> Vec<(PointerBlock, AffineOffset)> {
+        let mut state = self.state.lock().expect("equality graph");
         state.register_blocks([block.clone()]);
         let (representative, own) = state.find(block);
         let mut blocks = Vec::new();
@@ -404,11 +424,11 @@ impl PointerClasses {
         blocks
     }
 
-    pub(in crate::kernel) fn other_spellings(&self, pointer: &Pointer) -> Vec<Pointer> {
-        if !self.is_classed(&pointer.block) {
+    pub(in crate::kernel) fn pointer_spellings(&self, pointer: &Pointer) -> Vec<Pointer> {
+        if !self.pointer_is_classed(&pointer.block) {
             return Vec::new();
         }
-        self.class_blocks(&pointer.block)
+        self.pointer_class_members(&pointer.block)
             .into_iter()
             .filter(|(member, _)| member != &pointer.block)
             .filter_map(|(member, delta)| {
@@ -680,18 +700,18 @@ mod tests {
 
     #[test]
     fn a_chain_and_a_displacement_are_proved_without_a_walk() {
-        let mut classes = PointerClasses::default();
-        assert!(classes.assume_equal(&at(symbolic(1), 0), &at(symbolic(2), 0)));
-        assert!(classes.assume_equal(&at(symbolic(2), 0), &at(symbolic(3), 16)));
-        assert!(classes.proves_equal(&at(symbolic(1), 0), &at(symbolic(3), 16)));
-        assert!(classes.proves_equal(&at(symbolic(1), 8), &at(symbolic(3), 24)));
-        assert!(!classes.proves_equal(&at(symbolic(1), 8), &at(symbolic(3), 8)));
-        assert!(!classes.proves_equal(&at(symbolic(1), 0), &at(symbolic(4), 0)));
+        let mut classes = EqualityGraph::default();
+        assert!(classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 0)));
+        assert!(classes.add_equality(&at(symbolic(2), 0), &at(symbolic(3), 16)));
+        assert!(classes.are_equal(&at(symbolic(1), 0), &at(symbolic(3), 16)));
+        assert!(classes.are_equal(&at(symbolic(1), 8), &at(symbolic(3), 24)));
+        assert!(!classes.are_equal(&at(symbolic(1), 8), &at(symbolic(3), 8)));
+        assert!(!classes.are_equal(&at(symbolic(1), 0), &at(symbolic(4), 0)));
     }
 
     #[test]
     fn a_symbolic_displacement_carries_through_the_class() {
-        let mut classes = PointerClasses::default();
+        let mut classes = EqualityGraph::default();
         let element = Pointer {
             block: symbolic(2),
             offset: PointerOffsetTerm::Int32Scaled {
@@ -699,7 +719,7 @@ mod tests {
                 byte_width: 4,
             },
         };
-        classes.assume_equal(&at(symbolic(1), 0), &element);
+        classes.add_equality(&at(symbolic(1), 0), &element);
         let next = Pointer {
             block: symbolic(2),
             offset: PointerOffsetTerm::Add(
@@ -710,25 +730,25 @@ mod tests {
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
         };
-        assert!(classes.proves_equal(&at(symbolic(1), 4), &next));
-        assert!(!classes.proves_equal(&at(symbolic(1), 4), &element));
+        assert!(classes.are_equal(&at(symbolic(1), 4), &next));
+        assert!(!classes.are_equal(&at(symbolic(1), 4), &element));
     }
 
     #[test]
     fn an_equality_inside_one_class_records_nothing() {
-        let mut classes = PointerClasses::default();
-        classes.assume_equal(&at(symbolic(1), 0), &at(symbolic(2), 0));
-        assert!(!classes.assume_equal(&at(symbolic(1), 0), &at(symbolic(2), 8)));
-        assert!(classes.proves_equal(&at(symbolic(1), 0), &at(symbolic(2), 0)));
-        assert!(!classes.proves_equal(&at(symbolic(1), 0), &at(symbolic(2), 8)));
+        let mut classes = EqualityGraph::default();
+        classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 0));
+        assert!(!classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 8)));
+        assert!(classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 0)));
+        assert!(!classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 8)));
     }
 
     #[test]
-    fn class_blocks_restate_a_pointer_in_every_member() {
-        let mut classes = PointerClasses::default();
-        classes.assume_equal(&at(symbolic(1), 0), &at(symbolic(2), 8));
-        classes.assume_equal(&at(symbolic(3), 4), &at(symbolic(2), 0));
-        let blocks = classes.class_blocks(&symbolic(1));
+    fn pointer_class_members_restate_a_pointer_in_every_member() {
+        let mut classes = EqualityGraph::default();
+        classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 8));
+        classes.add_equality(&at(symbolic(3), 4), &at(symbolic(2), 0));
+        let blocks = classes.pointer_class_members(&symbolic(1));
         assert_eq!(blocks.len(), 3);
         for (member, delta) in blocks {
             let restated = Pointer {
@@ -738,14 +758,14 @@ mod tests {
                 ),
             };
             assert!(delta.terms.is_empty());
-            assert!(classes.proves_equal(&at(symbolic(1), 0), &restated));
+            assert!(classes.are_equal(&at(symbolic(1), 0), &restated));
         }
     }
 
     #[test]
-    fn other_spellings_name_the_same_address_in_each_member() {
-        let mut classes = PointerClasses::default();
-        assert!(classes.other_spellings(&at(symbolic(1), 4)).is_empty());
+    fn pointer_spellings_name_the_same_address_in_each_member() {
+        let mut classes = EqualityGraph::default();
+        assert!(classes.pointer_spellings(&at(symbolic(1), 4)).is_empty());
         let element = Pointer {
             block: symbolic(2),
             offset: PointerOffsetTerm::Int32Scaled {
@@ -753,13 +773,13 @@ mod tests {
                 byte_width: 8,
             },
         };
-        classes.assume_equal(&at(symbolic(1), 0), &element);
-        classes.assume_equal(&at(symbolic(3), 16), &at(symbolic(1), 0));
-        let spellings = classes.other_spellings(&at(symbolic(1), 4));
+        classes.add_equality(&at(symbolic(1), 0), &element);
+        classes.add_equality(&at(symbolic(3), 16), &at(symbolic(1), 0));
+        let spellings = classes.pointer_spellings(&at(symbolic(1), 4));
         assert_eq!(spellings.len(), 2);
         for spelling in &spellings {
             assert_ne!(spelling.block, symbolic(1));
-            assert!(classes.proves_equal(spelling, &at(symbolic(1), 4)));
+            assert!(classes.are_equal(spelling, &at(symbolic(1), 4)));
         }
         assert!(spellings.contains(&at(symbolic(3), 20)));
     }
@@ -783,18 +803,18 @@ mod tests {
         let through_q = name(&memory, at(symbolic(42), 0));
         let through_p_later = name(&other_memory, at(symbolic(41), 0));
         let through_r = name(&memory, at(symbolic(43), 0));
-        let mut classes = PointerClasses::default();
-        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_q.clone(), 8)));
-        classes.assume_equal(&at(symbolic(41), 0), &at(symbolic(42), 0));
-        assert!(classes.proves_equal(&at(through_p.clone(), 8), &at(through_q.clone(), 8)));
-        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_q, 0)));
-        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_p_later, 8)));
-        assert!(!classes.proves_equal(&at(through_p.clone(), 8), &at(through_r.clone(), 8)));
+        let mut classes = EqualityGraph::default();
+        assert!(!classes.are_equal(&at(through_p.clone(), 8), &at(through_q.clone(), 8)));
+        classes.add_equality(&at(symbolic(41), 0), &at(symbolic(42), 0));
+        assert!(classes.are_equal(&at(through_p.clone(), 8), &at(through_q.clone(), 8)));
+        assert!(!classes.are_equal(&at(through_p.clone(), 8), &at(through_q, 0)));
+        assert!(!classes.are_equal(&at(through_p.clone(), 8), &at(through_p_later, 8)));
+        assert!(!classes.are_equal(&at(through_p.clone(), 8), &at(through_r.clone(), 8)));
         // A loaded pointer an equality puts in a class brings the loads
         // congruent to it along.
-        classes.assume_equal(&at(through_r.clone(), 0), &at(symbolic(60), 0));
+        classes.add_equality(&at(through_r.clone(), 0), &at(symbolic(60), 0));
         let through_r_again = name(&memory, at(symbolic(43), 0));
-        assert!(classes.proves_equal(&at(through_r_again, 4), &at(symbolic(60), 4)));
+        assert!(classes.are_equal(&at(through_r_again, 4), &at(symbolic(60), 4)));
     }
 
     #[test]
@@ -816,13 +836,13 @@ mod tests {
         let lq = load(&q);
         let x = at(symbolic(104), 0);
         let y = at(symbolic(105), 0);
-        let mut classes = PointerClasses::default();
-        classes.assume_equal(&p, &q);
-        assert!(classes.proves_equal(&lp, &lq));
-        classes.assume_equal(&lp, &x);
-        classes.assume_equal(&lq, &y);
-        assert!(classes.proves_equal(&lp, &lq));
-        assert!(classes.proves_equal(&x, &y));
+        let mut classes = EqualityGraph::default();
+        classes.add_equality(&p, &q);
+        assert!(classes.are_equal(&lp, &lq));
+        classes.add_equality(&lp, &x);
+        classes.add_equality(&lq, &y);
+        assert!(classes.are_equal(&lp, &lq));
+        assert!(classes.are_equal(&x, &y));
     }
 
     #[test]
@@ -847,12 +867,12 @@ mod tests {
         };
         let (read_before, read_after) = (name(&before), name(&after));
         assert_ne!(read_before, read_after);
-        let mut classes = PointerClasses::default();
+        let mut classes = EqualityGraph::default();
         let left = at(read_before, 8);
         let right = at(read_after, 8);
         // Pointer comparison never searches memory history, even when a
         // separate frame derivation could prove the cell unchanged.
-        assert!(!classes.proves_equal(&left, &right));
+        assert!(!classes.are_equal(&left, &right));
         let separated = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(other, cell.clone()), false);
         let load = |pointer: &Pointer| {
@@ -866,20 +886,20 @@ mod tests {
         assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
         ));
-        assert!(!classes.proves_equal(&left, &right));
+        assert!(!classes.are_equal(&left, &right));
         // A checked caller can contribute that conclusion explicitly.
-        classes.assume_equal(&left, &right);
-        assert!(classes.proves_equal(&left, &right));
+        classes.add_equality(&left, &right);
+        assert!(classes.are_equal(&left, &right));
     }
 
     #[test]
     fn a_branch_extends_its_own_copy() {
-        let mut trunk = PointerClasses::default();
-        trunk.assume_equal(&at(symbolic(1), 0), &at(symbolic(2), 0));
+        let mut trunk = EqualityGraph::default();
+        trunk.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 0));
         let mut branch = trunk.clone();
-        branch.assume_equal(&at(symbolic(2), 0), &at(symbolic(3), 0));
-        assert!(branch.proves_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
-        assert!(!trunk.proves_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
+        branch.add_equality(&at(symbolic(2), 0), &at(symbolic(3), 0));
+        assert!(branch.are_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
+        assert!(!trunk.are_equal(&at(symbolic(1), 0), &at(symbolic(3), 0)));
     }
 
     /// Load congruence for one query visits only the classed loads of the
@@ -894,7 +914,7 @@ mod tests {
         };
         let mut costs = Vec::new();
         for unrelated in [16u64, 64, 256] {
-            let mut classes = PointerClasses::default();
+            let mut classes = EqualityGraph::default();
             for index in 0..unrelated {
                 let memory = crate::kernel::intern_c_memory(
                     crate::kernel::CMemory::new()
@@ -905,16 +925,16 @@ mod tests {
                         ),
                 );
                 let loaded = name(&memory, at(symbolic(70_000 + index), 0));
-                classes.assume_equal(&at(loaded, 0), &at(symbolic(80_000 + index), 0));
+                classes.add_equality(&at(loaded, 0), &at(symbolic(80_000 + index), 0));
             }
             let memory = crate::kernel::intern_c_memory(
                 crate::kernel::CMemory::new().with_block(symbolic(90_000), 16),
             );
-            classes.assume_equal(&at(symbolic(90_001), 0), &at(symbolic(90_002), 0));
+            classes.add_equality(&at(symbolic(90_001), 0), &at(symbolic(90_002), 0));
             let left = name(&memory, at(symbolic(90_001), 0));
             let right = name(&memory, at(symbolic(90_002), 0));
             let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-                classes.proves_equal(&at(left.clone(), 8), &at(right.clone(), 8))
+                classes.are_equal(&at(left.clone(), 8), &at(right.clone(), 8))
             });
             assert!(equal);
             costs.push(work);
@@ -953,23 +973,17 @@ mod tests {
             [2, 0, 1],
             [2, 1, 0],
         ] {
-            let mut classes = PointerClasses::default();
+            let mut classes = EqualityGraph::default();
             for index in order {
-                classes.proves_equal(&lp, &lq); // registration before and between merges
-                classes.assume_equal(&equations[index].0, &equations[index].1);
+                classes.are_equal(&lp, &lq); // registration before and between merges
+                classes.add_equality(&equations[index].0, &equations[index].1);
             }
-            assert!(classes.proves_equal(&lp, &lq), "{order:?}");
+            assert!(classes.are_equal(&lp, &lq), "{order:?}");
+            assert!(classes.are_equal(&at(x.block.clone(), 8), &y), "{order:?}");
+            assert!(!classes.are_equal(&x, &y), "different load displacements");
+            classes.add_equality(&at(symbolic(206), 0), &at(symbolic(207), 0));
             assert!(
-                classes.proves_equal(&at(x.block.clone(), 8), &y),
-                "{order:?}"
-            );
-            assert!(
-                !classes.proves_equal(&x, &y),
-                "different load displacements"
-            );
-            classes.assume_equal(&at(symbolic(206), 0), &at(symbolic(207), 0));
-            assert!(
-                classes.proves_equal(&lp, &lq),
+                classes.are_equal(&lp, &lq),
                 "extra facts must preserve equality"
             );
         }
@@ -986,14 +1000,14 @@ mod tests {
             left = named_load(&memory, &left);
             right = named_load(&memory, &right);
         }
-        let mut classes = PointerClasses::default();
-        assert!(!classes.proves_equal(&left, &right));
-        classes.assume_equal(&p, &q);
-        assert!(classes.proves_equal(&left, &right));
+        let mut classes = EqualityGraph::default();
+        assert!(!classes.are_equal(&left, &right));
+        classes.add_equality(&p, &q);
+        assert!(classes.are_equal(&left, &right));
         // A newly named parent after closure must see the existing congruence.
         let later_left = named_load(&memory, &at(left.block, 8));
         let later_right = named_load(&memory, &at(right.block, 8));
-        assert!(classes.proves_equal(&later_left, &later_right));
+        assert!(classes.are_equal(&later_left, &later_right));
     }
 
     #[test]
@@ -1005,16 +1019,16 @@ mod tests {
         let lq = named_load(&memory, &q);
         let x = at(symbolic(404), 0);
         let y = at(symbolic(405), 0);
-        let mut trunk = PointerClasses::default();
-        trunk.assume_equal(&lp, &x);
-        trunk.assume_equal(&lq, &y);
+        let mut trunk = EqualityGraph::default();
+        trunk.add_equality(&lp, &x);
+        trunk.add_equality(&lq, &y);
         let sibling = trunk.clone();
         let mut branch = trunk.clone();
-        branch.assume_equal(&p, &q);
-        assert!(branch.proves_equal(&x, &y));
-        assert!(!trunk.proves_equal(&x, &y));
-        assert!(!sibling.proves_equal(&x, &y));
-        assert!(!PointerClasses::default().proves_equal(&lp, &lq));
+        branch.add_equality(&p, &q);
+        assert!(branch.are_equal(&x, &y));
+        assert!(!trunk.are_equal(&x, &y));
+        assert!(!sibling.are_equal(&x, &y));
+        assert!(!EqualityGraph::default().are_equal(&lp, &lq));
     }
 
     #[test]
@@ -1026,19 +1040,19 @@ mod tests {
         let right = named_load(&memory, &q);
         let mut costs = Vec::new();
         for size in [16, 64, 256, 1024] {
-            let mut classes = PointerClasses::default();
+            let mut classes = EqualityGraph::default();
             for i in 0..size {
                 let load = named_load(&memory, &at(symbolic(100_000 + i), 0));
-                classes.assume_equal(&load, &at(symbolic(200_000 + i), 0));
+                classes.add_equality(&load, &at(symbolic(200_000 + i), 0));
             }
-            classes.assume_equal(&p, &q);
+            classes.add_equality(&p, &q);
             let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-                classes.proves_equal(&left, &right)
+                classes.are_equal(&left, &right)
             });
             assert!(equal);
             costs.push(work);
             let (equal, map_work) =
-                crate::persistent::measure_persistent_work(|| classes.proves_equal(&left, &right));
+                crate::persistent::measure_persistent_work(|| classes.are_equal(&left, &right));
             assert!(equal);
             assert!(
                 map_work < 32 * (size.ilog2() as usize + 1),
@@ -1054,18 +1068,18 @@ mod tests {
         for size in [16u64, 64, 256, 1024] {
             let left = at(symbolic(602), 0);
             let right = at(symbolic(603), 0);
-            let mut classes = PointerClasses::default();
+            let mut classes = EqualityGraph::default();
             let mut pairs = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for i in 0..size {
                     let a = named_load(&memory, &at(left.block.clone(), i as i64 * 8));
                     let b = named_load(&memory, &at(right.block.clone(), i as i64 * 8));
-                    assert!(!classes.proves_equal(&a, &b));
+                    assert!(!classes.are_equal(&a, &b));
                     pairs.push((a, b));
                 }
-                classes.assume_equal(&left, &right);
+                classes.add_equality(&left, &right);
                 for (a, b) in &pairs {
-                    assert!(classes.proves_equal(a, b));
+                    assert!(classes.are_equal(a, b));
                 }
             });
             assert!(
@@ -1081,17 +1095,17 @@ mod tests {
         let root = at(symbolic(702), 0);
         let mut costs = Vec::new();
         for size in [16u64, 64, 256, 1024] {
-            let mut trunk = PointerClasses::default();
+            let mut trunk = EqualityGraph::default();
             for i in 0..size {
                 let load = named_load(&memory, &at(root.block.clone(), i as i64 * 8));
-                trunk.assume_equal(&load, &at(symbolic(300_000 + i), 0));
+                trunk.add_equality(&load, &at(symbolic(300_000 + i), 0));
             }
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for i in 0..16 {
                     let mut branch = trunk.clone();
                     let alias = at(symbolic(400_000 + i), 0);
-                    branch.assume_equal(&root, &alias);
-                    assert!(branch.proves_equal(&root, &alias));
+                    branch.add_equality(&root, &alias);
+                    assert!(branch.are_equal(&root, &alias));
                 }
             });
             costs.push(work);
@@ -1137,12 +1151,12 @@ mod tests {
             0,
         );
         let pointer = named_load(&memory, &q);
-        let mut classes = PointerClasses::default();
-        classes.assume_equal(&p, &q);
-        assert!(!classes.proves_equal(&small, &pointer));
+        let mut classes = EqualityGraph::default();
+        classes.add_equality(&p, &q);
+        assert!(!classes.are_equal(&small, &pointer));
         let widened = named_load(&memory, &p);
         assert_eq!(small, widened);
-        assert!(classes.proves_equal(&widened, &pointer));
+        assert!(classes.are_equal(&widened, &pointer));
     }
 
     #[test]
@@ -1193,20 +1207,20 @@ mod tests {
         for exponent in [6u32, 8, 10, 12] {
             let n = 1u64 << exponent;
             let (classes, work) = crate::instrumentation::measure_deterministic_work(|| {
-                let mut classes = PointerClasses::default();
+                let mut classes = EqualityGraph::default();
                 let mut width = 1;
                 while width < n {
                     let mut start = 0;
                     while start + width < n {
                         classes
-                            .assume_equal(&at(symbolic(start), 0), &at(symbolic(start + width), 0));
+                            .add_equality(&at(symbolic(start), 0), &at(symbolic(start + width), 0));
                         start += 2 * width;
                     }
                     width *= 2;
                 }
                 classes
             });
-            assert!(classes.proves_equal(&at(symbolic(0), 0), &at(symbolic(n - 1), 0)));
+            assert!(classes.are_equal(&at(symbolic(0), 0), &at(symbolic(n - 1), 0)));
             let bound = 16 * n * u64::from(exponent);
             assert!(
                 work as u64 <= bound,

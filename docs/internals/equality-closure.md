@@ -7,6 +7,30 @@ described here remain planned work.
 The repository's `issues/egraph.md` owns milestones, regressions, the
 handoff checklist, and historical implementation anchors.
 
+## Current interface and trust boundary
+
+`kernel::equality_graph::EqualityGraph` is part of the **trusted kernel**.
+Its `add_equality(left, right)` operation admits an equality established in the
+current proof context; `are_equal(left, right)` queries the maintained closure.
+A negative query means unknown, not disequal. Insertion's return value reports
+whether a class merge occurred, not validation of the supplied premise.
+
+This first interface refactor preserves the existing pointer fragment and its
+pointer-typed operands. Supported load applications register on demand during
+insertion and queries. New term sorts and additional consumers will be added
+in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
+pointer-specific compatibility helpers for legacy consumers.
+
+Kernel rules may trust the graph's answers in their own proof context. There
+is no `explain` API or separate derivation checker. Expanded proofs can use
+simple kernel equality queries; expansion need not print the internal
+congruence steps. Such a consumer must preserve the checked premises, branch,
+load interpretation, and memory snapshot of the query. Cloning shares
+persistent storage while keeping subsequent additions branch-local.
+
+The larger typed-pointer migration remains an unmerged reference draft in
+`codex/egraph-foundation`; this refactor imports none of its behavior changes.
+
 ## Problem and scope
 
 A proved equality must have the same meaning at every kernel consumer.
@@ -214,9 +238,11 @@ The closure is a kernel decision procedure. Every non-definitional merge must
 have a checked source: an admitted hypothesis, an execution rule, another
 checked derivation, or a congruence/theory consequence of such sources.
 Certificates and selected-premise tactics must use only their allowed context.
-Where an explicit certificate needs equality evidence, provide a shareable
-explanation DAG or an equivalent checked derivation without repeatedly
-expanding a long chain.
+The graph itself is trusted; a kernel equality query does not require a
+separate explanation or derivation checker. A future explanation facility
+would need a concrete consumer, such as diagnostics or premise dependency
+reporting. It is not a prerequisite for `click expand`: a simple checked
+operation can query the graph maintained from the certificate's allowed facts.
 
 Equality substitution now has a kernel-owned checked rule in
 `proof/equality_rewrite.rs`. It admits the cited equality through the persistent

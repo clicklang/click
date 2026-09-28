@@ -5003,14 +5003,17 @@ impl ResourceContext {
         else {
             return self.without_fact_at_its_spelling(fact, assumptions);
         };
-        if !assumptions.pointer_classes.is_classed(&range.base.block) {
+        if !assumptions
+            .equality_graph
+            .pointer_is_classed(&range.base.block)
+        {
             return self.without_fact_at_its_spelling(fact, assumptions);
         }
         let original = self.clone();
         if let Some(consumed) = self.without_fact_at_its_spelling(fact, assumptions) {
             return Some(consumed);
         }
-        let spellings = assumptions.pointer_classes.other_spellings(&range.base);
+        let spellings = assumptions.equality_graph.pointer_spellings(&range.base);
         spellings.into_iter().find_map(|base| {
             let mut restated_range = range.clone();
             restated_range.base = base;
