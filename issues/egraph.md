@@ -302,6 +302,12 @@ checks. The shared range-endpoint helper also compares scaled pointer offsets
 and remains unchanged. Regressions cover snapshot and withdrawal boundaries,
 width mismatch, and multi-size queries without the legacy fact index.
 
+Certified condition-fact transport now compares operands of matching
+signed-order and equality facts through the typed int32 graph helper. The
+condition kind and polarity still have to match; changed snapshots and
+withdrawn premises remain distinct. Direct and multi-size regressions avoid
+the legacy fact index for graph-congruent operands.
+
 Selected range-composition candidates now rely on the graph-backed int32
 condition decision for endpoint equality, without a redundant second legacy
 fact-path walk. A direct join regression checks graph-congruent endpoints and

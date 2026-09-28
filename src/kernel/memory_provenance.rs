@@ -4371,8 +4371,138 @@ pub(crate) fn c_condition_facts_equivalent_for_memory_resolution(
     let Some((a, b, c, d)) = operands else {
         return false;
     };
-    bitvector_terms_proven_equal_for_memory_resolution(a, c, assumptions)
-        && bitvector_terms_proven_equal_for_memory_resolution(b, d, assumptions)
+    int32_values_proven_equal_for_memory_resolution(a, c, assumptions)
+        && int32_values_proven_equal_for_memory_resolution(b, d, assumptions)
+}
+
+#[cfg(test)]
+mod condition_fact_graph_equivalence_tests {
+    use super::*;
+
+    fn var(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    fn less_than(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+        Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), true)
+    }
+
+    #[test]
+    fn condition_fact_operands_use_graph_with_snapshot_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("fact-graph", 8));
+        let pointer = |index| Pointer {
+            block: "fact-graph".into(),
+            offset: PointerOffsetTerm::scale_int32(index, 4),
+        };
+        let load = |memory: &SharedCMemory, index| {
+            Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+                memory,
+                &pointer(index),
+                4,
+                memory,
+            ))
+        };
+        let (a, b) = (var(91), var(92));
+        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+            pointer(b.clone()),
+            CValue::Int32(Bitvector32Term::Constant(9)),
+        ));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let source = less_than(sum(load(&before, a.clone())), var(93));
+        let target = less_than(sum(load(&before, b.clone())), var(93));
+        let later = less_than(sum(load(&after, b.clone())), var(93));
+        let premise = ConditionTerm::equal(a, b.clone());
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert!(c_condition_facts_equivalent_for_memory_resolution(
+            &source, &target, &branch,
+        ));
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(!c_condition_facts_equivalent_for_memory_resolution(
+            &source, &later, &branch,
+        ));
+        assert!(!c_condition_facts_equivalent_for_memory_resolution(
+            &source, &target, &parent,
+        ));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(!c_condition_facts_equivalent_for_memory_resolution(
+            &source, &target, &withdrawn,
+        ));
+        let false_target = Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(sum(load(&before, b.clone())), var(93)),
+            false,
+        );
+        assert!(!c_condition_facts_equivalent_for_memory_resolution(
+            &source,
+            &false_target,
+            &branch,
+        ));
+        let equal_target = Proposition::ConditionIs(
+            ConditionTerm::equal(sum(load(&before, b.clone())), var(93)),
+            true,
+        );
+        assert!(!c_condition_facts_equivalent_for_memory_resolution(
+            &source,
+            &equal_target,
+            &branch,
+        ));
+        let right_premise = ConditionTerm::equal(var(93), var(94));
+        let both = branch.assume_condition(right_premise.clone(), true);
+        let target_right = less_than(sum(load(&before, b.clone())), var(94));
+        assert!(c_condition_facts_equivalent_for_memory_resolution(
+            &source,
+            &target_right,
+            &both,
+        ));
+        let equal_source = Proposition::ConditionIs(
+            ConditionTerm::equal(sum(load(&before, var(91))), var(93)),
+            true,
+        );
+        let equal_target =
+            Proposition::ConditionIs(ConditionTerm::equal(sum(load(&before, b)), var(94)), true);
+        assert!(c_condition_facts_equivalent_for_memory_resolution(
+            &equal_source,
+            &equal_target,
+            &both,
+        ));
+        let right_withdrawn =
+            both.without_exact_fact(&Proposition::ConditionIs(right_premise, true));
+        assert!(!c_condition_facts_equivalent_for_memory_resolution(
+            &source,
+            &target_right,
+            &right_withdrawn,
+        ));
+    }
+
+    #[test]
+    fn condition_fact_graph_queries_scale_without_fact_index() {
+        for size in [16u64, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+            let source = less_than(sum(var(0)), var(9000));
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context
+                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+            }
+            let _scope = context.enter_id_scope();
+            PureFactContext::reset_bitvector_equality_index_fact_visits();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 1..=size {
+                    let target = less_than(sum(var(index)), var(9000));
+                    assert!(c_condition_facts_equivalent_for_memory_resolution(
+                        &source, &target, &context,
+                    ));
+                }
+            });
+            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+            assert!(work < 300 * size as usize, "size={size}, work={work}");
+        }
+    }
 }
 
 /// Exports each certified store as the condition fact its record proves:

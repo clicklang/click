@@ -154,6 +154,12 @@ it has not been changed to accept wrapping graph equality as exact address
 equality. Regressions cover same-snapshot loads, changed snapshots, withdrawn
 premises, width mismatch, and multi-size queries without the legacy fact index.
 
+The kernel comparison of condition facts for certified transport now uses the
+typed int32 value rule for operands of matching signed-order or equality
+conditions. Condition kind and truth value must still match. Registered loads
+remain scoped to their defining snapshot, and withdrawn premises lose their
+consequences. Multi-size queries avoid the legacy fact index.
+
 For a range pair already selected for composition, endpoint comparison uses
 the graph-backed int32 condition decision. The composition helper no longer
 repeats a separate legacy fact-path walk after that decision. Candidate
