@@ -167,9 +167,10 @@ behavior-preserving interface refactor; additional equality sorts and consumer
 migrations follow one green commit at a time. The broad unmerged
 `codex/egraph-foundation` draft is reference material, not the next merge target.
 
-The first additional consumer is `normalize() using`: after validating and
-reducing its cited conditions, it can close a pointer-equality leaf through
-the current trusted equality graph. Ambient equality is deliberately available;
+The first additional consumer is `normalize() using`: after validating its
+cited premises, it uses the current trusted equality graph during reduction to
+decide pointer-equality leaves and conditional-expression guards. Failed
+queries stay unknown, and conditional reduction does not enter binder bodies. Ambient equality is deliberately available;
 other uncited conditions are not. This preserves the current term representation
 and adds no frame search or proof explanation. The graph now also retains
 explicit whole pointer-offset equalities, so normalization can prove transitive

@@ -31,10 +31,12 @@ persistent storage while keeping subsequent additions branch-local.
 The larger typed-pointer migration remains an unmerged reference draft in
 `codex/egraph-foundation`; this refactor imports none of its behavior changes.
 
-`normalize() using { ... }` now queries this existing graph for a positive
-pointer-equality leaf after reducing its cited conditions. Its equality query
-may use ambient graph facts; the `using` list restricts the additional
-conditions used for reduction. All cited premises must still be available and
+`normalize() using { ... }` queries this existing graph while reducing
+pointer-equality conditions, including guards of conditional expressions.
+Successful queries replace equality conditions with true; unsuccessful queries
+leave them unknown. The same traversal handles equality leaves and nested
+conditions. Graph queries may use ambient graph facts; the `using` list
+restricts the additional conditions used for reduction. All cited premises must still be available and
 supported. Other ambient facts, quantified bodies, and cross-snapshot frame
 search remain outside this operation. Expansion retains the simple step and
 rechecks it in the same proof context, without an explanation API or a

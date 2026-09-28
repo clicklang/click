@@ -10,6 +10,8 @@ use num_traits::ToPrimitive;
 use std::collections::HashMap;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
+mod graph_condition_tests;
 mod spec_rewrite;
 
 #[derive(Clone, Default)]
@@ -1164,6 +1166,7 @@ pub(crate) struct TermRewrite<'a> {
     bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
+    equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     collected_conditions: Option<Vec<ConditionTerm>>,
     integer_cache: HashMap<(u64, u64, bool), IntegerTerm>,
     scope_renaming_max: u64,
@@ -1209,6 +1212,7 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn new(from: &'a AlgebraicTerm, to: &'a AlgebraicTerm) -> Self {
         Self {
             conditions: None,
+            equality_graph: None,
             collected_conditions: None,
             algebraic: Some((from, to)),
             bitvector: None,
@@ -1273,6 +1277,7 @@ impl<'a> TermRewrite<'a> {
             .max();
         let mut rewrite = Self {
             conditions: None,
+            equality_graph: None,
             collected_conditions: None,
             algebraic: None,
             bitvector: Some((from, to)),
@@ -1377,6 +1382,7 @@ impl<'a> TermRewrite<'a> {
             algebraic: None,
             bitvector: None,
             conditions: Some(conditions),
+            equality_graph: None,
             collected_conditions: None,
             changed: false,
             integer_cache: HashMap::new(),
@@ -1411,12 +1417,25 @@ impl<'a> TermRewrite<'a> {
             collector_visits: 0,
         }
     }
+    /// Conditional reduction in the checked proof context. The graph can
+    /// establish positive equality only; an unsuccessful query stays unknown.
+    /// Like cited conditions, this context never enters binder bodies.
+    pub(in crate::kernel) fn for_conditions_with_graph(
+        conditions: &'a HashMap<ConditionTerm, bool>,
+        graph: &'a crate::kernel::equality_graph::EqualityGraph,
+    ) -> Self {
+        let mut rewrite = Self::for_conditions(conditions);
+        rewrite.equality_graph = Some(graph);
+        rewrite
+    }
+
     pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
         Self {
             algebraic: None,
             bitvector: None,
             pointer_variable: Some((from, to)),
             conditions: None,
+            equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -1494,6 +1513,7 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             pointer_variable: None,
             conditions: None,
+            equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -1665,6 +1685,7 @@ impl<'a> TermRewrite<'a> {
             bitvector: None,
             pointer_variable: None,
             conditions: None,
+            equality_graph: None,
             collected_conditions: None,
             integer_cache: HashMap::new(),
             scope_renaming_max: 0,
@@ -2596,6 +2617,9 @@ impl<'a> TermRewrite<'a> {
     }
 
     fn integer_fold_body(&mut self, body: &SharedIntegerTerm) -> IntegerTerm {
+        if self.conditions.is_some() {
+            return body.as_ref().clone();
+        }
         let previous = self.resolve_registered_loads;
         self.resolve_registered_loads = true;
         let body = self.integer_shared(body);
@@ -2679,7 +2703,11 @@ impl<'a> TermRewrite<'a> {
                 self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                 return exhausted();
             }
-            let body = self.integer(&arm.body).into();
+            let body = if self.conditions.is_some() {
+                arm.body.clone()
+            } else {
+                self.integer(&arm.body).into()
+            };
             self.restore_scope(&changes, saved_scope_id, saved_shadowed);
             if self.integer_work_exhausted {
                 return exhausted();
@@ -3510,6 +3538,12 @@ impl<'a> TermRewrite<'a> {
         };
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
+        } else if self.equality_graph.is_some_and(|graph| match &result {
+            ConditionTerm::PointerEqual(left, right) => graph.are_equal(left, right),
+            ConditionTerm::PointerOffsetEqual(left, right) => graph.are_offsets_equal(left, right),
+            _ => false,
+        }) {
+            ConditionTerm::Constant(true)
         } else {
             result
         }
@@ -4175,8 +4209,9 @@ mod tests {
                 };
             }
             let (visits, measured) = crate::instrumentation::measure_deterministic_work(|| {
-                let conditions = HashMap::new();
-                let mut rewrite = TermRewrite::for_conditions(&conditions);
+                let from = Bitvector32Term::Variable(Variable(90_000));
+                let to = Bitvector32Term::Constant(0);
+                let mut rewrite = TermRewrite::for_bits(&from, &to);
                 let _ = rewrite.term(&Term::Integer(expression.clone()));
                 rewrite.visits
             });

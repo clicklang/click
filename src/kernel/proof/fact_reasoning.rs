@@ -136,8 +136,8 @@ pub(crate) fn is_single_normalization_condition(proposition: &Proposition) -> bo
     crate::kernel::spec::proposition_as_single_condition(proposition).is_some()
 }
 
-/// Reduce checked, explicitly cited conditions, then close the resulting
-/// leaf by context-free normalization or the current trusted equality graph.
+/// Reduce checked, explicitly cited conditions and equalities established by
+/// the current trusted graph, then normalize the resulting leaf.
 /// Graph queries use the maintained context; they never scan ambient facts.
 pub(crate) fn normalize_using_conditions(
     goal: &Proposition,
@@ -240,19 +240,12 @@ pub(crate) fn normalize_using_conditions(
             }
         }
     }
-    let reduced = super::term_rewrite::TermRewrite::for_conditions(&conditions).proposition(goal);
-    let closes = normalizes_context_free_leaf(&reduced)
-        || match crate::kernel::spec::proposition_as_single_condition(&reduced) {
-            Some((ConditionTerm::PointerEqual(left, right), true)) => {
-                facts.assumptions().equality_graph.are_equal(&left, &right)
-            }
-            Some((ConditionTerm::PointerOffsetEqual(left, right), true)) => facts
-                .assumptions()
-                .equality_graph
-                .are_offsets_equal(&left, &right),
-            _ => false,
-        };
-    closes
+    let reduced = super::term_rewrite::TermRewrite::for_conditions_with_graph(
+        &conditions,
+        &facts.assumptions().equality_graph,
+    )
+    .proposition(goal);
+    normalizes_context_free_leaf(&reduced)
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
 }

@@ -16147,3 +16147,45 @@ fn normalize_using_pointer_addition_expands_and_rechecks() {
     assert!(verify_c0_sources(&expanded.replace("requires a == b;", ""), &c_sources).is_err());
     assert!(verify_c0_sources(&expanded.replace("b + 1;", "b + 2;"), &c_sources).is_err());
 }
+
+#[test]
+fn normalize_using_graph_conditions_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_graph_conditions.md");
+    let text = std::fs::read_to_string(&path).expect("read graph condition fixture");
+    let fixture = crate::cli::parse_mdtest(&path, &text).expect("parse graph condition fixture");
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().expect("Click source");
+    verify_c0_sources(source, &c_sources).expect("graph conditions should normalize");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("graph condition normalization should expand");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
+    verify_c0_sources(&expanded, &c_sources).expect("expanded graph condition should recheck");
+    let (keep_only, _) = expanded
+        .split_once("theorem mixed")
+        .expect("mixed theorem retained");
+    let missing = keep_only.replace("requires a == b;", "");
+    assert!(verify_c0_sources(&missing, &c_sources).is_err());
+    // Unknown equality proves neither choice of branch.
+    assert!(
+        verify_c0_sources(
+            &missing.replace("{ 7 } else { 0 }) == 7", "{ 7 } else { 0 }) == 0"),
+            &c_sources
+        )
+        .is_err()
+    );
+    let unavailable = source.replacen("using { }", "using { a + 1 == b + 1; }", 1);
+    assert!(verify_c0_sources(&unavailable, &c_sources).is_err());
+    let negated = source.replace("== b + 1 { 7 } else { 0 }", "!= b + 1 { 0 } else { 7 }");
+    verify_c0_sources(&negated, &c_sources)
+        .expect("known equality should also decide a negated guard");
+    let uncited = source.replace("using { x == 0; }", "using { }");
+    assert!(
+        verify_c0_sources(&uncited, &c_sources).is_err(),
+        "uncited scalar conditions stay unavailable"
+    );
+}
