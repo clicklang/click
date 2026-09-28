@@ -3,18 +3,6 @@ use super::reasoning::*;
 use super::resource_tracker::cell_source::*;
 use std::collections::BTreeSet;
 
-/// Resource arguments and fields carry values, not byte displacements. The
-/// int32 graph can answer these comparisons before the broader resolver.
-fn int32_resource_values_proven_equal(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-    assumptions: &PureFactContext,
-) -> bool {
-    (assumptions.equality_graph.has_term_equivalences()
-        && assumptions.equality_graph.are_int32_equal(left, right))
-        || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
-}
-
 /// Resource indices are logical values. ADT indices can only be exchanged
 /// using equality evidence of the same algebraic type; they are never cast
 /// to C scalars or interpreted as memory authority.
@@ -24,9 +12,6 @@ pub(crate) fn resource_arguments_proven_equal(
     assumptions: &PureFactContext,
 ) -> bool {
     match (left, right) {
-        (AlgebraicValue::C(CValue::Int32(left)), AlgebraicValue::C(CValue::Int32(right))) => {
-            int32_resource_values_proven_equal(left, right, assumptions)
-        }
         (AlgebraicValue::C(left), AlgebraicValue::C(right)) => {
             c_values_proven_equal_for_memory_resolution(left, right, assumptions)
         }
@@ -82,7 +67,7 @@ pub(crate) fn c_resources_directly_match(
             "kernel",
             "resource context equality",
             "resource direct match: bitvector value",
-            || int32_resource_values_proven_equal(left, right, assumptions),
+            || int32_values_proven_equal_for_memory_resolution(left, right, assumptions),
         ),
         (CValue::UInt8(left), CValue::UInt8(right)) => crate::instrumentation::measure_operation(
             "kernel",

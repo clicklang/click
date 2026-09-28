@@ -283,12 +283,12 @@ this does not turn wrapping index equality into exact byte-offset equality.
 Regressions cover same-snapshot load endpoints, a changed snapshot, premise
 withdrawal, and multi-size matching without building the legacy fact index.
 
-Direct composite/token and instance resource matching now queries the graph
-for `Int32` argument values and instance fields before its legacy scalar
-resolution path. They share one typed value rule. Same-snapshot load
-regressions check withdrawal and overwrite boundaries; multi-size queries
-avoid building the legacy fact index. Byte-typed and pointer arguments keep
-their existing rules.
+Checked `CValue::Int32` comparison now queries the graph before broader memory
+resolution. Composite/token and instance resource matching use this shared
+typed value rule for arguments and fields, removing the resource-specific graph
+check. Direct C-value regressions cover same-snapshot loads, withdrawal,
+overwrite, and multi-size queries without the legacy fact index. Byte-typed
+and pointer values keep their existing rules.
 
 Selected range-composition candidates now rely on the graph-backed int32
 condition decision for endpoint equality, without a redundant second legacy

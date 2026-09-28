@@ -1536,6 +1536,19 @@ pub(in crate::kernel) fn bitvector_terms_proven_equal_for_memory_resolution(
     })
 }
 
+/// Compare int32 *values* through the trusted graph before broader memory
+/// resolution. Callers proving exact byte-offset equality must use the
+/// separate offset judgment rather than this wrapping value equality.
+pub(in crate::kernel) fn int32_values_proven_equal_for_memory_resolution(
+    left: &Bitvector32Term,
+    right: &Bitvector32Term,
+    assumptions: &PureFactContext,
+) -> bool {
+    (assumptions.equality_graph.has_term_equivalences()
+        && assumptions.equality_graph.are_int32_equal(left, right))
+        || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
+}
+
 pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
     left: &CValue,
     right: &CValue,
@@ -1546,8 +1559,10 @@ pub(in crate::kernel) fn c_values_proven_equal_for_memory_resolution(
         (CValue::Int8(left), CValue::Int8(right)) => {
             bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
         }
+        (CValue::Int32(left), CValue::Int32(right)) => {
+            int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
+        }
         (CValue::Int16(left), CValue::Int16(right))
-        | (CValue::Int32(left), CValue::Int32(right))
         | (CValue::UInt8(left), CValue::UInt8(right))
         | (CValue::UInt16(left), CValue::UInt16(right))
         | (CValue::UInt32(left), CValue::UInt32(right))
