@@ -51,16 +51,34 @@ pub(super) struct WorkerCompletion {
     population_counts: Vec<WorkerPopulationCount>,
 }
 
-/// A checked contract's final total. Until join, the population is reserved:
-/// neither observations nor another transfer may treat this total as current.
-/// Stateful populations remain thread confined; this first accounting rule
-/// therefore handles ordinary abstract units without a shared body.
+/// A checked contract effect accumulated into a reserved final total. That
+/// total becomes observable only after every outstanding worker has joined.
+/// Fixed non-increasing abstract effects can overlap; stateful populations
+/// remain thread confined until shared-body custody is supported.
 #[derive(Clone, Debug)]
 pub(super) struct WorkerPopulationCount {
     pub(super) name: String,
     pub(super) arguments: super::ResourceArguments,
     pub(super) before: Bitvector32Term,
     pub(super) after: Bitvector32Term,
+    pub(super) overlap_safe: bool,
+}
+
+/// Keep a fixed-effect worker cohort's symbolic total bounded in size.
+/// Repeated subtraction must not build a path-length expression that every
+/// later create/join clones. Count effects are nonnegative fixed quantities.
+pub(super) fn consume_reserved_population(
+    prior: Bitvector32Term,
+    quantity: u32,
+) -> Option<Bitvector32Term> {
+    crate::instrumentation::record_deterministic_work(1);
+    match prior {
+        Bitvector32Term::Subtract(base, previous) if previous.as_const().is_some() => {
+            let total = previous.as_const()?.checked_add(quantity)?;
+            Some(Bitvector32Term::subtract(*base, total.into()))
+        }
+        prior => Some(Bitvector32Term::subtract(prior, quantity.into())),
+    }
 }
 
 impl WorkerPopulationCount {
@@ -70,7 +88,7 @@ impl WorkerPopulationCount {
             .insert(super::CCountedPopulation {
                 name: self.name.clone(),
                 arguments: self.arguments.clone(),
-                count: self.before.clone(),
+                count: self.after.clone(),
                 family_observation_marker: false,
             });
         self.ensure_count_entry(state);
@@ -97,18 +115,25 @@ impl WorkerPopulationCount {
             .population_effects
             .pending_counts
             .get(&self.name, &self.arguments, false)
-            .is_some_and(|reserved| reserved.count == self.before)
+            .is_some()
             && state.counted_population(&self.name, &self.arguments) == Some(&self.before)
     }
 
     fn complete(&self, state: &mut CState) {
+        let final_count = state
+            .population_effects
+            .pending_counts
+            .get(&self.name, &self.arguments, false)
+            .expect("registered population completion")
+            .count
+            .clone();
         Arc::make_mut(&mut state.population_effects)
             .pending_counts
             .remove(&self.name, &self.arguments);
         *state = state.clone().with_counted_population(
             self.name.clone(),
             self.arguments.clone(),
-            self.after.clone(),
+            final_count,
         );
     }
 }
@@ -484,6 +509,7 @@ struct ThreadLedgerStorage {
     loan_trace: Option<ThreadLoanTrace>,
     local_views: PersistentMap<CResourceFact, LoanViewBinding>,
     mutex_workers: PersistentMap<Pointer, usize>,
+    population_workers: PersistentMap<(String, super::ResourceArguments), (usize, bool)>,
 }
 
 /// The checked loan root before the first outstanding create and the root
@@ -512,6 +538,7 @@ impl ThreadLedger {
                 loan_trace: None,
                 local_views: PersistentMap::default(),
                 mutex_workers: PersistentMap::default(),
+                population_workers: PersistentMap::default(),
             }),
         }
     }
@@ -522,6 +549,24 @@ impl ThreadLedger {
 
     pub(super) fn has_mutex_workers(&self, mutex: &Pointer) -> bool {
         self.storage.mutex_workers.contains_key(mutex)
+    }
+
+    pub(super) fn population_allows_overlap(
+        &self,
+        name: &str,
+        arguments: &super::ResourceArguments,
+    ) -> bool {
+        self.storage
+            .population_workers
+            .get(&(name.into(), arguments.clone()))
+            .is_some_and(|(_, safe)| *safe)
+    }
+
+    fn population_workers(&self, effect: &WorkerPopulationCount) -> usize {
+        self.storage
+            .population_workers
+            .get(&(effect.name.clone(), effect.arguments.clone()))
+            .map_or(0, |(count, _)| *count)
     }
 
     pub(super) fn has_live_rights(&self) -> bool {
@@ -541,6 +586,7 @@ impl ThreadLedger {
         self.storage.rights.is_empty()
             && self.storage.local_views.is_empty()
             && self.storage.mutex_workers.is_empty()
+            && self.storage.population_workers.is_empty()
             && self.storage.loan_trace.as_ref().is_some_and(|trace| {
                 trace.origin == *origin
                     && trace.current == *current
@@ -589,6 +635,13 @@ impl ThreadLedger {
             let count = mutex_workers.get(&identity.mutex).copied().unwrap_or(0);
             mutex_workers = mutex_workers.with_inserted(identity.mutex.clone(), count + 1);
         }
+        let mut population_workers = self.storage.population_workers.clone();
+        for effect in &right.completion.population_counts {
+            let key = (effect.name.clone(), effect.arguments.clone());
+            let (count, safe) = population_workers.get(&key).copied().unwrap_or((0, true));
+            population_workers =
+                population_workers.with_inserted(key, (count + 1, safe && effect.overlap_safe));
+        }
         for (fact, binding) in right.completion.plan.suspended_local_parents() {
             local_views = local_views.with_inserted(fact.clone(), binding.clone());
         }
@@ -599,6 +652,7 @@ impl ThreadLedger {
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
                 mutex_workers,
+                population_workers,
             }),
         }
     }
@@ -613,7 +667,19 @@ impl ThreadLedger {
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
         let mut mutex_workers = self.storage.mutex_workers.clone();
+        let mut population_workers = self.storage.population_workers.clone();
         if let Some(right) = self.right(handle) {
+            for effect in &right.completion.population_counts {
+                let key = (effect.name.clone(), effect.arguments.clone());
+                let (count, safe) = *population_workers
+                    .get(&key)
+                    .expect("registered population worker");
+                population_workers = if count == 1 {
+                    population_workers.without_key(&key)
+                } else {
+                    population_workers.with_inserted(key, (count - 1, safe))
+                };
+            }
             for usage in &right.completion.plan.mutex_uses {
                 let fact = usage.required_resource();
                 let super::CResource::MutexUse(identity) = fact.resource() else {
@@ -642,6 +708,7 @@ impl ThreadLedger {
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
                 mutex_workers,
+                population_workers,
             }),
         }
     }
@@ -1024,10 +1091,20 @@ impl ThreadContext {
                     &recovery.local_view_updates,
                 ),
         );
-        // Install only the joined worker's checked delta. Unrelated parent
-        // populations, including changes made after create, remain untouched.
+        // Publish the accumulated total only when this population is quiescent.
+        // A partial join returns resources, but no current Count observation.
+        // Unrelated populations remain untouched.
         for count in &completion.population_counts {
-            count.complete(&mut next.parent);
+            if next
+                .parent
+                .thread_ledger
+                .as_ref()
+                .expect("thread ledger")
+                .population_workers(count)
+                == 0
+            {
+                count.complete(&mut next.parent);
+            }
         }
         Ok((next, completion.facts.clone()))
     }
@@ -1043,6 +1120,7 @@ mod population_count_tests {
             arguments: vec![super::super::AlgebraicValue::C(CValue::Int32(index.into()))].into(),
             before: 3.into(),
             after: 2.into(),
+            overlap_safe: true,
         }
     }
 
@@ -1075,6 +1153,77 @@ mod population_count_tests {
         assert!(
             !effect.can_complete(&changed),
             "completion cannot be spent twice"
+        );
+    }
+
+    #[test]
+    fn reserved_symbolic_total_stays_bounded_as_workers_accumulate() {
+        let base = Bitvector32Term::Variable(super::super::Variable(900_008));
+        for size in [8, 64, 512] {
+            let (total, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut total = base.clone();
+                for _ in 0..size {
+                    total = consume_reserved_population(total.clone(), 1).unwrap();
+                }
+                total
+            });
+            assert_eq!(total, Bitvector32Term::subtract(base.clone(), size.into()));
+            assert_eq!(work, size as usize);
+        }
+        assert!(
+            consume_reserved_population(Bitvector32Term::subtract(base, u32::MAX.into()), 1)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn last_join_uses_accumulated_total_not_its_own_saved_total() {
+        let first = effect(0);
+        let mut second = first.clone();
+        second.after = 1.into();
+        for last in [&first, &second] {
+            let mut state = CState::new();
+            first.reserve(&mut state);
+            second.reserve(&mut state);
+            assert!(first.can_complete(&state));
+            assert!(second.can_complete(&state));
+            assert_eq!(
+                state.counted_population("ticket", &first.arguments),
+                Some(&3.into())
+            );
+            last.complete(&mut state);
+            assert_eq!(
+                state.counted_population("ticket", &first.arguments),
+                Some(&1.into())
+            );
+            assert!(!first.can_complete(&state));
+            assert!(!second.can_complete(&state));
+        }
+    }
+
+    #[test]
+    fn population_worker_index_queries_ignore_unrelated_workers() {
+        let mut samples = Vec::new();
+        for size in [8, 64, 512] {
+            let mut ledger = ThreadLedger::new();
+            let storage = Arc::get_mut(&mut ledger.storage).unwrap();
+            for index in 0..size {
+                let effect = effect(index);
+                storage.population_workers = storage
+                    .population_workers
+                    .with_inserted((effect.name, effect.arguments), (2, true));
+            }
+            let selected = effect(0);
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                assert_eq!(ledger.population_workers(&selected), 2);
+                assert!(ledger.population_allows_overlap(&selected.name, &selected.arguments));
+                assert!(!ledger.population_allows_overlap("absent", &selected.arguments));
+            });
+            samples.push(work);
+        }
+        assert!(
+            samples[2] <= samples[0] * 4 + 8,
+            "worker index scans unrelated populations: {samples:?}"
         );
     }
 

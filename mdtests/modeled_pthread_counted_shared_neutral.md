@@ -1,6 +1,6 @@
-# Overlapping transfers of one counted population require synchronization support
+# Workers consume one shared abstract population in either join order
 
-```c filename=modeled_pthread_counted_overlap_rejected.c
+```c filename=modeled_pthread_counted_shared_neutral.c
 #include <pthread.h>
 #include <stddef.h>
 void *worker(void *argument) { return NULL; }
@@ -21,11 +21,10 @@ int run(void *p, void *q) {
 ```click
 target "x86_64-linux-userspace";
 runtime "modeled-pthread";
-verifying "modeled_pthread_counted_overlap_rejected.c";
+verifying "modeled_pthread_counted_shared_neutral.c";
 abstract resource ticket(p: void*);
 void* worker(void* argument) {
     owns ticket(argument);
-    ensures count(ticket(argument)) >= 1;
 } by { execute(); simp(); }
 int32 run(void* p, void* q) {
     consumes 2 of ticket(p);
@@ -46,21 +45,21 @@ int32 run(void* p, void* q) {
     branch {
         then {
             step();
-            have count(ticket(p)) == 0 by { simp(); }
+            have count(ticket(p)) == 2 by { simp(); }
             have count(ticket(q)) == 1 by { simp(); }
             step(); simp();
         }
         else {}
     }
     step();
-    have count(ticket(q)) == 0 by { simp(); }
+    have count(ticket(q)) == 1 by { simp(); }
     step();
-    have count(ticket(p)) == 0 by { simp(); }
-    have count(ticket(q)) == 0 by { simp(); }
+    have count(ticket(p)) == 2 by { simp(); }
+    have count(ticket(q)) == 1 by { simp(); }
     step(); simp();
 }
 ```
 
 ```expect
-fail: Requires joining the worker using ticket(...) before another population transfer
+pass
 ```

@@ -195,9 +195,9 @@ These implemented rules do not yet establish the concurrent result.
 The [scope-close consumption rule](../design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
 is implemented for a single unconditional unit effect. Join now commits checked
 Count effects for ordinary abstract populations, reserves current Count until
-join, and supports independent populations in either join order. Overlapping
-transfers of one population remain unsupported. Next compose shared-body
-custody with the mutex and aggregate overlapping worker effects through joins. `open` closure first attempts ordinary restoration;
+the last join, and supports fixed non-increasing abstract effects from multiple
+workers on one population in either join order. Count-dependent worker contracts
+remain excluded from overlap. Next compose shared-body custody with the mutex. `open` closure first attempts ordinary restoration;
 otherwise it may fulfill an outstanding `consumes` effect, spending owned units
 and proving the invariant at the decreased Count. The same effect must not be
 applied again at another scope or at return. The checked rule uses existing syntax.

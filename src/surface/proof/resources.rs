@@ -467,7 +467,6 @@ pub(super) fn materialize_counted_population_bodies(
 
     let mut next_variable = COUNTED_POPULATION_VARIABLE_BASE;
     let mut facts = Vec::new();
-    let mut family_totals = BTreeMap::<String, Bitvector32Term>::new();
 
     for (name, resource_arguments, visible_quantity) in populations {
         let observes_population = observed_population_families.contains(&name);
@@ -507,15 +506,9 @@ pub(super) fn materialize_counted_population_bodies(
             ),
             true,
         ));
-        if let Some(total) = family_totals.get(&name).cloned() {
-            facts.push(Proposition::ConditionIs(
-                ConditionTerm::signed_add_overflows(total.clone(), count.clone()),
-                false,
-            ));
-            family_totals.insert(name, Bitvector32Term::add(total, count));
-        } else {
-            family_totals.insert(name, count);
-        }
+        // Each population has its own representable count. A wildcard sum
+        // must establish its own overflow condition when observed; it is not
+        // an entry fact merely because two populations share a resource name.
     }
 
     Ok((state, facts))

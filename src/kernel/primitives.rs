@@ -5092,8 +5092,8 @@ pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
 pub(super) struct PopulationEffects {
     /// Function-local consumption committed at closure; callee binding resets it.
     pub(super) committed_consumptions: CountedPopulations,
-    /// Current Count is unavailable until the corresponding worker joins.
-    /// Calls inherit this restriction without acquiring join rights.
+    /// Reserved final totals; current Count is unavailable until every worker
+    /// for the population joins. Calls inherit restrictions, not join rights.
     pub(super) pending_counts: CountedPopulations,
 }
 

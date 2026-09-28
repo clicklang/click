@@ -377,13 +377,15 @@ two contributions. The [scope-close design](https://github.com/lacker/click/blob
 records the obligations and remaining concurrency work.
 
 For an ordinary abstract population transferred to a pthread worker, a successful
-create reserves its Count until the matching join. Current Count expressions
-that include that population cannot be evaluated in the meantime. Joining
-commits the worker's checked resource effect once; a failed create preserves
-the original total. Calls preserve this restriction. The initial rule permits
-independent populations to run concurrently, but requires joining before another
-transfer of the same population. Stateful populations still need mutex body
-custody before they can cross a worker boundary.
+create reserves its Count until every outstanding worker for that population has
+joined. Current Count expressions (including wildcard queries) are unavailable
+while it is reserved; `old(count(...))` still describes the historical entry
+state. The final join publishes the combined checked effects. Failed creation
+adds no effect. Fixed consumption and neutral effects on ordinary abstract
+populations can overlap when their pure contracts are state independent.
+Count-dependent contracts, production, and symbolic effects remain excluded from
+overlap. Stateful population bodies still require shared-body synchronization
+support. These rules add no syntax.
 
 Inside `count(...)`, `_` is a wildcard over one resource argument. For example,
 `count(pool_object(pool, _))` sums all exact object populations for `pool`.
@@ -393,6 +395,8 @@ contracts to that. Wherever two quantities for one population are added — two
 clauses of one contract, two facts in one state, two entries under one
 wildcard — the total has to be one Click can state exactly, or the two
 quantities stay separate and the contract that needs them added is refused.
+Separate populations do not imply that their sum fits; a wildcard observation
+must establish that condition where it is used.
 Constant quantities are added when their sum fits, and a quantity split off a
 population recombines with its own remainder. Without that rule, `produces
 2000000000 of tok(o)` twice composed to a population of `-294967296`, and

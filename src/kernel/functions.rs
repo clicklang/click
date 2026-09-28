@@ -3163,6 +3163,7 @@ fn execute_verified_function_applications_with_suspension(
             &effective_assumptions,
             true,
             "after call to",
+            suspended.is_some(),
             budget,
         )? {
             Ok(transition) => transition,
@@ -17260,6 +17261,7 @@ fn apply_counted_population_transitions(
         assumptions,
         reestablish_invariants,
         "at return from",
+        false,
         budget,
     )
 }
@@ -17273,6 +17275,7 @@ fn apply_counted_population_transitions_with_interface(
     assumptions: &PureFactContext,
     reestablish_invariants: bool,
     transition_site: &str,
+    suspended_worker: bool,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CCountedPopulationTransition, CRuntimeError>> {
     let Some(mut entry_state) =
@@ -17341,17 +17344,12 @@ fn apply_counted_population_transitions_with_interface(
         .collect::<BTreeSet<_>>();
     let mut transition = CCountedPopulationTransition::default();
     let mut transition_guaranteed_facts = Vec::new();
+    let contract_is_state_independent = interface
+        .contract_requires()
+        .iter()
+        .chain(interface.contract_ensures())
+        .all(spec_proposition_is_state_independent);
     for (name, arguments) in keys {
-        if caller_state
-            .population_effects
-            .pending_counts
-            .get(&name, &arguments, false)
-            .is_some()
-        {
-            return Ok(Err(CRuntimeError::FunctionContract(format!(
-                "Requires joining the worker using {name}(...) before another population transfer"
-            ))));
-        }
         let declared_population_definition = interface
             .composite_resource_definitions()
             .iter()
@@ -17366,6 +17364,30 @@ fn apply_counted_population_transitions_with_interface(
             .get(&(name.clone(), arguments.clone()))
             .cloned()
             .unwrap_or(Bitvector32Term::Constant(0));
+        // Fixed non-increasing abstract effects commute. Contract observations of
+        // shared state do not: keep those workers exclusive until their join.
+        let overlap_safe = population_body_definition.is_none()
+            && required_quantity
+                .as_const()
+                .zip(ensured_quantity.as_const())
+                .is_some_and(|(required, ensured)| ensured <= required)
+            && contract_is_state_independent;
+        let pending = caller_state
+            .population_effects
+            .pending_counts
+            .get(&name, &arguments, false);
+        if pending.is_some()
+            && !(suspended_worker
+                && overlap_safe
+                && caller_state
+                    .thread_ledger
+                    .as_ref()
+                    .is_some_and(|ledger| ledger.population_allows_overlap(&name, &arguments)))
+        {
+            return Ok(Err(CRuntimeError::FunctionContract(format!(
+                "Requires joining the worker using {name}(...) before another population transfer"
+            ))));
+        }
         if population_quantities_are_equal(&required_quantity, &ensured_quantity, assumptions) {
             // A resource-neutral contract preserves this exact population.
             // Do not ask general arithmetic reasoning to rediscover
@@ -17394,7 +17416,9 @@ fn apply_counted_population_transitions_with_interface(
                             .counted_population(&name, &arguments)
                             .cloned()
                             .unwrap_or(Bitvector32Term::Constant(0)),
-                        after: after.clone(),
+                        after: pending
+                            .map_or_else(|| after.clone(), |population| population.count.clone()),
+                        overlap_safe,
                     });
             }
             // Equal quantities preserve the population's lifetime, not its
@@ -17438,7 +17462,9 @@ fn apply_counted_population_transitions_with_interface(
                     .is_some_and(|old_count| {
                         population_quantities_are_equal(old_count, &required_quantity, assumptions)
                     });
-        let tracked_prior = caller_state.counted_population(&name, &arguments).cloned();
+        let tracked_prior = pending
+            .map(|population| population.count.clone())
+            .or_else(|| caller_state.counted_population(&name, &arguments).cloned());
         let visible_prior = caller_quantities
             .get(&(name.clone(), arguments.clone()))
             .cloned();
@@ -17458,7 +17484,21 @@ fn apply_counted_population_transitions_with_interface(
                     };
                     total
                 } else {
-                    Bitvector32Term::subtract(prior, Bitvector32Term::Constant(required - ensured))
+                    if suspended_worker && overlap_safe {
+                        let Some(total) =
+                            super::threads::consume_reserved_population(prior, required - ensured)
+                        else {
+                            return Ok(Err(CRuntimeError::FunctionContract(format!(
+                                "combined consumption for `{name}` exceeds the supported count range"
+                            ))));
+                        };
+                        total
+                    } else {
+                        Bitvector32Term::subtract(
+                            prior,
+                            Bitvector32Term::Constant(required - ensured),
+                        )
+                    }
                 }
             } else if required > 0 || ensured > 0 {
                 Bitvector32Term::Constant(ensured)
@@ -17506,6 +17546,7 @@ fn apply_counted_population_transitions_with_interface(
                     .cloned()
                     .unwrap_or(Bitvector32Term::Constant(0)),
                 after: new_count.clone(),
+                overlap_safe,
             });
         // An early close has already spent this function's one-unit effect.
         // Reconcile with the contract's entry-based total; never overwrite a

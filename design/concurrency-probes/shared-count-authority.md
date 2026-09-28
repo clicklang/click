@@ -253,22 +253,28 @@ A reduced abstract-ticket example exposed a stale total: after joining a worker
 that consumed the only ticket, the parent could still prove Count was one.
 Worker completion returned resources but did not update the population total.
 
-The first checked join rule now retains each observed population's contract
-total in its unique completion right. Successful create reserves that population
-until join. Neither current Count evaluation nor another transfer of the same
-population is supported while the worker is outstanding; calls inherit this
-restriction without acquiring the caller's completion rights. Failure preserves
-the original count. Join checks the reservation and unchanged baseline, commits
-only this worker's totals, and removes the reservation. Independent populations
-can complete in either order without restoring a saved parent population ledger.
-Even neutral contracts reserve Count: matching entry and exit quantities do not
-promise that every intermediate quantity is unchanged.
+The checked join rule retains each observed population's baseline and reserves
+its eventual total. Successful create adds its verified resource effect to that
+reserved total; failed create adds nothing. Current Count remains unavailable
+until every outstanding worker for the population has joined. Each join returns
+only that worker's resources and spends its completion right once. The final
+join publishes the accumulated total, preserving unrelated population changes.
+Independent populations can complete in either order.
 
-This is an abstract-resource prerequisite, not the shared mutex solution.
-Stateful populations remain thread confined. Overlapping workers for one
-population still require authenticated body custody and an aggregate of checked
-net effects, rather than independently installing entry-derived final totals.
-The reduced C regressions are separate from the unchanged mutex counter.
+Multiple workers may consume fixed quantities from the same ordinary abstract
+population, or return their units unchanged. Both the new worker and all existing
+workers must have fixed non-increasing effects and state-independent pure
+contracts. A worker whose contract observes current Count remains exclusive:
+its entry/exit assumptions cannot silently survive interference. Production,
+symbolic effects, and synchronous transfers while workers are outstanding are
+conservatively excluded from overlap. Neutral workers still reserve Count;
+matching entry and exit quantities do not promise unchanged intermediate totals.
+
+The shared-abstract-population regressions cover both join orders, both creation
+failure paths, neutral effects, and rejection of observations after a partial
+join. They are separate from the unchanged mutex counter. This accounting
+supports overlapping abstract units; stateful populations still need authenticated
+body custody under the mutex before they can cross worker boundaries.
 
 ## Subsequent obligations, not yet demonstrated by the probes
 
