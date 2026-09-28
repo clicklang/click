@@ -393,3 +393,18 @@ convenient proof shape.
 
 Exact shared-counter accounting, richer protected-resource composition, and
 atomic publication remain separate work in the concurrency roadmap.
+
+## Ordinary memory helpers under a held lock
+
+A synchronous helper may receive memory exposed by unfolding the protected
+state, using an ordinary `owns` or `views` contract. It need not receive the
+mutex guard when it does not perform a mutex operation. Argument binding and
+summary recovery preserve the caller's protocol ledgers, including folded
+guards and opaque acquisition receipts. Mutable footprints remain checked
+against mutex storage reservations; absence of a protocol clause does not
+authorize reinitialization or raw writes to a live mutex.
+
+The worker admission restriction remains separate: this change does not relax
+suspended-worker protocol transfer or stateful population confinement.
+`mdtests/mutex_population_body_helper.md` and
+`mdtests/mutex_guard_frames_ordinary_call.md` exercise ordinary helper framing.

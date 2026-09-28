@@ -23,7 +23,9 @@ One stays inside the protected resource; each worker gets one of the other
 two units. The retained unit keeps the population body alive until cleanup.
 It is accounting within the proof, not an extra C field or C operation.
 
-The intended wrapper uses existing declaration syntax:
+The initial concurrent proposal wrapped a retained unit using existing syntax.
+This shape remains unproved. The separate-body control below instead puts
+memory directly in the protected state:
 
 ```click
 resource counter_state(counter: struct mutex_counter*) {
@@ -275,6 +277,49 @@ failure paths, neutral effects, and rejection of observations after a partial
 join. They are separate from the unchanged mutex counter. This accounting
 supports overlapping abstract units; stateful populations still need authenticated
 body custody under the mutex before they can cross worker boundaries.
+
+## Protected-body control using separate ordinary resources
+
+The Iris-style control in `mdtests/mutex_population_separate_body.md` separates
+physical ownership from contribution accounting. Its `counter_state` owns
+`counter->value` directly, with the existing model field recording its current
+value. The worker also receives one abstract `contribution(counter)` unit.
+Lock returns the protected state and guard; unfold supplies memory ownership;
+fold and unlock return it. The unit itself has no memory body.
+
+This control uses the unchanged `mutex_counter.c` and verifies both workers,
+both create-failure paths, and join accounting: the remaining total is two
+before either worker starts, one after the sole successful worker joins, and
+zero after both join. The parent receives the initial units as contract inputs.
+Unused units on failure are consumed at the parent's return, after the explicit
+intermediate total checks. This is not local population initialization.
+
+`mutex_population_body_helper.md` checks that protected memory can be passed to
+an ordinary helper after acquisition. The helper needs its ordinary memory
+contract, without a mutex parameter or guard clause. Synchronous call summaries
+frame the caller's protocol ledgers; ordinary mutable effects still cannot
+write reserved mutex storage. Negative direct-read and helper-call controls
+show that a contribution unit plus `mutex_use` supplies no protected memory.
+
+This establishes body access through the existing protected-resource transfer.
+It introduces no additional body-permission resource and does not change the
+sequential memory-backed population rules above. In particular, it does not
+make a memory-backed population unit safe to send to a worker.
+
+The missing part is the conservation relation between the protected value and
+the external units. `mutex_population_missing_value_relation.md` retains the
+same source and accounting proof, but rejects an exact-two postcondition.
+The present contracts allow arbitrary protected value changes, so consuming
+two units alone cannot establish two increments. The next rule must let the
+protected state maintain the accounting relation and require the corresponding
+unit transition when restoring it. Simply allowing a mutable `count(...)`
+fact in an exclusive resource is insufficient: a separate helper must not
+consume a unit and invalidate that folded resource's fact. This dependency
+must be checked before broadening the existing declaration restriction.
+
+The earlier wrapper containing only one `remaining` unit is an investigation,
+not a demonstrated concurrent representation. Do not infer ownership of the
+shared body merely because such a unit occurs inside an exclusive wrapper.
 
 ## Subsequent obligations, not yet demonstrated by the probes
 

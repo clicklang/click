@@ -79,5 +79,5 @@ int32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: calls with live mutex protocols require contract protocol effects
+fail: missing resource fact `owns counter[0..40]`
 ```

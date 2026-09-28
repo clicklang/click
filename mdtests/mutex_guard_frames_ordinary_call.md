@@ -1,7 +1,7 @@
 # A call cannot erase a framed mutex protocol
 
 A helper with no resource inputs must not erase the framed mutex protocol.
-Until calls describe protocol effects, reject calls made while a protocol is live.
+Ordinary calls preserve the framed ledger without needing a guard in their contract.
 
 ```c filename=guarded_resource_mutex_flow.c
 #include <pthread.h>
@@ -69,5 +69,5 @@ int32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: calls with live mutex protocols require contract protocol effects
+pass
 ```

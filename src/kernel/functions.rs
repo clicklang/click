@@ -15052,7 +15052,13 @@ fn prepare_contract_resource_transfer(
     if let Some(message) = guard_contract_refusal(interface) {
         return Ok(Err(CRuntimeError::FunctionContract(message.into())));
     }
-    if purpose.lends()
+    // Ordinary calls frame the caller's protocol ledgers through argument
+    // binding and summary recovery. Their declared memory effects still pass
+    // storage_write_refusal, and their resource requirements cannot manufacture
+    // a guard or use permission. A helper receiving protected memory therefore
+    // need not receive the lock itself. Suspended workers use a different
+    // recovery path; retain its explicit protocol admission rule.
+    if purpose == ResourceTransitionPurpose::SuspendedWorker
         && (caller_state.preserves_mutex_protocols
             || caller_state
                 .mutex_ledger

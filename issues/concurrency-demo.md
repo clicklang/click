@@ -197,7 +197,17 @@ is implemented for a single unconditional unit effect. Join now commits checked
 Count effects for ordinary abstract populations, reserves current Count until
 the last join, and supports fixed non-increasing abstract effects from multiple
 workers on one population in either join order. Count-dependent worker contracts
-remain excluded from overlap. Next compose shared-body custody with the mutex. `open` closure first attempts ordinary restoration;
+remain excluded from overlap. A separate ordinary-resource control now puts
+memory directly in `counter_state` and gives each worker an abstract
+contribution unit. The unchanged counter C verifies memory access and join
+accounting, including calls to ordinary memory helpers under a held lock.
+It receives the initial units as contract inputs and does not yet establish
+the relation between consumption and the final value. The corresponding
+exact-two postcondition remains a failing regression. Prefer this protected
+resource transfer for body ownership over inferring body ownership from a
+membership unit; conservation still needs a checked relation to the units.
+
+For the sequential memory-backed population, `open` closure first attempts ordinary restoration;
 otherwise it may fulfill an outstanding `consumes` effect, spending owned units
 and proving the invariant at the decreased Count. The same effect must not be
 applied again at another scope or at return. The checked rule uses existing syntax.
