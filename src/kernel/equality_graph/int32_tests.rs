@@ -554,6 +554,75 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
+fn certification_uses_graph_int32_equality_with_snapshot_scope() {
+    let _session = VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new().with_block("certified-int32", 8));
+    let pointer = |index| Pointer {
+        block: "certified-int32".into(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let load = |memory: &SharedCMemory, index| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory,
+            &pointer(index),
+            4,
+            memory,
+        ))
+    };
+    let (a, b) = (var(81), var(82));
+    let after = intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let left = sum(load(&before, a.clone()));
+    let right = sum(load(&before, b.clone()));
+    let later = sum(load(&after, b.clone()));
+    let goal = |right| Proposition::ConditionIs(eq(&left, &right), true);
+    let certifies = |context: &PureFactContext, goal: &Proposition| {
+        crate::kernel::api::contract_certification::certification_proves_proposition(context, goal)
+    };
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(certifies(&branch, &goal(right.clone())));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!certifies(&branch, &goal(later)));
+    assert!(!certifies(&parent, &goal(right.clone())));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(!certifies(&withdrawn, &goal(right)));
+}
+
+#[test]
+fn certified_int32_graph_queries_scale_without_fact_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let left = sum(var(0));
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
+        }
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                let goal = Proposition::ConditionIs(eq(&left, &sum(var(index))), true);
+                assert!(
+                    crate::kernel::api::contract_certification::certification_proves_proposition(
+                        &context, &goal,
+                    )
+                );
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 300 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     let _session = VerificationSession::enter();
     let before = intern_c_memory(CMemory::new().with_block("int32", 16));

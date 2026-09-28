@@ -290,6 +290,12 @@ check. Direct C-value regressions cover same-snapshot loads, withdrawal,
 overwrite, and multi-size queries without the legacy fact index. Byte-typed
 and pointer values keep their existing rules.
 
+Contract certification of true `Bitvector32Equal` claims now uses the typed
+int32 value rule after checked cross-snapshot load framing. Direct regressions
+cover same-snapshot graph congruence, overwrite and withdrawal boundaries, and
+multi-size certification without the legacy fact index. Pointer-offset
+certification remains separate.
+
 Selected range-composition candidates now rely on the graph-backed int32
 condition decision for endpoint equality, without a redundant second legacy
 fact-path walk. A direct join regression checks graph-congruent endpoints and

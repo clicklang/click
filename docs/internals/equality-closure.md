@@ -141,6 +141,12 @@ match as values, while changed snapshots and withdrawn premises do not.
 Multi-size regressions check that graph matches avoid building the legacy fact
 index.
 
+Contract certification's `Bitvector32Equal` check now uses this typed int32
+value rule after its checked cross-snapshot load rule. Graph-congruent sums and
+same-snapshot loads therefore certify without searching the legacy fact index;
+changed snapshots and withdrawn premises still fail. This affects scalar
+equality claims, not pointer-offset certification.
+
 For a range pair already selected for composition, endpoint comparison uses
 the graph-backed int32 condition decision. The composition helper no longer
 repeats a separate legacy fact-path walk after that decision. Candidate

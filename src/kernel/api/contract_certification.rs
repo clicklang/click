@@ -2722,7 +2722,7 @@ pub(crate) fn certification_proves_proposition(
         }
         Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
             names_of_one_cell_framed(left, right, assumptions)
-                || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
+                || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions
                     .has_anchored_bitvector_equality_fact_for_memory_resolution(left, right)
                 || assumptions.proves_order_condition_for_memory_resolution(
