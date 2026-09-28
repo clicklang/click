@@ -302,10 +302,11 @@ checks. The shared range-endpoint helper also compares scaled pointer offsets
 and remains unchanged. Regressions cover snapshot and withdrawal boundaries,
 width mismatch, and multi-size queries without the legacy fact index.
 
-Same-base loadability facts now match a goal's 32-bit byte extent through the
-typed graph helper after the existing range-availability check. A missing
-loadable premise or a different base still fails. Direct and multi-size
-regressions avoid the legacy fact index for graph-congruent extents.
+The structural, memory-resolution, and covering-span readers of same-base
+loadable facts now share one typed graph check for the 32-bit byte extent.
+The existing range-availability checks remain with their callers. A missing
+loadable premise or a different base still fails; direct multi-size regressions
+avoid the legacy fact index for graph-congruent extents.
 
 Certified condition-fact transport now compares operands of matching
 signed-order and equality facts through the typed int32 graph helper. The

@@ -6576,3 +6576,86 @@ fn a_byte_range_narrows_by_its_endpoints() {
     assert!(bounded.proves_memory_loadable(&memory, &base, &k));
     assert!(!held.proves_memory_loadable(&memory, &base, &k));
 }
+
+mod loadable_extent_graph_tests {
+    use super::*;
+
+    fn var(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    fn extent(value: Bitvector32Term) -> Bitvector32Term {
+        Bitvector32Term::add(value, Bitvector32Term::Constant(1))
+    }
+
+    #[test]
+    fn memory_resolution_and_range_reader_share_graph_extent_equality() {
+        let memory = CMemory::new();
+        let base = Pointer::symbolic(Variable(9_320_000));
+        let range_bytes = extent(var(9_320_001));
+        let goal_bytes = extent(var(9_320_002));
+        let fact = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: range_bytes.clone(),
+        };
+        let premise = ConditionTerm::equal(var(9_320_001), var(9_320_002));
+        let parent = PureFactContext::new().assume_proposition(fact);
+        let branch = parent.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert!(branch.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
+        assert!(branch.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(!parent.proves_memory_loadable_for_memory_resolution(&memory, &base, &goal_bytes));
+        assert!(!parent.proves_loadable_region_from_range(&base, &range_bytes, &base, &goal_bytes));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(!withdrawn.proves_memory_loadable_for_memory_resolution(
+            &memory,
+            &base,
+            &goal_bytes
+        ));
+        let other = Pointer::symbolic(Variable(9_320_003));
+        assert!(!branch.proves_memory_loadable_for_memory_resolution(&memory, &other, &goal_bytes));
+    }
+
+    #[test]
+    fn direct_loadable_extent_graph_queries_scale_without_fact_index() {
+        for size in [16u64, 64, 256, 1024] {
+            let memory = CMemory::new();
+            let base = Pointer::symbolic(Variable(9_320_010));
+            let range_bytes = extent(var(0));
+            let fact = Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.clone(),
+                bytes: range_bytes.clone(),
+            };
+            let mut context = PureFactContext::new().assume_proposition(fact);
+            for index in 0..size {
+                context = context
+                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+            }
+            let _scope = context.enter_id_scope();
+            PureFactContext::reset_bitvector_equality_index_fact_visits();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 1..=size {
+                    let goal_bytes = extent(var(index));
+                    assert!(context.proves_memory_loadable_for_memory_resolution(
+                        &memory,
+                        &base,
+                        &goal_bytes,
+                    ));
+                    assert!(context.proves_loadable_region_from_range(
+                        &base,
+                        &range_bytes,
+                        &base,
+                        &goal_bytes,
+                    ));
+                }
+            });
+            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+            assert!(work < 300 * size as usize, "size={size}, work={work}");
+        }
+    }
+}
