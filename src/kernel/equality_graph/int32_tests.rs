@@ -233,3 +233,100 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
         drop(held);
     }
 }
+
+#[test]
+fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
+    let (a, b, c) = (var(70), var(71), var(72));
+    let offset_eq = |left: Bitvector32Term, right: Bitvector32Term| {
+        ConditionTerm::pointer_offset_equal(
+            PointerOffsetTerm::scale_int32(left, 4),
+            PointerOffsetTerm::scale_int32(right, 4),
+        )
+    };
+    let scaled = offset_eq(a.clone(), b.clone());
+    let direct = eq(&a, &b);
+    let bc = eq(&b, &c);
+    let context = PureFactContext::new()
+        .assume_condition(scaled.clone(), true)
+        .assume_condition(direct.clone(), true)
+        .assume_condition(bc.clone(), true);
+    assert!(context.equality_graph.are_int32_equal(&a, &c));
+    let without_direct = context.without_exact_fact(&Proposition::ConditionIs(direct, true));
+    assert!(without_direct.equality_graph.are_int32_equal(&a, &c));
+    let without_scaled =
+        without_direct.without_exact_fact(&Proposition::ConditionIs(scaled.clone(), true));
+    assert!(!without_scaled.equality_graph.are_int32_equal(&a, &c));
+    assert!(without_scaled.equality_graph.are_int32_equal(&b, &c));
+    let restricted = context.restricted_to_facts(&[(scaled, true)], &[]);
+    assert!(restricted.equality_graph.are_int32_equal(&a, &b));
+    assert!(!restricted.equality_graph.are_int32_equal(&a, &c));
+    let mut context = PureFactContext::new();
+    for width in [0, 1, 8] {
+        context = context.assume_condition(
+            ConditionTerm::pointer_offset_equal(
+                PointerOffsetTerm::Int32Scaled {
+                    value: Box::new(a.clone()),
+                    byte_width: width,
+                },
+                PointerOffsetTerm::Int32Scaled {
+                    value: Box::new(b.clone()),
+                    byte_width: width,
+                },
+            ),
+            true,
+        );
+    }
+    assert!(
+        !context.equality_graph.are_int32_equal(&a, &b),
+        "this ingress only translates four-byte element-index premises"
+    );
+}
+
+#[test]
+fn offset_premise_graph_insertion_and_forks_scale() {
+    let add = |v| Bitvector32Term::Add(Box::new(v), Box::new(Bitvector32Term::Constant(1)));
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut parent = PureFactContext::new();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..size {
+                    parent = parent.clone().assume_condition(
+                        ConditionTerm::pointer_offset_equal(
+                            PointerOffsetTerm::scale_int32(var(i), 4),
+                            PointerOffsetTerm::scale_int32(var(i + 1), 4),
+                        ),
+                        true,
+                    );
+                }
+                for i in 1..=size {
+                    assert!(
+                        parent
+                            .equality_graph
+                            .are_int32_equal(&add(var(0)), &add(var(i)))
+                    );
+                }
+                let branch = parent
+                    .clone()
+                    .assume_condition(eq(&var(size), &var(size + 1)), true);
+                assert!(
+                    branch
+                        .equality_graph
+                        .are_int32_equal(&add(var(0)), &add(var(size + 1)))
+                );
+                assert!(
+                    !parent
+                        .equality_graph
+                        .are_int32_equal(&add(var(0)), &add(var(size + 1)))
+                );
+            })
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 150 * size as usize, "size={size}, work={work}");
+        assert!(
+            map_work < 1500 * size as usize * (size.ilog2() as usize + 1),
+            "size={size}, map work={map_work}"
+        );
+    }
+}

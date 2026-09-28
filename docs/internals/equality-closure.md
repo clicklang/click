@@ -74,11 +74,25 @@ with the same byte width give equal offsets, and existing offset addition
 applications propagate that equality. Parent-use indexes handle late scalar
 merges in the same worklist. Literal indices join their folded byte constants
 when multiplication fits i64. This does not infer congruence for other scalar operations,
-64-bit or mathematical-integer equality, or scalar equality from equal offsets. Exact scalar premises are counted under shallow canonical edge keys so
+64-bit or mathematical-integer equality, or general injectivity of offset constructors. Exact scalar premises are counted under shallow canonical edge keys so
 withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
 cross-arena snapshot comparisons to traverse unrelated memory. This is an additive consumer migration; legacy scalar reasoning outside
 normalization has not changed.
+
+True offset premises also feed the shared graph through the existing checked
+int32 element-index interpretation: four-byte scaling, aligned constants, and
+supported additions. Equal byte offsets then imply equal int32 index residues.
+This premise translation shares support counting with explicit scalar edges;
+withdrawing one premise retains any other support for that edge. It does not
+infer exact offset equality from equal wrapping residues.
+
+The legacy Boolean scalar query is not interchangeable with the graph yet.
+Some callers use it while reasoning about exact pointer offsets, where a
+wrapping int32 equality is insufficient. Migrating those callers requires an
+explicit distinction between residue equality and exact-offset equality. The
+regression `wrapped_index_sum_does_not_decide_pointer_offsets_equal` protects
+that boundary. Keep this migration separate from admitting checked premises.
 
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact

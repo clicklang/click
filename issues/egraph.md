@@ -230,6 +230,18 @@ stores are rejected, and a supplied equality for one read neither merges whole
 snapshots nor leaks into sibling contexts. Removing that edge preserves the
 same-snapshot equalities and withdraws its cross-snapshot consequences.
 
+True offset premises now also populate scalar graph edges when both sides
+have the existing checked four-byte element-index interpretation. This shares
+support counting with explicit scalar premises and preserves withdrawal,
+restriction, and persistent fork isolation. Multi-size regressions cover
+insertion and congruent queries.
+
+A global replacement of the legacy Boolean scalar query is deferred: its
+exact-pointer-offset callers cannot accept every wrapping int32 equality the
+graph proves. The existing wrapped-index regression caught this boundary;
+the broader replacement was discarded. A future consumer migration must make
+the exact-offset versus residue-equality contract explicit first.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

@@ -2876,12 +2876,26 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
-        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
-            return;
-        };
         if !value {
             return;
         }
+        // Preserve the same exact-premise translation as the legacy scalar
+        // equality index. Equal byte offsets imply equal int32 element-index
+        // residues only when both offsets admit that checked interpretation.
+        let derived;
+        let (left, right) = match condition {
+            ConditionTerm::Bitvector32Equal(left, right) => (left.as_ref(), right.as_ref()),
+            ConditionTerm::PointerOffsetEqual(left, right) => {
+                let Some(pair) = int32_element_index_from_offset(left)
+                    .zip(int32_element_index_from_offset(right))
+                else {
+                    return;
+                };
+                derived = pair;
+                (&derived.0, &derived.1)
+            }
+            _ => return,
+        };
         // Count exact premises under the canonical edge rather than interning
         // raw MemoryLoad payloads. Raw interning can compare whole snapshots
         // across verification arenas. Counts preserve independent spellings
