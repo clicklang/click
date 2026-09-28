@@ -325,6 +325,13 @@ int32 endpoints as equal values, before its legacy fact-path fallback. This is
 an order fact about endpoint values, not a claim that wrapping equality gives
 an exact byte offset. Withdrawal and multi-size regressions cover this path.
 
+For indexed signed-order facts reached by one exact endpoint, the other
+endpoint now uses the typed graph-first value check. The containment order
+helper defers its general legacy scalar equality retry until after indexed
+order facts, avoiding the legacy fact-path index for graph-congruent matches.
+Facts with neither endpoint in the exact/canonical candidate index remain
+outside this slice.
+
 Certified condition-fact transport now compares operands of matching
 signed-order and equality facts through the typed int32 graph helper. The
 condition kind and polarity still have to match; changed snapshots and

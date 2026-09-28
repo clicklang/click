@@ -168,6 +168,13 @@ signed endpoint-order check has equal operands. Equal endpoint bitpatterns
 establish `<=`; this does not infer an exact byte-offset difference from a
 wrapping scalar equality. Other order and containment rules remain separate.
 
+When a signed-order fact is found by one exact endpoint, its other int32
+endpoint is compared through the graph first. The containment order check
+tries these indexed facts before its broader scalar equality fallback, so a
+graph-congruent match does not build the legacy fact-path index. Candidate
+lookup still requires one syntactic or canonical endpoint key; it does not
+search every order fact for a graph-equivalent endpoint.
+
 The kernel comparison of condition facts for certified transport now uses the
 typed int32 value rule for operands of matching signed-order or equality
 conditions. Condition kind and truth value must still match. Registered loads

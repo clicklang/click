@@ -5336,11 +5336,8 @@ fn exact_less_equal_for_memory_resolution(
     if left == right
         // These are signed int32 endpoint *values*, not exact byte offsets.
         // Equal bitpatterns therefore satisfy `<=` in this same-base check.
-        || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
-            left,
-            right,
-            assumptions,
-        )
+        || (assumptions.equality_graph.has_term_equivalences()
+            && assumptions.equality_graph.are_int32_equal(left, right))
         || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
             left.clone(),
             right.clone(),
@@ -5350,12 +5347,16 @@ fn exact_less_equal_for_memory_resolution(
         return true;
     }
     let left_constant = signed_bitvector_constant(left);
-    recorded_less_equal_candidates(left, right, assumptions).any(|(fact_lower, fact_upper)| {
+    if recorded_less_equal_candidates(left, right, assumptions).any(|(fact_lower, fact_upper)| {
         // The written fact states `fact_lower <= fact_upper` (or `<`, which
         // is stronger). It proves the query when its lower endpoint is the
         // query's lower endpoint, or — for a constant query endpoint — when
         // it is a constant at least as large.
-        if bitvector_terms_proven_equal_for_memory_resolution(&fact_lower, left, assumptions) {
+        if crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
+            &fact_lower,
+            left,
+            assumptions,
+        ) {
             return true;
         }
         let Some(left_constant) = left_constant else {
@@ -5371,7 +5372,12 @@ fn exact_less_equal_for_memory_resolution(
             == Some(true);
         signed_bitvector_constant(&fact_lower)
             .is_some_and(|bound| left_constant <= if strict { bound + 1 } else { bound })
-    })
+    }) {
+        return true;
+    }
+    // Keep broader scalar-resolution rules for forms outside graph closure or
+    // the indexed order facts, without building their fact index first.
+    bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
 }
 
 #[cfg(test)]
@@ -5480,6 +5486,95 @@ mod contained_range_endpoint_graph_tests {
             assert!(work < 200 * size as usize, "size={size}, work={work}");
         }
     }
+
+    #[test]
+    fn recorded_order_fact_matches_graph_equal_lower_or_upper_endpoint() {
+        let lower = variable(9_330_010);
+        let upper = variable(9_330_011);
+        let premise = ConditionTerm::equal(variable(9_330_001), variable(9_330_002));
+        let lower_fact = ConditionTerm::signed_less_equal(endpoint(9_330_001), upper.clone());
+        let upper_fact = ConditionTerm::signed_less_than(lower.clone(), endpoint(9_330_001));
+        let bare = PureFactContext::new()
+            .assume_condition(lower_fact, true)
+            .assume_condition(upper_fact, true);
+        let branch = bare.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert!(exact_less_equal_for_memory_resolution(
+            &endpoint(9_330_002),
+            &upper,
+            &branch,
+        ));
+        assert!(exact_less_equal_for_memory_resolution(
+            &lower,
+            &endpoint(9_330_002),
+            &branch,
+        ));
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(!exact_less_equal_for_memory_resolution(
+            &endpoint(9_330_002),
+            &upper,
+            &bare,
+        ));
+        assert!(!exact_less_equal_for_memory_resolution(
+            &lower,
+            &endpoint(9_330_002),
+            &bare,
+        ));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(!exact_less_equal_for_memory_resolution(
+            &endpoint(9_330_002),
+            &upper,
+            &withdrawn,
+        ));
+        assert!(!exact_less_equal_for_memory_resolution(
+            &lower,
+            &endpoint(9_330_002),
+            &withdrawn,
+        ));
+    }
+
+    #[test]
+    fn recorded_order_fact_graph_matches_scale_without_fact_index() {
+        for size in [16u64, 64, 256, 1024] {
+            let lower = variable(9_330_010);
+            let upper = variable(9_330_011);
+            let mut context = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(endpoint(0), upper.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(lower.clone(), endpoint(0)),
+                    true,
+                );
+            for index in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::equal(variable(index), variable(index + 1)),
+                    true,
+                );
+            }
+            let _scope = context.enter_id_scope();
+            PureFactContext::reset_bitvector_equality_index_fact_visits();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 1..=size {
+                    assert!(exact_less_equal_for_memory_resolution(
+                        &endpoint(index),
+                        &upper,
+                        &context,
+                    ));
+                    assert!(exact_less_equal_for_memory_resolution(
+                        &lower,
+                        &endpoint(index),
+                        &context,
+                    ));
+                }
+            });
+            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+            assert!(work < 400 * size as usize, "size={size}, work={work}");
+        }
+    }
 }
 
 /// The recorded `a <= b` and `a < b` facts whose upper endpoint is the named
@@ -5554,7 +5649,7 @@ fn recorded_less_equal_candidates<'a>(
         })
         .filter(move |(_, fact_upper)| {
             fact_upper == right
-                || bitvector_terms_proven_equal_for_memory_resolution(
+                || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
                     fact_upper,
                     right,
                     assumptions,
