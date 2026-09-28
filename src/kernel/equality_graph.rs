@@ -8,7 +8,7 @@
 //! The current supported fragment is pointers, affine byte offsets, and
 //! registered same-snapshot pointer loads, plus explicit whole-offset equality.
 //! Pointer and offset queries are typed separately; the offset fragment only
-//! closes stated equalities by symmetry and transitivity. Pointer spelling
+//! supports stated equalities and congruence of offset addition. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.
 //!
 //! The pointer fragment uses a persistent union-find with offsets.
@@ -388,8 +388,8 @@ impl EqualityGraph {
         }
     }
 
-    /// Query explicit whole-offset equality, including symmetry and transitivity.
-    /// This fragment does not propagate arithmetic or application congruence.
+    /// Query explicit offset equality and addition congruence.
+    /// This fragment does not solve arithmetic or perform cancellation.
     pub(in crate::kernel) fn are_offsets_equal(
         &self,
         left: &PointerOffsetTerm,

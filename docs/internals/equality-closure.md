@@ -44,9 +44,12 @@ C pointer parameters, which lower to offsets in a shared block, without
 changing their representation.
 
 The offset fragment interns whole terms with shallow keys and uses persistent
-union-find by size. It preserves widths, signedness, and machine-term snapshot
-identity; it does not infer arithmetic consequences or congruence from an
-assumed offset equality. Queries and additions use indexed access. Existing
+union-find weighted by members and parent uses. Addition signatures identify
+operand classes, so equal operands establish equal sums. Indexed parent uses
+propagate late merges through nested additions with an iterative worklist;
+only parents of the lighter class are revisited. It preserves widths,
+signedness, and machine-term snapshot identity, and adds no arithmetic solver
+or cancellation rule. Queries and additions use indexed access. Existing
 context restriction and equality-withdrawal rebuilds retain both graph
 fragments from their remaining exact alias indexes. Ownership and framing
 consumers do not query the new offset fragment.

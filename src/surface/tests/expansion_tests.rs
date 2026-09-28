@@ -16126,3 +16126,24 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
     let false_goal = source.replace("ensures a == c;", "ensures a != c;");
     assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
 }
+
+#[test]
+fn normalize_using_pointer_addition_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_pointer_addition.md");
+    let text = std::fs::read_to_string(&path).expect("read pointer addition fixture");
+    let fixture = crate::cli::parse_mdtest(&path, &text).expect("parse pointer addition fixture");
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().expect("Click source");
+    verify_c0_sources(source, &c_sources).expect("pointer addition congruence should verify");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("pointer addition congruence should expand");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
+    verify_c0_sources(&expanded, &c_sources).expect("expanded pointer addition should recheck");
+    assert!(verify_c0_sources(&expanded.replace("requires a == b;", ""), &c_sources).is_err());
+    assert!(verify_c0_sources(&expanded.replace("b + 1;", "b + 2;"), &c_sources).is_err());
+}

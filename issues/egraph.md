@@ -174,8 +174,11 @@ other uncited conditions are not. This preserves the current term representation
 and adds no frame search or proof explanation. The graph now also retains
 explicit whole pointer-offset equalities, so normalization can prove transitive
 equalities between ordinary C pointer parameters without migrating their
-representation. This offset fragment adds no arithmetic propagation or
-congruence, and no ownership or framing consumers have been migrated to it.
+representation. The offset fragment also maintains addition congruence using
+indexed parent uses and weighted class merges, including when operand
+equalities arrive after the addition terms. It adds no arithmetic solver or
+cancellation rule, and no ownership or framing consumers have been migrated
+to it.
 
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
