@@ -6191,11 +6191,106 @@ fn resource_quantity_resolves_to_zero(
     assumptions: &PureFactContext,
 ) -> bool {
     resource_quantity_is_zero(quantity, assumptions)
-        || crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
+        || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
             quantity,
             &Bitvector32Term::Constant(0),
             assumptions,
         )
+}
+
+#[cfg(test)]
+mod zero_quantity_graph_tests {
+    use super::*;
+
+    fn var(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    fn required(quantity: Bitvector32Term) -> CResourceFact {
+        CResourceFact::own_quantity(
+            CResource::Composite {
+                name: "zero-quantity".into(),
+                arguments: Vec::new().into(),
+            },
+            quantity,
+        )
+    }
+
+    #[test]
+    fn zero_ownership_uses_graph_with_snapshot_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("zero-quantity", 8));
+        let pointer = |index| Pointer {
+            block: "zero-quantity".into(),
+            offset: PointerOffsetTerm::scale_int32(index, 4),
+        };
+        let load = |memory: &SharedCMemory, index| {
+            Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+                memory,
+                &pointer(index),
+                4,
+                memory,
+            ))
+        };
+        let (a, b) = (var(90_101), var(90_102));
+        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+            pointer(b.clone()),
+            CValue::Int32(Bitvector32Term::Constant(9)),
+        ));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let source = required(sum(load(&before, a.clone())));
+        let later = required(sum(load(&after, b.clone())));
+        let address_premise = ConditionTerm::equal(a, b.clone());
+        let zero_premise =
+            ConditionTerm::equal(sum(load(&before, b)), Bitvector32Term::Constant(0));
+        let parent = PureFactContext::new();
+        let address_only = parent
+            .clone()
+            .assume_condition(address_premise.clone(), true);
+        let branch = address_only
+            .clone()
+            .assume_condition(zero_premise.clone(), true);
+        let empty = ResourceContext::new();
+        let _scope = branch.enter_id_scope();
+
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert!(empty.satisfies_fact(&source, &branch));
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(!empty.satisfies_fact(&later, &branch));
+        assert!(!empty.satisfies_fact(&source, &address_only));
+        let address_withdrawn =
+            branch.without_exact_fact(&Proposition::ConditionIs(address_premise, true));
+        assert!(!empty.satisfies_fact(&source, &address_withdrawn));
+        let zero_withdrawn =
+            branch.without_exact_fact(&Proposition::ConditionIs(zero_premise, true));
+        assert!(!empty.satisfies_fact(&source, &zero_withdrawn));
+    }
+
+    #[test]
+    fn zero_ownership_graph_queries_scale_without_fact_index() {
+        for size in [16u64, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context
+                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+            }
+            context = context.assume_condition(
+                ConditionTerm::equal(var(size), Bitvector32Term::Constant(0)),
+                true,
+            );
+            let empty = ResourceContext::new();
+            let _scope = context.enter_id_scope();
+            PureFactContext::reset_bitvector_equality_index_fact_visits();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    assert!(empty.satisfies_fact(&required(var(index)), &context));
+                }
+            });
+            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+            assert!(work < 300 * size as usize, "size={size}, work={work}");
+        }
+    }
 }
 
 fn consume_exact_resource_fact(

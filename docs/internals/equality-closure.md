@@ -166,6 +166,12 @@ does not use wrapping value equality to establish pointer-base equality.
 Regressions cover same-snapshot loads, overwrite and withdrawal boundaries,
 different bases, and multi-size graph queries without the legacy fact index.
 
+After indexed resource matching misses, the zero-ownership fallback now uses
+the typed int32 graph rule for the required quantity. This is value equality
+with zero, not a resource-key or pointer match. Regressions cover graph-
+congruent registered loads, changed snapshots, withdrawn premises, and
+multi-size zero-quantity queries without the legacy fact index.
+
 For a range pair already selected for composition, endpoint comparison uses
 the graph-backed int32 condition decision. The composition helper no longer
 repeats a separate legacy fact-path walk after that decision. Candidate

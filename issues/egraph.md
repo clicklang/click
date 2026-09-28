@@ -314,6 +314,11 @@ withdrawn premises, and different bases do not establish continuity. Direct
 and multi-size regressions avoid the legacy fact index for graph-congruent
 sizes.
 
+The zero-ownership fallback after indexed resource matching now checks its
+32-bit quantity through the typed graph helper. This lets graph-congruent
+registered loads establish a zero quantity, while changed snapshots and
+withdrawn premises cannot. Multi-size regressions avoid the legacy fact index.
+
 Selected range-composition candidates now rely on the graph-backed int32
 condition decision for endpoint equality, without a redundant second legacy
 fact-path walk. A direct join regression checks graph-congruent endpoints and
