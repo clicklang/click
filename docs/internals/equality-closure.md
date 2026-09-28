@@ -62,7 +62,12 @@ signedness, and machine-term snapshot identity, and adds no arithmetic solver
 or cancellation rule. Queries and additions use indexed access. Existing
 context restriction and equality-withdrawal rebuilds retain all graph
 fragments from their remaining exact equality indexes. Ownership and framing
-consumers do not query the new offset fragment.
+lookups have not migrated to the offset fragment. The pointer equality query
+now uses its exact offset classes after affine comparison misses **only when
+both pointers have the same block**. This admits explicit offset equalities
+and scaled int32 congruence at that one base without treating wrapping scalar
+residues as exact byte differences or extending the cross-block affine rule.
+Same-block pointer premises are not yet converted into offset edges.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition has its own application signature and shallow child

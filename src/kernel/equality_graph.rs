@@ -401,13 +401,18 @@ impl EqualityGraph {
         if left_rep != right_rep {
             return false;
         }
-        match (
+        let affine_equal = match (
             AffineOffset::of(&left.offset).and_then(|offset| left_delta.checked_add(&offset)),
             AffineOffset::of(&right.offset).and_then(|offset| right_delta.checked_add(&offset)),
         ) {
             (Some(left), Some(right)) => left == right,
             _ => false,
-        }
+        };
+        affine_equal
+            // Term-class offset equality is exact byte-offset equality. For
+            // one block, it can close explicit offset edges and int32-scaled
+            // congruence without changing the affine relation between blocks.
+            || (left.block == right.block && state.terms.are_equal(&left.offset, &right.offset))
     }
 
     /// Query explicit offset equality, addition and int32 scaling congruence.
@@ -798,6 +803,94 @@ mod tests {
         assert!(classes.are_equal(&at(symbolic(1), 8), &at(symbolic(3), 24)));
         assert!(!classes.are_equal(&at(symbolic(1), 8), &at(symbolic(3), 8)));
         assert!(!classes.are_equal(&at(symbolic(1), 0), &at(symbolic(4), 0)));
+    }
+
+    fn at_offset(block: PointerBlock, offset: PointerOffsetTerm) -> Pointer {
+        Pointer { block, offset }
+    }
+
+    #[test]
+    fn same_block_pointer_query_uses_exact_offset_classes() {
+        let left_offset = PointerOffsetTerm::Variable(Variable(11_001));
+        let right_offset = PointerOffsetTerm::Variable(Variable(11_002));
+        let base = symbolic(11_003);
+        let left = at_offset(base.clone(), left_offset.clone());
+        let right = at_offset(base.clone(), right_offset.clone());
+        let other_block = at_offset(symbolic(11_004), right_offset.clone());
+        let trunk = EqualityGraph::default();
+        assert!(!trunk.are_equal(&left, &right));
+        let mut branch = trunk.clone();
+        branch.add_offset_equality(&left_offset, &right_offset);
+        assert!(branch.are_equal(&left, &right));
+        assert!(!trunk.are_equal(&left, &right));
+        assert!(!branch.are_equal(&left, &other_block));
+    }
+
+    #[test]
+    fn same_block_pointer_query_uses_scaled_int32_congruence() {
+        let base = symbolic(11_010);
+        let offset = |id| {
+            PointerOffsetTerm::add(
+                PointerOffsetTerm::scale_int32(index(id), 4),
+                PointerOffsetTerm::Constant(8),
+            )
+        };
+        let left = at_offset(base.clone(), offset(11_011));
+        let right = at_offset(base.clone(), offset(11_012));
+        let wrong_width = at_offset(
+            base.clone(),
+            PointerOffsetTerm::add(
+                PointerOffsetTerm::scale_int32(index(11_012), 8),
+                PointerOffsetTerm::Constant(8),
+            ),
+        );
+        let mut graph = EqualityGraph::default();
+        assert!(!graph.are_equal(&left, &right));
+        graph.add_int32_equality(&index(11_011), &index(11_012));
+        assert!(graph.are_equal(&left, &right));
+        assert!(!graph.are_equal(&left, &wrong_width));
+        assert!(!graph.are_equal(&left, &at_offset(symbolic(11_013), offset(11_012))));
+    }
+
+    #[test]
+    fn same_block_pointer_query_does_not_turn_wrapping_index_into_exact_offset() {
+        let base = symbolic(11_014);
+        let max = Bitvector32Term::Constant(i32::MAX as u32);
+        let wrapped = at_offset(
+            base.clone(),
+            PointerOffsetTerm::scale_int32(
+                Bitvector32Term::add(max.clone(), Bitvector32Term::Constant(1)),
+                4,
+            ),
+        );
+        let exact_sum = at_offset(
+            base,
+            PointerOffsetTerm::add(
+                PointerOffsetTerm::scale_int32(max, 4),
+                PointerOffsetTerm::Constant(4),
+            ),
+        );
+        assert!(!EqualityGraph::default().are_equal(&wrapped, &exact_sum));
+    }
+
+    #[test]
+    fn same_block_pointer_queries_scale_with_registered_offset_classes() {
+        for size in [16u64, 64, 256, 1024] {
+            let base = symbolic(11_020);
+            let mut graph = EqualityGraph::default();
+            for id in 0..size {
+                graph.add_int32_equality(&index(id), &index(id + 1));
+            }
+            let first = at_offset(base.clone(), PointerOffsetTerm::scale_int32(index(0), 4));
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for id in 1..=size {
+                    let other =
+                        at_offset(base.clone(), PointerOffsetTerm::scale_int32(index(id), 4));
+                    assert!(graph.are_equal(&first, &other));
+                }
+            });
+            assert!(work < 200 * size as usize, "size={size}, work={work}");
+        }
     }
 
     #[test]

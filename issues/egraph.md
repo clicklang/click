@@ -190,8 +190,10 @@ equalities between ordinary C pointer parameters without migrating their
 representation. The offset fragment also maintains addition congruence using
 indexed parent uses and weighted class merges, including when operand
 equalities arrive after the addition terms. It adds no arithmetic solver or
-cancellation rule, and no ownership or framing consumers have been migrated
-to it.
+cancellation rule. The pointer equality query now uses these exact offset
+classes after affine matching misses for pointers with the same block. This
+does not convert same-block pointer premises into offset edges, change
+cross-block affine relations, or migrate ownership and framing lookup.
 
 The graph now also admits explicit int32 equalities. Normalization uses their
 transitive closure for equality leaves and conditional guards through the same
