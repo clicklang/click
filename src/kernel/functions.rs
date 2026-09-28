@@ -6565,6 +6565,8 @@ pub(super) fn assumed_mutex_input_reservations(
 /// body -- contributes nothing, so the rule never keeps a cell on the
 /// strength of a body it could not read. The opening is paid once per call,
 /// one unit per visited residual instance or composite and its body.
+/// Counted membership never owns its population-wide body independently:
+/// another transferred member may authorize the callee to change that body.
 pub(super) fn call_kept_ownership(
     residual: &ResourceContext,
     definitions: &[CCompositeResourceDefinition],
@@ -6584,7 +6586,7 @@ pub(super) fn call_kept_ownership(
                 }
             }
             CResource::Composite { .. } => {
-                let Some(expanded) = expand_all_composite_resource_facts(
+                let Some(expanded) = expand_composites_for_frame(
                     &ResourceContext::new().unchecked_with_fact(fact.clone()),
                     definitions,
                     state.memory(),
@@ -6606,6 +6608,452 @@ pub(super) fn call_kept_ownership(
         ),
         assumptions,
     )
+}
+
+/// Expose ordinary bodies with their existing access, leaving counted heads opaque,
+/// including heads nested inside an ordinary wrapper. This expansion is for
+/// custody and framing, not for a checked opening of a population body.
+fn expand_composites_for_frame(
+    context: &ResourceContext,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> Option<ResourceContext> {
+    enum Visit {
+        Head(CResourceFact),
+        Leave(String),
+    }
+    let mut expanded = context.clone();
+    let mut active = BTreeSet::new();
+    let mut pending = context
+        .facts()
+        .iter()
+        .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+        .cloned()
+        .map(Visit::Head)
+        .collect::<Vec<_>>();
+    while let Some(visit) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        let head = match visit {
+            Visit::Leave(name) => {
+                active.remove(&name);
+                continue;
+            }
+            Visit::Head(head) => head,
+        };
+        let CResource::Composite { name, .. } = head.resource() else {
+            unreachable!()
+        };
+        let index = definitions
+            .binary_search_by(|definition| {
+                crate::instrumentation::record_deterministic_work(1);
+                definition.name().cmp(name)
+            })
+            .ok()?;
+        let definition = &definitions[index];
+        if definition.is_counted_population()
+            || active.contains(name)
+            || !expanded.contains_exact_representation(&head)
+        {
+            continue;
+        }
+        let (next, children, _) = expand_composite_resource_fact_with_children(
+            &expanded,
+            &head,
+            std::slice::from_ref(definition),
+            memory,
+            assumptions,
+        )?;
+        let opaque = next.contains_exact_representation(&head);
+        expanded = next;
+        if opaque {
+            continue;
+        }
+        active.insert(name.clone());
+        pending.push(Visit::Leave(name.clone()));
+        pending.extend(
+            children
+                .into_iter()
+                .filter(|child| matches!(child.resource(), CResource::Composite { .. }))
+                .map(Visit::Head),
+        );
+    }
+    Some(expanded)
+}
+
+#[cfg(test)]
+mod counted_membership_framing_tests {
+    use super::*;
+    use crate::kernel::*;
+
+    #[test]
+    fn neutral_population_call_preserves_allocation_lifetime_without_preserving_bytes() {
+        let pointer = Pointer {
+            block: "population-allocation".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let arguments: ResourceArguments = vec![CValue::pointer(pointer.clone()).into()].into();
+        let body = CMemoryRange::new(
+            pointer.clone(),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        );
+        let population = CCompositeResourceDefinition::counted_population(
+            "remaining",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            None,
+            vec![
+                CResourceSpec::token(
+                    CResourceAccessMode::Own,
+                    CResourceFact::ALLOCATION_RESOURCE_NAME.into(),
+                    vec![c_variable("p"), c_int32_literal(4)],
+                    vec![CType::Int32Pointer, CType::Int32],
+                ),
+                CResourceSpec::owned_memory(CMemorySegment::new(
+                    c_variable("p"),
+                    c_int32_literal(0),
+                    c_int32_literal(1),
+                )),
+            ],
+            vec![],
+        );
+        let specification = CResourceSpec::composite(
+            CResourceAccessMode::Own,
+            "remaining".into(),
+            vec![c_variable("p")],
+            vec![CType::Int32Pointer],
+        );
+        let function = c_function(
+            CType::Void,
+            "neutral",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            CStatement::Skip,
+        )
+        .with_composite_resource_definitions(vec![population])
+        .with_resource_summary(vec![specification.clone()], vec![specification]);
+        let head = CResourceFact::own(CResource::Composite {
+            name: "remaining".into(),
+            arguments: arguments.clone(),
+        });
+        let before = CState::new()
+            .with_memory(
+                CMemory::new()
+                    .with_block("population-allocation", 4)
+                    .with_heap_allocation_claim(pointer.clone(), 4)
+                    .unwrap()
+                    .store(pointer.clone(), int32(0)),
+            )
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(head.clone()))
+            .with_counted_population("remaining", arguments.clone(), Bitvector32Term::Constant(3));
+        let assumptions = PureFactContext::new();
+        let havoc = before.memory().clone().with_call_memory_havoc(
+            Variable(780_120),
+            std::slice::from_ref(&body),
+            &assumptions,
+            None,
+        );
+        assert!(!havoc.cells.contains_key(&pointer));
+        let mut after = before.clone().with_memory(havoc.clone());
+        let transition = apply_counted_population_transitions(
+            &before,
+            &mut after,
+            &function,
+            &[CValue::pointer(pointer.clone())],
+            &assumptions,
+            true,
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            after.counted_population("remaining", &arguments),
+            Some(&Bitvector32Term::Constant(3))
+        );
+        assert_eq!(
+            transition.retained_body_allocations,
+            vec![(pointer.clone(), Bitvector32Term::Constant(4))]
+        );
+        assert!(transition.finalized_body_resources.is_empty());
+        assert_eq!(
+            after.memory(),
+            &havoc,
+            "lifetime accounting must not restore the body's old bytes"
+        );
+        assert!(!after.memory().cells.contains_key(&pointer));
+    }
+
+    #[test]
+    fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
+        let pointer = Pointer {
+            block: "counter".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let assumptions = PureFactContext::new();
+        let memory = CMemory::new().with_block("counter", 4);
+        let ordinary = |name: String, next: Option<String>| {
+            CCompositeResourceDefinition::new(
+                name,
+                vec![c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                next.into_iter()
+                    .map(|next| {
+                        CResourceSpec::composite(
+                            CResourceAccessMode::Own,
+                            next,
+                            vec![c_variable("p")],
+                            vec![CType::Int32Pointer],
+                        )
+                    })
+                    .collect(),
+                vec![],
+            )
+        };
+        let population = || {
+            CCompositeResourceDefinition::counted_population(
+                "z-count",
+                vec![c_parameter("p", CType::Int32Pointer)],
+                None,
+                vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                    c_variable("p"),
+                    c_int32_literal(0),
+                    c_int32_literal(1),
+                ))],
+                vec![],
+            )
+        };
+        let root = |name: &str| {
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_composite(
+                name.into(),
+                vec![CValue::pointer(pointer.clone())],
+            ))
+        };
+        let mut depth_samples = Vec::new();
+        for depth in [16, 32, 64] {
+            let mut definitions = (0..depth)
+                .map(|index| {
+                    ordinary(
+                        format!("wrapper-{index:04}"),
+                        Some(if index + 1 == depth {
+                            "z-count".into()
+                        } else {
+                            format!("wrapper-{:04}", index + 1)
+                        }),
+                    )
+                })
+                .collect::<Vec<_>>();
+            definitions.push(population());
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let expanded = expand_composites_for_frame(
+                    &root("wrapper-0000"),
+                    &definitions,
+                    &memory,
+                    &assumptions,
+                )
+                .unwrap();
+                assert!(owned_memory_ranges_of(&expanded).is_empty());
+                assert_eq!(expanded.facts().len(), 1);
+            });
+            depth_samples.push(work);
+        }
+        assert!(
+            depth_samples[2] <= depth_samples[0] * 7 + 128,
+            "nested expansion rescans its ancestors: {depth_samples:?}"
+        );
+        let mut frame_samples = Vec::new();
+        for size in [16, 64, 256] {
+            let mut definitions = (0..size)
+                .map(|index| ordinary(format!("unrelated-{index:04}"), None))
+                .collect::<Vec<_>>();
+            definitions.push(population());
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let expanded = expand_composites_for_frame(
+                    &root("z-count"),
+                    &definitions,
+                    &memory,
+                    &assumptions,
+                )
+                .unwrap();
+                assert!(owned_memory_ranges_of(&expanded).is_empty());
+            });
+            frame_samples.push(work);
+        }
+        for pair in frame_samples.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 2 + 16,
+                "selected body scans unrelated definitions: {frame_samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
+        let _session = VerificationSession::enter();
+        for wrapper_kind in 0..3 {
+            let pointer = |name: &str| Pointer {
+                block: name.into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let shared = pointer("shared-counter");
+            let private = pointer("private-cell");
+            crate::kernel::eval::declare_load_access_width(&shared, 4);
+            crate::kernel::eval::declare_load_access_width(&private, 4);
+            let range = |pointer: &Pointer| {
+                CMemoryRange::new(
+                    pointer.clone(),
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                )
+            };
+            let memory_spec = |name: &str| {
+                CResourceSpec::owned_memory(CMemorySegment::new(
+                    c_variable(name),
+                    c_int32_literal(0),
+                    c_int32_literal(1),
+                ))
+            };
+            let population = CCompositeResourceDefinition::counted_population(
+                "remaining",
+                vec![c_parameter("p", CType::Int32Pointer)],
+                None,
+                vec![memory_spec("p")],
+                vec![],
+            );
+            let schema =
+                ResourceFieldSchema::new(vec![("tag".into(), ResourceFieldType::C(CType::Int32))])
+                    .unwrap();
+            let wrapper = CCompositeResourceDefinition::new(
+                "wrapper",
+                vec![
+                    c_parameter("p", CType::Int32Pointer),
+                    c_parameter("q", CType::Int32Pointer),
+                ],
+                None,
+                false,
+                vec![
+                    CResourceSpec::composite(
+                        CResourceAccessMode::Own,
+                        "remaining".into(),
+                        vec![c_variable("p")],
+                        vec![CType::Int32Pointer],
+                    ),
+                    memory_spec("q"),
+                ],
+                vec![],
+            )
+            .with_instance_schema((wrapper_kind == 2).then_some(schema.clone()));
+            let mut residual = ResourceContext::new();
+            let head = match wrapper_kind {
+                0 => {
+                    residual =
+                        residual.unchecked_with_fact(CResourceFact::own_memory(range(&private)));
+                    CResourceFact::own_composite(
+                        "remaining".into(),
+                        vec![CValue::pointer(shared.clone())],
+                    )
+                }
+                1 => CResourceFact::own_composite(
+                    "wrapper".into(),
+                    vec![
+                        CValue::pointer(shared.clone()),
+                        CValue::pointer(private.clone()),
+                    ],
+                ),
+                _ => CResourceFact::own(CResource::Instance(
+                    ResourceInstance::new(
+                        Variable(780_100),
+                        "wrapper".into(),
+                        vec![
+                            CValue::pointer(shared.clone()).into(),
+                            CValue::pointer(private.clone()).into(),
+                        ]
+                        .into(),
+                        schema,
+                        vec![int32(0).into()].into(),
+                    )
+                    .unwrap(),
+                )),
+            };
+            residual = residual.unchecked_with_fact(head);
+            let base = CMemory::new()
+                .with_block("shared-counter", 4)
+                .with_block("private-cell", 4);
+            let load_in = |memory: &CMemory| {
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory_ref(memory),
+                    Box::new(shared.clone()),
+                )
+            };
+            let (old_name, _) =
+                crate::kernel::eval::load_variable_for_term(&load_in(&base)).unwrap();
+            let before = base
+                .store(
+                    shared.clone(),
+                    CValue::Int32(Bitvector32Term::Variable(old_name)),
+                )
+                .store(private.clone(), int32(7));
+            let assumptions = PureFactContext::new().assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(old_name),
+                    Bitvector32Term::Constant(0),
+                ),
+                true,
+            );
+            let state = CState::new()
+                .with_memory(before.clone())
+                .with_resource_context(residual.clone());
+            let kept = call_kept_ownership(&residual, &[population, wrapper], &state, &assumptions);
+            let after = before.clone().with_call_memory_havoc(
+                Variable(780_101 + wrapper_kind),
+                &[range(&shared), range(&private)],
+                &assumptions,
+                Some(&kept),
+            );
+            assert!(
+                !after.cells.contains_key(&shared),
+                "membership must not preserve the shared counter (wrapper {wrapper_kind})"
+            );
+            let same_load = |pointer: &Pointer| {
+                checked_atomic_load_equality(
+                    &Bitvector32Term::MemoryLoad(
+                        intern_c_memory_ref(&before),
+                        Box::new(pointer.clone()),
+                    ),
+                    &Bitvector32Term::MemoryLoad(
+                        intern_c_memory_ref(&after),
+                        Box::new(pointer.clone()),
+                    ),
+                    &assumptions,
+                )
+            };
+            let recorded = CallKeptRanges::recorded_on(&after).expect("private caller custody");
+            assert!(recorded.holds_access(&private, 4, &assumptions));
+            assert!(!recorded.holds_access(&shared, 4, &assumptions));
+            assert!(
+                !same_load(&shared),
+                "membership cannot certify shared-body load equality across a call (wrapper {wrapper_kind})"
+            );
+            let (new_name, _) =
+                crate::kernel::eval::load_variable_for_term(&load_in(&after)).unwrap();
+            assert_ne!(
+                new_name, old_name,
+                "a population mutation must get a fresh load identity"
+            );
+            let post_facts = assumptions.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(new_name),
+                    Bitvector32Term::Constant(1),
+                ),
+                true,
+            );
+            assert!(
+                !post_facts
+                    .equality_graph
+                    .are_int32_equal(&Bitvector32Term::Constant(0), &Bitvector32Term::Constant(1),),
+                "the old and new invariants must not imply zero equals one"
+            );
+        }
+    }
 }
 
 /// The owned memory ranges `context` holds directly, charged one unit each.
@@ -6757,7 +7205,7 @@ fn open_unmatched_instance_body<'a>(
         .iter()
         .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
     {
-        expand_all_composite_resource_facts(
+        expand_composites_for_frame(
             &body_resources,
             definitions,
             evaluation.memory(),
@@ -16746,11 +17194,44 @@ fn apply_counted_population_transitions_with_interface(
                     .cloned()
                     .unwrap_or(required_quantity);
                 if population_quantity_is_positive(&visible_count, assumptions) {
-                    *post_state =
-                        post_state
-                            .clone()
-                            .with_counted_population(name, arguments, visible_count);
+                    *post_state = post_state.clone().with_counted_population(
+                        name.clone(),
+                        arguments.clone(),
+                        visible_count,
+                    );
                 }
+            }
+            // Equal quantities preserve the population's lifetime, not its
+            // bytes. A call may havoc the body even when it returns every
+            // membership unit; allocation reconciliation still needs the
+            // population-wide allocations that the unchanged count keeps
+            // alive, just as it does for a nonzero changed count below.
+            if let Some(definition) = population_body_definition
+                && post_state
+                    .counted_population(&name, &arguments)
+                    .is_some_and(|count| !population_quantity_is_zero(count, assumptions))
+            {
+                let singleton = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
+                    CResource::Composite { name, arguments },
+                ));
+                let retained = match evaluate_resource_population_body_resources(
+                    &singleton,
+                    &entry_state,
+                    std::slice::from_ref(definition),
+                    assumptions,
+                    budget,
+                    true,
+                )? {
+                    Ok(resources) => resources,
+                    Err(error) => return Ok(Err(error)),
+                };
+                transition.retained_body_allocations.extend(
+                    retained
+                        .facts()
+                        .iter()
+                        .filter_map(CResourceFact::allocation)
+                        .map(|(base, bytes)| (base.clone(), bytes.clone())),
+                );
             }
             continue;
         }

@@ -87,6 +87,15 @@ perform the count change at the function boundary. This is evidence that the
 ordinary population invariant expresses conservation; it is not evidence that
 the current mutex or worker transport supports the invariant.
 
+A retained unit does not independently own the shared population body. Call
+framing now leaves counted heads opaque, including inside ordinary wrappers,
+so a callee's permitted mutation gets a fresh memory observation. Independently
+owned sibling memory remains preserved. Regression coverage rejects identifying
+the old counter value zero with its new value one across that call. Neutral
+calls retain the population body's allocation lifetime independently of its byte
+values. Typed definedness facts can follow checked pointer aliases, including
+field offsets, only with matching types and valid memory continuity.
+
 The original `mutex_counter.c` was left unchanged in both probes below. No
 helper calls were inserted into its C to imitate the sequential control.
 

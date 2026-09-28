@@ -198,36 +198,56 @@ impl PureFactContext {
         pointer: &Pointer,
         value_type: CType,
     ) -> bool {
-        let key = (
-            crate::kernel::api::canonicalize_pointer_loads(pointer),
-            value_type,
-        );
-        self.memory_read_defined_facts
-            .get(&key)
-            .is_some_and(|facts| {
-                facts.iter().any(|fact| {
-                    let Proposition::CMemoryReadDefined {
-                        memory: before,
-                        pointer: source,
-                        ..
-                    } = fact
-                    else {
-                        unreachable!()
-                    };
-                    if before == memory && source == pointer {
-                        return true;
-                    }
-                    before.read_region_identity(source) == memory.read_region_identity(pointer)
-                        && source == pointer
-                        && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
-                            before,
-                            memory,
-                            pointer,
-                            value_type.byte_width(),
-                            self,
+        let evidence_at = |candidate: &Pointer| {
+            let key = (
+                crate::kernel::api::canonicalize_pointer_loads(candidate),
+                value_type,
+            );
+            crate::instrumentation::record_deterministic_work(1);
+            self.memory_read_defined_facts
+                .get(&key)
+                .is_some_and(|facts| {
+                    facts.iter().any(|fact| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        let Proposition::CMemoryReadDefined {
+                            memory: before,
+                            pointer: source,
+                            ..
+                        } = fact
+                        else {
+                            unreachable!()
+                        };
+                        if source != pointer
+                        && !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                            source, pointer, self,
                         )
+                    {
+                        return false;
+                    }
+                        // Carry initialization along the evidence's own address:
+                        // a symbolic spelling need not share the physical block's
+                        // lifetime identity. Only after this no-write check may
+                        // the checked pointer equality transport the typed read.
+                        before == memory
+                        || before.read_region_identity(source)
+                            == memory.read_region_identity(source)
+                            && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                                before,
+                                memory,
+                                source,
+                                value_type.byte_width(),
+                                self,
+                            )
+                    })
                 })
-            })
+        };
+        evidence_at(pointer)
+            || self.exact_pointer_aliases(pointer).any(evidence_at)
+            // The class restates field addresses under equal base pointers,
+            // including displaced aliases absent from the exact-fact index.
+            // Visit only this equality component; each candidate still needs
+            // the checked address equality above.
+            || self.equality_graph.pointer_spellings(pointer).iter().any(evidence_at)
     }
 
     /// A successful typed specification evaluation proves validity. Value

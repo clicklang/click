@@ -14,6 +14,7 @@ resource reference(obj: struct object*) {
 verifying "reopen.c";
 void inspect(struct object* obj) {
     owns obj->refs;
+    ensures obj->refs == old(obj->refs);
 } by { execute(); simp(); }
 void restored(struct object* obj) {
     owns reference(obj);

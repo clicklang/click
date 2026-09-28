@@ -1972,6 +1972,141 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
 }
 
 #[test]
+fn read_validity_transports_checked_aliases_without_crossing_writes_or_retirement() {
+    let state = successful_heap_allocation_state();
+    let Some(CValue::Pointer(pointer)) = state.locals().get("p") else {
+        panic!("allocated pointer");
+    };
+    let address = pointer.pointer().clone();
+    let alias = Pointer::symbolic(Variable(940_001));
+    let unrelated = Pointer {
+        block: PointerBlock::Heap(940_002),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let validity = Proposition::CMemoryReadDefined {
+        memory: state.memory().clone(),
+        pointer: address.clone(),
+        value_type: CType::Int32,
+    };
+    let bare = PureFactContext::new().assume_proposition(validity);
+    assert!(!bare.has_memory_read_defined_evidence(state.memory(), &alias, CType::Int32));
+    let assumptions = bare.assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(alias.clone(), address.clone()),
+        true,
+    ));
+    assert!(assumptions.has_memory_read_defined_evidence(state.memory(), &alias, CType::Int32));
+    assert!(!assumptions.has_memory_read_defined_evidence(state.memory(), &alias, CType::Int64));
+    assert!(!assumptions.has_memory_read_defined_evidence(state.memory(), &alias, CType::UInt32));
+    let changed = state.memory().clone().store(unrelated, int32(5));
+    assert!(assumptions.has_memory_read_defined_evidence(&changed, &alias, CType::Int32));
+    let range = CMemoryRange::new(alias.clone(), 0u32.into(), 1u32.into());
+    let havoc =
+        changed
+            .clone()
+            .with_call_memory_havoc(Variable(940_003), &[range], &assumptions, None);
+    assert!(!assumptions.has_memory_read_defined_evidence(&havoc, &alias, CType::Int32));
+    let freed = changed.free_heap_block(&address, &assumptions).unwrap();
+    assert!(!assumptions.has_memory_read_defined_evidence(&freed, &alias, CType::Int32));
+}
+
+#[test]
+fn read_validity_transports_field_offsets_through_equal_base_pointers() {
+    let base = Pointer {
+        block: PointerBlock::Heap(943_000),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = Pointer::symbolic(Variable(943_001));
+    let field = base.offset_by_bytes(4);
+    let alias_field = alias.offset_by_bytes(4);
+    let memory = CMemory::new()
+        .with_heap_allocation_claim(base.clone(), 8)
+        .unwrap();
+    let assumptions = PureFactContext::new()
+        .assume_proposition(Proposition::CMemoryReadDefined {
+            memory: memory.clone(),
+            pointer: field.clone(),
+            value_type: CType::Int32,
+        })
+        .assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            true,
+        ));
+    assert!(assumptions.has_memory_read_defined_evidence(&memory, &alias_field, CType::Int32));
+    assert!(!assumptions.has_memory_read_defined_evidence(&memory, &alias, CType::Int32));
+    assert!(!assumptions.has_memory_read_defined_evidence(&memory, &alias_field, CType::Int64));
+    let changed = memory.clone().store(
+        Pointer {
+            block: PointerBlock::Heap(943_002),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        int32(5),
+    );
+    assert!(assumptions.has_memory_read_defined_evidence(&changed, &alias_field, CType::Int32));
+    let havoc = changed.clone().with_call_memory_havoc(
+        Variable(943_003),
+        &[CMemoryRange::new(
+            alias_field.clone(),
+            0u32.into(),
+            1u32.into(),
+        )],
+        &assumptions,
+        None,
+    );
+    assert!(!assumptions.has_memory_read_defined_evidence(&havoc, &alias_field, CType::Int32));
+    let freed = changed.free_heap_block(&base, &assumptions).unwrap();
+    assert!(!assumptions.has_memory_read_defined_evidence(&freed, &alias_field, CType::Int32));
+}
+
+#[test]
+fn aliased_read_validity_lookup_ignores_unrelated_facts() {
+    let memory = CMemory::new();
+    let pointer = Pointer {
+        block: PointerBlock::Heap(941_000),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = Pointer::symbolic(Variable(941_001));
+    let validity = Proposition::CMemoryReadDefined {
+        memory: memory.clone(),
+        pointer: pointer.offset_by_bytes(4),
+        value_type: CType::Int32,
+    };
+    let field_alias = alias.offset_by_bytes(4);
+    let mut samples = Vec::new();
+    for count in [0, 16, 64, 256] {
+        let mut assumptions = PureFactContext::new()
+            .assume_proposition(validity.clone())
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(alias.clone(), pointer.clone()),
+                true,
+            ));
+        for index in 1..=count {
+            assumptions = assumptions.assume_proposition(Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: Pointer {
+                    block: PointerBlock::Heap(942_000 + index),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                value_type: CType::Int32,
+            });
+        }
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32)
+        });
+        assert!(proved);
+        samples.push(work);
+        assert!(
+            !assumptions
+                .without_exact_fact(&validity)
+                .has_memory_read_defined_evidence(&memory, &field_alias, CType::Int32)
+        );
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 16),
+        "{samples:?}"
+    );
+}
+
+#[test]
 fn read_validity_lookup_ignores_unrelated_cells() {
     let memory = CMemory::new();
     let pointer = Pointer {
