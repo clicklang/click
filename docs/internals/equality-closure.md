@@ -154,6 +154,12 @@ it has not been changed to accept wrapping graph equality as exact address
 equality. Regressions cover same-snapshot loads, changed snapshots, withdrawn
 premises, width mismatch, and multi-size queries without the legacy fact index.
 
+The loadable-range prover now uses the typed int32 value rule to match byte
+extents of a fact and goal at the same base, after checking that the fact's
+range is still available in the goal snapshot. Equal extents do not supply
+viewability by themselves. Tests retain the loadable-premise and base
+boundaries and check multi-size queries without the legacy fact index.
+
 The kernel comparison of condition facts for certified transport now uses the
 typed int32 value rule for operands of matching signed-order or equality
 conditions. Condition kind and truth value must still match. Registered loads

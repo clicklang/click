@@ -689,7 +689,13 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
-        if range_base == base && range_bytes == bytes {
+        if range_base == base
+            && crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
+                range_bytes,
+                bytes,
+                self,
+            )
+        {
             return true;
         }
         if let Some(byte_width) = bytes.as_const()

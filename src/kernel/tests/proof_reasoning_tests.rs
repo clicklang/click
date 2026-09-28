@@ -5700,6 +5700,92 @@ fn loadability_transports_to_snapshot_with_symbolic_index_bounds() {
     }));
 }
 
+#[test]
+fn loadability_same_base_extent_uses_graph_for_byte_count() {
+    let before = CMemory::new().with_block("effect-side", 4);
+    let written = Pointer {
+        block: "effect-side".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let after = before
+        .clone()
+        .store(written.clone(), int32(Bitvector32Term::Constant(7)));
+    let base = Pointer::symbolic(Variable(90_301));
+    let a = Bitvector32Term::Variable(Variable(90_302));
+    let b = Bitvector32Term::Variable(Variable(90_303));
+    let bytes = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let fact = Proposition::CMemoryLoadable {
+        memory: before.clone(),
+        base: base.clone(),
+        bytes: bytes(a.clone()),
+    };
+    let goal = Proposition::CMemoryLoadable {
+        memory: after.clone(),
+        base: base.clone(),
+        bytes: bytes(b.clone()),
+    };
+    let premise = ConditionTerm::equal(a, b.clone());
+    let without_premise = PureFactContext::new().assume_proposition(fact.clone());
+    let with_premise = without_premise
+        .clone()
+        .assume_condition(premise.clone(), true);
+    let _scope = with_premise.enter_id_scope();
+
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(with_premise.proves_atomic_without_search(&goal));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    let derivation = with_premise
+        .derive_atomic_proposition(&goal)
+        .expect("the same-base loadable range should transport");
+    assert!(derivation.check(&with_premise));
+    assert!(!without_premise.proves_atomic_without_search(&goal));
+    let withdrawn =
+        with_premise.without_exact_fact(&Proposition::ConditionIs(premise.clone(), true));
+    assert!(!withdrawn.proves_atomic_without_search(&goal));
+    let without_loadable = PureFactContext::new().assume_condition(premise, true);
+    assert!(!without_loadable.proves_atomic_without_search(&goal));
+    let other_base = Proposition::CMemoryLoadable {
+        memory: after,
+        base: Pointer::symbolic(Variable(90_304)),
+        bytes: bytes(b),
+    };
+    assert!(!with_premise.proves_atomic_without_search(&other_base));
+}
+
+#[test]
+fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
+    let memory = CMemory::new();
+    let base = Pointer::symbolic(Variable(90_310));
+    let var = |id| Bitvector32Term::Variable(Variable(id));
+    let bytes = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    for size in [16u64, 64, 256, 1024] {
+        let fact = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes(var(0)),
+        };
+        let mut context = PureFactContext::new().assume_proposition(fact);
+        for index in 0..size {
+            context =
+                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+        }
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                let goal = Proposition::CMemoryLoadable {
+                    memory: memory.clone(),
+                    base: base.clone(),
+                    bytes: bytes(var(index)),
+                };
+                assert!(context.proves_atomic_without_search(&goal));
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 300 * size as usize, "size={size}, work={work}");
+    }
+}
+
 /// `lower <= term and term < upper`.
 fn int32_half_open_bound(term: &Bitvector32Term, lower: i64, upper: i64) -> Proposition {
     Proposition::And(
