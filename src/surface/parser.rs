@@ -3700,6 +3700,11 @@ impl Parser {
             self.position += 1;
         }
         self.expect(Token::RBrace)?;
+        // An empty mutex has no protected resource to deposit. Its named
+        // initialization still produces ordinary lifetime authority.
+        if callee == "pthread_mutex_init" && !bound.contains("state") {
+            declared.remove("state");
+        }
         if let Some((missing, _)) = declared.iter().find(|(name, entry)| {
             entry.kind == CalleeResourceBinderKind::Supplied && !bound.contains(*name)
         }) {
@@ -4091,7 +4096,9 @@ impl Parser {
             || self.in_resource_definition
             || rebinding)
         {
-            return Err(self.error(format!("named {resource_name} is currently supported only in preserving C function contracts")));
+            return Err(self.error(format!(
+                "named {resource_name} is currently supported only in C function contracts"
+            )));
         }
         let identity = match rebound {
             Some((identity, family)) => {

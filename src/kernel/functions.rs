@@ -3,8 +3,7 @@ use super::loans::{
     CheckedLoanCallEvidence, CompositeLoanBacking, CompositeProjectionEvidence, LoanId, LoanLedger,
     LoanRefusal, LoanRefusalOperation, LoanRefusalSubject, LoanViewBinding, LoanViewBindings,
     StableViewTransferPlan, append_checked_loan_evidence, concat_checked_loan_evidence,
-    empty_checked_loan_evidence_sequence,
-    plan_stable_view_transfer_with_bindings_and_composites_for_worker,
+    empty_checked_loan_evidence_sequence, plan_stable_view_transfer_with_protocol_effect,
 };
 use super::model_fields::{ModelFieldOrigin, ModelMint, algebraic_value_variable};
 use super::prelude::*;
@@ -370,6 +369,7 @@ fn record_resource_clause_attempt() {
 }
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CFunctionResourceTransfer {
+    helper_call: Option<Arc<super::mutexes::helper_contracts::HelperCall>>,
     /// The complete checked entry transition.  The two partitions are kept
     /// explicitly so callers cannot accidentally treat a borrowed view as a
     /// consumed capability when reconstructing the caller successor.
@@ -2722,7 +2722,7 @@ fn execute_verified_function_applications_with_suspension(
         // transfer, not by the contract's ordinary mutable footprint. Keep
         // this effect separate from `transfer.memory_effects`, whose ranges
         // must pass the ordinary mutex-storage write reservation.
-        let mutex_storage_effects = transfer
+        let mut mutex_storage_effects = transfer
             .stable_view_plan
             .as_ref()
             .into_iter()
@@ -2745,6 +2745,22 @@ fn execute_verified_function_applications_with_suspension(
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        if let Some(helper) = &transfer.helper_call {
+            let CResource::MutexUse(usage) = helper.required.resource() else {
+                unreachable!()
+            };
+            let range = CMemoryRange::new_with_element_width(
+                usage.mutex.clone(),
+                0u32.into(),
+                crate::languages::c::thread_runtime::ModeledPthreadBinding::builtin()
+                    .mutex_storage_bytes
+                    .into(),
+                1,
+            );
+            if !mutex_storage_effects.contains(&range) {
+                mutex_storage_effects.push(range);
+            }
+        }
         if let Some(diagnostic) = mutex_storage_effects.iter().find_map(|range| {
             transfer
                 .stable_view_plan
@@ -2854,6 +2870,76 @@ fn execute_verified_function_applications_with_suspension(
         }
         let result = symbolic_contract_result(interface, result_identity);
         let mut post_state = entry_state.clone().with_memory(memory);
+        // Protocol effects remain in the caller scope. The ordinary summary
+        // partition below is recovered before this checked successor is
+        // published, so no call-local hold can escape or be discarded.
+        let helper_effect = if let Some(helper) = &transfer.helper_call {
+            let payload = helper
+                .contract
+                .payload
+                .as_ref()
+                .and_then(|spec| spec.instance_identity())
+                .and_then(|formal| {
+                    selected_bindings
+                        .as_ref()
+                        .and_then(|bindings| bindings.get(&formal).copied())
+                });
+            let definition = match helper.required.resource() {
+                CResource::MutexUse(usage) => usage.protected.as_ref().and_then(|description| {
+                    environment
+                        .modeled_mutex_definitions
+                        .get(description.family())
+                }),
+                _ => unreachable!("checked helper use"),
+            };
+            let protocol_input = caller_state.clone().with_memory(post_state.memory.clone());
+            match super::mutexes::helper_contracts::apply_call_effect(
+                &protocol_input,
+                &helper.source,
+                &helper.required,
+                helper.contract.effect,
+                helper.guard.as_ref(),
+                payload,
+                definition,
+                &effective_assumptions,
+                budget,
+            ) {
+                Ok((successor, evidence, ranges)) => {
+                    if !ranges.is_empty() {
+                        worker_effects.extend(ranges.iter().cloned());
+                        facts.push(
+                            ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                                before: post_state.memory.clone(),
+                                after: successor.memory.clone(),
+                                mutable_ranges: ranges,
+                            })
+                            .into_certified(),
+                        );
+                    }
+                    post_state.memory = successor.memory.clone();
+                    post_state.mutex_ledger = successor.mutex_ledger.clone();
+                    post_state.opaque_mutex_acquisitions =
+                        successor.opaque_mutex_acquisitions.clone();
+                    Some((successor, evidence))
+                }
+                Err(error) => {
+                    let CResource::MutexUse(usage) = helper.required.resource() else {
+                        unreachable!()
+                    };
+                    paths.push(CFunctionPath {
+                        outcome: CFunctionOutcome::RuntimeError(
+                            error.into_runtime_error(&usage.mutex),
+                        ),
+                        facts,
+                        obligations,
+                        loan_evidence: empty_checked_loan_evidence_sequence(),
+                    });
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         // A typed use permits the callee to modify the protected state. A
         // summary must forget the concrete escrow's previous observations.
         if let Some(plan) = &transfer.stable_view_plan {
@@ -2947,6 +3033,22 @@ fn execute_verified_function_applications_with_suspension(
             else {
                 continue;
             };
+            if transfer
+                .helper_call
+                .as_ref()
+                .and_then(|helper| helper.contract.payload.as_ref())
+                .and_then(CResourceSpec::instance_identity)
+                == Some(identity)
+                && let Some((successor, _)) = &helper_effect
+            {
+                let Some(instance) = successor.owned_resource_instance(produced) else {
+                    return Ok(vec![resource_call_failure(
+                        "mutex helper did not produce its protected state",
+                    )]);
+                };
+                produced_instances.insert(identity, instance.clone());
+                continue;
+            }
             let Some(instance_resource) = resource.instance_resource_spec() else {
                 continue;
             };
@@ -3201,6 +3303,13 @@ fn execute_verified_function_applications_with_suspension(
         };
         transfer.candidate_output_views = returned_views;
         transfer.produced_borrowing_pieces = produced_borrowing_pieces;
+        if helper_effect.is_some()
+            && (!transfer.candidate_output_views.is_empty()
+                || !transfer.produced_borrowing_pieces.is_empty())
+        {
+            paths.push(resource_call_failure("unsupported mutex helper call: escaping views and borrowing resources are not supported"));
+            continue;
+        }
         drop(return_resource_timing);
         transfer.post_outputs = Some(return_resources);
         let return_resources = transfer
@@ -3456,6 +3565,20 @@ fn execute_verified_function_applications_with_suspension(
         return_state.mutex_ledger = post_state.mutex_ledger.clone();
         return_state.mutex_input_reservations = post_state.mutex_input_reservations.clone();
         return_state.opaque_mutex_acquisitions = post_state.opaque_mutex_acquisitions.clone();
+        let mut helper_evidence = empty_checked_loan_evidence_sequence();
+        if let Some((successor, evidence)) = helper_effect {
+            if return_state.loan_ledger != caller_state.loan_ledger
+                || return_state.loan_participant != caller_state.loan_participant
+            {
+                paths.push(resource_call_failure(
+                    "mutex helper protocol effect requires completed ordinary loan recovery",
+                ));
+                continue;
+            }
+            return_state.loan_ledger = successor.loan_ledger;
+            return_state.loan_participant = successor.loan_participant;
+            helper_evidence = evidence;
+        }
         // A callee's proof names are scoped to that call. Its checked return
         // restores the caller's names against the recovered occurrences below.
         return_state.named_mutex_authorities = caller_state.named_mutex_authorities.clone();
@@ -3464,6 +3587,43 @@ fn execute_verified_function_applications_with_suspension(
                 let Some((formal, binder)) = resource.mutex_authority_binding() else {
                     continue;
                 };
+                if resource.role() == CResourceTransferRole::Produce {
+                    let Some(actual) = bindings.get(&formal).copied() else {
+                        paths.push(resource_call_failure(&format!(
+                            "call map omits produced mutex authority binder `{binder}`"
+                        )));
+                        continue 'arguments;
+                    };
+                    let required = match evaluate_function_resource_spec_with_entry(
+                        &entry_contract_state,
+                        &post_state,
+                        resource,
+                        &effective_assumptions,
+                        budget,
+                    )? {
+                        Ok(fact) => fact,
+                        Err(error) => {
+                            paths.push(CFunctionPath {
+                                outcome: CFunctionOutcome::RuntimeError(error),
+                                facts,
+                                obligations,
+                                loan_evidence: empty_checked_loan_evidence_sequence(),
+                            });
+                            continue 'arguments;
+                        }
+                    };
+                    return_state = match return_state.bind_named_mutex_authority(actual, &required)
+                    {
+                        Ok(state) => state,
+                        Err(_) => {
+                            paths.push(resource_call_failure(
+                                "produced mutex guard has no fresh owned acquisition",
+                            ));
+                            continue 'arguments;
+                        }
+                    };
+                    continue;
+                }
                 if resource.role() != CResourceTransferRole::Borrow {
                     continue;
                 }
@@ -3505,14 +3665,17 @@ fn execute_verified_function_applications_with_suspension(
             outcome,
             facts,
             obligations,
-            loan_evidence: loan_evidence
-                .map(|evidence| {
-                    append_checked_loan_evidence(
-                        &empty_checked_loan_evidence_sequence(),
-                        Some(evidence),
-                    )
-                })
-                .unwrap_or_else(empty_checked_loan_evidence_sequence),
+            loan_evidence: super::loans::concat_checked_loan_evidence(
+                &loan_evidence
+                    .map(|evidence| {
+                        append_checked_loan_evidence(
+                            &empty_checked_loan_evidence_sequence(),
+                            Some(evidence),
+                        )
+                    })
+                    .unwrap_or_else(empty_checked_loan_evidence_sequence),
+                &helper_evidence,
+            ),
         });
         if let Some(exceptional_path) = exceptional_path {
             paths.push(exceptional_path);
@@ -14309,6 +14472,11 @@ pub(crate) fn preserves_mutex_protocols(interface: &CFunctionContractInterface) 
 pub(crate) fn guard_contract_refusal(
     interface: &CFunctionContractInterface,
 ) -> Option<&'static str> {
+    match super::mutexes::helper_contracts::classify(interface) {
+        Ok(Some(_)) => return None,
+        Err(message) => return Some(message),
+        Ok(None) => {}
+    }
     interface
         .resource_requires()
         .iter()
@@ -14365,6 +14533,7 @@ fn prepare_contract_resource_transfer(
     // repeatedly enumerate the caller's unrelated resource frame.
     if interface.resource_requires().is_empty() && !preserve_explicit_representation {
         return Ok(Ok(CFunctionResourceTransfer {
+            helper_call: None,
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
@@ -14383,7 +14552,7 @@ fn prepare_contract_resource_transfer(
             .composite_resource_definitions()
             .iter()
             .any(CCompositeResourceDefinition::is_recursive);
-    let (required_resources, mut checked_required_resources) =
+    let (mut required_resources, mut checked_required_resources) =
         match super::assumptions::capture_implicit_reasoning_provenance(|| {
             evaluate_function_resource_context_with_metadata(
                 callee_state,
@@ -14427,6 +14596,70 @@ fn prepare_contract_resource_transfer(
         };
         checked.selected_mutex_source = Some(std::sync::Arc::new((actual, source.clone())));
     }
+    let helper_contract = match super::mutexes::helper_contracts::classify(interface) {
+        Ok(contract) => contract,
+        Err(message) => return Ok(Err(CRuntimeError::FunctionContract(message.into()))),
+    };
+    if helper_contract.is_some() && purpose == ResourceTransitionPurpose::SuspendedWorker {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "mutex guards cannot transfer across a worker boundary".into(),
+        )));
+    }
+    let helper_call = if purpose == ResourceTransitionPurpose::CallSite {
+        if let Some(contract) = helper_contract {
+            let Some(checked) = checked_required_resources
+                .iter_mut()
+                .find(|checked| matches!(checked.fact.resource(), CResource::MutexUse(_)))
+            else {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "mutex helper requires checked use authority".into(),
+                )));
+            };
+            let Some(selected) = checked.selected_mutex_source.as_ref() else {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "mutex helper requires named access transport".into(),
+                )));
+            };
+            let source = selected.1.clone();
+            let required = checked.fact.clone();
+            if let Err(error) = super::mutexes::helper_contracts::check_call_access(
+                caller_state,
+                &source,
+                &required,
+                contract.effect,
+                assumptions,
+            ) {
+                let CResource::MutexUse(usage) = required.resource() else {
+                    unreachable!()
+                };
+                return Ok(Err(error.into_runtime_error(&usage.mutex)));
+            }
+            required_resources = required_resources
+                .without_fact_delaying_normalization(&required, assumptions)
+                .expect("checked helper use is in its requirement context");
+            required_resources = match required_resources
+                .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
+            {
+                Ok(resources) => resources,
+                Err(error) => return Ok(Err(resource_context_runtime_error(error))),
+            };
+            checked.fact = source.clone();
+            let guard = checked_required_resources.iter().find_map(|checked| {
+                matches!(checked.fact.resource(), CResource::MutexGuard(_))
+                    .then(|| checked.fact.clone())
+            });
+            Some(Arc::new(super::mutexes::helper_contracts::HelperCall {
+                contract,
+                source,
+                required,
+                guard,
+            }))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     // Role is section semantics, not a decoration on the access mode.  A
     // viewed fact can only be borrowed, while an owned fact may be either a
     // consumed transfer or an entry borrow returned by the contract.  A
@@ -14741,7 +14974,7 @@ fn prepare_contract_resource_transfer(
         } else {
             BTreeMap::new()
         };
-        match plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+        match plan_stable_view_transfer_with_protocol_effect(
             &planning_resources,
             &stable_requirements,
             assumptions,
@@ -14751,8 +14984,15 @@ fn prepare_contract_resource_transfer(
             caller_state.loan_view_bindings(),
             &composite_backings,
             purpose == ResourceTransitionPurpose::SuspendedWorker,
+            helper_call.is_some(),
         ) {
             Ok(mut plan) => {
+                if helper_call.is_some()
+                    && (plan.has_stable_views() || !plan.transferred_holds.is_empty())
+                {
+                    return Ok(Err(CRuntimeError::FunctionContract(
+                        "unsupported mutex helper call: stable views and borrowing resources are not supported".into())));
+                }
                 for use_plan in &plan.mutex_uses {
                     let fact = use_plan.source_resource();
                     let mutex = match fact.resource() {
@@ -15200,6 +15440,7 @@ fn prepare_contract_resource_transfer(
         })
         .collect();
     Ok(Ok(CFunctionResourceTransfer {
+        helper_call,
         borrowed_inputs,
         consumed_inputs,
         canonical_borrowed_owners,
@@ -20447,6 +20688,17 @@ pub(super) fn function_return_resources_definitionally_established(
             .set_typed("result".to_string(), value.clone(), function.return_type());
     }
     let mut budget = ExecutionBudget::beside_live_state();
+    if check_mutex_helper_body_return(
+        caller_state,
+        &claim_return_state,
+        function.contract_interface(),
+        &assumptions,
+        &mut budget,
+    )
+    .is_err()
+    {
+        return false;
+    }
     let entry_resource_state =
         with_contract_argument_views(caller_state, function, &argument_values);
     let Ok(Ok(expected)) = evaluate_function_return_resource_context(
@@ -20470,6 +20722,9 @@ pub(super) fn function_return_resources_definitionally_established(
             else {
                 return false;
             };
+            if super::mutexes::helper_contracts::permits_return(return_state) {
+                continue;
+            }
             if ledger
                 .check_assumed_mutex_use_return(binding, holder, claim_return_state.resources())
                 .is_err()
@@ -20487,6 +20742,61 @@ pub(super) fn function_return_resources_definitionally_established(
             &assumptions,
         )
     })
+}
+
+fn check_mutex_helper_body_return(
+    entry: &CState,
+    returned: &CState,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> Result<(), CRuntimeError> {
+    use super::mutexes::helper_contracts::{self, HelperEffect};
+    let Some(contract) = helper_contracts::classify(interface)
+        .map_err(|message| CRuntimeError::FunctionContract(message.into()))?
+    else {
+        return Ok(());
+    };
+    match contract.effect {
+        HelperEffect::Acquire => {
+            if !helper_contracts::same_export_permission(entry, returned)
+                || !helper_contracts::permits_return(returned)
+            {
+                return Err(CRuntimeError::FunctionContract(
+                    "acquiring helper must return its owned acquired guard and lifetime dependency"
+                        .into(),
+                ));
+            }
+            let actual = helper_contracts::exported_guard(returned).expect("checked export");
+            let expected = evaluate_function_resource_spec_with_entry(
+                entry,
+                returned,
+                &contract.guard,
+                assumptions,
+                budget,
+            )
+            .map_err(|_| {
+                CRuntimeError::FunctionContract(
+                    "mutex helper output evaluation exceeded its budget".into(),
+                )
+            })??;
+            if expected != actual {
+                return Err(CRuntimeError::MissingResource { resource: expected });
+            }
+        }
+        HelperEffect::Release => {
+            if returned
+                .opaque_mutex_acquisitions
+                .as_ref()
+                .is_some_and(|held| held.has_local_hold(returned.loan_participant))
+            {
+                return Err(CRuntimeError::FunctionContract(
+                    "releasing helper must discharge its consumed guard acquisition".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn resource_context_satisfies_definitional_fact(
@@ -24642,6 +24952,22 @@ pub(super) fn contract_exit_outcome(
         )));
     };
     let outcome = complete_void_fallthrough(function, outcome);
+    if let CStatementOutcome::Return { state, .. } = &outcome {
+        let entry = bind_c_function_arguments(caller_state, function, &argument_values)
+            .ok_or(CRuntimeError::TypeMismatch);
+        match entry.and_then(|entry| {
+            check_mutex_helper_body_return(
+                &entry,
+                state,
+                function.contract_interface(),
+                assumptions,
+                budget,
+            )
+        }) {
+            Ok(()) => {}
+            Err(error) => return Ok(Err(error)),
+        }
+    }
     // A proof may hold the body's exit resources in a split representation
     // (one owned token twice rather than a quantity of two). Execution
     // composes its resources as it goes; compose the retained ones the same

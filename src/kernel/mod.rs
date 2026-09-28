@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 44;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 45;
 
 pub(crate) mod assumptions;
 mod equality_graph;
@@ -127,6 +127,7 @@ pub(crate) use functions::checked_composite_projection_evidence;
 pub(crate) use functions::decide_resource_model_arm;
 pub(crate) use functions::establish_resource_derived_loop_frames;
 pub(crate) use functions::evaluate_guarded_contract_condition_with_loop_entry;
+pub(crate) use functions::guard_contract_refusal;
 pub(crate) use functions::initialize_c_function_globals;
 pub(crate) use functions::initialize_c_program_storage;
 #[cfg(test)]

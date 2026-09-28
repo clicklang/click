@@ -3022,6 +3022,9 @@ fn install_borrowed_contract_inputs(
     parameters: &[syntax::C0Parameter],
     proof_label: &str,
 ) -> Result<CState, ClickError> {
+    if let Some(message) = crate::kernel::guard_contract_refusal(function.contract_interface()) {
+        return Err(ClickError::new(format!("`{proof_label}` {message}")));
+    }
     crate::kernel::c_state_with_borrowed_contract_inputs(
         state,
         function,

@@ -10,6 +10,7 @@
 //! and initialization before a pthread call can use these transitions.
 
 mod assumed_protocol;
+pub(super) mod helper_contracts;
 pub(super) use assumed_protocol::{
     OpaqueMutexAcquisitions, opaque_runtime_transition_with_payload,
 };
@@ -84,7 +85,7 @@ enum MutexEntry {
         invariant: Option<CResourceFact>,
         interface: Option<Arc<InitializedMutexInterface>>,
         epoch: u64,
-        lifetime_hold: Option<(LoanHoldId, LoanParticipantId)>,
+        lifetime_hold: Option<(LoanHoldId, LoanParticipantId, MutexUseBinding)>,
     },
 }
 
@@ -451,6 +452,7 @@ pub(super) struct MutexInputReservations {
     guard_unnamed: bool,
     guards: PersistentMap<Pointer, CResourceFact>,
     lifetimes: PersistentMap<Pointer, CResourceFact>,
+    helper_return: Option<Arc<helper_contracts::HelperReturnPermission>>,
 }
 
 // Input descriptions are immutable after entry. Compare their identity, not
@@ -487,6 +489,7 @@ impl MutexInputReservations {
             guard_unnamed: false,
             guards: PersistentMap::default(),
             lifetimes: PersistentMap::default(),
+            helper_return: None,
         }
     }
 
@@ -1425,7 +1428,7 @@ impl MutexContext {
                 .map_err(|_| MutexTransitionError::MissingUse(mutex.clone()))?;
             runtime_loan_transition = Some((loans.clone(), participant, transition));
             let loans = next;
-            (Some(loans), Some((hold, participant)))
+            (Some(loans), Some((hold, participant, usage)))
         } else {
             if !self
                 .state
@@ -1698,7 +1701,7 @@ impl MutexContext {
         };
         let mut state = self.state.clone();
         let mut runtime_loan_transition = None;
-        if let Some((hold, participant)) = lifetime_hold {
+        if let Some((hold, participant, usage)) = lifetime_hold {
             if state.loan_participant != Some(participant) {
                 return Err("mutex guard lifetime hold belongs to another participant".into());
             }
@@ -1707,7 +1710,12 @@ impl MutexContext {
                 .as_ref()
                 .ok_or("missing mutex guard lifetime loan")?;
             let (next, transition) = loans
-                .release_with_transition(hold, participant)
+                .release_mutex_use_hold_with_transition(
+                    usage,
+                    &guard.initialization.resource_fact(&guard.mutex),
+                    hold,
+                    participant,
+                )
                 .map_err(|_| MutexTransitionError::Refusal("missing mutex guard lifetime hold"))?;
             runtime_loan_transition = Some((loans.clone(), participant, transition));
             state.loan_ledger = Some(next);

@@ -14,20 +14,20 @@ use crate::kernel::loans::{
 /// It supplies neither lifecycle ownership nor protected memory ownership.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct AssumedMutexProtocol {
-    usage: MutexUseBinding,
-    holder: LoanParticipantId,
-    use_fact: CResourceFact,
-    lifetime: CResourceFact,
+    pub(super) usage: MutexUseBinding,
+    pub(super) holder: LoanParticipantId,
+    pub(super) use_fact: CResourceFact,
+    pub(super) lifetime: CResourceFact,
 }
 
 /// An exact acquisition receipt. The guard atom and its loan hold must also
 /// remain in the state; copying this receipt never copies ownership.
 #[derive(Clone, Debug)]
 pub(super) struct AssumedMutexGuard {
-    protocol: AssumedMutexProtocol,
-    fact: CResourceFact,
-    hold: LoanHoldId,
-    payload: Option<crate::kernel::ResourceInstance>,
+    pub(super) protocol: AssumedMutexProtocol,
+    pub(super) fact: CResourceFact,
+    pub(super) hold: LoanHoldId,
+    pub(super) payload: Option<crate::kernel::ResourceInstance>,
 }
 
 pub(super) struct AssumedMutexTransition {
@@ -75,14 +75,17 @@ impl AssumedMutexProtocol {
         })
     }
 
-    fn mutex(&self) -> &Pointer {
+    pub(super) fn mutex(&self) -> &Pointer {
         let CResource::MutexUse(identity) = self.use_fact.resource() else {
             unreachable!()
         };
         &identity.mutex
     }
 
-    fn loans<'a>(&self, state: &'a CState) -> Result<&'a LoanLedger, MutexTransitionError> {
+    pub(super) fn loans<'a>(
+        &self,
+        state: &'a CState,
+    ) -> Result<&'a LoanLedger, MutexTransitionError> {
         let missing = || MutexTransitionError::MissingUse(self.mutex().clone());
         if !state.preserves_mutex_protocols
             || state.loan_participant != Some(self.holder)
@@ -118,7 +121,7 @@ impl AssumedMutexProtocol {
         )
     }
 
-    fn acquire_with_payload(
+    pub(super) fn acquire_with_payload(
         &self,
         state: &CState,
         assumptions: &PureFactContext,
@@ -227,7 +230,7 @@ impl AssumedMutexProtocol {
         self.release_with_payload(state, guard, assumptions, None)
     }
 
-    fn release_with_payload(
+    pub(super) fn release_with_payload(
         &self,
         state: &CState,
         guard: &AssumedMutexGuard,
@@ -332,10 +335,10 @@ impl AssumedMutexProtocol {
 /// Removing a visible guard does not remove its receipt or lifetime hold.
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct OpaqueMutexAcquisitions {
-    identity: u64,
-    receipts: PersistentMap<Pointer, Arc<AssumedMutexGuard>>,
-    storage: MutexLedger,
-    holders: PersistentMap<LoanParticipantId, usize>,
+    pub(super) identity: u64,
+    pub(super) receipts: PersistentMap<Pointer, Arc<AssumedMutexGuard>>,
+    pub(super) storage: MutexLedger,
+    pub(super) holders: PersistentMap<LoanParticipantId, usize>,
 }
 
 impl OpaqueMutexAcquisitions {
@@ -406,13 +409,34 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     payload_identity: Option<crate::kernel::Variable>,
     budget: &mut crate::kernel::ExecutionBudget,
 ) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
+    opaque_runtime_transition_with_selected_use(
+        state,
+        mutex,
+        acquire,
+        assumptions,
+        definition,
+        payload_identity,
+        budget,
+        None,
+    )
+}
+
+pub(super) fn opaque_runtime_transition_with_selected_use(
+    state: &CState,
+    mutex: &Pointer,
+    acquire: bool,
+    assumptions: &PureFactContext,
+    definition: Option<&crate::kernel::CCompositeResourceDefinition>,
+    payload_identity: Option<crate::kernel::Variable>,
+    budget: &mut crate::kernel::ExecutionBudget,
+    selected_use: Option<&CResourceFact>,
+) -> Result<(CState, CheckedLoanCallEvidenceSequence), MutexTransitionError> {
     if !state.preserves_mutex_protocols {
         return Err("opaque mutex transitions require preserving use authority".into());
     }
     if acquire {
-        let fact = state
-            .resources
-            .mutex_use_candidate_at(mutex)
+        let fact = selected_use
+            .or_else(|| state.resources.mutex_use_candidate_at(mutex))
             .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
         let CResource::MutexUse(identity) = fact.resource() else {
             unreachable!()
@@ -421,6 +445,9 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
             .binding
             .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
         let protocol = AssumedMutexProtocol::bind(state, usage)?;
+        if protocol.mutex() != mutex || protocol.use_fact != *fact {
+            return Err(MutexTransitionError::MissingUse(mutex.clone()));
+        }
         if let Some(error) = super::acquisition_availability_refusal(state, mutex, assumptions) {
             return Err(error);
         }
@@ -482,6 +509,9 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
             .receipts
             .get(mutex)
             .ok_or_else(|| MutexTransitionError::MissingGuard(mutex.clone()))?;
+        if selected_use.is_some_and(|selected| selected != &guard.protocol.use_fact) {
+            return Err("guard lifetime belongs to a different selected mutex_use".into());
+        }
         let mut transition =
             guard
                 .protocol

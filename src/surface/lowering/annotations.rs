@@ -327,6 +327,11 @@ pub(in crate::surface) fn check_resource_field_schemas(
                     let ResourceClause::Declared { name, .. } = resource.as_ref() else {
                         unreachable!()
                     };
+                    if matches!(name.as_str(), "mutex_live" | "mutex_guard" | "mutex_use") {
+                        // Primitive authority binders have no model-field
+                        // schema, whether they are inputs or new outputs.
+                        continue;
+                    }
                     binding.schema = Some(
                         schemas
                             .get(name)

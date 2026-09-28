@@ -1,8 +1,10 @@
 # Mutex operations as resource contracts
 
-Status: design with an implemented named lifecycle checkpoint described below.
-The complete transfer scheme remains the design direction; protected-state
-transport and storage binding syntax still need implementation.
+Status: named lifecycle operations, typed protected-state transport, and
+same-thread acquiring/releasing helpers are implemented for the subset below.
+Named storage transfer and destruction's named state output remain proposals.
+The `issues/concurrency-demo.md` roadmap records the current
+milestones and remaining work.
 
 Mutexes should behave like resources described by ordinary Click contracts.
 Their runtime implementation needs trusted rules, but their proof inputs and
@@ -13,7 +15,7 @@ together so that one operation's outputs fit the next operation's inputs.
 This refines [Concurrency contracts and failure explanations](concurrency-contracts-and-diagnostics.md).
 For the public contract design, it supersedes the hard-coded initialization
 binder `invariant` and the tentative lock output names `invariant` and
-`protected`. It does not change their implementation by itself.
+`protected`.
 
 ## Ordinary contracts determine the proof interface
 
@@ -70,9 +72,9 @@ separate description argument or add angle-bracket resource parameters.
 
 In the sketches below, `P` remains explanatory notation for that recorded
 assertion. The unary `mutex_live(mu)` and `mutex_use(mu)` spellings retain the
-association internally. How an independent helper exposes the associated
-payload in its contract must be established before enabling those outputs;
-an opaque input must not be treated as a known concrete payload.
+association internally. An independent helper uses
+`mutex_use(mu, counter_state(p))` to identify its protected resource type.
+An opaque unary input must not be treated as a known concrete payload.
 
 ## The four runtime contracts
 
@@ -286,6 +288,16 @@ let { lifetime: life } = step(pthread_mutex_init(mu, 0), { state: initial });
 step(pthread_mutex_destroy(mu), { lifetime: life });
 ```
 
+For an empty mutex, initialization has no state input:
+
+<!-- verified-example: mdtests/mutex_helper_transfers_unary.md -->
+```click
+let { lifetime: lifetime } = step(pthread_mutex_init(&p->mu, 0), {});
+```
+
+An omitted state input initializes an empty mutex; it does not infer or deposit
+an owned resource from a nearby `guarded_by` declaration.
+
 The kernel independently checks those maps and binds the output to the actual
 owned initialization. Named preserving `owns life: mutex_live(mu)` and
 `owns g: mutex_guard(mu)` helpers are implemented. Names select exact authority;
@@ -301,41 +313,83 @@ and restores the caller's original authority and name after checked recovery.
 Nested reborrows select the same exact source; matching only the mutex address
 cannot substitute a sibling permission.
 
-General consuming/producing helper contracts, named storage, fresh protected-state
-outputs, and escaping guards remain pending. Concrete lock still retrieves the
-escrowed instance; calls without named runtime maps retain their prior checked
-behavior. The contract sketches above describe the complete target, not the
-currently supported subset. New runtime projections must be enabled only when
-their corresponding kernel transfer is implemented.
+Typed permissions also identify the protected resource with
+`mutex_use(mu, counter_state(p))`. Their runtime acquisition returns a fresh
+state, and release accepts a restored replacement instance of that same type.
 
-Implement the design in this order:
+### Acquiring and releasing helpers
 
-1. Use existing resource arguments and named binders, deriving the protected
-   assertion from checked inputs. Establish how independent helper contracts
-   retain that association before enabling protected-state outputs. Do not make
-   a general parameter syntax a prerequisite.
-2. Route runtime contract inputs and outputs through ordinary binder checking.
-   Validate missing, extra, unowned, and incorrectly typed inputs exactly as
-   for user-defined contracts. Remove the special initialization key.
-3. Carry the invariant association through initialization, independent helper
-   entry, checked calls, reborrows, and wrappers. Reject stale initializations
-   and mismatched resource families or parameters.
-4. Produce fresh guards and protected observations on acquisition; require
-   restoration on release. Check modular memory effects so callers cannot
-   retain stale payload or representation-byte facts.
-5. Support escaping guard lifetime dependencies and destruction/storage
-   recovery. Verify consuming/producing helper contracts and their certificates,
-   including exceptional exits and outstanding payload borrows.
+A verified helper can expose those transfers in an ordinary contract:
 
-Each stage needs negative certificate tests as well as surface examples.
-Acceptance includes a user-defined acquiring/releasing helper whose interface
-uses the same rules as the runtime contract, reacquisition that cannot recover
-an earlier value without proof, failed substitution of a different guard, and
-refusal to destroy while any acquisition or use loan survives. Preserve
-existing C as the regression boundary. Do not rewrite C into a more convenient
-proof shape.
+<!-- verified-example: mdtests/mutex_helper_transfers.md -->
+```click
+void acquire(struct counter *p) {
+    owns access: mutex_use(&p->mu, counter_state(p));
+    produces guard: mutex_guard(&p->mu);
+    produces state: counter_state(p);
+}
 
-Shared worker execution, loop assertions with conditional acquisition,
-conserved contribution accounting, and atomic publication remain separate
-semantic work. Completing these four resource interfaces is necessary for
-that work, not evidence that it is already implemented.
+void release(struct counter *p) {
+    owns access: mutex_use(&p->mu, counter_state(p));
+    consumes guard: mutex_guard(&p->mu);
+    consumes state: counter_state(p);
+}
+```
+
+The `mdtests/mutex_helper_transfers.md` executable example includes their
+proofs, nested wrappers, and callers. It uses ordinary named call maps:
+
+<!-- verified-example: mdtests/mutex_helper_transfers.md -->
+```click
+let { guard: acquired, state: contents } = step(acquire(p), { access: access });
+step(release(p), { access: access, guard: acquired, state: contents });
+```
+
+The output names belong to each contract. A wrapper may rename them, and its
+proof may name the actual acquisition differently from its declared output.
+Neither renaming nor a `produces` clause creates authority. The acquiring body
+must establish the real acquisition and the owned protected state. The
+releasing body must discharge the acquisition's lifetime hold by unlocking;
+dropping its visible guard resource does not establish `consumes`.
+
+Independent helper entry ties permission to one rooted input use authority.
+Return checks tie the exported guard to that exact root and initialization.
+A caller summary applies the checked acquire/release exchange in the caller's
+scope, preserving its original use or lifecycle source. This keeps an exported
+guard's lifetime dependency alive across nested synchronous calls. A preserving
+`owns guard` contract still returns the exact entry acquisition; unlock followed
+by relock cannot satisfy that promise.
+
+The initial helper subset has one directly named preserved use input, one
+produced or consumed guard, and, for typed use, one matching protected-state
+transfer. Viewed or conditional resource clauses and additional mutex protocol
+transfers are outside this subset. Empty-mutex helpers can use unary
+`mutex_use(mu)` without a state clause; they cannot stand in for a typed
+transfer that must restore exposed protected state. The same protected-resource
+restrictions as runtime typed use apply: unconditional leaf resources with
+fixed memory footprints. These transfers are synchronous and stay on the same
+thread. They do not permit moving pthread guard ownership to a worker.
+
+A releasing helper can modify the payload and deposit a replacement instance.
+Its summary must forget earlier field and memory observations consistently
+with that mutation. Acquiring again does not recover an old value merely
+because the proof reuses a resource type or name.
+
+### Remaining boundary
+
+General lifecycle-consuming/producing helper contracts, named storage, and
+named destruction outputs remain unfinished. The four runtime sketches above
+include those future projections; the implemented acquire/release subset does
+not imply all four operations have a fully ordinary source-level contract.
+Direct `pthread_mutex_t *` parameters also remain unsupported by the sidecar
+parser; the frozen `mdtests/mutex_helper_transfers_empty.md` regression
+records that limitation without rewriting its C.
+
+The acceptance boundary includes independently checked bodies and call
+certificates, missing lock/unlock rejection, stale acquisition and observation
+rejection, and refusal to destroy while acquisitions or use loans survive.
+Preserve existing C as the regression boundary. Do not rewrite C into a more
+convenient proof shape.
+
+Exact shared-counter accounting, richer protected-resource composition, and
+atomic publication remain separate work in the concurrency roadmap.

@@ -1,7 +1,7 @@
-# Consuming a direct guard is not a preserving contract
+# Consuming a direct guard requires a releasing helper interface
 
-The helper receives the acquisition directly and returns the same authority.
-Its protected memory remains a separate input resource.
+This read-only helper has no preserved use permission and does not unlock.
+It cannot discharge an acquisition by declaring the guard consumed.
 
 ```c filename=guarded_resource_mutex_flow.c
 #include <pthread.h>
@@ -63,5 +63,5 @@ int32 read_counter(struct counter *counter) {
 ```
 
 ```expect
-fail: mutex authority contracts currently require preserving owned inputs
+fail: unsupported mutex helper contract: requires one named preserved mutex_use and one produced or consumed guard
 ```

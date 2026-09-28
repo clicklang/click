@@ -47,9 +47,9 @@ Mutex initialization checks writable storage and alignment. Initialized bytes
 are reserved against ordinary writes, and live mutexes prevent overlapping
 free/realloc and automatic-storage expiry. Initialization identities distinguish
 destruction and reinitialization at the same address. Named authority binders,
-preserving helpers, balanced use helpers, and typed lock/unlock payload
-transport are implemented. These are supported subsets, not general
-consuming/producing authority contracts.
+preserving helpers, balanced use helpers, typed lock/unlock payload transport,
+and same-thread acquiring/releasing helpers are implemented. These are
+supported subsets, not general lifecycle-consuming/producing contracts.
 
 All these client proofs use the explicitly selected
 [modeled pthread specification](../src/languages/c/modeled_pthread_spec.md).
@@ -74,11 +74,13 @@ tokens, including symbolic quantities, can be ingredients of that resource.
 The conditional loop acquisition abstraction requires an empty mutex, locally
 owned lifetime authority, and no use hold.
 
-User-defined authority contracts still require preserving inputs. A helper
-cannot yet export a newly acquired guard or consume an input guard to unlock,
-even though the runtime lock/unlock rules perform those transfers. This is a
-central composition gap to fix, not an intended distinction between built-ins
-and describable resources.
+[Acquiring/releasing helpers](../mdtests/mutex_helper_transfers.md) use ordinary
+`owns`, `consumes`, and `produces` clauses and named call maps. The supported
+subset has one named preserved use input, a produced or consumed guard, and a
+matching protected-state transfer for typed use. Nested synchronous wrappers
+retain the exact acquisition and lifetime dependency. Viewed or conditional
+clauses, additional protocol transfers, and lifecycle-changing helpers remain
+outside this subset. Unary transfer helpers require a payload-free protocol.
 
 ## Surface language decisions
 
@@ -160,16 +162,21 @@ Keep disabled runtime binder entries identified as unfinished work.
 
 ### 2. Make acquiring and releasing helpers ordinary contracts
 
-Support a verified C helper that locks and returns a fresh guard and protected
-state to its caller, plus a helper that consumes those resources and unlocks.
-Use existing `owns`, `consumes`, `produces`, and named call maps. The runtime
-and user-defined helpers must obey the same checked transfer rules.
+Implemented for the direct named subset above; pause here for contract and
+implementation review before starting step 3. A verified C helper can lock and
+return a fresh guard and protected state, and a releasing helper consumes those
+resources and unlocks. The [contract record](../docs/internals/mutex-resource-contracts.md#acquiring-and-releasing-helpers)
+and executable example show the existing syntax and current boundaries.
 
-The acquired guard must retain its initialization and lifetime dependency
-across return and nested calls. Reject duplicate or stale acquisitions,
-replacement of a promised preserved guard, release without restored state,
-and destruction while a guard or use loan survives. These are same-thread
-helper transfers, not permission to transfer pthread guards between threads.
+The body must establish the actual protocol effect; a declared output cannot
+invent a guard and a consumed guard cannot simply be discarded. Caller
+summaries retain initialization and lifetime dependencies and forget protected
+observations affected by the helper. The acceptance requirements remain:
+reject duplicate or stale acquisitions, replacement of a promised preserved
+guard, release without restored state, and destruction while a guard or use
+loan survives. These transfers do not authorize moving pthread guards between
+threads. Direct `pthread_mutex_t *` sidecar parameter spelling is a separate
+existing parser limitation, retained as a frozen negative regression.
 
 ### 3. Complete the mutex-protected counter
 

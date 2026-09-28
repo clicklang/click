@@ -2229,6 +2229,7 @@ fn has_live_mutex(state: &CState) -> bool {
         .opaque_mutex_acquisitions
         .as_ref()
         .is_some_and(|held| held.has_local_hold(state.loan_participant))
+        && !super::super::mutexes::helper_contracts::permits_return(state)
         || (!state.preserves_mutex_protocols
             && state
                 .mutex_ledger

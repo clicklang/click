@@ -8,5 +8,5 @@ theorem keep(mu: void*) {
 ```
 
 ```expect
-fail: named mutex_guard is currently supported only in preserving C function contracts
+fail: named mutex_guard is currently supported only in C function contracts
 ```

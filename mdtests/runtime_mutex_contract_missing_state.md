@@ -1,6 +1,8 @@
-# Initialization requires the declared state input
+# Named initialization requires binding the lifetime output
 
-The selected runtime contract declares a consumed `state` binder. An empty call map omits it.
+An empty call map initializes an empty mutex without depositing the separately
+owned state. The call still produces lifetime authority, which needs an output
+binder.
 
 ```c filename=runtime_mutex_contract_missing_state.c
 #include <pthread.h>
@@ -34,6 +36,5 @@ void initialize(struct counter *counter) {
 ```
 
 ```expect
-fail: call map omits `pthread_mutex_init` binder `state`
+fail: `pthread_mutex_init` produces named resource instance(s) `lifetime`
 ```
-

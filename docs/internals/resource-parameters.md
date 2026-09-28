@@ -2,6 +2,10 @@
 
 Status: resource types are accepted as mutex-use arguments. The earlier
 angle-bracket proposal is withdrawn; its syntax was never accepted by the parser.
+Acquiring and releasing helpers use these types with existing
+[`owns`/`consumes`/`produces` contracts](mutex-resource-contracts.md#acquiring-and-releasing-helpers).
+The chronological investigation below records earlier proposals, not additional
+language features to implement.
 
 ## Resource types in mutex contracts
 

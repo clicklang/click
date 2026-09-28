@@ -933,10 +933,15 @@ fn execute_modeled_pthread_mutex_paths(
         {
             transport.function.as_ref() == contract.function_name
                 && transport.arity == contract.arity
-                && transport.bindings.len() == contract.implemented_binders().count()
-                && contract
-                    .implemented_binders()
-                    .all(|binder| transport.bindings.contains_key(&Variable(binder.identity)))
+                && transport.bindings.keys().all(|identity| {
+                    contract
+                        .implemented_binders()
+                        .any(|binder| *identity == Variable(binder.identity))
+                })
+                && contract.implemented_binders().all(|binder| {
+                    transport.bindings.contains_key(&Variable(binder.identity))
+                        || (initializing && binder.role == MutexResourceRole::State)
+                })
                 && transport
                     .bindings
                     .values()
@@ -1031,27 +1036,26 @@ fn execute_modeled_pthread_mutex_paths(
             let transition = if let Some(error) = storage_refusal {
                 Err(error)
             } else if initializing {
-                let context = if selected.is_none() {
+                let state_binder = MutexOperation::Init
+                    .descriptor()
+                    .binder_by_role(MutexResourceRole::State)
+                    .expect("initialization declares its optional state input");
+                let state_identity = selected
+                    .and_then(|transport| transport.bindings.get(&Variable(state_binder.identity)));
+                let context = if let Some(identity) = state_identity {
+                    super::mutexes::MutexContext::new(state.clone())
+                        .publish_declared(
+                            mutex.pointer(),
+                            *identity,
+                            &environment.modeled_mutex_guards,
+                            &current,
+                            binding.mutex_storage_bytes,
+                        )
+                        .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
+                } else {
                     super::mutexes::MutexContext::new(state.clone())
                         .initialize_empty(mutex.pointer().clone(), binding.mutex_storage_bytes)
                         .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
-                } else {
-                    let contract = MutexOperation::Init.descriptor();
-                    let state_binder = contract
-                        .binder_by_role(MutexResourceRole::State)
-                        .expect("initialization declares its state input");
-                    let identity = selected.and_then(|transport| {
-                        transport.bindings.get(&Variable(state_binder.identity))
-                    });
-                    identity
-                    .ok_or("mutex init requires `step(pthread_mutex_init(...), { state: instance })`")
-                    .and_then(|identity| {
-                        super::mutexes::MutexContext::new(state.clone()).publish_declared(
-                            mutex.pointer(), *identity, &environment.modeled_mutex_guards,
-                            &current, binding.mutex_storage_bytes,
-                        )
-                    })
-                    .map_err(|message| CRuntimeError::FunctionContract(message.to_string()))
                 };
                 context.and_then(|context| {
                     let (next, evidence) = context.into_runtime_transition();

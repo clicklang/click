@@ -2670,6 +2670,52 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
                 .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
         }
     }
+    if let Some(contract) =
+        crate::kernel::mutexes::helper_contracts::classify(function.contract_interface())
+            .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
+    {
+        let entry = c_function_entry_state(&rooted, function, arguments)
+            .ok_or_else(|| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))?;
+        let mut budget = ExecutionBudget::beside_live_state();
+        let mut evaluate = |spec: &CResourceSpec| {
+            super::functions::evaluate_function_resource_spec_with_entry(
+                &entry,
+                &entry,
+                spec,
+                assumptions,
+                &mut budget,
+            )
+            .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?
+            .map_err(|_| LoanRefusal::MissingBacking.diagnostic(LoanRefusalOperation::Entry))
+        };
+        let access = evaluate(&contract.access)?;
+        let (guard, payload) =
+            if contract.effect == crate::kernel::mutexes::helper_contracts::HelperEffect::Release {
+                let guard = evaluate(&contract.guard)?;
+                let payload = contract
+                    .payload
+                    .as_ref()
+                    .map(&mut evaluate)
+                    .transpose()?
+                    .map(|fact| {
+                        let CResource::Instance(instance) = fact.resource() else {
+                            unreachable!("named protected state")
+                        };
+                        instance.clone()
+                    });
+                (Some(guard), payload)
+            } else {
+                (None, None)
+            };
+        rooted = crate::kernel::mutexes::helper_contracts::install_entry(
+            rooted,
+            &contract,
+            &access,
+            guard.as_ref(),
+            payload,
+        )
+        .map_err(|_| LoanRefusal::InvalidEvidence.diagnostic(LoanRefusalOperation::Entry))?;
+    }
     BORROWED_INPUT_ROOTS.with(|roots| {
         roots
             .borrow_mut()
