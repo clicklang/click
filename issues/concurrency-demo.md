@@ -60,8 +60,12 @@ initialize that mutex with an explicit resource selection, lock to retrieve
 the resource, restore it before unlock, and destroy the mutex to recover it.
 The [C proof fixture](../mdtests/guarded_resource_mutex_flow.md) exercises
 this flow and rejects a wrong mutex and an unfolded unlock. The runtime model
-assumes these valid calls succeed. Worker sharing and interference rules are
-still needed before this proves the concurrent counter.
+assumes these valid calls succeed. The unchanged counter now verifies worker
+and parent safety: typed use permissions split across both workers, either
+create failure cleans up, joins recover shares in the current ledger, and
+final destruction recovers the protected payload. Parent acquisition and
+release forget observations while workers remain. The exact final value still
+needs a contribution invariant; completed workers alone do not establish it.
 
 ### Mutex model boundary
 

@@ -49,11 +49,17 @@ and resource-type parameters on user-defined resource constructors remain
 unsupported and are rejected. As with the concrete mutex path, unlock currently
 requires outstanding memory loans to have returned. Named lock/unlock payload transport currently
 applies to independent typed-use contracts; the existing implicit concrete
-mutex path remains available. This implements the contract and synchronous
-helper boundary. The unchanged worker now verifies in
+mutex path remains available. Typed permissions also cross worker boundaries:
+create retains a parent share, transfers a checked worker share, and leaves
+both unchanged on failure. Joins return shares into the current ledger in
+either order; only complete recovery returns lifetime authority. No additional
+surface syntax is needed. Parent acquisitions and releases forget protected
+observations while workers remain outstanding.
+
+The unchanged worker and parent safety proof live in
 `design/concurrency-probes/mutex_counter.click` and the
-`mdtests/mutex_counter_worker.md` regression; the parent and exact final-count
-accounting remain unproved.
+`mdtests/mutex_counter_worker.md` regression. Exact final-count accounting
+remains unproved: permission recovery alone does not establish two increments.
 
 The older named-instance argument work below remains supported. It identifies
 an occurrence, whereas a resource type permits replacement occurrences. The

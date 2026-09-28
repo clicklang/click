@@ -9,7 +9,7 @@ in `tests/examples.rs`; proof work must not reshape its control flow.
 
 Initialization deposits one folded `counter_state(counter)` instance. Its
 identity, definition, and guarded mutex address remain in one protocol
-escrow. A worker contract may require a duplicable permission to use that
+escrow. A worker contract may require a share of permission to use that
 live protocol. The permission grants no direct memory resource, current
 field value, or right to destroy the mutex. Creation checks that the named
 protocol exists and gives the worker that permission without copying its
@@ -22,7 +22,7 @@ Because another worker may have run, fields and protected memory have to be
 freshened consistently with the resource definition. A value read before
 unlock remains a fact about that old copy, not a claim about current memory
 after a later lock. The holder may unfold, access the ordinary `value` field,
-fold, and unlock. Unlock consumes the same instance, checks its declared
+fold, and unlock. Unlock consumes an owned instance of the same resource type, checks its declared
 invariant, and returns it to the escrow. A second lock in the same path cannot
 acquire while its first guard is live. A path without protocol permission
 cannot lock, and one without a live guard cannot unlock or touch the field.
@@ -50,3 +50,20 @@ it.
 The modeled pthread specification is a trusted runtime assumption. These
 rules would validate the C client against that specification, not the native
 pthread implementation. The import lock and native binding remain separate.
+
+## Implemented safety boundary
+
+The sidecar now uses `owns access: mutex_use(mu, counter_state(p))` in the
+worker. The parent proves both creates, either failure cleanup, both joins,
+and final destruction against the unchanged C. Kernel regressions also cover
+reverse join order and another acquisition or spawn after a partial join.
+
+Use shares are linear checked loans. A parent retains a share at each successful
+create; only joining all workers restores the lifetime owner. Joins update the
+current ledger rather than installing a saved state. While workers are pending,
+parent lock and unlock freshen the protected observation, so an old value cannot
+survive a possible worker update. No new keyword or call syntax is introduced.
+
+The remaining functional claim is the exact count. This safety proof does not
+connect two completed workers to two conserved increments, and does not assign
+shared semantics to sequential `Count`.

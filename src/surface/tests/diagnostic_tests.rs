@@ -29,7 +29,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
 }
 
 #[test]
-fn unsupported_shared_mutex_worker_is_an_internal_error() {
+fn worker_without_protocol_contract_is_a_proof_error() {
     let c_source = r#"
         #include <pthread.h>
         #include <stddef.h>
@@ -66,21 +66,12 @@ fn unsupported_shared_mutex_worker_is_an_internal_error() {
         }
     "#;
     let error = verify_c0_sources(click_source, &[("mutex.c", c_source)]).unwrap_err();
-    assert_eq!(
-        error.kind(),
-        ClickErrorKind::Internal,
-        "{}",
-        error.message()
-    );
+    assert_eq!(error.kind(), ClickErrorKind::Proof, "{}", error.message());
     assert!(
         error
             .message()
-            .contains("cannot yet verify pthread workers sharing an initialized mutex"),
+            .contains("calls with live mutex protocols require contract protocol effects"),
         "{error:?}"
-    );
-    assert_eq!(
-        error.concise_report_parts().0,
-        "internal error in `start`:\n  Click cannot yet verify pthread workers sharing an initialized mutex"
     );
     assert!(!error.message().contains("runtime error"), "{error:?}");
 }

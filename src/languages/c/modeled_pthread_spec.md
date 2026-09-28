@@ -1,4 +1,4 @@
-# Modeled pthread create/join and mutex specification, version 8
+# Modeled pthread create/join and mutex specification, version 9
 
 This trusted specification is an explicit assumption of a conditional Click
 client proof. It does not certify an operating system's pthread implementation.
@@ -32,7 +32,8 @@ client proof. It does not certify an operating system's pthread implementation.
   `mutex_live` owner or a checked owned `mutex_use` loan for that initialization.
   It succeeds for an unlocked mutex and gives
   the current path its escrowed resource. `pthread_mutex_unlock` succeeds only
-  when that same resource has been folded and returned to escrow.
+  when an owned instance of the authenticated protected resource type has been
+  folded and returned to escrow.
   `pthread_mutex_destroy` succeeds only for an unlocked initialized mutex,
   consumes its `mutex_live` owner, and returns its protected resource to the caller. These calls do not branch on a failure
   status under their checked preconditions.
@@ -42,8 +43,20 @@ access. Describing an initialized address grants no ownership. Folded owners
 must be unfolded before lock or destroy; an old initialization's owner cannot
 authorize either transition after reinitialization at the same address.
 
-The checked mutex transitions currently apply to one C path with no worker
-sharing. Creation of a worker while a mutex is initialized is refused.
+Typed worker inputs `owns access: mutex_use(mu, counter_state(p))` receive a
+checked share of use authority. Creation lends the lifetime owner on the first
+use, retains a parent share, and splits a separate worker share on each success.
+Failure leaves the parent's authority unchanged. Join returns only that child's
+share into the current loan ledger. Destruction requires every share to return;
+a saved pre-create state cannot replace the current state. Creation while the
+parent holds a guard remains outside this profile.
+
+Protected observations are fresh at worker acquisition and at concrete summary
+calls. While workers remain, parent acquisition and release forget protected
+observations consistently with the resource definition. This admits arbitrary
+worker interference between critical sections without transferring the payload
+to an unlocked parent. Shared worker effects currently require external storage.
+The exact final value requires additional contribution accounting.
 The current modeled ABI gives each mutex a 40-byte storage footprint. An
 allocation overlapping any initialized footprint cannot be freed, reallocated,
 or retired by a helper contract until the mutex is destroyed. Lock/unlock do
@@ -75,8 +88,10 @@ authority. Unknown dependencies are conservative. Direct preserving `mutex_use`
 helpers may perform balanced opaque lock/unlock: acquisition creates an exact
 local guard and lifetime hold, and release consumes both. These operations
 expose no protected assertion. Return requires the preserved use input with no
-outstanding acquisition or child loan. Init/destroy, escaping acquisitions, and
-worker use sharing remain unsupported in this abstract path.
+outstanding acquisition or child loan. Init/destroy and
+escaping acquisitions remain unsupported in this abstract path. Typed use inputs
+add an authenticated protected resource type: lock produces `guard` and `state`,
+and unlock consumes the guard and an owned replacement of that resource type.
 
 Every synchronous use contract currently permits balanced acquisition. Calls
 therefore conservatively require the selected concrete initialization to be
@@ -104,6 +119,6 @@ binder identities and owned resources. A lifecycle name denotes the exact
 initialization, not merely its address; destruction and reinitialization cannot
 revive an old name. Named preserving lifecycle and guard helper contracts use
 the same call maps and preserve their selected authority through checked
-occurrence transfers. The remaining declared storage, use, guard-output, and
-protected-state-output binders are staged metadata, not accepted named runtime
-transitions or additional authority.
+occurrence transfers. Typed-use lock and unlock accept the named `access`, `guard`, and `state`
+binders. A suspended worker's input name is local to its contract; create selects
+and checks the required authority without adding a proof argument to the C call.

@@ -47,6 +47,7 @@ pub(super) struct WorkerCompletion {
     memory: CMemory,
     effects: Vec<CMemoryRange>,
     facts: Vec<ExecutionPureFact>,
+    mutex_ledger: Option<super::mutexes::MutexLedger>,
 }
 
 impl WorkerCompletion {
@@ -56,6 +57,7 @@ impl WorkerCompletion {
         memory: CMemory,
         effects: Vec<CMemoryRange>,
         facts: Vec<ExecutionPureFact>,
+        mutex_ledger: Option<super::mutexes::MutexLedger>,
     ) -> Self {
         Self {
             plan,
@@ -63,6 +65,7 @@ impl WorkerCompletion {
             memory,
             effects,
             facts,
+            mutex_ledger,
         }
     }
 }
@@ -389,6 +392,7 @@ struct ThreadLedgerStorage {
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
     loan_trace: Option<ThreadLoanTrace>,
     local_views: PersistentMap<CResourceFact, LoanViewBinding>,
+    mutex_workers: PersistentMap<Pointer, usize>,
 }
 
 /// The checked loan root before the first outstanding create and the root
@@ -416,12 +420,17 @@ impl ThreadLedger {
                 rights: PersistentMap::default(),
                 loan_trace: None,
                 local_views: PersistentMap::default(),
+                mutex_workers: PersistentMap::default(),
             }),
         }
     }
 
     fn right(&self, handle: ThreadHandle) -> Option<&Arc<CompletionRight>> {
         self.storage.rights.get(&handle)
+    }
+
+    pub(super) fn has_mutex_workers(&self, mutex: &Pointer) -> bool {
+        self.storage.mutex_workers.contains_key(mutex)
     }
 
     pub(super) fn has_live_rights(&self) -> bool {
@@ -440,6 +449,7 @@ impl ThreadLedger {
     ) -> bool {
         self.storage.rights.is_empty()
             && self.storage.local_views.is_empty()
+            && self.storage.mutex_workers.is_empty()
             && self.storage.loan_trace.as_ref().is_some_and(|trace| {
                 trace.origin == *origin
                     && trace.current == *current
@@ -479,6 +489,15 @@ impl ThreadLedger {
         participant: super::loans::LoanParticipantId,
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
+        let mut mutex_workers = self.storage.mutex_workers.clone();
+        for usage in &right.completion.plan.mutex_uses {
+            let fact = usage.required_resource();
+            let super::CResource::MutexUse(identity) = fact.resource() else {
+                unreachable!()
+            };
+            let count = mutex_workers.get(&identity.mutex).copied().unwrap_or(0);
+            mutex_workers = mutex_workers.with_inserted(identity.mutex.clone(), count + 1);
+        }
         for (fact, binding) in right.completion.plan.suspended_local_parents() {
             local_views = local_views.with_inserted(fact.clone(), binding.clone());
         }
@@ -488,6 +507,7 @@ impl ThreadLedger {
                 rights: self.storage.rights.with_inserted(handle, Arc::new(right)),
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
+                mutex_workers,
             }),
         }
     }
@@ -501,6 +521,23 @@ impl ThreadLedger {
         local_updates: &BTreeMap<CResourceFact, Option<LoanViewBinding>>,
     ) -> Self {
         let mut local_views = self.storage.local_views.clone();
+        let mut mutex_workers = self.storage.mutex_workers.clone();
+        if let Some(right) = self.right(handle) {
+            for usage in &right.completion.plan.mutex_uses {
+                let fact = usage.required_resource();
+                let super::CResource::MutexUse(identity) = fact.resource() else {
+                    unreachable!()
+                };
+                let count = *mutex_workers
+                    .get(&identity.mutex)
+                    .expect("registered mutex worker");
+                mutex_workers = if count == 1 {
+                    mutex_workers.without_key(&identity.mutex)
+                } else {
+                    mutex_workers.with_inserted(identity.mutex.clone(), count - 1)
+                };
+            }
+        }
         for (fact, binding) in local_updates {
             local_views = match binding {
                 Some(binding) => local_views.with_inserted(fact.clone(), binding.clone()),
@@ -513,6 +550,7 @@ impl ThreadLedger {
                 rights: self.storage.rights.without_key(&handle),
                 loan_trace: self.advanced_loan_trace(before, after, participant),
                 local_views,
+                mutex_workers,
             }),
         }
     }
@@ -607,6 +645,7 @@ pub(super) struct PreparedThreadCreate<'a> {
     worker: &'a CVerifiedFunctionRule,
     argument: CValue,
     completion: WorkerCompletion,
+    retained_names: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
 }
 
 impl PreparedThreadCreate<'_> {
@@ -640,6 +679,8 @@ impl PreparedThreadCreate<'_> {
                     .clone(),
             )
             .with_memory(self.completion.memory.clone());
+        next.parent.mutex_ledger = self.completion.mutex_ledger.clone();
+        next.parent.named_mutex_authorities = self.retained_names;
         let before_loans = self.parent.parent.loan_ledger().expect("parent ledger");
         let after_loans = next.parent.loan_ledger().expect("spawn ledger").clone();
         let participant = next.parent.loan_participant().expect("parent participant");
@@ -671,7 +712,7 @@ impl ThreadContext {
         if parent
             .mutex_ledger
             .as_ref()
-            .is_some_and(super::mutexes::MutexLedger::has_any_mutex)
+            .is_some_and(super::mutexes::MutexLedger::has_locked_guard)
         {
             return Err(CRuntimeError::UnsupportedConcurrentMutex);
         }
@@ -741,11 +782,34 @@ impl ThreadContext {
         {
             return Ok(Err("invalid worker entry evidence".to_string()));
         }
+        let retained_names = if let Some(named) = &self.parent.named_mutex_authorities {
+            let target = self
+                .parent
+                .clone()
+                .with_resource_context(completion.plan.caller_resources_after_requirements.clone());
+            let updates: Vec<_> = completion
+                .plan
+                .mutex_uses
+                .iter()
+                .filter_map(|usage| usage.retained_authority_update(self.parent.resources()))
+                .collect();
+            match named.apply_checked_mutex_updates(&updates, &target) {
+                Ok(names) => Some(Arc::new(names)),
+                Err(_) => {
+                    return Ok(Err(
+                        "retained mutex authority cannot transport its proof name".to_string(),
+                    ));
+                }
+            }
+        } else {
+            None
+        };
         Ok(Ok(PreparedThreadCreate {
             parent: self,
             worker,
             argument,
             completion,
+            retained_names,
         }))
     }
 
@@ -835,6 +899,13 @@ impl ThreadContext {
             .with_resource_context(recovery.resources)
             .with_loan_ledger(Some(recovery.ledger))
             .with_loan_view_bindings(recovery.view_bindings);
+        if let Some(named) = &next.parent.named_mutex_authorities {
+            next.parent.named_mutex_authorities = Some(Arc::new(
+                named
+                    .apply_checked_mutex_updates(&recovery.mutex_authority_updates, &next.parent)
+                    .map_err(|_| "returned mutex authority cannot transport its proof name")?,
+            ));
+        }
         next.parent.thread_ledger = Some(
             next.parent
                 .thread_ledger

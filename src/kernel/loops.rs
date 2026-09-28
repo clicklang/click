@@ -856,6 +856,48 @@ fn unbound_modeled_pthread_call(
     })
 }
 
+/// Other workers may change an unlocked payload before the next parent
+/// operation. Forget observations both before acquisition and after release;
+/// otherwise joining immediately after a parent write could preserve it.
+fn freshen_shared_mutex_payload(
+    state: &CState,
+    mutex: &Pointer,
+    assumptions: &PureFactContext,
+    environment: &CExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> Result<(CState, Vec<CMemoryRange>), CRuntimeError> {
+    if !state
+        .thread_ledger
+        .as_ref()
+        .is_some_and(|threads| threads.has_mutex_workers(mutex))
+    {
+        return Ok((state.clone(), Vec::new()));
+    }
+    let description = state
+        .mutex_ledger
+        .as_ref()
+        .and_then(|ledger| ledger.protected_type(mutex))
+        .ok_or_else(|| CRuntimeError::MissingMutexUse {
+            mutex: mutex.clone(),
+        })?;
+    let definition = environment
+        .modeled_mutex_definitions
+        .get(description.family())
+        .ok_or_else(|| {
+            CRuntimeError::FunctionContract(
+                "shared mutex access requires a guarded resource definition".into(),
+            )
+        })?;
+    super::mutexes::MutexLedger::havoc_protected_for_call(
+        state,
+        mutex,
+        definition,
+        assumptions,
+        budget,
+    )
+    .map_err(|error| error.into_runtime_error(mutex))
+}
+
 fn execute_modeled_pthread_mutex_paths(
     state: &CState,
     target: Option<&str>,
@@ -1035,7 +1077,10 @@ fn execute_modeled_pthread_mutex_paths(
                 && (function_name == binding.mutex_lock_name
                     || function_name == binding.mutex_unlock_name)
                 && (function_name == binding.mutex_lock_name
-                    || state.resources.mutex_use_at(mutex.pointer()).is_some()
+                    || state
+                        .resources
+                        .mutex_use_candidate_at(mutex.pointer())
+                        .is_some()
                     || state.opaque_mutex_acquisitions.is_some())
             {
                 let acquiring = function_name == binding.mutex_lock_name;
@@ -1053,7 +1098,7 @@ fn execute_modeled_pthread_mutex_paths(
                         transport.bindings[&Variable(binder.identity)]
                     })
                 };
-                let usage = state.resources.mutex_use_at(mutex.pointer());
+                let usage = state.resources.mutex_use_candidate_at(mutex.pointer());
                 let access_matches =
                     selected_role(MutexResourceRole::Access).is_none_or(|identity| {
                         state.resolve_named_mutex_authority(identity) == usage && usage.is_some()
@@ -1121,9 +1166,31 @@ fn execute_modeled_pthread_mutex_paths(
                         "named mutex lock and unlock require an assumed mutex_use protocol".into(),
                     ))
                 } else if function_name == binding.mutex_lock_name {
-                    context
-                        .acquire_current(mutex.pointer(), &current)
-                        .map_err(|error| error.into_runtime_error(mutex.pointer()))
+                    (|| {
+                        let (fresh, ranges) = freshen_shared_mutex_payload(
+                            state,
+                            mutex.pointer(),
+                            &current,
+                            environment,
+                            budget,
+                        )?;
+                        let before = state.memory.clone();
+                        let after = fresh.memory.clone();
+                        let acquired = super::mutexes::MutexContext::new(fresh)
+                            .acquire_current(mutex.pointer(), &current)
+                            .map_err(|error| error.into_runtime_error(mutex.pointer()))?;
+                        if !ranges.is_empty() {
+                            path.facts.push(
+                                ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                                    before,
+                                    after,
+                                    mutable_ranges: ranges,
+                                })
+                                .into_certified(),
+                            );
+                        }
+                        Ok(acquired)
+                    })()
                 } else if function_name == binding.mutex_unlock_name {
                     context
                         .release_current(mutex.pointer(), &current)
@@ -1156,6 +1223,29 @@ fn execute_modeled_pthread_mutex_paths(
                 };
                 result.map(super::mutexes::MutexContext::into_runtime_transition)
             };
+            let transition = transition.and_then(|(next, evidence)| {
+                if function_name != binding.mutex_unlock_name {
+                    return Ok((next, evidence));
+                }
+                let (fresh, ranges) = freshen_shared_mutex_payload(
+                    &next,
+                    mutex.pointer(),
+                    &current,
+                    environment,
+                    budget,
+                )?;
+                if !ranges.is_empty() {
+                    path.facts.push(
+                        ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                            before: next.memory.clone(),
+                            after: fresh.memory.clone(),
+                            mutable_ranges: ranges,
+                        })
+                        .into_certified(),
+                    );
+                }
+                Ok((fresh, evidence))
+            });
             match transition {
                 Ok((mut next, evidence)) => {
                     loan_evidence = evidence;

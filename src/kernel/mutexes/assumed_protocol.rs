@@ -412,7 +412,7 @@ pub(in crate::kernel) fn opaque_runtime_transition_with_payload(
     if acquire {
         let fact = state
             .resources
-            .mutex_use_at(mutex)
+            .mutex_use_candidate_at(mutex)
             .ok_or_else(|| MutexTransitionError::MissingUse(mutex.clone()))?;
         let CResource::MutexUse(identity) = fact.resource() else {
             unreachable!()

@@ -1,7 +1,7 @@
 # The unchanged shared-counter worker verifies with a resource type
 
-This freezes the C from `design/concurrency-probes/mutex_counter.c`. Only the
-worker is proved here; parent transfer and final-count accounting remain open.
+This freezes the C from `design/concurrency-probes/mutex_counter.c`. The worker and parent prove safe shared access and cleanup on every create
+outcome. Exact final-count accounting remains open.
 
 ```c filename=mutex_counter.c
 #include <pthread.h>
@@ -73,6 +73,50 @@ void* increment_counter(void* argument) {
     step(pthread_mutex_unlock(&counter->mutex), {
         access: access, guard: guard, state: restored
     });
+    step();
+    simp();
+}
+
+int32 increment_twice(struct mutex_counter* counter) {
+    owns &counter->mutex;
+    requires aligned(&counter->mutex, 8);
+    owns counter->value;
+    ensures result == 0 or result == 1;
+} by {
+    step();
+    step();
+    step();
+    let state = fold(counter_state(counter), { value: counter->value });
+    let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
+    branch {
+        then { unfold(state); step(); simp(); }
+        else {}
+    }
+    step();
+    branch {
+        then {
+            step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+            unfold(state);
+            step();
+            simp();
+        }
+        else {}
+    }
+    step();
+    branch {
+        then {
+            step();
+            step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+            unfold(state);
+            step();
+            simp();
+        }
+        else {}
+    }
+    step();
+    step();
+    step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+    unfold(state);
     step();
     simp();
 }

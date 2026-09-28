@@ -1594,6 +1594,7 @@ pub(crate) struct StableViewRecovery {
     /// The escrowed owners recovery handed back, in recovery order, each
     /// with the hold binding its occurrence carried before the call.
     pub(crate) recovered_escrows: Vec<(CResourceFact, Option<LoanViewBinding>)>,
+    pub(crate) mutex_authority_updates: Vec<mutex_calls::MutexAuthorityUpdate>,
     /// The holds this call's produced borrowing composites now carry.
     pub(crate) escaped_holds: Vec<EscapedHold>,
     pub(crate) view_bindings: LoanViewBindings,
@@ -2472,7 +2473,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
         .filter(|requirement| requirement.fact.is_own())
     {
         if let CResource::MutexUse(identity) = requirement.fact.resource() {
-            if split_reborrowed_views || requirement.role != CResourceTransferRole::Borrow {
+            if requirement.role != CResourceTransferRole::Borrow {
                 return Err(StableViewPlanError::InvalidRequirement);
             }
             let source = if let Some(selected) = &requirement.selected_mutex_source {
@@ -2502,20 +2503,33 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
                 selected_source.clone()
             } else {
                 residual
-                    .mutex_use_at(&identity.mutex)
+                    .mutex_use_candidate_at(&identity.mutex)
                     .cloned()
                     .or_else(|| residual.mutex_live_at(&identity.mutex).cloned())
                     .ok_or_else(|| StableViewPlanError::MissingResource(requirement.fact.clone()))?
             };
+            // Evaluating a typed requirement preserves its selected use binding
+            // but supplies the requested protected type. Concrete roots retain
+            // that type in their authenticated protocol interface, not in the
+            // loan atom, so compare occurrence identity here and validate the
+            // protected assertion against the interface after planning.
             if requirement.selected_mutex_source.is_none()
                 && identity.binding.is_some()
-                && source != requirement.fact
+                && !matches!(source.resource(), CResource::MutexUse(actual)
+                    if actual.binding == identity.binding
+                        && actual.initialization == identity.initialization
+                        && actual.mutex == identity.mutex)
             {
                 return Err(StableViewPlanError::MissingResource(
                     requirement.fact.clone(),
                 ));
             }
-            let mut use_plan = mutex_calls::MutexUseCallTransfer::prepare(
+            let prepare = if split_reborrowed_views {
+                mutex_calls::MutexUseCallTransfer::prepare_suspended
+            } else {
+                mutex_calls::MutexUseCallTransfer::prepare
+            };
+            let mut use_plan = prepare(
                 &planned_ledger,
                 caller,
                 callee,
@@ -2542,7 +2556,7 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
             canonical_transferred_ownership.push(None);
             residual = use_plan.caller_resources.clone();
             planned_ledger = use_plan.ledger.clone();
-            entry_transitions.push(use_plan.entry_transition.clone());
+            entry_transitions.extend(use_plan.entry_transitions.iter().cloned());
             mutex_uses.push(use_plan);
             continue;
         }
@@ -3486,6 +3500,7 @@ impl StableViewTransferPlan {
         let mut local_view_updates = BTreeMap::new();
         let mut transitions = Vec::new();
         let mut recovered_escrows = Vec::new();
+        let mut mutex_authority_updates = Vec::new();
         let mut pending_holds: Vec<(Vec<CResourceFact>, LoanViewBinding)> = Vec::new();
         for (scope, loan, root, support, recoverable) in loan_roots.into_iter().rev() {
             let transfer = ledger.transfer(root, self.callee, self.caller)?;
@@ -3665,19 +3680,42 @@ impl StableViewTransferPlan {
             }
         }
         for use_plan in self.mutex_uses.iter().rev() {
-            let returned = use_plan
-                .finish_checked_ledger(ledger, &use_plan.callee_resources, assumptions)
-                .map_err(|error| match error {
-                    mutex_calls::MutexUseCallError::Loan(error) => StableViewPlanError::Loan(error),
-                    _ => StableViewPlanError::InvalidResidual,
-                })?;
-            ledger = returned.ledger;
-            transitions.extend(returned.exit_transitions);
-            let source = use_plan.source_resource().clone();
-            resources = resources
-                .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
-                .map_err(|_| StableViewPlanError::InvalidResidual)?;
-            recovered_escrows.push((source, None));
+            if use_plan.is_suspended() {
+                let returned = use_plan
+                    .finish_suspended_checked_ledger(
+                        ledger,
+                        resources,
+                        &use_plan.callee_resources,
+                        assumptions,
+                    )
+                    .map_err(|error| match error {
+                        mutex_calls::MutexUseCallError::Loan(error) => {
+                            StableViewPlanError::Loan(error)
+                        }
+                        _ => StableViewPlanError::InvalidResidual,
+                    })?;
+                ledger = returned.ledger;
+                resources = returned.caller_resources;
+                mutex_authority_updates.extend(returned.authority_updates);
+                transitions.extend(returned.exit_transitions);
+                keep_terminal = true;
+            } else {
+                let returned = use_plan
+                    .finish_checked_ledger(ledger, &use_plan.callee_resources, assumptions)
+                    .map_err(|error| match error {
+                        mutex_calls::MutexUseCallError::Loan(error) => {
+                            StableViewPlanError::Loan(error)
+                        }
+                        _ => StableViewPlanError::InvalidResidual,
+                    })?;
+                ledger = returned.ledger;
+                transitions.extend(returned.exit_transitions);
+                let source = use_plan.source_resource().clone();
+                resources = resources
+                    .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
+                    .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                recovered_escrows.push((source, None));
+            }
         }
         // Every scope in loan_roots that this plan ended has just passed End
         // and Recover. End checks its indexed dependency set, so a registered
@@ -3713,6 +3751,7 @@ impl StableViewTransferPlan {
             hold_transitions,
             resources,
             recovered_escrows,
+            mutex_authority_updates,
             escaped_holds,
             view_bindings,
             local_view_updates,
@@ -4110,9 +4149,9 @@ impl LoanLedger {
         ))
     }
 
-    /// The selected use scope may acquire only while it has no outstanding
-    /// guard hold or child reborrow. Unlike modular return, this also applies
-    /// to a checked reborrow in an executing callee.
+    /// The selected share must be held and unpinned, with no guard hold in
+    /// its scope. A child reborrow pins only its own share; siblings remain
+    /// usable. Modular return separately requires every child to have ended.
     pub(crate) fn check_mutex_use_available(
         &self,
         usage: MutexUseBinding,
@@ -4126,7 +4165,7 @@ impl LoanLedger {
             .scopes
             .get(&usage.0.scope)
             .ok_or(LoanRefusal::MissingScope)?;
-        if !scope.dependencies.is_empty() || !scope.holds.is_empty() {
+        if !scope.holds.is_empty() {
             return Err(LoanRefusal::ActiveDependency);
         }
         if resources.unique_owned_occurrence_for_fact(&fact).is_none() {

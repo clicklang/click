@@ -709,7 +709,7 @@ pub(super) fn live_resource(
 pub(super) fn use_resource(state: &CState, mutex: &Pointer) -> CResourceFact {
     state
         .resources
-        .mutex_use_at(mutex)
+        .mutex_use_candidate_at(mutex)
         .cloned()
         .unwrap_or_else(|| {
             CResourceFact::own(CResource::MutexUse(super::MutexUseIdentity {
@@ -1493,7 +1493,7 @@ impl MutexContext {
         // The resource occurrence selects the loan; an address or a loan
         // record alone is not authority. The checked acquisition validates
         // possession and initialization identity before installing its hold.
-        if let Some(fact) = self.state.resources.mutex_use_at(mutex) {
+        if let Some(fact) = self.state.resources.mutex_use_candidate_at(mutex) {
             let CResource::MutexUse(identity) = fact.resource() else {
                 unreachable!()
             };
@@ -1757,6 +1757,14 @@ impl MutexLedger {
 
     fn get(&self, mutex: &Pointer) -> Option<&MutexEntry> {
         self.storage.entries.get(mutex)
+    }
+
+    /// The type authenticated by this initialization, without exposing an
+    /// owned payload or any of its current field observations.
+    pub(super) fn protected_type(&self, mutex: &Pointer) -> Option<&super::ResourceDescription> {
+        self.get(mutex)?
+            .interface()
+            .map(|interface| interface.description())
     }
 
     pub(super) fn check_use_acquisition(
@@ -4561,6 +4569,148 @@ mod tests {
         MutexContext::new(
             CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(fact)),
         )
+    }
+
+    #[test]
+    fn shared_acquisitions_forget_each_previous_payload_observation() {
+        use crate::kernel::{
+            CCompositeResourceDefinition, CMutexGuardDeclaration, CParameter, CValue,
+            ExecutionBudget, ResourceDescription,
+        };
+        use std::collections::BTreeMap;
+
+        let assumptions = PureFactContext::new();
+        let address = mutex(0);
+        let schema = ResourceFieldSchema::new(vec![(
+            "revision".into(),
+            ResourceFieldType::C(CType::Int32),
+        )])
+        .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(902),
+            "counter_state".into(),
+            vec![CValue::pointer(address.clone()).into()].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap();
+        let expected_type = ResourceDescription::from_instance(&instance);
+        let declaration = CMutexGuardDeclaration {
+            parameter_index: 0,
+            field_offset_bytes: 0,
+        };
+        let definitions = BTreeMap::from([("counter_state".into(), declaration.clone())]);
+        let definition = CCompositeResourceDefinition::new(
+            "counter_state",
+            vec![CParameter::new("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![],
+            vec![],
+        )
+        .with_instance_schema(Some(schema))
+        .with_mutex_guard(Some(declaration));
+        let initialized = context(CResourceFact::own(CResource::Instance(instance.clone())))
+            .publish_declared(
+                &address,
+                instance.identity(),
+                &definitions,
+                &assumptions,
+                40,
+            )
+            .unwrap();
+        assert_eq!(
+            initialized
+                .state
+                .mutex_ledger
+                .as_ref()
+                .unwrap()
+                .protected_type(&address),
+            Some(&expected_type)
+        );
+        let mut state = initialized.into_state();
+        let mut previous = instance;
+        let mut budget = ExecutionBudget::new();
+        for _ in 0..3 {
+            let (fresh, _) = MutexLedger::havoc_protected_for_call(
+                &state,
+                &address,
+                &definition,
+                &assumptions,
+                &mut budget,
+            )
+            .unwrap();
+            let held = MutexContext::new(fresh)
+                .acquire_current(&address, &assumptions)
+                .unwrap();
+            let current = held
+                .state
+                .resources
+                .owned_instance(previous.identity())
+                .unwrap();
+            assert_ne!(
+                current, &previous,
+                "another worker may have changed the payload"
+            );
+            assert_eq!(ResourceDescription::from_instance(current), expected_type);
+            previous = current.clone();
+            assert!(held.state.mutex_ledger.as_ref().unwrap().has_locked_guard());
+            state = held
+                .release_current(&address, &assumptions)
+                .unwrap()
+                .into_state();
+            assert!(!state.mutex_ledger.as_ref().unwrap().has_locked_guard());
+        }
+        // A parent may write under the lock and join its last worker without
+        // acquiring again. Release must forget that write immediately.
+        let mut held = MutexContext::new(state)
+            .acquire_current(&address, &assumptions)
+            .unwrap();
+        let old = CResourceFact::own(CResource::Instance(previous.clone()));
+        let mut written = previous.clone();
+        written.fields = vec![int32(99).into()].into();
+        held.state.resources = held
+            .state
+            .resources
+            .clone()
+            .without_fact(&old, &assumptions)
+            .unwrap()
+            .try_compose_with_fact(
+                CResourceFact::own(CResource::Instance(written.clone())),
+                &assumptions,
+            )
+            .unwrap();
+        let released = held.release_current(&address, &assumptions).unwrap();
+        let (fresh, _) = MutexLedger::havoc_protected_for_call(
+            released.state(),
+            &address,
+            &definition,
+            &assumptions,
+            &mut budget,
+        )
+        .unwrap();
+        let destroyed = MutexContext::new(fresh)
+            .destroy(&address, &assumptions)
+            .unwrap();
+        let returned = destroyed
+            .state
+            .resources
+            .owned_instance(previous.identity())
+            .unwrap();
+        assert_ne!(returned.fields(), written.fields());
+        assert_eq!(ResourceDescription::from_instance(returned), expected_type);
+        let empty = MutexContext::new(CState::new())
+            .initialize_empty(mutex(1), 40)
+            .unwrap();
+        assert!(
+            empty
+                .state
+                .mutex_ledger
+                .as_ref()
+                .unwrap()
+                .protected_type(&mutex(1))
+                .is_none()
+        );
     }
 
     fn runtime_mutex_call(

@@ -26,6 +26,9 @@ pub(crate) struct MutexUseCallTransfer {
     pub(crate) callee_resources: ResourceContext,
     pub(crate) ledger: LoanLedger,
     pub(crate) entry_transition: CheckedLoanTransition,
+    pub(crate) entry_transitions: Vec<CheckedLoanTransition>,
+    suspended_parent: Option<MutexUseBinding>,
+    retained_resource: Option<CResourceFact>,
     pub(crate) usage: MutexUseBinding,
     source: CResourceFact,
     selected_alias: Option<Variable>,
@@ -44,6 +47,15 @@ pub(crate) struct MutexUseCallReturn {
     /// to check and transfer; this component neither grants nor discards them.
     pub(crate) remaining_resources: ResourceContext,
     pub(crate) exit_transitions: Vec<CheckedLoanTransition>,
+    pub(crate) authority_updates: Vec<MutexAuthorityUpdate>,
+}
+
+/// An alias transport generated only while checking an actual authority exchange.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MutexAuthorityUpdate {
+    pub(crate) source_occurrence: ResourceOccurrenceId,
+    pub(crate) source: CResourceFact,
+    pub(crate) derived: CResourceFact,
 }
 
 impl MutexUseCallTransfer {
@@ -101,9 +113,240 @@ impl MutexUseCallTransfer {
             interface: None,
             required_type: None,
             loan,
+            entry_transitions: vec![entry_transition.clone()],
             entry_transition,
+            suspended_parent: None,
+            retained_resource: None,
             caller,
             callee,
+        })
+    }
+
+    /// Keep a caller share available while the worker holds its own child scope.
+    pub(crate) fn prepare_suspended(
+        ledger: &LoanLedger,
+        caller: LoanParticipantId,
+        callee: LoanParticipantId,
+        resources: &ResourceContext,
+        source: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, MutexUseCallError> {
+        let (support, _) = resources
+            .unique_owned_occurrence_for_fact(source)
+            .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?;
+        let mut ledger = ledger.clone();
+        let mut transitions = Vec::new();
+        let parent = match source.resource() {
+            CResource::MutexLive(_) => {
+                let (next, root, transition) = ledger.lend_mutex_use_with_transition(
+                    caller,
+                    caller,
+                    support,
+                    source.clone(),
+                )?;
+                ledger = next;
+                transitions.push(transition);
+                root.usage
+            }
+            CResource::MutexUse(identity) => {
+                let usage = identity.binding.ok_or(LoanRefusal::MissingLoanBinding)?;
+                ledger.check_mutex_use_available(usage, caller, resources)?;
+                if ledger.mutex_use_resource(usage, caller)? != *source {
+                    return Err(LoanRefusal::MissingLoanBinding.into());
+                }
+                usage
+            }
+            _ => return Err(LoanRefusal::UnsupportedResource.into()),
+        };
+        let (split, retained, worker) = ledger.split(parent.0.share, caller, caller, caller)?;
+        ledger = ledger.apply(&split)?;
+        transitions.push(split);
+        let retained = MutexUseBinding(LoanAuthorityBinding {
+            share: retained,
+            ..parent.0
+        });
+        let worker = MutexUseBinding(LoanAuthorityBinding {
+            share: worker,
+            ..parent.0
+        });
+        let (ledger, loan, entry_transition) =
+            ledger.reborrow_mutex_use_with_transition(worker, caller, callee)?;
+        transitions.push(entry_transition.clone());
+        let caller_resources = resources
+            .clone()
+            .without_fact_delaying_normalization(source, assumptions)
+            .ok_or_else(|| MutexUseCallError::MissingResource(source.clone()))?
+            .try_compose_with_facts_delaying_normalization(
+                [ledger.mutex_use_resource(retained, caller)?],
+                assumptions,
+            )
+            .map_err(MutexUseCallError::InvalidResources)?;
+        let callee_resources = ResourceContext::new()
+            .try_compose_with_facts_delaying_normalization(
+                [ledger.mutex_use_resource(loan.usage, callee)?],
+                assumptions,
+            )
+            .map_err(MutexUseCallError::InvalidResources)?;
+        let retained_resource = Some(ledger.mutex_use_resource(retained, caller)?);
+        Ok(Self {
+            caller_resources,
+            callee_resources,
+            ledger,
+            entry_transition,
+            entry_transitions: transitions,
+            retained_resource,
+            suspended_parent: Some(worker),
+            usage: loan.usage,
+            source: source.clone(),
+            selected_alias: None,
+            interface: None,
+            required_type: None,
+            loan,
+            caller,
+            callee,
+        })
+    }
+
+    pub(crate) fn retained_authority_update(
+        &self,
+        resources: &ResourceContext,
+    ) -> Option<MutexAuthorityUpdate> {
+        if !matches!(self.source.resource(), CResource::MutexUse(_)) {
+            return None;
+        }
+        Some(MutexAuthorityUpdate {
+            source_occurrence: resources.unique_owned_occurrence_for_fact(&self.source)?.0,
+            source: self.source.clone(),
+            derived: self.retained_resource.clone()?,
+        })
+    }
+
+    pub(crate) fn is_suspended(&self) -> bool {
+        self.suspended_parent.is_some()
+    }
+
+    /// Resume only this worker against current ownership, never its entry snapshot.
+    pub(super) fn finish_suspended_checked_ledger(
+        &self,
+        mut ledger: LoanLedger,
+        mut caller_resources: ResourceContext,
+        returned_resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Result<MutexUseCallReturn, MutexUseCallError> {
+        let parent = self.suspended_parent.ok_or(LoanRefusal::InvalidEvidence)?;
+        let expected = ledger.mutex_use_resource(self.usage, self.callee)?;
+        if self
+            .interface
+            .as_ref()
+            .is_some_and(|interface| !interface.matches_use(&expected))
+        {
+            return Err(MutexUseCallError::MissingResource(expected));
+        }
+        if returned_resources
+            .unique_owned_occurrence_for_fact(&expected)
+            .is_none()
+        {
+            return Err(MutexUseCallError::MissingResource(expected));
+        }
+        let remaining_resources = returned_resources
+            .clone()
+            .without_fact_delaying_normalization(&expected, assumptions)
+            .ok_or_else(|| MutexUseCallError::MissingResource(expected.clone()))?;
+        let transfer = ledger.transfer(self.usage.0.share, self.callee, self.caller)?;
+        ledger = ledger.apply(&transfer)?;
+        let end = ledger.end(self.loan.scope, self.caller)?;
+        ledger = ledger.apply(&end)?;
+        let mut exit_transitions = vec![transfer, end];
+        let mut current = parent.0.share;
+        let mut consumed_authorities = Vec::new();
+        loop {
+            let record = ledger
+                .storage
+                .data
+                .shares
+                .get(&current)
+                .ok_or(LoanRefusal::MissingShare)?;
+            let Some(ancestor) = record.parent else {
+                break;
+            };
+            let (left, right) = ledger
+                .storage
+                .data
+                .shares
+                .get(&ancestor)
+                .and_then(|record| record.children)
+                .ok_or(LoanRefusal::NotSiblings)?;
+            let sibling = if left == current {
+                right
+            } else if right == current {
+                left
+            } else {
+                return Err(LoanRefusal::NotSiblings.into());
+            };
+            if !ledger
+                .storage
+                .data
+                .shares
+                .get(&sibling)
+                .is_some_and(|record| {
+                    record.holder == Some(self.caller) && record.pinned_by.is_none()
+                })
+            {
+                break;
+            }
+            let sibling_use = MutexUseBinding(LoanAuthorityBinding {
+                share: sibling,
+                ..parent.0
+            });
+            let sibling_fact = ledger.mutex_use_resource(sibling_use, self.caller)?;
+            let occurrence = caller_resources
+                .unique_owned_occurrence_for_fact(&sibling_fact)
+                .ok_or_else(|| MutexUseCallError::MissingResource(sibling_fact.clone()))?
+                .0;
+            consumed_authorities.push((occurrence, sibling_fact.clone()));
+            caller_resources = caller_resources
+                .without_fact_delaying_normalization(&sibling_fact, assumptions)
+                .ok_or_else(|| MutexUseCallError::MissingResource(sibling_fact.clone()))?;
+            let join = ledger.join(left, right, self.caller)?;
+            ledger = ledger.apply(&join)?;
+            exit_transitions.push(join);
+            current = ancestor;
+        }
+        let restored_use = MutexUseBinding(LoanAuthorityBinding {
+            share: current,
+            ..parent.0
+        });
+        let restored = if ledger.loan_is_recoverable_by(parent.0.loan, self.caller)
+            && ledger.scope_can_end(parent.0.scope, self.caller)
+        {
+            let end = ledger.end(parent.0.scope, self.caller)?;
+            ledger = ledger.apply(&end)?;
+            exit_transitions.push(end);
+            let (recover, owner, support) = ledger.recover(parent.0.loan, self.caller)?;
+            consumed_authorities.push((support, owner.clone()));
+            ledger = ledger.apply(&recover)?;
+            exit_transitions.push(recover);
+            owner
+        } else {
+            ledger.mutex_use_resource(restored_use, self.caller)?
+        };
+        let authority_updates = consumed_authorities
+            .into_iter()
+            .map(|(source_occurrence, source)| MutexAuthorityUpdate {
+                source_occurrence,
+                source,
+                derived: restored.clone(),
+            })
+            .collect();
+        caller_resources = caller_resources
+            .try_compose_with_facts_delaying_normalization([restored], assumptions)
+            .map_err(MutexUseCallError::InvalidResources)?;
+        Ok(MutexUseCallReturn {
+            ledger,
+            caller_resources,
+            remaining_resources,
+            exit_transitions,
+            authority_updates,
         })
     }
 
@@ -210,7 +453,10 @@ impl MutexUseCallTransfer {
 
     #[cfg(test)]
     pub(crate) fn recheck_entry(&self, predecessor: &LoanLedger) -> Result<(), LoanRefusal> {
-        let checked = predecessor.apply(&self.entry_transition)?;
+        let mut checked = predecessor.clone();
+        for transition in &self.entry_transitions {
+            checked = checked.apply(transition)?;
+        }
         if checked != self.ledger {
             return Err(LoanRefusal::InvalidEvidence);
         }
@@ -308,6 +554,7 @@ impl MutexUseCallTransfer {
             caller_resources,
             remaining_resources,
             exit_transitions,
+            authority_updates: Vec::new(),
         })
     }
 }
@@ -338,6 +585,480 @@ mod tests {
         )
         .unwrap();
         ResourceDescription::from_instance(&instance)
+    }
+
+    #[test]
+    fn suspended_siblings_recover_current_shares_in_either_order() {
+        for reverse in [false, true] {
+            for borrowed in [false, true] {
+                let ledger = LoanLedger::new();
+                let caller = ledger.fresh_participant().unwrap();
+                let worker1 = ledger.fresh_participant().unwrap();
+                let worker2 = ledger.fresh_participant().unwrap();
+                let resources = ResourceContext::new().unchecked_with_fact(owner());
+                let assumptions = PureFactContext::new();
+                let (ledger, source) = if borrowed {
+                    let (support, _) = resources
+                        .unique_owned_occurrence_for_fact(&owner())
+                        .unwrap();
+                    let (ledger, input) = ledger
+                        .borrowed_mutex_use_input_with_protected(
+                            caller,
+                            support,
+                            Pointer::symbolic(Variable(100)),
+                            Some(protected_type(1)),
+                        )
+                        .unwrap();
+                    let fact = ledger.mutex_use_resource(input.usage, caller).unwrap();
+                    (ledger, fact)
+                } else {
+                    (ledger, owner())
+                };
+                let resources = ResourceContext::new().unchecked_with_fact(source.clone());
+                let mut named_state =
+                    crate::kernel::CState::new().with_resource_context(resources.clone());
+                let mut names = crate::kernel::named_authority::NamedMutexAuthorities::new()
+                    .bind(Variable(7000), &source, &named_state)
+                    .unwrap();
+                let first = MutexUseCallTransfer::prepare_suspended(
+                    &ledger,
+                    caller,
+                    worker1,
+                    &resources,
+                    &source,
+                    &assumptions,
+                )
+                .unwrap();
+                first.recheck_entry(&ledger).unwrap();
+                named_state.resources = first.caller_resources.clone();
+                let updates: Vec<_> = first
+                    .retained_authority_update(&resources)
+                    .into_iter()
+                    .collect();
+                names = names
+                    .apply_checked_mutex_updates(&updates, &named_state)
+                    .unwrap();
+                assert_eq!(
+                    names.resolve(Variable(7000), &named_state).is_some(),
+                    borrowed
+                );
+                let retained = first
+                    .caller_resources
+                    .mutex_use_at(&Pointer::symbolic(Variable(100)))
+                    .unwrap()
+                    .clone();
+                if borrowed {
+                    first
+                        .clone()
+                        .with_required_type(Some(protected_type(1)))
+                        .check_protected_type(&assumptions)
+                        .unwrap();
+                }
+                let second = MutexUseCallTransfer::prepare_suspended(
+                    &first.ledger,
+                    caller,
+                    worker2,
+                    &first.caller_resources,
+                    &retained,
+                    &assumptions,
+                )
+                .unwrap();
+                second.recheck_entry(&first.ledger).unwrap();
+                named_state.resources = second.caller_resources.clone();
+                let updates: Vec<_> = second
+                    .retained_authority_update(&first.caller_resources)
+                    .into_iter()
+                    .collect();
+                names = names
+                    .apply_checked_mutex_updates(&updates, &named_state)
+                    .unwrap();
+                assert!(
+                    MutexUseCallTransfer::prepare_suspended(
+                        &second.ledger,
+                        caller,
+                        worker2,
+                        &second.caller_resources,
+                        &retained,
+                        &assumptions
+                    )
+                    .is_err()
+                );
+                let parent = first.suspended_parent.unwrap();
+                assert!(!second.ledger.scope_can_end(parent.0.scope, caller));
+                let (early, last) = if reverse {
+                    (&second, &first)
+                } else {
+                    (&first, &second)
+                };
+                let joined = early
+                    .finish_suspended_checked_ledger(
+                        second.ledger.clone(),
+                        second.caller_resources.clone(),
+                        &early.callee_resources,
+                        &assumptions,
+                    )
+                    .unwrap();
+                assert!(
+                    joined
+                        .caller_resources
+                        .mutex_live_at(&Pointer::symbolic(Variable(100)))
+                        .is_none()
+                );
+                named_state.resources = joined.caller_resources.clone();
+                names = names
+                    .apply_checked_mutex_updates(&joined.authority_updates, &named_state)
+                    .unwrap();
+                assert_eq!(
+                    names.resolve(Variable(7000), &named_state).is_some(),
+                    borrowed
+                );
+                assert!(!joined.ledger.scope_can_end(parent.0.scope, caller));
+                assert!(
+                    early
+                        .finish_suspended_checked_ledger(
+                            joined.ledger.clone(),
+                            joined.caller_resources.clone(),
+                            &early.callee_resources,
+                            &assumptions
+                        )
+                        .is_err()
+                );
+                let done = last
+                    .finish_suspended_checked_ledger(
+                        joined.ledger,
+                        joined.caller_resources,
+                        &last.callee_resources,
+                        &assumptions,
+                    )
+                    .unwrap();
+                assert!(
+                    done.caller_resources
+                        .unique_owned_occurrence_for_fact(&source)
+                        .is_some()
+                );
+                named_state.resources = done.caller_resources.clone();
+                names = names
+                    .apply_checked_mutex_updates(&done.authority_updates, &named_state)
+                    .unwrap();
+                assert_eq!(names.resolve(Variable(7000), &named_state), Some(&source));
+                if borrowed {
+                    assert!(
+                        done.caller_resources
+                            .mutex_live_at(&Pointer::symbolic(Variable(100)))
+                            .is_none()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bound_typed_requirement_keeps_occurrence_identity_without_assuming_its_type() {
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let worker = ledger.fresh_participant().unwrap();
+        let resources = ResourceContext::new().unchecked_with_fact(owner());
+        let assumptions = PureFactContext::new();
+        let first = MutexUseCallTransfer::prepare_suspended(
+            &ledger,
+            caller,
+            worker,
+            &resources,
+            &owner(),
+            &assumptions,
+        )
+        .unwrap();
+        let mut required = first.retained_resource.clone().unwrap();
+        let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut required else {
+            panic!("use");
+        };
+        identity.protected = Some(protected_type(1));
+        let checked = CCheckedResourceFact {
+            fact: required,
+            role: CResourceTransferRole::Borrow,
+            snapshot: CResourceSnapshot::Entry,
+            clause_position: None,
+            section_index: Some(0),
+            selected_mutex_source: None,
+        };
+        let second = plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+            &first.caller_resources,
+            std::slice::from_ref(&checked),
+            &assumptions,
+            &first.ledger,
+            caller,
+            worker,
+            &LoanViewBindings::default(),
+            &BTreeMap::new(),
+            true,
+        )
+        .unwrap();
+        second.recheck_entry(&first.ledger).unwrap();
+        // Selection is successful, but the requested type still needs concrete
+        // initialization evidence. The written requirement cannot grant it.
+        assert!(
+            second.mutex_uses[0]
+                .check_protected_type(&assumptions)
+                .is_err()
+        );
+        let mut wrong = checked;
+        let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut wrong.fact else {
+            panic!("use");
+        };
+        identity.binding = Some(first.usage);
+        assert!(
+            plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+                &first.caller_resources,
+                &[wrong],
+                &assumptions,
+                &first.ledger,
+                caller,
+                worker,
+                &LoanViewBindings::default(),
+                &BTreeMap::new(),
+                true
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn returned_sibling_candidate_can_acquire_and_spawn_before_last_join() {
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let worker = ledger.fresh_participant().unwrap();
+        let resources = ResourceContext::new().unchecked_with_fact(owner());
+        let assumptions = PureFactContext::new();
+        let first = MutexUseCallTransfer::prepare_suspended(
+            &ledger,
+            caller,
+            worker,
+            &resources,
+            &owner(),
+            &assumptions,
+        )
+        .unwrap();
+        let retained = first.retained_resource.as_ref().unwrap();
+        let second = MutexUseCallTransfer::prepare_suspended(
+            &first.ledger,
+            caller,
+            worker,
+            &first.caller_resources,
+            retained,
+            &assumptions,
+        )
+        .unwrap();
+        let joined = first
+            .finish_suspended_checked_ledger(
+                second.ledger.clone(),
+                second.caller_resources.clone(),
+                &first.callee_resources,
+                &assumptions,
+            )
+            .unwrap();
+        let pointer = Pointer::symbolic(Variable(100));
+        assert!(joined.caller_resources.mutex_use_at(&pointer).is_none());
+        let candidate = joined
+            .caller_resources
+            .mutex_use_candidate_at(&pointer)
+            .unwrap();
+        let CResource::MutexUse(identity) = candidate.resource() else {
+            panic!("use candidate");
+        };
+        let usage = identity.binding.unwrap();
+        joined
+            .ledger
+            .check_mutex_use_available(usage, caller, &joined.caller_resources)
+            .unwrap();
+        let (held, hold) = joined
+            .ledger
+            .hold_mutex_use(usage, &owner(), caller)
+            .unwrap();
+        let released = held.release(hold, caller).unwrap();
+        let third = MutexUseCallTransfer::prepare_suspended(
+            &released,
+            caller,
+            worker,
+            &joined.caller_resources,
+            candidate,
+            &assumptions,
+        )
+        .unwrap();
+        let joined = third
+            .finish_suspended_checked_ledger(
+                third.ledger.clone(),
+                third.caller_resources.clone(),
+                &third.callee_resources,
+                &assumptions,
+            )
+            .unwrap();
+        let done = second
+            .finish_suspended_checked_ledger(
+                joined.ledger,
+                joined.caller_resources,
+                &second.callee_resources,
+                &assumptions,
+            )
+            .unwrap();
+        assert!(
+            done.caller_resources
+                .unique_owned_occurrence_for_fact(&owner())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn suspended_mutex_share_recovery_scales_with_worker_count() {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let ledger = LoanLedger::new();
+            let caller = ledger.fresh_participant().unwrap();
+            let worker = ledger.fresh_participant().unwrap();
+            let resources = ResourceContext::new().unchecked_with_fact(owner());
+            let assumptions = PureFactContext::new();
+            let (((), work), persistent) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let mut ledger = ledger;
+                    let mut resources = resources;
+                    let mut source = owner();
+                    let mut workers = Vec::new();
+                    for _ in 0..size {
+                        let plan = MutexUseCallTransfer::prepare_suspended(
+                            &ledger,
+                            caller,
+                            worker,
+                            &resources,
+                            &source,
+                            &assumptions,
+                        )
+                        .unwrap();
+                        ledger = plan.ledger.clone();
+                        resources = plan.caller_resources.clone();
+                        source = resources
+                            .mutex_use_at(&Pointer::symbolic(Variable(100)))
+                            .unwrap()
+                            .clone();
+                        workers.push(plan);
+                    }
+                    // Oldest first exercises the final climb across all returned siblings.
+                    for plan in workers {
+                        let returned = plan
+                            .finish_suspended_checked_ledger(
+                                ledger,
+                                resources,
+                                &plan.callee_resources,
+                                &assumptions,
+                            )
+                            .unwrap();
+                        ledger = returned.ledger;
+                        resources = returned.caller_resources;
+                    }
+                    assert!(
+                        resources
+                            .unique_owned_occurrence_for_fact(&owner())
+                            .is_some()
+                    );
+                })
+            });
+            samples.push((size, work, persistent));
+        }
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * 6 && pair[1].2 <= pair[0].2 * 6,
+                "mutex worker share recovery must scale near-linearly: {samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn suspended_sibling_availability_does_not_unpin_the_worker_parent() {
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let worker = ledger.fresh_participant().unwrap();
+        let resources = ResourceContext::new().unchecked_with_fact(owner());
+        let assumptions = PureFactContext::new();
+        let plan = MutexUseCallTransfer::prepare_suspended(
+            &ledger,
+            caller,
+            worker,
+            &resources,
+            &owner(),
+            &assumptions,
+        )
+        .unwrap();
+        let parent = plan.suspended_parent.unwrap();
+        let mut invented = plan.callee_resource().unwrap();
+        let CResourceFact::Own(CResource::MutexUse(identity), _) = &mut invented else {
+            panic!("use");
+        };
+        identity.binding = Some(parent);
+        let forged_resources = ResourceContext::new().unchecked_with_fact(invented);
+        assert_eq!(
+            plan.ledger
+                .check_mutex_use_available(parent, caller, &forged_resources),
+            Err(LoanRefusal::MissingLoanBinding)
+        );
+        let CResource::MutexUse(retained) = plan.retained_resource.as_ref().unwrap().resource()
+        else {
+            panic!("retained use");
+        };
+        plan.ledger
+            .check_mutex_use_available(retained.binding.unwrap(), caller, &plan.caller_resources)
+            .unwrap();
+    }
+
+    #[test]
+    fn suspended_return_requires_ownership_and_released_guard() {
+        let ledger = LoanLedger::new();
+        let caller = ledger.fresh_participant().unwrap();
+        let worker = ledger.fresh_participant().unwrap();
+        let resources = ResourceContext::new().unchecked_with_fact(owner());
+        let assumptions = PureFactContext::new();
+        let plan = MutexUseCallTransfer::prepare_suspended(
+            &ledger,
+            caller,
+            worker,
+            &resources,
+            &owner(),
+            &assumptions,
+        )
+        .unwrap();
+        assert!(
+            plan.finish_suspended_checked_ledger(
+                plan.ledger.clone(),
+                plan.caller_resources.clone(),
+                &ResourceContext::new(),
+                &assumptions
+            )
+            .is_err()
+        );
+        let (held, _) = plan
+            .ledger
+            .hold_mutex_use(plan.usage, &owner(), worker)
+            .unwrap();
+        assert!(
+            plan.finish_suspended_checked_ledger(
+                held,
+                plan.caller_resources.clone(),
+                &plan.callee_resources,
+                &assumptions
+            )
+            .is_err()
+        );
+        // The failed attempts are persistent: the original valid return still works.
+        let done = plan
+            .finish_suspended_checked_ledger(
+                plan.ledger.clone(),
+                plan.caller_resources.clone(),
+                &plan.callee_resources,
+                &assumptions,
+            )
+            .unwrap();
+        assert!(
+            done.caller_resources
+                .unique_owned_occurrence_for_fact(&owner())
+                .is_some()
+        );
     }
 
     #[test]
@@ -1023,20 +1744,36 @@ mod tests {
                 )
                 .is_err()
             );
-            assert!(
-                plan_stable_view_transfer_with_bindings_and_composites_for_worker(
-                    &resources,
-                    &[required],
+            let suspended = plan_stable_view_transfer_with_bindings_and_composites_for_worker(
+                &resources,
+                &[required],
+                &assumptions,
+                &ledger,
+                caller,
+                callee,
+                &LoanViewBindings::default(),
+                &BTreeMap::new(),
+                true,
+            )
+            .unwrap();
+            suspended.recheck_entry(&ledger).unwrap();
+            let entry = suspended.ledger.clone();
+            let retained = suspended.caller_resources_after_requirements.clone();
+            let recovered = suspended
+                .recover_suspended_views(
+                    entry.clone(),
+                    retained,
+                    LoanViewBindings::default(),
+                    BTreeMap::new(),
                     &assumptions,
-                    &ledger,
-                    caller,
-                    callee,
-                    &LoanViewBindings::default(),
-                    &BTreeMap::new(),
-                    true
                 )
-                .is_err()
+                .unwrap();
+            assert_eq!(
+                recovered.recheck_transitions(&entry, caller).unwrap(),
+                recovered.ledger
             );
+            assert!(recovered.resources.satisfies_fact(&owner(), &assumptions));
+            assert_ne!(recovered.ledger, ledger);
             samples.push((size, work, persistent));
         }
         for pair in samples.windows(2) {

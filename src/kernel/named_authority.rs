@@ -174,6 +174,28 @@ impl NamedMutexAuthorities {
         })
     }
 
+    /// Follow only the exact occurrence exchanged by the checked loan adapter.
+    /// A stale same-address alias is not selected by this indexed lookup.
+    pub(in crate::kernel) fn apply_checked_mutex_updates(
+        &self,
+        updates: &[super::loans::mutex_calls::MutexAuthorityUpdate],
+        state: &CState,
+    ) -> Result<Self, NamedMutexAuthorityError> {
+        let mut next = self.clone();
+        for update in updates {
+            let Some(binder) = next.occupied.get(&update.source_occurrence).copied() else {
+                continue;
+            };
+            if update.source == update.derived {
+                next = next.rebind_existing_exact(binder, &update.source, state)?;
+            } else {
+                next =
+                    next.transport_checked_use(binder, &update.source, &update.derived, state)?;
+            }
+        }
+        Ok(next)
+    }
+
     /// A checked synchronous call may lend a live authority or reborrow a use
     /// share, giving its callee a different use atom under the same proof name.
     /// The caller supplies the checked loan transition; this map only verifies

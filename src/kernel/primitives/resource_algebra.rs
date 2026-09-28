@@ -2441,6 +2441,20 @@ impl ResourceContext {
             .find(|available| resource_fact_entails(available, required, assumptions))
     }
 
+    /// Select a deterministic owned candidate from the pointer index. Multiple
+    /// returned sibling shares are legitimate. This lookup grants no authority:
+    /// callers must still check the selected loan, initialization, and type.
+    pub(crate) fn mutex_use_candidate_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
+        let entries = self
+            .storage
+            .index
+            .mutex_authorities
+            .get(&(ResourceFamily::MutexUse, pointer.clone()))?;
+        let fact = self.fact(*entries.iter().next()?);
+        matches!(fact, CResourceFact::Own(_, q) if q.as_const() == Some(1)).then_some(fact)
+    }
+
+    #[cfg(test)]
     pub(crate) fn mutex_use_at(&self, pointer: &Pointer) -> Option<&CResourceFact> {
         let entries = self
             .storage

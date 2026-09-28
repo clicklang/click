@@ -259,7 +259,7 @@ impl ModeledPthreadBinding {
     pub fn builtin() -> Self {
         Self {
             target: super::target::CTarget::X86_64LinuxUserspace,
-            specification_version: 8,
+            specification_version: 9,
             header_digest: Sha256::digest(include_str!("modeled_pthread.h").as_bytes()).into(),
             specification_digest: Sha256::digest(
                 include_str!("modeled_pthread_spec.md").as_bytes(),
@@ -354,7 +354,7 @@ impl CThreadRuntime {
         match self {
             Self::None => None,
             Self::ModeledPthread => Some(
-                "modeled-pthread v2: pthread create/join and single-thread mutex calls obey the trusted Click specification; native runtime binding unvalidated",
+                "modeled-pthread v9: pthread create/join and shared mutex calls obey the trusted Click specification; native runtime binding unvalidated",
             ),
         }
     }

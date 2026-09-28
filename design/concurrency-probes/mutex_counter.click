@@ -30,3 +30,47 @@ void* increment_counter(void* argument) {
     step();
     simp();
 }
+
+int32 increment_twice(struct mutex_counter* counter) {
+    owns &counter->mutex;
+    requires aligned(&counter->mutex, 8);
+    owns counter->value;
+    ensures result == 0 or result == 1;
+} by {
+    step();
+    step();
+    step();
+    let state = fold(counter_state(counter), { value: counter->value });
+    let { lifetime: lifetime } = step(pthread_mutex_init(&counter->mutex, 0), { state: state });
+    branch {
+        then { unfold(state); step(); simp(); }
+        else {}
+    }
+    step();
+    branch {
+        then {
+            step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+            unfold(state);
+            step();
+            simp();
+        }
+        else {}
+    }
+    step();
+    branch {
+        then {
+            step();
+            step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+            unfold(state);
+            step();
+            simp();
+        }
+        else {}
+    }
+    step();
+    step();
+    step(pthread_mutex_destroy(&counter->mutex), { lifetime: lifetime });
+    unfold(state);
+    step();
+    simp();
+}

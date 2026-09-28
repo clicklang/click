@@ -2517,6 +2517,24 @@ fn execute_verified_function_applications_with_suspension(
                     .iter()
                     .chain(application.interface.resource_ensures())
                     .find(|resource| {
+                        // A pthread callback's mutex-use binder names its
+                        // own checked input share. There is no source-level
+                        // call map at the runtime callback boundary; the
+                        // worker planner selects and authenticates the
+                        // concrete typed authority before granting it.
+                        if suspended.is_some()
+                            && resource.role() == CResourceTransferRole::Borrow
+                            && resource.access() == CResourceAccessMode::Own
+                            && matches!(
+                                resource.term(),
+                                CResourceTerm::MutexUse {
+                                    protected: Some(_),
+                                    ..
+                                }
+                            )
+                        {
+                            return false;
+                        }
                         resource.binding_identity().is_some_and(|identity| {
                             !bindings.is_some_and(|bindings| bindings.contains_key(&identity))
                         })
@@ -2822,14 +2840,14 @@ fn execute_verified_function_applications_with_suspension(
                 &effective_assumptions,
             )
         };
-        if !transfer.memory_effects.is_empty() || !mutex_storage_effects.is_empty() {
-            let mut mutable_ranges = transfer.memory_effects.clone();
-            mutable_ranges.extend(mutex_storage_effects);
+        let mut worker_effects = transfer.memory_effects.clone();
+        worker_effects.extend(mutex_storage_effects);
+        if !worker_effects.is_empty() {
             facts.push(
                 ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
                     before: entry_state.memory.clone(),
                     after: memory.clone(),
-                    mutable_ranges,
+                    mutable_ranges: worker_effects.clone(),
                 })
                 .into_certified(),
             );
@@ -2867,6 +2885,7 @@ fn execute_verified_function_applications_with_suspension(
                 ) {
                     Ok((fresh, ranges)) => {
                         if !ranges.is_empty() {
+                            worker_effects.extend(ranges.iter().cloned());
                             facts.push(
                                 ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
                                     before,
@@ -3316,13 +3335,26 @@ fn execute_verified_function_applications_with_suspension(
         }
 
         if let Some(completions) = suspended.as_deref_mut() {
+            // Only the exact child authorities produced by the checked worker
+            // loan plan may cross this boundary. A nested or invented use
+            // remains subject to ordinary thread confinement.
+            let worker_mutex_uses: BTreeSet<_> = transfer
+                .stable_view_plan
+                .iter()
+                .flat_map(|plan| &plan.mutex_uses)
+                .filter_map(|usage| usage.callee_resource().ok())
+                .collect();
             if let Some(name) = transfer
                 .callee_resources
                 .facts()
                 .iter()
                 .chain(output_resources.facts())
                 .find_map(|fact| {
-                    confined_resource_name(fact, interface.composite_resource_definitions())
+                    if worker_mutex_uses.contains(fact) {
+                        None
+                    } else {
+                        confined_resource_name(fact, interface.composite_resource_definitions())
+                    }
                 })
             {
                 paths.push(resource_call_failure(&format!(
@@ -3352,8 +3384,7 @@ fn execute_verified_function_applications_with_suspension(
                         }
                         _ => true,
                     })
-                && transfer
-                    .memory_effects
+                && worker_effects
                     .iter()
                     .all(|range| is_external_memory_pointer(range.base()))
                 && output_resources.facts().iter().all(|fact| match fact {
@@ -3379,8 +3410,9 @@ fn execute_verified_function_applications_with_suspension(
                 plan,
                 output_resources,
                 post_state.memory.clone(),
-                transfer.memory_effects.clone(),
+                worker_effects,
                 facts,
+                post_state.mutex_ledger.clone(),
             ));
             // The internal caller checks there is exactly one completion.
             // No worker guarantee or ownership is published as a call return.
@@ -14327,8 +14359,7 @@ fn prepare_contract_resource_transfer(
                 .mutex_ledger
                 .as_ref()
                 .is_some_and(super::mutexes::MutexLedger::has_any_mutex))
-        && (purpose == ResourceTransitionPurpose::SuspendedWorker
-            || !preserves_mutex_protocols(interface))
+        && !preserves_mutex_protocols(interface)
     {
         return Ok(Err(CRuntimeError::FunctionContract(
             "calls with live mutex protocols require contract protocol effects".into(),
