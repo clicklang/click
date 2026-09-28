@@ -233,3 +233,44 @@ fn int32_load_nested_registration_and_late_closure_are_iterative_and_scale() {
         );
     }
 }
+
+#[test]
+fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = memory();
+    let after = intern_c_memory(
+        before
+            .memory()
+            .clone()
+            .store(address(3), CValue::Int32(Bitvector32Term::Constant(9))),
+    );
+    let old_i = load(&before, &address(1), 4);
+    let new_i = load(&after, &address(1), 4);
+    let old_j = load(&before, &address(2), 4);
+    let new_j = load(&after, &address(2), 4);
+    // This edge represents a separately checked transport conclusion. The
+    // graph must compose it, but must not itself infer that a store is disjoint.
+    let bridge = ConditionTerm::equal(old_i.clone(), new_i.clone());
+    let indices = ConditionTerm::equal(var(1), var(2));
+    let parent = PureFactContext::new().assume_condition(indices.clone(), true);
+    assert!(parent.equality_graph.are_int32_equal(&old_i, &old_j));
+    assert!(!parent.equality_graph.are_int32_equal(&old_j, &new_j));
+    let sibling = parent.clone();
+    let context = parent.clone().assume_condition(bridge.clone(), true);
+    assert!(context.equality_graph.are_int32_equal(&old_j, &new_j));
+    assert!(!sibling.equality_graph.are_int32_equal(&old_j, &new_j));
+    assert!(!context.equality_graph.are_int32_equal(
+        &load(&before, &address(3), 4),
+        &load(&after, &address(3), 4)
+    ));
+    let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(bridge.clone(), true));
+    assert!(!withdrawn.equality_graph.are_int32_equal(&old_j, &new_j));
+    assert!(withdrawn.equality_graph.are_int32_equal(&old_i, &old_j));
+    let restricted = context.restricted_to_facts(&[(bridge.clone(), true)], &[]);
+    assert!(restricted.equality_graph.are_int32_equal(&old_i, &new_i));
+    assert!(!restricted.equality_graph.are_int32_equal(&old_j, &new_j));
+    let reverse_order = PureFactContext::new()
+        .assume_condition(bridge, true)
+        .assume_condition(indices, true);
+    assert!(reverse_order.equality_graph.are_int32_equal(&old_j, &new_j));
+}

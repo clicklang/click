@@ -16431,3 +16431,49 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
         "equal offsets do not grant read permission"
     );
 }
+
+#[test]
+fn normalize_using_transported_int32_loads_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_transported_int32_loads.md");
+    let fixture =
+        crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().unwrap();
+    verify_c0_sources(source, &c_sources)
+        .expect("checked transport should compose with load congruence");
+    let expanded =
+        expand_c0_claim_source(source, &c_sources, "write_other", CProofClaim::Ensure(1))
+            .expect("transport composition should expand");
+    verify_c0_sources(&expanded, &c_sources)
+        .expect("expanded transport composition should recheck");
+    assert!(expanded.contains("transport("));
+    assert!(expanded.contains("normalize() using"));
+    let omitted_indices = source.replace("requires i == j;", "");
+    assert_ne!(omitted_indices, source);
+    assert!(verify_c0_sources(&omitted_indices, &c_sources).is_err());
+    let overlap = source.replace("i != k", "i == k");
+    assert_ne!(overlap, source);
+    assert!(verify_c0_sources(&overlap, &c_sources).is_err());
+    let missing_separation = source
+        .replace("requires i != k;", "")
+        .replace("using { i != k; }", "using { }");
+    assert_ne!(missing_separation, source);
+    assert!(verify_c0_sources(&missing_separation, &c_sources).is_err());
+    let bridge_start = source
+        .find("    have p[i] == at(entry, p[i]) by {")
+        .unwrap();
+    let bridge_end = source
+        .find("    have p[j] == at(entry, p[i]) by {")
+        .unwrap();
+    let mut no_bridge = source.to_owned();
+    no_bridge.replace_range(bridge_start..bridge_end, "");
+    assert!(
+        verify_c0_sources(&no_bridge, &c_sources).is_err(),
+        "the equality graph must not perform frame search"
+    );
+}

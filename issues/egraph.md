@@ -221,6 +221,15 @@ Multi-size regressions cover registration, late closure, and persistent forks.
 Cross-snapshot framing, block-equality integration, and resource lookup remain
 separate work.
 
+An end-to-end transport composition checkpoint now verifies a store to `p[k]`,
+a checked frame equality for `p[i]` from `i != k`, and graph normalization of
+`p[j]` from `i == j`. The existing interfaces already compose; this checkpoint
+adds regressions and documentation rather than a new kernel mechanism.
+Expansion rechecks, omitted bridges and missing premises fail, overlapping
+stores are rejected, and a supplied equality for one read neither merges whole
+snapshots nor leaks into sibling contexts. Removing that edge preserves the
+same-snapshot equalities and withdraws its cross-snapshot consequences.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
