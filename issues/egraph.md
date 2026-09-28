@@ -283,6 +283,12 @@ this does not turn wrapping index equality into exact byte-offset equality.
 Regressions cover same-snapshot load endpoints, a changed snapshot, premise
 withdrawal, and multi-size matching without building the legacy fact index.
 
+Selected range-composition candidates now rely on the graph-backed int32
+condition decision for endpoint equality, without a redundant second legacy
+fact-path walk. A direct join regression checks graph-congruent endpoints and
+withdrawal. Candidate indexing remains narrower: normalization does not yet
+select every pair whose endpoints are related only by graph congruence.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

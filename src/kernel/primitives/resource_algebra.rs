@@ -8006,12 +8006,43 @@ fn bitvector_terms_proven_equal(
 ) -> bool {
     left == right
         || assumptions.decide(&ConditionTerm::equal(left.clone(), right.clone())) == Some(true)
-        || assumptions.bitvector_terms_equal_from_facts(left, right)
 }
 
 #[cfg(test)]
 mod support_removal_tests {
     use super::*;
+
+    #[test]
+    fn selected_range_join_uses_graph_endpoint_decision_without_fact_path_fallback() {
+        let (a, b) = (Variable(90_010), Variable(90_011));
+        let endpoint = |variable| {
+            Bitvector32Term::add(
+                Bitvector32Term::Variable(variable),
+                Bitvector32Term::Constant(1),
+            )
+        };
+        let base = Pointer::symbolic(Variable(90_012));
+        let left = CMemoryRange::new(base.clone(), Bitvector32Term::Constant(0), endpoint(a));
+        let right = CMemoryRange::new(base.clone(), endpoint(b), Bitvector32Term::Constant(16));
+        let premise =
+            ConditionTerm::equal(Bitvector32Term::Variable(a), Bitvector32Term::Variable(b));
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert_eq!(
+            merge_memory_ranges(&left, &right, &branch),
+            Some(CMemoryRange::new(
+                base,
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(16),
+            )),
+        );
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(merge_memory_ranges(&left, &right, &parent).is_none());
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(merge_memory_ranges(&left, &right, &withdrawn).is_none());
+    }
 
     #[test]
     fn concrete_interval_rejects_exclusive_end_outside_shared_coordinate_space() {

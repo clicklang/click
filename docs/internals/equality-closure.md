@@ -132,6 +132,12 @@ its separate pointer check. Congruent sums and registered same-snapshot loads
 can therefore identify equal range endpoints, while changed snapshots and
 withdrawn premises remain distinct.
 
+For a range pair already selected for composition, endpoint comparison uses
+the graph-backed int32 condition decision. The composition helper no longer
+repeats a separate legacy fact-path walk after that decision. Candidate
+selection remains its own index boundary: normalization does not yet discover
+every pair whose endpoints become equal only through graph congruence.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads
