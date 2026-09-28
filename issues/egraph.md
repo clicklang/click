@@ -1,8 +1,18 @@
 # Decide equality with one e-graph in the kernel
 
-Plan revised 2026-09-27 after takeover review. This replaces the previous
-fixture-by-fixture loaded-pointer flip plan. The implementation is partial;
-the milestones below describe work still to do.
+Plan revised 2026-09-28. This replaces the previous fixture-by-fixture
+loaded-pointer flip plan. The implementation is partial; the progress ledger
+below records landed slices, while the milestones describe the remaining
+integration and deletion work.
+
+Current state on local `master`: the trusted, persistent `EqualityGraph`
+supports affine pointer classes, whole offset equalities, int32 addition and
+scaling congruence, and registered same-snapshot pointer and four-byte scalar
+loads. `normalize() using` and selected int32 value consumers query it. This
+does **not** yet make equality uniform across resource lookup, pointer loads,
+or every kernel judgment. In particular, ordinary C pointer loads still use
+the storage-relative representation, and alias/spelling retries and the legacy
+scalar fact-path index remain in use.
 
 P1. The kernel records facts, owned cells, and load names under whichever
 spelling of a term produced them. Each lookup site then decides for itself how
@@ -130,10 +140,11 @@ saturation. Equalities enter from hypotheses, checked proof steps, and
 execution. The service propagates their consequences through registered
 applications; it does not search for arithmetic identities or rewrite rules.
 
-The next milestone is a coherent pointer-and-load foundation, not a smaller
-failure count on the old trial. Keep the useful affine pointer classes and
-constructor centralization where they fit, but replace the recursive load
-normalizer and spelling retries rather than extending them.
+The next architectural milestone is a coherent pointer-value representation
+and indexed read/fold lookup, not a smaller failure count on the old trial.
+Keep the landed affine classes, incremental congruence, and constructor
+centralization. Retire spelling retries as each consumer gets a complete
+replacement.
 
 The detailed invariants and API boundaries are in
 [Equality closure design](../docs/internals/equality-closure.md). In particular:
@@ -157,15 +168,16 @@ The detailed invariants and API boundaries are in
 - Keep C unchanged. Every stage lands green, with the old mechanism deleted
   for the consumer that has migrated.
 
-## Implementation progress (2026-09-27)
+## Implementation progress (through 2026-09-28)
 
-The next integration slice exposes the existing implementation as
+The interface refactor exposed the existing implementation as
 `kernel::equality_graph::EqualityGraph`, with `add_equality` and `are_equal`.
 It remains trusted kernel code with pointer-typed operands and no `explain`
 requirement. Pointer spelling helpers remain explicitly separate. This is a
-behavior-preserving interface refactor; additional equality sorts and consumer
-migrations follow one green commit at a time. The broad unmerged
-`codex/egraph-foundation` draft is reference material, not the next merge target.
+behavior-preserving interface refactor. Subsequent green commits added offset
+and int32 support and migrated selected consumers. The broad unmerged
+`codex/egraph-foundation` draft is historical reference material, not a merge
+target.
 
 The first additional consumer is `normalize() using`: after validating its
 cited premises, it uses the current trusted equality graph during reduction to
@@ -435,9 +447,11 @@ work:
 
 ## Milestones
 
-### A. Settle the pointer/load contract and executable regressions
+### A. Settle the pointer/load contract and executable regressions (partial)
 
-This is the first implementation chunk. Work in an isolated branch/worktree.
+The congruence, scaling, and rewrite-evidence regressions listed below have
+landed. The loaded-pointer representation and its mandatory consumer contract
+are still open. Work in an isolated branch/worktree.
 
 - Reproduce the explicit-class congruence failure above. Add nested-load,
   late-merge, insertion-order, and branch-isolation cases at the kernel API.
@@ -461,10 +475,12 @@ Exit: a concrete API/design and regressions establishing what the foundation
 must guarantee, with no unresolved representation or trust-boundary choice
 hidden in a consumer migration.
 
-### B. Build and integrate the pointer/load foundation
+### B. Build and integrate the pointer/load foundation (partial)
 
-This is the main hard part. It can take several green commits, but the
-representation change must be coherent when integrated.
+This remains the main hard part. Persistent indexed congruence for the
+supported pointer/offset/int32 fragments has landed, along with selected
+value-consumer integrations. The representation change and indexed read/fold
+lookup must be coherent when integrated.
 
 - Maintain incremental congruence using indexed application signatures and
   affected-parent worklists. Updating an address class must merge existing
@@ -507,7 +523,7 @@ failure count is not an acceptance criterion.
 
 ### C. Migrate remaining pointer consumers and delete the old mechanisms
 
-After milestone B, migrate one bounded subsystem at a time: read/write
+After milestone B, migrate one bounded pointer subsystem at a time: read/write
 permission, loans, heap retirement, validity, remaining resource matching,
 then effect/transport lookup and diagnostics. Each change names its old code,
 uses the established API, adds positive/negative and ambient-scaling coverage,
@@ -525,18 +541,21 @@ replace their evidence or candidate indexes.
 Proceed by separately reviewed extensions, not by assuming these are routine
 consumer migrations:
 
-1. Bitvector and integer applications, with sort/width-aware constants and
-   checked interaction with offset atoms. Replace the lazy equality graph,
-   64-bit adjacency map, and constant-class machinery as their roles move.
+1. Extend the landed int32 addition, scaling, and registered-load fragment to
+   other bitvector and integer applications, with sort/width-aware constants
+   and checked interaction with offset atoms. Replace the lazy scalar
+   fact-path index, 64-bit adjacency map, and constant-class machinery as
+   their roles move. A graph-first query with a legacy fallback is a partial
+   migration, not deletion of that mechanism.
 2. Algebraic constructors and pure-function applications, including
    injectivity, no-confusion, scoped binders, and the chosen finite-value
    semantics for cyclic constructor equalities. Delete the gap-74 retry.
-3. Premise matching for `assumption`, `apply ... using`, and `normalize() using`
-   modulo the closure of their permitted premises. `normalize() using` now
-   deliberately permits the current equality graph for pointer-equality goals;
-   other selected-premise operations retain their existing restrictions until
-   explicitly migrated. Any restricted context must be built in work
-   proportional to the selection and required term DAG.
+3. Premise matching for `assumption` and `apply ... using` modulo the closure
+   of their permitted premises, and further `normalize() using` term forms.
+   `normalize() using` already queries the ambient graph for supported pointer
+   and int32 equality goals; other selected-premise operations retain their
+   existing restrictions until explicitly migrated. Any restricted context
+   must be built in work proportional to the selection and required term DAG.
 4. Finish `rewrite`, diagnostics, and surface bridge removal using the trusted
    kernel boundary. Explanations are optional future work for a concrete
    consumer, not a requirement for certificate expansion.

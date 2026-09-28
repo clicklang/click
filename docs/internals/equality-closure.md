@@ -1,9 +1,11 @@
 # Equality closure design
 
-Status: partial implementation, 2026-09-27. Persistent affine pointer classes
-now maintain same-snapshot congruence for registered opaque pointer-load blocks.
-The complete pointer representation, resource indexing, and other theories
-described here remain planned work.
+Status: partial implementation, 2026-09-28. The trusted persistent graph
+maintains affine pointer classes, offset and int32 congruence, and registered
+same-snapshot pointer and four-byte scalar loads. Selected normalization,
+transport, memory, resource-value, and range consumers query it. Ordinary C
+pointer loads still have a storage-relative representation; equality-aware
+resource indexing and the other theories described here remain planned work.
 The repository's `issues/egraph.md` owns milestones, regressions, the
 handoff checklist, and historical implementation anchors.
 
@@ -30,8 +32,8 @@ congruence steps. Such a consumer must preserve the checked premises, branch,
 load interpretation, and memory snapshot of the query. Cloning shares
 persistent storage while keeping subsequent additions branch-local.
 
-The larger typed-pointer migration remains an unmerged reference draft in
-`codex/egraph-foundation`; this refactor imports none of its behavior changes.
+The larger typed-pointer migration remains an unmerged historical reference
+draft in `codex/egraph-foundation`; its behavior changes are not on `master`.
 
 `normalize() using { ... }` queries this existing graph while reducing
 pointer and int32 equality conditions, including guards of conditional expressions.
@@ -484,9 +486,12 @@ Delete old mechanisms as their responsibilities migrate:
 | Algebraic/function congruence | Gap-74 alias retry and duplicated operand-wise equality recursion |
 | Tactic matching | Surface bridges made redundant by checked closure queries |
 
-An intermediate consumer may retain its legacy implementation until migrated,
-but a migrated consumer must not quietly fall back to a second equality
-relation. Full deletion is an acceptance criterion, not optional cleanup.
+Many current int32 consumers query the graph first and retain a legacy
+fact-path fallback for forms outside its supported fragment. Those are partial
+migrations, not completed replacements. For each complete consumer migration,
+identify the remaining fallback cases, cover them with the intended checked
+judgment, and delete the superseded path. Full deletion is an acceptance
+criterion, not optional cleanup.
 
 The first substantial handoff is after the pointer/load representation and
 closure work through real read/fold consumers, with checked evidence, scaling
