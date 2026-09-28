@@ -12,6 +12,8 @@
 mod assumed_protocol;
 pub(super) use assumed_protocol::{OpaqueMutexAcquisitions, opaque_runtime_transition};
 mod invariant_interface;
+mod loop_protocol;
+pub(super) use loop_protocol::abstract_loop_mutex;
 
 use std::cmp::Ordering as CmpOrdering;
 use std::hash::{Hash, Hasher};
@@ -58,6 +60,12 @@ impl MutexTransitionError {
 
 #[derive(Clone)]
 enum MutexEntry {
+    /// Heldness supplied by a checked loop resource, never authority itself.
+    ConditionalLoop {
+        initialization: MutexInitialization,
+        epoch: u64,
+        held: ConditionTerm,
+    },
     Unlocked {
         initialization: MutexInitialization,
         invariant: Option<CResourceFact>,
@@ -1101,6 +1109,17 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexUseLoan), MutexTransitionError> {
+        if self
+            .state
+            .mutex_ledger
+            .as_ref()
+            .is_some_and(|ledger| ledger.is_loop_abstract(mutex))
+        {
+            return Err(
+                "conditional loop mutex authority cannot be lent before its heldness is resolved"
+                    .into(),
+            );
+        }
         if self.state.preserves_mutex_protocols {
             return Err("preserving mutex contracts cannot lend mutex authority".into());
         }
@@ -1346,6 +1365,9 @@ impl MutexContext {
         usage: Option<MutexUseBinding>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
+        if let Some(concrete) = self.materialize_loop_mutex(mutex, assumptions)? {
+            return concrete.acquire_with_use(mutex, usage, assumptions);
+        }
         if self.state.preserves_mutex_protocols {
             return Err(MutexTransitionError::Refusal(
                 "preserving mutex contracts cannot change mutex protocols",
@@ -1358,7 +1380,7 @@ impl MutexContext {
                 invariant,
                 interface,
             }) => (*initialization, invariant.clone(), interface.clone()),
-            Some(MutexEntry::Locked { .. }) => {
+            Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. }) => {
                 return Err(MutexTransitionError::Refusal("mutex is already guarded"));
             }
             None => return Err(MutexTransitionError::NotInitialized),
@@ -1472,6 +1494,9 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
+        if let Some(concrete) = self.materialize_loop_mutex(mutex, assumptions)? {
+            return concrete.release_current(mutex, assumptions);
+        }
         if self.state.preserves_mutex_protocols {
             return Err("preserving mutex contracts cannot change mutex protocols".into());
         }
@@ -1520,6 +1545,9 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
+        if let Some(concrete) = self.materialize_loop_mutex(mutex, assumptions)? {
+            return concrete.destroy(mutex, assumptions);
+        }
         if self.state.preserves_mutex_protocols {
             return Err(MutexTransitionError::Refusal(
                 "preserving mutex contracts cannot change mutex protocols",
@@ -1528,7 +1556,7 @@ impl MutexContext {
         let ledger = self.state.mutex_ledger.as_ref().expect("mutex ledger");
         let invariant = match ledger.get(mutex) {
             Some(MutexEntry::Unlocked { invariant, .. }) => invariant.clone(),
-            Some(MutexEntry::Locked { .. }) => {
+            Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. }) => {
                 return Err(MutexTransitionError::Refusal("cannot destroy a held mutex"));
             }
             None => return Err(MutexTransitionError::NotInitialized),
@@ -1576,6 +1604,9 @@ impl MutexContext {
         restored: Option<CResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
+        if let Some(concrete) = self.materialize_loop_mutex(&guard.mutex, assumptions)? {
+            return concrete.release_with_invariant(guard, restored, assumptions);
+        }
         if self.state.preserves_mutex_protocols {
             return Err("preserving mutex contracts cannot change mutex protocols".into());
         }
@@ -1829,29 +1860,41 @@ impl MutexLedger {
 
     pub(super) fn live_resource(&self, mutex: &Pointer) -> Option<CResourceFact> {
         let (MutexEntry::Unlocked { initialization, .. }
-        | MutexEntry::Locked { initialization, .. }) = self.get(mutex)?;
+        | MutexEntry::Locked { initialization, .. }
+        | MutexEntry::ConditionalLoop { initialization, .. }) = self.get(mutex)?;
         Some(initialization.resource_fact(mutex))
     }
 
     pub(super) fn guard_resource(&self, mutex: &Pointer) -> Option<CResourceFact> {
         match self.get(mutex) {
-            Some(MutexEntry::Locked { epoch, .. }) => Some(CResourceFact::own(
-                CResource::MutexGuard(super::MutexIdentity {
-                    epoch: Some(*epoch),
-                    mutex: mutex.clone(),
-                }),
-            )),
+            Some(MutexEntry::Locked { epoch, .. } | MutexEntry::ConditionalLoop { epoch, .. }) => {
+                Some(CResourceFact::own(CResource::MutexGuard(
+                    super::MutexIdentity {
+                        epoch: Some(*epoch),
+                        mutex: mutex.clone(),
+                    },
+                )))
+            }
             _ => None,
         }
     }
 
     pub(super) fn held_condition(&self, mutex: &Pointer) -> ConditionTerm {
-        ConditionTerm::Constant(matches!(self.get(mutex), Some(MutexEntry::Locked { .. })))
+        match self.get(mutex) {
+            Some(MutexEntry::ConditionalLoop { held, .. }) => held.clone(),
+            entry => ConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
+        }
     }
 
     fn with_inserted(&self, mutex: Pointer, entry: MutexEntry) -> Self {
-        let was_locked = matches!(self.get(&mutex), Some(MutexEntry::Locked { .. }));
-        let now_locked = matches!(entry, MutexEntry::Locked { .. });
+        let was_locked = matches!(
+            self.get(&mutex),
+            Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. })
+        );
+        let now_locked = matches!(
+            entry,
+            MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. }
+        );
         let had_return_obligation = self
             .get(&mutex)
             .is_some_and(MutexEntry::has_return_obligation);
@@ -1915,7 +1958,10 @@ impl MutexLedger {
     }
 
     fn without(&self, mutex: &Pointer) -> Self {
-        let was_locked = matches!(self.get(mutex), Some(MutexEntry::Locked { .. }));
+        let was_locked = matches!(
+            self.get(mutex),
+            Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. })
+        );
         let had_return_obligation = self
             .get(mutex)
             .is_some_and(MutexEntry::has_return_obligation);
@@ -2044,6 +2090,18 @@ impl MutexLedger {
                         ..
                     }),
                 ) if left == right && left_epoch == right_epoch && left_hold == right_hold => {}
+                (
+                    Some(MutexEntry::ConditionalLoop {
+                        epoch: left_epoch,
+                        held: left_held,
+                        ..
+                    }),
+                    Some(MutexEntry::ConditionalLoop {
+                        epoch: right_epoch,
+                        held: right_held,
+                        ..
+                    }),
+                ) if left_epoch == right_epoch && left_held == right_held => {}
                 (None, None) => {}
                 _ => return Err(MutexProtocolMismatch::State),
             }
@@ -2056,6 +2114,7 @@ impl MutexEntry {
     fn interface(&self) -> Option<&Arc<InitializedMutexInterface>> {
         match self {
             Self::Unlocked { interface, .. } | Self::Locked { interface, .. } => interface.as_ref(),
+            Self::ConditionalLoop { .. } => None,
         }
     }
 
@@ -2069,9 +2128,9 @@ impl MutexEntry {
 
     fn initialization(&self) -> MutexInitialization {
         match self {
-            Self::Unlocked { initialization, .. } | Self::Locked { initialization, .. } => {
-                *initialization
-            }
+            Self::Unlocked { initialization, .. }
+            | Self::Locked { initialization, .. }
+            | Self::ConditionalLoop { initialization, .. } => *initialization,
         }
     }
 

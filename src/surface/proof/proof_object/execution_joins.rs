@@ -3257,8 +3257,9 @@ fn advance_joined_kernel_variable_mark(
 /// prerequisites and derivation theorems are self-contained checked
 /// obligations, so either arm may contribute them. An unfold marker is a
 /// frontier-local planning hint and becomes common only when both arms
-/// introduced it. Loop rules are checked theorems keyed by their code region
-/// and are deduplicated below.
+/// introduced it. Presentation clauses are deduplicated by code region;
+/// every checked loop rule is retained so a ranked branch cannot mask an
+/// unranked sibling's termination obligation.
 fn migrate_arm_metadata(
     execution: &mut ExecutionProofState,
     arms: &[CheckedExecutionJoinArm<'_>; 2],
@@ -3282,11 +3283,13 @@ fn migrate_arm_metadata(
         }
     }
     for arm in arms {
-        for (clause, rule) in arm
-            .introduced_loop_clauses
-            .iter()
-            .zip(&arm.introduced_loop_rules)
-        {
+        // Clauses describe source presentation and may share a C loop across
+        // proof branches. Rules are checked path evidence: retain every rule,
+        // including unranked siblings and nested rules with no separate clause.
+        for rule in &arm.introduced_loop_rules {
+            execution.core.frontier_loop_rules.push(rule.clone());
+        }
+        for clause in &arm.introduced_loop_clauses {
             if execution
                 .presentation
                 .frontier_loop_clauses
@@ -3299,7 +3302,6 @@ fn migrate_arm_metadata(
                 .presentation
                 .frontier_loop_clauses
                 .push(clause.clone());
-            execution.core.frontier_loop_rules.push(rule.clone());
         }
     }
 }

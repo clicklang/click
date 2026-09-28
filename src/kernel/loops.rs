@@ -2222,6 +2222,7 @@ pub(super) fn execute_c_while_verification_paths(
 /// abstraction and effect checks; heap lifetime, resource ownership, and
 /// counted resource populations are separate semantic state and must either
 /// be unchanged at the loop-state join.
+#[cfg(test)]
 pub(crate) fn c_loop_state_components_match_at_back_edge(
     top_state: &CState,
     next_state: &CState,
@@ -2233,7 +2234,75 @@ pub(crate) fn c_loop_state_components_match_at_back_edge(
         next_state,
         composite_resource_definitions,
         assumptions,
+        &[],
     )
+}
+
+/// Validate protocol custody before forgetting a loop binder's model values.
+pub(crate) fn c_loop_binder_state_components_match_at_back_edge(
+    top: &CState,
+    next: &CState,
+    binders: &[CLoopBinder],
+    assumptions: &PureFactContext,
+    definitions: &[CCompositeResourceDefinition],
+) -> Result<(), String> {
+    let mut checked = Vec::new();
+    for binder in binders {
+        let Some(head) = top.resources().owned_instance(binder.identity) else {
+            continue;
+        };
+        let Some((mutex, _)) =
+            super::functions::loop_instance_guard(top, head, definitions, assumptions)?
+        else {
+            continue;
+        };
+        if !top
+            .mutex_ledger
+            .as_ref()
+            .is_some_and(|l| l.is_loop_abstract(&mutex))
+        {
+            continue;
+        }
+        let actual = next
+            .resources()
+            .owned_instance(binder.identity)
+            .ok_or_else(|| format!("Requires owns {} for loop guard", binder.name))?;
+        let Some((next_mutex, held)) =
+            super::functions::loop_instance_guard(next, actual, definitions, assumptions)?
+        else {
+            return Err("loop guard resource changed its definition".into());
+        };
+        if mutex != next_mutex {
+            return Err("loop guard resource changed its mutex".into());
+        }
+        check_loop_guard_custody(next, &mutex, &held, assumptions)?;
+        checked.push(mutex);
+    }
+    c_loop_state_components_match_at_back_edge_inner(
+        top,
+        &c_loop_state_with_head_binder_models(next, top, binders),
+        definitions,
+        assumptions,
+        &checked,
+    )
+}
+
+fn check_loop_guard_custody(
+    state: &CState,
+    mutex: &Pointer,
+    held: &ConditionTerm,
+    assumptions: &PureFactContext,
+) -> Result<(), String> {
+    let ledger = state
+        .mutex_ledger
+        .as_ref()
+        .ok_or("Requires an initialized loop mutex")?;
+    let expected = condition_is_decided(assumptions, held)
+        .ok_or("Requires the loop resource condition to determine guard ownership")?;
+    if condition_is_decided(assumptions, &ledger.held_condition(mutex)) != Some(expected) {
+        return Err("loop resource guard ownership does not match the mutex acquisition".into());
+    }
+    Ok(())
 }
 
 /// Whether a post-body loop condition still has a feasible true path.
@@ -2354,6 +2423,7 @@ fn c_loop_state_components_match_at_back_edge_inner(
     next_state: &CState,
     composite_resource_definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
+    checked_mutexes: &[Pointer],
 ) -> Result<(), String> {
     let mut changed = Vec::new();
     if !top_state
@@ -2414,7 +2484,8 @@ fn c_loop_state_components_match_at_back_edge_inner(
     }
     match (&top_state.mutex_ledger, &next_state.mutex_ledger) {
         (None, None) => {}
-        (Some(top), Some(next)) => match top.check_protocol_state_since(next) {
+        (Some(top), Some(next)) => match top.check_loop_protocol_state_since(next, checked_mutexes)
+        {
             Ok(()) => {}
             Err(super::mutexes::MutexProtocolMismatch::Initialization) => {
                 return Err("Click does not yet support destroying and reinitializing a loop-head mutex across a loop backedge; the loop requires the same initialization".into());
@@ -4532,15 +4603,12 @@ pub(super) fn collect_loop_preservation_summary(
                         } else if let Some(failure) = &binder_failure {
                             Some(failure.clone())
                         } else {
-                            c_loop_state_components_match_at_back_edge_inner(
+                            c_loop_binder_state_components_match_at_back_edge(
                                 top_state,
-                                &c_loop_state_with_head_binder_models(
-                                    &next_state,
-                                    top_state,
-                                    &binders,
-                                ),
-                                composite_resource_definitions,
+                                &next_state,
+                                &binders,
                                 &path_assumptions,
+                                composite_resource_definitions,
                             )
                             .err()
                         };
@@ -4906,11 +4974,11 @@ impl CLoopHead {
 }
 
 /// Every composite resource definition this environment's functions declare,
-/// in first-seen order and without repeats.
+/// sorted by family name and without exact repeats.
 pub(super) fn environment_composite_resource_definitions(
     environment: &CExecutionEnvironment,
 ) -> Vec<CCompositeResourceDefinition> {
-    environment
+    let mut definitions = environment
         .functions
         .values()
         .flat_map(|function| function.composite_resource_definitions().iter().cloned())
@@ -4919,7 +4987,12 @@ pub(super) fn environment_composite_resource_definitions(
                 definitions.push(definition);
             }
             definitions
-        })
+        });
+    // Consumers can index the table rather than scanning it per loop binder.
+    // Conflicting definitions retain distinct entries and are not resolved by
+    // choosing an arbitrary family body.
+    definitions.sort_by(|left, right| left.name().cmp(right.name()));
+    definitions
 }
 
 /// Installs a loop's declared-resource frame from the kernel's own reading
@@ -5225,6 +5298,52 @@ pub(super) fn prepare_loop_top_state(
                 vec![failure],
             ),
         };
+    // A declared conditional guard carries an existential acquisition. Check
+    // its real entry custody before replacing concrete heldness at the head.
+    let mut top_state = top_state;
+    let mut selected_mutexes = std::collections::BTreeSet::new();
+    for binder in c_loop_binders(resource_specs) {
+        let result = (|| -> Result<(), String> {
+            let Some(entry_instance) = entry_state.resources().owned_instance(binder.identity)
+            else {
+                return Ok(());
+            };
+            let Some((mutex, entry_held)) = super::functions::loop_instance_guard(
+                &entry_state,
+                entry_instance,
+                definitions,
+                assumptions,
+            )?
+            else {
+                return Ok(());
+            };
+            if !selected_mutexes.insert(mutex.clone()) {
+                return Err("two loop resources describe the same mutex guard".into());
+            }
+            check_loop_guard_custody(&entry_state, &mutex, &entry_held, assumptions)?;
+            let head_instance = top_state
+                .resources()
+                .owned_instance(binder.identity)
+                .ok_or("loop guard binder is absent at the head")?;
+            let Some((head_mutex, held)) = super::functions::loop_instance_guard(
+                &top_state,
+                head_instance,
+                definitions,
+                assumptions,
+            )?
+            else {
+                return Err("loop guard definition changed at the head".into());
+            };
+            if head_mutex != mutex {
+                return Err("loop guard mutex must not depend on changing model fields".into());
+            }
+            top_state = super::mutexes::abstract_loop_mutex(&top_state, &mutex, held)?;
+            Ok(())
+        })();
+        if let Err(message) = result {
+            rebound_failures.push(message);
+        }
+    }
     // The loop's declarations are evaluated where the loop starts, over the
     // head's models: the clause arguments are the ones at loop entry, and the
     // models are the fresh ones an arbitrary visit carries.

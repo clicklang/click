@@ -50,6 +50,24 @@ fn frozen_shared_heap_lifecycles_verify() {
 }
 
 #[test]
+fn frozen_mutex_parity_verifies() {
+    let project = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("design/concurrency-probes");
+    run_example_in_thread(&project).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn concurrency_mutex_parity_source_is_frozen() {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("design/concurrency-probes/mutex_held_parity.c");
+    let bytes = fs::read(&source).expect("the frozen parity C source exists");
+    assert_eq!(
+        hex_digest(sha256(&bytes)),
+        "719d577494b9b2aa43aaa269e43bf8201e57a4039ff84ce9f6ec900571226d51",
+        "the parity proof must use the selected C source unchanged"
+    );
+}
+
+#[test]
 fn example_projects() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let examples_dir = manifest_dir.join("examples");

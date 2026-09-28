@@ -874,6 +874,7 @@ fn expand_declared_resource_signed_step(
         | SignedArithmeticStep::IntervalAddBounded { .. }
         | SignedArithmeticStep::IntervalSubtract { .. }
         | SignedArithmeticStep::IntervalMultiply { .. }
+        | SignedArithmeticStep::IntervalRemainderAdd { .. }
         | SignedArithmeticStep::IntervalRemainder { .. }
         | SignedArithmeticStep::IntervalShiftLeft { .. }
         | SignedArithmeticStep::IntervalArithmeticShiftRight { .. }

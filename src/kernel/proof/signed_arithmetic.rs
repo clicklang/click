@@ -687,6 +687,15 @@ pub(crate) enum SignedArithmeticNode {
         defined: usize,
         result: SignedArithmeticInterval,
     },
+    /// Remainder after a bounded addition, using a checked interval for the
+    /// original remainder. Both the original and resulting dividends are nonnegative.
+    IntervalRemainderAdd {
+        operand: usize,
+        remainder: usize,
+        addend: i32,
+        divisor: i32,
+        result: SignedArithmeticInterval,
+    },
     IntervalRemainder {
         operand: usize,
         divisor: i32,
@@ -1121,6 +1130,49 @@ impl SignedArithmeticCertificate {
                     require_defined_or_bounded(
                         &checked, &mut terms, *defined, term, left_term, node_index,
                     )?;
+                    check_interval_result(&expected, result, node_index)?;
+                    CheckedValue::Interval {
+                        value: expected,
+                        term,
+                    }
+                }
+                SignedArithmeticNode::IntervalRemainderAdd {
+                    operand,
+                    remainder,
+                    addend,
+                    divisor,
+                    result,
+                } => {
+                    let (op, operand_term) = interval_at(&checked, *operand)?;
+                    let (rem, remainder_term) = interval_at(&checked, *remainder)?;
+                    let expected = interval_remainder_add(op, rem, *addend, *divisor, node_index)?;
+                    let divisor_term = terms
+                        .atom(Bitvector32Term::Constant(*divisor as u32))
+                        .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
+                    let expected_remainder =
+                        terms.binary(CheckedBinaryOperator::Remainder, operand_term, divisor_term);
+                    let same_remainder =
+                        match (&terms.terms[operand_term], &terms.terms[remainder_term]) {
+                            (CheckedTerm::Atom(base), CheckedTerm::Atom(actual)) => {
+                                let mut expected = Vec::with_capacity(base.tokens.len() + 2);
+                                expected.push(SignedArithmeticAtomToken::Binary(
+                                    SignedArithmeticBinaryOperator::Remainder,
+                                ));
+                                expected.extend(base.tokens.iter().cloned());
+                                expected.push(SignedArithmeticAtomToken::Constant(*divisor as u32));
+                                let expected = SignedArithmeticAtom { tokens: expected };
+                                charge_atom_pair_work(&expected, actual) && expected == *actual
+                            }
+                            _ => terms.equivalent(expected_remainder, remainder_term),
+                        };
+                    if !same_remainder {
+                        return Err(SignedArithmeticCheckError::InvalidOperator(node_index));
+                    }
+                    let addend_term = terms
+                        .atom(Bitvector32Term::Constant(*addend as u32))
+                        .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
+                    let sum = terms.binary(CheckedBinaryOperator::Add, operand_term, addend_term);
+                    let term = terms.binary(CheckedBinaryOperator::Remainder, sum, divisor_term);
                     check_interval_result(&expected, result, node_index)?;
                     CheckedValue::Interval {
                         value: expected,
@@ -2314,6 +2366,43 @@ fn interval_multiply(
     )
 }
 
+/// For nonnegative dividends, C remainder agrees with Euclidean remainder.
+/// Translation by a constant preserves residues. An interval that crosses a
+/// multiple of the divisor cannot be represented by this single interval rule.
+pub(crate) fn interval_remainder_add(
+    operand: &SignedArithmeticInterval,
+    remainder: &SignedArithmeticInterval,
+    addend: i32,
+    divisor: i32,
+    node: usize,
+) -> Result<SignedArithmeticInterval, SignedArithmeticCheckError> {
+    if operand.carrier != SignedArithmeticCarrier::SignedInt32
+        || remainder.carrier != SignedArithmeticCarrier::SignedInt32
+        || divisor <= 0
+        || operand.lower < 0
+        || operand.upper > SIGNED_MAX
+        || operand.lower > operand.upper
+        || remainder.lower > remainder.upper
+        || operand.lower + i64::from(addend) < 0
+        || operand.upper + i64::from(addend) > SIGNED_MAX
+        || remainder.lower < 0
+        || remainder.upper >= i64::from(divisor)
+    {
+        return Err(SignedArithmeticCheckError::InvalidOperator(node));
+    }
+    let lower = remainder.lower + i64::from(addend);
+    let upper = remainder.upper + i64::from(addend);
+    let divisor = i64::from(divisor);
+    if lower.div_euclid(divisor) != upper.div_euclid(divisor) {
+        return Err(SignedArithmeticCheckError::InvalidOperator(node));
+    }
+    interval_checked(
+        i128::from(lower.rem_euclid(divisor)),
+        i128::from(upper.rem_euclid(divisor)),
+        node,
+    )
+}
+
 fn interval_remainder(
     operand: &SignedArithmeticInterval,
     divisor: i32,
@@ -2684,6 +2773,35 @@ fn propositions_match(left: &Proposition, right: &Proposition) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::{Pointer, Variable};
+
+    #[test]
+    fn remainder_add_requires_nonnegative_bounded_dividends_and_single_residue_interval() {
+        let interval = |lower, upper| SignedArithmeticInterval {
+            carrier: SignedArithmeticCarrier::SignedInt32,
+            lower,
+            upper,
+        };
+        assert_eq!(
+            interval_remainder_add(&interval(0, 100), &interval(2, 2), 5, 3, 0).unwrap(),
+            interval(1, 1)
+        );
+        assert_eq!(
+            interval_remainder_add(&interval(4, 100), &interval(0, 0), -1, 3, 0).unwrap(),
+            interval(2, 2)
+        );
+        for (op, rem, add, divisor) in [
+            (interval(-1, 100), interval(0, 0), 1, 2),
+            (interval(0, i32::MAX as i64), interval(0, 0), 1, 2),
+            (interval(0, 100), interval(0, 0), -1, 2),
+            (interval(0, 100), interval(0, 0), 1, 0),
+            (interval(0, 100), interval(0, 0), 1, -2),
+            (interval(0, 100), interval(-1, 0), 1, 2),
+            (interval(0, 100), interval(0, 2), 1, 2),
+            (interval(0, 100), interval(0, 1), 1, 2),
+        ] {
+            assert!(interval_remainder_add(&op, &rem, add, divisor, 0).is_err());
+        }
+    }
 
     fn x() -> Bitvector32Term {
         Bitvector32Term::Variable(Variable(1))

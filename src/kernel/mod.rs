@@ -11,7 +11,7 @@ pub(crate) mod api;
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 37;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 38;
 
 pub(crate) mod assumptions;
 mod eval;
@@ -147,9 +147,11 @@ pub(crate) use functions::{
     validate_resource_derived_loop_frames,
 };
 pub use loops::CLoopBinder;
+#[cfg(test)]
+pub(crate) use loops::c_loop_state_components_match_at_back_edge;
 pub(crate) use loops::{
-    c_loop_binders, c_loop_condition_may_continue, c_loop_state_components_match_at_back_edge,
-    c_loop_state_with_head_binder_models, c_loop_state_with_loop_binders_rebound,
+    c_loop_binder_state_components_match_at_back_edge, c_loop_binders,
+    c_loop_condition_may_continue, c_loop_state_with_loop_binders_rebound,
     loop_structural_descent_failure,
 };
 pub use memory_provenance::*;

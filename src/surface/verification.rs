@@ -4884,32 +4884,10 @@ pub(in crate::surface) fn c_function_termination_plans(
                 )));
             }
         }
-        // Grouped proofs are the source of frontier-local loop clauses. A
-        // nested `loop` tactic lives inside its enclosing loop's preservation
-        // proof, so it is not present in `structural_clauses()`; collect those
-        // clauses in source/proof order and let the kernel bind that order to
-        // the exact C loop indices it re-traverses.
-        if function.structural_clauses().is_empty()
-            && let Some(proof) = function.grouped_proof()
-        {
-            let mut grouped_clauses = Vec::new();
-            proof.collect_termination_loop_clauses(&mut grouped_clauses);
-            for (index, clause) in grouped_clauses.into_iter().enumerate() {
-                if let Some(expressions) = loop_termination_measure(
-                    clause,
-                    &format!(
-                        "loop {index} `decreases` in `{}`",
-                        function.signature().name()
-                    ),
-                )? && loop_measures.insert(index, expressions).is_some()
-                {
-                    return Err(ClickError::new(format!(
-                        "duplicate `decreases` measure for loop {index} in `{}`",
-                        function.signature().name()
-                    )));
-                }
-            }
-        }
+        // Frontier-local loops are bound to C loop identities during proof
+        // execution. Proof order is not C loop order: distinct proof branches
+        // may annotate the same C loop. Their verified rules supply the exact
+        // checked ranking measures after execution, including nested loops.
         // A plan is a demand for certified termination, and only a function
         // this run verifies can answer it. A location-scoped run (`verify_at`,
         // which every audit site uses) verifies one proof unit and the C it

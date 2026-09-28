@@ -1379,13 +1379,10 @@ impl<'a> Proof<'a> {
         // the loop declares `owns` or `views` clauses of its own. A binder's
         // model is what its invariants constrain, so the ownership comparison
         // sets it aside; the invariant obligations above checked it.
-        crate::kernel::c_loop_state_components_match_at_back_edge(
+        crate::kernel::c_loop_binder_state_components_match_at_back_edge(
             loop_head_state,
-            &crate::kernel::c_loop_state_with_head_binder_models(
-                &back_edge_state,
-                loop_head_state,
-                binders,
-            ),
+            &back_edge_state,
+            binders,
             &assumptions,
             composite_resource_definitions,
         )

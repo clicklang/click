@@ -972,6 +972,16 @@ fn write_signed_int32_certificate(
                 "interval_multiply {left}, {right} {defined} ({}) ({});",
                 result.lower, result.upper
             ),
+            SignedArithmeticStep::IntervalRemainderAdd {
+                operand,
+                remainder,
+                addend,
+                divisor,
+                result,
+            } => format!(
+                "interval_remainder_add {operand}, {remainder} ({addend}) ({divisor}) ({}) ({});",
+                result.lower, result.upper
+            ),
             SignedArithmeticStep::IntervalRemainder {
                 operand,
                 divisor,

@@ -1203,6 +1203,19 @@ impl<'a> Proof<'a> {
                     defined: r(*defined),
                     result: interval(result.clone()),
                 },
+                SignedArithmeticNode::IntervalRemainderAdd {
+                    operand,
+                    remainder,
+                    addend,
+                    divisor,
+                    result,
+                } => SignedArithmeticStep::IntervalRemainderAdd {
+                    operand: r(*operand),
+                    remainder: r(*remainder),
+                    addend: *addend,
+                    divisor: *divisor,
+                    result: interval(result.clone()),
+                },
                 SignedArithmeticNode::IntervalRemainder {
                     operand,
                     divisor,

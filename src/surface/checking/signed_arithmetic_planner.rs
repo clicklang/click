@@ -1973,7 +1973,38 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::Remainder(_, divisor) => {
+            Bitvector32Term::Remainder(dividend, divisor) => {
+                // A known residue transports through a checked bounded sum.
+                if let Bitvector32Term::Add(base, addend) = dividend.as_ref()
+                    && Self::is_safe_interval_atom(base)
+                    && let Some(addend) = addend.as_const().and_then(|v| v.to_i32())
+                    && let Some(divisor) = divisor.as_const().and_then(|v| v.to_i32())
+                    && let Some(operand) = self.build_interval(base)
+                {
+                    let original = Bitvector32Term::Remainder(
+                        base.clone(),
+                        Box::new(Bitvector32Term::Constant(divisor as u32)),
+                    );
+                    if let Some(remainder) = self.interval_atom(&original)
+                        && let Some(op) = self.interval_at(operand)
+                        && let Some(rem) = self.interval_at(remainder)
+                        && let Ok(result) =
+                            crate::kernel::proof::signed_arithmetic::interval_remainder_add(
+                                &op, &rem, addend, divisor, 0,
+                            )
+                    {
+                        return self.push_interval(
+                            SignedArithmeticNode::IntervalRemainderAdd {
+                                operand,
+                                remainder,
+                                addend,
+                                divisor,
+                                result: result.clone(),
+                            },
+                            result,
+                        );
+                    }
+                }
                 let operand = right_index?;
                 let divisor = divisor.as_const()?.to_i32()?;
                 if divisor == 0 {
@@ -2280,6 +2311,72 @@ fn interval_proves(
 mod tests {
     use super::*;
     use crate::kernel::Variable;
+
+    #[test]
+    fn remainder_add_transports_checked_residue_and_rejects_forgery() {
+        let remainder = Bitvector32Term::Remainder(Box::new(var(1)), Box::new(constant(2)));
+        let successor = Bitvector32Term::Remainder(
+            Box::new(Bitvector32Term::Add(
+                Box::new(var(1)),
+                Box::new(constant(1)),
+            )),
+            Box::new(constant(2)),
+        );
+        for residue in [0, 1] {
+            let premises = [
+                le(constant(0), var(1)),
+                lt(var(1), constant(i32::MAX)),
+                le(constant(residue), remainder.clone()),
+                le(remainder.clone(), constant(residue)),
+            ];
+            let goal = proposition(
+                ConditionTerm::Bitvector32Equal(
+                    Box::new(successor.clone()),
+                    Box::new(constant(1 - residue)),
+                ),
+                true,
+            );
+            let plan = plan_signed_arithmetic_certificate(&goal, &premises).expect("parity plan");
+            plan.check(&goal, &premises).unwrap();
+            for mutation in 0..7 {
+                let mut forged = plan.clone();
+                let node = forged
+                    .nodes
+                    .iter_mut()
+                    .find(|n| matches!(n, SignedArithmeticNode::IntervalRemainderAdd { .. }))
+                    .unwrap();
+                if let SignedArithmeticNode::IntervalRemainderAdd {
+                    operand,
+                    remainder,
+                    addend,
+                    divisor,
+                    result,
+                } = node
+                {
+                    match mutation {
+                        0 => *operand = usize::MAX,
+                        1 => *remainder = *operand,
+                        2 => *divisor = 0,
+                        3 => *divisor = -2,
+                        4 => *divisor = 3,
+                        5 => *addend = i32::MAX,
+                        6 => result.lower = 7,
+                        _ => unreachable!(),
+                    }
+                }
+                assert!(
+                    forged.check(&goal, &premises).is_err(),
+                    "mutation {mutation}"
+                );
+            }
+            let mut negative = premises.clone();
+            negative[0] = le(constant(-10), var(1));
+            assert!(plan.check(&goal, &negative).is_err());
+            let mut overflow = premises.clone();
+            overflow[1] = le(var(1), constant(i32::MAX));
+            assert!(plan.check(&goal, &overflow).is_err());
+        }
+    }
 
     fn var(index: u64) -> Bitvector32Term {
         Bitvector32Term::Variable(Variable(index))

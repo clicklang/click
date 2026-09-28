@@ -2657,8 +2657,9 @@ fn verified_loop_ranking_measures(
     function_name: &str,
     source_body: &CStatement,
     rules: &[CVerifiedLoopRule],
-) -> Result<BTreeMap<usize, CLoopTerminationMeasure>, CTerminationError> {
+) -> Result<(BTreeMap<usize, CLoopTerminationMeasure>, BTreeSet<usize>), CTerminationError> {
     let mut certified: BTreeMap<usize, CLoopTerminationMeasure> = BTreeMap::new();
+    let mut unranked = BTreeSet::new();
     for rule in rules {
         let Some(index) = rule.loop_index else {
             continue;
@@ -2689,7 +2690,10 @@ fn verified_loop_ranking_measures(
         }
         let measure = match structural_measure {
             Some(binder) => CLoopTerminationMeasure::Structural(binder.clone()),
-            None if ranking_measures.is_empty() => continue,
+            None if ranking_measures.is_empty() => {
+                unranked.insert(index);
+                continue;
+            }
             None => CLoopTerminationMeasure::Ranking(
                 ranking_measures
                     .iter()
@@ -2707,7 +2711,12 @@ fn verified_loop_ranking_measures(
             certified.insert(index, measure);
         }
     }
-    Ok(certified)
+    // Termination needs every summarized path to carry a ranking proof. A
+    // ranked sibling cannot stand in for an unranked execution of this loop.
+    for index in &unranked {
+        certified.remove(index);
+    }
+    Ok((certified, unranked))
 }
 
 fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64>, i64) {
@@ -3062,7 +3071,10 @@ fn check_loops(
                 next_index,
                 unranked,
             )?;
-            let Some(measures) = supplied.get(&index) else {
+            // Frontier-local proofs already certify their ranking components on
+            // the exact source loop. They need no speculative syntax-order
+            // plan; explicit plans remain demands checked against that rule.
+            let Some(measures) = supplied.get(&index).or_else(|| certified.get(&index)) else {
                 unranked.push(index);
                 return Ok(());
             };
@@ -4170,9 +4182,24 @@ pub fn c_verified_function_termination_rules(
                 } else {
                     &function.source_body
                 };
-                let certified = match verified_loop_rules.get(name) {
+                let (certified, uncertified_paths) = match verified_loop_rules.get(name) {
                     Some(rules) => verified_loop_ranking_measures(name, loop_source_body, rules)?,
-                    None => BTreeMap::new(),
+                    None => (BTreeMap::new(), BTreeSet::new()),
+                };
+                // A presentation clause may come from a ranked proof branch,
+                // while a sibling honestly declares only partial correctness.
+                // Preserve that as an unranked-loop refusal (and allow an
+                // explicit `diverges` contract), not a plan for its sibling.
+                let complete_path_measures;
+                let loop_measures = if uncertified_paths.is_empty() {
+                    loop_measures
+                } else {
+                    complete_path_measures = loop_measures
+                        .iter()
+                        .filter(|(index, _)| !uncertified_paths.contains(index))
+                        .map(|(index, measure)| (*index, measure.clone()))
+                        .collect::<BTreeMap<_, _>>();
+                    &complete_path_measures
                 };
                 let mut next_loop = 0;
                 let mut unranked = Vec::new();
@@ -5100,6 +5127,39 @@ mod local_descent_tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn checked_frontier_measure_needs_no_plan_but_does_not_cover_other_loops() {
+        let source_loop = crate::kernel::c_while(
+            crate::kernel::c_int32_literal(1),
+            Vec::new(),
+            CStatement::Skip,
+        );
+        let body = CStatement::Seq(Arc::new(source_loop.clone()), Arc::new(source_loop));
+        let ranking = |value| {
+            CLoopTerminationMeasure::Ranking(vec![CRankingMeasureKey::CExpression(
+                crate::kernel::c_int32_literal(value),
+            )])
+        };
+        let certified = BTreeMap::from([(0, ranking(1))]);
+        let mut next = 0;
+        let mut unranked = Vec::new();
+        check_loops(
+            &body,
+            &BTreeMap::new(),
+            &certified,
+            "f",
+            &mut next,
+            &mut unranked,
+        )
+        .unwrap();
+        assert_eq!(next, 2);
+        assert_eq!(unranked, [1]);
+        let planned = BTreeMap::from([(0, ranking(2))]);
+        assert!(check_loops(&body, &planned, &certified, "f", &mut 0, &mut Vec::new()).is_err());
+        let planned = BTreeMap::from([(1, ranking(1))]);
+        assert!(check_loops(&body, &planned, &certified, "f", &mut 0, &mut Vec::new()).is_err());
     }
 
     /// `loop_at_index` had no arm for a try/catch, so it neither found a loop

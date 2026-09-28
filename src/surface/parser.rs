@@ -6582,6 +6582,25 @@ impl Parser {
                         }
                     }
                 }
+                "interval_remainder_add" => {
+                    let operand = self.expect_index("operand interval")?;
+                    self.expect(Token::Comma)?;
+                    let remainder = self.expect_index("remainder interval")?;
+                    let addend = i32::try_from(self.expect_signed_i64("remainder addend")?)
+                        .map_err(|_| self.error("remainder addend must fit in int32"))?;
+                    let divisor = i32::try_from(self.expect_signed_i64("remainder divisor")?)
+                        .map_err(|_| self.error("remainder divisor must fit in int32"))?;
+                    let lower = self.expect_signed_i64("interval lower bound")?;
+                    let upper = self.expect_signed_i64("interval upper bound")?;
+                    self.expect(Token::Semicolon)?;
+                    SignedArithmeticStep::IntervalRemainderAdd {
+                        operand,
+                        remainder,
+                        addend,
+                        divisor,
+                        result: SignedInt32Interval { lower, upper },
+                    }
+                }
                 "interval_remainder" => {
                     let operand = self.expect_index("operand interval")?;
                     let divisor = i32::try_from(self.expect_signed_i64("remainder divisor")?)

@@ -1758,6 +1758,19 @@ impl<'a> Proof<'a> {
                     defined: *defined,
                     result: signed_interval(*result),
                 },
+                SignedArithmeticStep::IntervalRemainderAdd {
+                    operand,
+                    remainder,
+                    addend,
+                    divisor,
+                    result,
+                } => SignedArithmeticNode::IntervalRemainderAdd {
+                    operand: *operand,
+                    remainder: *remainder,
+                    addend: *addend,
+                    divisor: *divisor,
+                    result: signed_interval(*result),
+                },
                 SignedArithmeticStep::IntervalRemainder {
                     operand,
                     divisor,

@@ -4911,6 +4911,15 @@ pub enum SignedArithmeticStep {
         defined: usize,
         result: SignedInt32Interval,
     },
+    /// Remainder after a bounded addition, using a checked interval for the
+    /// original remainder. Both the original and resulting dividends are nonnegative.
+    IntervalRemainderAdd {
+        operand: usize,
+        remainder: usize,
+        addend: i32,
+        divisor: i32,
+        result: SignedInt32Interval,
+    },
     IntervalRemainder {
         operand: usize,
         divisor: i32,

@@ -1287,13 +1287,10 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 &join_assumptions,
             )
             .and_then(|rebound| {
-                crate::kernel::c_loop_state_components_match_at_back_edge(
+                crate::kernel::c_loop_binder_state_components_match_at_back_edge(
                     preservation.state(),
-                    &crate::kernel::c_loop_state_with_head_binder_models(
-                        &rebound,
-                        preservation.state(),
-                        preservation.binders(),
-                    ),
+                    &rebound,
+                    preservation.binders(),
                     &join_assumptions,
                     environment.function.composite_resource_definitions(),
                 )

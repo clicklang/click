@@ -332,6 +332,24 @@ missing guard. Branches must prove their relation to the model/index.
 thread may hold it. A lock operation requires live-use permission, not a proof
 that no other thread currently holds the lock.
 
+### Implemented parity checkpoint
+
+The [unchanged parity sidecar](https://github.com/lacker/click/blob/master/design/concurrency-probes/mutex_held_parity.click)
+uses an ordinary scalar field and conditional `owns mutex_guard(...)` body.
+At a loop head, the kernel records symbolic heldness and a fresh acquisition
+description only after checking the declared wrapper against real entry
+custody. The description supplies no owned guard. Unfolding the checked
+wrapper is still necessary to obtain ownership for unlock. At each backedge,
+the returned wrapper must account for actual heldness before its model fields
+are abstracted; other mutex protocols retain their exact comparison.
+
+This checkpoint requires an empty mutex, owned lifetime, and a direct
+conditional guard body. It does not abstract protected payloads, use holds,
+or joins between different exit receipts. The proof covers all signed input
+values, using a separate proof case for the skipped negative-input loop.
+Checked remainder arithmetic establishes parity after increment without
+changing the C source or treating a bounded unrolling as an induction proof.
+
 ## Failure explanations are part of the design
 
 Every implemented operation must have a corresponding human-facing failure
@@ -950,8 +968,8 @@ observations. Disjoint owned memory remains available and unchanged.
 The protected-state boundary remains open: independent proof entry needs a
 contract association between the use permission and its invariant, and an
 acquisition exposing that invariant must create fresh observations. Shared
-workers, escaping guards, and conditional acquisition loop assertions remain
-separate work.
+workers and escaping guards remain separate work. Conditional acquisition loop
+assertions now have the bounded empty-mutex checkpoint described above.
 
 ## Remaining semantic implementation boundaries
 
@@ -980,8 +998,11 @@ hostile certificate tests:
 3. **Interference and loop abstraction.** Acquiring shared protected state must
    establish a fresh observation without reviving earlier-memory facts. Loop
    assertions need existential, possibly conditional acquisition ownership,
-   rather than the current concrete-status comparison. The frozen parity and
-   shared-counter sources are acceptance targets, not passing demonstrations.
+   rather than the current concrete-status comparison. The frozen parity source
+   now verifies for an empty mutex with a direct conditional guard resource
+   and locally owned lifetime. Payload-bearing and
+   use-loan-backed loop assertions remain open, as does the shared-counter
+   demonstration.
 
 Exact concurrent counter results additionally need conserved contribution
 accounting connected to the invariant. Existing `Count` does not itself supply

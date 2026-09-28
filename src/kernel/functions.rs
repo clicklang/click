@@ -18659,6 +18659,97 @@ fn instance_body_evaluation(
     Ok(evaluation)
 }
 
+/// Exact conditional guard ingredient of a loop-owned instance. This is a
+/// projection of its checked definition, not authority manufactured from a
+/// mutex address. More general bodies retain the existing strict loop rule.
+pub(super) fn loop_instance_guard(
+    state: &CState,
+    instance: &ResourceInstance,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
+) -> Result<Option<(Pointer, ConditionTerm)>, String> {
+    let Ok(index) = definitions.binary_search_by(|d| {
+        crate::instrumentation::record_deterministic_work(1);
+        d.name().cmp(instance.name())
+    }) else {
+        return Ok(None);
+    };
+    let definition = &definitions[index];
+    if index
+        .checked_sub(1)
+        .and_then(|i| definitions.get(i))
+        .is_some_and(|d| d.name() == instance.name())
+        || definitions
+            .get(index + 1)
+            .is_some_and(|d| d.name() == instance.name())
+    {
+        return Err("loop guard resource has conflicting definitions".into());
+    }
+    if !definition.contains_mutex_authority || definition.matched.is_some() {
+        return Ok(None);
+    }
+    let [spec] = definition.contains.as_slice() else {
+        return Ok(None);
+    };
+    let CResourceTerm::MutexGuard { mutex, snapshot } = spec.term() else {
+        return Ok(None);
+    };
+    let Some(condition) = definition.condition() else {
+        return Ok(None);
+    };
+    if !definition.children.is_empty()
+        || !definition.witnesses.is_empty()
+        || definition.instance_schema.as_ref() != Some(instance.schema())
+        || spec.guard().is_some()
+        || spec.access() != CResourceAccessMode::Own
+        || spec.quantity() != &CResourceQuantity::One
+        || !definition.facts.is_empty()
+        || definition.recursive
+        || definition.counted_population
+        || definition.parameters.len() != instance.arguments().len()
+        || *snapshot != CResourceSnapshot::Current
+        || spec.snapshot() != CResourceSnapshot::Current
+        || spec.role() != CResourceTransferRole::Consume
+    {
+        return Err("conditional loop guard requires a direct guard resource body".into());
+    }
+    let evaluation = instance_body_evaluation(state, instance, definition)?;
+    let mut budget = ExecutionBudget::beside_live_state();
+    let paths = lower_spec_proposition_at_state_with_loop_entry(
+        &evaluation,
+        condition,
+        None,
+        assumptions,
+        &mut budget,
+    )
+    .map_err(|_| "could not evaluate loop guard condition")?;
+    let [path] = paths.as_slice() else {
+        return Err("conditional loop guard requires one model condition".into());
+    };
+    if !path
+        .obligations
+        .iter()
+        .all(|o| required_obligation_is_exactly_discharged(assumptions, o.proposition()))
+    {
+        return Err("Requires the loop guard model condition to be defined".into());
+    }
+    let Proposition::ConditionIs(held, true) = &path.proposition else {
+        return Err("conditional loop guard currently requires a positive model comparison".into());
+    };
+    let pointer = evaluate_loop_effect_segment_value(
+        &evaluation,
+        mutex,
+        assumptions,
+        "loop guard mutex",
+        &mut budget,
+    )
+    .map_err(|_| "could not evaluate loop guard mutex")?;
+    let Ok(CValue::Pointer(pointer)) = pointer else {
+        return Err("loop guard requires a mutex pointer".into());
+    };
+    Ok(Some((pointer.pointer().clone(), held.clone())))
+}
+
 pub(in crate::kernel) fn instance_body_guard_case(
     state: &CState,
     instance: &ResourceInstance,

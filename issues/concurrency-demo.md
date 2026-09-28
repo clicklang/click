@@ -67,23 +67,23 @@ still needed before this proves the concurrent counter.
 
 `held(&mutex)` is a checked fact about the current path's guard. Straight-line
 lock/unlock and loops that restore the same mutex ownership at every loop
-head verify. The [quarantined parity probe](../design/concurrency-probes/mutex_held_parity.c)
-is ordinary C that alternates lock and unlock according to the loop index,
-then releases any final guard and destroys the mutex. It has no Click sidecar
-or passing proof. At its loop head, whether the guard is held depends on the
-index parity. The current loop state has one concrete mutex status, so the
-backedge cannot express that relation for arbitrary `n`.
+head verify. The unchanged [parity probe](../design/concurrency-probes/mutex_held_parity.c)
+now has a [verified sidecar](../design/concurrency-probes/mutex_held_parity.click)
+for every `int32 n` under the modeled runtime. Its ordinary conditional
+resource owns a guard exactly when the loop's parity field is one, and its
+loop invariant relates that field to `i % 2`. The loop rule checks actual
+custody at entry and on each backedge before abstracting the acquisition.
+The final conditional unlock and destruction verify. False parity and
+unguarded-unlock regressions fail, and the normal gate pins the C source.
 
-The next mutex-state design needs a checked conditional guard state: establish
-its relation to `i` at entry and on every backedge, narrow it on each branch,
-and never manufacture unlock authority at a join. It should reject a false
-parity claim and an unlock on a path without the guard. Mutex lifecycle also
-needs an explicit connection to the storage holding `pthread_mutex_t`:
-initialization and destruction are separate from allocation and freeing, and
-the current ledger does not establish that the storage remains live for every
-initialized mutex. Returning a held guard is currently refused; a design for
-transferring it through a function contract remains open. These are distinct
-from the shared lock protocol required by the concurrent counter.
+This completes the first near-term milestone, not shared mutation. The
+implemented loop slice requires an empty initialized mutex and an owned
+lifetime; it supports a direct conditional guard body with a scalar condition.
+Protected payloads, use-loan-backed loop acquisitions, and joins that change
+mutex receipts remain separate work. The second milestone is the frozen
+shared-worker counter below. After both demonstrations, review what was
+implemented, what was designed, and what the proofs actually used before
+expanding the resource interface further.
 
 ## Remaining work
 
@@ -236,9 +236,10 @@ Direct named guard clauses and consumed/produced guards still require the
 full abstract acquisition binding and transition model. The current symbolic
 form is restricted to helpers whose mutex protocols cannot change. Calls
 without preserving guard inputs remain refused while protocols are live.
-Lock-changing helpers and loop joins across acquisition epochs remain open
-before the unchanged parity loop can verify. Protocol lifecycle and shared
-interference are also still open.
+Lock-changing helpers remain open. The bounded conditional-loop checkpoint
+above now allows a declared guard resource to carry a fresh acquisition across
+a backedge while preserving its initialization. Shared interference remains
+open.
 
 ## Acceptance
 

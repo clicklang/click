@@ -15,16 +15,31 @@ workers mutate the same ordinary cell under one lock. The
 interference rules needed to verify it; the current one-path mutex escrow
 still refuses worker creation while that mutex is initialized.
 
-The [mutex parity source](mutex_held_parity.c) is a quarantined C probe for a
-smaller open proof boundary. For a successful initialization and valid mutex
-operations, its loop holds the mutex exactly when `i` is odd, then unlocks
-and destroys it before returning. The source is intentionally outside the
-example and mdtest gates: no Click sidecar proves it yet. The current loop
-checker carries one concrete mutex ownership status at a loop head and cannot
-represent this conditional status. Future proof work should keep these C
-bytes fixed and establish the parity relation for arbitrary `n`, including
-zero and both final parities. It must also reject a false parity relation or
-an unlock on an unheld path.
+The unchanged [mutex parity source](mutex_held_parity.c) and its
+[sidecar](mutex_held_parity.click) now verify under the modeled pthread
+runtime for every `int32 n`, including negative values, zero, both final
+parities, and the largest positive value. A conditional resource owns
+`mutex_guard` when its `parity` field is one; the loop invariant relates that
+field to `i % 2`. Each iteration returns the required ownership with a fresh
+acquisition when appropriate. The final conditional unlock and destruction
+verify as well. The normal example test gate checks the sidecar and pins the
+original C bytes.
+
+This first milestone covers an initialized empty mutex whose lifetime is owned
+locally. It does not demonstrate shared-worker interference or protected
+payload transfer. Conditional loop abstraction currently supports one direct
+guard ingredient under a scalar model comparison. Nonempty mutex invariants,
+use-loan-backed acquisitions, nested/matched guard wrappers, and joins of exits
+with different mutex receipts remain outside this slice. Other mutexes retain
+the strict protocol comparison; the loop cannot silently change their state.
+
+Hostile regressions reject a false parity invariant and an unguarded unlock.
+Kernel tests additionally reject missing or extra guard custody, stale
+acquisitions, changed initialization, outstanding use loans, and changes to
+framed mutexes. Deterministic scaling tests vary unrelated definitions,
+resources, and mutexes. The next milestone is the shared-worker counter above;
+after that proof, compare the implemented resource machinery with the design
+and with the abstractions the two demonstrations actually needed.
 
 ## Binding direction
 
