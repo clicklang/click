@@ -90,9 +90,14 @@ infer exact offset equality from equal wrapping residues.
 The legacy Boolean scalar query is not interchangeable with the graph yet.
 Some callers use it while reasoning about exact pointer offsets, where a
 wrapping int32 equality is insufficient. Migrating those callers requires an
-explicit distinction between residue equality and exact-offset equality. The
-regression `wrapped_index_sum_does_not_decide_pointer_offsets_equal` protects
-that boundary. Keep this migration separate from admitting checked premises.
+explicit distinction between residue equality and exact-offset equality.
+Memory resolution now checks that both rebuilt indices are exact before a
+positive residue equality can prove an offset equality; unequal residues can
+still refute one. The regression
+`wrapped_index_sum_does_not_decide_pointer_offsets_equal` and direct
+memory-resolution tests protect that boundary for explicit scalar facts and
+multiple element widths. Keep the graph-query migration separate from this
+repair and audit its other consumers before replacing the legacy query.
 
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact

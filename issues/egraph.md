@@ -242,6 +242,13 @@ graph proves. The existing wrapped-index regression caught this boundary;
 the broader replacement was discarded. A future consumer migration must make
 the exact-offset versus residue-equality contract explicit first.
 
+Memory resolution now applies the existing exact-index rebuild check when it
+uses a scalar equality to affirm an offset equality. This closes a preexisting
+hole for explicitly asserted wrapping scalar equalities, independent of graph
+integration. The same tests show that nonwrapping equalities still work at
+element widths 1, 4, and 8. The broader scalar-query migration remains future
+work because its other consumers still need review.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
