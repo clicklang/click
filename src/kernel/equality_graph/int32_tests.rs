@@ -222,6 +222,99 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
+fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
+    let _session = VerificationSession::enter();
+    let pointer = |offset| Pointer {
+        block: "two-resolved-int32".into(),
+        offset: PointerOffsetTerm::Constant(offset),
+    };
+    let (a, b) = (var(41), var(42));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let left_pointer = pointer(0);
+    let right_pointer = pointer(4);
+    let before = intern_c_memory(
+        CMemory::new()
+            .with_block("two-resolved-int32", 8)
+            .store(left_pointer.clone(), CValue::Int32(sum(a.clone())))
+            .store(right_pointer.clone(), CValue::Int32(sum(b.clone()))),
+    );
+    let after = intern_c_memory(before.memory().clone().store(
+        right_pointer.clone(),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let byte_memory = intern_c_memory(
+        CMemory::new()
+            .with_block("two-resolved-int32", 8)
+            .store(right_pointer.clone(), CValue::UInt8(sum(b.clone()))),
+    );
+    let load = |memory: &SharedCMemory, pointer: &Pointer, width| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory, pointer, width, memory,
+        ))
+    };
+    let left = load(&before, &left_pointer, 4);
+    let right = load(&before, &right_pointer, 4);
+    let overwritten = load(&after, &right_pointer, 4);
+    let byte_load = load(&byte_memory, &right_pointer, 1);
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    assert_eq!(branch.resolve_memory_load_term(&left), Some(sum(a)));
+    assert_eq!(branch.resolve_memory_load_term(&right), Some(sum(b)));
+    assert!(branch.resolve_memory_load_term(&byte_load).is_some());
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(branch.memory_loads_proven_equal(&left, &right));
+    assert!(branch.memory_loads_proven_equal(&right, &left));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!branch.memory_loads_proven_equal(&left, &overwritten));
+    assert!(!branch.memory_loads_proven_equal(&left, &byte_load));
+    assert!(!parent.memory_loads_proven_equal(&left, &right));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(!withdrawn.memory_loads_proven_equal(&left, &right));
+}
+
+#[test]
+fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let pointer = |offset| Pointer {
+            block: "two-resolved-int32-scale".into(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let memory = intern_c_memory(
+            CMemory::new()
+                .with_block("two-resolved-int32-scale", 8)
+                .store(pointer(0), CValue::Int32(sum(var(0))))
+                .store(pointer(4), CValue::Int32(sum(var(size)))),
+        );
+        let load = |offset| {
+            Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+                &memory,
+                &pointer(offset),
+                4,
+                &memory,
+            ))
+        };
+        let (left, right) = (load(0), load(4));
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
+        }
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                assert!(context.memory_loads_proven_equal(&left, &right));
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 250 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     let _session = VerificationSession::enter();
     let before = intern_c_memory(CMemory::new().with_block("int32", 16));

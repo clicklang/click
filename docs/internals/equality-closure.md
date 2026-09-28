@@ -146,6 +146,12 @@ frame permission. Other load widths keep their existing comparison path.
 Regressions cover both comparison directions, a changed snapshot, withdrawn
 premises, a one-byte load, and multi-size query work.
 
+When both operands are resolved four-byte loads, the same path compares their
+checked stored values through the graph before searching the legacy fact
+index. Neither load's opaque name needs to equal the other load's stored term.
+Each value still comes from its own recorded snapshot. Changed or withdrawn
+evidence and a resolved one-byte read do not use this two-load rule.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads

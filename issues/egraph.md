@@ -296,6 +296,12 @@ permission. Other widths keep the existing path. Regressions cover both
 directions, overwritten and withdrawn evidence, a one-byte load, and multi-size
 queries without building the legacy fact index.
 
+Two resolved four-byte loads now compare their checked stored values through
+the int32 graph before the legacy fact index. This handles distinct load names
+whose values are graph-congruent, without merging their snapshots or widening
+the rule to other widths. Regressions cover withdrawal, overwrite, a resolved
+one-byte load, and multi-size query work.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

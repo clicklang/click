@@ -88,27 +88,40 @@ impl PureFactContext {
         if checked_load_equality(left, right) {
             return true;
         }
+        // This resolver also handles 8-bit, 16-bit, and 64-bit loads. Only a
+        // load recorded as four bytes may use the int32 graph for its value.
+        let is_four_byte_load = |load: &Bitvector32Term| match load {
+            Bitvector32Term::Variable(variable) => {
+                crate::kernel::registered_load_bytes_for_variable(variable) == Some(4)
+            }
+            Bitvector32Term::MemoryLoad(memory, pointer) => {
+                crate::kernel::eval::recorded_load_access_width(memory, pointer) == Some(4)
+            }
+            _ => false,
+        };
         let graph_proves_resolved_int32 =
             |load: &Bitvector32Term, resolved: &Bitvector32Term, other: &Bitvector32Term| {
-                // This resolver also handles 8-bit, 16-bit, and 64-bit loads.
-                // Only a load recorded as four bytes may use the int32 graph.
-                let width = match load {
-                    Bitvector32Term::Variable(variable) => {
-                        crate::kernel::registered_load_bytes_for_variable(variable)
-                    }
-                    Bitvector32Term::MemoryLoad(memory, pointer) => {
-                        crate::kernel::eval::recorded_load_access_width(memory, pointer)
-                    }
-                    _ => None,
-                };
-                width == Some(4)
+                is_four_byte_load(load)
                     && self.equality_graph.has_term_equivalences()
                     && self.equality_graph.are_int32_equal(resolved, other)
             };
         if let Some(resolved_left) = self.resolve_memory_load_term(left) {
-            return resolved_left == *right
-                || graph_proves_resolved_int32(left, &resolved_left, right)
-                || self.bitvector_terms_equal_from_facts(&resolved_left, right)
+            if resolved_left == *right || graph_proves_resolved_int32(left, &resolved_left, right) {
+                return true;
+            }
+            // Two checked resolutions may reveal equal stored values even
+            // when neither value equals the other load's opaque name.
+            if is_four_byte_load(left)
+                && is_four_byte_load(right)
+                && self.equality_graph.has_term_equivalences()
+                && let Some(resolved_right) = self.resolve_memory_load_term(right)
+                && self
+                    .equality_graph
+                    .are_int32_equal(&resolved_left, &resolved_right)
+            {
+                return true;
+            }
+            return self.bitvector_terms_equal_from_facts(&resolved_left, right)
                 || checked_load_equality(&resolved_left, right);
         }
         if let Some(resolved_right) = self.resolve_memory_load_term(right) {
