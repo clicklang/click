@@ -7184,6 +7184,12 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         for spec in contains {
+            // Abstract tokens own no memory, regardless of their quantity.
+            // Footprint discovery need not prove that quantity nonnegative;
+            // the actual resource exchange still checks it.
+            if matches!(spec.term(), CResourceTerm::Token { .. }) {
+                continue;
+            }
             let Ok(Ok(fact)) = evaluate_function_resource_spec(
                 &evaluation,
                 spec,
@@ -17734,13 +17740,65 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     {
         return Err("child selection must name every selected arm child exactly once".into());
     }
+    let body_specs: &[CResourceSpec] = if active {
+        selected.map_or(&definition.contains, |arm| &arm.contains)
+    } else {
+        &[]
+    };
+    // An owned instance contains well-formed owned quantities. Opening it
+    // may therefore expose their nonnegativity, just as it exposes owned
+    // memory bounds. A proposed fold has no such authority: its quantities
+    // must be proved nonnegative and actually consumed below.
+    let entry_assumptions = assumptions;
+    let mut quantity_assumptions = assumptions.clone();
+    let mut quantity_facts = Vec::new();
+    if unfold {
+        for resource in body_specs {
+            let CResourceQuantity::Count(quantity) = resource.quantity() else {
+                continue;
+            };
+            // A false clause guard owns no quantity at all. Decide the
+            // guard before deriving anything from this clause, using the
+            // same checked selection as ordinary resource evaluation.
+            if !resource_spec_guard_is_active(
+                &evaluation,
+                &evaluation,
+                resource,
+                &quantity_assumptions,
+                &mut budget,
+            )
+            .map_err(|_| "instance quantity guard evaluation exceeded its budget")?
+            .map_err(|_| "instance quantity requires a proved clause guard case")?
+            {
+                continue;
+            }
+            let value = evaluate_loop_effect_segment_value(
+                &evaluation,
+                quantity,
+                &quantity_assumptions,
+                "instance body quantity",
+                &mut budget,
+            )
+            .map_err(|_| "instance body quantity evaluation exceeded its budget")?
+            .map_err(|_| "could not evaluate instance body quantity")?;
+            let CValue::Int32(quantity) = value else {
+                return Err("instance body quantity must have type int32".into());
+            };
+            let fact = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedGreaterEqual(
+                    Box::new(quantity),
+                    Box::new(Bitvector32Term::Constant(0)),
+                ),
+                true,
+            );
+            quantity_assumptions = quantity_assumptions.assume_proposition(fact.clone());
+            quantity_facts.push(fact);
+        }
+    }
+    let assumptions = &quantity_assumptions;
     let mut body = evaluate_function_resource_context_with_normalization(
         &evaluation,
-        if active {
-            selected.map_or(&definition.contains, |arm| &arm.contains)
-        } else {
-            &[]
-        },
+        body_specs,
         // A resource body is rewritten against its own declared memory only;
         // expanding a contained composite here would hand the body read
         // authority it has not opened.
@@ -17940,6 +17998,7 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     };
     evaluation.resource_bindings = Some(std::sync::Arc::new(resource_bindings));
     let mut facts = body.observable_facts_assuming_valid(assumptions);
+    facts.extend(quantity_facts);
     for fact in body.facts() {
         let Some(range) = fact.memory_range() else {
             continue;
@@ -18007,7 +18066,9 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     let semantic_facts = if unfold {
         facts
             .into_iter()
-            .filter(|fact| !assumptions.states_required_goal(fact) && seen.insert(fact.clone()))
+            .filter(|fact| {
+                !entry_assumptions.states_required_goal(fact) && seen.insert(fact.clone())
+            })
             .collect()
     } else {
         Vec::new()
@@ -18492,7 +18553,8 @@ fn check_unmatched_instance_children(
 /// Whether an instance body's unnamed clauses can move as a whole on fold and
 /// unfold: owned memory and owned, field-free declared resources. A declared
 /// resource stays folded inside the body, exactly as the parent's caller
-/// would hold it; a view or quantity is refused.
+/// would hold it. Quantities use the ordinary checked resource evaluation
+/// and exact consumption rules; views cannot be exchanged as ownership.
 fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
     contains.iter().all(|body| {
         !body.is_view()
@@ -18502,9 +18564,7 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 | ResourceFamily::MutexGuard
                 | ResourceFamily::MutexLive
                 | ResourceFamily::MutexUse => true,
-                ResourceFamily::Composite | ResourceFamily::Token => {
-                    matches!(body.quantity(), CResourceQuantity::One)
-                }
+                ResourceFamily::Composite | ResourceFamily::Token => true,
                 ResourceFamily::Instance | ResourceFamily::OpaqueParameter => false,
             }
     })

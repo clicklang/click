@@ -1339,6 +1339,17 @@ fn resource_body_fields_as_parameters(
     }));
     let mut view = body.clone();
     view.fields = other;
+    view.contains = body
+        .contains
+        .iter()
+        .map(|resource| {
+            crate::surface::verification::substitute_resource_clause_for_summary_in(
+                resource,
+                &substitutions,
+            )
+        })
+        .collect::<Result<_, _>>()
+        .map_err(ClickError::new)?;
     view.condition = body
         .condition
         .as_ref()

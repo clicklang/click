@@ -475,6 +475,50 @@ fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition,
     (instance, definition, state)
 }
 
+#[test]
+fn inactive_instance_quantity_does_not_imply_nonnegativity() {
+    let (mut instance, mut definition, _) = instance_memory_fixture();
+    instance.fields = vec![int32(u32::MAX).into()].into();
+    let unit = CResourceSpec::declared(
+        ResourceFamily::Token,
+        CResourceAccessMode::Own,
+        "credit".into(),
+        vec![],
+        vec![],
+        CResourceTransferRole::Consume,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    definition.contains = vec![
+        CResourceSpec::quantified(
+            c_variable("value"),
+            unit,
+            CResourceTransferRole::Consume,
+            CResourceSnapshot::Current,
+        )
+        .unwrap()
+        .with_guard(SpecProposition::Comparison {
+            left: SpecExpression::CExpression(c_int32_literal(0)),
+            operator: CComparisonOperator::Equal,
+            right: SpecExpression::CExpression(c_int32_literal(1)),
+        }),
+    ];
+    let assumptions = PureFactContext::new();
+    let (folded, _) =
+        rewrite_resource_instance(&CState::new(), &instance, &definition, &assumptions, false)
+            .unwrap();
+    let (opened, facts) =
+        rewrite_resource_instance(&folded, &instance, &definition, &assumptions, true).unwrap();
+    assert!(opened.resources().is_empty());
+    assert!(!facts.contains(&Proposition::ConditionIs(
+        ConditionTerm::Bitvector32SignedGreaterEqual(
+            Box::new(Bitvector32Term::Constant(u32::MAX)),
+            Box::new(Bitvector32Term::Constant(0)),
+        ),
+        true,
+    )));
+}
+
 fn recursive_child_fixture() -> (ResourceInstance, CCompositeResourceDefinition, CState) {
     let (mut instance, mut definition, _) = instance_memory_fixture();
     let tree = AlgebraicValueType::Algebraic {

@@ -1,9 +1,46 @@
 # Shared counter accounting: next language boundary
 
-Status: proposal for review, not implemented syntax or verified code. The
+Status: shelved proposal, not implemented syntax or verified code. First test
+the ordinary-resource approach; this document is not an implementation plan. The
 unchanged counter already verifies for safety. Its exact final value requires
 shared accounting that the current sequential population mechanism cannot
 supply.
+
+## Ordinary-resource experiment
+
+Existing syntax can express a bundle of credits:
+
+```click
+abstract resource increment_credit(p: struct mutex_counter*);
+resource credits(p: struct mutex_counter*) {
+    field amount: int32;
+    owns amount of increment_credit(p);
+}
+```
+
+A scalar model field can supply the quantity. Folding consumes the actual
+credits and checks nonnegativity; unfolding an owned bundle recovers them.
+Flat ordinary tokens, including symbolic quantities, can also be ingredients
+of the mutex-protected resource. They add no memory footprint.
+
+The regressions `resource_model_quantity.md` and
+`mutex_use_preserves_resource_quantity.md` exercise these existing operations.
+No count-authority primitive or new surface notation is involved.
+
+The attempted deposit invariant relates the C counter to the number of
+protected credits and bounds both by two. A worker consumes one external
+credit and deposits it while incrementing. It reaches the obligation
+`credits + 1 <= 2`, which does not follow from `credits <= 2` and ownership of
+one external credit. That contract allows two credits inside and another
+outside. `mutex_resource_quantity_requires_conservation.md` preserves this
+expected failure against the unchanged C.
+
+Abstract credits also need an initial source: verified code cannot freely
+mint them. Assuming two credits from a caller is a useful experiment, but
+does not discharge the original parent's memory-only precondition. These
+are the remaining conservation and initialization questions. This experiment
+does not establish that the interface proposed below is necessary; it remains
+shelved pending a smaller ordinary-resource solution.
 
 ## Proposed resource interface
 

@@ -7385,6 +7385,29 @@ fn resource_clause_to_resource_spec_for_body(
     parameters: &[syntax::C0Parameter],
     result_type: Option<crate::kernel::CType>,
 ) -> Result<CResourceSpec, ClickError> {
+    // Scalar model fields are bound by the instance-body evaluator, just as
+    // they are for memory endpoints and child arguments. Keep this spelling
+    // local to bodies: a field read in an ordinary contract still requires
+    // the named instance's authority.
+    let lowered_quantity;
+    let resource = if let ResourceClause::Quantified { quantity, resource } = resource {
+        let no_values = BTreeMap::new();
+        let substitutions =
+            crate::surface::lowering::ContractSubstitutions::with_body_fields_as_c_names(
+                &no_values,
+            );
+        lowered_quantity = ResourceClause::Quantified {
+            quantity: crate::surface::lowering::substitute_contract_expression_in(
+                quantity,
+                &substitutions,
+            )
+            .map_err(ClickError::new)?,
+            resource: resource.clone(),
+        };
+        &lowered_quantity
+    } else {
+        resource
+    };
     let role = match resource {
         ResourceClause::Conditional { .. } => {
             return Err(ClickError::new(

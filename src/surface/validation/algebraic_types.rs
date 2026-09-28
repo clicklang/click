@@ -240,6 +240,36 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 contains.push(resource.clone());
                 continue;
             }
+            ResourceClause::Quantified {
+                resource: inner, ..
+            } => {
+                let ResourceClause::Declared {
+                    access: ResourceAccessMode::Own,
+                    name,
+                    resource_type_arguments,
+                    ..
+                } = inner.as_ref()
+                else {
+                    return Err(ClickError::new(
+                        "resource body quantities require owned declared resources",
+                    ));
+                };
+                if !resource_type_arguments.is_empty()
+                    || resources(name).is_some_and(|child| !child.fields().is_empty())
+                {
+                    return Err(ClickError::new(
+                        "resource body quantities require field-free declared resources",
+                    ));
+                }
+                contains.push(
+                    crate::surface::verification::substitute_resource_clause_for_summary_in(
+                        resource,
+                        &field_names,
+                    )
+                    .map_err(ClickError::new)?,
+                );
+                continue;
+            }
             ResourceClause::Declared {
                 type_schema,
                 resource_type_arguments,
