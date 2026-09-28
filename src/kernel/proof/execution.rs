@@ -749,10 +749,26 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 delta_proofs: Arc::new(checked),
             });
         }
-        if before_state
-            .resources()
-            .directly_supporting_fact(selected, assumptions)
-            .is_none()
+        if definition.is_counted_population()
+            && selected.is_own()
+            && !selected.has_proven_positive_quantity(assumptions)
+        {
+            return Err("population body access requires a positive owned quantity".into());
+        }
+        let population_residual = definition
+            .is_counted_population()
+            .then(|| {
+                before_state
+                    .resources()
+                    .clone()
+                    .without_fact_incrementally(selected, assumptions)
+            })
+            .flatten();
+        if population_residual.is_none()
+            && before_state
+                .resources()
+                .directly_supporting_fact(selected, assumptions)
+                .is_none()
             && after_state
                 .resources()
                 .directly_supporting_fact(selected, after_facts.assumptions())
@@ -761,6 +777,77 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             return Err(
                 "the rewritten composite is absent from both resource representations".to_string(),
             );
+        }
+        // A destructive population unfold must recover the body only from
+        // the entire owned population. An `open` retains membership and has
+        // its own ordered restoration scope instead.
+        let mut population_cleanup_matches = false;
+        if definition.is_counted_population()
+            && selected.is_own()
+            && let Some(residual) = &population_residual
+            && before_state.population_access == after_state.population_access
+            && after_state
+                .resources()
+                .directly_supporting_fact(selected, assumptions)
+                .is_none()
+        {
+            let (_, _, total) = before_state
+                .counted_population_proven_equal(name, arguments, assumptions)
+                .ok_or("population cleanup requires an active population")?;
+            let quantity = selected
+                .owned_quantity_term()
+                .ok_or("population cleanup requires ownership")?;
+            if !selected.has_proven_positive_quantity(assumptions)
+                || !crate::kernel::api::contract_certification::certification_proves_proposition(
+                    assumptions,
+                    &Proposition::ConditionIs(
+                        crate::kernel::ConditionTerm::Bitvector32Equal(
+                            Box::new(total),
+                            Box::new(quantity.clone()),
+                        ),
+                        true,
+                    ),
+                )
+            {
+                return Err("population cleanup requires ownership of its entire count".into());
+            }
+            if before_state.population_body_is_open(name, arguments, assumptions) {
+                return Err("close the open population body before cleanup".into());
+            }
+            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let body = crate::kernel::functions::expand_composite_resource_fact(
+                &singleton,
+                selected,
+                std::slice::from_ref(&definition),
+                before_state.memory(),
+                assumptions,
+            )
+            .ok_or("population cleanup requires its checked body")?;
+            let expected = residual
+                .clone()
+                .try_compose_with_facts_delaying_normalization(
+                    body.facts().iter().cloned(),
+                    assumptions,
+                )
+                .map_err(|_| "population cleanup has overlapping body ownership")?;
+            population_cleanup_matches =
+                expected.same_exchange_from(after_state.resources(), before_state.resources());
+            if !population_cleanup_matches {
+                return Err(
+                    "population cleanup must exchange all owned units for exactly its body".into(),
+                );
+            }
+            if let Some(ledger) = before_state.loan_ledger() {
+                for child in body.facts() {
+                    if let Some(range) = child.memory_own_range() {
+                        ledger
+                            .permits_memory_access_with_assumptions(range, assumptions)
+                            .map_err(
+                                |_| "population cleanup requires its body free of active borrows",
+                            )?;
+                    }
+                }
+            }
         }
         let access_key = before_state
             .counted_population_proven_equal(name, arguments, assumptions)
@@ -797,6 +884,13 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             );
         }
         let expansion_matches = |folded: &CState, exposed: &CState| {
+            if definition.is_counted_population()
+                && selected.is_own()
+                && std::ptr::eq(folded, before_state)
+                && !population_cleanup_matches
+            {
+                return false;
+            }
             let Some(authority) = folded
                 .resources()
                 .directly_supporting_fact(selected, assumptions)
@@ -829,6 +923,12 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             )
         };
         let open_borrow_matches = |folded: &CState, opened: &CState| {
+            if definition.is_counted_population()
+                && selected.is_own()
+                && before_state.population_access == after_state.population_access
+            {
+                return false;
+            }
             let Some(authority) = folded
                 .resources()
                 .directly_supporting_fact(selected, assumptions)
@@ -860,6 +960,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             resource_contexts_match_modulo_redundant_views(&expected, &actual, assumptions)
         };
         if before_state.resources() != after_state.resources()
+            && !population_cleanup_matches
             && !expansion_matches(before_state, after_state)
             && !expansion_matches(after_state, before_state)
             && !open_borrow_matches(before_state, after_state)

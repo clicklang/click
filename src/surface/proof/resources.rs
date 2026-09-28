@@ -3048,6 +3048,10 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     };
     let mut abstract_resource =
         lower_resource_clause_at_state(resource, parameters, arguments, &state)?;
+    let requested_quantity = abstract_resource
+        .owned_quantity_term()
+        .cloned()
+        .unwrap_or(Bitvector32Term::Constant(1));
     let assumptions = available_pure_facts.assumptions().clone();
     if let Some(authority) = state
         .resources()
@@ -3133,18 +3137,25 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         return Err(ClickError::new("population body is already open"));
     }
     if access == ResourceBodyAccess::Finalize {
+        let quantity = requested_quantity;
         let count = population_count;
         let final_unit = Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(
-                Box::new(count),
-                Box::new(Bitvector32Term::Constant(1)),
-            ),
+            ConditionTerm::Bitvector32Equal(Box::new(count), Box::new(quantity)),
             true,
         );
         if !assumptions.proves(&final_unit) {
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `unfold({})` can finalize only a population whose count is proved equal to 1",
-                describe_resource_clause(resource)
+                "`{claim_label}` tactic {tactic_index}: `unfold({})` Requires count({}) == {}",
+                describe_resource_clause(resource),
+                describe_resource_clause(match resource {
+                    ResourceClause::Quantified { resource, .. } => resource,
+                    _ => resource,
+                }),
+                match resource {
+                    ResourceClause::Quantified { quantity, .. } =>
+                        describe_contract_expression(quantity),
+                    _ => "1".to_string(),
+                }
             )));
         }
     }
@@ -3169,7 +3180,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 state
                     .resources()
                     .clone()
-                    .without_fact(&abstract_resource, &assumptions)
+                    .without_fact_incrementally(&abstract_resource, &assumptions)
             })
     };
     let already_unfolded = folded_resources.is_none();
@@ -4554,7 +4565,9 @@ fn composite_resource_law_definition<'a>(
     tactic_index: usize,
 ) -> Result<&'a ResourceDefinition, ClickError> {
     let resource = match resource {
-        ResourceClause::Quantified { resource, .. } if matches!(action, "fold" | "observe") => {
+        ResourceClause::Quantified { resource, .. }
+            if matches!(action, "fold" | "unfold" | "observe") =>
+        {
             resource.as_ref()
         }
         _ => resource,

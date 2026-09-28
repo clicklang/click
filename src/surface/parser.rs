@@ -5859,9 +5859,30 @@ impl Parser {
             }
             "unfold" => {
                 self.expect(Token::LParen)?;
-                let mut tactic = if self
-                    .peek_ident()
-                    .is_some_and(|name| self.current_resource_targets.contains_key(name))
+                // Look ahead without parsing: parsing an expression may split
+                // generic `>>` tokens, so rewinding only the cursor is unsafe.
+                let mut depth = 0usize;
+                let mut quantified = false;
+                for token in &self.tokens[self.position..] {
+                    match token {
+                        Token::LParen | Token::LBracket | Token::LBrace => depth += 1,
+                        Token::RParen | Token::RBracket | Token::RBrace => {
+                            if depth == 0 {
+                                break;
+                            }
+                            depth -= 1;
+                        }
+                        Token::Ident(name) if depth == 0 && name == "of" => {
+                            quantified = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                let mut tactic = if quantified
+                    || self
+                        .peek_ident()
+                        .is_some_and(|name| self.current_resource_targets.contains_key(name))
                 {
                     ProofTactic::UnfoldResource(self.parse_owned_resource_target()?)
                 } else if matches!(self.peek(), Some(Token::Ident(_)))

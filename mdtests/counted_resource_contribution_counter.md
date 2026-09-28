@@ -19,6 +19,16 @@ unsigned int sequential(struct counter *p) {
     contribute(p);
     return p->value;
 }
+unsigned int cleanup_known(struct counter *p, int n) { return p->value; }
+unsigned int cleanup_three(struct counter *p) {
+    p->value = 0u;
+    return p->value;
+}
+unsigned int cleanup_two(struct counter *p) {
+    p->value = 0u;
+    contribute(p);
+    return p->value;
+}
 unsigned int local_initialize(struct counter *p) {
     p->value = 0u;
     contribute(p);
@@ -72,6 +82,38 @@ uint32 sequential(struct counter* p) {
     step();
     step();
     unfold(remaining(p));
+    step();
+    simp();
+}
+uint32 cleanup_known(struct counter* p, int32 n) {
+    consumes n of remaining(p);
+    requires n > 0;
+    requires count(remaining(p)) == n;
+    produces p->value;
+    ensures result == 3 - n;
+} by {
+    unfold(n of remaining(p));
+    step();
+    simp();
+}
+uint32 cleanup_three(struct counter* p) {
+    owns p->value;
+    ensures result == 0;
+} by {
+    step();
+    fold(3 of remaining(p));
+    unfold(3 of remaining(p));
+    step();
+    simp();
+}
+uint32 cleanup_two(struct counter* p) {
+    owns p->value;
+    ensures result == 1;
+} by {
+    step();
+    fold(3 of remaining(p));
+    step();
+    unfold(2 of remaining(p));
     step();
     simp();
 }

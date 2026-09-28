@@ -72,7 +72,7 @@ is part of this design.
 ## What actually verifies today
 
 `mdtests/counted_resource_contribution_counter.md` is a passing sequential
-control. Its four verified functions:
+control. Its seven verified functions:
 
 1. Write zero and produce three `remaining` units by folding the memory body.
 2. Preserve one unit and consume another while incrementing the uint32 value.
@@ -80,6 +80,12 @@ control. Its four verified functions:
    the returned value is exactly two.
 4. Initialize directly after the C assignment with `fold(3 of remaining(p))`,
    call the two contributions, and again prove the returned value is two.
+5. Initialize and recover all three units with `unfold(3 of remaining(p))`,
+   proving the untouched value is zero.
+6. Make one contribution, recover the two remaining units with
+   `unfold(2 of remaining(p))`, and prove the value is one.
+7. Recover a positive symbolic quantity `n` using `unfold(n of remaining(p))`
+   when the contract supplies ownership and proves `count(remaining(p)) == n`.
 
 The arithmetic proof explicitly establishes that subtracting one leaves at
 least one unit and preserves the body equality. Existing population transitions
@@ -146,6 +152,40 @@ protocol. Merely holding a unit must not expose memory or current Count facts
 outside the lock. Do not remove thread confinement globally or freshly invent
 the population when acquiring a wrapper.
 
+## Early consumption probe and pending scope decision
+
+The accounting gap is reproducible without pthreads. For a function that
+increments the value and then returns it, this proof fails at scope closure:
+
+```text
+// Function contract: owns remaining(p); consumes remaining(p);
+open(remaining(p)) {
+    step(); // the existing C increment
+}
+step(); // the existing C return
+```
+
+At closure the body requires `p->value == 3 - count(remaining(p))`, but the
+increment established `p->value == 3 - (entry_count - 1)` and current Count
+still denotes `entry_count`. The sequential control succeeds because its
+`execute()` reaches the return inside the open scope. Unlock must happen before
+return, so return-time accounting cannot establish the mutex invariant.
+
+Proposed existing-syntax rule, pending review: closing an open body may discharge
+an outstanding `consumes` effect from the enclosing function contract when that
+is needed to restore the invariant. The checked event must consume the actual
+units, preserve the live body, validate its invariant at the decreased total,
+and record the effect so return certification cannot apply it twice. Restoring
+the invariant without consumption remains the first choice. An alternative is
+an explicit proof statement selecting the consumption point; no such notation
+has been added.
+
+A separate classification limitation rejects a guarded exclusive wrapper whose
+model fact mentions `count(remaining(p))`: it currently treats any Count mention
+as observing the wrapper's own population. Supporting foreign-population facts
+must preserve the same authenticated population across acquisitions and must
+not manufacture its total from the locally visible units.
+
 ## Subsequent obligations, not yet demonstrated by the probes
 
 - **Commit consumption before unlock.** The worker must restore the invariant
@@ -162,19 +202,22 @@ the population when acquiring a wrapper.
   unit. Retain verified net effects through the participation protocol and expose
   exact totals when the relevant workers/rights have returned. Never copy a
   child's saved count into the parent or infer total count from local holdings.
-- **Finalize an entire owned population.** Failure paths own two or three units.
-  Generalize finalization from the existing single-last-unit case to a requested
-  quantity proved equal to the total, while checking all borrow obligations.
 - **Keep observations scoped.** For mutex-shared populations, current Count observations
   require valid body access; prior observations remain historical facts. An independently verified
   worker begins with an arbitrary valid total, never a chosen entry zero.
 
 ## Implementation order and acceptance
 
-Checked local initialization is implemented for the memory-backed slice above.
-Next implement full-population finalization independently of concurrency, then
-compose population-body access
-with mutexes, commit guarded count transitions, and connect worker accounting.
+Checked local initialization and full-population cleanup are implemented for
+this control. Cleanup uses ordinary quantity syntax, `unfold(n of remaining(p))`.
+It requires the requested quantity to equal the total and consumes all those
+owned units, including separately held pieces, to recover one shared body.
+The kernel rejects partial or zero ownership, an open body, and active loans.
+Unfolding is a representation change: the existing contract transition still
+owns logical consumption; cleanup does not silently reset the ledger.
+
+Next compose population-body access with mutexes, commit guarded count
+transitions, and connect worker accounting.
 The original pthread C stays the end-to-end regression throughout.
 
 Each step needs negative coverage for forged/duplicated units, unrelated

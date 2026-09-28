@@ -311,6 +311,70 @@ mod tests {
     }
 
     #[test]
+    fn population_cleanup_requires_the_entire_positive_population() {
+        let (function, body, selected, population) = fixture();
+        let exposed = population.clone().with_resource_context(
+            population
+                .resources()
+                .clone()
+                .without_exact_representation(&selected)
+                .unwrap()
+                .unchecked_with_facts(body.resources().facts().iter().cloned()),
+        );
+        assert!(accepts(&function, &population, &selected, &exposed));
+        for quantity in [0, 1, 2, 4] {
+            let partial = CResourceFact::own_quantity(
+                selected.resource().clone(),
+                Bitvector32Term::Constant(quantity),
+            );
+            let partial_state = population
+                .clone()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(partial.clone()));
+            assert!(
+                !accepts(&function, &partial_state, &partial, &exposed),
+                "quantity {quantity} must not recover a population of three"
+            );
+        }
+        let CResource::Composite { name, arguments } = selected.resource() else {
+            unreachable!()
+        };
+        // Inventing a restoration scope cannot turn a destructive unfold
+        // into a valid borrow: an opening must retain its membership units.
+        for quantity in [0, 1, 3] {
+            let member = CResourceFact::own_quantity(
+                selected.resource().clone(),
+                Bitvector32Term::Constant(quantity),
+            );
+            let input = population
+                .clone()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(member.clone()));
+            let output = input
+                .clone()
+                .with_resource_context(
+                    input
+                        .resources()
+                        .clone()
+                        .without_exact_representation(&member)
+                        .unwrap()
+                        .unchecked_with_facts(body.resources().facts().iter().cloned()),
+                )
+                .open_population_body(name.clone(), arguments.clone())
+                .unwrap();
+            assert!(
+                !accepts(&function, &input, &member, &output),
+                "an opening must retain its {quantity} units"
+            );
+        }
+        let open = population
+            .clone()
+            .open_population_body(name.clone(), arguments.clone())
+            .unwrap();
+        let mut exposed_open = exposed.clone();
+        exposed_open.population_access = open.population_access.clone();
+        assert!(!accepts(&function, &open, &selected, &exposed_open));
+    }
+
+    #[test]
     fn local_population_initialization_certifies_only_the_owned_body_exchange() {
         let (function, before, selected, after) = fixture();
         assert!(accepts(&function, &before, &selected, &after));
@@ -506,6 +570,26 @@ mod tests {
             )
             .err()
             .expect("an active memory loan forbids initialization");
+            assert!(error.contains("free of active borrows"), "{error}");
+            let cleanup = after.clone().with_resource_context(
+                after
+                    .resources()
+                    .clone()
+                    .without_exact_representation(&selected)
+                    .unwrap()
+                    .unchecked_with_facts(before.resources().facts().iter().cloned()),
+            );
+            let error = CheckedResourceRewrite::check(
+                &function,
+                &after,
+                &facts,
+                &selected,
+                &cleanup,
+                &facts,
+                &CheckedCallEvents::default(),
+            )
+            .err()
+            .expect("an active memory loan forbids population cleanup");
             assert!(error.contains("free of active borrows"), "{error}");
         }
     }
