@@ -184,23 +184,27 @@ Prove that the unchanged [counter C](../design/concurrency-probes/mutex_counter.
 finishes at exactly two when both workers are created and joined successfully.
 Preserve safety and cleanup for both create-failure paths and either join order.
 
-The [ordinary-resource experiment](../design/concurrency-probes/shared-count-authority.md#ordinary-resource-experiment)
-now supports a model-field quantity such as `owns credits of increment_credit(p)`.
-Folding consumes actual credits; unfolding recovers them. Mutexes can preserve
-such bundles. This establishes useful composition, but not a closed total.
+The [ordinary-resource control](../design/concurrency-probes/shared-count-authority.md)
+now proves exact two sequentially using a memory-backed `remaining(p)`
+population and `p->value == 3 - count(remaining(p))`. Checked local
+initialization creates three units from the owned memory body. Each contribution
+consumes one; the retained unit keeps the body alive. Full-population cleanup
+recovers the body from a positive exact total, including a symbolic quantity.
+These implemented rules do not yet establish the concurrent result.
 
-The attempted deposit proof needs `credits + 1 <= 2`. The invariant
-`credits <= 2` and ownership of one external credit do not imply it: that
-contract permits two credits inside and another outside. Initial abstract
-credits also need a justified source; requiring them from a caller does not
-prove the original parent's memory-only contract.
+Next implement the [approved scope-close consumption rule](../design/concurrency-probes/shared-count-authority.md#approved-scope-close-consumption-rule-implementation-pending),
+then compose shared-body custody with the mutex and carry checked worker
+effects through joins. `open` closure first attempts ordinary restoration;
+otherwise it may fulfill an outstanding `consumes` effect, spending owned units
+and proving the invariant at the decreased Count. The same effect must not be
+applied again at another scope or at return. This approved rule uses existing
+syntax and is not yet implemented.
 
-Find the smallest checked conservation and initialization mechanism. Prefer
-ordinary resource composition, but do not pretend packaging establishes a
-global supply. Existing sequential `count(...)` is not automatically a shared
-population observation. Keep the authority proposal shelved unless this
-experiment demonstrates a need for it. Any new surface interface requires
-separate review before implementation.
+Mutex acquisition must preserve population identity and authorize current
+observations. Joining one worker must not publish an exact current total while
+another worker may have changed it. Existing sequential `count(...)` alone
+does not provide this authority. Keep the separate authority-resource proposal
+shelved; any further surface interface requires review before implementation.
 
 Reject missing or doubled contributions, incorrect increments, fabricated
 credits, mismatched populations, and reuse of old counter observations. Preserve

@@ -152,7 +152,7 @@ protocol. Merely holding a unit must not expose memory or current Count facts
 outside the lock. Do not remove thread confinement globally or freshly invent
 the population when acquiring a wrapper.
 
-## Early consumption probe and pending scope decision
+## Approved scope-close consumption rule (implementation pending)
 
 The accounting gap is reproducible without pthreads. For a function that
 increments the value and then returns it, this proof fails at scope closure:
@@ -171,14 +171,56 @@ still denotes `entry_count`. The sequential control succeeds because its
 `execute()` reaches the return inside the open scope. Unlock must happen before
 return, so return-time accounting cannot establish the mutex invariant.
 
-Proposed existing-syntax rule, pending review: closing an open body may discharge
-an outstanding `consumes` effect from the enclosing function contract when that
-is needed to restore the invariant. The checked event must consume the actual
-units, preserve the live body, validate its invariant at the decreased total,
-and record the effect so return certification cannot apply it twice. Restoring
-the invariant without consumption remains the first choice. An alternative is
-an explicit proof statement selecting the consumption point; no such notation
-has been added.
+The approved rule uses existing syntax. First try to close `open` by restoring
+the invariant with unchanged membership and Count. If that cannot be proved,
+closure may fulfill an outstanding `consumes` effect of the enclosing function
+for this population. No new consumption statement, resource type, or keyword is
+introduced. This is an approved implementation target; the early-close probe
+above does not yet verify.
+
+The invariant is still required at closure. Consumption changes the Count at
+which it must hold; it does not excuse a missing invariant. In the example,
+let the current total be `N`. After the C increment, consuming one owned unit
+changes the total to `N - 1`, and closure must prove
+`p->value == 3 - (N - 1)`. The ordinary close instead requires
+`p->value == 3 - N`. Merely placing `open` last in a block grants no exemption.
+
+The checked transition must establish all of the following:
+
+- The enclosing contract has an unfulfilled consumption for this exact
+  population. Evaluate entry arguments at function entry, even if C later
+  reassigns its parameters. A contract effect is an obligation, not ownership.
+- The proof owns the units being consumed and has valid access to the open
+  shared body. A view or a declaration alone cannot authorize the transition.
+- Subtracting the consumed quantity leaves a positive total and restores every
+  body fact at that total. The worker's retained unit keeps this body alive.
+  Final-population cleanup remains a separate operation.
+- The transition spends those units, closes body access, and preserves all
+  unrelated resources, populations, memory, and active-loan restrictions.
+- A checked record marks this part of the contract effect as fulfilled on this
+  execution path. A later scope cannot fulfill it again, and return must
+  reconcile it with the remaining effect rather than spend it a second time.
+  Calls must keep caller and callee obligations distinct.
+
+For the first implementation, support the counter's single-unit effect. Do not
+infer an arbitrary consumption amount by searching for one that makes the
+invariant true. General partial fulfillment of symbolic effects and competing
+candidate effects need a separately justified extension of the checked rule.
+
+Report failed obligations with Click expressions, such as
+`Requires remaining(p)` or `Requires p->value == 3 - count(remaining(p))`,
+and identify whether Count is before or after the proposed consumption when
+that matters. Missing contract authorization should name the required
+`consumes remaining(p)` clause. Do not expose internal bookkeeping terminology
+as the explanation of the user's proof failure.
+
+Acceptance starts with the early-close sequential regression, then composes it
+with unlock. Negative tests must reject absent consumption clauses, viewed or
+missing units, missing increments, repeated fulfillment, consuming the last
+unit, and changes to unrelated populations. A successful ordinary close must
+leave the contract effect outstanding. A successful consuming close followed
+by return must account for exactly one unit. Branches and nested calls must
+preserve that accounting, and expansion must produce a checkable certificate.
 
 A separate classification limitation rejects a guarded exclusive wrapper whose
 model fact mentions `count(remaining(p))`: it currently treats any Count mention
@@ -192,7 +234,7 @@ not manufacture its total from the locally visible units.
   at the decreased population while still holding the lock. Existing return-time
   consumption cannot leave the body invalid between unlock and return. Closing
   `open` needs a checked transition that return certification recognizes exactly
-  once. Whether existing scope syntax suffices needs an implementation probe.
+  once, following the approved rule above.
 - **Authenticate population identity.** Publication, typed mutex use, external
   worker units, and replacement protected states must refer to the same
   population. A fresh acquisition changes observations, not that identity.

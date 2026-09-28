@@ -360,6 +360,16 @@ scoped proof and requires it to be restored. Declaring a resource does not by
 itself justify minting a unit; retain and release contracts must preserve the
 body invariant while changing both the C state and logical quantity.
 
+An approved extension, not yet implemented, will let closure of `open` fulfill
+an outstanding `consumes` clause of the enclosing function when ordinary
+restoration fails. It will still require the invariant: for consumption of one
+unit, prove it at the total decreased by one, spend an actually owned unit,
+and leave the shared body alive. Return must recognize that the consumption
+has already happened. Being the last `open` in a function or block does not
+itself waive restoration. This uses the existing syntax; the
+[scope-close design](https://github.com/lacker/click/blob/master/design/concurrency-probes/shared-count-authority.md#approved-scope-close-consumption-rule-implementation-pending)
+records the exact obligations and planned coverage.
+
 Inside `count(...)`, `_` is a wildcard over one resource argument. For example,
 `count(pool_object(pool, _))` sums all exact object populations for `pool`.
 
