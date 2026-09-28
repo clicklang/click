@@ -130,6 +130,71 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
 }
 
 #[test]
+fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
+    let _session = VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new().with_block("int32", 16));
+    let pointer = |index| Pointer {
+        block: "int32".into(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let load = |memory: &SharedCMemory, index| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory,
+            &pointer(index),
+            4,
+            memory,
+        ))
+    };
+    let (a, b) = (var(21), var(22));
+    let after = intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let sum = |value, other| Bitvector32Term::add(value, other);
+    let fixed = var(23);
+    let left = sum(load(&before, a.clone()), fixed.clone());
+    let right = sum(fixed.clone(), load(&before, b.clone()));
+    let later = sum(fixed, load(&after, b.clone()));
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    assert!(!branch.equality_graph.are_int32_equal(&left, &right));
+    assert!(branch.bitvector_add_terms_proven_equal(&left, &right));
+    assert_eq!(branch.decide(&eq(&left, &right)), Some(true));
+    assert!(!branch.bitvector_add_terms_proven_equal(&left, &later));
+    assert!(!parent.bitvector_add_terms_proven_equal(&left, &right));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(!withdrawn.bitvector_add_terms_proven_equal(&left, &right));
+}
+
+#[test]
+fn graph_equal_addend_matching_scales_without_the_legacy_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
+        }
+        let fixed = var(size + 2);
+        let last = var(size + 3);
+        let left = Bitvector32Term::add(Bitvector32Term::add(var(0), fixed.clone()), last.clone());
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                let right = Bitvector32Term::add(
+                    var(index),
+                    Bitvector32Term::add(fixed.clone(), last.clone()),
+                );
+                assert!(context.bitvector_add_terms_proven_equal(&left, &right));
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 200 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();

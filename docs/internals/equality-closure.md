@@ -119,6 +119,12 @@ rules and fact-path lookup still handle unsupported term forms. Transport is a
 value-equality consumer; exact pointer-offset decisions retain their separate
 guard against wrapping int32 equalities.
 
+The commutative int32-addition matcher also queries the graph when comparing
+individual addends. A reordered sum can therefore use registered load
+congruence or a joined scalar class even though the graph does not itself
+reorder addition. Other addend rules and the legacy fact-path lookup still
+cover forms outside this graph fragment.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads

@@ -270,6 +270,13 @@ The old lookup and structural transport remain for term forms outside the
 graph; memory and resource consumers have not moved. Branch withdrawal,
 snapshot separation, and multi-size query work have direct regressions.
 
+The int32-addition matcher now asks the same graph for equality of individual
+addends. This composes a reordered sum with registered same-snapshot load
+congruence. A direct graph match avoids the legacy fact index; a nonmatching
+candidate in the existing greedy matcher may still build it first. Tests cover
+changed snapshots, withdrawn premises, and multi-size reassociated matching;
+the graph itself still does not reorder addition.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
