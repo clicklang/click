@@ -63,8 +63,19 @@ pub(crate) fn c_resources_directly_match(
     }
     let values_match = |left: &CValue, right: &CValue| match (left, right) {
         (CValue::Void, CValue::Void) => true,
-        (CValue::Int32(left), CValue::Int32(right))
-        | (CValue::UInt8(left), CValue::UInt8(right)) => crate::instrumentation::measure_operation(
+        (CValue::Int32(left), CValue::Int32(right)) => crate::instrumentation::measure_operation(
+            "kernel",
+            "resource context equality",
+            "resource direct match: bitvector value",
+            || {
+                // Resource arguments are values, so wrapping int32 equality
+                // is sufficient here; pointer offsets use separate rules.
+                (assumptions.equality_graph.has_term_equivalences()
+                    && assumptions.equality_graph.are_int32_equal(left, right))
+                    || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
+            },
+        ),
+        (CValue::UInt8(left), CValue::UInt8(right)) => crate::instrumentation::measure_operation(
             "kernel",
             "resource context equality",
             "resource direct match: bitvector value",

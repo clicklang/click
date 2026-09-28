@@ -315,6 +315,81 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
 }
 
 #[test]
+fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
+    let _session = VerificationSession::enter();
+    let before = intern_c_memory(CMemory::new().with_block("resource-value", 8));
+    let pointer = |index| Pointer {
+        block: "resource-value".into(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let load = |memory: &SharedCMemory, index| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory,
+            &pointer(index),
+            4,
+            memory,
+        ))
+    };
+    let (a, b) = (var(51), var(52));
+    let after = intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let resource = |value| CResource::Composite {
+        name: "indexed-value".into(),
+        arguments: vec![CValue::Int32(value).into()].into(),
+    };
+    let left = resource(load(&before, a.clone()));
+    let right = resource(load(&before, b.clone()));
+    let later = resource(load(&after, b.clone()));
+    let premise = eq(&a, &b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &branch,));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &later, &branch,));
+    assert!(!crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &parent,));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(
+        !crate::kernel::memory_provenance::c_resources_directly_match(&left, &right, &withdrawn,)
+    );
+}
+
+#[test]
+fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let resource = |value| CResource::Composite {
+            name: "indexed-value-scale".into(),
+            arguments: vec![CValue::Int32(sum(value)).into()].into(),
+        };
+        let left = resource(var(0));
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
+        }
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                assert!(
+                    crate::kernel::memory_provenance::c_resources_directly_match(
+                        &left,
+                        &resource(var(index)),
+                        &context,
+                    )
+                );
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 250 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     let _session = VerificationSession::enter();
     let before = intern_c_memory(CMemory::new().with_block("int32", 16));
