@@ -16369,3 +16369,65 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
         "equality cannot discharge signed overflow"
     );
 }
+
+#[test]
+fn normalize_using_int32_loads_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_int32_loads.md");
+    let fixture =
+        crate::cli::parse_mdtest(&path, &std::fs::read_to_string(&path).unwrap()).unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().unwrap();
+    verify_c0_sources(source, &c_sources).expect("same-snapshot int32 loads should verify");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("load congruence should expand");
+    assert!(expanded.contains("normalize() using"));
+    verify_c0_sources(&expanded, &c_sources).expect("expanded loads should recheck");
+    let (keep, _) = expanded.split_once("theorem same_read").unwrap();
+    let missing = keep.replace("requires i == j;", "");
+    assert_ne!(missing, keep);
+    assert!(verify_c0_sources(&missing, &c_sources).is_err());
+    let false_goal = source.replace("ensures p[i] == p[j];", "ensures p[i] != p[j];");
+    assert_ne!(false_goal, source);
+    assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
+    let restricted = source.replacen(
+        "normalize() using { }",
+        "simp() using { 0 <= i; i < n; 0 <= j; j < n; }",
+        1,
+    );
+    assert_ne!(restricted, source);
+    assert!(verify_c0_sources(&restricted, &c_sources).is_err());
+    let store_c = [("store.c", "void store(int32 p[]) { p[0] = 9; }")];
+    let store = r#"
+        verifying "store.c";
+        void store(int32 p[]) {
+            owns p[0..1];
+            ensures p[0] == old(p[0]);
+        } by { execute(); simp(); }
+    "#;
+    verify_c0_sources(&store.replace("old(p[0])", "9"), &store_c)
+        .expect("the store itself verifies");
+    assert!(
+        verify_c0_sources(store, &store_c).is_err(),
+        "a relevant store must invalidate the old read"
+    );
+    let read_c = [(
+        "read.c",
+        "int32 read(int32 p[], int32 i, int32 j) { return p[i]; }",
+    )];
+    let read = r#"
+        verifying "read.c";
+        int32 read(int32 p[], int32 i, int32 j) {
+            requires i == j;
+            ensures result == result;
+        } by { execute(); simp(); }
+    "#;
+    assert!(
+        verify_c0_sources(read, &read_c).is_err(),
+        "equal offsets do not grant read permission"
+    );
+}

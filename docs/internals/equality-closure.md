@@ -19,7 +19,7 @@ Pointer operations keep pointer-typed operands; `add_offset_equality` and
 `are_offsets_equal` accept whole pointer-offset terms. Supported pointer-load
 applications and offset terms register on demand during insertion and queries.
 `add_int32_equality` and `are_int32_equal` admit and query explicit int32
-equalities, their transitive closure, and addition congruence. Further sorts and consumers will be
+equalities, addition congruence, and registered same-snapshot int32 load congruence. Further sorts and consumers will be
 added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
 
@@ -79,6 +79,22 @@ withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
 cross-arena snapshot comparisons to traverse unrelated memory. This is an additive consumer migration; legacy scalar reasoning outside
 normalization has not changed.
+
+Registered four-byte scalar loads also participate as int32 applications. Their
+signature contains the registered defining snapshot's arena identity, the exact
+storage block, and the offset class. Equal offsets therefore give equal reads
+in that snapshot, including when the offset equality arrives later. Load
+registration follows nested index dependencies iteratively; merge propagation
+uses the same parent-use index as addition and scaling. Neither step scans
+unrelated snapshots or enumerates address spellings.
+
+The defining snapshot can already be an assumption-free canonical projection.
+The graph uses that registered definition, never the mutable live origin. It
+does not equate distinct defining snapshots or storage blocks, search for frame
+evidence, resolve stores, or grant read permission. Unregistered, unknown-width,
+and other-width loads remain opaque. Existing canonicalization can independently
+retain a value across a justified memory change; this slice adds no new rule
+for doing so. Global load naming remains independent of contextual equality.
 
 ## Problem and scope
 

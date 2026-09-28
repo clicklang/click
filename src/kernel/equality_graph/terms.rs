@@ -1,10 +1,11 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
-//! int32 addition, connected by int32 scaling. Other scalar operations stay opaque.
+//! int32 addition and registered same-snapshot int32 loads, connected by int32
+//! scaling. Other scalar operations stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
-use super::{MachineAtom, PointerOffsetTerm, Variable};
+use super::{MachineAtom, PointerBlock, PointerOffsetTerm, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -25,13 +26,16 @@ enum Application {
     Add(u64, u64),
     Int32Add(u64, u64),
     Int32Scaled(u64, i64),
+    // Defining snapshot, exact storage block ID, offset node/class ID.
+    // Only registered four-byte loads in the int32 interpretation enter here.
+    Int32Load((u32, u32), u64, u64),
 }
 
 impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
             Self::Add(left, right) | Self::Int32Add(left, right) => [Some(left), Some(right)],
-            Self::Int32Scaled(value, _) => [Some(value), None],
+            Self::Int32Scaled(value, _) | Self::Int32Load(_, _, value) => [Some(value), None],
         }
         .into_iter()
         .flatten()
@@ -42,6 +46,9 @@ impl Application {
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
+            Self::Int32Load(snapshot, block, offset) => {
+                Self::Int32Load(snapshot, block, classes.root(offset))
+            }
         }
     }
 }
@@ -49,6 +56,11 @@ impl Application {
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
     nodes: PersistentMap<Node, u64>,
+    load_blocks: PersistentMap<PointerBlock, u64>,
+    registered_int32_loads: PersistentSet<u64>,
+    // Registration dependencies are drained before any public answer. Keeping
+    // this worklist iterative handles loads used as indices of further loads.
+    pending_loads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
     // with many application parents repeatedly joined to fresh singleton terms.
@@ -114,8 +126,9 @@ impl TermClasses {
     }
 
     fn intern_node(&mut self, node: Node) -> u64 {
-        if let Some(id) = self.nodes.get(&node) {
-            return *id;
+        if let Some(id) = self.nodes.get(&node).copied() {
+            self.enqueue_int32_load(id, &node);
+            return id;
         }
         let id = self.nodes.len() as u64;
         let application = match &node {
@@ -130,11 +143,49 @@ impl TermClasses {
             }
             _ => None,
         };
+        self.enqueue_int32_load(id, &node);
         self.nodes.insert(node, id);
         if let Some(application) = application {
             self.register_application(id, application);
         }
         id
+    }
+
+    fn enqueue_int32_load(&mut self, id: u64, node: &Node) {
+        let Node::Int32(atom) = node else { return };
+        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+            return;
+        };
+        if !crate::kernel::is_load_variable(variable)
+            || self.registered_int32_loads.contains(&id)
+            || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
+        {
+            return;
+        }
+        let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
+            return;
+        };
+        // This is the registered defining snapshot, not the mutable live
+        // origin. Canonicalization already justified any projection; this
+        // graph neither walks history nor equates distinct snapshot IDs.
+        self.registered_int32_loads = self.registered_int32_loads.with_value(id);
+        self.pending_loads.push((id, memory, pointer));
+    }
+
+    fn register_pending_loads(&mut self) {
+        while let Some((id, memory, pointer)) = self.pending_loads.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let next_block = self.load_blocks.len() as u64;
+            let block = match self.load_blocks.get(&pointer.block) {
+                Some(block) => *block,
+                None => {
+                    self.load_blocks.insert(pointer.block, next_block);
+                    next_block
+                }
+            };
+            let offset = self.intern(&pointer.offset);
+            self.register_application(id, Application::Int32Load(memory.arena_id(), block, offset));
+        }
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
@@ -176,6 +227,7 @@ impl TermClasses {
     ) -> bool {
         let left = self.intern_int32(left);
         let right = self.intern_int32(right);
+        self.register_pending_loads();
         // Reflexivity needs no class traversal, even when this node was merged.
         left == right || self.root(left) == self.root(right)
     }
@@ -187,6 +239,7 @@ impl TermClasses {
     ) -> bool {
         let left = self.intern_int32(left);
         let right = self.intern_int32(right);
+        self.register_pending_loads();
         left != right && self.close(vec![(left, right)])
     }
 
@@ -207,6 +260,7 @@ impl TermClasses {
     ) -> bool {
         let left = self.intern(left);
         let right = self.intern(right);
+        self.register_pending_loads();
         self.root(left) == self.root(right)
     }
 
@@ -217,6 +271,7 @@ impl TermClasses {
     ) -> bool {
         let left = self.intern(left);
         let right = self.intern(right);
+        self.register_pending_loads();
         self.close(vec![(left, right)])
     }
 

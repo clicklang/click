@@ -209,6 +209,18 @@ withdrawal/restriction, expansion/rechecking, and multi-size registration,
 propagation, and fork work. Other scalar operators, arithmetic solving,
 cancellation, ownership, and framing remain outside this slice.
 
+Registered int32 loads now have same-snapshot congruence within one exact
+storage block. The shared application signature includes the defining snapshot
+identity and offset class; indexed parent uses propagate late equalities.
+Nested load-index registration is iterative. The graph reads the registered
+definition, not the mutable live origin, and does not change global load names.
+The surface regression proves equal array reads from equal indices and expands
+and rechecks. Negative coverage keeps relevant stores, storage blocks, access
+widths, omitted premises, branch assumptions, and read permissions separate.
+Multi-size regressions cover registration, late closure, and persistent forks.
+Cross-snapshot framing, block-equality integration, and resource lookup remain
+separate work.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,
