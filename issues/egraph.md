@@ -171,7 +171,11 @@ The first additional consumer is `normalize() using`: after validating and
 reducing its cited conditions, it can close a pointer-equality leaf through
 the current trusted equality graph. Ambient equality is deliberately available;
 other uncited conditions are not. This preserves the current term representation
-and adds no frame search, proof explanation, or separate equality index.
+and adds no frame search or proof explanation. The graph now also retains
+explicit whole pointer-offset equalities, so normalization can prove transitive
+equalities between ordinary C pointer parameters without migrating their
+representation. This offset fragment adds no arithmetic propagation or
+congruence, and no ownership or framing consumers have been migrated to it.
 
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and

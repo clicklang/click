@@ -6,10 +6,10 @@
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
 //! The current supported fragment is pointers, affine byte offsets, and
-//! registered same-snapshot pointer loads. The insertion and query API is
-//! intentionally still pointer-typed; adding another term sort is a separate
-//! change. Pointer spelling helpers serve legacy consumers and are not the
-//! general equality interface.
+//! registered same-snapshot pointer loads, plus explicit whole-offset equality.
+//! Pointer and offset queries are typed separately; the offset fragment only
+//! closes stated equalities by symmetry and transitivity. Pointer spelling
+//! helpers serve legacy consumers and are not the general equality interface.
 //!
 //! The pointer fragment uses a persistent union-find with offsets.
 //!
@@ -46,6 +46,8 @@
 //! relates offsets, not bases, and stays with the offset facts.
 
 use super::prelude::*;
+
+mod offsets;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
 /// ID; the original term is retained only for legacy spelling reconstruction.
@@ -286,13 +288,14 @@ pub(in crate::kernel) struct CanonicalPointer {
     pub(in crate::kernel) offset: AffineOffset,
 }
 
-/// The pointer fragment's closed, persistent state. Query registration adds only
-/// definitional load applications; hypotheses enter through `add_equality`.
+/// Closed, persistent pointer and offset equality state. Query registration
+/// adds only terms and definitional load applications; hypotheses enter through
+/// `add_equality` and `add_offset_equality`.
 /// Cloning copies the persistent roots into a new lock, never a shared mutable
 /// graph. The lock preserves `PureFactContext`'s Send/Sync contract.
 #[derive(Default)]
 pub(in crate::kernel) struct EqualityGraph {
-    state: std::sync::Mutex<PointerClassState>,
+    state: std::sync::Mutex<EqualityGraphState>,
 }
 
 impl Clone for EqualityGraph {
@@ -338,7 +341,8 @@ enum OffsetPart {
 }
 
 #[derive(Clone, Default)]
-struct PointerClassState {
+struct EqualityGraphState {
+    offsets: offsets::OffsetClasses,
     parent: crate::persistent::PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
     members: crate::persistent::PersistentMap<
         PointerBlock,
@@ -382,6 +386,33 @@ impl EqualityGraph {
             (Some(left), Some(right)) => left == right,
             _ => false,
         }
+    }
+
+    /// Query explicit whole-offset equality, including symmetry and transitivity.
+    /// This fragment does not propagate arithmetic or application congruence.
+    pub(in crate::kernel) fn are_offsets_equal(
+        &self,
+        left: &PointerOffsetTerm,
+        right: &PointerOffsetTerm,
+    ) -> bool {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .offsets
+            .are_equal(left, right)
+    }
+
+    /// Admit an already established offset equality in this proof context.
+    pub(in crate::kernel) fn add_offset_equality(
+        &mut self,
+        left: &PointerOffsetTerm,
+        right: &PointerOffsetTerm,
+    ) -> bool {
+        self.state
+            .get_mut()
+            .expect("equality graph")
+            .offsets
+            .add_equality(left, right)
     }
 
     /// Admit an equality already established in this proof context and
@@ -441,7 +472,7 @@ impl EqualityGraph {
     }
 }
 
-impl PointerClassState {
+impl EqualityGraphState {
     fn find(&self, block: &PointerBlock) -> (PointerBlock, AffineOffset) {
         crate::instrumentation::record_deterministic_work(1);
         self.parent

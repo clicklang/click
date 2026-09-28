@@ -537,7 +537,7 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
 /// are the same load variable and the premise is reflexive. The expansion
 /// needs no snapshot transport and rewrites from the remaining premise.
 #[test]
-fn snapshot_bridged_simp_premise_expands_to_an_explicit_transport() {
+fn snapshot_bridged_simp_premises_expand_to_checked_offset_equality() {
     let init_c = r#"
 struct box {
     int32 value;
@@ -640,19 +640,20 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the snapshot-bridged restricted simp should expand");
-    // `box_touch` returns `owner->data` unchanged, but the kernel names the
-    // load after the calls by a fresh variable it relates to each call's entry
-    // by an equality: the expansion rewrites through those snapshot premises,
-    // in the form the proof stated them, and the remaining premise is then the
-    // goal itself.
-    assert!(
-        expanded.contains("rewrite(owner->data == at(statement(3).entry, owner->data));"),
-        "the rewrite must cite the construction-time premise form:\n{expanded}"
-    );
-    assert!(
-        expanded.contains("assumption();"),
-        "the remaining premise closes the rewritten goal:\n{expanded}"
-    );
+    // The calls explicitly establish equalities between the load snapshots.
+    // Their transitive chain now closes through the trusted offset fragment,
+    // retaining the cited snapshot forms for the simple normalization check.
+    assert!(expanded.contains("normalize() using {"), "{expanded}");
+    for premise in [
+        "owner->data == at(statement(3).entry, owner->data);",
+        "at(statement(3).entry, owner->data) == at(statement(2).entry, owner->data);",
+        "at(statement(2).entry, owner->data) == data;",
+    ] {
+        assert!(
+            expanded.contains(premise),
+            "missing checked premise {premise}:\n{expanded}"
+        );
+    }
     verify_c0_sources(&expanded, &sources)
         .expect("the explicit bridged-premise certificate should check");
 }

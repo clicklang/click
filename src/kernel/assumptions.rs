@@ -2845,7 +2845,7 @@ impl PureFactContext {
         }
     }
 
-    /// Rebuilds the graph's current pointer fragment from the exact alias index. A union-find
+    /// Rebuilds the graph's pointer and offset fragments from the exact alias indexes. A union-find
     /// cannot forget one equality, so a withdrawal refiles the equalities
     /// that remain: work in the pointer equalities held, not in the facts.
     fn rebuild_equality_graph(&mut self) {
@@ -2854,6 +2854,13 @@ impl PureFactContext {
             for (right, _) in aliases.iter() {
                 if left < right {
                     classes.add_equality(left, right);
+                }
+            }
+        }
+        for (left, aliases) in self.pointer_offset_aliases.iter() {
+            for right in aliases.iter() {
+                if left < right {
+                    classes.add_offset_equality(left, right);
                 }
             }
         }
@@ -2870,6 +2877,16 @@ impl PureFactContext {
             return;
         };
         if !value || left == right {
+            return;
+        }
+        // Both orientations can be exact facts. Withdrawing one must not
+        // remove the undirected edge still supplied by the other.
+        if !insert
+            && self.condition_facts.get(&ConditionTerm::PointerOffsetEqual(
+                right.clone(),
+                left.clone(),
+            )) == Some(&true)
+        {
             return;
         }
         for (key, alias) in [
@@ -2910,6 +2927,11 @@ impl PureFactContext {
                 self.pointer_offset_aliases
                     .with_inserted(key.clone(), aliases)
             };
+        }
+        if insert {
+            self.equality_graph.add_offset_equality(left, right);
+        } else {
+            self.rebuild_equality_graph();
         }
     }
 

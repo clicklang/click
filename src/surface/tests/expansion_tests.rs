@@ -16095,3 +16095,34 @@ fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
         "expanded query must still depend on its ambient equality premises"
     );
 }
+
+#[test]
+fn normalize_using_c_pointer_equality_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_c_pointer_equality.md");
+    let text = std::fs::read_to_string(&path).expect("read C pointer equality fixture");
+    let fixture = crate::cli::parse_mdtest(&path, &text).expect("parse C pointer equality fixture");
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().expect("Click source");
+    verify_c0_sources(source, &c_sources).expect("C pointer transitivity should verify");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("C pointer transitivity should expand");
+    assert!(expanded.contains("normalize() using"), "{expanded}");
+    verify_c0_sources(&expanded, &c_sources).expect("expanded C pointer equality should recheck");
+    for missing in ["requires a == b;", "requires b == c;"] {
+        assert!(verify_c0_sources(&expanded.replace(missing, ""), &c_sources).is_err());
+    }
+    let reversed = source.replace("ensures a == c;", "ensures c == a;");
+    verify_c0_sources(&reversed, &c_sources).expect("symmetric transitivity should verify");
+    let unavailable = source.replace("using { }", "using { a == c; }");
+    assert!(
+        verify_c0_sources(&unavailable, &c_sources).is_err(),
+        "graph success cannot excuse an unavailable cited premise"
+    );
+    let false_goal = source.replace("ensures a == c;", "ensures a != c;");
+    assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
+}

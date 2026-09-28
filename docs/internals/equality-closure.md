@@ -15,10 +15,10 @@ current proof context; `are_equal(left, right)` queries the maintained closure.
 A negative query means unknown, not disequal. Insertion's return value reports
 whether a class merge occurred, not validation of the supplied premise.
 
-This first interface refactor preserves the existing pointer fragment and its
-pointer-typed operands. Supported load applications register on demand during
-insertion and queries. New term sorts and additional consumers will be added
-in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
+Pointer operations keep pointer-typed operands; `add_offset_equality` and
+`are_offsets_equal` accept whole pointer-offset terms. Supported pointer-load
+applications and offset terms register on demand during insertion and queries.
+Further term sorts and consumers will be added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
 
 Kernel rules may trust the graph's answers in their own proof context. There
@@ -38,10 +38,18 @@ conditions used for reduction. All cited premises must still be available and
 supported. Other ambient facts, quantified bodies, and cross-snapshot frame
 search remain outside this operation. Expansion retains the simple step and
 rechecks it in the same proof context, without an explanation API or a
-per-tactic graph rebuild. This covers the graph's existing symbolic-pointer
-fragment, including introduced pointer binders. Ordinary C pointer parameters
-still lower to offsets in a shared block; their offset equalities are not yet
-part of this graph and gain no new transitive reasoning from this change.
+per-tactic graph rebuild. Explicit pointer-offset equalities also enter the
+same graph and are available to this normalization check. This covers ordinary
+C pointer parameters, which lower to offsets in a shared block, without
+changing their representation.
+
+The offset fragment interns whole terms with shallow keys and uses persistent
+union-find by size. It preserves widths, signedness, and machine-term snapshot
+identity; it does not infer arithmetic consequences or congruence from an
+assumed offset equality. Queries and additions use indexed access. Existing
+context restriction and equality-withdrawal rebuilds retain both graph
+fragments from their remaining exact alias indexes. Ownership and framing
+consumers do not query the new offset fragment.
 
 ## Problem and scope
 

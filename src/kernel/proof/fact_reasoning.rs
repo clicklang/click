@@ -242,11 +242,16 @@ pub(crate) fn normalize_using_conditions(
     }
     let reduced = super::term_rewrite::TermRewrite::for_conditions(&conditions).proposition(goal);
     let closes = normalizes_context_free_leaf(&reduced)
-        || matches!(
-            crate::kernel::spec::proposition_as_single_condition(&reduced),
-            Some((ConditionTerm::PointerEqual(left, right), true))
-                if facts.assumptions().equality_graph.are_equal(&left, &right)
-        );
+        || match crate::kernel::spec::proposition_as_single_condition(&reduced) {
+            Some((ConditionTerm::PointerEqual(left, right), true)) => {
+                facts.assumptions().equality_graph.are_equal(&left, &right)
+            }
+            Some((ConditionTerm::PointerOffsetEqual(left, right), true)) => facts
+                .assumptions()
+                .equality_graph
+                .are_offsets_equal(&left, &right),
+            _ => false,
+        };
     closes
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
