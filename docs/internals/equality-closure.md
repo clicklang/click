@@ -160,6 +160,12 @@ conditions. Condition kind and truth value must still match. Registered loads
 remain scoped to their defining snapshot, and withdrawn premises lose their
 consequences. Multi-size queries avoid the legacy fact index.
 
+Allocation continuity across a call now compares its two 32-bit size values
+through the typed graph rule after the separate allocation-base check. This
+does not use wrapping value equality to establish pointer-base equality.
+Regressions cover same-snapshot loads, overwrite and withdrawal boundaries,
+different bases, and multi-size graph queries without the legacy fact index.
+
 For a range pair already selected for composition, endpoint comparison uses
 the graph-backed int32 condition decision. The composition helper no longer
 repeats a separate legacy fact-path walk after that decision. Candidate

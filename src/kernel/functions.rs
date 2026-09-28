@@ -11356,11 +11356,7 @@ fn allocation_continuity(
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
     if pointers_proven_equal_for_memory_resolution(input_base, output_base, assumptions) {
-        if bitvector_terms_proven_equal_for_memory_resolution(
-            input_bytes,
-            output_bytes,
-            assumptions,
-        ) {
+        if int32_values_proven_equal_for_memory_resolution(input_bytes, output_bytes, assumptions) {
             return AllocationContinuity::Same;
         }
         let condition = ConditionTerm::Bitvector32Equal(
@@ -11519,6 +11515,98 @@ mod allocation_continuity_tests {
             ),
             AllocationContinuity::Undecided(ConditionTerm::pointer_equal(input, other)),
         );
+    }
+
+    #[test]
+    fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = crate::kernel::intern_c_memory(CMemory::new().with_block("alloc-size", 8));
+        let pointer = |index| Pointer {
+            block: "alloc-size".into(),
+            offset: PointerOffsetTerm::scale_int32(index, 4),
+        };
+        let load = |memory: &SharedCMemory, index| {
+            Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+                memory,
+                &pointer(index),
+                4,
+                memory,
+            ))
+        };
+        let (a, b) = (
+            Bitvector32Term::Variable(Variable(930_010)),
+            Bitvector32Term::Variable(Variable(930_011)),
+        );
+        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+            pointer(b.clone()),
+            CValue::Int32(Bitvector32Term::Constant(9)),
+        ));
+        let size = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let input_size = size(load(&before, a.clone()));
+        let output_size = size(load(&before, b.clone()));
+        let later_size = size(load(&after, b.clone()));
+        let base = external_pointer(930_012);
+        let premise = ConditionTerm::equal(a, b);
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert_eq!(
+            allocation_continuity(&base, &input_size, &base, &output_size, &branch),
+            AllocationContinuity::Same,
+        );
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        for (size, context) in [(&later_size, &branch), (&output_size, &parent)] {
+            assert!(matches!(
+                allocation_continuity(&base, &input_size, &base, size, context),
+                AllocationContinuity::Undecided(ConditionTerm::Bitvector32Equal(_, _)),
+            ));
+        }
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(matches!(
+            allocation_continuity(&base, &input_size, &base, &output_size, &withdrawn),
+            AllocationContinuity::Undecided(ConditionTerm::Bitvector32Equal(_, _)),
+        ));
+        assert_ne!(
+            allocation_continuity(
+                &base,
+                &input_size,
+                &external_pointer(930_013),
+                &output_size,
+                &branch
+            ),
+            AllocationContinuity::Same,
+        );
+    }
+
+    #[test]
+    fn allocation_size_graph_queries_scale_without_fact_index() {
+        for size in [16u64, 64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let var = |id| Bitvector32Term::Variable(Variable(id));
+            let offset = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+            let base = external_pointer(930_020);
+            let input_size = offset(var(0));
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context
+                    .assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+            }
+            let _scope = context.enter_id_scope();
+            PureFactContext::reset_bitvector_equality_index_fact_visits();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 1..=size {
+                    let output_size = offset(var(index));
+                    assert_eq!(
+                        allocation_continuity(&base, &input_size, &base, &output_size, &context,),
+                        AllocationContinuity::Same,
+                    );
+                }
+            });
+            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+            assert!(work < 300 * size as usize, "size={size}, work={work}");
+        }
     }
 }
 

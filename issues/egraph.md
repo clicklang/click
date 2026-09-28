@@ -308,6 +308,12 @@ condition kind and polarity still have to match; changed snapshots and
 withdrawn premises remain distinct. Direct and multi-size regressions avoid
 the legacy fact index for graph-congruent operands.
 
+Call allocation continuity now compares 32-bit allocation sizes through the
+typed graph helper after its separate base-pointer check. Changed snapshots,
+withdrawn premises, and different bases do not establish continuity. Direct
+and multi-size regressions avoid the legacy fact index for graph-congruent
+sizes.
+
 Selected range-composition candidates now rely on the graph-backed int32
 condition decision for endpoint equality, without a redundant second legacy
 fact-path walk. A direct join regression checks graph-congruent endpoints and
