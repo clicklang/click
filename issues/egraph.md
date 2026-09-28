@@ -189,8 +189,17 @@ branch isolation, sort and snapshot separation, withdrawal and restriction,
 expansion/rechecking, and multi-size indexed insertion/fork work. Canonical
 edge support counts avoid raw-load interning across verification arenas; a
 multi-size regression rejects the whole-snapshot comparisons that exposed. Scalar
-arithmetic congruence and propagation from equal scalar indices into scaled
-offsets remain separate future chunks.
+arithmetic congruence remains a future chunk.
+
+Int32 equality now propagates into same-width scaled offsets through the shared
+application-signature and parent-use indexes, including late merges and nested
+offset additions. Literal indices also join their folded byte constants with
+checked multiplication. Thus normalization can prove `p + i == p + j` from
+`i == j` for the same pointer base. Widths, 64-bit signedness, and memory
+snapshots remain distinct; no cancellation, scalar arithmetic, ownership, or
+framing rules were added. Regressions cover expansion/rechecking, withdrawal,
+restriction, persistent forks, and deterministic multi-size affected-parent
+and fork work.
 
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and

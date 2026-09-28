@@ -16294,3 +16294,34 @@ fn restricted_simp_does_not_borrow_the_ambient_equality_graph() {
         }
     }
 }
+
+#[test]
+fn normalize_using_scaled_int32_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_scaled_int32.md");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &text).unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().unwrap();
+    verify_c0_sources(source, &c_sources).expect("scaled indices and literal should verify");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("scaled equality should expand");
+    assert!(expanded.contains("normalize() using"));
+    verify_c0_sources(&expanded, &c_sources).expect("expanded proof should recheck");
+    let (keep, _) = expanded.split_once("theorem choose").unwrap();
+    for missing in ["requires i == j;", "requires j == k;"] {
+        let changed = keep.replace(missing, "");
+        assert_ne!(changed, keep);
+        assert!(verify_c0_sources(&changed, &c_sources).is_err());
+    }
+    let false_goal = source.replace("ensures p + i == p + k;", "ensures p + i != p + k;");
+    assert_ne!(false_goal, source);
+    assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
+    let restricted = source.replacen("normalize() using { }", "simp() using { i == j; }", 1);
+    assert_ne!(restricted, source);
+    assert!(verify_c0_sources(&restricted, &c_sources).is_err());
+}

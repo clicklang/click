@@ -1,7 +1,7 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
-//! explicit int32 equality. Scalar terms are opaque; their operands do not
-//! participate in congruence yet.
-//! Addition signatures use operand classes; parent-use indexes propagate late
+//! explicit int32 equality, connected by int32 scaling. Scalar terms are opaque;
+//! their operands do not participate in congruence yet.
+//! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
@@ -14,8 +14,34 @@ enum Node {
     Constant(i64),
     Variable(Variable),
     Add(u64, u64),
-    Int32Scaled(MachineAtom, i64),
+    Int32Scaled(u64, i64),
     Int64Scaled(MachineAtom, i64, bool),
+}
+
+// Operand IDs in an application are structural; in a signature they are
+// current class roots. Constructor and width remain part of every signature.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Application {
+    Add(u64, u64),
+    Int32Scaled(u64, i64),
+}
+
+impl Application {
+    fn operands(self) -> impl Iterator<Item = u64> {
+        match self {
+            Self::Add(left, right) => [Some(left), Some(right)],
+            Self::Int32Scaled(value, _) => [Some(value), None],
+        }
+        .into_iter()
+        .flatten()
+    }
+
+    fn signature(self, classes: &TermClasses) -> Self {
+        match self {
+            Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
+            Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -23,13 +49,14 @@ pub(super) struct TermClasses {
     nodes: PersistentMap<Node, u64>,
     // Weight counts class members plus registered parent uses. Moving the
     // lighter side bounds both root depth and reindexing, including a class
-    // with many addition parents repeatedly joined to fresh singleton terms.
+    // with many application parents repeatedly joined to fresh singleton terms.
     parents: PersistentMap<u64, u64>,
     weights: PersistentMap<u64, usize>,
-    additions: PersistentMap<u64, (u64, u64)>,
+    int32_constants: PersistentMap<u64, i32>,
+    applications: PersistentMap<u64, Application>,
     uses: PersistentMap<u64, PersistentSet<u64>>,
-    signatures: PersistentMap<(u64, u64), u64>,
-    addition_signatures: PersistentMap<u64, (u64, u64)>,
+    signatures: PersistentMap<Application, u64>,
+    application_signatures: PersistentMap<u64, Application>,
 }
 
 impl TermClasses {
@@ -57,13 +84,9 @@ impl TermClasses {
                         pending.push(Work::Term(left));
                         continue;
                     }
-                    PointerOffsetTerm::Int32Scaled { value, byte_width } => Node::Int32Scaled(
-                        MachineAtom::new(
-                            crate::kernel::MachineIntegerType::Int32,
-                            crate::kernel::canonical_term(value),
-                        ),
-                        *byte_width,
-                    ),
+                    PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                        Node::Int32Scaled(self.intern_int32(value), *byte_width)
+                    }
                     PointerOffsetTerm::Int64Scaled {
                         value,
                         byte_width,
@@ -93,13 +116,20 @@ impl TermClasses {
             return *id;
         }
         let id = self.nodes.len() as u64;
-        let operands = match &node {
-            Node::Add(left, right) => Some((*left, *right)),
+        let application = match &node {
+            Node::Add(left, right) => Some(Application::Add(*left, *right)),
+            Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
+            Node::Int32(value) => {
+                if let Some(value) = value.value().as_const() {
+                    self.int32_constants.insert(id, value as i32);
+                }
+                None
+            }
             _ => None,
         };
         self.nodes.insert(node, id);
-        if let Some(operands) = operands {
-            self.register_addition(id, operands);
+        if let Some(application) = application {
+            self.register_application(id, application);
         }
         id
     }
@@ -165,9 +195,9 @@ impl TermClasses {
         self.weights.get(&id).copied().unwrap_or(1)
     }
 
-    fn register_addition(&mut self, id: u64, operands: (u64, u64)) {
-        self.additions.insert(id, operands);
-        for operand in [operands.0, operands.1] {
+    fn register_application(&mut self, id: u64, application: Application) {
+        self.applications.insert(id, application);
+        for operand in application.operands() {
             let root = self.root(operand);
             let uses = self.uses.get(&root).cloned().unwrap_or_default();
             if !uses.contains(&id) {
@@ -176,19 +206,31 @@ impl TermClasses {
             }
         }
         let mut pending = Vec::new();
-        self.reindex_addition(id, &mut pending);
+        self.reindex_application(id, &mut pending);
         self.close(pending);
     }
 
-    fn reindex_addition(&mut self, id: u64, pending: &mut Vec<(u64, u64)>) {
+    fn reindex_application(&mut self, id: u64, pending: &mut Vec<(u64, u64)>) {
         crate::instrumentation::record_deterministic_work(1);
-        if let Some(old) = self.addition_signatures.get(&id).copied()
+        if let Some(old) = self.application_signatures.get(&id).copied()
             && self.signatures.get(&old) == Some(&id)
         {
             self.signatures.remove(&old);
         }
-        let (left, right) = *self.additions.get(&id).expect("registered addition");
-        let signature = (self.root(left), self.root(right));
+        let signature = self
+            .applications
+            .get(&id)
+            .expect("registered application")
+            .signature(self);
+        // PointerOffsetTerm folds literal int32 indices to byte constants.
+        // Join that definitional form without solving any scalar arithmetic.
+        if let Application::Int32Scaled(value, width) = signature
+            && let Some(value) = self.int32_constants.get(&value)
+            && let Some(bytes) = i64::from(*value).checked_mul(width)
+        {
+            let constant = self.intern_node(Node::Constant(bytes));
+            pending.push((id, constant));
+        }
         if let Some(other) = self.signatures.get(&signature) {
             if *other != id {
                 pending.push((id, *other));
@@ -196,7 +238,7 @@ impl TermClasses {
         } else {
             self.signatures.insert(signature, id);
         }
-        self.addition_signatures.insert(id, signature);
+        self.application_signatures.insert(id, signature);
     }
 
     fn close(&mut self, mut pending: Vec<(u64, u64)>) -> bool {
@@ -217,10 +259,21 @@ impl TermClasses {
             self.weights.insert(kept, weight);
             let moved_uses = self.uses.get(&moved).cloned().unwrap_or_default();
             let mut kept_uses = self.uses.get(&kept).cloned().unwrap_or_default();
+            // A class learns a literal only once. Its existing applications
+            // then need constant evaluation as well as the moved applications.
+            if !self.int32_constants.contains_key(&kept)
+                && let Some(value) = self.int32_constants.get(&moved).copied()
+            {
+                self.int32_constants.insert(kept, value);
+                for id in kept_uses.iter() {
+                    self.reindex_application(*id, &mut pending);
+                }
+            }
+            self.int32_constants.remove(&moved);
             for id in moved_uses.iter() {
                 crate::instrumentation::record_deterministic_work(1);
                 kept_uses = kept_uses.with_value(*id);
-                self.reindex_addition(*id, &mut pending);
+                self.reindex_application(*id, &mut pending);
             }
             self.uses.remove(&moved);
             if !kept_uses.is_empty() {

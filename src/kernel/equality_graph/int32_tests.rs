@@ -26,7 +26,7 @@ fn int32_equality_is_transitive_symmetric_and_branch_local() {
 }
 
 #[test]
-fn int32_classes_are_typed_and_do_not_infer_arithmetic_or_scaled_congruence() {
+fn int32_classes_are_typed_and_do_not_infer_scalar_arithmetic_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&a, &b);
@@ -38,7 +38,7 @@ fn int32_classes_are_typed_and_do_not_infer_arithmetic_or_scaled_congruence() {
         &Pointer::symbolic(Variable(1)),
         &Pointer::symbolic(Variable(2))
     ));
-    assert!(!graph.are_offsets_equal(
+    assert!(graph.are_offsets_equal(
         &PointerOffsetTerm::scale_int32(a.clone(), 4),
         &PointerOffsetTerm::scale_int32(b.clone(), 4),
     ));
@@ -122,6 +122,17 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
         .assume_condition(eq(&named, &a), true);
     assert!(context.equality_graph.are_int32_equal(&load(&before), &a));
     assert!(!context.equality_graph.are_int32_equal(&load(&after), &a));
+    let scale = |value| PointerOffsetTerm::scale_int32(value, 4);
+    assert!(
+        context
+            .equality_graph
+            .are_offsets_equal(&scale(load(&before)), &scale(a.clone()))
+    );
+    assert!(
+        !context
+            .equality_graph
+            .are_offsets_equal(&scale(load(&after)), &scale(a.clone()))
+    );
     let once = context.without_exact_fact(&Proposition::ConditionIs(eq(&load(&before), &a), true));
     assert!(once.equality_graph.are_int32_equal(&named, &a));
     let twice = once.without_exact_fact(&Proposition::ConditionIs(eq(&named, &a), true));

@@ -63,9 +63,12 @@ consumers do not query the new offset fragment.
 
 Explicit int32 equalities use typed opaque nodes in the same term-class engine
 as offsets. The graph preserves canonical machine-term identity, including
-memory snapshots. It does not infer scalar arithmetic congruence, 64-bit or
-mathematical-integer equality, or equality of scaled offsets from scalar
-equality. Exact scalar premises are counted under shallow canonical edge keys so
+memory snapshots. Int32 scaling is a congruent application: equal indices
+with the same byte width give equal offsets, and existing offset addition
+applications propagate that equality. Parent-use indexes handle late scalar
+merges in the same worklist. Literal indices join their folded byte constants
+when multiplication fits i64. This does not infer scalar arithmetic congruence,
+64-bit or mathematical-integer equality, or scalar equality from equal offsets. Exact scalar premises are counted under shallow canonical edge keys so
 withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow
 cross-arena snapshot comparisons to traverse unrelated memory. This is an additive consumer migration; legacy scalar reasoning outside

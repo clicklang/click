@@ -8,7 +8,7 @@
 //! The current supported fragment is pointers, affine byte offsets, and
 //! registered same-snapshot pointer loads, plus explicit whole-offset and int32 equality.
 //! Pointer and offset queries are typed separately; the offset fragment only
-//! supports stated equalities and congruence of offset addition. Pointer spelling
+//! supports stated equalities, offset addition and int32 scaling congruence. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.
 //!
 //! The pointer fragment uses a persistent union-find with offsets.
@@ -49,6 +49,8 @@ use super::prelude::*;
 
 #[cfg(test)]
 mod int32_tests;
+#[cfg(test)]
+mod scaled_int32_tests;
 mod terms;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
@@ -394,7 +396,7 @@ impl EqualityGraph {
         }
     }
 
-    /// Query explicit offset equality and addition congruence.
+    /// Query explicit offset equality, addition and int32 scaling congruence.
     /// This fragment does not solve arithmetic or perform cancellation.
     pub(in crate::kernel) fn are_offsets_equal(
         &self,
