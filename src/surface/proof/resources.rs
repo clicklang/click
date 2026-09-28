@@ -3275,7 +3275,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 &lowered,
                 parameters,
             );
-            state = state.with_memory(memory);
+            // Naming cells during a proof rewrite is not a C write. Keep
+            // unrelated memory-backed views and their support identities.
+            state = state.with_materialized_memory(memory);
         }
         // The selected child was already lowered in the current state.
         // Re-lowering from memory alone loses locals such as a callback's
@@ -3473,17 +3475,30 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 .collect::<Vec<_>>();
             state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
         } else {
-            let resources = state
-                .resources()
-                .clone()
-                .try_compose_with_facts(unfolded_facts.clone(), available_pure_facts.assumptions())
-                .map_err(|error| {
-                    ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
-                        describe_resource_clause(resource),
-                        describe_resource_context_validity_error(error, parameters, arguments)
-                    ))
-                })?;
+            // Population cleanup is certified as the exact exchange of its
+            // units for its body. Do not normalize unrelated framed memory
+            // (for example adjacent mutex storage) during that exchange.
+            let resources = if tracks_population_in_body {
+                state
+                    .resources()
+                    .clone()
+                    .try_compose_with_facts_delaying_normalization(
+                        unfolded_facts.clone(),
+                        available_pure_facts.assumptions(),
+                    )
+            } else {
+                state.resources().clone().try_compose_with_facts(
+                    unfolded_facts.clone(),
+                    available_pure_facts.assumptions(),
+                )
+            }
+            .map_err(|error| {
+                ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
+                    describe_resource_clause(resource),
+                    describe_resource_context_validity_error(error, parameters, arguments)
+                ))
+            })?;
             state = state.with_resource_context(resources);
         }
     }

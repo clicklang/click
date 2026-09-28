@@ -249,6 +249,37 @@ as observing the wrapper's own population. Supporting foreign-population facts
 must preserve the same authenticated population across acquisitions and must
 not manufacture its total from the locally visible units.
 
+## Conservation through a locally owned mutex
+
+`mdtests/population_conservation_local_mutex.md` isolates the conservation rule
+from cross-thread transfer. A sequential helper receives a protected wrapper
+containing one `remaining(p)` unit and consumes a second unit. It initializes
+a local mutex, acquires it, unfolds the wrapper, and opens the population body.
+After the C increment, scope closure commits the consumption and proves
+`p->value == 3 - count(remaining(p))` at the decreased count. The helper folds
+the wrapper, unlocks, destroys the mutex, and returns the retained unit inside
+the wrapper. Its caller initializes three units, invokes the helper twice,
+recovers the last unit's memory, and proves the returned value is two.
+
+This is a synthetic sequential control under the modeled pthread assumptions,
+not a replacement for the unchanged concurrent C. Its mutex is local to each
+helper call, and its contract can require a current Count bound because no
+other worker is running. The negative control increments by two while consuming
+one unit and fails with
+`Requires p->value == (3 - count(remaining(p))) after consumption`.
+
+The final cleanup also tests that proof-only cell materialization preserves
+unrelated memory views. Population cleanup exchanges only the selected units
+and body; it must not normalize or discard framed mutex-storage observations.
+
+The remaining concurrency rule is body custody, not another arithmetic law:
+publication must bind this population to the mutex lifetime; worker units must
+remain opaque outside an acquisition; acquisition must establish a fresh
+observation of the same population; consuming closure must spend the worker's
+unit while restoring the shared body; and final join must connect the verified
+net effects to the total used at destruction. Neither a fresh population per
+acquisition nor a Count copied from worker entry is valid under interference.
+
 ## Join accounting prerequisite
 
 A reduced abstract-ticket example exposed a stale total: after joining a worker
@@ -323,9 +354,10 @@ shared body merely because such a unit occurs inside an exclusive wrapper.
 
 ## Subsequent obligations, not yet demonstrated by the probes
 
-- **Compose consumption with unlock.** Early consumption now works sequentially.
-  The worker must use this transition while holding the lock, restore the
-  protected wrapper, and then unlock. The mutex composition remains unproved.
+- **Compose consumption with unlock.** Early consumption now composes with a locally
+  owned mutex in the sequential control above. The worker must use the same
+  checked transition under shared body custody; that concurrent composition
+  remains unproved.
 - **Authenticate population identity.** Publication, typed mutex use, external
   worker units, and replacement protected states must refer to the same
   population. A fresh acquisition changes observations, not that identity.
