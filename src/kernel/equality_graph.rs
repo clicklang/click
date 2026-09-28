@@ -6,7 +6,7 @@
 //! added. Branches clone persistent state so local assumptions do not leak.
 //!
 //! The current supported fragment is pointers, affine byte offsets, and
-//! registered same-snapshot pointer loads, plus explicit whole-offset and int32 equality.
+//! registered same-snapshot pointer loads, plus whole-offset equality and int32 addition congruence.
 //! Pointer and offset queries are typed separately; the offset fragment only
 //! supports stated equalities, offset addition and int32 scaling congruence. Pointer spelling
 //! helpers serve legacy consumers and are not the general equality interface.
@@ -47,6 +47,8 @@
 
 use super::prelude::*;
 
+#[cfg(test)]
+mod int32_addition_tests;
 #[cfg(test)]
 mod int32_tests;
 #[cfg(test)]
@@ -410,8 +412,8 @@ impl EqualityGraph {
             .are_equal(left, right)
     }
 
-    /// Query stated int32 equality and transitivity. A false answer is unknown.
-    /// Scalar operations are opaque; no arithmetic congruence is inferred.
+    /// Query int32 equality, transitivity and addition congruence.
+    /// A false answer is unknown. Other scalar operations remain opaque.
     pub(in crate::kernel) fn are_int32_equal(
         &self,
         left: &Bitvector32Term,

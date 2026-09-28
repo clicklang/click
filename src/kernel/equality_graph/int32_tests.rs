@@ -26,7 +26,7 @@ fn int32_equality_is_transitive_symmetric_and_branch_local() {
 }
 
 #[test]
-fn int32_classes_are_typed_and_do_not_infer_scalar_arithmetic_congruence() {
+fn int32_classes_are_typed_and_only_supported_operators_have_congruence() {
     let (a, b) = (var(1), var(2));
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&a, &b);
@@ -44,7 +44,10 @@ fn int32_classes_are_typed_and_do_not_infer_scalar_arithmetic_congruence() {
     ));
     let plus_one =
         |value| Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
-    assert!(!graph.are_int32_equal(&plus_one(a), &plus_one(b)));
+    assert!(graph.are_int32_equal(&plus_one(a.clone()), &plus_one(b.clone())));
+    let minus_one =
+        |value| Bitvector32Term::Subtract(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+    assert!(!graph.are_int32_equal(&minus_one(a), &minus_one(b)));
     graph.add_offset_equality(
         &PointerOffsetTerm::Variable(Variable(3)),
         &PointerOffsetTerm::Variable(Variable(4)),
@@ -132,6 +135,17 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
         !context
             .equality_graph
             .are_offsets_equal(&scale(load(&after)), &scale(a.clone()))
+    );
+    let sum = |value| Bitvector32Term::Add(Box::new(value), Box::new(var(42)));
+    assert!(
+        context
+            .equality_graph
+            .are_int32_equal(&sum(load(&before)), &sum(a.clone()))
+    );
+    assert!(
+        !context
+            .equality_graph
+            .are_int32_equal(&sum(load(&after)), &sum(a.clone()))
     );
     let once = context.without_exact_fact(&Proposition::ConditionIs(eq(&load(&before), &a), true));
     assert!(once.equality_graph.are_int32_equal(&named, &a));

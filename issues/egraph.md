@@ -188,8 +188,7 @@ term-class engine; no separate scalar union-find was added. Regressions cover
 branch isolation, sort and snapshot separation, withdrawal and restriction,
 expansion/rechecking, and multi-size indexed insertion/fork work. Canonical
 edge support counts avoid raw-load interning across verification arenas; a
-multi-size regression rejects the whole-snapshot comparisons that exposed. Scalar
-arithmetic congruence remains a future chunk.
+multi-size regression rejects the whole-snapshot comparisons that exposed. Further scalar operators remain future chunks.
 
 Int32 equality now propagates into same-width scaled offsets through the shared
 application-signature and parent-use indexes, including late merges and nested
@@ -200,6 +199,15 @@ snapshots remain distinct; no cancellation, scalar arithmetic, ownership, or
 framing rules were added. Regressions cover expansion/rechecking, withdrawal,
 restriction, persistent forks, and deterministic multi-size affected-parent
 and fork work.
+
+Int32 addition now participates in the same application worklist. Operand
+merges propagate through nested sums and scaled pointer offsets; literal sums
+join their wrapping bitvector values without discharging C signed definedness.
+Registration canonicalizes the input once and interns shallow child IDs.
+Regressions cover late merges, constant folding, snapshot and branch isolation,
+withdrawal/restriction, expansion/rechecking, and multi-size registration,
+propagation, and fork work. Other scalar operators, arithmetic solving,
+cancellation, ownership, and framing remain outside this slice.
 
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and

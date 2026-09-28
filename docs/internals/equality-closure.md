@@ -19,7 +19,7 @@ Pointer operations keep pointer-typed operands; `add_offset_equality` and
 `are_offsets_equal` accept whole pointer-offset terms. Supported pointer-load
 applications and offset terms register on demand during insertion and queries.
 `add_int32_equality` and `are_int32_equal` admit and query explicit int32
-equalities and their transitive closure. Further sorts and consumers will be
+equalities, their transitive closure, and addition congruence. Further sorts and consumers will be
 added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
 
@@ -54,20 +54,26 @@ The offset fragment interns whole terms with shallow keys and uses persistent
 union-find weighted by members and parent uses. Addition signatures identify
 operand classes, so equal operands establish equal sums. Indexed parent uses
 propagate late merges through nested additions with an iterative worklist;
-only parents of the lighter class are revisited. It preserves widths,
+parents of the lighter class are revisited. When a class first acquires a
+literal value, its existing parents also receive constant evaluation. It preserves widths,
 signedness, and machine-term snapshot identity, and adds no arithmetic solver
 or cancellation rule. Queries and additions use indexed access. Existing
 context restriction and equality-withdrawal rebuilds retain all graph
 fragments from their remaining exact equality indexes. Ownership and framing
 consumers do not query the new offset fragment.
 
-Explicit int32 equalities use typed opaque nodes in the same term-class engine
-as offsets. The graph preserves canonical machine-term identity, including
+Explicit int32 equalities use typed nodes in the same term-class engine
+as offsets. Int32 addition has its own application signature and shallow child
+IDs; other scalar operations remain opaque. Equal operands give equal sums,
+including late equalities and nested additions. Registration canonicalizes each
+input once before walking its supported constructors. Literal sums use the
+kernel bitvector wrapping semantics; equality does not prove C signed
+definedness. No commutativity, cancellation, or arithmetic solver is added. The graph preserves canonical machine-term identity, including
 memory snapshots. Int32 scaling is a congruent application: equal indices
 with the same byte width give equal offsets, and existing offset addition
 applications propagate that equality. Parent-use indexes handle late scalar
 merges in the same worklist. Literal indices join their folded byte constants
-when multiplication fits i64. This does not infer scalar arithmetic congruence,
+when multiplication fits i64. This does not infer congruence for other scalar operations,
 64-bit or mathematical-integer equality, or scalar equality from equal offsets. Exact scalar premises are counted under shallow canonical edge keys so
 withdrawal preserves other premises that support the same edge. `MemoryLoad`
 expressions are not separately interned for support tracking: that would allow

@@ -16325,3 +16325,47 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
     assert_ne!(restricted, source);
     assert!(verify_c0_sources(&restricted, &c_sources).is_err());
 }
+
+#[test]
+fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/normalize_using_int32_addition.md");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &text).unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let source = fixture.click_source.as_deref().unwrap();
+    verify_c0_sources(source, &c_sources).expect("addition and offset congruence should verify");
+    let expanded = expand_c0_claim_source(source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("addition congruence should expand");
+    assert!(expanded.contains("normalize() using"));
+    verify_c0_sources(&expanded, &c_sources).expect("expanded proof should recheck");
+    let (keep, _) = expanded.split_once("theorem offsets").unwrap();
+    let missing = keep.replace("requires a == b;", "");
+    assert_ne!(missing, keep);
+    assert!(verify_c0_sources(&missing, &c_sources).is_err());
+    let false_goal = source.replace("ensures a + c == b + c;", "ensures a + c != b + c;");
+    assert_ne!(false_goal, source);
+    assert!(verify_c0_sources(&false_goal, &c_sources).is_err());
+    let restricted = source.replacen(
+        "normalize() using { }",
+        "simp() using { defined(a + c); defined(b + c); }",
+        1,
+    );
+    assert_ne!(restricted, source);
+    assert!(verify_c0_sources(&restricted, &c_sources).is_err());
+    let overflow = r#"
+        theorem overflow(a: int32, b: int32) {
+            requires a == b;
+            requires a == 2147483647;
+            ensures defined(b + 1) by { normalize() using { } }
+        }
+    "#;
+    assert!(
+        verify_c0_sources(overflow, &[]).is_err(),
+        "equality cannot discharge signed overflow"
+    );
+}

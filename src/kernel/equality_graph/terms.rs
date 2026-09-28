@@ -1,6 +1,5 @@
 //! Typed term classes inside the trusted graph: offset addition congruence and
-//! explicit int32 equality, connected by int32 scaling. Scalar terms are opaque;
-//! their operands do not participate in congruence yet.
+//! int32 addition, connected by int32 scaling. Other scalar operations stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
@@ -11,6 +10,7 @@ use crate::persistent::{PersistentMap, PersistentSet};
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Int32(MachineAtom),
+    Int32Add(u64, u64),
     Constant(i64),
     Variable(Variable),
     Add(u64, u64),
@@ -23,13 +23,14 @@ enum Node {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
     Add(u64, u64),
+    Int32Add(u64, u64),
     Int32Scaled(u64, i64),
 }
 
 impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
-            Self::Add(left, right) => [Some(left), Some(right)],
+            Self::Add(left, right) | Self::Int32Add(left, right) => [Some(left), Some(right)],
             Self::Int32Scaled(value, _) => [Some(value), None],
         }
         .into_iter()
@@ -39,6 +40,7 @@ impl Application {
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
+            Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
         }
     }
@@ -118,6 +120,7 @@ impl TermClasses {
         let id = self.nodes.len() as u64;
         let application = match &node {
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
+            Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
             Node::Int32(value) => {
                 if let Some(value) = value.value().as_const() {
@@ -135,9 +138,35 @@ impl TermClasses {
     }
 
     fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
-        self.intern_node(Node::Int32(MachineAtom::int32(
-            crate::kernel::canonical_term(term),
-        )))
+        use crate::kernel::Bitvector32Term;
+        // Canonicalize once, then walk only the supported constructor. Repeated
+        // canonicalization of every subtree would make nested sums quadratic.
+        let term = crate::kernel::canonical_term(term);
+        enum Work<'a> {
+            Term(&'a Bitvector32Term),
+            Add,
+        }
+        let mut pending = vec![Work::Term(&term)];
+        let mut values = Vec::new();
+        while let Some(work) = pending.pop() {
+            let node = match work {
+                Work::Term(Bitvector32Term::Add(left, right)) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    pending.push(Work::Add);
+                    pending.push(Work::Term(right));
+                    pending.push(Work::Term(left));
+                    continue;
+                }
+                Work::Term(term) => Node::Int32(MachineAtom::int32(term.clone())),
+                Work::Add => {
+                    let right = values.pop().expect("right int32 operand");
+                    let left = values.pop().expect("left int32 operand");
+                    Node::Int32Add(left, right)
+                }
+            };
+            values.push(self.intern_node(node));
+        }
+        values.pop().expect("int32 term")
     }
 
     pub(super) fn are_int32_equal(
@@ -229,6 +258,21 @@ impl TermClasses {
             && let Some(bytes) = i64::from(*value).checked_mul(width)
         {
             let constant = self.intern_node(Node::Constant(bytes));
+            pending.push((id, constant));
+        }
+        // Kernel int32 values are bitvectors. Folding their sum wraps at 32
+        // bits, just like Bitvector32Term::as_const; C signed definedness is a
+        // separate obligation and is not established by equality congruence.
+        if let Application::Int32Add(left, right) = signature
+            && let (Some(left), Some(right)) = (
+                self.int32_constants.get(&left),
+                self.int32_constants.get(&right),
+            )
+        {
+            let value = left.wrapping_add(*right) as u32;
+            let constant = self.intern_node(Node::Int32(MachineAtom::int32(
+                crate::kernel::Bitvector32Term::Constant(value),
+            )));
             pending.push((id, constant));
         }
         if let Some(other) = self.signatures.get(&signature) {
