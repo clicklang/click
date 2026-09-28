@@ -946,12 +946,15 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     else {
         return false;
     };
-    let candidate = left.block == right.block
-        && pointer_offsets_proven_equal_for_memory_resolution(
-            &left.offset,
-            &right.offset,
-            assumptions,
-        )
+    // Same-block addresses use the exact-offset resolver below, including
+    // its graph query. Ask pointer classes only across blocks: registering
+    // both sides of every same-block cell comparison inside a smart tactic
+    // exceeds its work budget for large unfolded runs.
+    let candidate = if left.block == right.block {
+        pointer_offsets_proven_equal_for_memory_resolution(&left.offset, &right.offset, assumptions)
+    } else {
+        assumptions.equality_graph.are_equal(left, right)
+    }
         || assumptions
             .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
             == Some(true)
@@ -985,6 +988,13 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         right.clone(),
     )) {
         return Some(value);
+    }
+    // These classes denote exact byte offsets, unlike the wrapping scalar
+    // index equalities consulted by the guarded rebuild below.
+    if assumptions.equality_graph.has_term_equivalences()
+        && assumptions.equality_graph.are_offsets_equal(left, right)
+    {
+        return Some(true);
     }
     // A field displacement plus one signed index is an exact byte offset,
     // not a modular sum of element indices. Move the constant displacement
@@ -1181,6 +1191,161 @@ fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
             &unbounded
         ),
         None
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
+    let scalar = |id: u64| Bitvector32Term::Variable(Variable(91_000 + id));
+    let offset = |id| {
+        PointerOffsetTerm::add(
+            PointerOffsetTerm::Constant(4),
+            PointerOffsetTerm::scale_int32(scalar(id), 4),
+        )
+    };
+    let named = PointerOffsetTerm::Variable(Variable(91_100));
+    let named_fact = ConditionTerm::pointer_offset_equal(offset(2), named.clone());
+    let scalar_fact = ConditionTerm::equal(scalar(1), scalar(2));
+    let parent = PureFactContext::new().assume_condition(named_fact.clone(), true);
+    let branch = parent.clone().assume_condition(scalar_fact.clone(), true);
+    let pointer = |offset| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset,
+    };
+
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &parent),
+        None
+    );
+    assert!(!pointers_proven_equal_for_memory_resolution(
+        &pointer(offset(1)),
+        &pointer(named.clone()),
+        &parent,
+    ));
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &branch),
+        Some(true)
+    );
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &pointer(offset(1)),
+        &pointer(named.clone()),
+        &branch,
+    ));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(scalar_fact, true));
+    assert_ne!(
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &withdrawn),
+        Some(true)
+    );
+    let restricted = branch.restricted_to_facts(&[], &[]);
+    assert_ne!(
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &restricted),
+        Some(true)
+    );
+    let retained = branch.without_exact_fact(&Proposition::ConditionIs(named_fact, true));
+    assert_ne!(
+        pointer_offsets_equal_for_memory_resolution(&offset(1), &named, &retained),
+        Some(true)
+    );
+}
+
+#[cfg(test)]
+#[test]
+fn memory_resolution_uses_pointer_classes_across_blocks() {
+    let pointer = |block: u64, offset| Pointer {
+        block: PointerBlock::Symbolic(Variable(91_200 + block)),
+        offset: PointerOffsetTerm::Constant(offset),
+    };
+    let first = ConditionTerm::pointer_equal(pointer(0, 0), pointer(1, 4));
+    let second = ConditionTerm::pointer_equal(pointer(1, 4), pointer(2, 8));
+    let parent = PureFactContext::new().assume_condition(first, true);
+    let branch = parent.clone().assume_condition(second.clone(), true);
+    assert!(!pointers_proven_equal_for_memory_resolution(
+        &pointer(0, 12),
+        &pointer(2, 20),
+        &parent,
+    ));
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &pointer(0, 12),
+        &pointer(2, 20),
+        &branch,
+    ));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(second, true));
+    assert!(!pointers_proven_equal_for_memory_resolution(
+        &pointer(0, 12),
+        &pointer(2, 20),
+        &withdrawn,
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let scalar = |id| Bitvector32Term::Variable(Variable(92_000 + id));
+        let offset = |id| PointerOffsetTerm::scale_int32(scalar(id), 4);
+        let named = PointerOffsetTerm::Variable(Variable(94_000));
+        let mut context = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_offset_equal(offset(0), named.clone()),
+            true,
+        );
+        for index in 0..size {
+            context = context
+                .assume_condition(ConditionTerm::equal(scalar(index), scalar(index + 1)), true);
+        }
+        let _scope = context.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                assert_eq!(
+                    pointer_offsets_equal_for_memory_resolution(&offset(index), &named, &context),
+                    Some(true)
+                );
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 200 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = crate::kernel::intern_c_memory(CMemory::new().with_block("offset-load", 16));
+    let scalar = |id: u64| Bitvector32Term::Variable(Variable(95_000 + id));
+    let address = |index| Pointer {
+        block: "offset-load".into(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let loaded = |memory: &SharedCMemory, index| {
+        Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+            memory,
+            &address(index),
+            4,
+            memory,
+        ))
+    };
+    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        address(scalar(1)),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let left = PointerOffsetTerm::scale_int32(loaded(&before, scalar(1)), 4);
+    let right = PointerOffsetTerm::scale_int32(loaded(&before, scalar(2)), 4);
+    let changed = PointerOffsetTerm::scale_int32(loaded(&after, scalar(2)), 4);
+    let context =
+        PureFactContext::new().assume_condition(ConditionTerm::equal(scalar(1), scalar(2)), true);
+    assert_eq!(
+        pointer_offsets_equal_for_memory_resolution(&left, &right, &context),
+        Some(true)
+    );
+    assert_ne!(
+        pointer_offsets_equal_for_memory_resolution(&left, &changed, &context),
+        Some(true)
     );
 }
 

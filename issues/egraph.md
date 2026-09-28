@@ -269,6 +269,15 @@ consumer while retaining the exact-offset guard at its memory-resolution
 caller. Branch, snapshot, wrapping-offset, and multi-size regressions cover
 the migration; the broader legacy fact-path helper remains in use elsewhere.
 
+Central memory-resolution cross-block pointer and exact same-block byte-offset
+queries now consult the maintained graph before their older equality paths.
+This carries scalar scaling and offset-addition congruence into address
+matching while retaining the structural-distinctness and explicit-range guards.
+Wrapping int32 index equality still needs the existing exact rebuild proof
+before it can establish
+byte-offset equality. Fork, withdrawal, restriction, and multi-size regressions
+cover the new consumer; other memory arithmetic and framing rules are unchanged.
+
 The full int32 equality condition decision now also queries a graph with
 established term equivalences before memory resolution and its other arithmetic
 rules. An empty graph skips interning unrelated terms. Regressions cover

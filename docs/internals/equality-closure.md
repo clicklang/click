@@ -112,6 +112,17 @@ building the legacy fact-path index. Its offset callers still use the exactness
 check above before affirming byte-offset equality. Other callers of the legacy
 scalar fact-path helper remain separate migration candidates.
 
+The central memory resolver now asks pointer classes for cross-block equality
+and offset classes for exact same-block byte-offset equality. Its pointer
+query still rejects structurally distinct blocks and explicitly separated
+ranges; its offset query still treats equal wrapping int32 residues as
+insufficient unless the existing exact-index rebuild check succeeds. A graph
+offset edge can flow
+through int32 scaling and offset addition into a pointer address without
+building the legacy scalar fact index. Context forks, fact withdrawal, and
+restriction keep these answers scoped to their supporting premises. Broader
+memory arithmetic and framing rules remain in the resolver.
+
 The full `Bitvector32Equal` condition decision now uses the same graph query
 before memory resolution and its other arithmetic rules when the graph has
 established term equivalences. An empty graph skips interning unrelated scalar
