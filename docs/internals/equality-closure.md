@@ -161,6 +161,11 @@ equal extents do not supply viewability by themselves. Tests retain the
 loadable-premise and base boundaries and check direct multi-size queries
 without the legacy fact index.
 
+Same-base range containment now uses the typed int32 value rule when its
+signed endpoint-order check has equal operands. Equal endpoint bitpatterns
+establish `<=`; this does not infer an exact byte-offset difference from a
+wrapping scalar equality. Other order and containment rules remain separate.
+
 The kernel comparison of condition facts for certified transport now uses the
 typed int32 value rule for operands of matching signed-order or equality
 conditions. Condition kind and truth value must still match. Registered loads

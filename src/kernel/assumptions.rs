@@ -5334,7 +5334,13 @@ fn exact_less_equal_for_memory_resolution(
         return left <= right;
     }
     if left == right
-        || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
+        // These are signed int32 endpoint *values*, not exact byte offsets.
+        // Equal bitpatterns therefore satisfy `<=` in this same-base check.
+        || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
+            left,
+            right,
+            assumptions,
+        )
         || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
             left.clone(),
             right.clone(),
@@ -5366,6 +5372,114 @@ fn exact_less_equal_for_memory_resolution(
         signed_bitvector_constant(&fact_lower)
             .is_some_and(|bound| left_constant <= if strict { bound + 1 } else { bound })
     })
+}
+
+#[cfg(test)]
+mod contained_range_endpoint_graph_tests {
+    use super::*;
+
+    fn variable(id: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(id))
+    }
+
+    fn endpoint(id: u64) -> Bitvector32Term {
+        Bitvector32Term::add(variable(id), Bitvector32Term::Constant(1))
+    }
+
+    #[test]
+    fn signed_containment_order_uses_graph_value_equality() {
+        let premise = ConditionTerm::equal(variable(9_330_001), variable(9_330_002));
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        assert!(exact_less_equal_for_memory_resolution(
+            &endpoint(9_330_001),
+            &endpoint(9_330_002),
+            &branch,
+        ));
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(!exact_less_equal_for_memory_resolution(
+            &endpoint(9_330_001),
+            &endpoint(9_330_002),
+            &parent,
+        ));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(!exact_less_equal_for_memory_resolution(
+            &endpoint(9_330_001),
+            &endpoint(9_330_002),
+            &withdrawn,
+        ));
+    }
+
+    #[test]
+    fn same_base_range_containment_uses_graph_equal_endpoints() {
+        let base = Pointer::symbolic(Variable(9_330_003));
+        let parent = CMemoryRange::new(
+            base.clone(),
+            Bitvector32Term::Constant(0),
+            endpoint(9_330_001),
+        );
+        let child = CMemoryRange::new(
+            base.clone(),
+            Bitvector32Term::Constant(0),
+            endpoint(9_330_002),
+        );
+        let premise = ConditionTerm::equal(variable(9_330_001), variable(9_330_002));
+        let bare = PureFactContext::new();
+        let branch = bare.clone().assume_condition(premise.clone(), true);
+        let _scope = branch.enter_id_scope();
+
+        assert!(!memory_range_shallowly_contained_with_facts(
+            &child, &parent, &branch,
+        ));
+        assert!(memory_range_contained_for_memory_resolution(
+            &child, &parent, &branch,
+        ));
+        assert!(!memory_range_contained_for_memory_resolution(
+            &child, &parent, &bare,
+        ));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(!memory_range_contained_for_memory_resolution(
+            &child, &parent, &withdrawn,
+        ));
+        let other_base = child.with_bounds(
+            Pointer::symbolic(Variable(9_330_004)),
+            child.start().clone(),
+            child.end().clone(),
+        );
+        assert!(!memory_range_contained_for_memory_resolution(
+            &other_base,
+            &parent,
+            &branch,
+        ));
+    }
+
+    #[test]
+    fn signed_containment_order_graph_queries_scale_without_fact_index() {
+        for size in [16u64, 64, 256, 1024] {
+            let mut context = PureFactContext::new();
+            for index in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::equal(variable(index), variable(index + 1)),
+                    true,
+                );
+            }
+            let _scope = context.enter_id_scope();
+            PureFactContext::reset_bitvector_equality_index_fact_visits();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 1..=size {
+                    assert!(exact_less_equal_for_memory_resolution(
+                        &endpoint(0),
+                        &endpoint(index),
+                        &context,
+                    ));
+                }
+            });
+            assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+            assert!(work < 200 * size as usize, "size={size}, work={work}");
+        }
+    }
 }
 
 /// The recorded `a <= b` and `a < b` facts whose upper endpoint is the named

@@ -308,6 +308,11 @@ The existing range-availability checks remain with their callers. A missing
 loadable premise or a different base still fails; direct multi-size regressions
 avoid the legacy fact index for graph-congruent extents.
 
+Same-base containment's signed endpoint-order check now treats graph-equal
+int32 endpoints as equal values, before its legacy fact-path fallback. This is
+an order fact about endpoint values, not a claim that wrapping equality gives
+an exact byte offset. Withdrawal and multi-size regressions cover this path.
+
 Certified condition-fact transport now compares operands of matching
 signed-order and equality facts through the typed int32 graph helper. The
 condition kind and polarity still have to match; changed snapshots and
