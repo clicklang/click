@@ -237,12 +237,9 @@ that description and actual ownership. The lower-level transition accepts an
 explicit owned replacement; current runtime unlock still selects the original
 instance until named `state` input transport is connected.
 
-The kernel also has staged opaque parameter atoms and description-substitution
-helpers. They are not a source-language feature: generic rule issuance and
-parameter-clause evaluation remain disabled. Their existence is not a reason
-to introduce explicit description parameters, and activating them is no longer
-a prerequisite for the mutex migration. Reuse internal pieces only where the
-resource-passing design needs them.
+The unused opaque resource-parameter atoms and description-substitution
+helpers have been removed. `ResourceDescription` and `ResourceReference`
+remain for checked mutex types and ordinary named resource arguments.
 
 Next, carry the checked protected-resource association through the ordinary
 named authority interface and connect runtime `state` inputs and outputs.

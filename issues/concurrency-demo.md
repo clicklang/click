@@ -140,10 +140,10 @@ conservation; it does not choose a Click surface interface.
 
 ### 1. Remove abandoned machinery and consolidate status
 
-Remove unused resource-description parameter substitution and opaque parameter
-scaffolding after checking its callers. `<P: Resource>` was never accepted by
-the parser, but staged kernel machinery remains. Keep `ResourceDescription`
-itself: current mutex associations use it.
+The unused resource-description parameter substitution and opaque parameter
+scaffolding have been removed. `<P: Resource>` was never accepted by the
+parser. `ResourceDescription` remains for current mutex associations.
+Status consolidation in the linked design records remains.
 
 Retain the implemented, tested named resource-reference arguments. A parameter
 such as `target: cell(p)` denotes an occurrence, not a resource-type template.

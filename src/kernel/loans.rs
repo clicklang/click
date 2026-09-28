@@ -2692,7 +2692,6 @@ pub(crate) fn plan_stable_view_transfer_with_bindings_and_composites_for_worker(
         let owned = &owned;
         match owned.resource() {
             CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -5406,7 +5405,6 @@ impl LoanLedger {
                     CResource::Token { .. } | CResource::MutexLive(_) => Vec::new(),
                     CResource::Composite { .. }
                     | CResource::Instance(_)
-                    | CResource::OpaqueParameter(_)
                     | CResource::MutexGuard(_)
                     | CResource::MutexUse(_)
                     | CResource::Iterated(_) => {

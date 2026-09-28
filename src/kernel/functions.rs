@@ -6349,18 +6349,6 @@ pub(super) fn checked_owned_memory_ranges(
     OwnedFootprintDerivation::new(definitions, state, assumptions).derive(fact)
 }
 
-#[cfg(test)]
-#[test]
-fn opaque_parameter_owned_footprint_is_unnamed() {
-    let fact = CResourceFact::own(CResource::OpaqueParameter(OpaqueResourceParameter::new(
-        Variable(401),
-        Variable(402),
-    )));
-    let ranges = checked_owned_memory_ranges(&fact, &[], &CState::new(), &PureFactContext::new())
-        .expect("an opaque parameter is a valid unknown footprint");
-    assert!(ranges.iter().any(CMemoryRange::is_unnamed_footprint));
-}
-
 /// Project storage dependencies once at an independent contract entry. The
 /// ordinary definition walk handles folded instances, children and match arms;
 /// unknown dependencies conservatively reserve an unnamed footprint.
@@ -6929,10 +6917,6 @@ impl<'a> OwnedFootprintDerivation<'a> {
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
             CResource::Token { .. } => {}
-            // The representation of a resource parameter is unknown here.
-            // Conservatively include every byte it may own, even though the
-            // atom grants no direct access to any particular cell.
-            CResource::OpaqueParameter(_) => self.reaches_unnamed = true,
             CResource::MutexUse(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(CMemoryRange::new_with_element_width(
@@ -13850,7 +13834,6 @@ fn evaluate_resource_population_body_resources(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -16139,7 +16122,6 @@ fn counted_population_quantities(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -18565,7 +18547,7 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 | ResourceFamily::MutexLive
                 | ResourceFamily::MutexUse => true,
                 ResourceFamily::Composite | ResourceFamily::Token => true,
-                ResourceFamily::Instance | ResourceFamily::OpaqueParameter => false,
+                ResourceFamily::Instance => false,
             }
     })
 }
@@ -19801,7 +19783,6 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -22828,7 +22809,6 @@ fn resource_clause_supply_with_fact(
                 // element is read only after it is taken out.
                 CResource::Token { .. }
                 | CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -23198,9 +23178,6 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
         )));
     }
     match resource.term() {
-        CResourceTerm::Parameter { .. } => Ok(Err(CRuntimeError::FunctionContract(
-            "resource description parameter is not instantiated".into(),
-        ))),
         CResourceTerm::MutexGuard { mutex, snapshot } => {
             let selected = match snapshot {
                 CResourceSnapshot::Entry => entry_state,
@@ -23801,7 +23778,6 @@ fn evaluate_function_declared_resource_spec(
         },
         ResourceFamily::Memory
         | ResourceFamily::Instance
-        | ResourceFamily::OpaqueParameter
         | ResourceFamily::MutexGuard
         | ResourceFamily::MutexLive
         | ResourceFamily::MutexUse
@@ -23825,7 +23801,6 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
             CResource::Composite { .. }
             | CResource::Token { .. }
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)

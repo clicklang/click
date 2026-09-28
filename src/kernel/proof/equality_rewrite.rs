@@ -843,7 +843,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 CResource::Composite { .. }
                 | CResource::Token { .. }
                 | CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -1594,7 +1593,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
         CResource::Composite { .. }
         | CResource::Token { .. }
         | CResource::Instance(_)
-        | CResource::OpaqueParameter(_)
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)

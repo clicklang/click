@@ -1421,14 +1421,6 @@ fn collect_c_resource_spec_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource.term() {
-        CResourceTerm::Parameter {
-            parameter,
-            identity,
-            ..
-        } => {
-            variables.insert(*parameter);
-            variables.insert(*identity);
-        }
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
@@ -1467,14 +1459,6 @@ fn collect_c_resource_term_bound_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
-        CResourceTerm::Parameter {
-            parameter,
-            identity,
-            ..
-        } => {
-            variables.insert(*parameter);
-            variables.insert(*identity);
-        }
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
@@ -1520,7 +1504,6 @@ pub(in crate::kernel) fn collect_c_function_contract_interface_bound_variables(
     interface: &CFunctionContractInterface,
     variables: &mut BTreeSet<Variable>,
 ) {
-    variables.extend(interface.resource_description_parameters().iter().copied());
     for resource in interface
         .proof_parameters()
         .iter()
@@ -1632,10 +1615,7 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
                 },
             );
         }
-        CResource::OpaqueParameter(parameter) => {
-            variables.insert(parameter.parameter());
-            variables.insert(parameter.occurrence());
-        }
+
         CResource::Memory(range) => {
             collect_pointer_bound_variables(&range.base, variables);
             collect_bitvector_bound_variables(&range.start, variables);
@@ -4059,7 +4039,6 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
             );
             CResource::Instance(result)
         }
-        CResource::OpaqueParameter(parameter) => CResource::OpaqueParameter(parameter.clone()),
         CResource::Memory(range) => CResource::Memory(
             substitute_bitvector_variable_in_c_memory_range(range, from, to),
         ),
@@ -4337,7 +4316,6 @@ fn substitute_bitvector_variable_in_resource_term(
     to: &Bitvector32Term,
 ) -> CResourceTerm {
     match resource {
-        CResourceTerm::Parameter { .. } => resource.clone(),
         CResourceTerm::Instance {
             identity,
             binder,
@@ -6766,7 +6744,6 @@ fn substitute_pointer_variable_in_c_resource(
             );
             CResource::Instance(result)
         }
-        CResource::OpaqueParameter(parameter) => CResource::OpaqueParameter(parameter.clone()),
         CResource::Memory(range) => CResource::Memory(
             substitute_pointer_variable_in_c_memory_range(range, from, to),
         ),
@@ -7939,7 +7916,6 @@ fn substitute_pointer_variable_in_resource_term(
     to: &Pointer,
 ) -> CResourceTerm {
     match resource {
-        CResourceTerm::Parameter { .. } => resource.clone(),
         CResourceTerm::Instance {
             identity,
             binder,

@@ -461,21 +461,6 @@ impl ResourceContextIndex {
                 }
             }
         }
-        if let CResource::OpaqueParameter(parameter) = fact.resource() {
-            let identity = parameter.occurrence();
-            result.instances = insert_resource_index_entry(&result.instances, identity, entry);
-            if !fact.has_valid_exclusive_access() {
-                let count = result
-                    .invalid_instance_access
-                    .get(&identity)
-                    .copied()
-                    .unwrap_or(0);
-                result.invalid_instance_access = result
-                    .invalid_instance_access
-                    .with_inserted(identity, count + 1);
-            }
-            result.refresh_suspect_instance(identity);
-        }
         if let CResource::Iterated(iterated) = fact.resource() {
             let [first, second] = iterated.blocks();
             result.iterated_by_block =
@@ -645,25 +630,6 @@ impl ResourceContextIndex {
                     );
                 }
             }
-        }
-        if let CResource::OpaqueParameter(parameter) = fact.resource() {
-            let identity = parameter.occurrence();
-            result.instances = remove_resource_index_entry(&result.instances, &identity, entry);
-            if !fact.has_valid_exclusive_access() {
-                let count = result
-                    .invalid_instance_access
-                    .get(&identity)
-                    .copied()
-                    .expect("invalid opaque occurrence access count exists");
-                result.invalid_instance_access = if count == 1 {
-                    result.invalid_instance_access.without_key(&identity)
-                } else {
-                    result
-                        .invalid_instance_access
-                        .with_inserted(identity, count - 1)
-                };
-            }
-            result.refresh_suspect_instance(identity);
         }
         if let CResource::Iterated(iterated) = fact.resource() {
             let [first, second] = iterated.blocks();
@@ -978,10 +944,7 @@ fn memory_footprint_for_fact(fact: &CResourceFact) -> ResourceMemoryFootprint {
     // lowering supplies those prerequisite ranges explicitly, treating it as
     // unknown is the only sound choice; it still remains independently
     // indexed from concrete sibling projections.
-    if matches!(
-        fact.resource(),
-        CResource::Composite { .. } | CResource::OpaqueParameter(_)
-    ) {
+    if matches!(fact.resource(), CResource::Composite { .. }) {
         ResourceMemoryFootprint::Unknown
     } else {
         ResourceMemoryFootprint::None
@@ -1185,7 +1148,6 @@ impl ResourceContext {
         }
         let identity = match fact.resource() {
             CResource::Instance(instance) => instance.identity,
-            CResource::OpaqueParameter(parameter) => parameter.occurrence(),
             _ => return None,
         };
         if !fact.has_valid_exclusive_access() {
@@ -3765,9 +3727,6 @@ impl ResourceContext {
                 self.storage.index.by_resource.get(fact.resource())
             }
             CResource::Instance(instance) => self.storage.index.instances.get(&instance.identity),
-            CResource::OpaqueParameter(parameter) => {
-                self.storage.index.instances.get(&parameter.occurrence())
-            }
             CResource::Iterated(iterated) => self
                 .storage
                 .index
@@ -5630,8 +5589,7 @@ impl ResourceNormalizationIndex {
             CResource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
-            CResource::OpaqueParameter(_)
-            | CResource::Iterated(_)
+            CResource::Iterated(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
@@ -5707,8 +5665,7 @@ impl ResourceNormalizationIndex {
             CResource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
-            CResource::OpaqueParameter(_)
-            | CResource::Iterated(_)
+            CResource::Iterated(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_) => {}
@@ -5817,7 +5774,6 @@ fn resource_family_algebra(family: ResourceFamily) -> &'static dyn ResourceFamil
         ResourceFamily::Composite => &COMPOSITE_RESOURCE_ALGEBRA,
         ResourceFamily::Token => &TOKEN_RESOURCE_ALGEBRA,
         ResourceFamily::Instance => &INSTANCE_RESOURCE_ALGEBRA,
-        ResourceFamily::OpaqueParameter => &OPAQUE_PARAMETER_RESOURCE_ALGEBRA,
         ResourceFamily::MutexGuard => &MUTEX_GUARD_RESOURCE_ALGEBRA,
         ResourceFamily::MutexLive => &MUTEX_LIVE_RESOURCE_ALGEBRA,
         ResourceFamily::MutexUse => &MUTEX_USE_RESOURCE_ALGEBRA,
@@ -6573,209 +6529,6 @@ impl ResourceFamilyAlgebra for InstanceResourceAlgebra {
     }
 }
 
-impl ResourceFamilyAlgebra for OpaqueParameterResourceAlgebra {
-    fn family(&self) -> ResourceFamily {
-        ResourceFamily::OpaqueParameter
-    }
-
-    fn pair_validity_error(
-        &self,
-        left: &CResourceFact,
-        right: &CResourceFact,
-        _: &PureFactContext,
-    ) -> Option<ResourceContextValidityError> {
-        match (left.resource(), right.resource()) {
-            (CResource::OpaqueParameter(a), CResource::OpaqueParameter(b)) if a == b => Some(
-                ResourceContextValidityError::DuplicateOwnedResourceFact(right.clone()),
-            ),
-            _ => None,
-        }
-    }
-
-    fn entails(
-        &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
-        _: &PureFactContext,
-    ) -> bool {
-        matches!((available, required),
-            (CResourceFact::Own(CResource::OpaqueParameter(a), left),
-             CResourceFact::Own(CResource::OpaqueParameter(b), right))
-                if left.as_const() == Some(1) && right.as_const() == Some(1) && a == b)
-    }
-
-    fn consume(
-        &self,
-        available: &CResourceFact,
-        required: &CResourceFact,
-        assumptions: &PureFactContext,
-    ) -> Option<ResourceFactConsumption> {
-        self.entails(available, required, assumptions)
-            .then(|| ResourceFactConsumption::Replace(vec![]))
-    }
-
-    fn normalize_pair(
-        &self,
-        _: &CResourceFact,
-        _: &CResourceFact,
-        _: &PureFactContext,
-    ) -> Option<CResourceFact> {
-        None
-    }
-
-    fn core(&self, _: &CResourceFact) -> Option<CResourceFact> {
-        None
-    }
-
-    fn observable_facts(&self, _: &[&CResourceFact], _: &PureFactContext) -> Vec<Proposition> {
-        vec![]
-    }
-}
-
-#[cfg(test)]
-#[test]
-fn opaque_parameter_is_one_exclusive_occurrence_without_direct_memory_authority() {
-    let assumptions = PureFactContext::new();
-    let parameter = Variable(101);
-    let occurrence = Variable(102);
-    let atom = CResource::OpaqueParameter(OpaqueResourceParameter::new(parameter, occurrence));
-    let owned = CResourceFact::own(atom.clone());
-    let context = ResourceContext::new()
-        .try_compose_with_fact(owned.clone(), &assumptions)
-        .expect("one opaque occurrence is owned");
-    assert_eq!(owned.family(), ResourceFamily::OpaqueParameter);
-    assert_eq!(owned.memory_range(), None);
-    assert_eq!(owned.core(), None);
-    assert!(owned.may_refer_to_memory_block(&PointerBlock::ExternalArgument));
-    let pointer = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    assert!(!memory_resource_fact_permits_read(
-        &owned,
-        &pointer,
-        4,
-        &assumptions
-    ));
-    assert!(!memory_resource_fact_permits_write(
-        &owned,
-        &pointer,
-        4,
-        &assumptions
-    ));
-    assert!(matches!(
-        context.clone().try_compose_with_fact(owned, &assumptions),
-        Err(ResourceContextValidityError::DuplicateOwnedResourceFact(_))
-    ));
-    assert!(matches!(
-        context.clone().try_compose_with_fact(
-            CResourceFact::own(CResource::OpaqueParameter(OpaqueResourceParameter::new(
-                Variable(104),
-                occurrence,
-            ))),
-            &assumptions,
-        ),
-        Err(ResourceContextValidityError::DuplicateOwnedResourceFact(_))
-    ));
-    let schema =
-        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
-            .expect("valid concrete field schema");
-    let concrete = ResourceInstance::new(
-        occurrence,
-        "cell".into(),
-        vec![].into(),
-        schema,
-        vec![AlgebraicValue::C(int32(7))].into(),
-    )
-    .expect("valid concrete occurrence");
-    assert!(matches!(
-        context.clone().try_compose_with_fact(
-            CResourceFact::own(CResource::Instance(concrete)),
-            &assumptions,
-        ),
-        Err(ResourceContextValidityError::DuplicateOwnedResourceFact(_))
-    ));
-    assert!(matches!(
-        ResourceContext::new()
-            .try_compose_with_fact(CResourceFact::View(atom.clone()), &assumptions),
-        Err(ResourceContextValidityError::InvalidExclusiveAccess(_))
-    ));
-    assert!(matches!(
-        ResourceContext::new().try_compose_with_fact(
-            CResourceFact::own_quantity(atom.clone(), Bitvector32Term::Constant(2)),
-            &assumptions,
-        ),
-        Err(ResourceContextValidityError::InvalidExclusiveAccess(_))
-    ));
-    assert!(
-        context
-            .try_compose_with_fact(
-                CResourceFact::own(CResource::OpaqueParameter(OpaqueResourceParameter::new(
-                    parameter,
-                    Variable(103),
-                ))),
-                &assumptions,
-            )
-            .is_ok()
-    );
-}
-
-#[cfg(test)]
-#[test]
-fn opaque_parameter_update_cost_tracks_index_height() {
-    let assumptions = PureFactContext::new();
-    let samples = [32_usize, 128, 512]
-        .into_iter()
-        .map(|size| {
-            let resources = ResourceContext::new().unchecked_with_facts((0..size).map(|index| {
-                CResourceFact::own(CResource::OpaqueParameter(OpaqueResourceParameter::new(
-                    Variable(10),
-                    Variable(1_000 + index as u64),
-                )))
-            }));
-            let target = CResourceFact::own(CResource::OpaqueParameter(
-                OpaqueResourceParameter::new(Variable(11), Variable(9_000)),
-            ));
-            let before_insert = crate::persistent::persistent_node_allocations();
-            let (inserted, insert_work) =
-                crate::instrumentation::measure_deterministic_work(|| {
-                    resources
-                        .try_compose_with_fact(target.clone(), &assumptions)
-                        .expect("fresh opaque occurrence composes")
-                });
-            let insert_allocations =
-                crate::persistent::persistent_node_allocations() - before_insert;
-            let before_remove = crate::persistent::persistent_node_allocations();
-            let (removed, remove_work) = crate::instrumentation::measure_deterministic_work(|| {
-                inserted
-                    .without_fact(&target, &assumptions)
-                    .expect("owned occurrence can be withdrawn")
-            });
-            let remove_allocations =
-                crate::persistent::persistent_node_allocations() - before_remove;
-            assert!(!removed.contains_exact_representation(&target));
-            (
-                size,
-                insert_work,
-                remove_work,
-                insert_allocations,
-                remove_allocations,
-            )
-        })
-        .collect::<Vec<_>>();
-    for pair in samples.windows(2) {
-        assert!(
-            pair[1].1 <= pair[0].1.saturating_add(64) && pair[1].2 <= pair[0].2.saturating_add(64),
-            "opaque occurrence work grew with unrelated holdings: {samples:?}"
-        );
-        assert!(
-            pair[1].3 <= pair[0].3.saturating_add(256)
-                && pair[1].4 <= pair[0].4.saturating_add(256),
-            "opaque occurrence allocations grew with unrelated holdings: {samples:?}"
-        );
-    }
-}
-
 impl ResourceFamilyAlgebra for MutexGuardResourceAlgebra {
     fn family(&self) -> ResourceFamily {
         ResourceFamily::MutexGuard
@@ -7038,7 +6791,6 @@ fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRang
             CResource::Composite { .. }
             | CResource::Token { .. }
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -7085,7 +6837,6 @@ fn memory_resource_fact_permits_write(
             CResource::Composite { .. }
             | CResource::Token { .. }
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -7380,7 +7131,6 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             CResource::Composite { .. }
             | CResource::Token { .. }
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -7391,7 +7141,6 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             CResource::Composite { .. }
             | CResource::Token { .. }
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -7821,7 +7570,7 @@ impl CResource {
             Self::Composite { .. } => ResourceFamily::Composite,
             Self::Token { .. } => ResourceFamily::Token,
             Self::Instance(_) => ResourceFamily::Instance,
-            Self::OpaqueParameter(_) => ResourceFamily::OpaqueParameter,
+
             Self::MutexGuard(_) => ResourceFamily::MutexGuard,
             Self::MutexLive(_) => ResourceFamily::MutexLive,
             Self::MutexUse(_) => ResourceFamily::MutexUse,
@@ -7835,7 +7584,6 @@ impl CResourceFact {
         !matches!(
             self.resource(),
             CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -7921,7 +7669,6 @@ impl CResourceFact {
                 |argument| matches!(argument, AlgebraicValue::C(CValue::Pointer(pointer)) if &pointer.block == block),
             ),
             CResource::Iterated(iterated) => iterated.blocks().contains(&block),
-            CResource::OpaqueParameter(_) => true,
             CResource::Token { .. } | CResource::Instance(_) | CResource::MutexGuard(_) | CResource::MutexLive(_) | CResource::MutexUse(_) => false,
         }
     }
@@ -8003,7 +7750,6 @@ impl CResourceFact {
         if matches!(
             self.resource(),
             CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -8028,7 +7774,6 @@ impl CResourceFact {
                 CResource::Composite { .. }
                 | CResource::Token { .. }
                 | CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -8046,7 +7791,6 @@ impl CResourceFact {
                 CResource::Composite { .. }
                 | CResource::Token { .. }
                 | CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -8065,7 +7809,6 @@ impl CResourceFact {
                 CResource::Composite { .. }
                 | CResource::Token { .. }
                 | CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -8076,7 +7819,6 @@ impl CResourceFact {
                 CResource::Composite { .. }
                 | CResource::Token { .. }
                 | CResource::Instance(_)
-                | CResource::OpaqueParameter(_)
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)

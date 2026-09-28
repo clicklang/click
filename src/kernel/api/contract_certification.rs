@@ -1393,11 +1393,6 @@ pub(super) fn c_function_contract_certification_assumptions(
                     CResource::MutexLive(_) => "mutex lifetime".to_string(),
                     CResource::MutexUse(_) => "mutex use".to_string(),
                     CResource::Instance(instance) => format!("instance {}", instance.name()),
-                    CResource::OpaqueParameter(parameter) => format!(
-                        "resource parameter #{} occurrence #{}",
-                        parameter.parameter().0,
-                        parameter.occurrence().0
-                    ),
                     CResource::Iterated(iterated) => {
                         format!("iterated ownership of {}", iterated.owner())
                     }
@@ -1433,7 +1428,6 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
-            | CResource::OpaqueParameter(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)

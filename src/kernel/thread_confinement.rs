@@ -95,11 +95,6 @@ pub(super) fn confined_resource_name<'a>(
         | CResourceFact::View(CResource::MutexLive(_)) => return Some("mutex lifetime"),
         CResourceFact::Own(CResource::MutexGuard(_), _)
         | CResourceFact::View(CResource::MutexGuard(_)) => return Some("mutex guard"),
-        // An unknown representation may contain thread-confined authority.
-        CResourceFact::Own(CResource::OpaqueParameter(_), _)
-        | CResourceFact::View(CResource::OpaqueParameter(_)) => {
-            return Some("resource parameter");
-        }
         CResourceFact::Own(CResource::Composite { name, .. }, _)
         | CResourceFact::View(CResource::Composite { name, .. })
         | CResourceFact::Own(CResource::Token { name, .. }, _)

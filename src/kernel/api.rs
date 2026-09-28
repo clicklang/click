@@ -4942,7 +4942,6 @@ pub fn prove_owned_resource_count_lower_bound(
         }
         CResource::Memory(_)
         | CResource::Instance(_)
-        | CResource::OpaqueParameter(_)
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
@@ -5019,7 +5018,6 @@ fn describe_contract_reuse_premise(premise: &Proposition) -> String {
             CResource::MutexLive(_) => "mutex lifetime",
             CResource::MutexUse(_) => "mutex use",
             CResource::Instance(instance) => instance.name(),
-            CResource::OpaqueParameter(_) => "opaque resource parameter",
             CResource::Iterated(iterated) => iterated.owner(),
         }
     }

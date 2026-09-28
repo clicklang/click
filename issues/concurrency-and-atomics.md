@@ -4,7 +4,7 @@ Click verifies disjoint fork/join, an even/odd locking loop, and the safety
 of a shared-worker mutex counter under an explicit modeled pthread runtime.
 The exact counter result, release/acquire publication, and native runtime
 validation remain open. The [P1 concurrency roadmap](concurrency-demo.md) is
-the current plan: remove abandoned scaffolding, make helper authority transfers
+the current plan: finish status consolidation, make helper authority transfers
 ordinary contracts, complete the counter, test protected-resource composition,
 and review the surface language against those proofs before expanding it.
 
