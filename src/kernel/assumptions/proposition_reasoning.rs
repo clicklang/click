@@ -3206,6 +3206,8 @@ impl PureFactContext {
         left == right
             || self.bitvector_if_terms_proven_equal(left, right)
             || self.range_fold_terms_alpha_equivalent(left, right)
+            || (self.equality_graph.has_term_equivalences()
+                && self.equality_graph.are_int32_equal(left, right))
             || self.bitvector_terms_equal_from_facts(left, right)
             || self.memory_loads_proven_equal(left, right)
     }

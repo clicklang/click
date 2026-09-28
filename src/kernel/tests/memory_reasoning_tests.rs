@@ -1084,6 +1084,89 @@ fn direct_resource_match_uses_exact_field_load_equalities() {
 }
 
 #[test]
+fn memory_range_endpoint_match_uses_graph_loads_in_one_snapshot() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = crate::kernel::intern_c_memory(CMemory::new().with_block("range", 16));
+    let pointer = |index| Pointer {
+        block: "range".into(),
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let load = |memory: &SharedCMemory, index| {
+        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            memory,
+            &pointer(index),
+            4,
+            memory,
+        ))
+    };
+    let (a, b) = (
+        Bitvector32Term::Variable(Variable(41_110)),
+        Bitvector32Term::Variable(Variable(41_111)),
+    );
+    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
+        pointer(b.clone()),
+        CValue::Int32(Bitvector32Term::Constant(9)),
+    ));
+    let resource = |end| {
+        CResource::Memory(CMemoryRange::new(
+            Pointer::symbolic(Variable(41_112)),
+            Bitvector32Term::Constant(0),
+            end,
+        ))
+    };
+    let left = resource(load(&before, a.clone()));
+    let right = resource(load(&before, b.clone()));
+    let later = resource(load(&after, b.clone()));
+    let premise = ConditionTerm::equal(a, b);
+    let parent = PureFactContext::new();
+    let branch = parent.clone().assume_condition(premise.clone(), true);
+    let _scope = branch.enter_id_scope();
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(c_resources_directly_match(&left, &right, &branch));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!c_resources_directly_match(&left, &later, &branch));
+    assert!(!c_resources_directly_match(&left, &right, &parent));
+    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
+    assert!(!c_resources_directly_match(&left, &right, &withdrawn));
+}
+
+#[test]
+fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
+    for size in [16u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |id| Bitvector32Term::Variable(Variable(42_000 + id));
+        let mut assumptions = PureFactContext::new();
+        for index in 0..size {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::equal(variable(index), variable(index + 1)),
+                true,
+            );
+        }
+        let resource = |index| {
+            CResource::Memory(CMemoryRange::new(
+                Pointer::symbolic(Variable(43_000)),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::add(variable(index), Bitvector32Term::Constant(1)),
+            ))
+        };
+        let left = resource(0);
+        let _scope = assumptions.enter_id_scope();
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                assert!(c_resources_directly_match(
+                    &left,
+                    &resource(index),
+                    &assumptions,
+                ));
+            }
+        });
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+        assert!(work < 200 * size as usize, "size={size}, work={work}");
+    }
+}
+
+#[test]
 fn direct_composite_resource_match_checks_pointer_load_across_block_declaration() {
     let entry = CMemory::new().with_block("arg-memory", 32);
     let field = arc_pointer(16);
