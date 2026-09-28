@@ -1,18 +1,22 @@
 # Model concurrency and atomics
 
-Click verifies a frozen concurrent C fork/join program under an explicit
-modeled pthread runtime. Native runtime validation, mutexes, and atomics
-remain open. See the [P1 concurrency milestone](concurrency-demo.md#current-state)
-for the current boundary and remaining three-program acceptance criteria.
+Click verifies disjoint fork/join, an even/odd locking loop, and the safety
+of a shared-worker mutex counter under an explicit modeled pthread runtime.
+The exact counter result, release/acquire publication, and native runtime
+validation remain open. The [P1 concurrency roadmap](concurrency-demo.md) is
+the current plan: remove abandoned scaffolding, make helper authority transfers
+ordinary contracts, complete the counter, test protected-resource composition,
+and review the surface language against those proofs before expanding it.
 
 The P1 [concurrency demo](concurrency-demo.md) owns the before-launch slice:
 three programs exercising fork/join ownership, mutex-protected mutation, and
 one-shot release/acquire publication, with production checked rules and
 deterministic scaling regressions. This P2 issue owns broader support beyond
 that slice, including general atomic read-modify-write operations, reusable
-protocols, additional orders/fences and synchronization APIs, and concurrent
-memory reclamation. Future C++ threading is also in scope: keep the shared task
-and completion model independent of pthread's result codes and handle storage,
+protocols, additional orders/fences and synchronization APIs, reader/writer locks,
+detached threads, lock-free structures, and concurrent memory reclamation.
+Future C++ threading is also in scope: keep the shared task and completion
+model independent of pthread's result codes and handle storage,
 with checked adapters for moves, captures, exceptions, and cleanup joins. The
 [accepted binding design](../design/concurrency-probes/pthread-binding-design.md#future-c-threading)
 records these extension constraints; implementing C++ threading is not a P1
@@ -23,6 +27,19 @@ The [stable views record](../docs/internals/stable-views.md) establishes stable 
 and checks resource transfer between small modeled thread contexts. Build on
 those resource laws here; this issue owns the C execution/memory model,
 synchronization, and atomics needed for production concurrency support.
+
+A mutex-protected dynamic collection first needs the ordinary-resource
+composition work in P1. Condition variables additionally need a checked
+release/wait/reacquire protocol; reader/writer locks need shared-reader
+authority; detached threads need lifetime reasoning beyond a matching parent
+join. Lock-free algorithms need atomic interference and abstract-operation
+reasoning, while reclamation must establish that no thread can still access
+retired storage. These are semantic extensions, not features obtained merely
+by accepting additional API names.
+
+Deadlock freedom, fairness, and termination are separate proof goals. The
+current safety model does not establish them. Do not silently strengthen a
+safety claim into a progress guarantee.
 
 ## Violated invariant
 

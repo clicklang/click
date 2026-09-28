@@ -2,272 +2,303 @@
 
 ## Goal
 
-Show that Click can verify useful properties of ordinary concurrent C, not just
-parse pthread declarations. For the supported C11 subset and a named runtime
-binding, a proof must establish memory safety, freedom from conflicting
-unsynchronized accesses, and an exact functional result when the operations
-complete. The same checked authority and observation rules must cover three
-different ways threads interact:
+Verify ordinary concurrent C through composable resource contracts. Built-in
+memory and mutex resources should obey the same ownership and transfer rules
+as user-defined resources wherever possible. Keep the C fixed when proof work
+exposes a verifier gap.
 
-1. **Fork/join:** workers own disjoint writable ranges and share stable input.
-2. **Mutex:** workers mutate the same ordinary cell through one lock invariant.
-3. **Release/acquire:** a consumer observes a producer's one-shot publication
-   before reading an ordinary payload.
+The launch milestone remains three programs: disjoint fork/join workers,
+mutex-protected shared mutation with an exact result, and one-shot
+release/acquire publication. The parity loop is a completed intermediate
+mutex milestone. Safety must cover arbitrary compatible schedules, including
+execution prefixes that never complete. Exact results are conditional on the
+relevant operations completing; they do not establish fairness, deadlock
+freedom, or termination of polling.
 
-These examples test independent boundaries. Disjoint workers alone do not
-exercise shared mutation; a mutex alone does not exercise atomic visibility.
-The verifier must not prove one convenient schedule and treat it as all
-schedules. Safety claims apply to execution prefixes, including ones that
-never complete. Exact-result claims may rely on the relevant operations
-completing; they do not imply fairness, deadlock freedom, or termination of a
-polling loop.
+This issue is the current implementation roadmap. The older
+[contract and diagnostics record](../docs/internals/concurrency-contracts-and-diagnostics.md),
+[mutex contract design](../docs/internals/mutex-resource-contracts.md), and
+[resource-argument record](../docs/internals/resource-parameters.md) retain
+historical checkpoints and proposals. Their chronological status statements
+must not override the current state below. Consolidating those records is the
+first cleanup step, not a reason to implement every earlier proposal.
 
 ## Current state
 
-The unchanged [fork/join C program](../examples/concurrency-fork-join/fork_join.c)
-and its [sidecar](../examples/concurrency-fork-join/fork_join.click) verify in
-the normal gate under an explicitly selected **modeled pthread runtime**. The
-proof transfers two disjoint output slices to workers, lends their stack job
-records as stable views, and recovers each child's resources and postconditions
-only at its matching join. It covers both successful creates, first-create
-failure, and second-create failure with cleanup. The successful output is
-[11, 11, 22, 22]; the two failure outputs are [0, 0, 0, 0] and
-[11, 11, 0, 0]. Shared-reader companions cover both join orders, failed
-creation, and recovery of explicit, implicit stack, and owned backing.
-Hostile regressions reject overlapping writers, parent access before join,
-duplicate or wrong-child recovery, and premature lifetime end.
+| Demonstration | Verified today | Still missing |
+| --- | --- | --- |
+| [Disjoint fork/join](../examples/concurrency-fork-join/fork_join.click) | Exact outputs, ownership transfer, stable input loans, matching joins, and create-failure cleanup | Native runtime validation and broader threading APIs |
+| [Even/odd locking](../design/concurrency-probes/mutex_held_parity.click) | Conditional acquisition across loop iterations, final unlock, and destruction | The conditional acquisition abstraction with protected payloads or use-loan-backed guards |
+| [Shared-worker counter](../design/concurrency-probes/mutex_counter.click) | Worker and parent safety, shared typed use permissions, create-failure cleanup, and final destruction | The exact final value of two |
+| One-shot publication | Design obligation only | Checked release/acquire semantics and a frozen C demonstration |
 
-This is a conditional client proof. Click checks the client and the
-create/join authority transitions against a trusted modeled pthread
-specification; it has **not** established that a native Linux or macOS
-pthread library matches that specification. The compiler-import path locks a
-real Ubuntu GCC/glibc artifact for the frozen source. That artifact now loads
-through the ordinary import path on macOS, including the real header
-declarations, and verifies the unchanged worker and parent sidecar against the
-trusted modeled pthread runtime. The proof records the locked import identity
-and remains conditional on that runtime specification; it does not validate
-native runtime behavior.
+The parity loop works both through an ordinary conditional guard resource and
+[direct conditional ownership in its loop contract](../design/concurrency-probes/mutex_held_parity_direct.click).
+`loop_guard` is an example resource name, not a built-in construct.
 
-The concurrent mutex counter, release/acquire publication, and native pthread
-binding remain open. The [mutex counter C source](../design/concurrency-probes/mutex_counter.c)
-is now frozen; its [shared-protocol design](../design/concurrency-probes/mutex-shared-protocol.md)
-records the required authority rules. [The probe record](../design/concurrency-probes/README.md)
-describes the selected source and profile; [the binding design](../design/concurrency-probes/pthread-binding-design.md)
-records the existing create/join rule and trust boundary.
-The resource-body spelling `guarded_by counter->mutex;` now binds a folded,
-exclusive instance to a typed `pthread_mutex_t` member. A single C path can
-initialize that mutex with an explicit resource selection, lock to retrieve
-the resource, restore it before unlock, and destroy the mutex to recover it.
-The [C proof fixture](../mdtests/guarded_resource_mutex_flow.md) exercises
-this flow and rejects a wrong mutex and an unfolded unlock. The runtime model
-assumes these valid calls succeed. The unchanged counter now verifies worker
-and parent safety: typed use permissions split across both workers, either
-create failure cleans up, joins recover shares in the current ledger, and
-final destruction recovers the protected payload. Parent acquisition and
-release forget observations while workers remain. The exact final value still
-needs a contribution invariant; completed workers alone do not establish it.
+The counter's typed use permissions identify the protected resource. Successful
+creation transfers a checked worker share while retaining a parent share;
+failure leaves authority unchanged. Joins recover shares into the current
+ledger in either order. Destruction requires complete recovery. Shared
+acquisition and release forget observations consistently with interference;
+completed workers alone do not establish the final counter value.
+
+Mutex initialization checks writable storage and alignment. Initialized bytes
+are reserved against ordinary writes, and live mutexes prevent overlapping
+free/realloc and automatic-storage expiry. Initialization identities distinguish
+destruction and reinitialization at the same address. Named authority binders,
+preserving helpers, balanced use helpers, and typed lock/unlock payload
+transport are implemented. These are supported subsets, not general
+consuming/producing authority contracts.
+
+All these client proofs use the explicitly selected
+[modeled pthread specification](../src/languages/c/modeled_pthread_spec.md).
+They do not validate a native pthread implementation. A locked Ubuntu
+GCC/glibc import verifies through the ordinary import path, including on
+macOS; that is an artifact and declaration-identity regression, not a native
+runtime guarantee.
 
 ### Mutex model boundary
 
-`held(&mutex)` is a checked fact about the current path's guard. Straight-line
-lock/unlock and loops that restore the same mutex ownership at every loop
-head verify. The unchanged [parity probe](../design/concurrency-probes/mutex_held_parity.c)
-now has a [verified sidecar](../design/concurrency-probes/mutex_held_parity.click)
-for every `int32 n` under the modeled runtime. Its ordinary conditional
-resource owns a guard exactly when the loop's parity field is one, and its
-loop invariant relates that field to `i % 2`. The loop rule checks actual
-custody at entry and on each backedge before abstracting the acquisition.
-The final conditional unlock and destruction verify. False parity and
-unguarded-unlock regressions fail, and the normal gate pins the C source.
+A successful acquisition supplies a unique owned guard and resources satisfying
+the protected assertion. Unlock requires that acquisition and an owned,
+restored assertion; restoring it may use a replacement resource instance and
+new field values. An old local value remains a fact about that local value,
+not evidence of the current protected memory after interference.
 
-This completes the first near-term milestone, not shared mutation. The
-implemented loop slice requires an empty initialized mutex and an owned
-lifetime; it supports a direct conditional guard body with a scalar condition.
-Protected payloads, use-loan-backed loop acquisitions, and joins that change
-mutex receipts remain separate work. The second milestone is the frozen
-shared-worker counter below. After both demonstrations, review what was
-implemented, what was designed, and what the proofs actually used before
-expanding the resource interface further.
+The independently checked typed-use path currently requires an unconditional,
+field-bearing leaf resource with a memory footprint independent of changing
+model fields. It rejects recursive or matched bodies, named child resources,
+existential pointer witnesses, and resource-reference parameters. Flat abstract
+tokens, including symbolic quantities, can be ingredients of that resource.
+The conditional loop acquisition abstraction requires an empty mutex, locally
+owned lifetime authority, and no use hold.
 
-## Remaining work
+User-defined authority contracts still require preserving inputs. A helper
+cannot yet export a newly acquired guard or consume an input guard to unlock,
+even though the runtime lock/unlock rules perform those transfers. This is a
+central composition gap to fix, not an intended distinction between built-ins
+and describable resources.
 
-### Native pthread binding
+## Surface language decisions
 
-For each platform on which we claim the verified C program runs, connect the
-modeled operation to the actual selected declarations, ABI, and runtime
-semantics. The first intended profile is Debian Bookworm GCC 12/glibc 2.36,
-C11, x86-64 Linux user space, LP64, with the compile options in the probe
-record. The current Ubuntu GCC 13/glibc 2.39 artifact is an offline proof
-regression, not validation of that profile.
+Keep the existing ownership vocabulary: `owns`, `views`, `consumes`, and
+`produces`. Resource fields, facts, quantities, conditional bodies, and
+fold/unfold remain general resource features. Sequential, lock-protected, and
+atomic access are semantic disciplines, not three new declaration keywords.
 
-The locked Ubuntu import checks the selected declaration origin and types for
-the conditional modeled proof. A native claim additionally needs ABI and
-runtime evidence that the selected pthread implementation meets the trusted
-runtime specification, with a pinned platform profile. The binding must
-reject mismatched headers, types, options, or same-named lookalike functions.
-A macOS claim would need its own target, SDK checks, runtime binding, and
-artifact identity.
+| Spelling | Role | Decision |
+| --- | --- | --- |
+| `mutex_live(mu)` | Lifecycle authority for one initialization | Keep distinct from use and acquisition |
+| `mutex_use(mu)` | Permission to participate while lifetime is guaranteed | Keep; unary use does not expose a guessed payload |
+| `mutex_use(mu, counter_state(p))` | Use authority with an authenticated protected resource type | Keep the accepted shape; generalize only when a concrete ordinary-resource example needs it |
+| `mutex_guard(mu)` | Exclusive ownership of an acquisition | Keep |
+| `guarded_by p->mutex;` | Declaration-level association with a pthread mutex field | Supported today; review whether initialization's checked association can replace or generalize it |
+| `held(mu)` | Checked fact about the current path's acquisition | Convenience predicate; never a substitute for owned guard authority |
+| `runtime "modeled-pthread";` | Explicit selection of the trusted runtime specification | Keep the assumption visible |
 
-### Mutex-protected counter
+`access`, `guard`, `state`, and `lifetime` are runtime contract binder names,
+not ownership keywords. `storage` is a planned binder for ordinary memory,
+not a new resource family. Runtime named storage transfer and destruction's
+named state output are not yet implemented, although concrete destruction
+recovers protected state.
 
-The C program is frozen before its sidecar. Two workers each increment the
-same ordinary counter once under one mutex. Starting from zero,
-prove the final count is exactly two after both joins and that all counter
-accesses are protected.
+Do not introduce angle-bracket resource parameters, a `protecting` modifier,
+a `uses` clause, or public acquisition/continuity identifiers. Existing
+algebraic type applications such as `List<int32>` are unrelated to this
+restriction. The shelved `count_authority` and `create_count` proposal is not
+an accepted language extension.
 
-A shared lock handle grants permission to use a protocol, not direct access
-to its payload. Successful lock acquires a unique guard and the protected
-resources; unlock checks that the invariant has been restored and returns
-them. Checked contribution accounting, or an equivalent conserved ghost
-state, must justify the exact final count. A weak invariant such as
-"counter >= 0" does not suffice.
+The current `guarded_by` parser requires a struct pointer's pthread mutex
+field with the modeled layout. That excludes a direct standalone mutex-pointer
+annotation. Any redesign must retain authenticated initialization associations,
+resource ownership checks, and stale-initialization rejection; merely deleting
+the check is not sufficient.
 
-Reject an unguarded increment, access under the wrong or expired guard,
-duplicate guard authority, and unlock without restoring the invariant.
-After unlock and reacquire, an earlier local copy remains a fact about that
-copy but cannot stand in for the current counter value. Model lock failure or
-restrict the supported API with an explicit, checked assumption.
+## Relationship to Iris
+
+Use the [Iris lock interface](https://plv.mpi-sws.org/coqdoc/iris/iris.heap_lang.lib.lock.html)
+as the ownership reference: initialization deposits an assertion, acquisition
+returns an exclusive lock token and that assertion, and release consumes the
+token and the restored assertion. Click follows this discipline, but does not
+thereby implement Iris or inherit its soundness proof.
+
+Iris's basic lock description is persistent and its invariant can be an
+arbitrary logical assertion. Click tracks use loans to support C destruction
+and storage reclamation, and currently accepts much narrower protected
+resources. The basic Iris interface does not include destruction. These are
+explicit differences, not grounds for treating use authority as a stable view
+of mutable payload.
+
+Exact concurrent results need a relation between contributions held by workers
+and the state protected by the invariant. Iris's
+[counter construction](https://plv.mpi-sws.org/coqdoc/iris/iris.heap_lang.lib.counter.html)
+uses ghost resources for such a relationship. This motivates checked
+conservation; it does not choose a Click surface interface.
+
+## Ordered implementation plan
+
+### 1. Remove abandoned machinery and consolidate status
+
+Remove unused resource-description parameter substitution and opaque parameter
+scaffolding after checking its callers. `<P: Resource>` was never accepted by
+the parser, but staged kernel machinery remains. Keep `ResourceDescription`
+itself: current mutex associations use it.
+
+Retain the implemented, tested named resource-reference arguments. A parameter
+such as `target: cell(p)` denotes an occurrence, not a resource-type template.
+Its ordinary ownership and reference checks are useful independently of locks.
+
+Record the separate limitation that nested resource-type syntax currently has
+special parser handling for `mutex_use`; user-defined resource constructors do
+not have general resource-type parameters. Do not activate the abandoned
+templating implementation merely to remove this special case.
+
+Replace contradictory historical status statements in the linked design
+records with one supported-feature inventory and clearly marked proposals.
+Keep disabled runtime binder entries identified as unfinished work.
+
+### 2. Make acquiring and releasing helpers ordinary contracts
+
+Support a verified C helper that locks and returns a fresh guard and protected
+state to its caller, plus a helper that consumes those resources and unlocks.
+Use existing `owns`, `consumes`, `produces`, and named call maps. The runtime
+and user-defined helpers must obey the same checked transfer rules.
+
+The acquired guard must retain its initialization and lifetime dependency
+across return and nested calls. Reject duplicate or stale acquisitions,
+replacement of a promised preserved guard, release without restored state,
+and destruction while a guard or use loan survives. These are same-thread
+helper transfers, not permission to transfer pthread guards between threads.
+
+### 3. Complete the mutex-protected counter
+
+Prove that the unchanged [counter C](../design/concurrency-probes/mutex_counter.c)
+finishes at exactly two when both workers are created and joined successfully.
+Preserve safety and cleanup for both create-failure paths and either join order.
+
+The [ordinary-resource experiment](../design/concurrency-probes/shared-count-authority.md#ordinary-resource-experiment)
+now supports a model-field quantity such as `owns credits of increment_credit(p)`.
+Folding consumes actual credits; unfolding recovers them. Mutexes can preserve
+such bundles. This establishes useful composition, but not a closed total.
+
+The attempted deposit proof needs `credits + 1 <= 2`. The invariant
+`credits <= 2` and ownership of one external credit do not imply it: that
+contract permits two credits inside and another outside. Initial abstract
+credits also need a justified source; requiring them from a caller does not
+prove the original parent's memory-only contract.
+
+Find the smallest checked conservation and initialization mechanism. Prefer
+ordinary resource composition, but do not pretend packaging establishes a
+global supply. Existing sequential `count(...)` is not automatically a shared
+population observation. Keep the authority proposal shelved unless this
+experiment demonstrates a need for it. Any new surface interface requires
+separate review before implementation.
+
+Reject missing or doubled contributions, incorrect increments, fabricated
+credits, mismatched populations, and reuse of old counter observations. Preserve
+the [current missing-conservation regression](../mdtests/mutex_resource_quantity_requires_conservation.md)
+until a stronger contract actually supplies the missing relationship.
+
+### 4. Test protected-resource composition
+
+First verify a mutex protecting an ordinary resource with a named child. Then
+verify a small example whose protected ownership footprint changes, such as
+an allocated collection that grows while locked. Freeze each C example before
+adapting the verifier; do not flatten the source or resource structure just to
+fit the current leaf restriction.
+
+Use these examples to decide what support for nested resources, recursive
+assertions, changing footprints, and payload-bearing conditional loop guards
+is required. They should extend ordinary resource reasoning, not create a
+parallel mutex-specific assertion language.
+
+### 5. Review the language against what the proofs use
+
+Compare the implemented interfaces, the intended design, and the contracts
+actually used by the helper, counter, and composition examples. Decide whether
+`guarded_by` adds necessary information beyond initialization, and whether a
+user-defined resource genuinely needs resource-type parameters. Do not add a
+general parameter language in anticipation of possible future examples.
+
+This review precedes further expansion of concurrency vocabulary. One-shot
+publication remains the next independent launch milestone below.
+
+## Remaining launch obligations
 
 ### One-shot release/acquire publication
 
-Freeze a C11 program in which a producer initializes an ordinary payload and
-release-stores a ready flag. A consumer acquire-loads the flag and reads the
-payload only after observing the publication. Prove that this read sees the
-initialized value. The flag starts in a stated initial state and is published
-once; polling need not be proved to terminate.
+Freeze a C11 producer/consumer example. The producer initializes ordinary
+payload and release-stores a ready flag; the consumer acquire-loads the flag
+and reads only after observing publication. Prove the initialized value is
+observed without requiring the polling loop to terminate.
 
-A matching acquire observation must be tied to the actual release event and
-its resource transfer. Labeling a load "acquire" alone grants no payload
-authority. The protocol transfers exclusive payload authority at most once;
-repeated observations and competing consumers cannot duplicate it. Reject
-reading before observing ready, producer access after surrendering the
-payload, and a proof with either required ordering edge weakened to relaxed.
-If relaxed operations are outside the first supported subset, refuse them
-locally and use kernel counterexamples to show why the transfer cannot be
-inferred without synchronization.
+Tie the acquire observation to the actual release and its resource transfer.
+Transfer exclusive payload authority at most once; repeated observations and
+competing consumers cannot duplicate it. Reject reads before publication,
+producer accesses after surrendering ownership, and proofs with a required
+ordering edge weakened to relaxed. Unsupported orders must be refused locally,
+not silently strengthened.
 
-## Required proof boundary
+### Native pthread binding
 
-- **C and runtime identity:** state the supported C11 ordinary-access,
-  data-race, thread-start/join, mutex, and release/acquire semantics. Recognize
-  exact selected declarations and operations. Bind the target, import/profile,
-  and trusted runtime specification into proof artifacts and caches. Reject
-  unsupported orders and operations; never strengthen source ordering
-  implicitly.
-- **Authority:** keep writable ownership exclusive across concurrent
-  contexts. A live completion right belongs to one actual child and is
-  consumed once. Lock-protected and published resources live in checked
-  protocols while unavailable to ordinary thread contexts. Stable views
-  cannot authorize reads of changing lock-protected or atomic memory.
-- **Observation:** preserve facts about copied locals and past snapshots, but
-  require current authority and synchronization evidence for current-memory
-  claims after another thread may interfere.
-- **Certificates:** the kernel checks authority conservation, protocol
-  identities, synchronization, and allowed interference. Lowering and tactics
-  may propose transitions; they cannot invent an observation or assume the
-  result of another thread. Reuse sequential reasoning on exclusively owned
-  or stable borrowed memory without enumerating schedules.
+For any native execution claim, bind the selected declarations, ABI, compile
+options, and runtime semantics to a pinned platform profile. The first intended
+profile remains Debian Bookworm GCC 12/glibc 2.36, C11, x86-64 Linux user space,
+LP64, as recorded in the [probe record](../design/concurrency-probes/README.md).
+The existing Ubuntu GCC 13/glibc 2.39 artifact does not validate that profile.
+A macOS claim needs its own binding and artifact identity.
 
-The [stable-views record](../docs/internals/stable-views.md) and current
-fork/join rules are the starting point. Implement the lock and publication
-protocols through ordinary C execution and the shared bounded verification
-engine. Keep the C source fixed when proof work exposes a Click gap.
+Reject mismatched headers, types, options, and same-named lookalike functions.
+Keep client proof completion separate from native runtime validation. The
+[binding design](../design/concurrency-probes/pthread-binding-design.md) records
+the present boundary.
 
-### Guard ownership checkpoint
+## Diagnostics and proof obligations
 
-Modeled lock acquisition now supplies an opaque exclusive guard atom in the
-ordinary resource context. Unlock consumes that exact acquisition's atom;
-ledger heldness alone, a stale guard, a view, or a counted quantity cannot
-supply ownership. The guard is thread-confined and grants no memory access
-on its own. Kernel regressions cover missing/stale authority, invalid
-composition, consumption, and logarithmic indexed work amid unrelated guards.
+Failures should identify the missing fact or resource in Click terms, such as
+`Requires owns mutex_guard(mu)` or `Requires owns counter_state(p)`. A failed
+body fact should identify the actual proposition, rather than only a body-clause
+number. Association mismatches should show the required and supplied resource
+types. Distinguish unsupported forms from missing premises; do not disguise an
+implementation restriction as a fact the user ought to prove.
 
-The surface now supports `owns mutex_guard(mu)` in declared-resource bodies,
-including conditional model arms. Preserving contracts may now carry folded
-guard instances through ordinary and nested helpers. Independently checked
-helpers can unfold and refold them, establish `held(mu)` from exposed guards,
-and access separately supplied protected memory. Their checked
-bodies freeze all mutex transitions; reinitialization, unlock, destruction,
-and untracked nested calls are rejected. The caller retains the same protocol
-and acquisition. Direct `owns mutex_guard(mu)` inputs also work, including
-nested preserving calls and wrapper exchanges. They return the entry acquisition
-and report missing input authority as `Requires owns mutex_guard(...)`. This
-uses the existing `owns` syntax.
+The kernel must check ownership conservation, initialization and acquisition
+identity, lifetime dependencies, synchronization, and permitted interference.
+Stable `views` freeze their memory and cannot authorize reads of concurrently
+changing payload. A matching join recovers one child's checked outputs once;
+a saved worker or parent snapshot cannot replace the current shared ledger.
 
-Successful initialization now creates a fresh internal identity. Lock/unlock
-retain it; destruction and reinitialization replace it even at the same address
-with the same protected assertion. Loop joins reject that replacement with an
-explicit limitation message, while a complete initialization/destruction within
-an iteration remains supported. Kernel regressions cover replacement with and
-without a protected resource, forged initialization witnesses, and indexed join
-work at increasing mutex counts. The lifecycle owner is implemented below;
-use loans and the connection to live C storage remain unimplemented.
-
-Unlock failures now preserve structured missing-resource obligations through
-the kernel/runtime boundary. They report `Requires owns mutex_guard(...)`
-for absent or packaged acquisition authority, and `Requires owns resource(...)`
-for the protected instance that must be restored. The latter identifies the
-instance selected at initialization without requiring its old model values.
-Missing guards take precedence over a separately missing protected instance;
-unsupported preserving-contract transitions retain their limitation message.
-
-Heap allocation retirement now refuses overlap with an initialized mutex's
-full modeled ABI footprint, including direct free/realloc and retiring helper
-contracts. The index drops a footprint only on destruction, and unrelated
-allocation blocks remain independently releasable. Abstract guard contracts
-cannot yet retire allocations without checked lifecycle inputs. Initialization
-storage validity, ordinary-write exclusion, and
-use loans remain open; this is not full `mutex_live`/`mutex_use` support.
-
-`owns mutex_live(mu)` now carries the initialization's exclusive owner in the
-ordinary resource context. It composes inside declared resources and preserving
-helper contracts. Lock requires available ownership; destroy consumes it.
-Folding, duplication attempts, missing call inputs, and same-address stale
-owners are covered by regressions, as is indexed lifecycle-transition work.
-Missing authority reports `Requires owns mutex_live(...)`. This checkpoint does
-not implement `mutex_use`, storage validity at init, write protection,
-named primitive binders, or lifecycle-changing helper contracts.
-
-Automatic-storage expiry now refuses an initialized mutex on every scope exit,
-including abrupt control flow and validation of scope-retirement certificates.
-The check uses initialization metadata even when ownership is folded away.
-Destroying one mutex does not clear another in the same object. A separate
-index conservatively handles symbolic pointers that might designate local
-storage, without scanning unrelated concrete initializations. Kernel hostile
-certificate tests and C scope/reentry fixtures cover the boundary.
-
-Direct named guard clauses and consumed/produced guards still require the
-full abstract acquisition binding and transition model. The current symbolic
-form is restricted to helpers whose mutex protocols cannot change. Calls
-without preserving guard inputs remain refused while protocols are live.
-Lock-changing helpers remain open. The bounded conditional-loop checkpoint
-above now allows a declared guard resource to carry a fresh acquisition across
-a backedge while preserving its initialization. Shared interference remains
-open.
+Preserve historical facts while requiring current authority for current-memory
+claims. Keep protocol generations and acquisition identities internal. All
+rules must remain sound under arbitrary compatible threads, not one convenient
+schedule. Proof tactics may propose transitions; certificates must check them.
 
 ## Acceptance
 
-- All three frozen C programs and modular sidecars verify through normal
-  verify, profile, expand/reverify, and audit workflows under one documented
-  memory-model profile. Their stated safety and exact-result properties hold
-  at the supported boundary.
-- Positive and hostile regressions cover the authority, synchronization,
-  stale-observation, failure, and duplicate-recovery cases above. Forged
-  certificates cannot bypass a checked transition. Diagnostics identify the
-  relevant source access and missing authority or synchronization.
-- Deterministic work-counter tests cover increasing independent workers,
-  increasing lock/publication operations, and fixed operations amid growing
-  unrelated threads, protocols, and history. Explicit simple proofs scale
-  approximately linearly up to indexing factors; no schedule enumeration,
-  full-state clone per step, or unrelated-history scan.
-- A durable design record justifies each concurrent rule under arbitrary
-  compatible threads and states the runtime trust boundary, supported orders,
-  and deferred extensions. The full scripts/check.sh gate passes.
+- The helper transfer and protected-resource composition examples establish
+  that runtime and ordinary resources follow the same contract rules.
+- Fork/join, exact mutex counter, and one-shot publication verify through
+  ordinary verify, profile, expand/reverify, and audit workflows. The parity
+  demonstration and existing failure-path coverage remain green.
+- Positive and hostile regressions cover wrong/stale authority, missing
+  restoration, duplicate recovery, conservation, interference, lifetime end,
+  synchronization failures, and forged certificates.
+- Deterministic scaling tests cover increasing workers and synchronization
+  operations, and fixed operations amid unrelated resources and history.
+  Explicit proofs remain approximately linear up to indexing factors, without
+  schedule enumeration or whole-history scans per step.
+- The language inventory distinguishes implemented forms from proposals;
+  diagnostics identify source obligations; each concurrent rule has a stated
+  interpretation and runtime trust boundary. `scripts/check.sh` passes.
+- Native execution claims satisfy the separate binding obligations above.
 
-General read-modify-write atomics, reusable publication, fences, condition
-variables, detached threads, lock-free structures, reclamation, and C++
-threading remain in [broader concurrency support](concurrency-and-atomics.md).
-Exclusive transfer of implicit stack/global/static storage is also deferred;
-the fork/join demo needs stable stack views, not that transfer. Delete this
-issue and its index entry when the three programs, binding claims, tests, and
-documentation satisfy the acceptance criteria.
+General atomic read-modify-write operations, reusable publication, fences,
+condition variables, reader/writer locks, detached threads, lock-free
+structures, concurrent reclamation, and C++ threading remain in
+[broader concurrency support](concurrency-and-atomics.md). Deadlock freedom,
+fairness, and termination need separate specifications and reasoning. They do
+not follow from the safety model. Exclusive transfer of implicit stack/global/
+static storage is also deferred. Delete this issue and its index entry when
+its demonstrations, reviewed interfaces, tests, documentation, and binding
+claims satisfy these acceptance criteria.
