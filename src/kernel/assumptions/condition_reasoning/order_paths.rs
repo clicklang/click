@@ -146,9 +146,7 @@ impl PureFactContext {
                     return Some(equal);
                 }
 
-                if self.bitvector_terms_equal_from_facts(&left, &right)
-                    || self
-                        .has_condition_fact(ConditionTerm::equal(left.clone(), right.clone()), true)
+                if self.has_condition_fact(ConditionTerm::equal(left.clone(), right.clone()), true)
                     || self
                         .has_condition_fact(ConditionTerm::equal(right.clone(), left.clone()), true)
                     || self.memory_loads_proven_equal(&left, &right)

@@ -374,6 +374,16 @@ struct EqualityGraphState {
 }
 
 impl EqualityGraph {
+    /// Whether term classes have established any nontrivial equivalence.
+    /// Callers can avoid interning unrelated query terms in an empty graph.
+    pub(in crate::kernel) fn has_term_equivalences(&self) -> bool {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .has_equivalences()
+    }
+
     /// Query the maintained closure, registering supported load applications
     /// on demand. A false answer means equality is not established here,
     /// not that the operands are unequal. No frame or heuristic search runs.

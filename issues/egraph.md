@@ -255,6 +255,14 @@ consumer while retaining the exact-offset guard at its memory-resolution
 caller. Branch, snapshot, wrapping-offset, and multi-size regressions cover
 the migration; the broader legacy fact-path helper remains in use elsewhere.
 
+The full int32 equality condition decision now also queries a graph with
+established term equivalences before memory resolution and its other arithmetic
+rules. An empty graph skips interning unrelated terms. Regressions cover
+addition, same-snapshot loads, branch scope, wrapped offset refusal, resource
+quantity work, and multi-size decisions without building the legacy fact
+index. Transport, memory, and resource consumers of that index remain future
+slices.
+
 The first implementation chunk replaces the bounded load normalizer in
 the pointer fragment (now `kernel/equality_graph.rs`) with maintained same-snapshot application signatures and
 an iterative merge worklist. This fragment recognizes already-opaque,

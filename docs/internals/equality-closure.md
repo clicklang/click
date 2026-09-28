@@ -105,6 +105,13 @@ building the legacy fact-path index. Its offset callers still use the exactness
 check above before affirming byte-offset equality. Other callers of the legacy
 scalar fact-path helper remain separate migration candidates.
 
+The full `Bitvector32Equal` condition decision now uses the same graph query
+before memory resolution and its other arithmetic rules when the graph has
+established term equivalences. An empty graph skips interning unrelated scalar
+queries; structural and memory rules still run. Explicit premises, other
+checked scalar rules, and negative decisions keep their existing paths. The
+legacy fact-path helper still serves transport, memory, and resource consumers.
+
 Registered four-byte scalar loads also participate as int32 applications. Their
 signature contains the registered defining snapshot's arena identity, the exact
 storage block, and the offset class. Equal offsets therefore give equal reads

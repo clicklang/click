@@ -37,8 +37,16 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
         branch.decide_bitvector_equality_shallow(&plus_one(a.clone()), &plus_one(b.clone())),
         Some(true)
     );
+    assert_eq!(
+        branch.decide(&eq(&plus_one(a.clone()), &plus_one(b.clone()))),
+        Some(true)
+    );
     assert_ne!(
         parent.decide_bitvector_equality_shallow(&plus_one(a.clone()), &plus_one(b.clone())),
+        Some(true)
+    );
+    assert_ne!(
+        parent.decide(&eq(&plus_one(a.clone()), &plus_one(b.clone()))),
         Some(true)
     );
     let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
@@ -328,6 +336,7 @@ fn offset_premise_shallow_decision_and_forks_scale() {
                         parent.decide_bitvector_equality_shallow(&add(var(0)), &add(var(i))),
                         Some(true)
                     );
+                    assert_eq!(parent.decide(&eq(&var(0), &var(i))), Some(true));
                 }
                 let branch = parent
                     .clone()

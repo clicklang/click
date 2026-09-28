@@ -333,11 +333,13 @@ impl PureFactContext {
                     return Some(value);
                 }
                 if let ConditionTerm::Bitvector32Equal(left, right) = condition
-                    && super::super::super::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
-                        left,
-                        right,
-                        self,
-                    )
+                    && (self.equality_graph.has_term_equivalences()
+                        && self.equality_graph.are_int32_equal(left, right)
+                        || super::super::super::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
+                            left,
+                            right,
+                            self,
+                        ))
                 {
                     return Some(true);
                 }

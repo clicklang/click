@@ -57,8 +57,16 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_snapshot() {
         context.decide_bitvector_equality_shallow(&left, &right),
         Some(true)
     );
+    assert_eq!(
+        context.decide(&ConditionTerm::equal(left.clone(), right.clone())),
+        Some(true)
+    );
     assert_ne!(
         context.decide_bitvector_equality_shallow(&left, &changed),
+        Some(true)
+    );
+    assert_ne!(
+        context.decide(&ConditionTerm::equal(left, changed)),
         Some(true)
     );
 }
