@@ -16866,6 +16866,85 @@ fn counted_population_quantities(
 }
 
 #[cfg(test)]
+mod committed_population_return_tests {
+    use super::*;
+
+    #[test]
+    fn return_reconciles_an_early_consumption_without_resetting_the_total() {
+        let head = CResource::Composite {
+            name: "remaining".into(),
+            arguments: vec![].into(),
+        };
+        let effect = CResourceSpec::declared(
+            ResourceFamily::Composite,
+            CResourceAccessMode::Own,
+            "remaining".into(),
+            vec![],
+            vec![],
+            CResourceTransferRole::Consume,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap();
+        let definition = CCompositeResourceDefinition::counted_population(
+            "remaining",
+            vec![],
+            None,
+            vec![],
+            vec![],
+        );
+        let function = c_function(
+            CType::Void,
+            "consume",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition])
+        .with_resource_summary(vec![effect], vec![]);
+        let entry = CState::new()
+            .with_counted_population("remaining", vec![].into(), Bitvector32Term::Constant(3))
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                CResourceFact::own_quantity(head.clone(), Bitvector32Term::Constant(3)),
+            ));
+        for current in [1, 2, 3] {
+            let mut returned = entry
+                .clone()
+                .with_counted_population(
+                    "remaining",
+                    vec![].into(),
+                    Bitvector32Term::Constant(current),
+                )
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own_quantity(head.clone(), Bitvector32Term::Constant(2)),
+                ));
+            returned
+                .committed_population_consumptions
+                .insert(CCountedPopulation {
+                    name: "remaining".into(),
+                    arguments: vec![].into(),
+                    count: Bitvector32Term::Constant(1),
+                    family_observation_marker: false,
+                });
+            let result = apply_counted_population_transitions(
+                &entry,
+                &mut returned,
+                &function,
+                &[],
+                &PureFactContext::new(),
+                true,
+                &mut ExecutionBudget::beside_live_state(),
+            )
+            .expect("bounded return transition");
+            assert_eq!(result.is_ok(), current == 2, "current count {current}");
+            assert_eq!(
+                returned.counted_population("remaining", &[]),
+                Some(&Bitvector32Term::Constant(current)),
+                "return must not silently reset a mismatching total"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod counted_population_alias_tests {
     use super::*;
 
@@ -17300,6 +17379,23 @@ fn apply_counted_population_transitions_with_interface(
                 total
             }
         };
+        // An early close has already spent this function's one-unit effect.
+        // Reconcile with the contract's entry-based total; never overwrite a
+        // different current total and thereby hide a second consumption.
+        if post_state
+            .committed_population_consumptions
+            .get(&name, &arguments, false)
+            .is_some()
+            && !post_state
+                .counted_population(&name, &arguments)
+                .is_some_and(|current| {
+                    population_quantities_are_equal(current, &new_count, assumptions)
+                })
+        {
+            return Ok(Err(CRuntimeError::FunctionContract(format!(
+                "Requires count({name}(...)) to equal the contract total after consumption"
+            ))));
+        }
         let population_was_initialized =
             caller_state.counted_population(&name, &arguments).is_some()
                 || caller_quantities

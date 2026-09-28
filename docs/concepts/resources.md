@@ -360,15 +360,21 @@ scoped proof and requires it to be restored. Declaring a resource does not by
 itself justify minting a unit; retain and release contracts must preserve the
 body invariant while changing both the C state and logical quantity.
 
-An approved extension, not yet implemented, will let closure of `open` fulfill
-an outstanding `consumes` clause of the enclosing function when ordinary
-restoration fails. It will still require the invariant: for consumption of one
-unit, prove it at the total decreased by one, spend an actually owned unit,
-and leave the shared body alive. Return must recognize that the consumption
-has already happened. Being the last `open` in a function or block does not
-itself waive restoration. This uses the existing syntax; the
-[scope-close design](https://github.com/lacker/click/blob/master/design/concurrency-probes/shared-count-authority.md#approved-scope-close-consumption-rule-implementation-pending)
-records the exact obligations and planned coverage.
+Closing `open` first tries to restore the invariant without changing Count.
+If that fails, it can fulfill one outstanding `consumes` clause of the enclosing
+function: spend an owned unit and prove the invariant at the total decreased
+by one. The shared body must remain alive. A later scope cannot fulfill the
+same effect again, and return checks the overall contract without spending
+that unit again. Being the last `open` in a block does not waive restoration.
+
+This currently supports one unconditional single-unit consumption clause for
+the resource family, with no produced units of that family. It uses the entry
+arguments even if C reassigns parameters. Consumption within a loop and partial
+fulfillment of symbolic or multiple effects remain unsupported. No new syntax
+is needed. The [checked example](https://github.com/lacker/click/blob/master/mdtests/population_consumption_at_close.md)
+covers early closure, reopening for a read, branches, nested calls, and exact
+two contributions. The [scope-close design](https://github.com/lacker/click/blob/master/design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
+records the obligations and remaining concurrency work.
 
 Inside `count(...)`, `_` is a wildcard over one resource argument. For example,
 `count(pool_object(pool, _))` sums all exact object populations for `pool`.

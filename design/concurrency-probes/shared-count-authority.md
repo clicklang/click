@@ -152,22 +152,25 @@ protocol. Merely holding a unit must not expose memory or current Count facts
 outside the lock. Do not remove thread confinement globally or freshly invent
 the population when acquiring a wrapper.
 
-## Approved scope-close consumption rule (implementation pending)
+## Scope-close consumption
 
 The accounting gap is reproducible without pthreads. For a function that
-increments the value and then returns it, this proof fails at scope closure:
+increments the value and then returns it, the following shape now verifies
+with the arithmetic facts supplied in the regression:
 
 ```text
 // Function contract: owns remaining(p); consumes remaining(p);
 open(remaining(p)) {
     step(); // the existing C increment
 }
-step(); // the existing C return
+open(remaining(p)) {
+    step(); // the existing C return reads the protected value
+}
 ```
 
-At closure the body requires `p->value == 3 - count(remaining(p))`, but the
+Before this change, closure required `p->value == 3 - count(remaining(p))`, but the
 increment established `p->value == 3 - (entry_count - 1)` and current Count
-still denotes `entry_count`. The sequential control succeeds because its
+still denoted `entry_count`. The sequential control succeeds because its
 `execute()` reaches the return inside the open scope. Unlock must happen before
 return, so return-time accounting cannot establish the mutex invariant.
 
@@ -175,8 +178,9 @@ The approved rule uses existing syntax. First try to close `open` by restoring
 the invariant with unchanged membership and Count. If that cannot be proved,
 closure may fulfill an outstanding `consumes` effect of the enclosing function
 for this population. No new consumption statement, resource type, or keyword is
-introduced. This is an approved implementation target; the early-close probe
-above does not yet verify.
+introduced. The single-unit case is implemented and covered by
+`mdtests/population_consumption_at_close.md`. After a consuming close, another
+ordinary `open` can expose the surviving body for a subsequent C read.
 
 The invariant is still required at closure. Consumption changes the Count at
 which it must hold; it does not excuse a missing invariant. In the example,
@@ -202,10 +206,25 @@ The checked transition must establish all of the following:
   reconcile it with the remaining effect rather than spend it a second time.
   Calls must keep caller and callee obligations distinct.
 
-For the first implementation, support the counter's single-unit effect. Do not
-infer an arbitrary consumption amount by searching for one that makes the
-invariant true. General partial fulfillment of symbolic effects and competing
-candidate effects need a separately justified extension of the checked rule.
+The implementation admits one unconditional single-unit consumption clause for
+the resource family and rejects production of that family in the same
+contract. It does not search for an amount that makes the invariant true.
+Consumption inside a loop, general partial fulfillment of symbolic effects,
+and competing candidate effects remain unsupported. A later extension needs
+checked loop/partial-effect accounting; it must not reset a spent effect.
+
+The kernel records the committed unit in persistent function-local state.
+Callee binding starts a separate record, and returning preserves the caller's
+record. The combined execution event is tied to the enclosing contract and
+checks ordinary restoration after the consumption. Reopening interprets body
+facts at the current Count. Return reconciles the tracked total with the
+entry-based contract effect rather than silently resetting a differing total.
+Kernel regressions cover actual ownership, entry argument reassignment, repeated
+consumption, unchanged unrelated state, active memory loans, false invariants,
+and keeping the last unit alive. Sidecars cover ordinary closure before a
+consuming close, reopening, branches, nested reads, exact two calls, and
+rejection of missing contracts, incorrect increments, and repeated or nested
+extra consumption.
 
 Report failed obligations with Click expressions, such as
 `Requires remaining(p)` or `Requires p->value == 3 - count(remaining(p))`,
@@ -230,11 +249,9 @@ not manufacture its total from the locally visible units.
 
 ## Subsequent obligations, not yet demonstrated by the probes
 
-- **Commit consumption before unlock.** The worker must restore the invariant
-  at the decreased population while still holding the lock. Existing return-time
-  consumption cannot leave the body invalid between unlock and return. Closing
-  `open` needs a checked transition that return certification recognizes exactly
-  once, following the approved rule above.
+- **Compose consumption with unlock.** Early consumption now works sequentially.
+  The worker must use this transition while holding the lock, restore the
+  protected wrapper, and then unlock. The mutex composition remains unproved.
 - **Authenticate population identity.** Publication, typed mutex use, external
   worker units, and replacement protected states must refer to the same
   population. A fresh acquisition changes observations, not that identity.

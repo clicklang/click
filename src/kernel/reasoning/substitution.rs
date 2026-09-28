@@ -3949,6 +3949,29 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_state(
                 family_observation_marker: population.family_observation_marker,
             })
             .collect(),
+        committed_population_consumptions: state
+            .committed_population_consumptions
+            .iter()
+            .map(|population| CCountedPopulation {
+                name: population.name.clone(),
+                arguments: population
+                    .arguments
+                    .iter()
+                    .map(|argument| {
+                        substitute_bitvector_variable_in_algebraic_value(argument, from, to)
+                    })
+                    .collect(),
+                count: match substitute_bitvector_variable_in_c_value(
+                    &CValue::Int32(population.count.clone()),
+                    from,
+                    to,
+                ) {
+                    CValue::Int32(count) => count,
+                    _ => unreachable!("an int32 population count remains int32"),
+                },
+                family_observation_marker: population.family_observation_marker,
+            })
+            .collect(),
     }
 }
 
@@ -6638,6 +6661,22 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
         enclosing_frame_holds_locals: state.enclosing_frame_holds_locals,
         counted_populations: state
             .counted_populations
+            .iter()
+            .map(|population| CCountedPopulation {
+                name: population.name.clone(),
+                arguments: population
+                    .arguments
+                    .iter()
+                    .map(|argument| {
+                        substitute_pointer_variable_in_algebraic_value(argument, from, to)
+                    })
+                    .collect(),
+                count: population.count.clone(),
+                family_observation_marker: population.family_observation_marker,
+            })
+            .collect(),
+        committed_population_consumptions: state
+            .committed_population_consumptions
             .iter()
             .map(|population| CCountedPopulation {
                 name: population.name.clone(),

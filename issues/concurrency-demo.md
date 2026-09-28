@@ -192,13 +192,14 @@ consumes one; the retained unit keeps the body alive. Full-population cleanup
 recovers the body from a positive exact total, including a symbolic quantity.
 These implemented rules do not yet establish the concurrent result.
 
-Next implement the [approved scope-close consumption rule](../design/concurrency-probes/shared-count-authority.md#approved-scope-close-consumption-rule-implementation-pending),
-then compose shared-body custody with the mutex and carry checked worker
-effects through joins. `open` closure first attempts ordinary restoration;
+The [scope-close consumption rule](../design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
+is implemented for a single unconditional unit effect. Next compose shared-body
+custody with the mutex and carry checked worker effects through joins. `open` closure first attempts ordinary restoration;
 otherwise it may fulfill an outstanding `consumes` effect, spending owned units
 and proving the invariant at the decreased Count. The same effect must not be
-applied again at another scope or at return. This approved rule uses existing
-syntax and is not yet implemented.
+applied again at another scope or at return. The checked rule uses existing syntax.
+Symbolic partial effects, competing effects, and consumption inside loops
+remain outside the implemented slice.
 
 Mutex acquisition must preserve population identity and authorize current
 observations. Joining one worker must not publish an exact current total while

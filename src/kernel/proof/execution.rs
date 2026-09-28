@@ -18,6 +18,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+#[path = "population_consumption.rs"]
+mod population_consumption;
+
 #[path = "population_initialization.rs"]
 mod population_initialization;
 
@@ -404,6 +407,7 @@ pub(crate) struct CheckedResourceRewrite {
     pub(crate) before_facts: ProofFacts,
     pub(crate) after_facts: ProofFacts,
     definition: CCompositeResourceDefinition,
+    consumption_contract: Option<Arc<CheckedFunctionEntry>>,
     instance: Option<crate::kernel::ResourceInstance>,
     selected_children: Option<Arc<[(String, Variable)]>>,
     load_equalities: Vec<crate::kernel::CheckedLoadEquality>,
@@ -710,6 +714,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 before_facts: before_facts.clone(),
                 after_facts: after_facts.clone(),
                 definition: definition.clone(),
+                consumption_contract: None,
                 instance: Some(instance.clone()),
                 selected_children,
                 load_equalities: load_equality_capture.finish(),
@@ -743,6 +748,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 before_facts: before_facts.clone(),
                 after_facts: after_facts.clone(),
                 definition,
+                consumption_contract: None,
                 instance: None,
                 selected_children: None,
                 load_equalities: load_equality_capture.finish(),
@@ -991,6 +997,41 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             .collect::<Vec<_>>();
         let child_context = ResourceContext::new().unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
+        // Opening a closed population exposes its invariant at the tracked
+        // current total, which can now differ from its entry observation after
+        // a checked consuming close. Ordinary composite projection alone has
+        // no population ledger with which to interpret that Count.
+        if definition.is_counted_population()
+            && before_state.population_body_is_open(name, arguments, assumptions)
+                != after_state.population_body_is_open(name, arguments, assumptions)
+        {
+            let population_facts =
+                crate::kernel::functions::evaluate_resource_population_fact_propositions(
+                    &temporary,
+                    std::slice::from_ref(&definition),
+                    after_state,
+                    assumptions,
+                    true,
+                )
+                .ok_or("cannot expose the population invariant at its current count")?;
+            for fact in population_facts {
+                if before_state.population_body_is_open(name, arguments, assumptions)
+                    && fact.is_body_fact
+                    && !crate::kernel::api::contract_certification::certification_proves_proposition(
+                        assumptions,
+                        &fact.proposition,
+                    )
+                {
+                    return Err(format!(
+                        "Requires {} at population close",
+                        fact.source_fact
+                            .as_deref()
+                            .unwrap_or("the population invariant")
+                    ));
+                }
+                allowed.push(fact.proposition);
+            }
+        }
         allowed.push(Proposition::CResourceComposition(child_context.clone()));
         allowed.extend(
             after_state
@@ -1060,6 +1101,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             before_facts: before_facts.clone(),
             after_facts: after_facts.clone(),
             definition,
+            consumption_contract: None,
             instance: None,
             selected_children: None,
             load_equalities,
@@ -4723,28 +4765,39 @@ fn events_use_the_function_definitions(
     function: &CFunction,
     events: &[CheckedExecutionEvent],
 ) -> bool {
-    let definitions = function.composite_resource_definitions();
-    events.iter().all(|event| match event {
-        CheckedExecutionEvent::ResourceObservation(observation) => {
-            definitions.contains(observation.definition())
-        }
-        CheckedExecutionEvent::ResourceRewrite(rewrite) => {
-            definitions.contains(rewrite.definition())
-        }
-        CheckedExecutionEvent::Branch(branch) => {
-            branch.matches_interface_resource_definitions(function)
-                && (0..2).all(|arm_index| {
-                    events_use_the_function_definitions(function, branch.arm_events(arm_index))
-                })
-        }
-        CheckedExecutionEvent::AutomaticLifetimeEnd(_)
-        | CheckedExecutionEvent::IteratedStep(_)
-        | CheckedExecutionEvent::Statement(_)
-        | CheckedExecutionEvent::Call(_)
-        | CheckedExecutionEvent::Condition(_)
-        | CheckedExecutionEvent::Context(_)
-        | CheckedExecutionEvent::ProofCase(_) => true,
-    })
+    fn check(
+        function: &CFunction,
+        events: &[CheckedExecutionEvent],
+        checked_entries: &mut std::collections::HashSet<usize>,
+    ) -> bool {
+        let definitions = function.composite_resource_definitions();
+        events.iter().all(|event| match event {
+            CheckedExecutionEvent::ResourceObservation(observation) => {
+                definitions.contains(observation.definition())
+            }
+            CheckedExecutionEvent::ResourceRewrite(rewrite) => {
+                definitions.contains(rewrite.definition())
+                    && rewrite.consumption_contract.as_ref().is_none_or(|entry| {
+                        !checked_entries.insert(Arc::as_ptr(entry) as usize)
+                            || &entry.function == function
+                    })
+            }
+            CheckedExecutionEvent::Branch(branch) => {
+                branch.matches_interface_resource_definitions(function)
+                    && (0..2).all(|arm_index| {
+                        check(function, branch.arm_events(arm_index), checked_entries)
+                    })
+            }
+            CheckedExecutionEvent::AutomaticLifetimeEnd(_)
+            | CheckedExecutionEvent::IteratedStep(_)
+            | CheckedExecutionEvent::Statement(_)
+            | CheckedExecutionEvent::Call(_)
+            | CheckedExecutionEvent::Condition(_)
+            | CheckedExecutionEvent::Context(_)
+            | CheckedExecutionEvent::ProofCase(_) => true,
+        })
+    }
+    check(function, events, &mut std::collections::HashSet::new())
 }
 
 /// Why a record call refused the evidence offered to it. `reason` names
@@ -6479,6 +6532,75 @@ impl ExecutionProofCore {
             trace.push(CheckedExecutionEvent::ResourceObservation(
                 observation.clone(),
             ));
+        }
+        Ok(())
+    }
+
+    /// A candidate only: publication still requires a checked close event.
+    pub(crate) fn prepare_consuming_resource_close(
+        &self,
+        selected: &CResourceFact,
+        facts: &ProofFacts,
+    ) -> Result<CState, String> {
+        if self.frontier.in_loop_body {
+            return Err("consuming close inside a loop requires loop effect accounting".into());
+        }
+        let entry = self
+            .function_entry
+            .as_ref()
+            .ok_or("consuming close requires the checked function entry")?;
+        population_consumption::prepare(
+            &entry.function,
+            &entry.entry_state,
+            self.reached_state(),
+            selected,
+            facts,
+        )
+    }
+
+    pub(crate) fn record_consuming_resource_close(
+        &mut self,
+        function: &CFunction,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+    ) -> Result<(), String> {
+        if self.evidence_completed || self.frontier.is_at_function_entry() {
+            return Err("consuming close requires an active function body".into());
+        }
+        let candidate = self.prepare_consuming_resource_close(selected, before_facts)?;
+        let CResource::Composite {
+            name,
+            arguments: resource_arguments,
+        } = selected.resource()
+        else {
+            return Err("consuming close requires a population".into());
+        };
+        if after_state.population_body_is_open(name, resource_arguments, before_facts.assumptions())
+        {
+            return Err("consuming close must restore and close the population body".into());
+        }
+        let mut rewrite = CheckedResourceRewrite::check_with_children(
+            function,
+            &candidate,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            &self.checked_call_events,
+            None,
+        )?;
+        // Both transitions have been checked: spend the declared unit, then
+        // restore its body. Retain the original input for trace validation and
+        // bind the effect to the enclosing contract, not merely its definition.
+        rewrite.before_state = self.reached_state().clone();
+        rewrite.consumption_contract = self.function_entry.clone();
+        if self.evidence_state.is_some() {
+            self.evidence_state = Some(rewrite.after_state.clone());
+        }
+        for trace in &mut *self.execution_evidence {
+            trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite.clone()));
         }
         Ok(())
     }

@@ -5125,6 +5125,10 @@ pub struct CState {
     pub(super) pending_thread_create: Option<super::threads::PendingThreadCreate>,
     pub(super) population_access: super::population_access::PopulationAccess,
     pub(super) counted_populations: CountedPopulations,
+    /// Function-local consumption already committed while closing a body.
+    /// Entries currently record exactly one unit. Callee binding starts empty;
+    /// returning to a caller preserves that caller's independent obligations.
+    pub(super) committed_population_consumptions: CountedPopulations,
     /// Monotonic identity source for stack frames created by nested calls.
     /// Keeping this in the symbolic state makes frame identities deterministic
     /// and ensures recursive calls cannot reuse a caller's stack slots.
