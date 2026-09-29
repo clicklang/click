@@ -331,6 +331,15 @@ defining snapshot and address from a typed load site or checked evidence; the
 storage-relative `Pointer::as_loaded` shape also describes indexed pointer
 arithmetic and is not sufficient evidence by itself.
 
+The bridge from a completed C pointer read to the graph application is
+execution evidence scoped to that path. It must not be published as an
+ordinary proposition premise: doing so changes a statement theorem from
+`Executes` to `bridge => Executes` and makes resource child-argument checking
+reject previously readable expressions. The trusted path context needs a
+checked carrier that feeds this equality to the graph without changing the
+logical premises or granting read permission. Volatile reads do not acquire a
+same-snapshot equality merely from repeated access.
+
 The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
 and a constructor/decoder pair for `(defining snapshot, address, displacement)`.
 The equality graph indexes this explicit pointer application without consulting

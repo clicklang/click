@@ -140,8 +140,9 @@ saturation. Equalities enter from hypotheses, checked proof steps, and
 execution. The service propagates their consequences through registered
 applications; it does not search for arithmetic identities or rewrite rules.
 
-The next milestone is one live, typed pointer-load equality query using the
-existing graph, followed by indexed read/fold lookup in separate green slices.
+The next milestone is a checked, path-local bridge from an actual pointer read
+to its graph application, followed by one live consumer and indexed read/fold
+lookup in separate green slices.
 Keep the landed affine classes and incremental congruence. Do not make a
 pointer-value representation change a prerequisite for using load congruence.
 Retire spelling retries as each consumer gets a complete replacement.
@@ -157,6 +158,10 @@ The detailed invariants and API boundaries are in
   used by C execution. A caller must retain genuine load-site evidence;
   decoding the existing storage-relative pointer shape alone cannot distinguish
   a loaded pointer from indexed pointer arithmetic.
+- The equality between a completed read's existing C value and its graph
+  application is checked execution evidence. Keep it in the path's trusted
+  context without turning it into a new proposition premise of the execution
+  theorem or granting a resource read that the path did not have.
 - Loads include their snapshot and access interpretation. Same-snapshot
   congruence is automatic; different snapshots require checked frame evidence.
 - Equality comparison performs no frame search. Execution may retain a name
@@ -440,12 +445,26 @@ exploit. Goal lowering/unfolding and the generic publisher remain their existing
 trust boundaries; this change gives equality substitution its own checked rule,
 not a migration of every proof transition.
 
-Next: connect a live typed pointer-load comparison to the graph query using
-its real snapshot and addresses. The distinct pointer-load name and block are
-already available as graph syntax, without relying on the scalar registry's
-shared names across access widths. Keep C pointer values in their current
-representation for this slice. Then integrate indexed read/fold lookup in a
-separate green milestone.
+Next: carry checked load-value evidence into the path's trusted equality
+context, then connect a live comparison. The distinct pointer-load name and
+block are already available as graph syntax, without relying on the scalar
+registry's shared names across access widths. Keep C pointer values in their
+current representation. Do not publish the bridge as an ordinary proof
+premise: that changes execution theorem shapes and resource checking. Then
+integrate indexed read/fold lookup in a separate green milestone.
+
+The attempted live slice on 2026-09-28 established two boundaries. Direct
+same-snapshot C comparisons of loads through addresses already known equal
+verified before the change, so they do not demonstrate new egraph coverage.
+Adding `load(M, p) == value` to every completed pointer read as a certified
+`ExecutionPureFact` made a canonicalization test's execution theorem acquire a
+new implication premise and made recursive child-argument checking refuse a
+formerly readable expression. The graph equality itself worked, including a
+volatile-read negative; the proof fact channel was the wrong carrier. That
+prototype was reverted. The next regression must inspect the checked bridge
+and a genuinely later address equality, while retaining the canonicalization
+and recursive-resource cases, rather than merely count another passing C
+comparison.
 
 ## Why the migration changes
 
@@ -509,9 +528,10 @@ Persistent indexed congruence for the supported pointer/offset/int32 fragments
 has landed, along with selected value-consumer integrations. The explicit
 pointer-load block is understood by the graph. A direct producer flip exposed
 failures in provenance, materialized loads, contracts, and expansion; it is not
-the route to the next green checkpoint. First connect one live equality
-consumer that has actual typed load-site evidence and keeps its existing
-pointer value. Then address resource indexing as another bounded slice.
+the route to the next green checkpoint. First carry actual typed load-site
+evidence through the path and connect one live equality consumer while keeping
+its existing pointer value. Then address resource indexing as another bounded
+slice.
 
 - Maintain incremental congruence using indexed application signatures and
   affected-parent worklists. Updating an address class must merge existing
@@ -521,10 +541,12 @@ pointer value. Then address resource indexing as another bounded slice.
   branch forks, merge maintenance, and explanation size, not just the number
   of union operations. Reconsider the representation if these costs violate
   the complexity contract.
-- At a live comparison or checked proof judgment, query typed pointer-load
-  congruence with the actual defining snapshot and addresses. Preserve
-  validity, volatility, and path conditions. Do not project every
-  storage-relative pointer through `as_loaded` or scan earlier loads.
+- Add a checked load-value evidence carrier in the persistent path context.
+  It must feed the graph without appearing as an extra user premise or
+  authorizing a resource read. Test branch isolation and certificate checking
+  before using it in a comparison. Preserve validity, volatility, and path
+  conditions. Do not project every storage-relative pointer through
+  `as_loaded` or scan earlier loads.
 - Keep checked frame derivation outside comparison. Add derived equalities
   only to the context justified by that derivation and its premises.
 - Integrate indexed resource lookup through at least specification reads and
