@@ -5234,11 +5234,9 @@ impl PropositionDerivation {
                 if expected_cases.len() < 2 || cases.len() != expected_cases.len() {
                     return false;
                 }
-                let mut base = available.clone();
-                base.remove_proposition_fact(disjunction);
                 cases.iter().zip(expected_cases).all(|(proof, case)| {
                     proof.conclusion == self.conclusion
-                        && proof.check(&base.clone().assume_proposition(case))
+                        && proof.check(&available.clone().assume_proposition(case))
                 })
             }
         }

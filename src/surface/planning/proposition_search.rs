@@ -961,11 +961,16 @@ impl PropositionSearch for PureFactContext {
             if cases.len() < 2 {
                 continue;
             }
-            let base = self.without_exact_fact(disjunction);
+            // A branch retains the disjunction and adds its chosen case.
+            // Once a case is present, splitting this disjunction again adds
+            // nothing and would recurse on the same proof context.
+            if cases.iter().any(|case| self.contains_assumed_exact(case)) {
+                continue;
+            }
             let Some(proofs) = cases
                 .iter()
                 .map(|case| {
-                    base.clone()
+                    self.clone()
                         .assume_proposition(case.clone())
                         .derive_proposition_using(proposition, for_simp)
                         .map(|proof| *proof)
