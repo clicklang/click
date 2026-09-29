@@ -814,6 +814,17 @@ impl PureFactContext {
                     }
                 }
             }
+            ConditionMatchKey::OverflowAdd(left, right) => {
+                for left in spellings(left) {
+                    for right in spellings(right) {
+                        keys.insert(if left <= right {
+                            ConditionMatchKey::OverflowAdd(left.clone(), right)
+                        } else {
+                            ConditionMatchKey::OverflowAdd(right, left.clone())
+                        });
+                    }
+                }
+            }
             ConditionMatchKey::OffsetEqual(_, _) => {}
         }
         keys.into_iter().collect()

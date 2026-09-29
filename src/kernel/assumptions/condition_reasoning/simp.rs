@@ -384,7 +384,9 @@ impl PureFactContext {
                     }
                 }
             }
-            ConditionMatchKey::OffsetEqual(_, _) => return None,
+            ConditionMatchKey::OffsetEqual(_, _) | ConditionMatchKey::OverflowAdd(_, _) => {
+                return None;
+            }
         }
         let matches = |facts: &crate::persistent::PersistentMap<ConditionTerm, bool>| {
             facts.iter().any(|(fact, fact_value)| {

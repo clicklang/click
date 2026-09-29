@@ -2863,6 +2863,15 @@ impl PureFactContext {
                         && self.pointer_offset_terms_snapshot_equivalent(fact_right, target_left)
             }
             (
+                ConditionTerm::Bitvector32SignedAddOverflows(fact_left, fact_right),
+                ConditionTerm::Bitvector32SignedAddOverflows(target_left, target_right),
+            ) => {
+                self.bitvector_terms_equal_for_transport(fact_left, target_left)
+                    && self.bitvector_terms_equal_for_transport(fact_right, target_right)
+                    || self.bitvector_terms_equal_for_transport(fact_left, target_right)
+                        && self.bitvector_terms_equal_for_transport(fact_right, target_left)
+            }
+            (
                 ConditionTerm::Bitvector32SignedLessThan(fact_left, fact_right),
                 ConditionTerm::Bitvector32SignedLessThan(target_left, target_right),
             )

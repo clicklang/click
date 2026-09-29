@@ -529,28 +529,24 @@ fn transfer_population_call_facts<'a>(
             }
             continue;
         }
-        let (description, authority_fact) = match fact {
+        let (description, authority_fact, quantity) = match fact {
             CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
                 if quantity.as_const() == Some(1) =>
             {
-                (description.clone(), true)
+                (description.clone(), true, quantity)
             }
-            CResourceFact::Own(CResource::Composite { name, arguments }, quantity)
-                if quantity.as_const() == Some(1) =>
-            {
-                (
-                    ResourceDescription::new(
-                        name.clone(),
-                        arguments.clone(),
-                        ResourceFieldSchema::new(vec![]).expect("empty schema"),
-                    ),
-                    false,
-                )
-            }
-            CResourceFact::Own(CResource::PopulationAuthority(_), _)
-            | CResourceFact::Own(CResource::Composite { .. }, _) => {
+            CResourceFact::Own(CResource::Composite { name, arguments }, quantity) => (
+                ResourceDescription::new(
+                    name.clone(),
+                    arguments.clone(),
+                    ResourceFieldSchema::new(vec![]).expect("empty schema"),
+                ),
+                false,
+                quantity,
+            ),
+            CResourceFact::Own(CResource::PopulationAuthority(_), _) => {
                 return Err(CRuntimeError::FunctionContract(
-                    "population call requires one exact owned resource".into(),
+                    "population call requires one exact authority".into(),
                 ));
             }
             _ => continue,
@@ -559,7 +555,14 @@ fn transfer_population_call_facts<'a>(
             continue;
         }
         events = events
-            .transfer_call_fact(from_events, to_events, &description, authority_fact)
+            .transfer_call_fact_quantity(
+                from_events,
+                to_events,
+                &description,
+                authority_fact,
+                quantity,
+                assumptions,
+            )
             .map_err(|refusal| {
                 CRuntimeError::FunctionContract(format!(
                     "population call transfer refused: {refusal:?}"
@@ -2118,7 +2121,30 @@ fn authority_mode_input_protects_member(
     }
 }
 
-fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInterface) -> bool {
+fn authority_mode_member_quantity_admitted(
+    interface: &CFunctionContractInterface,
+    member: &CResourceSpec,
+) -> bool {
+    if member.access() != CResourceAccessMode::Own
+        || member.guard().is_some()
+        || !member.resource_arguments().is_empty()
+    {
+        return false;
+    }
+    if member.quantity() == &CResourceQuantity::One {
+        return true;
+    }
+    let CResourceTerm::Composite { name, .. } = member.term() else {
+        return false;
+    };
+    // Several identical members cannot each own the same private body.
+    matches!(member.quantity(), CResourceQuantity::Count(_))
+        && interface
+            .composite_resource_definition(name)
+            .is_some_and(|definition| definition.contains().is_empty())
+}
+
+fn authority_mode_consumes_member_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
         || interface.resource_requires().len() != 2
         || interface.resource_ensures().is_empty()
@@ -2142,7 +2168,7 @@ fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInte
         && returned.role() == CResourceTransferRole::Borrow
         && authority.term() == returned.term()
         && exact_owned(authority)
-        && exact_owned(member)
+        && authority_mode_member_quantity_admitted(interface, member)
         && exact_owned(returned)
         && authority_mode_matches_member_body(
             interface,
@@ -2154,7 +2180,7 @@ fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInte
 
 /// A helper may return its borrowed authority and one newly folded member,
 /// after consuming the member's entire private body.
-fn authority_mode_produces_one_member_contract(interface: &CFunctionContractInterface) -> bool {
+fn authority_mode_produces_member_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
         || interface.resource_requires().is_empty()
         || interface.resource_ensures().len() != 2
@@ -2179,7 +2205,7 @@ fn authority_mode_produces_one_member_contract(interface: &CFunctionContractInte
         && authority.term() == returned.term()
         && exact_owned(authority)
         && exact_owned(returned)
-        && exact_owned(member)
+        && authority_mode_member_quantity_admitted(interface, member)
         && authority_mode_matches_member_body(
             interface,
             member,
@@ -2229,8 +2255,8 @@ fn authority_mode_final_release_contract(interface: &CFunctionContractInterface)
 
 fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
     authority_mode_preserves_resource_contract(interface)
-        || authority_mode_consumes_one_member_contract(interface)
-        || authority_mode_produces_one_member_contract(interface)
+        || authority_mode_consumes_member_contract(interface)
+        || authority_mode_produces_member_contract(interface)
         || authority_mode_final_release_contract(interface)
 }
 
@@ -4098,10 +4124,10 @@ fn execute_verified_function_applications_with_suspension(
         };
 
         if caller_state.uses_population_authority_semantics()
-            && (authority_mode_consumes_one_member_contract(interface)
-                || authority_mode_produces_one_member_contract(interface))
+            && (authority_mode_consumes_member_contract(interface)
+                || authority_mode_produces_member_contract(interface))
         {
-            let produce = authority_mode_produces_one_member_contract(interface);
+            let produce = authority_mode_produces_member_contract(interface);
             let produced_member = if produce {
                 match evaluate_function_resource_spec_with_entry(
                     &entry_contract_state,
@@ -4137,12 +4163,6 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            if quantity.as_const() != Some(1) {
-                paths.push(resource_call_failure(
-                    "population helper requires one exact member",
-                ));
-                continue;
-            }
             let description = ResourceDescription::new(
                 name.clone(),
                 arguments.clone(),
@@ -4171,16 +4191,21 @@ fn execute_verified_function_applications_with_suspension(
                 paths.push(resource_call_failure("Requires live base storage for R(p)"));
                 continue;
             }
-            let (next, _) =
-                match events.checked_member_exchange(&anchor.block, &description, produce) {
-                    Ok(exchange) => exchange,
-                    Err(refusal) => {
-                        paths.push(resource_call_failure(&format!(
-                            "population helper member transition refused: {refusal:?}"
-                        )));
-                        continue;
-                    }
-                };
+            let (next, _) = match events.checked_member_exchange_quantity(
+                &anchor.block,
+                &description,
+                produce,
+                quantity,
+                &effective_assumptions,
+            ) {
+                Ok(exchange) => exchange,
+                Err(refusal) => {
+                    paths.push(resource_call_failure(&format!(
+                        "population helper member transition refused: {refusal:?}"
+                    )));
+                    continue;
+                }
+            };
             Arc::make_mut(&mut post_state.population_effects).creation = Some(next);
         }
         let mut return_state = caller_state.clone();
@@ -26705,8 +26730,8 @@ fn function_outcome_from_body_with_resource_transfer(
         }
     }
     let population_transition = if caller_state.uses_population_authority_semantics()
-        && (authority_mode_consumes_one_member_contract(function.contract_interface())
-            || authority_mode_produces_one_member_contract(function.contract_interface())
+        && (authority_mode_consumes_member_contract(function.contract_interface())
+            || authority_mode_produces_member_contract(function.contract_interface())
             || authority_mode_final_release_contract(function.contract_interface()))
     {
         CCountedPopulationTransition::default()
@@ -26961,8 +26986,8 @@ pub(super) fn contract_exit_outcome(
         return Ok(Err(CRuntimeError::TypeMismatch));
     };
     if caller_state.uses_population_authority_semantics()
-        && (authority_mode_consumes_one_member_contract(function.contract_interface())
-            || authority_mode_produces_one_member_contract(function.contract_interface())
+        && (authority_mode_consumes_member_contract(function.contract_interface())
+            || authority_mode_produces_member_contract(function.contract_interface())
             || authority_mode_final_release_contract(function.contract_interface()))
     {
         let CStatementOutcome::Return { state, .. } = &outcome else {
@@ -26970,8 +26995,32 @@ pub(super) fn contract_exit_outcome(
                 "population helper must return after its member transition".into(),
             )));
         };
-        let produce = authority_mode_produces_one_member_contract(function.contract_interface());
+        let produce = authority_mode_produces_member_contract(function.contract_interface());
         let final_release = authority_mode_final_release_contract(function.contract_interface());
+        let member_spec = if produce {
+            &function.resource_ensures()[1]
+        } else {
+            &function.resource_requires()[1]
+        };
+        let expected_member = match evaluate_function_resource_spec_with_entry(
+            &callee_state,
+            &callee_state,
+            member_spec,
+            assumptions,
+            budget,
+        )? {
+            Ok(fact) => fact,
+            Err(error) => return Ok(Err(error)),
+        };
+        let expected_quantity = expected_member.owned_quantity_term().cloned();
+        let expected_description = match expected_member.resource() {
+            CResource::Composite { name, arguments } => Some(ResourceDescription::new(
+                name.clone(),
+                arguments.clone(),
+                ResourceFieldSchema::new(vec![]).expect("empty schema"),
+            )),
+            _ => None,
+        };
         let exchanged = callee_state
             .population_effects
             .creation
@@ -26981,10 +27030,30 @@ pub(super) fn contract_exit_outcome(
                 if final_release {
                     after.spent_imported_member_since(before)
                         && after.retired_imported_authority_since(before)
-                } else if produce {
-                    after.born_imported_member_since(before)
+                } else if let (Some(description), Some(expected_quantity)) =
+                    (expected_description.as_ref(), expected_quantity.as_ref())
+                {
+                    after
+                        .imported_member_delta_since_entry(description)
+                        .is_some_and(|(actual_produce, actual_quantity)| {
+                            (actual_produce == produce
+                                || crate::kernel::quantity_condition_holds(
+                                    assumptions,
+                                    ConditionTerm::Bitvector32Equal(
+                                        Box::new(actual_quantity.clone()),
+                                        Box::new(Bitvector32Term::Constant(0)),
+                                    ),
+                                ))
+                                && crate::kernel::quantity_condition_holds(
+                                    assumptions,
+                                    ConditionTerm::Bitvector32Equal(
+                                        Box::new(actual_quantity),
+                                        Box::new(expected_quantity.clone()),
+                                    ),
+                                )
+                        })
                 } else {
-                    after.spent_imported_member_since(before)
+                    false
                 }
             });
         if !exchanged {
@@ -27022,8 +27091,8 @@ pub(super) fn contract_exit_outcome(
     };
     if function_needs_outcome_resource_transfer(function)
         || caller_state.uses_population_authority_semantics()
-            && (authority_mode_consumes_one_member_contract(function.contract_interface())
-                || authority_mode_produces_one_member_contract(function.contract_interface())
+            && (authority_mode_consumes_member_contract(function.contract_interface())
+                || authority_mode_produces_member_contract(function.contract_interface())
                 || authority_mode_final_release_contract(function.contract_interface()))
     {
         function_outcome_from_body_with_resource_transfer(

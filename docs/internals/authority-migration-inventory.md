@@ -18,12 +18,12 @@ The third query finds explicit coefficient clauses, including unrelated resource
 ## Parallel authority proof status
 
 `examples/refcount-authority/refcount.click` selects authority semantics for
-unchanged C files from `examples/refcount/`. It verifies initialization,
-retaining one reference, nonfinal release of one reference, and final release
-with allocation reclamation. The symbolic `amount` helpers and complete
-pipeline remain in the legacy baseline until checked symbolic member quantities
-can cross authority-mode helper contracts. This parallel proof does not mark
-the sequential refcount group migrated.
+unchanged C files from `examples/refcount/`. It verifies all seven functions:
+initialization, one and symbolic-batch retain/release, final release with
+allocation reclamation, and the complete pipeline including allocation failure.
+The old sidecar remains the baseline until the negative fixture group is
+migrated. This parallel proof does not mark the sequential refcount group
+migrated.
 
 ## Source-backed example and design groups
 

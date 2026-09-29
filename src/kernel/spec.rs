@@ -6065,21 +6065,29 @@ fn evaluate_resource_count_paths(
                     // An imported control's checked equality to a population
                     // count entails this bound, including any member owned by
                     // the helper at entry. It is not an arbitrary C assumption.
+                    let entry_owned = symbolic
+                        .entry_symbolic_members
+                        .clone()
+                        .unwrap_or(Bitvector32Term::Constant(symbolic.entry_owned_members));
                     let minimum = Proposition::ConditionIs(
-                        ConditionTerm::signed_greater_equal(
-                            entry.clone(),
-                            Bitvector32Term::Constant(symbolic.entry_owned_members),
-                        ),
+                        ConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
                         true,
                     );
                     facts.push(ExecutionPureFact::certified(minimum.clone()));
-                    let count = match symbolic.delta {
-                        -1 => Bitvector32Term::subtract(entry, Bitvector32Term::Constant(1)),
-                        0 => entry,
-                        1 => {
+                    let delta = symbolic
+                        .symbolic_delta
+                        .clone()
+                        .or_else(|| match symbolic.delta {
+                            -1 => Some((false, Bitvector32Term::Constant(1))),
+                            1 => Some((true, Bitvector32Term::Constant(1))),
+                            _ => None,
+                        });
+                    let count = match delta {
+                        None => entry,
+                        Some((true, quantity)) => {
                             let overflow = ConditionTerm::signed_add_overflows(
                                 entry.clone(),
-                                Bitvector32Term::Constant(1),
+                                quantity.clone(),
                             );
                             let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
                             let bounded = path_assumptions.assume_proposition(minimum);
@@ -6092,9 +6100,30 @@ fn evaluate_resource_count_paths(
                                         .with_context("count(reference) fits in int32"),
                                 );
                             }
-                            Bitvector32Term::add(entry, Bitvector32Term::Constant(1))
+                            Bitvector32Term::add(entry, quantity)
                         }
-                        _ => return Err(ExecutionLimit::AuthorityCountNeedsOwnership),
+                        Some((false, quantity)) => {
+                            let within = Proposition::ConditionIs(
+                                ConditionTerm::signed_greater_equal(
+                                    entry.clone(),
+                                    quantity.clone(),
+                                ),
+                                true,
+                            );
+                            let bounded = path_assumptions.assume_proposition(minimum);
+                            if !bounded.proves_exact(&within)
+                                && bounded.decide(&ConditionTerm::signed_greater_equal(
+                                    entry.clone(),
+                                    quantity.clone(),
+                                )) != Some(true)
+                            {
+                                obligations.push(
+                                    ProofObligation::verification_condition(within)
+                                        .with_context("count(reference) contains consumed members"),
+                                );
+                            }
+                            Bitvector32Term::subtract(entry, quantity)
+                        }
                     };
                     return Ok(SpecExpressionPath {
                         value: CValue::Int32(count),
@@ -6106,13 +6135,21 @@ fn evaluate_resource_count_paths(
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
                 let count = creation
-                    .observe(&anchor.block, name)
+                    .observe_term(&anchor.block, name)
                     .map_err(|_| ExecutionLimit::AuthorityCountNeedsOwnership)?;
-                if count > i32::MAX as u32 {
-                    return Err(ExecutionLimit::AuthorityCountOverflows);
+                if let Some((base, quantity)) =
+                    creation.observed_symbolic_batch(&anchor.block, name)
+                {
+                    facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+                        ConditionTerm::signed_add_overflows(
+                            Bitvector32Term::Constant(base),
+                            quantity,
+                        ),
+                        false,
+                    )));
                 }
                 return Ok(SpecExpressionPath {
-                    value: CValue::Int32(Bitvector32Term::Constant(count)),
+                    value: CValue::Int32(count),
                     facts,
                     obligations,
                 });

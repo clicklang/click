@@ -527,6 +527,69 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
 }
 
 #[test]
+fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Constant(5);
+    let assumptions = PureFactContext::new();
+    let held = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(quantity.clone()),
+            Some(quantity.clone()),
+        )
+        .unwrap();
+    assert!(held.owns_population_member(&description));
+    assert!(matches!(
+        held.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+    let (spent, _) = held
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap();
+    assert!(!spent.owns_population_member(&description));
+    assert!(matches!(
+        spent.checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        ),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+
+    let empty = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(0)),
+            None,
+        )
+        .unwrap();
+    let (born, _) = empty
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            true,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap();
+    assert!(born.owns_population_member(&description));
+    assert!(matches!(
+        born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+}
+
+#[test]
 fn checked_control_import_observes_only_its_exact_entry_population() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,

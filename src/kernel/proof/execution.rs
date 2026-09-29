@@ -667,9 +667,7 @@ fn checks_population_member_exchange(
     let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected else {
         return Err("population member rewrite requires an owned declared resource".into());
     };
-    if quantity.as_const() != Some(1) {
-        return Err("population member rewrite requires one owned member".into());
-    }
+    let batch = quantity.as_const() != Some(1);
     if definition.name != *name
         || !definition.resource_parameters.is_empty()
         || definition.guarded_by.is_some()
@@ -691,6 +689,9 @@ fn checks_population_member_exchange(
             .is_some_and(|schema| !schema.fields().is_empty())
     {
         return Err("population member rewrite requires a private owned-memory body".into());
+    }
+    if batch && !definition.contains().is_empty() {
+        return Err("quantified population members need an empty body".into());
     }
     let description = crate::kernel::ResourceDescription::new(
         name.clone(),
@@ -1257,7 +1258,10 @@ impl CheckedResourceRewrite {
             let bound = Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_greater_equal(
                     imported.entry_count,
-                    Bitvector32Term::Constant(imported.entry_owned_members),
+                    imported
+                        .entry_symbolic_members
+                        .clone()
+                        .unwrap_or(Bitvector32Term::Constant(imported.entry_owned_members)),
                 ),
                 true,
             );

@@ -256,6 +256,10 @@ pub(in crate::kernel) fn condition_match_key(
             let (left, right) = ordered(canonical(left), canonical(right));
             ConditionMatchKey::Equal(left, right)
         }
+        ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
+            let (left, right) = ordered(canonical(left), canonical(right));
+            ConditionMatchKey::OverflowAdd(left, right)
+        }
         ConditionTerm::PointerOffsetEqual(left, right) => {
             let left = crate::kernel::eval::canonical_offset_term(left);
             let right = crate::kernel::eval::canonical_offset_term(right);
@@ -297,7 +301,8 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
         | ConditionTerm::Bitvector32SignedLessThan(left, right)
         | ConditionTerm::Bitvector32SignedLessEqual(left, right)
         | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => open(left) || open(right),
+        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right)
+        | ConditionTerm::Bitvector32SignedAddOverflows(left, right) => open(left) || open(right),
         ConditionTerm::PointerOffsetEqual(left, right) => open_offset(left) || open_offset(right),
         _ => false,
     }

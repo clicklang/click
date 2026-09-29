@@ -29,11 +29,22 @@ impl<'a> Proof<'a> {
         resource: &ResourceClause,
         produce: bool,
     ) -> Result<CheckedFocusedTransition, ClickError> {
-        let ResourceClause::Declared { name, .. } = resource else {
-            return Err(
-                self.step_error("authority-mode member changes require a direct declared resource")
-            );
+        let declared = match resource {
+            ResourceClause::Declared { name, .. } => name,
+            ResourceClause::Quantified { resource, .. } => match resource.as_ref() {
+                ResourceClause::Declared { name, .. } => name,
+                _ => {
+                    return Err(self
+                        .step_error("authority-mode member changes require a declared resource"));
+                }
+            },
+            _ => {
+                return Err(
+                    self.step_error("authority-mode member changes require a declared resource")
+                );
+            }
         };
+        let name = declared;
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("population member change requires a C execution proof"));
         };

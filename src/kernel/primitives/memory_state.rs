@@ -4498,22 +4498,29 @@ impl CState {
             return Err("Requires owns authority(R(p))".into());
         }
         let count = if anchor.offset == PointerOffsetTerm::Constant(0) {
-            let count = events
-                .observe(&anchor.block, description.family())
-                .map_err(|_| "Requires a current authority count")?;
-            if count > i32::MAX as u32 {
-                return Err("current authority count exceeds int32".into());
-            }
-            Bitvector32Term::Constant(count)
+            events
+                .observe_term(&anchor.block, description.family())
+                .map_err(|_| "Requires a current authority count")?
         } else {
             let imported = events
                 .observe_symbolic(&description)
                 .ok_or("Requires a current authority count")?;
-            match imported.delta {
-                0 => imported.entry_count,
-                1 => Bitvector32Term::add(imported.entry_count, Bitvector32Term::Constant(1)),
-                -1 => Bitvector32Term::subtract(imported.entry_count, Bitvector32Term::Constant(1)),
-                _ => return Err("control authority has an unsupported count change".into()),
+            if let Some((produce, quantity)) = imported.symbolic_delta {
+                if produce {
+                    Bitvector32Term::add(imported.entry_count, quantity)
+                } else {
+                    Bitvector32Term::subtract(imported.entry_count, quantity)
+                }
+            } else {
+                match imported.delta {
+                    0 => imported.entry_count,
+                    1 => Bitvector32Term::add(imported.entry_count, Bitvector32Term::Constant(1)),
+                    -1 => Bitvector32Term::subtract(
+                        imported.entry_count,
+                        Bitvector32Term::Constant(1),
+                    ),
+                    _ => return Err("control authority has an unsupported count change".into()),
+                }
             }
         };
         Ok((children, count))
@@ -4868,9 +4875,7 @@ impl CState {
         else {
             return Err("Requires owns R(p)".into());
         };
-        if quantity.as_const() != Some(1) {
-            return Err("Requires one owned R(p)".into());
-        }
+        let batch = quantity.as_const() != Some(1);
         if definition.name != *name
             || !definition.resource_parameters.is_empty()
             || definition.guarded_by.is_some()
@@ -4937,6 +4942,9 @@ impl CState {
             .creation
             .as_ref()
             .ok_or("authority mode has no creation history")?;
+        if batch && !definition.contains().is_empty() {
+            return Err("a quantified member needs an empty private body".into());
+        }
         let body = if definition.contains().is_empty() {
             Vec::new()
         } else {
@@ -5000,7 +5008,13 @@ impl CState {
                 .map_err(|error| format!("member body ownership refused: {error:?}"))?
         };
         let (history, evidence) = events
-            .checked_member_exchange(&anchor.block, &description, produce)
+            .checked_member_exchange_quantity(
+                &anchor.block,
+                &description,
+                produce,
+                quantity,
+                assumptions,
+            )
             .map_err(|error| format!("member change refused: {error:?}"))?;
         let mut next = self.clone();
         next.resources = resources;

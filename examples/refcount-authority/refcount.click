@@ -16,6 +16,7 @@ void object_init(struct object* obj) {
     consumes object(obj);
     produces object(obj);
     ensures obj->refs == 1;
+    ensures defined(obj->refs);
 } by {
     execute();
     simp();
@@ -56,5 +57,91 @@ void object_release_final(struct object* obj) {
     unfold(reference(obj));
     unfold(authority(reference(obj)));
     execute();
+    simp();
+}
+
+verifying "../refcount/object_retain_many.c";
+verifying "../refcount/object_release_many_nonfinal.c";
+
+void object_retain_many(struct object* obj, int32 amount) {
+    requires 0 <= amount;
+    requires defined(obj->refs + amount);
+    owns control(obj);
+    produces amount of reference(obj);
+    ensures defined(obj->refs);
+} by {
+    open(control(obj)) {
+        step();
+        fold(amount of reference(obj));
+    }
+    execute();
+    simp();
+}
+
+void object_release_many_nonfinal(struct object* obj, int32 amount) {
+    requires 0 <= amount;
+    requires amount < obj->refs;
+    requires defined(1 + amount);
+    owns control(obj);
+    consumes amount of reference(obj);
+    ensures defined(obj->refs);
+} by {
+    open(control(obj)) {
+        unfold(amount of reference(obj));
+        step();
+    }
+    execute();
+    simp();
+}
+
+verifying "../refcount/refcount_pipeline.c";
+
+int32 refcount_pipeline(int32 amount) {
+    requires 0 <= amount;
+    requires amount <= 2147483646;
+    ensures result == -1 or result == 0;
+} by {
+    have amount < 2147483647 by simp;
+    have defined(1 + amount) by {
+        apply(int32_one_plus_below_max_is_defined(amount)) using {
+            amount < 2147483647;
+        }
+    }
+    step();
+    step();
+    branch {
+        then {
+            step();
+            simp();
+        }
+        else {}
+    }
+    step();
+    have defined(obj->refs + amount) by {
+        rewrite(obj->refs == 1);
+        split();
+    }
+    fold(authority(reference(obj)));
+    fold(reference(obj));
+    fold(control(obj));
+    step();
+    open(control(obj)) {
+        have obj->refs == 1 + amount by simp;
+    }
+    have amount < 1 + amount by {
+        apply(int32_one_plus_strictly_increases(amount)) using {
+            amount < 2147483647;
+        }
+    }
+    have amount < obj->refs by {
+        rewrite(obj->refs == 1 + amount);
+        assumption();
+    }
+    step();
+    open(control(obj)) {
+        have obj->refs == 1 by simp;
+    }
+    step();
+    step();
     simp();
 }

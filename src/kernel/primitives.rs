@@ -5611,6 +5611,8 @@ pub(super) enum ConditionMatchKey {
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
     /// A signed order: strict, then its lower and its upper side.
     Order(bool, Bitvector32Term, Bitvector32Term),
+    /// Signed addition overflow, with commutative operands ordered.
+    OverflowAdd(Bitvector32Term, Bitvector32Term),
 }
 
 impl ConditionMatchKey {
@@ -5621,6 +5623,7 @@ impl ConditionMatchKey {
             Self::Equal(_, _) => 0,
             Self::OffsetEqual(_, _) => 1,
             Self::Order(_, _, _) => 2,
+            Self::OverflowAdd(_, _) => 3,
         }
     }
 }

@@ -340,20 +340,17 @@ and final reclamation. The negative variants fail for the relevant missing
 permission or false equality. This group has no legacy dependency; unrelated
 examples have not changed semantics.
 
-**Current frontier:** A parallel authority-mode sidecar verifies the frozen
-`object_init.c`, `object_retain.c`, `object_release_nonfinal.c`, and
-`object_release_final.c` with an ordinary `control(obj)` that owns the
-allocation, object memory, authority, and count equation. Checked helper calls
-can transfer that control and final release consumes its last member, retires
-the authority, and frees storage. Focused negative proofs reject an omitted
-`free` and a claimed final release at count two. The symbolic `amount`
-retain/release helpers and `refcount_pipeline.c` remain to be proved; the
-legacy sidecar is still the complete baseline. Existing syntax already parses
-`fold(amount of reference(obj))` and its `unfold` counterpart, but authority
-rewrites, the opaque helper ledger, and the concrete caller ledger currently
-accept only one member. They need a checked symbolic quantity transition and
-checked call transition before the parallel proof can replace the legacy group. Do not
-admit the symbolic contract based only on its `produces`/`consumes` clauses.
+**Current frontier:** A parallel authority-mode sidecar verifies all seven
+frozen refcount C functions, including symbolic `amount` retain/release and
+the complete allocation-failure and final-free pipeline. Its ordinary
+`control(obj)` owns the allocation, counter memory, authority, and count
+equation. Checked symbolic batches cross helper contracts and are consumed
+before final authority retirement. The helper contracts state when the
+counter remains defined after a call. The legacy sidecar remains the baseline
+until the related positive and negative fixture group is migrated. Existing
+focused negative proofs reject an omitted `free` and a claimed final release
+at count two; batch-specific refusals and the remaining legacy clients are
+still migration work.
 
 ### 5. Migrate shared-parent ownership
 
