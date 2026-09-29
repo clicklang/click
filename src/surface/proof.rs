@@ -1935,6 +1935,21 @@ pub(super) struct InitialClaimContext {
     pub(super) surface_propositions: SurfacePropositionMap,
 }
 
+fn authority_mode_member_contract_resource(resource: &ResourceClause) -> bool {
+    match resource {
+        ResourceClause::Declared { .. }
+        | ResourceClause::Named { .. }
+        | ResourceClause::Iterated(_) => true,
+        ResourceClause::Conditional { resource, .. }
+        | ResourceClause::Quantified { resource, .. } => {
+            authority_mode_member_contract_resource(resource)
+        }
+        ResourceClause::ViewMemory(_)
+        | ResourceClause::OwnMemory(_)
+        | ResourceClause::MemoryAggregate { .. } => false,
+    }
+}
+
 pub(super) fn initial_claim_context(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
@@ -1988,6 +2003,52 @@ pub(super) fn initial_claim_context_with_caller_owner(
     claim_label: &str,
     caller_owner: Option<&CallerSourceOwnerId>,
 ) -> Result<InitialClaimContext, ClickError> {
+    initial_claim_context_with_mode(
+        function_block,
+        parsed_function,
+        resource_environment,
+        predicate_environment,
+        click_function_environment,
+        claim_label,
+        caller_owner,
+        ResourceSemanticsMode::Legacy,
+    )
+}
+
+pub(super) fn initial_claim_context_with_mode(
+    function_block: &FunctionBlock,
+    parsed_function: &syntax::C0Function,
+    resource_environment: &ResourceEnvironment,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+    claim_label: &str,
+    caller_owner: Option<&CallerSourceOwnerId>,
+    resource_semantics_mode: ResourceSemanticsMode,
+) -> Result<InitialClaimContext, ClickError> {
+    if resource_semantics_mode == ResourceSemanticsMode::Authority {
+        for requirement in function_block.requires() {
+            if let Requirement::Resource(resource) = requirement.inner()
+                && authority_mode_member_contract_resource(resource)
+            {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` requires a declared resource; authority-mode member and authority contract transfer is not yet checked"
+                )));
+            }
+        }
+        for ensure in function_block
+            .ensures()
+            .iter()
+            .chain(function_block.exceptional_ensures())
+        {
+            if let Ensure::Resource(resource) = ensure.ensure()
+                && authority_mode_member_contract_resource(resource)
+            {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` produces a declared resource; authority-mode member and authority contract transfer is not yet checked"
+                )));
+            }
+        }
+    }
     let (mut state, arguments) = if let Some(startup) = &parsed_function.program_entry_state {
         if !function_block.requires().is_empty() || !parsed_function.parameters().is_empty() {
             return Err(ClickError::new(
@@ -1996,7 +2057,12 @@ pub(super) fn initial_claim_context_with_caller_owner(
         }
         (
             crate::kernel::initialize_c_function_globals(
-                startup,
+                &match resource_semantics_mode {
+                    ResourceSemanticsMode::Legacy => startup.as_ref().clone(),
+                    ResourceSemanticsMode::Authority => {
+                        startup.as_ref().clone().with_population_creation_tracking()
+                    }
+                },
                 &parsed_function.to_kernel_function(),
             ),
             vec![],
@@ -2006,6 +2072,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             function_block.requires(),
             parsed_function.parameters(),
             &parsed_function.to_kernel_function(),
+            resource_semantics_mode,
         )?
     };
     let mut observed_population_families = BTreeSet::new();
@@ -2016,7 +2083,11 @@ pub(super) fn initial_claim_context_with_caller_owner(
             collect_called_predicates(proposition, &mut pending_predicates);
         }
     }
-    for ensure in function_block.ensures() {
+    for ensure in function_block
+        .ensures()
+        .iter()
+        .chain(function_block.exceptional_ensures())
+    {
         if let Ensure::Proposition(proposition) = ensure.ensure() {
             collect_resource_count_families(proposition, &mut observed_population_families);
             collect_called_predicates(proposition, &mut pending_predicates);
@@ -2037,6 +2108,13 @@ pub(super) fn initial_claim_context_with_caller_owner(
         collect_resource_count_families(definition.body(), &mut observed_population_families);
         collect_called_predicates(definition.body(), &mut pending_predicates);
     }
+    if resource_semantics_mode == ResourceSemanticsMode::Authority
+        && !observed_population_families.is_empty()
+    {
+        return Err(ClickError::new(format!(
+            "`{claim_label}` uses count(R(p)); authority-mode count observation is not yet checked"
+        )));
+    }
     for family in &observed_population_families {
         state = state.with_observed_population_family(family.clone());
     }
@@ -2056,17 +2134,28 @@ pub(super) fn initial_claim_context_with_caller_owner(
         })
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
-    let (population_state, population_facts) = materialize_counted_population_bodies(
-        resource_environment,
-        parsed_function.parameters(),
-        &arguments,
-        state,
-        &observed_population_families,
-        &symbolic_population_families,
-        predicate_environment,
-        click_function_environment,
-        claim_label,
-    )?;
+    let (population_state, population_facts) = if resource_semantics_mode
+        == ResourceSemanticsMode::Authority
+    {
+        if !symbolic_population_families.is_empty() {
+            return Err(ClickError::new(format!(
+                "`{claim_label}` cannot materialize legacy resource populations in authority mode"
+            )));
+        }
+        (state, Vec::new())
+    } else {
+        materialize_counted_population_bodies(
+            resource_environment,
+            parsed_function.parameters(),
+            &arguments,
+            state,
+            &observed_population_families,
+            &symbolic_population_families,
+            predicate_environment,
+            click_function_environment,
+            claim_label,
+        )?
+    };
     state = population_state;
     // Keep an authority-only snapshot before folded composite cells or
     // observable body facts are materialized.  Those conveniences are valid

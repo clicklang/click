@@ -412,6 +412,18 @@ fn assign_call_result(
     Ok(())
 }
 
+fn authority_mode_call_refusal_path() -> CStatementExecutionPath {
+    CStatementExecutionPath {
+        loop_invariant_correspondence: Default::default(),
+        outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
+            "C calls are not yet supported by authority resource semantics".to_string(),
+        )),
+        facts: Vec::new(),
+        obligations: Vec::new(),
+        loan_evidence: empty_checked_loan_evidence_sequence(),
+    }
+}
+
 pub(super) fn execute_c_call_assign_paths(
     state: &CState,
     target: &str,
@@ -422,6 +434,9 @@ pub(super) fn execute_c_call_assign_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    if state.uses_population_authority_semantics() {
+        return Ok(vec![authority_mode_call_refusal_path()]);
+    }
     if environment
         .modeled_pthread_binding
         .as_ref()
@@ -701,6 +716,9 @@ pub(super) fn execute_c_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    if state.uses_population_authority_semantics() {
+        return Ok(vec![authority_mode_call_refusal_path()]);
+    }
     if environment
         .modeled_pthread_binding
         .as_ref()
@@ -6385,6 +6403,7 @@ fn viewed_form_of_resource_fact(fact: &CResourceFact) -> Option<CResourceFact> {
         CResourceFact::Own(
             CResource::Token { .. }
             | CResource::GuardedPopulation { .. }
+            | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)

@@ -75,6 +75,14 @@ pub(super) struct AuthorityState {
 }
 
 impl AuthorityState {
+    fn shares_roots_with(&self, other: &Self) -> bool {
+        self.anchors.shares_root_with(&other.anchors)
+            && self.registrations.shares_root_with(&other.registrations)
+            && self.populations.shares_root_with(&other.populations)
+            && self.members.shares_root_with(&other.members)
+            && self.obligations.shares_root_with(&other.obligations)
+    }
+
     fn change_obligations(&mut self, holder: Holder, remove: u64, add: u64) {
         let prior = self.obligations.get(&holder).copied().unwrap_or(0);
         let next = prior

@@ -1115,6 +1115,11 @@ pub(super) fn construct_c_function_resource(
     constructed: &CResourceFact,
     assumptions: &PureFactContext,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
+    if state.uses_population_authority_semantics() {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "generic resource construction cannot create members in authority mode".to_string(),
+        )));
+    }
     let Some(mut evaluation_state) = c_function_entry_state(state, function, arguments) else {
         return Ok(Err(CRuntimeError::FunctionContract(
             "could not bind function arguments for resource construction".to_string(),
@@ -1816,6 +1821,17 @@ pub(super) fn execute_c_function_verification_paths(
     Ok(paths)
 }
 
+/// C calls have no certified population transition yet, including calls with
+/// empty contracts and runtime-provided summaries. Heap allocation/free are
+/// separate statement forms and do not pass through this function boundary.
+fn authority_mode_call_refusal(caller_state: &CState) -> Option<CRuntimeError> {
+    caller_state.uses_population_authority_semantics().then(|| {
+        CRuntimeError::FunctionContract(
+            "C calls are not yet supported by authority resource semantics".to_string(),
+        )
+    })
+}
+
 pub(super) fn execute_c_function_call_paths(
     caller_state: &CState,
     function: &CFunction,
@@ -1825,6 +1841,14 @@ pub(super) fn execute_c_function_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
+    if let Some(error) = authority_mode_call_refusal(caller_state) {
+        return Ok(vec![CFunctionPath {
+            outcome: CFunctionOutcome::RuntimeError(error),
+            facts: Vec::new(),
+            obligations: Vec::new(),
+            loan_evidence: empty_checked_loan_evidence_sequence(),
+        }]);
+    }
     if environment.selected_call_contract.is_some() {
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(
@@ -3386,8 +3410,17 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
-        for block in retired_creations {
-            post_state.retire_population_storage(&block);
+        if let Some(error) = retired_creations
+            .into_iter()
+            .find_map(|block| post_state.retire_population_storage(&block).err())
+        {
+            paths.push(CFunctionPath {
+                outcome: CFunctionOutcome::RuntimeError(error),
+                facts,
+                obligations,
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            });
+            continue;
         }
         let post_contract_state = with_canonical_borrowed_pointer_memory(
             &with_contract_interface_argument_views(&post_state, interface, &argument_values),
@@ -3952,6 +3985,14 @@ fn prepare_verified_function_call<'a>(
     suspend_worker: bool,
 ) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
     let contract_interface = application.interface;
+    if let Some(error) = authority_mode_call_refusal(caller_state) {
+        return Ok(Err(CFunctionPath {
+            outcome: CFunctionOutcome::RuntimeError(error),
+            facts: arguments_path.facts,
+            obligations: arguments_path.obligations,
+            loan_evidence: empty_checked_loan_evidence_sequence(),
+        }));
+    }
     if contract_interface.contract_requirement_sources().len()
         != contract_interface.contract_requires().len()
     {
@@ -7540,6 +7581,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             }
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
+            CResource::PopulationAuthority(_) => {}
             CResource::Token { .. } | CResource::GuardedPopulation { .. } => {}
             CResource::MutexUse(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
@@ -11460,7 +11502,7 @@ mod allocation_continuity_tests {
             assert_eq!(retired, vec![base.block.clone()]);
             let mut returned = state.clone().with_memory(after_memory);
             for block in retired {
-                returned.retire_population_storage(&block);
+                returned.retire_population_storage(&block).unwrap();
             }
             assert!(
                 !returned
@@ -14633,6 +14675,7 @@ fn evaluate_resource_population_body_resources(
                 (name, arguments)
             }
             CResource::Memory(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
@@ -16907,7 +16950,10 @@ fn produced_composite_frontier_conflict(
             piece.is_own()
                 && matches!(
                     piece.resource(),
-                    CResource::Memory(_) | CResource::Instance(_) | CResource::Composite { .. }
+                    CResource::Memory(_)
+                        | CResource::PopulationAuthority(_)
+                        | CResource::Instance(_)
+                        | CResource::Composite { .. }
                 )
         }) {
             continue;
@@ -17013,6 +17059,7 @@ fn counted_population_quantities(
                 (name, arguments)
             }
             CResource::Memory(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
@@ -19645,7 +19692,9 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 | ResourceFamily::MutexLive
                 | ResourceFamily::MutexUse => true,
                 ResourceFamily::Composite | ResourceFamily::Token => true,
-                ResourceFamily::Instance | ResourceFamily::GuardedPopulation => false,
+                ResourceFamily::PopulationAuthority
+                | ResourceFamily::Instance
+                | ResourceFamily::GuardedPopulation => false,
             }
     })
 }
@@ -20880,6 +20929,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
                 (name, arguments)
             }
             CResource::Memory(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
@@ -23976,6 +24026,7 @@ fn resource_clause_supply_with_fact(
                 // Iterated ownership grants no read authority of its own: an
                 // element is read only after it is taken out.
                 CResource::Token { .. }
+                | CResource::PopulationAuthority(_)
                 | CResource::Instance(_)
                 | CResource::GuardedPopulation { .. }
                 | CResource::MutexGuard(_)
@@ -24117,31 +24168,54 @@ fn evaluate_resource_type(
     entry: &CState,
     state: &CState,
     resource_type: &CResourceTypeSpec,
+    allow_token: bool,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceDescription, CRuntimeError>> {
     let invalid = || {
-        CRuntimeError::FunctionContract("mutex_use requires a field-bearing resource type".into())
+        CRuntimeError::FunctionContract(if allow_token {
+            "population authority requires a declared resource type".into()
+        } else {
+            "mutex_use requires a field-bearing resource type".into()
+        })
     };
     let spec = &resource_type.resource;
     let schema = &resource_type.schema;
     if !spec.resource_arguments().is_empty() {
         return Ok(Err(invalid()));
     }
-    let CResourceTerm::Composite {
-        name,
-        arguments,
-        argument_snapshots,
-        parameter_types,
-    } = spec.term()
-    else {
-        return Ok(Err(invalid()));
+    let (family, name, arguments, argument_snapshots, parameter_types) = match spec.term() {
+        CResourceTerm::Composite {
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+        } => (
+            ResourceFamily::Composite,
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+        ),
+        CResourceTerm::Token {
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+        } if allow_token && schema.fields().is_empty() => (
+            ResourceFamily::Token,
+            name,
+            arguments,
+            argument_snapshots,
+            parameter_types,
+        ),
+        _ => return Ok(Err(invalid())),
     };
     let fact = match evaluate_function_declared_resource_spec(
         entry,
         state,
         CResourceAccessMode::Own,
-        ResourceFamily::Composite,
+        family,
         name,
         arguments,
         argument_snapshots,
@@ -24154,14 +24228,43 @@ fn evaluate_resource_type(
         Ok(fact) => fact,
         Err(error) => return Ok(Err(error)),
     };
-    let CResource::Composite { name, arguments } = fact.resource() else {
-        return Ok(Err(invalid()));
+    let (name, arguments) = match fact.resource() {
+        CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            (name, arguments)
+        }
+        _ => return Ok(Err(invalid())),
     };
     Ok(Ok(ResourceDescription::new(
         name.clone(),
         arguments.clone(),
         schema.clone(),
     )))
+}
+
+/// Describes an authority clause for a checked proof rewrite. This evaluates
+/// the declared type but grants no ownership; only the authority rewrite
+/// checker may publish the returned candidate into a resource context.
+#[allow(dead_code)] // Contract lowering will call this once authority transport is enabled.
+pub(crate) fn evaluate_population_authority_candidate(
+    entry: &CState,
+    state: &CState,
+    resource: &CResourceSpec,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
+    let CResourceTerm::PopulationAuthority { protected, .. } = resource.term() else {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "expected a population authority resource".into(),
+        )));
+    };
+    let description =
+        match evaluate_resource_type(entry, state, protected, true, assumptions, budget)? {
+            Ok(description) => description,
+            Err(error) => return Ok(Err(error)),
+        };
+    Ok(Ok(CResourceFact::own(CResource::PopulationAuthority(
+        description,
+    ))))
 }
 
 pub(super) fn evaluate_function_resource_spec(
@@ -24347,6 +24450,23 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
         )));
     }
     match resource.term() {
+        CResourceTerm::PopulationAuthority { protected, .. } => {
+            let description = match evaluate_resource_type(
+                entry_state,
+                state,
+                protected,
+                true,
+                assumptions,
+                budget,
+            )? {
+                Ok(description) => description,
+                Err(error) => return Ok(Err(error)),
+            };
+            Ok(Err(CRuntimeError::FunctionContract(format!(
+                "population authority for {} requires a checked creation event and population state",
+                description.family(),
+            ))))
+        }
         CResourceTerm::MutexGuard { mutex, snapshot } => {
             let selected = match snapshot {
                 CResourceSnapshot::Entry => entry_state,
@@ -24450,6 +24570,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                     entry_state,
                     state,
                     protected,
+                    false,
                     assumptions,
                     budget,
                 )? {
@@ -24946,6 +25067,7 @@ fn evaluate_function_declared_resource_spec(
             arguments: values.into_iter().map(AlgebraicValue::C).collect(),
         },
         ResourceFamily::GuardedPopulation
+        | ResourceFamily::PopulationAuthority
         | ResourceFamily::Memory
         | ResourceFamily::Instance
         | ResourceFamily::MutexGuard
@@ -24970,6 +25092,7 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
         CResourceFact::Own(
             CResource::Composite { .. }
             | CResource::Token { .. }
+            | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
@@ -25182,6 +25305,15 @@ fn active_counted_population_supports_allocation(
 /// namespace and owns no block.
 ///
 /// Bounded by this frame's own bindings; it reads no caller state.
+fn retired_automatic_creation_blocks(state: &CState, after: &CMemory) -> Vec<PointerBlock> {
+    state
+        .locals
+        .slots()
+        .filter(|slot| state.memory.has_block(&slot.block) && !after.has_block(&slot.block))
+        .map(|slot| slot.block.clone())
+        .collect()
+}
+
 fn end_inline_frame_automatic_lifetimes(state: &CState) -> Result<CMemory, CRuntimeError> {
     let mut memory = state.memory.clone();
     for slot in state.locals.slots() {
@@ -25199,6 +25331,9 @@ fn end_inline_frame_automatic_lifetimes(state: &CState) -> Result<CMemory, CRunt
                 .expect("indexed local slot"),
             &slot.block,
         ) {
+            return Err(error);
+        }
+        if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
             return Err(error);
         }
         memory = memory.without_local_block(&slot.block);
@@ -25233,6 +25368,9 @@ fn end_function_body_automatic_lifetimes(
                     .expect("indexed local slot"),
                 &slot.block,
             ) {
+                return Err(error);
+            }
+            if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
                 return Err(error);
             }
             memory = memory.without_local_block(&slot.block);
@@ -25614,7 +25752,13 @@ fn function_outcome_from_body_with_resource_transfer(
         Ok(memory) => memory,
         Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
     };
+    let retired_creation_blocks = retired_automatic_creation_blocks(&state, &retired_memory);
     state.set_memory(retired_memory);
+    for block in retired_creation_blocks {
+        if let Err(error) = state.retire_population_storage(&block) {
+            return Ok((CFunctionOutcome::RuntimeError(error), obligations, None));
+        }
+    }
     let population_transition = match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -26032,6 +26176,9 @@ pub(super) fn apply_verified_contract_resource_transition(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(CFunctionOutcome, Vec<ProofObligation>), CRuntimeError>> {
+    if let Some(error) = authority_mode_call_refusal(caller_state) {
+        return Ok(Err(error));
+    }
     let Some(argument_values) = arguments
         .iter()
         .map(|argument| match argument {
@@ -26168,10 +26315,19 @@ pub(super) fn function_outcome_from_body(
                     Some(&value),
                 )
             };
-            match retired_memory {
-                Ok(memory) => caller_state.set_memory(memory),
+            let retired_creation_blocks = match retired_memory {
+                Ok(memory) => {
+                    let blocks = retired_automatic_creation_blocks(&state, &memory);
+                    caller_state.set_memory(memory);
+                    blocks
+                }
                 Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
-            }
+            };
+            let retired_creation =
+                match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
+                    Ok(creation) => creation,
+                    Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+                };
             if function.has_inline_body() {
                 // Inline bodies execute with a parameter-only local
                 // environment, so pointer stores into caller locals cannot
@@ -26202,7 +26358,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.counted_populations = state.counted_populations;
             caller_state.restore_population_creation_after_call(
                 original_creation.as_ref(),
-                state.population_effects.creation.as_ref(),
+                retired_creation.as_ref(),
             );
             caller_state.next_local_frame = state.next_local_frame;
             caller_state.next_local_lifetime = state.next_local_lifetime;
@@ -26231,10 +26387,19 @@ pub(super) fn function_outcome_from_body(
             } else {
                 end_function_body_automatic_lifetimes(&state, function, caller_state.memory(), None)
             };
-            match retired_memory {
-                Ok(memory) => caller_state.set_memory(memory),
+            let retired_creation_blocks = match retired_memory {
+                Ok(memory) => {
+                    let blocks = retired_automatic_creation_blocks(&state, &memory);
+                    caller_state.set_memory(memory);
+                    blocks
+                }
                 Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
-            }
+            };
+            let retired_creation =
+                match state.retired_population_creation_for_blocks(&retired_creation_blocks) {
+                    Ok(creation) => creation,
+                    Err(error) => return (CFunctionOutcome::RuntimeError(error), obligations),
+                };
             caller_state.thread_ledger = state.thread_ledger.clone();
             caller_state.mutex_ledger = state.mutex_ledger.clone();
             caller_state.mutex_input_reservations = state.mutex_input_reservations.clone();
@@ -26256,7 +26421,7 @@ pub(super) fn function_outcome_from_body(
             caller_state.counted_populations = state.counted_populations;
             caller_state.restore_population_creation_after_call(
                 original_creation.as_ref(),
-                state.population_effects.creation.as_ref(),
+                retired_creation.as_ref(),
             );
             caller_state.next_local_frame = state.next_local_frame;
             caller_state.next_local_lifetime = state.next_local_lifetime;
@@ -26376,6 +26541,79 @@ mod mutex_automatic_frame_tests {
                     !end_inline_frame_automatic_lifetimes(destroyed.state())
                         .unwrap()
                         .has_block(&address.block)
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod population_creation_frame_tests {
+    use super::*;
+
+    #[test]
+    fn authority_mode_refuses_all_c_calls() {
+        let legacy = CState::new();
+        let authority = CState::new().with_population_creation_tracking();
+        assert!(authority_mode_call_refusal(&legacy).is_none());
+        assert!(authority_mode_call_refusal(&authority).is_some());
+
+        let helper = c_function(CType::Void, "helper", vec![], CStatement::Skip);
+        let paths = execute_c_function_call_paths(
+            &authority,
+            &helper,
+            &[],
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::APPLY_VERIFIED_RULES,
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert!(matches!(
+            paths.as_slice(),
+            [CFunctionPath {
+                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::FunctionContract(message)),
+                ..
+            }] if message.contains("C calls are not yet supported")
+        ));
+    }
+
+    #[test]
+    fn ended_automatic_storage_retires_creation_evidence() {
+        let function = c_function(CType::Int32, "scope", vec![], c_return(c_int32_literal(0)));
+        for name in ["frame:holder", "lifetime:holder"] {
+            let mut state = CState::new()
+                .with_local(name, int32(0))
+                .with_population_creation_tracking();
+            let block = state.locals.slot(name).unwrap().block.clone();
+            state.set_memory(CMemory::new().with_block(block.clone(), 4));
+            state.record_population_storage_creation(block.clone());
+            assert!(
+                state
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .unwrap()
+                    .created_here(&block)
+            );
+            for memory in [
+                end_inline_frame_automatic_lifetimes(&state).unwrap(),
+                end_function_body_automatic_lifetimes(&state, &function, &CMemory::new(), None)
+                    .unwrap(),
+            ] {
+                let retired = retired_automatic_creation_blocks(&state, &memory);
+                assert_eq!(retired, vec![block.clone()]);
+                let mut after = state.clone().with_memory(memory);
+                for block in retired {
+                    after.retire_population_storage(&block).unwrap();
+                }
+                assert!(
+                    !after
+                        .population_effects
+                        .creation
+                        .as_ref()
+                        .unwrap()
+                        .created_here(&block)
                 );
             }
         }

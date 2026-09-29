@@ -1,5 +1,117 @@
 use super::*;
 
+fn authority_test_scope(
+    kind: ResourceKind,
+    parameter_type: C0Type,
+    has_fields: bool,
+) -> DeclaredResourceScope {
+    DeclaredResourceScope {
+        definitions: BTreeMap::from([(
+            "reference".to_string(),
+            DeclaredResourceInfo {
+                fields: Default::default(),
+                parameter_types: vec![parameter_type],
+                resource_parameter_families: Vec::new(),
+                kind,
+                has_fields,
+                child_slots: Default::default(),
+            },
+        )]),
+        children: Default::default(),
+        instances: Default::default(),
+        field_binders: Default::default(),
+        unowned_resource_parameters: Default::default(),
+    }
+}
+
+fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
+    ResourceClause::Declared {
+        type_schema: None,
+        resource_type_arguments: Vec::new(),
+        resource_arguments: Vec::new(),
+        access: ResourceAccessMode::Own,
+        kind: ResourceKind::Token,
+        name: "reference".to_string(),
+        arguments: vec![argument],
+        parameter_types: Vec::new(),
+    }
+}
+
+#[test]
+fn authority_type_argument_requires_exact_unary_pointer_family() {
+    let pointer = ContractExpression::CFragment(CExpression::Variable("p".to_string()));
+    let accepted = expand_resource_type_arguments(
+        "authority",
+        vec![authority_test_protected(pointer.clone())],
+        &authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, false),
+    )
+    .expect("exact field-free pointer family");
+    assert!(matches!(
+        &accepted[0],
+        ResourceClause::Declared {
+            type_schema: Some(_),
+            kind: ResourceKind::Composite,
+            ..
+        }
+    ));
+    let authority = ResourceClause::Declared {
+        type_schema: None,
+        resource_type_arguments: accepted,
+        resource_arguments: Vec::new(),
+        access: ResourceAccessMode::Own,
+        kind: ResourceKind::Token,
+        name: "authority".to_string(),
+        arguments: Vec::new(),
+        parameter_types: Vec::new(),
+    };
+    let spec = crate::surface::verification::resource_clause_to_resource_spec(&authority)
+        .expect("checked source authority lowers to a kernel resource term");
+    assert!(matches!(
+        spec.term(),
+        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+    ));
+    assert!(
+        expand_resource_type_arguments(
+            "authority",
+            vec![authority_test_protected(pointer.clone())],
+            &authority_test_scope(ResourceKind::Token, C0Type::Int32Pointer, false),
+        )
+        .is_ok(),
+        "abstract token resource families are valid protected types"
+    );
+    for (scope, argument) in [
+        (
+            authority_test_scope(ResourceKind::Composite, C0Type::Int32, false),
+            pointer.clone(),
+        ),
+        (
+            authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, true),
+            pointer.clone(),
+        ),
+        (
+            authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, false),
+            ContractExpression::ResourceWildcard,
+        ),
+    ] {
+        assert!(
+            expand_resource_type_arguments(
+                "authority",
+                vec![authority_test_protected(argument)],
+                &scope,
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        expand_resource_type_arguments(
+            "authority",
+            Vec::new(),
+            &authority_test_scope(ResourceKind::Composite, C0Type::Int32Pointer, false)
+        )
+        .is_err()
+    );
+}
+
 fn check_isolated_program(value: i32, expected: i32) {
     let c_source = format!("int32 answer(void) {{ return {value}; }}");
     let click_source = format!(

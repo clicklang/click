@@ -16,6 +16,7 @@ pub(in crate::surface) fn initial_call_state(
     requires: &[Requirement],
     parameters: &[syntax::C0Parameter],
     function: &CFunction,
+    resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<(CState, Vec<CExpression>), ClickError> {
     let aggregate_parameters = parameters
         .iter()
@@ -243,7 +244,11 @@ pub(in crate::surface) fn initial_call_state(
     // Install ordinary function storage before adding symbolic loadable
     // cells. Otherwise a loadable clause can create a block first and leave
     // entry initialization unable to install its stable typed cells.
-    let mut state = crate::kernel::initialize_c_function_globals(&CState::new(), function);
+    let initial = match resource_semantics_mode {
+        ResourceSemanticsMode::Legacy => CState::new(),
+        ResourceSemanticsMode::Authority => CState::new().with_population_creation_tracking(),
+    };
+    let mut state = crate::kernel::initialize_c_function_globals(&initial, function);
     if parameters
         .iter()
         .any(|parameter| parameter.is_struct_value())
@@ -1534,7 +1539,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
             parameter_types,
         } => {
             if !resource_type_arguments.is_empty()
-                && (name != "mutex_use" || resource_type_arguments.len() != 1)
+                && (!matches!(name.as_str(), "mutex_use" | "authority")
+                    || resource_type_arguments.len() != 1)
             {
                 return Err(ClickError::new("unsupported resource type arguments"));
             }
@@ -1617,6 +1623,48 @@ fn lower_resource_clause_with_values_mode_at_entry(
                     ResourceAccessMode::Own => guard,
                     ResourceAccessMode::View => CResourceFact::View(guard.resource().clone()),
                 });
+            }
+            if name == "authority" {
+                let [protected] = resource_type_arguments.as_slice() else {
+                    return Err(ClickError::new(
+                        "authority expects one checked resource type",
+                    ));
+                };
+                let ResourceClause::Declared {
+                    type_schema: Some(schema),
+                    ..
+                } = protected
+                else {
+                    return Err(ClickError::new(
+                        "authority requires a checked resource type",
+                    ));
+                };
+                let protected_fact = lower_resource_clause_with_values_mode_at_entry(
+                    protected,
+                    parameters,
+                    values,
+                    entry_state,
+                    state,
+                    result,
+                    allow_symbolic_resource_arguments,
+                    base_assumptions,
+                )?;
+                let (family, arguments) = match protected_fact.resource() {
+                    CResource::Composite { name, arguments }
+                    | CResource::Token { name, arguments } => (name, arguments),
+                    _ => {
+                        return Err(ClickError::new(
+                            "authority requires a declared resource type",
+                        ));
+                    }
+                };
+                return Ok(CResourceFact::own(CResource::PopulationAuthority(
+                    crate::kernel::ResourceDescription::new(
+                        family.clone(),
+                        arguments.clone(),
+                        schema.clone(),
+                    ),
+                )));
             }
             if name == "mutex_live" {
                 let [CValue::Pointer(mutex)] = resource_values.as_slice() else {

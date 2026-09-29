@@ -5989,6 +5989,9 @@ fn evaluate_resource_count_paths(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    if state.uses_population_authority_semantics() {
+        return Err(ExecutionLimit::ResourceCountUnavailableInAuthorityMode);
+    }
     let observed_state = state.count_observation_state(assumptions);
     let state = observed_state.as_ref();
     let mut argument_paths = vec![(Vec::<Option<AlgebraicValue>>::new(), Vec::new(), Vec::new())];

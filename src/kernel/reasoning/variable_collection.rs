@@ -1588,6 +1588,11 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
+        CResource::PopulationAuthority(description) => {
+            description.visit_values(|value| {
+                collect_algebraic_value_bitvector_variables(value, variables)
+            });
+        }
         CResource::MutexUse(identity) => {
             if let Some(p) = &identity.protected {
                 p.visit_values(|v| collect_algebraic_value_bitvector_variables(v, variables));
@@ -1689,6 +1694,9 @@ pub(in crate::kernel) fn collect_resource_spec_bitvector_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
         }
+        CResourceTerm::PopulationAuthority { protected, .. } => {
+            collect_resource_spec_bitvector_variables(&protected.resource, variables)
+        }
         CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bitvector_variables(mutex, variables)
         }
@@ -1731,6 +1739,9 @@ fn collect_resource_term_bitvector_variables(
     match resource {
         CResourceTerm::Instance { resource, .. } => {
             collect_resource_term_bitvector_variables(resource, variables)
+        }
+        CResourceTerm::PopulationAuthority { protected, .. } => {
+            collect_resource_spec_bitvector_variables(&protected.resource, variables)
         }
         CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bitvector_variables(mutex, variables)

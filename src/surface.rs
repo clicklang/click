@@ -572,6 +572,25 @@ pub struct ClickProject {
 pub struct CProjectProfile {
     pub target: Option<crate::languages::c::target::CTarget>,
     pub runtime: Option<crate::languages::c::thread_runtime::CThreadRuntime>,
+    pub resource_semantics: ResourceSemanticsMode,
+}
+
+/// Explicit semantics boundary for a complete verification unit. Existing
+/// projects use the legacy rules until their whole unit opts into authority.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum ResourceSemanticsMode {
+    #[default]
+    Legacy,
+    Authority,
+}
+
+impl ResourceSemanticsMode {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Authority => "authority",
+        }
+    }
 }
 
 impl ClickProject {
@@ -593,6 +612,14 @@ impl ClickProject {
 
     pub fn c_profile(&self) -> Option<&CProjectProfile> {
         self.c_profile.as_ref()
+    }
+
+    pub fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
+        self.c_profile
+            .as_ref()
+            .map_or(ResourceSemanticsMode::Legacy, |profile| {
+                profile.resource_semantics
+            })
     }
 
     pub fn entry(&self) -> &str {

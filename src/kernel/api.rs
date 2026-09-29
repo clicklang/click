@@ -2239,6 +2239,9 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::ResourceCountPendingWorker => {
             "count(...) requires joining its outstanding worker".to_string()
         }
+        ExecutionLimit::ResourceCountUnavailableInAuthorityMode => {
+            "legacy count(...) is unavailable in authority mode".to_string()
+        }
         // The kernel knows the identity is absent; it does not know the name
         // the reader wrote for it. A caller that has the source expression
         // says which field and which repair instead of printing this.
@@ -4604,6 +4607,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state(
         CheckedExecutionEvent::AutomaticLifetimeEnd(end) => Some(end.before_state()),
         CheckedExecutionEvent::ResourceObservation(observation) => Some(observation.before_state()),
         CheckedExecutionEvent::ResourceRewrite(rewrite) => Some(rewrite.before_state()),
+        CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => Some(rewrite.before_state()),
         CheckedExecutionEvent::IteratedStep(step) => Some(step.before_state()),
         CheckedExecutionEvent::Statement(theorem) | CheckedExecutionEvent::Condition(theorem) => {
             match proof_evidence_conclusion(theorem) {
@@ -4663,6 +4667,7 @@ pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
                 | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
                 | CheckedExecutionEvent::ResourceObservation(_)
                 | CheckedExecutionEvent::ResourceRewrite(_)
+                | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
                 | CheckedExecutionEvent::IteratedStep(_) => {}
             }
         }
@@ -4990,6 +4995,7 @@ pub fn prove_owned_resource_count_lower_bound(
             (name, arguments)
         }
         CResource::Memory(_)
+        | CResource::PopulationAuthority(_)
         | CResource::Instance(_)
         | CResource::GuardedPopulation { .. }
         | CResource::MutexGuard(_)
@@ -5066,6 +5072,7 @@ fn describe_contract_reuse_premise(premise: &Proposition) -> String {
             | CResource::Token { name, .. }
             | CResource::GuardedPopulation { name, .. } => name,
             CResource::Memory(_) => "memory",
+            CResource::PopulationAuthority(_) => "population authority",
             CResource::MutexGuard(_) => "mutex guard",
             CResource::MutexLive(_) => "mutex lifetime",
             CResource::MutexUse(_) => "mutex use",

@@ -260,6 +260,17 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
             child_slots: Default::default(),
         },
     );
+    resource_definitions.insert(
+        "authority".into(),
+        DeclaredResourceInfo {
+            fields: Default::default(),
+            has_fields: false,
+            resource_parameter_families: Vec::new(),
+            parameter_types: Vec::new(),
+            kind: ResourceKind::Token,
+            child_slots: Default::default(),
+        },
+    );
     let resource_definitions = DeclaredResourceScope {
         definitions: resource_definitions,
         children: Default::default(),
@@ -1378,7 +1389,15 @@ fn expand_declared_resource_clause(
                     "named ownership requires a declared resource",
                 ));
             };
-            if matches!(name.as_str(), "mutex_live" | "mutex_guard" | "mutex_use") {
+            if name == "authority" {
+                return Err(ClickError::new(
+                    "named authority binders are unsupported; use an ordinary unnamed authority clause",
+                ));
+            }
+            if matches!(
+                name.as_str(),
+                "mutex_live" | "mutex_guard" | "mutex_use" | "authority"
+            ) {
                 if binding.fold_fields.is_some() || binding.child_bindings.is_some() {
                     return Err(ClickError::new(
                         "mutex authority has no fields or resource body to fold or unfold",
@@ -1569,7 +1588,8 @@ fn expand_declared_resource_clause(
             if (name == CResourceFact::ALLOCATION_RESOURCE_NAME
                 || name == "mutex_guard"
                 || name == "mutex_live"
-                || name == "mutex_use")
+                || name == "mutex_use"
+                || name == "authority")
                 && access == ResourceAccessMode::View
             {
                 return Err(ClickError::new(format!(
@@ -1601,10 +1621,16 @@ fn expand_resource_type_arguments(
     arguments: Vec<ResourceClause>,
     definitions: &DeclaredResourceScope,
 ) -> Result<Vec<ResourceClause>, ClickError> {
+    let is_authority = name == "authority";
+    if name == "authority" && arguments.len() != 1 {
+        return Err(ClickError::new(
+            "authority expects exactly one resource type",
+        ));
+    }
     if arguments.is_empty() {
         return Ok(arguments);
     }
-    if name != "mutex_use" || arguments.len() != 1 {
+    if !matches!(name, "mutex_use" | "authority") || arguments.len() != 1 {
         return Err(ClickError::new(format!(
             "resource `{name}` does not accept these resource type arguments"
         )));
@@ -1613,10 +1639,18 @@ fn expand_resource_type_arguments(
         let ResourceClause::Declared { access, name, arguments, resource_arguments, resource_type_arguments, .. } = argument else {
             return Err(ClickError::new("expected a declared resource type"));
         };
-        if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() || matches!(name.as_str(), "mutex_live" | "mutex_use" | "mutex_guard") {
+        if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() || matches!(name.as_str(), "mutex_live" | "mutex_use" | "mutex_guard" | "authority") {
             return Err(ClickError::new("protected resource types currently require ordinary value arguments"));
         }
         let info = declared_resource_info_with_fields(&name, arguments.len(), definitions, true)?;
+        if is_authority && (arguments.len() != 1
+            || !info.parameter_types[0].is_pointer()
+            || info.has_fields
+            || access != ResourceAccessMode::Own
+            || arguments.iter().any(|argument| matches!(argument, ContractExpression::ResourceWildcard)))
+        {
+            return Err(ClickError::new("authority requires an exact unary field-free resource type with one pointer argument"));
+        }
         let mut fields = info.fields.iter().map(|(name, (index, ty))| {
             let ty = match ty {
                 ClickType::C(ty) => crate::kernel::ResourceFieldType::C(ty.to_kernel_type()),
@@ -2380,6 +2414,9 @@ fn reject_counted_field_resource(
         )),
         ResourceClause::Declared { name, .. } if name == "mutex_guard" => Err(ClickError::new(
             "`mutex_guard` is exclusive and not countable",
+        )),
+        ResourceClause::Declared { name, .. } if name == "authority" => Err(ClickError::new(
+            "`authority` is exclusive and not countable",
         )),
         ResourceClause::Declared { name, .. }
             if definitions.get(name).is_some_and(|info| info.has_fields) =>

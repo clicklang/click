@@ -392,6 +392,7 @@ impl FunctionSourceRequirements {
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub(in crate::surface) struct FunctionSourceRegistry {
     functions: PersistentMap<String, FunctionSourceRequirements>,
+    resource_semantics_mode: ResourceSemanticsMode,
 }
 
 impl FunctionSourceRegistry {
@@ -411,7 +412,22 @@ impl FunctionSourceRegistry {
                 FunctionSourceRequirements::from_function_block(function),
             );
         }
-        Ok(Self { functions })
+        Ok(Self {
+            functions,
+            resource_semantics_mode: ResourceSemanticsMode::Legacy,
+        })
+    }
+
+    pub(in crate::surface) fn with_resource_semantics_mode(
+        mut self,
+        mode: ResourceSemanticsMode,
+    ) -> Self {
+        self.resource_semantics_mode = mode;
+        self
+    }
+
+    pub(in crate::surface) fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
+        self.resource_semantics_mode
     }
 
     /// Finds one ordinary function's source requirements by stable function

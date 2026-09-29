@@ -99,7 +99,9 @@ use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::source as c_source;
 use crate::languages::cpp::PreparedCppImport;
 use crate::surface::verifying_source_paths;
-use crate::surface::{CProjectProfile, ClickModuleSource, ClickProject, click_import_sites};
+use crate::surface::{
+    CProjectProfile, ClickModuleSource, ClickProject, ResourceSemanticsMode, click_import_sites,
+};
 
 /// Parses a one-based `PATH:LINE:COLUMN` source location.
 ///
@@ -660,6 +662,7 @@ fn read_c_inputs_for_target(
 struct ProjectConfigJson {
     target: Option<String>,
     runtime: Option<String>,
+    resource_semantics: Option<String>,
 }
 
 fn read_c_project_profile(
@@ -699,7 +702,21 @@ fn read_c_project_profile(
                 .ok_or_else(|| format!("unknown C runtime `{name}` in `{}`", path.display()))
         })
         .transpose()?;
-    Ok(Some(CProjectProfile { target, runtime }))
+    let resource_semantics = match config.resource_semantics.as_deref() {
+        None | Some("legacy") => ResourceSemanticsMode::Legacy,
+        Some("authority") => ResourceSemanticsMode::Authority,
+        Some(name) => {
+            return Err(format!(
+                "unknown resource semantics `{name}` in `{}`; expected `legacy` or `authority`",
+                path.display()
+            ));
+        }
+    };
+    Ok(Some(CProjectProfile {
+        target,
+        runtime,
+        resource_semantics,
+    }))
 }
 
 /// Loads the entry sidecar and its transitive local Click imports once, using
@@ -1488,6 +1505,35 @@ pub fn read_mdtest(path: &Path) -> Result<MdTest, String> {
     parse_mdtest(path, &source)
 }
 
+/// Keep an mdtest's explicit project configuration when selecting the
+/// verification route. Plain unconfigured C mdtests retain the direct source
+/// route used by the existing corpus.
+pub fn read_mdtest_project_if_needed(
+    path: &Path,
+    click_source: &str,
+    inputs: &CInput,
+) -> Result<Option<ClickProject>, String> {
+    let has_imports = !click_import_sites(click_source)
+        .map_err(|error| error.report())?
+        .is_empty();
+    let config_path = containing_directory(path).join("click.project.json");
+    let has_config = match fs::symlink_metadata(&config_path) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            return Err(format!(
+                "failed to inspect `{}`: {error}",
+                config_path.display()
+            ));
+        }
+    };
+    if has_imports || has_config || matches!(inputs, CInput::PreparedCpp(_)) {
+        read_click_project(path, click_source).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
 /// Prepares the source representation consumed by every mdtest driver. C++
 /// fences go through the same locked semantic import as ordinary C++ sidecars;
 /// they never fall back to the C parser.
@@ -1957,6 +2003,77 @@ mod tests {
                 .unwrap_err()
                 .message()
                 .contains("project config")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn project_config_selects_resource_semantics_for_the_whole_unit() {
+        let root = std::env::temp_dir().join(format!(
+            "click-project-resource-semantics-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("entry.click");
+        let click = "verifying \"entry.c\";\n";
+        fs::write(&path, click).unwrap();
+        fs::write(root.join("entry.c"), "int answer(void) { return 1; }\n").unwrap();
+        let mdtest_path = root.join("fixture.md");
+        fs::write(&mdtest_path, "# Fixture\n").unwrap();
+        let mdtest_inputs = CInput::Bundle(Vec::new());
+        let legacy = read_click_project(&path, click).unwrap();
+        assert_eq!(
+            legacy.resource_semantics_mode(),
+            ResourceSemanticsMode::Legacy
+        );
+        assert!(
+            read_mdtest_project_if_needed(&mdtest_path, click, &mdtest_inputs)
+                .unwrap()
+                .is_none(),
+            "unconfigured mdtests retain their direct source route"
+        );
+
+        fs::write(
+            root.join("click.project.json"),
+            r#"{"resource_semantics":"authority"}"#,
+        )
+        .unwrap();
+        let authority = read_click_project(&path, click).unwrap();
+        assert_eq!(
+            authority.resource_semantics_mode(),
+            ResourceSemanticsMode::Authority
+        );
+        assert_eq!(
+            authority
+                .with_entry_source("verifying \"other.c\";")
+                .resource_semantics_mode(),
+            ResourceSemanticsMode::Authority,
+            "proof rewrites must keep the selected semantics"
+        );
+        let loaded = load_target_inputs(&path, None).unwrap();
+        assert_eq!(
+            loaded.project.resource_semantics_mode(),
+            ResourceSemanticsMode::Authority,
+            "CLI verification, expansion, and audit share this loader"
+        );
+        let mdtest_project = read_mdtest_project_if_needed(&mdtest_path, click, &mdtest_inputs)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            mdtest_project.resource_semantics_mode(),
+            ResourceSemanticsMode::Authority,
+            "the mdtest gate, profile, expansion, and audit retain explicit config"
+        );
+        fs::write(
+            root.join("click.project.json"),
+            r#"{"resource_semantics":"unknown"}"#,
+        )
+        .unwrap();
+        assert!(
+            read_click_project(&path, click)
+                .unwrap_err()
+                .contains("unknown resource semantics")
         );
         fs::remove_dir_all(root).unwrap();
     }

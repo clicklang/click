@@ -3722,6 +3722,8 @@ pub enum ExecutionLimit {
     /// A worker may still change this total. No current observation is
     /// available until the checked completion right is joined.
     ResourceCountPendingWorker,
+    /// The legacy count ledger is not the authority-mode population model.
+    ResourceCountUnavailableInAuthorityMode,
 }
 
 impl ExecutionLimit {
@@ -3756,6 +3758,9 @@ impl ExecutionLimit {
             }
             Self::ResourceCountPendingWorker => {
                 "count(...) requires joining its outstanding worker".to_string()
+            }
+            Self::ResourceCountUnavailableInAuthorityMode => {
+                "legacy count(...) is unavailable in authority mode".to_string()
             }
             Self::ResourceFieldInstanceUnavailable => {
                 "a model field of a resource instance this state does not hold".to_string()
@@ -5799,6 +5804,8 @@ pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResource {
     Memory(CMemoryRange),
+    /// Exclusive control of a population described by a checked resource type.
+    PopulationAuthority(super::ResourceDescription),
     Composite {
         name: String,
         arguments: ResourceArguments,
@@ -5999,8 +6006,25 @@ pub(super) trait ResourceFamilyAlgebra {
                 "resource term and family algebra disagree".into(),
             ));
         }
+        if let CResourceTerm::PopulationAuthority { protected, .. } = &spec.term
+            && (!matches!(
+                protected.resource.term(),
+                CResourceTerm::Composite { .. } | CResourceTerm::Token { .. }
+            ) || (matches!(protected.resource.term(), CResourceTerm::Token { .. })
+                && !protected.schema.fields().is_empty())
+                || protected.resource.access() != CResourceAccessMode::Own
+                || protected.resource.quantity() != &CResourceQuantity::One)
+        {
+            return Err(CResourceSpecError::InvalidNestedTerm(
+                "population authority requires an owned unit composite or token resource type"
+                    .into(),
+            ));
+        }
         match self.family() {
-            ResourceFamily::MutexGuard | ResourceFamily::MutexLive | ResourceFamily::MutexUse => {
+            ResourceFamily::PopulationAuthority
+            | ResourceFamily::MutexGuard
+            | ResourceFamily::MutexLive
+            | ResourceFamily::MutexUse => {
                 if spec.access != CResourceAccessMode::Own {
                     return Err(CResourceSpecError::InvalidAccess {
                         family: self.family(),
@@ -6010,7 +6034,7 @@ pub(super) trait ResourceFamilyAlgebra {
                 if spec.quantity != CResourceQuantity::One {
                     return Err(CResourceSpecError::InvalidQuantity {
                         family: self.family(),
-                        reason: "mutex authority has unit quantity".into(),
+                        reason: "authority has unit quantity".into(),
                     });
                 }
             }
@@ -6126,6 +6150,9 @@ struct MutexGuardResourceAlgebra;
 static MUTEX_GUARD_RESOURCE_ALGEBRA: MutexGuardResourceAlgebra = MutexGuardResourceAlgebra;
 
 static MEMORY_RESOURCE_ALGEBRA: MemoryResourceAlgebra = MemoryResourceAlgebra;
+struct PopulationAuthorityResourceAlgebra;
+static POPULATION_AUTHORITY_RESOURCE_ALGEBRA: PopulationAuthorityResourceAlgebra =
+    PopulationAuthorityResourceAlgebra;
 static TOKEN_RESOURCE_ALGEBRA: TokenResourceAlgebra = TokenResourceAlgebra;
 static COMPOSITE_RESOURCE_ALGEBRA: CompositeResourceAlgebra = CompositeResourceAlgebra;
 static INSTANCE_RESOURCE_ALGEBRA: InstanceResourceAlgebra = InstanceResourceAlgebra;
@@ -6141,6 +6168,7 @@ static ITERATED_RESOURCE_ALGEBRA: IteratedResourceAlgebra = IteratedResourceAlge
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFamily {
     Memory,
+    PopulationAuthority,
     Composite,
     Token,
     GuardedPopulation,
@@ -6176,6 +6204,10 @@ pub struct CResourceTypeSpec {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResourceTerm {
     Memory(CMemorySegment),
+    PopulationAuthority {
+        protected: Box<CResourceTypeSpec>,
+        snapshot: CResourceSnapshot,
+    },
     MutexGuard {
         mutex: Box<CExpression>,
         snapshot: CResourceSnapshot,
@@ -6339,6 +6371,7 @@ impl CResourceTerm {
     pub fn family(&self) -> ResourceFamily {
         match self {
             Self::Memory(_) => ResourceFamily::Memory,
+            Self::PopulationAuthority { .. } => ResourceFamily::PopulationAuthority,
             Self::MutexGuard { .. } => ResourceFamily::MutexGuard,
             Self::MutexLive { .. } => ResourceFamily::MutexLive,
             Self::MutexUse { .. } => ResourceFamily::MutexUse,
@@ -6540,6 +6573,7 @@ impl CResourceSpec {
             },
             ResourceFamily::GuardedPopulation
             | ResourceFamily::Memory
+            | ResourceFamily::PopulationAuthority
             | ResourceFamily::Instance
             | ResourceFamily::Iterated
             | ResourceFamily::MutexGuard
@@ -7056,6 +7090,106 @@ mod named_mutex_authority_spec_tests {
             CResourceSnapshot::Current,
         );
         assert!(counted.is_err());
+    }
+}
+
+#[cfg(test)]
+mod population_authority_spec_tests {
+    use super::*;
+
+    fn authority_type(resource: CResourceSpec) -> CResourceTerm {
+        CResourceTerm::PopulationAuthority {
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(resource),
+                schema: ResourceFieldSchema::new(vec![]).unwrap(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        }
+    }
+
+    #[test]
+    fn authority_requires_exclusive_unit_declared_type() {
+        for resource in [
+            CResourceSpec::composite(CResourceAccessMode::Own, "node".into(), vec![], vec![]),
+            CResourceSpec::token(CResourceAccessMode::Own, "node".into(), vec![], vec![]),
+        ] {
+            let term = authority_type(resource);
+            assert!(
+                CResourceSpec::new(
+                    term.clone(),
+                    CResourceAccessMode::Own,
+                    CResourceQuantity::One,
+                    CResourceTransferRole::Borrow,
+                    CResourceSnapshot::Current,
+                )
+                .is_ok()
+            );
+            assert!(
+                CResourceSpec::new(
+                    term.clone(),
+                    CResourceAccessMode::View,
+                    CResourceQuantity::One,
+                    CResourceTransferRole::Borrow,
+                    CResourceSnapshot::Current,
+                )
+                .is_err()
+            );
+            assert!(
+                CResourceSpec::new(
+                    term,
+                    CResourceAccessMode::Own,
+                    CResourceQuantity::Count(CExpression::Value(int32(2))),
+                    CResourceTransferRole::Borrow,
+                    CResourceSnapshot::Current,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn authority_cannot_be_composed_twice_or_split() {
+        let description = super::super::ResourceDescription::new(
+            "node".into(),
+            Arc::from([]),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        );
+        let fact = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+        let assumptions = PureFactContext::new();
+        let context = ResourceContext::new()
+            .try_compose_with_fact(fact.clone(), &assumptions)
+            .unwrap();
+        assert!(
+            context
+                .clone()
+                .try_compose_with_fact(fact.clone(), &assumptions)
+                .is_err()
+        );
+        assert!(context.satisfies_fact(&fact, &assumptions));
+        assert!(
+            ResourceContext::new()
+                .try_compose_with_fact(
+                    CResourceFact::View(CResource::PopulationAuthority(description.clone())),
+                    &assumptions,
+                )
+                .is_err()
+        );
+        assert!(
+            ResourceContext::new()
+                .try_compose_with_fact(
+                    CResourceFact::Own(
+                        CResource::PopulationAuthority(description.clone()),
+                        Box::new(Bitvector32Term::Constant(2)),
+                    ),
+                    &assumptions,
+                )
+                .is_err()
+        );
+        assert!(
+            CResourceFact::View(CResource::PopulationAuthority(description))
+                .core()
+                .is_none()
+        );
     }
 }
 

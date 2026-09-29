@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CheckedPopulationAuthorityExchange;
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -4366,9 +4367,9 @@ impl CState {
         self.next_local_frame
     }
 
-    /// Internal staged-mode entry. No source construct exposes this ledger.
-    #[cfg(test)]
-    pub(in crate::kernel) fn with_population_creation_tracking(mut self) -> Self {
+    /// Initialize the checked creation ledger only at a fresh authority-mode
+    /// source proof entry, before any C statement executes.
+    pub(crate) fn with_population_creation_tracking(mut self) -> Self {
         if self.population_effects.creation.is_none() {
             Arc::make_mut(&mut self.population_effects).creation =
                 Some(super::super::population_authority::c_creation::CreationEvents::new());
@@ -4376,11 +4377,16 @@ impl CState {
         self
     }
 
+    pub(crate) fn uses_population_authority_semantics(&self) -> bool {
+        self.population_effects.creation.is_some()
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
         pointer.offset == PointerOffsetTerm::Constant(0)
-            && matches!(&pointer.block, PointerBlock::Heap(_))
-            && self.memory.live_heap_block_size(pointer).is_some()
+            && (matches!(&pointer.block, PointerBlock::Heap(_))
+                && self.memory.live_heap_block_size(pointer).is_some()
+                || pointer.block.starts_with("local:") && self.memory.has_block(&pointer.block))
             && self
                 .population_effects
                 .creation
@@ -4388,7 +4394,68 @@ impl CState {
                 .is_some_and(|events| events.created_here(&pointer.block))
     }
 
-    #[cfg(test)]
+    /// The only state transition that creates or retires a population
+    /// authority resource. The event ledger owns the abstract population
+    /// identity and its zero-count retirement check; the resource algebra
+    /// checks exclusive possession of the visible fact.
+    pub(crate) fn checked_population_authority_exchange(
+        &self,
+        selected: &CResourceFact,
+        establish: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<(CState, CheckedPopulationAuthorityExchange), String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected
+        else {
+            return Err("Requires owns authority(R(p))".into());
+        };
+        if quantity.as_const() != Some(1) {
+            return Err("Requires one authority(R(p))".into());
+        }
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err("authority requires one pointer anchor".into());
+        };
+        let anchor = pointer.pointer();
+        if anchor.offset != PointerOffsetTerm::Constant(0)
+            || !(matches!(&anchor.block, PointerBlock::Heap(_))
+                && self.memory.live_heap_block_size(anchor).is_some()
+                || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block))
+        {
+            return Err("Requires live base storage for authority(R(p))".into());
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("authority mode has no creation history")?;
+        let mut next = self.clone();
+        let evidence = if establish {
+            let (history, evidence) = events
+                .checked_establish(&anchor.block, description)
+                .map_err(|refusal| format!("authority establishment refused: {refusal:?}"))?;
+            let resources = self
+                .resources
+                .clone()
+                .try_compose_with_fact(selected.clone(), assumptions)
+                .map_err(|error| format!("authority ownership refused: {error:?}"))?;
+            next.resources = resources;
+            Arc::make_mut(&mut next.population_effects).creation = Some(history);
+            evidence
+        } else {
+            let resources = self
+                .resources
+                .clone()
+                .without_fact_incrementally(selected, assumptions)
+                .ok_or("Requires owns authority(R(p))")?;
+            let (history, evidence) = events
+                .checked_retire(&anchor.block, description)
+                .map_err(|refusal| format!("authority retirement refused: {refusal:?}"))?;
+            next.resources = resources;
+            Arc::make_mut(&mut next.population_effects).creation = Some(history);
+            evidence
+        };
+        Ok((next, evidence))
+    }
+
     pub(in crate::kernel) fn record_population_storage_creation(&mut self, block: PointerBlock) {
         if let Some(events) = &self.population_effects.creation {
             Arc::make_mut(&mut self.population_effects).creation = Some(events.created(block));
@@ -4418,10 +4485,54 @@ impl CState {
         }
     }
 
-    pub(in crate::kernel) fn retire_population_storage(&mut self, block: &PointerBlock) {
+    pub(in crate::kernel) fn retire_population_storage(
+        &mut self,
+        block: &PointerBlock,
+    ) -> Result<(), CRuntimeError> {
         if let Some(events) = &self.population_effects.creation {
-            Arc::make_mut(&mut self.population_effects).creation = Some(events.retired(block));
+            let next = events.retired(block).map_err(|refusal| {
+                CRuntimeError::FunctionContract(format!(
+                    "population authority prevents storage retirement: {refusal:?}"
+                ))
+            })?;
+            Arc::make_mut(&mut self.population_effects).creation = Some(next);
         }
+        Ok(())
+    }
+
+    /// Retire a returning frame's blocks while its own creation environment
+    /// still owns them. The caller environment is restored only afterward.
+    pub(in crate::kernel) fn retired_population_creation_for_blocks(
+        &self,
+        blocks: &[PointerBlock],
+    ) -> Result<Option<super::super::population_authority::c_creation::CreationEvents>, CRuntimeError>
+    {
+        let Some(mut events) = self.population_effects.creation.clone() else {
+            return Ok(None);
+        };
+        for block in blocks {
+            events = events.retired(block).map_err(|refusal| {
+                CRuntimeError::FunctionContract(format!(
+                    "population authority prevents storage retirement: {refusal:?}"
+                ))
+            })?;
+        }
+        Ok(Some(events))
+    }
+
+    pub(in crate::kernel) fn population_storage_retirement_refusal(
+        &self,
+        block: &PointerBlock,
+    ) -> Option<CRuntimeError> {
+        self.population_effects
+            .creation
+            .as_ref()
+            .and_then(|events| events.retirement_refusal(block))
+            .map(|refusal| {
+                CRuntimeError::FunctionContract(format!(
+                    "population authority prevents storage {block:?} retirement: {refusal:?}"
+                ))
+            })
     }
 
     /// Recover caller environment identity while retaining any creation

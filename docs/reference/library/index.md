@@ -92,6 +92,25 @@ also unsupported. Missing call-site authority is reported as
 **Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_use_contract.md)
 and [`mdtests/mutex_use_mixed.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_use_mixed.md).
 
+## Population authority
+
+### `authority`
+
+```click
+abstract resource authority();
+```
+
+**Meaning:** `authority(reference(p))` is the exclusive control resource for
+one population of the declared resource type `reference(p)`. The empty
+population may be established with `fold(authority(reference(p)))` only in the
+execution proof that created `p`'s storage. It may be retired with
+`unfold(authority(reference(p)))` only when its member count is zero. The
+current authority mode admits these empty-population operations; member
+changes, `count(...)`, resource contracts, and C calls remain closed until
+their checked transitions are implemented.
+
+**Verified use:** [`authority_mode_establishes_and_retires_empty_stack_population`](https://github.com/lacker/click/blob/master/src/surface/tests/execution_tests.rs).
+
 ## Allocation authority
 
 ### `allocation`

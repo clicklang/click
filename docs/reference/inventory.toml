@@ -1019,6 +1019,10 @@ id = "stdlib.resource.allocation"
 path = "reference/library/index.md#allocation"
 
 [[item]]
+id = "stdlib.resource.authority"
+path = "reference/library/index.md#authority"
+
+[[item]]
 id = "language.target"
 path = "reference/language/c0.md#selecting-a-target"
 

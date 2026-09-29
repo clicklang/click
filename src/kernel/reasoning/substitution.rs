@@ -1424,6 +1424,9 @@ fn collect_c_resource_spec_bound_variables(
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
         }
+        CResourceTerm::PopulationAuthority { protected, .. } => {
+            collect_c_resource_spec_bound_variables(&protected.resource, variables)
+        }
         CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
         }
@@ -1461,6 +1464,9 @@ fn collect_c_resource_term_bound_variables(
     match resource {
         CResourceTerm::Instance { resource, .. } => {
             collect_c_resource_term_bound_variables(resource, variables)
+        }
+        CResourceTerm::PopulationAuthority { protected, .. } => {
+            collect_c_resource_spec_bound_variables(&protected.resource, variables)
         }
         CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
             collect_c_expression_bound_variables(mutex, variables)
@@ -1591,6 +1597,10 @@ fn collect_memory_bound_variables(memory: &CMemory, variables: &mut BTreeSet<Var
 
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
+        CResource::PopulationAuthority(description) => {
+            description
+                .visit_values(|value| collect_algebraic_value_bound_variables(value, variables));
+        }
         CResource::MutexUse(identity) => {
             if let Some(p) = &identity.protected {
                 p.visit_values(|v| collect_algebraic_value_bound_variables(v, variables));
@@ -4015,6 +4025,11 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
     to: &Bitvector32Term,
 ) -> CResource {
     match resource {
+        CResource::PopulationAuthority(description) => {
+            CResource::PopulationAuthority(description.map_values(|value| {
+                substitute_bitvector_variable_in_algebraic_value(value, from, to)
+            }))
+        }
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
                 if identity.binding.is_none() {
@@ -4368,6 +4383,20 @@ fn substitute_bitvector_variable_in_resource_term(
             resource: Box::new(substitute_bitvector_variable_in_resource_term(
                 resource, from, to,
             )),
+        },
+        CResourceTerm::PopulationAuthority {
+            protected,
+            snapshot,
+        } => CResourceTerm::PopulationAuthority {
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(substitute_bitvector_variable_in_resource_spec(
+                    &protected.resource,
+                    from,
+                    to,
+                )),
+                schema: protected.schema.clone(),
+            }),
+            snapshot: *snapshot,
         },
         CResourceTerm::MutexGuard { mutex, snapshot } => CResourceTerm::MutexGuard {
             mutex: Box::new(substitute_bitvector_variable_in_c_expression(
@@ -6756,6 +6785,11 @@ fn substitute_pointer_variable_in_c_resource(
     to: &Pointer,
 ) -> CResource {
     match resource {
+        CResource::PopulationAuthority(description) => {
+            CResource::PopulationAuthority(description.map_values(|value| {
+                substitute_pointer_variable_in_algebraic_value(value, from, to)
+            }))
+        }
         CResource::MutexUse(identity) => CResource::MutexUse(MutexUseIdentity {
             protected: identity.protected.as_ref().map(|p| {
                 if identity.binding.is_none() {
@@ -8002,6 +8036,20 @@ fn substitute_pointer_variable_in_resource_term(
             resource: Box::new(substitute_pointer_variable_in_resource_term(
                 resource, from, to,
             )),
+        },
+        CResourceTerm::PopulationAuthority {
+            protected,
+            snapshot,
+        } => CResourceTerm::PopulationAuthority {
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(substitute_pointer_variable_in_resource_spec(
+                    &protected.resource,
+                    from,
+                    to,
+                )),
+                schema: protected.schema.clone(),
+            }),
+            snapshot: *snapshot,
         },
         CResourceTerm::MutexGuard { mutex, snapshot } => CResourceTerm::MutexGuard {
             mutex: Box::new(substitute_pointer_variable_in_c_expression(mutex, from, to)),

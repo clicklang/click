@@ -1978,6 +1978,16 @@ fn execute_c_heap_free_paths(
             });
             continue;
         };
+        if let Some(error) = state.population_storage_retirement_refusal(&pointer.block) {
+            paths.push(CStatementExecutionPath {
+                loop_invariant_correspondence: Default::default(),
+                outcome: CStatementOutcome::RuntimeError(error),
+                facts,
+                obligations,
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            });
+            continue;
+        }
         let full_allocation_range = CMemoryRange::new_with_element_width(
             pointer.pointer().clone(),
             Bitvector32Term::Constant(0),
@@ -2080,7 +2090,16 @@ fn execute_c_heap_free_paths(
             .clone()
             .with_memory(memory)
             .with_resource_context(resources);
-        next.retire_population_storage(&pointer.block);
+        if let Err(error) = next.retire_population_storage(&pointer.block) {
+            paths.push(CStatementExecutionPath {
+                loop_invariant_correspondence: Default::default(),
+                outcome: CStatementOutcome::RuntimeError(error),
+                facts,
+                obligations,
+                loan_evidence: empty_checked_loan_evidence_sequence(),
+            });
+            continue;
+        }
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             outcome: CStatementOutcome::Normal(next),
@@ -2495,6 +2514,9 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
             continue;
         };
         if slot.block.starts_with("local:") && memory.has_block(&slot.block) {
+            if let Some(error) = state.population_storage_retirement_refusal(&slot.block) {
+                return Err(error);
+            }
             if let Some(error) =
                 super::super::mutexes::automatic_storage_refusal(&state, name, &slot.block)
             {
@@ -2517,6 +2539,7 @@ pub(in crate::kernel) fn end_scope_automatic_lifetimes(
                 return Err(CRuntimeError::LoanRefusal(refusal));
             }
             memory = memory.without_local_block(&slot.block);
+            state.retire_population_storage(&slot.block)?;
             retired = true;
         }
         state.locals.remove(name);
@@ -2808,7 +2831,9 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                     *constant,
                     *pointee_constant,
                 ) {
-                    Ok(state) => CStatementOutcome::Normal(state),
+                    Ok(state) => {
+                        CStatementOutcome::Normal(note_declared_population_storage(state, name))
+                    }
                     Err(refusal) => CStatementOutcome::RuntimeError(refusal),
                 }
             };
@@ -2831,7 +2856,9 @@ pub(in crate::kernel) fn execute_c_statement_paths(
             } else {
                 declare_aggregate_local(state, name, layout)
             } {
-                Ok(state) => CStatementOutcome::Normal(state),
+                Ok(state) => {
+                    CStatementOutcome::Normal(note_declared_population_storage(state, name))
+                }
                 Err(refusal) => CStatementOutcome::RuntimeError(refusal),
             };
             vec![CStatementExecutionPath {
@@ -3856,6 +3883,18 @@ fn fresh_local_object_identity(state: &mut CState, name: &str) -> Pointer {
              an automatic object would share a block with another one"
         );
     }
+}
+
+/// The declaration, rather than a later memory claim or address lookup, is
+/// the trusted creation event for an automatic object.
+fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
+    if let Some(slot) = state.locals.slot(name).cloned()
+        && slot.block.starts_with("local:")
+        && state.memory.has_block(&slot.block)
+    {
+        state.record_population_storage_creation(slot.block);
+    }
+    state
 }
 
 pub(in crate::kernel) fn declare_local(

@@ -591,6 +591,9 @@ impl Names {
                 binder.clear();
                 self.resource_term(resource);
             }
+            CResourceTerm::PopulationAuthority { protected, .. } => {
+                self.resource_spec(&mut protected.resource)
+            }
             CResourceTerm::MutexGuard { mutex, .. } | CResourceTerm::MutexLive { mutex, .. } => {
                 self.c(mutex)
             }

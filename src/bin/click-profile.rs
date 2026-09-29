@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use click::cli::{
     CInput, DEFAULT_SIMPLE_TACTIC_LIMIT, DEFAULT_SMART_TACTIC_LIMIT, MdTestExpectation, RunLimits,
     TargetSelection, format_duration, format_fractional_duration, load_sidecar_inputs,
-    looks_like_mdtest, parse_duration, parse_work_limit, prepare_mdtest_inputs, read_click_project,
-    read_mdtest, select_targets, shell_quote, source_refs,
+    looks_like_mdtest, parse_duration, parse_work_limit, prepare_mdtest_inputs, read_mdtest,
+    read_mdtest_project_if_needed, select_targets, shell_quote, source_refs,
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
 use click::surface::{
@@ -15,10 +15,9 @@ use click::surface::{
     c0_prepared_project_tactic_source_position, c0_prepared_smart_tactic_source_sites,
     c0_prepared_tactic_source_position, c0_project_smart_tactic_source_sites,
     c0_project_tactic_source_position, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    click_import_sites, cpp_prepared_project_smart_tactic_source_sites,
-    cpp_prepared_project_tactic_source_position, cpp_prepared_smart_tactic_source_sites,
-    cpp_prepared_tactic_source_position, verify_c0_prepared_project, verify_c0_project,
-    verify_c0_sources, verify_cpp_prepared_project,
+    cpp_prepared_project_smart_tactic_source_sites, cpp_prepared_project_tactic_source_position,
+    cpp_prepared_smart_tactic_source_sites, cpp_prepared_tactic_source_position,
+    verify_c0_prepared_project, verify_c0_project, verify_c0_sources, verify_cpp_prepared_project,
 };
 
 /// The crash-containment bound per profiled project; see
@@ -1485,20 +1484,7 @@ fn load_profiled_source(
         let click_source = mdtest
             .click_source
             .ok_or_else(|| format!("mdtest `{}` has no ```click block", path.display()))?;
-        let has_imports = !click_import_sites(&click_source)
-            .map_err(|error| {
-                format!(
-                    "could not read imports in mdtest `{}`: {}",
-                    path.display(),
-                    error.report()
-                )
-            })?
-            .is_empty();
-        let project = if has_imports || matches!(inputs, CInput::PreparedCpp(_)) {
-            Some(read_click_project(path, &click_source)?)
-        } else {
-            None
-        };
+        let project = read_mdtest_project_if_needed(path, &click_source, &inputs)?;
         return Ok(ProfiledSource {
             click_source,
             inputs,
@@ -1624,20 +1610,18 @@ fn verify_mdtest(path: &Path) -> Result<(), String> {
     if instrumentation::enabled() {
         instrumentation::emit(VerificationEvent::Source(path.to_path_buf()));
     }
-    let has_imports = !click_import_sites(click_source)
-        .map_err(|error| error.report())?
-        .is_empty();
-    let result = match &inputs {
-        CInput::Bundle(sources) if has_imports => {
-            let project = read_click_project(path, click_source)?;
-            verify_c0_project(&project, &source_refs(sources))
+    let project = read_mdtest_project_if_needed(path, click_source, &inputs)?;
+    let result = match (&inputs, &project) {
+        (CInput::Bundle(sources), Some(project)) => {
+            verify_c0_project(project, &source_refs(sources))
         }
-        CInput::Bundle(sources) => verify_c0_sources(click_source, &source_refs(sources)),
-        CInput::PreparedCpp(import) => {
-            let project = read_click_project(path, click_source)?;
-            verify_cpp_prepared_project(&project, import)
+        (CInput::Bundle(sources), None) => verify_c0_sources(click_source, &source_refs(sources)),
+        (CInput::PreparedCpp(import), Some(project)) => {
+            verify_cpp_prepared_project(project, import)
         }
-        CInput::Prepared(_) => unreachable!("mdtests have no C compiler-import fence"),
+        (CInput::PreparedCpp(_), None) | (CInput::Prepared(_), _) => {
+            unreachable!("mdtests have no C compiler-import fence")
+        }
     };
     match (mdtest.expectation.as_ref(), result) {
         (Some(MdTestExpectation::FailContains(expected)), Err(error)) => {

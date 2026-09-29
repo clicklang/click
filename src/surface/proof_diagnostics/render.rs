@@ -1184,6 +1184,18 @@ impl Renderer<'_> {
                 self.pointer(identity.mutex());
                 self.push(")");
             }
+            CResource::PopulationAuthority(description) => {
+                self.push("authority(");
+                self.push(description.family());
+                self.push("(");
+                for (index, argument) in description.arguments().iter().enumerate() {
+                    if index > 0 {
+                        self.push(", ");
+                    }
+                    self.algebraic_value(argument);
+                }
+                self.push("))");
+            }
             CResource::Memory(range) => {
                 self.push("memory-resource(");
                 self.pointer(range.base());
@@ -1228,6 +1240,18 @@ impl Renderer<'_> {
                 self.push("mutex_use(");
                 self.pointer(identity.mutex());
                 self.push(")");
+            }
+            CResource::PopulationAuthority(description) => {
+                self.push("authority(");
+                self.push(description.family());
+                self.push("(");
+                for (index, argument) in description.arguments().iter().enumerate() {
+                    if index > 0 {
+                        self.push(", ");
+                    }
+                    self.algebraic_value(argument);
+                }
+                self.push("))");
             }
             CResource::Composite { name, arguments }
             | CResource::Token { name, arguments }

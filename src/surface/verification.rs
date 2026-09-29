@@ -19,6 +19,7 @@ use std::sync::Arc;
 pub struct CProofArtifactIdentity {
     digest: [u8; 32],
     pub resource_semantics_version: u32,
+    pub resource_semantics_mode: ResourceSemanticsMode,
 }
 
 impl CProofArtifactIdentity {
@@ -26,18 +27,25 @@ impl CProofArtifactIdentity {
         &self.digest
     }
 
-    fn for_components(input_digest: [u8; 32], click_digest: [u8; 32], target: &str) -> Self {
+    fn for_components(
+        input_digest: [u8; 32],
+        click_digest: [u8; 32],
+        target: &str,
+        resource_semantics_mode: ResourceSemanticsMode,
+    ) -> Self {
         let version = crate::kernel::RESOURCE_SEMANTICS_VERSION.to_be_bytes();
         let digest = digest_framed_parts([
-            b"click-c-proof-artifact-v2".as_slice(),
+            b"click-c-proof-artifact-v3".as_slice(),
             &input_digest,
             &click_digest,
             target.as_bytes(),
             &version,
+            resource_semantics_mode.name().as_bytes(),
         ]);
         Self {
             digest,
             resource_semantics_version: crate::kernel::RESOURCE_SEMANTICS_VERSION,
+            resource_semantics_mode,
         }
     }
 }
@@ -120,6 +128,7 @@ pub(in crate::surface) struct CSourceContext<'a> {
     prepared_project_identity: Option<String>,
     input_digest: [u8; 32],
     specification_digest: Option<[u8; 32]>,
+    resource_semantics_mode: ResourceSemanticsMode,
     prepared_duplicates: bool,
     parsed_units: RefCell<BTreeMap<String, Arc<syntax::C0TranslationUnit>>>,
     #[cfg(test)]
@@ -127,6 +136,10 @@ pub(in crate::surface) struct CSourceContext<'a> {
 }
 
 impl<'a> CSourceContext<'a> {
+    pub(in crate::surface) fn resource_semantics_mode(&self) -> ResourceSemanticsMode {
+        self.resource_semantics_mode
+    }
+
     fn modeled_pthread_binding(
         &self,
     ) -> crate::languages::c::thread_runtime::ModeledPthreadBinding {
@@ -155,6 +168,7 @@ impl<'a> CSourceContext<'a> {
             prepared_project_identity: None,
             input_digest: digest_framed_parts(parts),
             specification_digest: None,
+            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
             #[cfg(test)]
@@ -217,6 +231,7 @@ impl<'a> CSourceContext<'a> {
             prepared_project_identity: Some(project_identity),
             input_digest: digest_framed_parts(identity_parts),
             specification_digest: None,
+            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: duplicate_logical_source,
             parsed_units: RefCell::new(BTreeMap::new()),
             #[cfg(test)]
@@ -244,6 +259,7 @@ impl<'a> CSourceContext<'a> {
                 import.identity().as_bytes(),
             ]),
             specification_digest: None,
+            resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
             #[cfg(test)]
@@ -275,6 +291,7 @@ impl<'a> CSourceContext<'a> {
             self.input_digest,
             self.specification_digest.unwrap_or([0; 32]),
             &profile,
+            self.resource_semantics_mode,
         )
     }
 
@@ -303,16 +320,23 @@ impl<'a> CSourceContext<'a> {
             .identity_suffix()
             .map(|suffix| format!("{}:{suffix}", target.name()))
             .unwrap_or_else(|| target.name().to_string());
-        CProofArtifactIdentity::for_components(self.input_digest, click_digest, &profile)
+        CProofArtifactIdentity::for_components(
+            self.input_digest,
+            click_digest,
+            &profile,
+            self.resource_semantics_mode,
+        )
     }
 
     pub(in crate::surface) fn with_click_project(mut self, project: &ClickProject) -> Self {
+        self.resource_semantics_mode = project.resource_semantics_mode();
         let mut modules = project.modules().iter().collect::<Vec<_>>();
         modules.sort_by_key(|module| module.identity());
         let mut hasher = Sha256::new();
         for part in [
             b"click-specification-project-v1".as_slice(),
             project.entry().as_bytes(),
+            project.resource_semantics_mode().name().as_bytes(),
         ] {
             hasher.update((part.len() as u64).to_be_bytes());
             hasher.update(part);
@@ -934,10 +958,17 @@ pub fn verify_c0_sources(
     })
 }
 
+fn ensure_resource_semantics_supported(sources: &CSourceContext<'_>) -> Result<(), ClickError> {
+    match sources.resource_semantics_mode() {
+        ResourceSemanticsMode::Legacy | ResourceSemanticsMode::Authority => Ok(()),
+    }
+}
+
 pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
+    ensure_resource_semantics_supported(sources)?;
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
@@ -2116,6 +2147,7 @@ fn verify_c0_sources_with_context(
     mut expansion_capture: Option<&mut ExpansionCapture>,
     resolved_file: Option<ClickFile>,
 ) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+    ensure_resource_semantics_supported(c_sources)?;
     check_verification_deadline()?;
     let preselected_runtime = resolved_file
         .as_ref()
@@ -2230,9 +2262,10 @@ fn verify_c0_sources_with_context(
     let selected_target = file.selected_c_target();
     let selected_thread_runtime = file.selected_thread_runtime();
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
-    let function_source_registry = Arc::new(FunctionSourceRegistry::from_function_blocks(
-        &external_and_user_function_blocks,
-    )?);
+    let function_source_registry = Arc::new(
+        FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
+            .with_resource_semantics_mode(c_sources.resource_semantics_mode()),
+    );
     // A sidecar contract names a C function with its ordinary spelling, but a
     // header `static inline` body executes under a translation-unit-qualified
     // name, which is the name its call sites carry and the name the kernel
@@ -5532,6 +5565,7 @@ pub(in crate::surface) fn parse_verified_sources(
             ),
         ),
         specification_digest: None,
+        resource_semantics_mode: ResourceSemanticsMode::Legacy,
         prepared_duplicates: false,
         parsed_units: RefCell::new(BTreeMap::new()),
         #[cfg(test)]
@@ -7560,7 +7594,8 @@ fn resource_clause_to_resource_spec_with_metadata(
             parameter_types,
         } => {
             if !resource_type_arguments.is_empty()
-                && (name != "mutex_use" || resource_type_arguments.len() != 1)
+                && (!matches!(name.as_str(), "mutex_use" | "authority")
+                    || resource_type_arguments.len() != 1)
             {
                 return Err(ClickError::new("unsupported resource type arguments"));
             }
@@ -7581,6 +7616,50 @@ fn resource_clause_to_resource_spec_with_metadata(
                 .iter()
                 .map(|c_type| c_type.to_kernel_type())
                 .collect();
+            if name == "authority" {
+                let [protected] = resource_type_arguments.as_slice() else {
+                    return Err(ClickError::new(
+                        "authority expects one checked resource type",
+                    ));
+                };
+                let ResourceClause::Declared {
+                    type_schema: Some(schema),
+                    arguments: protected_arguments,
+                    ..
+                } = protected
+                else {
+                    return Err(ClickError::new(
+                        "authority requires a checked resource type",
+                    ));
+                };
+                let protected_spec = resource_clause_to_resource_spec_with_metadata(
+                    protected,
+                    parameters,
+                    result_type,
+                    role,
+                    snapshot,
+                )?
+                .with_source_arguments(
+                    protected_arguments
+                        .iter()
+                        .map(crate::surface::diagnostics::describe_contract_expression)
+                        .collect(),
+                );
+                return CResourceSpec::new(
+                    crate::kernel::CResourceTerm::PopulationAuthority {
+                        protected: Box::new(crate::kernel::CResourceTypeSpec {
+                            resource: Box::new(protected_spec),
+                            schema: schema.clone(),
+                        }),
+                        snapshot,
+                    },
+                    access,
+                    crate::kernel::CResourceQuantity::One,
+                    role,
+                    snapshot,
+                )
+                .map_err(|error| ClickError::new(error.to_string()));
+            }
             if name == "mutex_guard" {
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new("mutex_guard expects one mutex pointer"));
@@ -8440,11 +8519,50 @@ int32 answer() {
 
         let c_digest = [1; 32];
         let click_digest = [2; 32];
-        let first_target =
-            CProofArtifactIdentity::for_components(c_digest, click_digest, "x86_64-linux-kernel");
-        let second_target =
-            CProofArtifactIdentity::for_components(c_digest, click_digest, "other-target-profile");
+        let first_target = CProofArtifactIdentity::for_components(
+            c_digest,
+            click_digest,
+            "x86_64-linux-kernel",
+            ResourceSemanticsMode::Legacy,
+        );
+        let second_target = CProofArtifactIdentity::for_components(
+            c_digest,
+            click_digest,
+            "other-target-profile",
+            ResourceSemanticsMode::Legacy,
+        );
         assert_ne!(first_target, second_target);
+    }
+
+    #[test]
+    fn authority_mode_has_distinct_environment_and_artifact_identities() {
+        let module = ClickModuleSource::new("answer.click", CLICK, []);
+        let legacy = ClickProject::new("answer.click", [module.clone()]);
+        let authority =
+            ClickProject::new("answer.click", [module]).with_c_profile(CProjectProfile {
+                target: None,
+                runtime: None,
+                resource_semantics: ResourceSemanticsMode::Authority,
+            });
+        let sources = [("answer.c", C_SOURCE)];
+        let legacy_context = CSourceContext::bundle(&sources).with_click_project(&legacy);
+        let authority_context = CSourceContext::bundle(&sources).with_click_project(&authority);
+        assert_eq!(
+            legacy_context.resource_semantics_mode(),
+            ResourceSemanticsMode::Legacy
+        );
+        assert_eq!(
+            authority_context.resource_semantics_mode(),
+            ResourceSemanticsMode::Authority
+        );
+        assert_ne!(
+            legacy_context.environment_identity(CTarget::SUPPORTED),
+            authority_context.environment_identity(CTarget::SUPPORTED)
+        );
+        assert_ne!(
+            legacy_context.artifact_identity(CLICK, CTarget::SUPPORTED),
+            authority_context.artifact_identity(CLICK, CTarget::SUPPORTED)
+        );
     }
 
     /// The same C and Click sources verified for different C implementation

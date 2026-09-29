@@ -1,8 +1,13 @@
 # Every standard-library symbol
 
-This fixture gives every public declaration in `stdlib/prelude.click` a
-checked use. The documentation inventory separately checks that the fixture's
-source registry and the library reference remain complete.
+This fixture and the companion regressions named below give every public
+declaration in `stdlib/prelude.click` a checked use. The documentation
+inventory separately checks that the source registry and library reference
+remain complete.
+
+The `authority` resource's restricted empty-population source use is verified
+by `authority_mode_establishes_and_retires_empty_stack_population` in
+`src/surface/tests/execution_tests.rs`.
 
 The external catalog symbols `memcpy`, `memcmp`, `memset`, and `strlen` are
 verified in `mdtests/stdlib_external_contracts.md`.

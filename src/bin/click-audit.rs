@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use click::cli::{
     self, CInput, MdTestExpectation, TargetSelection, containing_directory, find_mdtests,
     format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs, read_c_inputs,
-    read_click_project, select_targets, shell_quote, source_refs,
+    read_click_project, read_mdtest_project_if_needed, select_targets, shell_quote, source_refs,
 };
 use click::surface::{
     C0VerificationSession, ClickProject, SourcePosition, c0_incremental_selection,
@@ -946,20 +946,7 @@ fn load_audit_source_from_text(
             .click_source
             .clone()
             .ok_or_else(|| format!("mdtest `{}` has no ```click block", path.display()))?;
-        let has_imports = !click_import_sites(&click_source)
-            .map_err(|error| {
-                format!(
-                    "could not read imports in mdtest `{}`: {}",
-                    path.display(),
-                    error.report()
-                )
-            })?
-            .is_empty();
-        let project = if !has_imports && !matches!(inputs, CInput::PreparedCpp(_)) {
-            None
-        } else {
-            Some(read_click_project(path, &click_source)?)
-        };
+        let project = read_mdtest_project_if_needed(path, &click_source, &inputs)?;
         return Ok(AuditSource {
             container_source,
             click_source,

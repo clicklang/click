@@ -1,6 +1,228 @@
 use super::*;
 use crate::kernel::CLoopEffectOrigin;
 
+fn authority_stack_project(click_source: &str) -> ClickProject {
+    ClickProject::new(
+        "authority_stack.click",
+        [ClickModuleSource::new(
+            "authority_stack.click",
+            click_source,
+            [],
+        )],
+    )
+    .with_c_profile(CProjectProfile {
+        target: None,
+        runtime: None,
+        resource_semantics: ResourceSemanticsMode::Authority,
+    })
+}
+
+#[test]
+fn authority_mode_establishes_and_retires_empty_stack_population() {
+    let c_source = r#"
+        int32 value(void) {
+            int32 x = 7;
+            return x;
+        }
+    "#;
+    let click_source = r#"
+        abstract resource reference(p: int32*);
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    parser::parse_file_items(click_source)
+        .expect("the source fold/unfold fixture must parse independently of mode gating");
+    verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect("the creator may establish and retire one empty population");
+}
+
+#[test]
+fn authority_mode_cannot_reestablish_after_retirement() {
+    let c_source = r#"
+        int32 value(void) {
+            int32 x = 7;
+            return x;
+        }
+    "#;
+    let click_source = r#"
+        abstract resource reference(p: int32*);
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            unfold(authority(reference(&x)));
+            fold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("a retired population cannot be established a second time");
+    assert!(error.message().contains("AlreadyEstablished"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_rejects_automatic_storage_end_with_live_authority() {
+    let c_source = r#"
+        int32 value(void) {
+            int32 x = 7;
+            return x;
+        }
+    "#;
+    let click_source = r#"
+        abstract resource reference(p: int32*);
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("automatic storage cannot end while its authority remains live");
+    assert!(error.message().contains("authority"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_imported_pointer_without_live_storage_cannot_establish_population() {
+    let c_source = r#"
+        int32 value(int32* p) {
+            return 7;
+        }
+    "#;
+    let click_source = r#"
+        abstract resource reference(p: int32*);
+        verifying "authority_stack.c";
+
+        int32 value(int32* p) {
+            owns p[0..1];
+            ensures result == 7;
+        } by {
+            fold(authority(reference(p)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("an imported pointer without live base storage cannot establish authority");
+    assert!(
+        error.message().contains("Requires live base storage"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn authority_mode_cannot_create_untracked_member_before_establishment() {
+    let c_source = r#"
+        int32 value(void) {
+            int32 x = 7;
+            return x;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {
+            owns p[0..1];
+        }
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(reference(&x));
+            fold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("legacy resource folding cannot silently make authority members");
+    assert!(error.message().contains("untracked members"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_refuses_legacy_count_observation() {
+    let c_source = "int32 value(int32* p) { return 7; }";
+    let click_source = r#"
+        abstract resource reference(p: int32*);
+        verifying "authority_stack.c";
+
+        int32 value(int32* p) {
+            ensures count(reference(p)) == 0;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("count cannot read the legacy population ledger in authority mode");
+    assert!(error.message().contains("count"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_refuses_plain_c_helper_call() {
+    let c_source = r#"
+        int32 helper(void) { return 7; }
+        int32 value(void) {
+            int32 x = helper();
+            return x;
+        }
+    "#;
+    let click_source = r#"
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("calls without resource contracts still lack checked population transfer");
+    assert!(
+        error.message().contains("C calls are not yet supported"),
+        "{error:?}"
+    );
+}
+
 #[test]
 fn verifies_loadable_segment_proposition_for_indexed_read() {
     let c_source = r#"

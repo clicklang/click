@@ -441,6 +441,7 @@ pub(super) fn materialize_counted_population_bodies(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Iterated(_) => continue,
         };
         if resource_environment.get(name).is_none() {
@@ -555,6 +556,7 @@ fn materialize_folded_composite_resource_memory(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Iterated(_) => {
                 continue;
             }
@@ -2186,6 +2188,7 @@ fn project_held_resource_observable_facts(
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
+        | CResource::PopulationAuthority(_)
         | CResource::Iterated(_) => {
             return Ok(state.memory().clone());
         }
@@ -3101,6 +3104,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Iterated(_) => {
                 return Err(ClickError::new(
                     "instance unfolding is not a population operation",
@@ -3258,6 +3262,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::PopulationAuthority(_)
                 | CResource::Iterated(_) => None,
             };
             if let Some((name, resource_arguments)) = named
@@ -3719,6 +3724,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::PopulationAuthority(_)
                 | CResource::Iterated(_) => {
                     return Err(ClickError::new(format!(
                         "`{claim_label}` path {path_index}: `fold({})` did not lower to a declared resource",
@@ -3807,6 +3813,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
+                | CResource::PopulationAuthority(_)
                 | CResource::Iterated(_) => {
                     return Err(ClickError::new(
                         "instance folding is not a population operation",

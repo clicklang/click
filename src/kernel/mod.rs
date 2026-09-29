@@ -24,6 +24,7 @@ mod population_access;
 // adapter or legacy proof path may use it until the subsequent bridge lands.
 #[allow(dead_code)]
 mod population_authority;
+pub(crate) use population_authority::c_creation::CheckedPopulationAuthorityExchange;
 mod quantified_frame;
 mod resource_description;
 mod thread_confinement;

@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use click::cli::{
-    CInput, MdTestExpectation, prepare_mdtest_inputs, read_click_project, read_mdtest, source_refs,
+    CInput, MdTestExpectation, prepare_mdtest_inputs, read_click_project, read_mdtest,
+    read_mdtest_project_if_needed, source_refs,
 };
 use click::instrumentation::{self, ArtifactReuseRejection};
 use click::surface::{
@@ -213,12 +214,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         .as_ref()
         .ok_or_else(|| format!("`{}` is missing a ```expect block", path.display()))?;
 
-    let has_imports = click_source.contains("import \"");
-    let project = match &inputs {
-        CInput::Bundle(_) if !has_imports => None,
-        CInput::Prepared(_) => unreachable!("mdtests have no C compiler-import fence"),
-        _ => Some(read_click_project(path, click_source)?),
-    };
+    let project = read_mdtest_project_if_needed(path, click_source, &inputs)?;
     let verify = || -> Result<(), String> {
         match (&inputs, &project) {
             (CInput::Bundle(sources), Some(project)) => {

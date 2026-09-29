@@ -177,13 +177,19 @@ Checkpoint 0 has a [consumer inventory](../docs/internals/authority-migration-in
 and an approved [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md).
 The first additive kernel slice checks exact unary population ownership,
 creation-site restriction, once-per-lifetime establishment, transfer, and empty
-retirement. A kernel-test-only C event ledger additionally checks heap creation
-provenance and call-environment transport. This is partial checkpoint 1, not a
-usable C authority implementation: stack creation, resource enrollment,
-authority contract transport, symbolic totals, and source operations remain
-outstanding. `construct(...)`
-has not been extended. Checkpoints 2–12 remain pending. Update this status and
-the inventory as commits land.
+retirement. A C event ledger checks heap and automatic-object
+creation provenance, call-environment transport, and per-family history that
+prevents late establishment after members were transferred away. Project-level
+mode selection and `authority(R(p))` parsing/lowering are additive. A restricted
+source bridge now checks `fold(authority(R(p)))` for empty establishment and
+`unfold(authority(R(p)))` for zero-count retirement against actual C creation
+events. Its certificate event is checked independently. Authority mode refuses
+member changes, current `count`, resource contracts, and C calls rather than
+falling back to legacy accounting. This remains partial checkpoint 1, not a
+usable counted-resource implementation: resource enrollment, authority
+contract transport, symbolic totals, and count conservation remain outstanding.
+`construct(...)` has not been extended. Checkpoints 2–12 remain pending.
+Update this status and the inventory as commits land.
 
 | Checkpoints | Deliverable | What happens to old clients |
 | --- | --- | --- |

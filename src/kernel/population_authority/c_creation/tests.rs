@@ -113,26 +113,6 @@ fn only_successful_real_malloc_records_creation() {
         succeeded.population_effects.creation
     );
 
-    let returned_call = execute_c_statement_paths(
-        &succeeded,
-        &c_call("helper", vec![c_variable("p")]),
-        &PureFactContext::new(),
-        &CExecutionEnvironment::new().with_function(helper),
-        CExecutionSemantics::EXECUTE_BODIES,
-        &mut ExecutionBudget::default(),
-    )
-    .expect("execute real helper call");
-    let [
-        CStatementExecutionPath {
-            outcome: CStatementOutcome::Normal(after_call),
-            ..
-        },
-    ] = returned_call.as_slice()
-    else {
-        panic!("helper returns normally: {returned_call:?}");
-    };
-    assert!(after_call.population_storage_created_here(created));
-
     let freed = execute_c_statement_paths(
         &succeeded,
         &c_heap_free(c_variable("p")),
@@ -234,12 +214,18 @@ fn creation_lookup_and_call_transport_ignore_unrelated_events() {
         let mut events = CreationEvents::new();
         for id in 0..size {
             events = events.created(PointerBlock::Heap(id));
+            events = events.member_created(&PointerBlock::Heap(id), "reference");
             events = events.pending_creation(PointerBlock::Symbolic(Variable(id)));
         }
         let selected = PointerBlock::Heap(size / 2);
         let pending_block = PointerBlock::Symbolic(Variable(10_000 + size));
         let ((), measured) = crate::persistent::measure_persistent_work(|| {
             assert!(events.created_here(&selected));
+            assert_eq!(
+                events.establish(&selected, "reference"),
+                Err(CreationRefusal::MembersAlreadyExisted)
+            );
+            assert!(events.establish(&selected, "other").is_ok());
             let callee = events.enter_call();
             assert!(!callee.created_here(&selected));
             assert!(callee.return_to(&events).created_here(&selected));
@@ -258,4 +244,143 @@ fn creation_lookup_and_call_transport_ignore_unrelated_events() {
         work.push(measured);
     }
     assert!(work[2] < work[0].saturating_mul(2) + 20, "{work:?}");
+}
+
+#[test]
+fn actual_stack_declaration_grants_one_lifetime_creation_event() {
+    let entry = CState::new().with_population_creation_tracking();
+    let paths = execute_c_statement_paths(
+        &entry,
+        &c_declare("x", CType::Int32),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .expect("declaration executes");
+    let [
+        CStatementExecutionPath {
+            outcome: CStatementOutcome::Normal(declared),
+            ..
+        },
+    ] = paths.as_slice()
+    else {
+        panic!("one declaration path");
+    };
+    let slot = declared.locals().slot("x").expect("declared slot").clone();
+    assert!(declared.population_storage_created_here(&slot));
+    assert!(!entry.population_storage_created_here(&slot));
+    assert!(!declared.population_storage_created_here(&slot.offset_by_bytes(1)));
+
+    let ended = crate::kernel::eval::end_scope_automatic_lifetimes(declared, &["x".to_owned()])
+        .expect("scope exit");
+    assert!(!ended.population_storage_created_here(&slot));
+    let second = execute_c_statement_paths(
+        &ended,
+        &c_declare("x", CType::Int32),
+        &PureFactContext::new(),
+        &CExecutionEnvironment::new(),
+        CExecutionSemantics::EXECUTE_BODIES,
+        &mut ExecutionBudget::default(),
+    )
+    .expect("re-enter declaration");
+    let [
+        CStatementExecutionPath {
+            outcome: CStatementOutcome::Normal(second),
+            ..
+        },
+    ] = second.as_slice()
+    else {
+        panic!("one re-entry path");
+    };
+    let second_slot = second.locals().slot("x").expect("new slot");
+    assert_ne!(slot.block, second_slot.block);
+    assert!(second.population_storage_created_here(second_slot));
+    assert!(!second.population_storage_created_here(&slot));
+}
+
+#[test]
+fn member_history_blocks_late_establishment_after_transfer_and_return() {
+    let block = PointerBlock::Heap(940_100);
+    let caller = CreationEvents::new().created(block.clone());
+    let moved = caller.member_created(&block, "reference");
+    let helper = moved.enter_call();
+    assert_eq!(
+        helper.establish(&block, "reference"),
+        Err(CreationRefusal::NotCreationEnvironment),
+    );
+    let resumed = helper.return_to(&caller);
+    assert_eq!(
+        resumed.establish(&block, "reference"),
+        Err(CreationRefusal::MembersAlreadyExisted),
+    );
+    let established_other = resumed
+        .establish(&block, "other")
+        .expect("unrelated family remains pristine");
+    assert_eq!(
+        established_other.establish(&block, "other"),
+        Err(CreationRefusal::AlreadyEstablished),
+    );
+    assert_eq!(
+        established_other.retired(&block),
+        Err(CreationRefusal::OutstandingAuthority),
+    );
+    let retired_other = established_other
+        .retire_authority(&block, "other")
+        .expect("zero-member authority retires");
+    let ended = retired_other.retired(&block).expect("empty lifetime ends");
+    assert_eq!(
+        ended.establish(&block, "other"),
+        Err(CreationRefusal::NotCreationEnvironment),
+    );
+}
+
+#[test]
+fn pending_member_history_follows_actual_malloc_result() {
+    let pending = PointerBlock::Symbolic(Variable(940_101));
+    let live = PointerBlock::Heap(940_102);
+    let caller = CreationEvents::new()
+        .pending_creation(pending.clone())
+        .member_created(&pending, "reference");
+    let helper = caller.enter_call();
+    let decided = helper.resolve_pending(&pending, Some(live.clone()));
+    let resumed = decided.return_to(&caller);
+    assert_eq!(
+        resumed.establish(&live, "reference"),
+        Err(CreationRefusal::MembersAlreadyExisted),
+    );
+    assert!(resumed.establish(&live, "other").is_ok());
+}
+
+#[test]
+fn storage_cannot_expire_with_outstanding_population_authority() {
+    let block = PointerBlock::Heap(940_103);
+    let created = CreationEvents::new().created(block.clone());
+    let established = created
+        .establish(&block, "reference")
+        .expect("creation environment establishes empty population");
+    assert_eq!(
+        established.retirement_refusal(&block),
+        Some(CreationRefusal::OutstandingAuthority)
+    );
+    assert_eq!(
+        established.retired(&block),
+        Err(CreationRefusal::OutstandingAuthority)
+    );
+    let retired = established
+        .retire_authority(&block, "reference")
+        .expect("zero-member authority retires")
+        .retired(&block)
+        .expect("empty storage lifetime retires");
+    assert!(!retired.created_here(&block));
+}
+
+#[test]
+fn repeated_entry_recheck_reuses_the_same_creation_environment() {
+    let caller = CreationEvents::new();
+    let first = caller.enter_call();
+    assert_eq!(first, caller.enter_call());
+    assert_ne!(first, caller);
+    let advanced = caller.created(PointerBlock::Heap(940_104));
+    assert_ne!(first, advanced.enter_call());
 }

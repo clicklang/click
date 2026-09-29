@@ -91,6 +91,10 @@ pub(super) fn confined_resource_name<'a>(
         CResourceFact::Own(CResource::GuardedPopulation { name, .. }, _)
         | CResourceFact::View(CResource::GuardedPopulation { name, .. }) => return Some(name),
         // Moving the atom alone does not transfer its loan share/hold custody.
+        CResourceFact::Own(CResource::PopulationAuthority(description), _)
+        | CResourceFact::View(CResource::PopulationAuthority(description)) => {
+            return Some(description.family());
+        }
         CResourceFact::Own(CResource::MutexUse(_), _)
         | CResourceFact::View(CResource::MutexUse(_)) => return Some("mutex use"),
         CResourceFact::Own(CResource::MutexLive(_), _)

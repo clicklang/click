@@ -4,6 +4,71 @@ use super::*;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
 
 impl<'a> Proof<'a> {
+    fn apply_execution_population_authority_exchange(
+        &self,
+        resource: &ResourceClause,
+        establish: bool,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let operation = if establish { "fold" } else { "unfold" };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error(format!(
+                "population authority `{operation}` requires a C execution proof"
+            )));
+        };
+        self.require_execution_frontier("population authority exchange")?;
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("population authority exchange lost its C state"))?;
+        if execution.core.frontier.is_at_function_exit() {
+            return Err(self.step_error(format!(
+                "population authority `{operation}` must run before function exit"
+            )));
+        }
+        let before_facts = self.facts().clone();
+        let selected = lower_resource_clause_at_state(
+            resource,
+            context.parsed_function.parameters(),
+            context.arguments,
+            &execution.core.state,
+        )?;
+        let (after_state, witness) = execution
+            .core
+            .state
+            .checked_population_authority_exchange(&selected, establish, before_facts.assumptions())
+            .map_err(|message| self.step_error(message))?;
+        execution
+            .core
+            .record_population_authority_rewrite(
+                &before_facts,
+                &selected,
+                establish,
+                &witness,
+                &after_state,
+                &before_facts,
+            )
+            .map_err(|message| {
+                self.step_error(format!(
+                    "kernel rejected checked population authority `{operation}`: {message}"
+                ))
+            })?;
+        execution.core.state = after_state.into();
+        let branch = self
+            .focused_branch()
+            .expect("population authority exchange requires an open goal")
+            .with_state(BranchState {
+                facts: before_facts,
+                unfolded_predicates: self.focused_branch_unfolds().clone(),
+                execution: Some(Arc::new(execution)),
+            });
+        Ok(CheckedFocusedTransition {
+            locals: self.state().locals().clone(),
+            branch: Some(branch),
+            added_facts: Vec::new(),
+            checked_facts: Vec::new(),
+        })
+    }
+
     fn apply_instance_rewrite(
         &self,
         binding: &ResourceInstanceBinding,
@@ -1463,6 +1528,17 @@ impl<'a> Proof<'a> {
         tactic: &IteratedTactic,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let name = tactic.name();
+        if matches!(
+            tactic,
+            IteratedTactic::Gather(_) | IteratedTactic::Scatter(_)
+        ) && self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        {
+            return Err(self.step_error(
+                "resource gathering and scattering may change untracked members in authority mode",
+            ));
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error(format!("`{name}` requires an execution-frontier proof")));
         };
@@ -1548,6 +1624,14 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        {
+            return Err(self.step_error(
+                "resource observation may introduce untracked members in authority mode",
+            ));
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`observe` requires an execution-frontier proof"));
         };
@@ -1611,8 +1695,20 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
+        {
+            return Err(self.step_error(
+                "ordinary resource unfold may create untracked members in authority mode",
+            ));
+        }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, true);
+        }
+        if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
+            return self.apply_execution_population_authority_exchange(resource, false);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("resource `unfold` requires an execution-frontier proof"));
@@ -1678,8 +1774,20 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
+        {
+            return Err(self.step_error(
+                "ordinary resource fold may create untracked members in authority mode",
+            ));
+        }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, false);
+        }
+        if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
+            return self.apply_execution_population_authority_exchange(resource, true);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("resource `fold` requires an execution-frontier proof"));
@@ -1757,6 +1865,19 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        {
+            return Err(self.step_error(
+                "resource unfold after function outcome is unavailable in authority mode",
+            ));
+        }
+        if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
+            return Err(self.step_error(
+                "population authority `unfold` must run before the function reaches its outcome",
+            ));
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `unfold` requires an execution proof"));
         };
@@ -1814,8 +1935,21 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        {
+            return Err(self.step_error(
+                "resource fold after function outcome is unavailable in authority mode",
+            ));
+        }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, false);
+        }
+        if matches!(resource, ResourceClause::Declared { name, .. } if name == "authority") {
+            return Err(self.step_error(
+                "population authority `fold` must run before the function reaches its outcome",
+            ));
         }
         self.apply_outcome_resource_fold_with_closure(resource, ResourceBodyClosure::Initialize)
     }
@@ -1909,6 +2043,14 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
+        if self
+            .execution()
+            .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+        {
+            return Err(self.step_error(
+                "resource construction may create untracked members in authority mode",
+            ));
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `construct` requires an execution proof"));
         };

@@ -1387,6 +1387,9 @@ pub(super) fn c_function_contract_certification_assumptions(
                     CResource::Memory(range) => {
                         format!("memory in {}", range.base().block)
                     }
+                    CResource::PopulationAuthority(description) => {
+                        format!("population authority for {}", description.family())
+                    }
                     CResource::Composite { name, .. } => format!("composite {name}"),
                     CResource::Token { name, .. } => format!("token {name}"),
                     CResource::GuardedPopulation { name, .. } => {
@@ -1430,6 +1433,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                 (name, arguments)
             }
             CResource::Memory(_)
+            | CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)

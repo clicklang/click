@@ -5,6 +5,7 @@
 //! certificate builder, diagnostic cursor, or smart-planning state.
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
+use crate::kernel::population_authority::c_creation::CheckedPopulationAuthorityExchange;
 use crate::kernel::{
     Bitvector32Term, CCompositeResourceDefinition, CConditionOutcome, CExecutionEnvironment,
     CExecutionSemantics, CExpression, CFunction, CFunctionExecutionCandidates, CFunctionOutcome,
@@ -97,6 +98,7 @@ pub(crate) enum CheckedExecutionEvent {
     ResourceObservation(CheckedResourceObservation),
     AutomaticLifetimeEnd(CheckedAutomaticLifetimeEnd),
     ResourceRewrite(CheckedResourceRewrite),
+    PopulationAuthorityRewrite(CheckedPopulationAuthorityRewrite),
     /// One iterated guarded-ownership step (`take`, `give`, `gather`,
     /// `scatter`). Like a lifetime end, it changes only the resource context
     /// and is re-derived from its input state when the trace is checked.
@@ -414,6 +416,191 @@ pub(crate) struct CheckedResourceRewrite {
     delta_proofs: Arc<Vec<CheckedResourceDeltaProof>>,
 }
 
+/// A checked establish or retirement of source population authority. This is
+/// a state transition, so it has its own event and rechecks the exact exchange
+/// rather than using definitional composite-resource rewriting.
+#[derive(Clone)]
+pub(crate) struct CheckedPopulationAuthorityRewrite {
+    before_state: CState,
+    after_state: CState,
+    before_facts: ProofFacts,
+    after_facts: ProofFacts,
+    selected: CResourceFact,
+    establish: bool,
+    witness: CheckedPopulationAuthorityExchange,
+}
+
+fn checks_population_authority_exchange(
+    before: &CState,
+    after: &CState,
+    selected: &CResourceFact,
+    establish: bool,
+    witness: &CheckedPopulationAuthorityExchange,
+    assumptions: &PureFactContext,
+) -> Result<(), String> {
+    let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = selected else {
+        return Err("population authority rewrite requires an owned authority".into());
+    };
+    if quantity.as_const() != Some(1) {
+        return Err("population authority rewrite requires unit ownership".into());
+    }
+    let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+    else {
+        return Err("population authority rewrite requires one pointer anchor".into());
+    };
+    let anchor = pointer.pointer();
+    if anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
+        || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
+            && before.memory.live_heap_block_size(anchor).is_some()
+            || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block))
+    {
+        return Err("population authority rewrite requires live base storage".into());
+    }
+    let (Some(before_events), Some(after_events)) = (
+        before.population_effects.creation.as_ref(),
+        after.population_effects.creation.as_ref(),
+    ) else {
+        return Err("population authority rewrite requires creation history".into());
+    };
+    if !witness.matches(before_events, after_events, description, establish) {
+        return Err("population authority rewrite has mismatched creation evidence".into());
+    }
+    let expected_resources = if establish {
+        before
+            .resources
+            .clone()
+            .try_compose_with_fact(selected.clone(), assumptions)
+            .map_err(|_| "population authority establishment has invalid ownership")?
+    } else {
+        before
+            .resources
+            .clone()
+            .without_fact_incrementally(selected, assumptions)
+            .ok_or("population authority retirement lacks exact ownership")?
+    };
+    if !after
+        .resources
+        .same_exchange_from(&expected_resources, &before.resources)
+        || !Arc::ptr_eq(
+            &after.resources.loan_dependencies,
+            &expected_resources.loan_dependencies,
+        )
+    {
+        return Err("population authority rewrite has the wrong resource exchange".into());
+    }
+    let same_bindings = match (&before.resource_bindings, &after.resource_bindings) {
+        (None, None) => true,
+        (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+        _ => false,
+    };
+    if !Arc::ptr_eq(
+        &before.instance_field_scope.storage,
+        &after.instance_field_scope.storage,
+    ) || !Arc::ptr_eq(
+        &before.instance_field_scope.loan_dependencies,
+        &after.instance_field_scope.loan_dependencies,
+    ) || !same_bindings
+        || !Arc::ptr_eq(&before.locals.bindings, &after.locals.bindings)
+        || !Arc::ptr_eq(&before.locals.slots, &after.locals.slots)
+        || before.memory.diagnostic_identity() != after.memory.diagnostic_identity()
+        || before.loan_ledger != after.loan_ledger
+        || before.loan_participant != after.loan_participant
+        || before.loan_view_bindings != after.loan_view_bindings
+        || before.thread_ledger != after.thread_ledger
+        || before.mutex_ledger != after.mutex_ledger
+        || before.preserves_mutex_protocols != after.preserves_mutex_protocols
+        || before.mutex_input_reservations != after.mutex_input_reservations
+        || before.opaque_mutex_acquisitions != after.opaque_mutex_acquisitions
+        || before.named_mutex_authorities != after.named_mutex_authorities
+        || before.pending_thread_create != after.pending_thread_create
+        || before.population_access != after.population_access
+        || !before
+            .counted_populations
+            .shares_storage_with(&after.counted_populations)
+        || !before
+            .population_effects
+            .committed_consumptions
+            .shares_storage_with(&after.population_effects.committed_consumptions)
+        || !before
+            .population_effects
+            .pending_counts
+            .shares_storage_with(&after.population_effects.pending_counts)
+        || before.next_local_frame != after.next_local_frame
+        || before.next_local_lifetime != after.next_local_lifetime
+        || before.enclosing_frame_holds_locals != after.enclosing_frame_holds_locals
+    {
+        return Err("population authority rewrite changed unrelated execution state".into());
+    }
+    Ok(())
+}
+
+impl CheckedPopulationAuthorityRewrite {
+    pub(crate) fn before_state(&self) -> &CState {
+        &self.before_state
+    }
+
+    fn check(
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        establish: bool,
+        witness: &CheckedPopulationAuthorityExchange,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+    ) -> Result<Self, String> {
+        checks_population_authority_exchange(
+            before_state,
+            after_state,
+            selected,
+            establish,
+            witness,
+            before_facts.assumptions(),
+        )?;
+        if !after_facts
+            .introduced_since(before_facts)
+            .is_some_and(|introduced| introduced.is_empty())
+        {
+            return Err("population authority rewrite introduced unchecked pure facts".into());
+        }
+        Ok(Self {
+            before_state: before_state.clone(),
+            after_state: after_state.clone(),
+            before_facts: before_facts.clone(),
+            after_facts: after_facts.clone(),
+            selected: selected.clone(),
+            establish,
+            witness: witness.clone(),
+        })
+    }
+
+    fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
+        if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
+            || !state.shares_non_memory_storage_with(&self.before_state)
+            || !state
+                .population_effects
+                .committed_consumptions
+                .shares_storage_with(&self.before_state.population_effects.committed_consumptions)
+            || facts.introduced_since(&self.before_facts).is_none()
+            || !self
+                .after_facts
+                .introduced_since(&self.before_facts)
+                .is_some_and(|introduced| introduced.is_empty())
+            || checks_population_authority_exchange(
+                state,
+                &self.after_state,
+                &self.selected,
+                self.establish,
+                &self.witness,
+                self.before_facts.assumptions(),
+            )
+            .is_err()
+        {
+            return None;
+        }
+        Some(facts.clone())
+    }
+}
+
 /// Whether `after` differs from `before` only by cells that name their own
 /// load: each added cell holds the canonical form of the load of that very
 /// pointer at `before`. Adding one is definitional — it records what the
@@ -624,6 +811,9 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
+        if before_state.uses_population_authority_semantics() {
+            return Err("generic resource rewriting is unavailable in authority mode".into());
+        }
         if !before_state.loan_bindings_are_consistent()
             || !after_state.loan_bindings_are_consistent()
         {
@@ -1125,7 +1315,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         facts: &ProofFacts,
         call_events: &CheckedCallEvents,
     ) -> Option<ProofFacts> {
-        if state != &self.before_state
+        if state.uses_population_authority_semantics()
+            || state != &self.before_state
             || facts.introduced_since(&self.before_facts).is_none()
             || self
                 .delta_proofs
@@ -1448,7 +1639,10 @@ impl CheckedIteratedStep {
     }
 
     fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<CState> {
-        if state != &self.before_state || facts.introduced_since(&self.before_facts).is_none() {
+        if state != &self.before_state
+            || state.uses_population_authority_semantics()
+            || facts.introduced_since(&self.before_facts).is_none()
+        {
             return None;
         }
         let after = crate::kernel::apply_iterated_step(
@@ -1490,6 +1684,9 @@ impl CheckedResourceObservation {
         derivations: &PersistentOrderedSet<Theorem>,
         call_events: &CheckedCallEvents,
     ) -> Result<Self, &'static str> {
+        if before_state.uses_population_authority_semantics() {
+            return Err("resource observation is unavailable in authority mode");
+        }
         if !before_state.loan_bindings_are_consistent()
             || !after_state.loan_bindings_are_consistent()
         {
@@ -1676,7 +1873,8 @@ impl CheckedResourceObservation {
         facts: &ProofFacts,
         call_events: &CheckedCallEvents,
     ) -> Option<ProofFacts> {
-        if state != &self.before_state
+        if state.uses_population_authority_semantics()
+            || state != &self.before_state
             || facts.introduced_since(&self.before_facts).is_none()
             || self.load_equalities.iter().any(|equality| {
                 !equality.checks_with_call_events(self.before_facts.assumptions(), call_events)
@@ -2056,6 +2254,7 @@ fn branch_split_starts_at_parent(
                 event,
                 CheckedExecutionEvent::ResourceObservation(_)
                     | CheckedExecutionEvent::ResourceRewrite(_)
+                    | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             )
         })
     {
@@ -3973,6 +4172,7 @@ fn collect_retained_call_events(
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ResourceRewrite(_)
+            | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::IteratedStep(_) => {}
         }
     }
@@ -4413,6 +4613,15 @@ fn check_evidence_events_with_call_events(
             *returned = rewrite.after_state.clone();
             continue;
         }
+        if let Some(CStatementOutcome::Return {
+            state: returned, ..
+        }) = &mut completed
+            && let CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) = event
+        {
+            current_facts = rewrite.advance_checked(returned, &current_facts)?;
+            *returned = rewrite.after_state.clone();
+            continue;
+        }
         if let CheckedExecutionEvent::AutomaticLifetimeEnd(end) = event {
             if let Some(outcome) = &mut completed {
                 let returned = match outcome {
@@ -4448,6 +4657,11 @@ fn check_evidence_events_with_call_events(
             }
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
                 current_facts = rewrite.advance_checked(&state, &current_facts, &call_events)?;
+                state = rewrite.after_state.clone();
+                continue;
+            }
+            CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => {
+                current_facts = rewrite.advance_checked(&state, &current_facts)?;
                 state = rewrite.after_state.clone();
                 continue;
             }
@@ -4535,7 +4749,9 @@ fn check_evidence_events_with_call_events(
             | CheckedExecutionEvent::ResourceObservation(_) => {
                 unreachable!("handled before source advance")
             }
-            CheckedExecutionEvent::ResourceRewrite(_) | CheckedExecutionEvent::IteratedStep(_) => {
+            CheckedExecutionEvent::ResourceRewrite(_)
+            | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
+            | CheckedExecutionEvent::IteratedStep(_) => {
                 unreachable!("handled before source advance")
             }
         }
@@ -4639,6 +4855,18 @@ fn trace_completion(
                             interface_execution_facts.push(fact.clone());
                         }
                     }
+                }
+            }
+            CheckedExecutionEvent::PopulationAuthorityRewrite(rewrite) => {
+                fallthrough = None;
+                if let Some((outcome, _)) = &mut completed {
+                    let CStatementOutcome::Return { state, .. } = outcome else {
+                        return Err("population authority rewrite requires a returned state");
+                    };
+                    rewrite
+                        .advance_checked(state, &rewrite.before_facts)
+                        .ok_or("population authority rewrite failed certificate check")?;
+                    *state = rewrite.after_state.clone();
                 }
             }
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
@@ -4785,6 +5013,7 @@ fn events_use_the_function_definitions(
             CheckedExecutionEvent::ResourceObservation(observation) => {
                 definitions.contains(observation.definition())
             }
+            CheckedExecutionEvent::PopulationAuthorityRewrite(_) => true,
             CheckedExecutionEvent::ResourceRewrite(rewrite) => {
                 definitions.contains(rewrite.definition())
                     && rewrite.consumption_contract.as_ref().is_none_or(|entry| {
@@ -4878,6 +5107,7 @@ fn validate_checked_event_shapes(events: &[CheckedExecutionEvent]) -> Result<(),
             CheckedExecutionEvent::AutomaticLifetimeEnd(_)
             | CheckedExecutionEvent::ResourceObservation(_)
             | CheckedExecutionEvent::ResourceRewrite(_)
+            | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
             | CheckedExecutionEvent::IteratedStep(_) => {
                 pending_call_views.clear();
                 continue;
@@ -6482,6 +6712,9 @@ impl ExecutionProofCore {
             return Err("an iterated ownership step was recorded after the trace completed".into());
         }
         let before_state = self.reached_state().clone();
+        if before_state.uses_population_authority_semantics() {
+            return Err("iterated ownership is unavailable in authority mode".into());
+        }
         let after_state =
             crate::kernel::apply_iterated_step(&before_state, &step, before_facts.assumptions())?;
         let checked = CheckedIteratedStep {
@@ -6633,6 +6866,40 @@ impl ExecutionProofCore {
             after_facts,
             None,
         )
+    }
+
+    /// Publish one authority establish or retirement only with the opaque
+    /// creation witness and its exact resource and state exchange.
+    pub(crate) fn record_population_authority_rewrite(
+        &mut self,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        establish: bool,
+        witness: &CheckedPopulationAuthorityExchange,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+    ) -> Result<(), String> {
+        if self.evidence_completed || self.frontier.is_at_function_entry() {
+            return Err("population authority rewrite requires an active function body".into());
+        }
+        let rewrite = CheckedPopulationAuthorityRewrite::check(
+            self.reached_state(),
+            before_facts,
+            selected,
+            establish,
+            witness,
+            after_state,
+            after_facts,
+        )?;
+        if self.evidence_state.is_some() {
+            self.evidence_state = Some(rewrite.after_state.clone());
+        }
+        for trace in &mut *self.execution_evidence {
+            trace.push(CheckedExecutionEvent::PopulationAuthorityRewrite(
+                rewrite.clone(),
+            ));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -7102,7 +7369,13 @@ impl ExecutionProofCore {
             // the final exit rule below still checks the folded ownership.
             let publication_end = events
                 .iter()
-                .rposition(|event| !matches!(event, CheckedExecutionEvent::ResourceRewrite(_)))
+                .rposition(|event| {
+                    !matches!(
+                        event,
+                        CheckedExecutionEvent::ResourceRewrite(_)
+                            | CheckedExecutionEvent::PopulationAuthorityRewrite(_)
+                    )
+                })
                 .map_or(0, |index| index + 1);
             let publication_completed = if publication_end < events.len() {
                 trace_completion(
@@ -10549,6 +10822,229 @@ mod automatic_lifetime_tests {
                 .enumerate()
                 .all(|(i, work)| *work <= samples[0] + i),
             "{samples:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod population_authority_rewrite_tests {
+    use super::*;
+    use crate::kernel::{CType, c_function};
+
+    fn source_state() -> (CState, CResourceFact) {
+        let mut state = CState::new()
+            .with_local("anchor", crate::kernel::int32(0))
+            .with_population_creation_tracking();
+        let pointer = state.locals.slot("anchor").unwrap().clone();
+        state.set_memory(CMemory::new().with_block(pointer.block.clone(), 4));
+        state.record_population_storage_creation(pointer.block.clone());
+        let description = crate::kernel::ResourceDescription::new(
+            "reference".into(),
+            vec![CValue::pointer(pointer).into()].into(),
+            crate::kernel::ResourceFieldSchema::new(vec![]).unwrap(),
+        );
+        (
+            state,
+            CResourceFact::own(CResource::PopulationAuthority(description)),
+        )
+    }
+
+    #[test]
+    fn checked_authority_events_reject_forged_deltas() {
+        let (before, selected) = source_state();
+        let facts = ProofFacts::default();
+        let (established, witness) = before
+            .checked_population_authority_exchange(&selected, true, facts.assumptions())
+            .unwrap();
+        let event = CheckedPopulationAuthorityRewrite::check(
+            &before,
+            &facts,
+            &selected,
+            true,
+            &witness,
+            &established,
+            &facts,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&before, &facts).is_some());
+        let forged_memory = established
+            .clone()
+            .with_memory(CMemory::new().with_block("local:forged", 4));
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &before,
+                &facts,
+                &selected,
+                true,
+                &witness,
+                &forged_memory,
+                &facts,
+            )
+            .is_err()
+        );
+        let mut forged_event = event.clone();
+        forged_event.after_state = forged_memory;
+        assert!(forged_event.advance_checked(&before, &facts).is_none());
+        let missing_storage_before = before.clone().with_memory(CMemory::new());
+        let missing_storage_after = established.clone().with_memory(CMemory::new());
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &missing_storage_before,
+                &facts,
+                &selected,
+                true,
+                &witness,
+                &missing_storage_after,
+                &facts,
+            )
+            .is_err()
+        );
+        let forged_resources = established
+            .clone()
+            .with_resource_context(ResourceContext::new());
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &before,
+                &facts,
+                &selected,
+                true,
+                &witness,
+                &forged_resources,
+                &facts,
+            )
+            .is_err()
+        );
+        let forged_legacy_count = established.clone().with_counted_population(
+            "reference",
+            vec![CValue::pointer(before.locals.slot("anchor").unwrap().clone()).into()].into(),
+            Bitvector32Term::Constant(0),
+        );
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &before,
+                &facts,
+                &selected,
+                true,
+                &witness,
+                &forged_legacy_count,
+                &facts,
+            )
+            .is_err()
+        );
+        let forged_facts = facts.clone().with_fact(Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(true),
+            true,
+        ));
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &before,
+                &facts,
+                &selected,
+                true,
+                &witness,
+                &established,
+                &forged_facts,
+            )
+            .is_err()
+        );
+        let (retired, retire_witness) = established
+            .checked_population_authority_exchange(&selected, false, facts.assumptions())
+            .unwrap();
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &established,
+                &facts,
+                &selected,
+                false,
+                &retire_witness,
+                &retired,
+                &facts,
+            )
+            .is_ok()
+        );
+        assert!(
+            CheckedPopulationAuthorityRewrite::check(
+                &established,
+                &facts,
+                &selected,
+                false,
+                &witness,
+                &retired,
+                &facts,
+            )
+            .is_err()
+        );
+        assert!(
+            before
+                .checked_population_authority_exchange(&selected, true, facts.assumptions())
+                .is_ok()
+        );
+        assert!(
+            retired
+                .checked_population_authority_exchange(&selected, true, facts.assumptions())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn generic_resource_events_cannot_check_under_authority_history() {
+        let (before, _) = source_state();
+        let selected = CResourceFact::own_composite("reference".into(), Vec::new());
+        let facts = ProofFacts::default();
+        let function =
+            c_function(
+                CType::Void,
+                "value",
+                vec![],
+                CStatement::Return(CExpression::Value(CValue::Void)),
+            )
+            .with_composite_resource_definitions(vec![
+                CCompositeResourceDefinition::new("reference", vec![], None, false, vec![], vec![]),
+            ]);
+        assert!(
+            CheckedResourceRewrite::check(
+                &function,
+                &before,
+                &facts,
+                &selected,
+                &before,
+                &facts,
+                &CheckedCallEvents::default(),
+            )
+            .is_err()
+        );
+        assert!(
+            CheckedResourceObservation::check(
+                &function,
+                &before,
+                &facts,
+                &selected,
+                &before,
+                &facts,
+                &PersistentOrderedSet::default(),
+                &CheckedCallEvents::default(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn authority_history_refuses_legacy_count_evaluation() {
+        let (state, _) = source_state();
+        let count = crate::kernel::SpecExpression::CountedResourceCount {
+            name: "reference".into(),
+            arguments: vec![None],
+        };
+        assert_eq!(
+            crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                &state,
+                &count,
+                &PureFactContext::new(),
+                &std::collections::BTreeMap::new(),
+                &mut crate::kernel::ExecutionBudget::beside_live_state(),
+            )
+            .err(),
+            Some(crate::kernel::ExecutionLimit::ResourceCountUnavailableInAuthorityMode),
         );
     }
 }

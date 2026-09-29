@@ -4088,6 +4088,11 @@ impl Parser {
         else {
             return Err(self.error("named ownership requires a field-bearing declared resource"));
         };
+        if resource_name == "authority" {
+            return Err(self.error(
+                "named authority binders are unsupported; use an ordinary unnamed authority clause",
+            ));
+        }
         if matches!(
             resource_name.as_str(),
             "mutex_live" | "mutex_guard" | "mutex_use"
@@ -5880,6 +5885,7 @@ impl Parser {
                     }
                 }
                 let mut tactic = if quantified
+                    || self.peek_ident() == Some("authority")
                     || self
                         .peek_ident()
                         .is_some_and(|name| self.current_resource_targets.contains_key(name))
@@ -6303,6 +6309,26 @@ impl Parser {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         let mut resource_type_arguments = Vec::new();
+        if name == "authority" {
+            if self.peek() == Some(&Token::RParen) {
+                return Err(self.error("authority expects one declared resource type"));
+            }
+            resource_type_arguments.push(self.parse_declared_resource_call()?);
+            if self.peek() != Some(&Token::RParen) {
+                return Err(self.error("authority expects exactly one declared resource type"));
+            }
+            self.expect(Token::RParen)?;
+            return Ok(ResourceClause::Declared {
+                type_schema: None,
+                resource_type_arguments,
+                resource_arguments: Vec::new(),
+                access,
+                kind: ResourceKind::Token,
+                name,
+                arguments,
+                parameter_types: Vec::new(),
+            });
+        }
         if self.peek() != Some(&Token::RParen) {
             loop {
                 if name == "mutex_use" && arguments.len() == 1 {
@@ -10367,6 +10393,67 @@ fn requirement_object_alignment_facts(
         }
         Requirement::Resource(clause) => out.extend(object_alignment_fact(clause, struct_layouts)),
         Requirement::LoadableSegment { .. } | Requirement::Proposition(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod authority_resource_parser_tests {
+    use super::*;
+
+    #[test]
+    fn parses_exact_unary_authority_resource_type() {
+        let mut parser = Parser::new("authority(reference(p))").unwrap();
+        let clause = parser.parse_declared_resource_call().unwrap();
+        let ResourceClause::Declared {
+            name,
+            arguments,
+            resource_type_arguments,
+            ..
+        } = clause
+        else {
+            panic!("authority is a declared built-in resource");
+        };
+        assert_eq!(name, "authority");
+        assert!(arguments.is_empty());
+        let [
+            ResourceClause::Declared {
+                name: protected_name,
+                arguments: protected_arguments,
+                ..
+            },
+        ] = resource_type_arguments.as_slice()
+        else {
+            panic!("authority has one protected resource type");
+        };
+        assert_eq!(protected_name, "reference");
+        assert_eq!(protected_arguments.len(), 1);
+        assert!(
+            Parser::new("authority()")
+                .unwrap()
+                .parse_declared_resource_call()
+                .is_err()
+        );
+        assert!(
+            Parser::new("authority(reference(p), reference(q))")
+                .unwrap()
+                .parse_declared_resource_call()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn unfold_authority_retains_protected_resource_type() {
+        let mut parser = Parser::new("unfold(authority(reference(p)));").unwrap();
+        let ProofTactic::UnfoldResource(ResourceClause::Declared {
+            name,
+            resource_type_arguments,
+            ..
+        }) = parser.parse_proof_tactic_inner().unwrap()
+        else {
+            panic!("authority unfold must be a resource tactic");
+        };
+        assert_eq!(name, "authority");
+        assert_eq!(resource_type_arguments.len(), 1);
     }
 }
 

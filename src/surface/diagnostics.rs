@@ -1266,6 +1266,17 @@ pub(super) fn describe_resource_fact(
             if resource.is_own() { "owns" } else { "views" },
             format_mutex_use(identity, parameters, arguments)
         ),
+        CResourceFact::Own(CResource::PopulationAuthority(description), _)
+        | CResourceFact::View(CResource::PopulationAuthority(description)) => format!(
+            "{} authority({})",
+            if resource.is_own() { "owns" } else { "views" },
+            format_declared_resource(
+                description.family(),
+                description.arguments(),
+                parameters,
+                arguments,
+            )
+        ),
         CResourceFact::Own(CResource::Instance(instance), _)
         | CResourceFact::View(CResource::Instance(instance)) => format!(
             "{} instance {}#{}",
@@ -1414,6 +1425,15 @@ fn describe_c_resource(
             describe_mutex_pointer(identity.mutex(), parameters, arguments)
         ),
         CResource::MutexUse(identity) => format_mutex_use(identity, parameters, arguments),
+        CResource::PopulationAuthority(description) => format!(
+            "authority({})",
+            format_declared_resource(
+                description.family(),
+                description.arguments(),
+                parameters,
+                arguments,
+            )
+        ),
         CResource::Iterated(iterated) => describe_iterated_memory(iterated, parameters, arguments),
     }
 }

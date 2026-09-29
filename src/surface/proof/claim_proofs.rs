@@ -357,7 +357,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         pure_facts,
         entry_fact_origins,
         surface_propositions,
-    } = initial_claim_context_with_caller_owner(
+    } = initial_claim_context_with_mode(
         function_block,
         parsed_function,
         resource_environment,
@@ -365,6 +365,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         click_function_environment,
         claim_label,
         Some(&caller_source_owner),
+        function_source_registry.resource_semantics_mode(),
     )?;
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
@@ -608,7 +609,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         pure_facts,
         entry_fact_origins,
         surface_propositions,
-    } = initial_claim_context_with_caller_owner(
+    } = initial_claim_context_with_mode(
         function_block,
         parsed_function,
         resource_environment,
@@ -616,6 +617,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         click_function_environment,
         &proof_label,
         Some(&caller_source_owner),
+        function_source_registry.resource_semantics_mode(),
     )?;
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),

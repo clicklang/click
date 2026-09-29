@@ -3,8 +3,12 @@
 This records the selected lifetime protocol for the authority migration.
 See `issues/authority-migration.md` for rollout order and the
 [consumer inventory](authority-migration-inventory.md) for existing clients.
-The new abstract kernel model is additive; current C proofs still use legacy
-counting. No new source operation is implemented by this checkpoint.
+The new abstract kernel model is additive; existing projects still use legacy
+counting. An authority-mode project can be selected with
+`{"resource_semantics":"authority"}` in `click.project.json`. Its initial
+source slice admits an empty population established and retired in the storage
+creator's execution proof. Member changes, `count(...)`, resource contracts,
+and C calls remain refused until their checked transfers exist.
 
 ## Establishment and uniqueness
 
@@ -24,20 +28,21 @@ members nor recovery of raw memory ownership permits duplicate establishment.
 Aliases must resolve to the same anchor lifetime and registration. Reuse of a
 C address after deallocation must resolve to a new lifetime.
 
-The checked C bridge must preserve this registration through calls, wrappers,
-frames, and thread transfers. Minting a fresh internal identifier whenever a
-pointer is encountered would violate this rule. The abstract kernel allocator
+The eventual C bridge must preserve this registration through calls, wrappers,
+frames, and thread transfers. The initial source slice rejects C calls.
+Minting a fresh internal identifier whenever a pointer is encountered would
+violate this rule. The abstract kernel allocator
 creates fresh abstract lifetimes only; it grants no C memory permission and is
 not a source-level authority constructor.
 
 Establishment must also precede any member creation for that population. The
 creation environment alone does not prove emptiness at an arbitrary later
 point: it might already have produced and transferred ordinary `reference(p)`
-instances. Before exposing source establishment, the bridge must retain a
-pristine-population check across these transitions and escapes. Local absence
-of members is insufficient. The abstract model currently only admits member
-creation under existing authority; ordinary-resource enrollment remains a
-separate integration obligation.
+instances. The initial source slice refuses all member production and
+consumption. Its creation ledger retains per-family member history, so a
+later checked transition cannot justify establishment from local absence
+after members escape. The abstract model admits member creation under existing
+authority; source enrollment remains a separate integration obligation.
 
 ## Membership and cleanup
 
@@ -52,8 +57,8 @@ but retains the fact that this scope has already been established until the
 anchor lifetime ends. Re-establishment during the same lifetime is forbidden,
 including in the original creating environment. Outstanding members prevent
 retirement. A new actual allocation, even at the same address, has a new
-lifetime and may establish its own authority. The anchor cannot be freed while any authority remains
-registered. Scope exit cannot silently discard authority, members, or anchor
+lifetime and may establish its own authority. The anchor cannot be freed while
+any authority remains registered. Scope exit cannot silently discard authority, members, or anchor
 ownership. Moving these obligations to another owner is allowed.
 
 A closed control resource packages authority along with its counter ownership
@@ -70,9 +75,9 @@ contract; it does not establish the lifetime or registration evidence above.
 The proposed reuse of `construct` has not been adopted. The selected source
 operations are `fold(authority(reference(p)))` for empty establishment and
 `unfold(authority(reference(p)))` for zero-count retirement. These reuse the
-existing tactic syntax; their new checked resource behavior is not yet wired
-to source proofs. Ordinary wrapper folding requires already-owned authority
-and cannot bypass the establishment checks.
+existing tactic syntax and record a dedicated checked certificate event. In
+the initial source slice, ordinary wrapper folding is refused until its
+member and authority exchange is checked.
 
 The additive kernel model exercises ownership, registration, membership,
 transfer, retirement, and cleanup with concrete totals. It does not yet admit
@@ -80,9 +85,8 @@ C bindings, symbolic totals, wildcard scopes, views, or loans. Those must be
 implemented explicitly, including nonoverlap checks for population scopes;
 independent authorities must never count overlapping sets of members.
 
-Legacy proofs remain unchanged until the C bridge and source interface have
-positive and negative fixtures. The temporary migration boundary must cover a
-complete verification unit and be included in proof/cache identity. New proofs
+Legacy proofs remain unchanged. The temporary migration boundary covers a
+complete verification unit and is included in proof/cache identity. New proofs
 must not fall back to legacy counting. Existing examples migrate in the order
 recorded in the issue before legacy semantics and `guarded_by` are removed.
 
@@ -145,11 +149,21 @@ free, scope exit, and contract retirement must reject live authorities before
 ending the anchor lifetime.
 
 The abstract kernel checks the creation-environment and once-per-lifetime
-restrictions. A separate C event ledger now records successful heap creation,
-uses distinct caller/callee environments, and clears provenance on direct free
-and checked contract retirement. The first query accepts an exact heap base;
-subobject/interior anchors still need checked canonicalization. Its opt-in is internal to kernel tests; it
-neither creates authority nor changes existing source verification. Stack
-creation, authority transfer through contracts, the pristine-population check,
-and source `fold`/`unfold` behavior remain to be implemented. Tests of C event
-provenance do not yet prove those authority integration boundaries.
+restrictions. A separate C event ledger records successful heap creation and
+actual automatic declarations, uses distinct caller/callee environments, and
+clears provenance on direct free, scope exit, and checked contract retirement.
+It retains per-storage family history: once a member existed, transferring it
+away cannot make later establishment appear empty. Pending heap outcomes carry
+that history to the resolved allocation. The first query accepts an exact heap
+or automatic-object base; subobject/interior anchors still need checked
+canonicalization. Its opt-in is enabled only by an authority-mode source proof
+or kernel test. Resource transitions must be connected to this history before
+source member operations can use it.
+
+The source parser recognizes `authority(R(p))` for an exact unary, field-free,
+pointer-anchored declared family, and lowers it to a distinct exclusive kernel
+resource. Ordinary resource evaluation refuses to mint it. The explicit
+project mode and proof artifacts carry the semantics choice. Checked source
+`fold`/`unfold` cover the empty population. Member enrollment, authority
+transfer through contracts, and current-count conservation still need
+integration before authority mode can verify a counted program.
