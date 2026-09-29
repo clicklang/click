@@ -342,6 +342,27 @@ pub struct Pointer {
     pub offset: PointerOffsetTerm,
 }
 
+/// An assumption-free name for one pointer-valued, eight-byte load.
+/// It is a different sort from scalar load variables even when both reads
+/// use the same snapshot and address.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct PointerLoadId(pub(crate) u64);
+
+/// Semantic decoder for an opaque pointer value read from memory. The
+/// displacement belongs to later pointer arithmetic, not to the identity of
+/// the load or to the storage address that held the value.
+#[derive(Clone, Debug)]
+#[allow(
+    dead_code,
+    reason = "the typed load producer migrates after this identity foundation"
+)]
+pub(crate) struct LoadedPointerView {
+    pub(crate) identity: PointerLoadId,
+    pub(crate) defining_memory: SharedCMemory,
+    pub(crate) defining_address: Pointer,
+    pub(crate) displacement: PointerOffsetTerm,
+}
+
 /// A C pointer value carries both its raw address and the type through which
 /// the address is being viewed.  `Pointer` remains the untyped address
 /// identity used by memory, aliasing, and provenance; pointer casts retag the
@@ -445,6 +466,9 @@ pub enum PointerBlock {
     /// have been derived from the same caller object.
     ExternalObject(Variable),
     Symbolic(Variable),
+    /// The value read by a pointer-typed load, independent of the storage
+    /// block that held it and of the pointee type used after the read.
+    LoadedPointer(PointerLoadId),
     /// A trusted allocation identity. Unlike a symbolic/opaque block, this is
     /// fresh and distinct from every other block identity.
     Heap(u64),
@@ -490,6 +514,10 @@ impl std::hash::Hash for PointerBlock {
                 4u64.hash(state);
                 variable.hash(state);
             }
+            Self::LoadedPointer(identity) => {
+                9u64.hash(state);
+                identity.hash(state);
+            }
             Self::Heap(identity) => {
                 5u64.hash(state);
                 identity.hash(state);
@@ -533,6 +561,7 @@ impl PointerBlock {
             | Self::ExternalArgument
             | Self::ExternalObject(_)
             | Self::Symbolic(_)
+            | Self::LoadedPointer(_)
             | Self::Heap(_)
             | Self::Temporary(_) => None,
         }
@@ -563,6 +592,7 @@ impl PointerBlock {
             matches!(
                 value,
                 Self::Symbolic(_)
+                    | Self::LoadedPointer(_)
                     | Self::FunctionSymbolic(_)
                     | Self::ExternalArgument
                     | Self::ExternalObject(_)
@@ -588,7 +618,9 @@ impl PointerBlock {
         // postcondition such as `result == destination` does exactly that).
         // It is therefore never proven distinct by structure alone; only an
         // explicit disequality in the assumptions can separate it.
-        if matches!(self, Self::Symbolic(_)) || matches!(other, Self::Symbolic(_)) {
+        if matches!(self, Self::Symbolic(_) | Self::LoadedPointer(_))
+            || matches!(other, Self::Symbolic(_) | Self::LoadedPointer(_))
+        {
             return false;
         }
         // A function's own scalar locals (`local:` blocks) are storage the
@@ -677,6 +709,7 @@ impl std::fmt::Display for PointerBlock {
             Self::ExternalArgument => formatter.write_str("arg-memory"),
             Self::ExternalObject(variable) => write!(formatter, "arg-object:{}", variable.0),
             Self::Symbolic(variable) => write!(formatter, "symbolic-pointer:{}", variable.0),
+            Self::LoadedPointer(identity) => write!(formatter, "loaded-pointer:{}", identity.0),
             Self::Heap(identity) => write!(formatter, "heap-allocation:{identity}"),
             Self::Temporary(identity) => write!(formatter, "temporary:{identity}"),
         }

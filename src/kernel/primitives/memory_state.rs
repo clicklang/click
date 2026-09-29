@@ -58,6 +58,9 @@ fn write_havoc_block(identity: &mut String, block: PointerBlock) {
         PointerBlock::Symbolic(variable) => {
             let _ = write!(identity, "bs{};", variable.0);
         }
+        PointerBlock::LoadedPointer(identity_id) => {
+            let _ = write!(identity, "blp{};", identity_id.0);
+        }
         PointerBlock::Heap(value) => {
             let _ = write!(identity, "bh{value};");
         }

@@ -219,7 +219,7 @@ impl AliasCandidates {
         };
         let intervals = match block {
             // A symbolic block may be constrained to any address.
-            PointerBlock::Symbolic(_) => vec![BlockInterval {
+            PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_) => vec![BlockInterval {
                 start: None,
                 end: Upper::Unbounded,
             }],

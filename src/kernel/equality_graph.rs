@@ -632,7 +632,11 @@ impl EqualityGraphState {
     /// Register the explicit roots and their load-address dependencies once,
     /// with an iterative traversal rather than a semantic nesting limit.
     fn register_blocks(&mut self, roots: impl IntoIterator<Item = PointerBlock>) {
-        let is_load = |block: &PointerBlock| matches!(block, PointerBlock::Symbolic(variable) if crate::kernel::is_load_variable(variable));
+        let is_load = |block: &PointerBlock| match block {
+            PointerBlock::LoadedPointer(_) => true,
+            PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
+            _ => false,
+        };
         let mut pending: Vec<_> = roots.into_iter().filter(is_load).collect();
         let mut equalities = Vec::new();
         while let Some(block) = pending.pop() {
@@ -640,19 +644,20 @@ impl EqualityGraphState {
             if self.loads.contains_key(&block) {
                 continue;
             }
-            let PointerBlock::Symbolic(variable) = &block else {
-                continue;
+            let definition = match &block {
+                PointerBlock::LoadedPointer(identity) => {
+                    crate::kernel::eval::registered_pointer_load(*identity)
+                }
+                PointerBlock::Symbolic(variable)
+                    if crate::kernel::is_load_variable(variable)
+                        && crate::kernel::registered_load_bytes_for_variable(variable)
+                            == Some(8) =>
+                {
+                    crate::kernel::registered_load_for_variable(variable)
+                }
+                _ => None,
             };
-            // Only pointer-width reads can denote a load-backed pointer.
-            // A smaller read may later be registered as a pointer-width read,
-            // so it must not be permanently negative-cached here.
-            if !crate::kernel::is_load_variable(variable)
-                || crate::kernel::registered_load_bytes_for_variable(variable) != Some(8)
-            {
-                continue;
-            }
-            let Some((memory, address)) = crate::kernel::registered_load_for_variable(variable)
-            else {
+            let Some((memory, address)) = definition else {
                 continue;
             };
             let Some(address_offset) = AffineOffset::of(&address.offset) else {
@@ -1263,6 +1268,90 @@ mod tests {
             assert!(classes.are_equal(spelling, &at(symbolic(1), 4)));
         }
         assert!(spellings.contains(&at(symbolic(3), 20)));
+    }
+
+    #[test]
+    fn explicit_pointer_load_identity_is_typed_and_congruent() {
+        let p = at(symbolic(51_100), 0);
+        let q = at(symbolic(51_101), 0);
+        let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(p.block.clone(), 8));
+        let later = crate::kernel::intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(p.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+        );
+        let from_p = Pointer::loaded_value(&memory, &p);
+        let from_p_again = Pointer::loaded_value(&memory, &p);
+        let from_q = Pointer::loaded_value(&memory, &q);
+        let from_later = Pointer::loaded_value(&later, &p);
+        assert_eq!(from_p, from_p_again);
+        assert_ne!(from_p, from_q);
+        assert_ne!(from_p, from_later);
+        let definition = from_p.as_loaded_value().unwrap();
+        assert_eq!(
+            definition.identity,
+            from_p_again.as_loaded_value().unwrap().identity
+        );
+        assert_eq!(definition.defining_address, p);
+        assert_eq!(definition.defining_memory.arena_id(), memory.arena_id());
+        let byte_view =
+            CPointerValue::new(from_p.clone(), CType::Int32Pointer).with_type(CType::UInt8Pointer);
+        assert_eq!(byte_view.pointer(), &from_p);
+        let displaced = from_p.offset_by_bytes(8);
+        assert_eq!(
+            displaced.as_loaded_value().unwrap().displacement,
+            PointerOffsetTerm::Constant(8)
+        );
+        assert!(from_p.has_symbolic_block());
+        let scalar_indexed_address = Pointer::loaded(
+            p.block.clone(),
+            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(p.clone())),
+            8,
+        );
+        assert!(scalar_indexed_address.as_loaded_value().is_none());
+        assert_ne!(scalar_indexed_address, from_p);
+
+        // A scalar read of the same cell may have a four-byte interpretation;
+        // it cannot determine whether the distinct pointer-load name enters
+        // the graph's eight-byte application index.
+        crate::kernel::load_variable_for_cell_with_origin(&memory, &p, 4, &memory);
+        let mut graph = EqualityGraph::default();
+        assert!(!graph.are_equal(&from_p, &from_q));
+        graph.add_equality(&p, &q);
+        assert!(graph.are_equal(&from_p, &from_q));
+        assert!(graph.are_equal(&displaced, &from_q.offset_by_bytes(8)));
+        assert!(!graph.are_equal(&from_p, &from_later));
+    }
+
+    #[test]
+    fn explicit_pointer_load_congruence_is_branch_local_and_order_independent() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let p = at(symbolic(51_201), 0);
+        let q = at(symbolic(51_202), 0);
+        let left = Pointer::loaded_value(&memory, &p);
+        let right = Pointer::loaded_value(&memory, &q);
+        let x = at(symbolic(51_203), 0);
+        let y = at(symbolic(51_204), 0);
+        for address_first in [false, true] {
+            let mut trunk = EqualityGraph::default();
+            trunk.add_equality(&left, &x);
+            trunk.add_equality(&right, &y);
+            let sibling = trunk.clone();
+            let mut branch = trunk.clone();
+            if address_first {
+                branch.add_equality(&p, &q);
+            }
+            assert!(!sibling.are_equal(&x, &y));
+            assert!(!trunk.are_equal(&x, &y));
+            if !address_first {
+                assert!(!branch.are_equal(&x, &y));
+                branch.add_equality(&p, &q);
+            }
+            assert!(branch.are_equal(&x, &y));
+            assert!(branch.are_equal(&left.offset_by_bytes(8), &right.offset_by_bytes(8)));
+            assert!(!trunk.are_equal(&left, &right));
+        }
     }
 
     #[test]

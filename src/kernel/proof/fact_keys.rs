@@ -945,6 +945,7 @@ enum AlphaPointerBlockKey {
     ExternalArgument,
     ExternalObject(AlphaVariableKey),
     Symbolic(AlphaVariableKey),
+    LoadedPointer(crate::kernel::PointerLoadId),
     /// A pointer loaded from memory is its own block, named by the load
     /// variable; like a load at an offset position, it is keyed by the
     /// snapshot and address it reads, so a binder inside that address
@@ -1760,6 +1761,14 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 &bindings.bitvector,
             )?)
+        }
+        PointerBlock::LoadedPointer(identity) => {
+            // Until alpha-key construction traverses this load's defining
+            // address, keep snapshot-aware matching on its checked fallback.
+            if bindings.snapshot_aware {
+                return None;
+            }
+            AlphaPointerBlockKey::LoadedPointer(*identity)
         }
         PointerBlock::Heap(identity) => AlphaPointerBlockKey::Heap(*identity),
         PointerBlock::Temporary(identity) => AlphaPointerBlockKey::Temporary(*identity),

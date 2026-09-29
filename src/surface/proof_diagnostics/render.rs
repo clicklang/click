@@ -1166,6 +1166,9 @@ impl Renderer<'_> {
                 self.push(&name);
             }
             crate::kernel::PointerBlock::ExternalArgument => self.push("external"),
+            crate::kernel::PointerBlock::LoadedPointer(identity) => {
+                self.fmt(format_args!("loaded-pointer#{}", identity.0))
+            }
             crate::kernel::PointerBlock::StringLiteral { identity, .. } => self.push(identity),
         };
         self.push("+");

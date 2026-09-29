@@ -39,6 +39,7 @@ fn pointer_block_payload(block: &PointerBlock) -> Option<usize> {
         | PointerBlock::ExternalArgument
         | PointerBlock::ExternalObject(_)
         | PointerBlock::Symbolic(_)
+        | PointerBlock::LoadedPointer(_)
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => 1,
     };

@@ -477,8 +477,10 @@ work:
 ### A. Settle the pointer/load contract and executable regressions (partial)
 
 The congruence, scaling, and rewrite-evidence regressions listed below have
-landed. The loaded-pointer representation and its mandatory consumer contract
-are still open. Work in an isolated branch/worktree.
+landed. An explicit typed pointer-load name, block, and decoder have also
+landed, with graph congruence, type-view, snapshot, and branch regressions.
+Ordinary typed C loads still use the legacy storage-relative form. The
+producer/consumer switch remains open. Work in an isolated branch/worktree.
 
 - Reproduce the explicit-class congruence failure above. Add nested-load,
   late-merge, insertion-order, and branch-isolation cases at the kernel API.
@@ -506,8 +508,12 @@ hidden in a consumer migration.
 
 This remains the main hard part. Persistent indexed congruence for the
 supported pointer/offset/int32 fragments has landed, along with selected
-value-consumer integrations. The representation change and indexed read/fold
-lookup must be coherent when integrated.
+value-consumer integrations. The explicit pointer-load block is understood by
+the graph but is not yet emitted by ordinary C loads. A direct producer flip
+exposed failures in provenance, materialized loads, contracts, and expansion;
+these need a shared migration rather than individual spelling retries. The
+representation change and indexed read/fold lookup must be coherent when
+integrated.
 
 - Maintain incremental congruence using indexed application signatures and
   affected-parent worklists. Updating an address class must merge existing

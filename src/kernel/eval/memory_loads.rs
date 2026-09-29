@@ -1320,6 +1320,11 @@ fn canonicalized_symbolic_load_value_with_identity(
 
 const LOAD_VARIABLE_BASE: u64 = 1 << 40;
 const LOAD_VARIABLE_RANGE: u64 = 1 << 40;
+#[allow(
+    dead_code,
+    reason = "the typed load producer migrates after this identity foundation"
+)]
+const POINTER_LOAD_ID_RANGE: u64 = 1 << 40;
 
 /// The most load identities one verification session may mint. The registry
 /// is the only guard against two distinct loads sharing an id (the defining
@@ -1414,6 +1419,13 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
 }
 
 thread_local! {
+    /// Separate pointer-valued load names. The defining key is one canonical
+    /// snapshot and address at the fixed eight-byte pointer interpretation;
+    /// neither a scalar load variable nor its mutable maximum access width
+    /// decides membership in this registry.
+    static POINTER_LOAD_REGISTRY: std::cell::RefCell<
+        std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// Load variable -> (canonical memory, pointer, first-seen live origin,
     /// the origin epoch that origin was recorded in, access width in bytes).
     ///
@@ -1460,6 +1472,7 @@ pub(crate) fn clear_load_canonicalization_caches() {
 
 pub(crate) fn clear_load_variable_registry() {
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow_mut().clear());
+    POINTER_LOAD_REGISTRY.with(|registry| registry.borrow_mut().clear());
     // Access widths are scoped to the verification that observed them. A
     // `local:` address is spelled the same in the next function, so a width
     // left behind would answer for an unrelated cell there.
@@ -1497,6 +1510,51 @@ pub(crate) fn registered_load_for_variable(
             .get(variable)
             .map(|(memory, pointer, _, _, _)| (memory.clone(), pointer.clone()))
     })
+}
+
+/// Intern an eight-byte pointer load by its assumption-free defining
+/// snapshot and address. Hashing only chooses a candidate slot: a collision
+/// probes until the full key matches or an unused slot is found.
+#[allow(
+    dead_code,
+    reason = "the typed load producer migrates after this identity foundation"
+)]
+pub(crate) fn pointer_load_identity(memory: &SharedCMemory, address: &Pointer) -> PointerLoadId {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    memory.arena_id().hash(&mut hasher);
+    address.hash(&mut hasher);
+    let mut slot = hasher.finish() % POINTER_LOAD_ID_RANGE;
+    POINTER_LOAD_REGISTRY.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        loop {
+            let identity = PointerLoadId(slot);
+            match registry.get(&identity) {
+                Some((known_memory, known_address))
+                    if known_memory.arena_id() == memory.arena_id() && known_address == address =>
+                {
+                    return identity;
+                }
+                Some(_) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    slot = (slot + 1) % POINTER_LOAD_ID_RANGE;
+                }
+                None => {
+                    assert!(
+                        registry.len() < LOAD_VARIABLE_REGISTRY_CAPACITY,
+                        "pointer-load registry capacity exhausted"
+                    );
+                    registry.insert(identity, (memory.clone(), address.clone()));
+                    return identity;
+                }
+            }
+        }
+    })
+}
+
+/// Decode a pointer-load name without consulting scalar-load metadata.
+pub(crate) fn registered_pointer_load(identity: PointerLoadId) -> Option<(SharedCMemory, Pointer)> {
+    POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().get(&identity).cloned())
 }
 
 thread_local! {

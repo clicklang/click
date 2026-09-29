@@ -3191,6 +3191,9 @@ fn collect_pointer_capture_variables(
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
+        // The identity is opaque here, like a scalar load name. The equality
+        // graph separately indexes its defining address exactly once.
+        | PointerBlock::LoadedPointer(_)
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => {}
     }
@@ -4874,6 +4877,7 @@ pub(in crate::kernel) fn collect_pointer_bitvector_variables(
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
+        | PointerBlock::LoadedPointer(_)
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => {}
     }
@@ -5167,6 +5171,7 @@ fn block_variables(block: &PointerBlock, contents: &CBlock) -> BTreeSet<Variable
         | PointerBlock::StringLiteral { .. }
         | PointerBlock::Function(_)
         | PointerBlock::ExternalArgument
+        | PointerBlock::LoadedPointer(_)
         | PointerBlock::Heap(_)
         | PointerBlock::Temporary(_) => {}
     }
@@ -5369,6 +5374,7 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables_whole(
             | PointerBlock::StringLiteral { .. }
             | PointerBlock::Function(_)
             | PointerBlock::ExternalArgument
+            | PointerBlock::LoadedPointer(_)
             | PointerBlock::Heap(_)
             | PointerBlock::Temporary(_) => {}
         }

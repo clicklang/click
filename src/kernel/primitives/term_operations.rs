@@ -3035,12 +3035,48 @@ impl Pointer {
         }
     }
 
+    /// Name the pointer value read by an eight-byte load. Its identity is
+    /// independent of the containing storage block and of the pointee type.
+    /// The caller supplies the assumption-free defining snapshot and address.
+    #[allow(
+        dead_code,
+        reason = "the typed load producer migrates after this identity foundation"
+    )]
+    pub(crate) fn loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
+        Self {
+            block: PointerBlock::LoadedPointer(crate::kernel::eval::pointer_load_identity(
+                memory, address,
+            )),
+            offset: PointerOffsetTerm::Constant(0),
+        }
+    }
+
+    /// Recover the load definition and any subsequent pointer displacement.
+    /// The defining address is never reconstructed from this value's block or
+    /// from its pointee width.
+    #[allow(
+        dead_code,
+        reason = "the typed load producer migrates after this identity foundation"
+    )]
+    pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
+        let PointerBlock::LoadedPointer(identity) = self.block else {
+            return None;
+        };
+        let (defining_memory, defining_address) =
+            crate::kernel::eval::registered_pointer_load(identity)?;
+        Some(LoadedPointerView {
+            identity,
+            defining_memory,
+            defining_address,
+            displacement: self.offset.clone(),
+        })
+    }
+
     /// The pointer value a load of a pointer-typed cell denotes, where
     /// `bits` names what the cell holds: a raw `MemoryLoad` or the load
-    /// variable minted for it. Every construction of a loaded pointer goes
-    /// through here, so the encoding is decided in one place: today, the
-    /// block of the storage it was read from, displaced by the loaded bits
-    /// times the pointee's width.
+    /// variable minted for it. Legacy constructions still use the block of
+    /// the storage it was read from, displaced by the loaded bits times the
+    /// pointee's width.
     pub(crate) fn loaded(block: PointerBlock, bits: Bitvector32Term, pointee_width: i64) -> Self {
         Self {
             block,
@@ -3087,7 +3123,9 @@ impl Pointer {
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
         matches!(
             self.block,
-            PointerBlock::ExternalArgument | PointerBlock::Symbolic(_)
+            PointerBlock::ExternalArgument
+                | PointerBlock::Symbolic(_)
+                | PointerBlock::LoadedPointer(_)
         )
     }
 

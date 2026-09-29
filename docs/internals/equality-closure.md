@@ -331,6 +331,16 @@ API. Consumers must not reconstruct a storage block plus scaled integer load.
 Pointee width determines subsequent C pointer arithmetic, not the identity of
 the pointer value just read.
 
+The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
+and a constructor/decoder pair for `(defining snapshot, address, displacement)`.
+The equality graph indexes this explicit pointer application without consulting
+the scalar load registry's mutable access width. Ordinary C pointer-load
+producers still create the legacy storage-relative form, so this is an identity
+foundation, not yet the representation switch. The next migration must move
+the producers and their materialization, substitution, provenance, and render
+consumers together; merely swapping the typed-load constructor breaks existing
+verification and expansion fixtures.
+
 The existing weighted pointer classes are useful groundwork:
 `base(member) = base(representative) + delta`. Exact affine normalization can
 relate displaced spellings such as `p + 8` and `(p + 4) + 4`. Preserve signedness,
