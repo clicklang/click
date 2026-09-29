@@ -4251,12 +4251,23 @@ mod tests {
             });
         assert!(address_first.pointer_equality_in_graph(&x, &y));
         assert!(!empty.pointer_equality_in_graph(&x, &y));
-        let withdrawn = branch.without_exact_fact(x_facts[0].proposition());
-        assert!(!withdrawn.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
-        assert!(!owner.permits_memory_read(&y, 4, &withdrawn));
-        let restricted = address_first
-            .restricted_to_facts(&[(ConditionTerm::pointer_equal(a.clone(), b), true)], &[]);
-        assert!(!restricted.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        // Fork before filing the x read's defining fact. This sibling has
+        // the y read and the late address equality, but never received the
+        // bridge that would identify x with the loaded pointer.
+        let without_x = x_facts
+            .iter()
+            .skip(1)
+            .chain(&y_facts)
+            .fold(empty.clone(), |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            })
+            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        assert!(!without_x.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!owner.permits_memory_read(&y, 4, &without_x));
+        let address_only = empty
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b), true);
+        assert!(!address_only.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
         let later = intern_c_memory(
             memory
                 .clone()

@@ -90,6 +90,7 @@ pub(crate) trait PropositionSearch {
         &self,
         proposition: &Proposition,
         for_simp: bool,
+        exclude_exact_goal: bool,
     ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)>;
 
     fn derive_proposition_using(
@@ -341,20 +342,31 @@ impl PropositionSearch for PureFactContext {
             .map(|derivation| *derivation)
     }
 
-    /// Searches for a simplifier derivation without using the goal's own
-    /// exact ambient fact as a premise. This is a read-only weakening used
-    /// when an enclosing checked `have` needs independently checkable
-    /// evidence rather than the circular `assumption()` candidate.
-    ///
-    /// The returned derivation still checks against the original stronger
-    /// context. Removing one exact entry touches only persistent indexes
-    /// keyed by that proposition; it never rebuilds or scans the fact set.
+    /// Selects an independent derivation without taking the goal's own exact
+    /// ambient fact as a premise. Keep the ambient graph intact: dropping a
+    /// fact from it would rebuild its equality closure just to avoid the
+    /// circular `assumption()` candidate.
     fn derive_simp_proposition_without_exact_goal(
         &self,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        self.without_exact_fact(proposition)
-            .derive_simp_proposition(proposition)
+        if let Some(derivation) = self.derive_simp_proposition(proposition)
+            && !derivation.context_premises().contains(proposition)
+        {
+            return Some(derivation);
+        }
+        self.atomic_derivation_premises(proposition, true, true)
+            .map(|(premises, premises_id, evidence)| {
+                proposition_derivation(
+                    proposition,
+                    PropositionDerivationRule::ContextualAtomic {
+                        premises: RetainedPremises::from_context(&premises),
+                        premises_id,
+                        for_simp: true,
+                        evidence,
+                    },
+                )
+            })
     }
 
     /// Check one atomic theory consequence against this exact premise set.
@@ -384,8 +396,8 @@ impl PropositionSearch for PureFactContext {
         if simp_reasoning_interrupted() {
             return None;
         }
-        self.atomic_derivation_premises(proposition, for_simp).map(
-            |(premises, premises_id, evidence)| {
+        self.atomic_derivation_premises(proposition, for_simp, false)
+            .map(|(premises, premises_id, evidence)| {
                 proposition_derivation(
                     proposition,
                     PropositionDerivationRule::ContextualAtomic {
@@ -395,8 +407,7 @@ impl PropositionSearch for PureFactContext {
                         evidence,
                     },
                 )
-            },
-        )
+            })
     }
 
     /// Select the range fact that justified a memory-access consequence.
@@ -409,8 +420,9 @@ impl PropositionSearch for PureFactContext {
         &self,
         proposition: &Proposition,
         for_simp: bool,
+        exclude_exact_goal: bool,
     ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)> {
-        if self.proves_exact(proposition) {
+        if !exclude_exact_goal && self.proves_exact(proposition) {
             let exact = PureFactContext::new().assume_proposition(proposition.clone());
             let (evidence, premises_id) =
                 exact.proves_atomic_for_derivation_with_id(proposition, for_simp);
@@ -437,7 +449,7 @@ impl PropositionSearch for PureFactContext {
                 return evidence.map(|evidence| (candidate, premises_id, evidence));
             }
         }
-        if atomic_premise_minimization_disabled() {
+        if !exclude_exact_goal && atomic_premise_minimization_disabled() {
             let (evidence, premises_id) =
                 self.proves_atomic_for_derivation_with_id(proposition, for_simp);
             return evidence.map(|evidence| (self.clone(), premises_id, evidence));
@@ -465,8 +477,10 @@ impl PropositionSearch for PureFactContext {
                         Proposition::ConditionIs(goal, expected)
                             if goal == condition && *expected == value
                     );
-                    if exact_goal_fact
-                        || (!variables.is_empty() && !variables.is_disjoint(&connected_variables))
+                    if !exclude_exact_goal && exact_goal_fact
+                        || (!exact_goal_fact
+                            && !variables.is_empty()
+                            && !variables.is_disjoint(&connected_variables))
                     {
                         connected_variables.extend(variables);
                         selected.push((condition.clone(), value));
@@ -497,7 +511,7 @@ impl PropositionSearch for PureFactContext {
         };
         let candidates = self
             .proposition_facts()
-            .filter(|fact| candidate_family(fact))
+            .filter(|fact| candidate_family(fact) && (!exclude_exact_goal || *fact != proposition))
             .cloned()
             .collect::<Vec<_>>();
         if let Proposition::CMemoryLoadable {
@@ -506,6 +520,7 @@ impl PropositionSearch for PureFactContext {
             bytes,
         } = proposition
             && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
+            && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
         {
             let candidate = self.with_only_proposition_facts(&premises);
             let (evidence, premises_id) =
@@ -545,9 +560,13 @@ impl PropositionSearch for PureFactContext {
                 }
             }
         }
-        let (evidence, premises_id) =
-            self.proves_atomic_for_derivation_with_id(proposition, for_simp);
-        evidence.map(|evidence| (self.clone(), premises_id, evidence))
+        if exclude_exact_goal {
+            None
+        } else {
+            let (evidence, premises_id) =
+                self.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            evidence.map(|evidence| (self.clone(), premises_id, evidence))
+        }
     }
 
     #[inline(never)]
@@ -700,14 +719,15 @@ impl PropositionSearch for PureFactContext {
         proposition: &Proposition,
         for_simp: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.atomic_derivation_premises(proposition, for_simp).map(
-            |(premises, premises_id, evidence)| PropositionDerivationRule::ContextualAtomic {
-                premises: RetainedPremises::from_context(&premises),
-                premises_id,
-                for_simp,
-                evidence,
-            },
-        )
+        self.atomic_derivation_premises(proposition, for_simp, false)
+            .map(
+                |(premises, premises_id, evidence)| PropositionDerivationRule::ContextualAtomic {
+                    premises: RetainedPremises::from_context(&premises),
+                    premises_id,
+                    for_simp,
+                    evidence,
+                },
+            )
     }
 
     fn derive_by_algebraic_constructor_rules(
