@@ -194,8 +194,10 @@ an opaque population with no count or creator permission. Such a helper can
 open a transferred member's private memory body, use it, and close it before
 return. A helper can also consume one exact empty-bodied member while
 returning authority: its standalone proof checks the member death, and the
-call applies that decrement to the concrete ledger. Helper-side creation,
-nonempty-body consumption, other contract transitions, symbolic totals,
+call applies that decrement to the concrete ledger. A verified helper can
+likewise produce one exact empty-bodied member: its standalone proof checks
+the birth, and the call checks live concrete anchor storage before applying
+the increment. Nonempty-body helper transitions, other contract transitions, symbolic totals,
 recorded-state count, field-bearing or nested member bodies, and worker calls
 remain unsupported in authority mode. This is not yet a usable general counted-resource
 implementation. `construct(...)` has not been extended. The remainder of

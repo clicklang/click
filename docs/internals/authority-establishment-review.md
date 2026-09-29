@@ -17,11 +17,11 @@ their standalone proofs receive an opaque population with no known count or
 creator right. An imported member can be opened to use its private owned-memory
 body, then closed before return. The helper does not need a concrete caller
 allocation in its standalone proof; the caller established the member against
-live storage before transferring it. A verified helper may also consume one
-empty-bodied imported member while returning its authority. Its proof must
-perform the checked `unfold`, and the concrete call decrements the caller's
-population under transferred authority. Helper-side member creation,
-nonempty-body consumption, other contract transitions, worker calls,
+live storage before transferring it. A verified helper may create or consume
+one empty-bodied imported member while returning its authority. Its proof must
+perform the checked `fold` or `unfold`; the concrete call updates the caller's
+population under transferred authority. Creation also checks that the caller's
+anchor is still live. Nonempty-body helper transitions, other contract transitions, worker calls,
 recorded-state count, and field-bearing or nested member bodies remain refused.
 
 ## Establishment and uniqueness
@@ -124,13 +124,15 @@ this rule; ordinary function entry must not re-create global authority.
 
 The creator establishes empty authority before calling an initializer. The
 initializer receives that authority explicitly through its ordinary resource
-contract and uses it to create the first member. A helper that receives only
+contract and uses it to create the first member. The current narrow helper
+rule covers an empty-bodied member; this example also needs wrapper and
+nonempty-body support. A helper that receives only
 memory or `allocation(p, size)` cannot establish authority. The earlier
 allocation-custody proposal is superseded; authority need not retain the heap
 allocation resource, and this design does not restrict anchors to heap objects.
 
 For example, the intended initializer interface uses existing contract clauses
-(the authority resource itself is still being implemented):
+(its wrapper transfer and nonempty member body remain to be implemented):
 
 ```text
 void object_init(struct object* p) {
@@ -188,8 +190,10 @@ preserving membership, and its close restores the body. Current exact
 `count(R(p))` reads the ledger, never the legacy population state. A verified
 ordinary helper can borrow and return the same authority and member through
 the checked resource contract and creation ledger. Its standalone proof imports
-only that declared custody as an opaque population: it cannot observe a total,
-create or consume members, or retire authority. Other contract transitions,
+only that declared custody as an opaque population: it cannot observe a total
+or retire authority. An exact empty-bodied member may be born or spent under
+the imported authority, with the same update applied to the caller's concrete
+population at a verified call. Other contract transitions,
 worker calls, field-bearing or nested member bodies, and historical count
 observations still need integration before authority mode can verify a real
 counted-resource program.

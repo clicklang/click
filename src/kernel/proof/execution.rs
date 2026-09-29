@@ -665,14 +665,19 @@ fn checks_population_member_exchange(
         return Err("population member rewrite requires one pointer anchor".into());
     };
     let anchor = pointer.pointer();
-    let imported_empty_member_consumption = !produce
-        && definition.contains.is_empty()
+    let imported_empty_member_exchange = definition.contains.is_empty()
         && before
             .population_effects
             .creation
             .as_ref()
-            .is_some_and(|events| events.owns_imported_population_member(&description));
-    if !imported_empty_member_consumption
+            .is_some_and(|events| {
+                if produce {
+                    events.recognizes_imported_population(&description)
+                } else {
+                    events.owns_imported_population_member(&description)
+                }
+            });
+    if !imported_empty_member_exchange
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
                 && before.memory.live_heap_block_size(anchor).is_some()

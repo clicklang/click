@@ -4557,14 +4557,19 @@ impl CState {
             return Err("Requires an exact pointer-anchored resource R(p)".into());
         };
         let anchor = pointer.pointer();
-        let imported_empty_member_consumption = !produce
-            && definition.contains().is_empty()
+        let imported_empty_member_exchange = definition.contains().is_empty()
             && self
                 .population_effects
                 .creation
                 .as_ref()
-                .is_some_and(|events| events.owns_imported_population_member(&description));
-        if !imported_empty_member_consumption
+                .is_some_and(|events| {
+                    if produce {
+                        events.recognizes_imported_population(&description)
+                    } else {
+                        events.owns_imported_population_member(&description)
+                    }
+                });
+        if !imported_empty_member_exchange
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()

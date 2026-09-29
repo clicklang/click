@@ -463,6 +463,166 @@ fn authority_mode_helper_consumes_one_member_and_returns_authority() {
 }
 
 #[test]
+fn authority_mode_helper_produces_one_member_and_returns_authority() {
+    let c_source = r#"
+        int32 add_reference(int32* p) { return 7; }
+        int32 value(void) {
+            int32 x = 7;
+            int32 result = add_reference(&x);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 add_reference(int32* p) {
+            owns authority(reference(p));
+            produces reference(p);
+            ensures result == 7;
+        } by {
+            fold(reference(p));
+            execute();
+            simp();
+        }
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            step();
+            step();
+            step();
+            have count(reference(&x)) == 1 by { simp(); }
+            unfold(reference(&x));
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect("a verified helper creates one owned member and returns authority");
+}
+
+#[test]
+fn authority_mode_helper_cannot_claim_creation_without_folding_member() {
+    let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+        int32 add_reference(int32* p) {
+            owns authority(reference(p));
+            produces reference(p);
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("a declared production needs a checked member birth in the helper proof");
+    assert!(
+        error.message().contains("Requires produces reference(p)"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn authority_mode_helper_cannot_birth_imported_member_twice() {
+    let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+        int32 add_reference(int32* p) {
+            owns authority(reference(p));
+            produces reference(p);
+            ensures result == 7;
+        } by {
+            fold(reference(p));
+            fold(reference(p));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("one helper proof cannot create two members");
+    assert!(error.message().contains("reference"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_creating_helper_requires_caller_authority() {
+    let c_source = r#"
+        int32 add_reference(int32* p) { return 7; }
+        int32 value(void) {
+            int32 x = 7;
+            return add_reference(&x);
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+        int32 add_reference(int32* p) {
+            owns authority(reference(p));
+            produces reference(p);
+            ensures result == 7;
+        } by {
+            fold(reference(p));
+            execute();
+            simp();
+        }
+        int32 value() {
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("a helper cannot create a member without concrete caller authority");
+    assert!(error.message().contains("authority"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_helper_cannot_create_private_memory_from_opaque_authority() {
+    let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
+    let click_source = r#"
+        resource reference(p: int32*) { owns p[0..1]; }
+        verifying "authority_stack.c";
+        int32 add_reference(int32* p) {
+            owns authority(reference(p));
+            produces reference(p);
+            ensures result == 7;
+        } by {
+            fold(reference(p));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("opaque authority alone cannot supply a member's private memory");
+    assert!(
+        error.message().contains("reference") || error.message().contains("member"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn authority_mode_helper_cannot_claim_consumption_without_spending_member() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"

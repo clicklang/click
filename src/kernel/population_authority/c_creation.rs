@@ -325,6 +325,28 @@ impl CreationEvents {
         }
     }
 
+    pub(in crate::kernel) fn born_imported_member_since(&self, before: &Self) -> bool {
+        match (&before.0.opaque_import, &self.0.opaque_import) {
+            (Some(start), Some(end)) => {
+                start.description == end.description
+                    && start.owned_members == 0
+                    && end.owned_members == 1
+                    && before.0.invocation == self.0.invocation
+            }
+            _ => false,
+        }
+    }
+
+    pub(in crate::kernel) fn recognizes_imported_population(
+        &self,
+        description: &ResourceDescription,
+    ) -> bool {
+        self.0
+            .opaque_import
+            .as_ref()
+            .is_some_and(|import| import.description == *description)
+    }
+
     pub(in crate::kernel) fn recognizes_population_authority(
         &self,
         description: &ResourceDescription,
@@ -403,18 +425,15 @@ impl CreationEvents {
             .as_ref()
             .filter(|import| import.description == *description)
         {
-            // An opaque proof can spend only its exact imported member.
-            // Producing an external member needs a storage-backed call rule.
-            if produce {
-                return Err(CreationRefusal::NotCreationEnvironment);
-            }
+            // This ledger is proof-local. A birth is transferred only at a
+            // verified call whose concrete authority still has a live anchor.
             let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
                 return Err(CreationRefusal::InvalidMember);
             };
             if &pointer.pointer().block != block {
                 return Err(CreationRefusal::InvalidMember);
             }
-            if import.owned_members != 1 {
+            if import.owned_members != u32::from(!produce) {
                 return Err(CreationRefusal::MissingMembers);
             }
             let after = Self(Arc::new(Root {
@@ -432,7 +451,7 @@ impl CreationEvents {
                 tainted: self.0.tainted.clone(),
                 opaque_import: Some(OpaqueImport {
                     description: description.clone(),
-                    owned_members: 0,
+                    owned_members: u32::from(produce),
                 }),
             }));
             let evidence = CheckedPopulationMemberExchange {

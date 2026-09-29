@@ -432,7 +432,7 @@ fn member_description(block: PointerBlock) -> ResourceDescription {
 }
 
 #[test]
-fn opaque_helper_import_has_no_count_or_creation_right() {
+fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
@@ -462,7 +462,19 @@ fn opaque_helper_import_has_no_count_or_creation_right() {
     );
     assert!(matches!(
         entry.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
-        Err(CreationRefusal::NotCreationEnvironment)
+        Err(CreationRefusal::MissingMembers)
+    ));
+    let empty = CreationEvents::new()
+        .import_opaque_contract_population(&description, 0)
+        .unwrap();
+    let (born, _) = empty
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .expect("an opaque helper can birth its exact member once");
+    assert!(born.born_imported_member_since(&empty));
+    assert!(born.owns_population_member(&description));
+    assert!(matches!(
+        born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
+        Err(CreationRefusal::MissingMembers)
     ));
     let (spent, _) = entry
         .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
