@@ -12,8 +12,12 @@ in `tests/examples.rs` pins the C bytes.
 The [mutex counter source](mutex_counter.c) is frozen separately. Its two
 workers mutate the same ordinary cell under one lock. The
 [shared-protocol design](mutex-shared-protocol.md) records the authority and
-interference rules needed to verify it; the current one-path mutex escrow
-still refuses worker creation while that mutex is initialized.
+interference rules. Typed mutex use now crosses worker boundaries, and the
+memory-safety control verifies the unchanged counter. The exact-two result
+remains unproved. The [explicit-authority proposal](explicit-authority.md)
+compares an Iris-style contributed counter with the earlier
+[counted-resource investigation](shared-count-authority.md) and identifies the
+surface additions for review before implementation.
 
 The unchanged [mutex parity source](mutex_held_parity.c) and its
 [sidecar](mutex_held_parity.click) now verify under the modeled pthread

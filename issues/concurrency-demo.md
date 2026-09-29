@@ -140,6 +140,13 @@ conservation; it does not choose a Click surface interface.
 
 ## Ordered implementation plan
 
+Current design review: [explicit authority for the shared counter](../design/concurrency-probes/explicit-authority.md)
+proposes fractional contribution shares and authority inside the ordinary
+protected resource. It supersedes further shared-population-body custody work
+for the exact-two milestone. Its resource interfaces, fresh proof identity, and
+resource-transforming lemma application remain proposals; existing population
+features and the completed steps below retain their current semantics.
+
 ### 1. Remove abandoned machinery and consolidate status
 
 The unused resource-description parameter substitution and opaque parameter

@@ -1,10 +1,17 @@
 # Exact-two counter using ordinary counted resources
 
-Status: existing-resource investigation. A sequential control verifies exact
+Status: implemented sequential controls and historical concurrency
+investigation. The next-step recommendation is now
+[explicit fractional authority](explicit-authority.md), a design proposal for
+review. It replaces the shared-body-custody direction below; those shared
+rules were not implemented. Existing counted-resource semantics are unchanged.
+
+A sequential control verifies exact
 value two with existing resource declarations, `count`, `owns`/`consumes`/
 `produces`, `fold`, `open`, and `unfold`. The unchanged pthread example is not
-yet verified for its exact result. No new built-in resource type is justified
-by this investigation. The earlier bounded-completion-pool proposal is shelved.
+yet verified for its exact result. The earlier attempt to avoid all additional
+resource interfaces did not resolve concurrent body authority. The new proposal
+explicitly reviews that choice. The bounded-completion-pool proposal stays shelved.
 
 ## Accounting invariant
 
@@ -381,9 +388,12 @@ The kernel rejects partial or zero ownership, an open body, and active loans.
 Unfolding is a representation change: the existing contract transition still
 owns logical consumption; cleanup does not silently reset the ledger.
 
-Next compose population-body access with mutexes, commit guarded count
-transitions, and connect worker accounting.
-The original pthread C stays the end-to-end regression throughout.
+The original next step was to compose population-body access with mutexes,
+commit guarded count transitions, and connect worker accounting. That direction
+is paused in favor of the [explicit-authority proposal](explicit-authority.md):
+keep memory in the protected resource, put a separate authority beside it, and
+return contribution shares through ordinary join transfers. The original
+pthread C stays the end-to-end regression throughout.
 
 Each step needs negative coverage for forged/duplicated units, unrelated
 population changes, stale observations, mismatched lifetimes, missing or double
@@ -392,7 +402,7 @@ reverse join order must work. Expansion must yield checkable certificates and
 `scripts/check.sh` must pass. Representation changes must meet the existing
 indexed, delta-proportional verification requirements.
 
-The evidence currently supports extending ordinary resource semantics rather
-than adding specialized completion primitives. It does not yet establish that
-every needed operation is expressible without any further surface decision.
-If a genuine syntax gap remains, identify its exact missing rule first.
+The sequential evidence establishes the existing population rules, but does
+not establish concurrent custody. The replacement design exposes the missing
+authority and update operations explicitly; its proposed surface additions
+require review before implementation.
