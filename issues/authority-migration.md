@@ -103,12 +103,14 @@ count must never manufacture ownership or permission to update it.
 Specify these rules together, with a small kernel interpretation and source
 examples. Review additional surface syntax before implementing it.
 
-1. **Population establishment and retirement.** Allocate authority with a fresh
-   logical identity and justified initial members/count. Folding a wrapper
-   cannot create authority. Establish how existing members can be enrolled,
-   or initially restrict establishment to a fresh population. Prevent a second
-   authority, re-enrollment of existing units, and resurrection by pointer reuse.
-   Retirement/reclamation must account for outstanding members and loans.
+1. **Population establishment and retirement.** The selected rule anchors an
+   initially empty population to an exclusively owned C object argument.
+   Registration persists through ownership transfers; it prevents a second
+   authority even when the first is held elsewhere. Retirement requires zero
+   members; freeing the anchor requires all registrations to be retired.
+   Folding a wrapper cannot create authority. Implement lifetime transport and
+   loan checks before exposing establishment to C proofs. Source spelling is
+   still to be selected; the existing `construct` is not authorization.
 2. **Scope and patterns.** Support the exact populations used by refcount and
    the per-pool wildcard observation `count(pool_object(pool, _))`. Initially
    use disjoint governing scopes, not overlapping independent authorities.
@@ -167,8 +169,14 @@ public default. The checkpoints below are ordered dependencies, not one large
 patch. Each may take several coherent commits, but must meet its exit gate
 before the next checkpoint starts. Keep the original C and properties fixed.
 
-All checkpoints below are pending; this issue records the rollout, not completed
-implementation. Update their status and consumer inventory as commits land.
+Checkpoint 0 has a [consumer inventory](../docs/internals/authority-migration-inventory.md)
+and an approved [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md).
+The first additive kernel slice checks exact unary population ownership,
+registration, transfer, and empty retirement. This is partial checkpoint 1,
+not a usable C authority implementation: C lifetime transport, symbolic totals,
+and the source establishment operation remain outstanding. `construct(...)`
+has not been extended. Checkpoints 2–12 remain pending. Update this status and
+the inventory as commits land.
 
 | Checkpoints | Deliverable | What happens to old clients |
 | --- | --- | --- |

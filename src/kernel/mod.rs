@@ -20,6 +20,10 @@ mod fold_read_summary;
 mod functions;
 mod owned_footprint_reach;
 mod population_access;
+// Authority migration checkpoint 1: checked abstract ownership spine. No C
+// adapter or legacy proof path may use it until the subsequent bridge lands.
+#[allow(dead_code)]
+mod population_authority;
 mod quantified_frame;
 mod resource_description;
 mod thread_confinement;

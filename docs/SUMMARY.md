@@ -63,6 +63,8 @@
 - [Separation logic](internals/separation-logic.md)
 - [Stable views](internals/stable-views.md)
 - [Resource invariants and synchronization](internals/resource-invariants.md)
+- [Authority migration consumer inventory](internals/authority-migration-inventory.md)
+- [Object-anchored population authority](internals/authority-establishment-review.md)
 - [Concurrency contracts and diagnostics (proposal)](internals/concurrency-contracts-and-diagnostics.md)
 - [Resource arguments and mutex associations (design)](internals/resource-parameters.md)
 - [Mutex operations as resource contracts (proposal)](internals/mutex-resource-contracts.md)
