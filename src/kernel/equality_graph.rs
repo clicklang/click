@@ -409,16 +409,46 @@ impl EqualityGraph {
             (Some(left), Some(right)) => left == right,
             _ => false,
         };
-        affine_equal
-            // An exact offset equality can cross blocks only when their
-            // bases have the same known displacement from the representative.
-            // Otherwise the offset terms alone say nothing about the
-            // displacement between the two addresses. In one block retain
-            // the existing exact-offset query; across blocks avoid interning
-            // unrelated offsets when no term classes have merged.
-            || ((left.block == right.block
-                || (left_delta == right_delta && state.terms.has_equivalences()))
-                && state.terms.are_equal(&left.offset, &right.offset))
+        if affine_equal {
+            return true;
+        }
+        // An exact offset equality can cross blocks only after accounting
+        // for their known base displacement. The equal-base case uses the
+        // whole offsets directly; a constant displacement can be added to
+        // either side. Query both spellings so the answer is symmetric even
+        // when only one translated equality was explicitly stated.
+        if (left.block == right.block
+            || (left_delta == right_delta && state.terms.has_equivalences()))
+            && state.terms.are_equal(&left.offset, &right.offset)
+        {
+            return true;
+        }
+        if left.block == right.block
+            || !state.terms.has_equivalences()
+            || !left_delta.terms.is_empty()
+            || !right_delta.terms.is_empty()
+        {
+            return false;
+        }
+        let Some(displacement) = left_delta.constant.checked_sub(right_delta.constant) else {
+            return false;
+        };
+        let Ok(displacement) = i64::try_from(displacement) else {
+            return false;
+        };
+        let Some(reverse) = displacement.checked_neg() else {
+            return false;
+        };
+        let shifted_left = PointerOffsetTerm::Add(
+            Box::new(left.offset.clone()),
+            Box::new(PointerOffsetTerm::Constant(displacement)),
+        );
+        let shifted_right = PointerOffsetTerm::Add(
+            Box::new(right.offset.clone()),
+            Box::new(PointerOffsetTerm::Constant(reverse)),
+        );
+        state.terms.are_equal(&shifted_left, &right.offset)
+            || state.terms.are_equal(&left.offset, &shifted_right)
     }
 
     /// Query explicit offset equality, addition and int32 scaling congruence.
@@ -949,6 +979,91 @@ mod tests {
             assert!(equal);
             assert!(
                 map_work < 64 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
+        }
+    }
+
+    #[test]
+    fn constant_displacement_uses_only_a_stated_translated_offset_equality() {
+        let a = symbolic(11_060);
+        let b = symbolic(11_061);
+        let x = PointerOffsetTerm::Variable(Variable(11_062));
+        let y = PointerOffsetTerm::Variable(Variable(11_063));
+        let translated = PointerOffsetTerm::add(x.clone(), PointerOffsetTerm::Constant(8));
+        let offset_fact = ConditionTerm::pointer_offset_equal(translated, y.clone());
+        let pointer_fact = ConditionTerm::pointer_equal(at(a.clone(), 0), at(b.clone(), 8));
+        let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
+        let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
+        let left = at_offset(a.clone(), x.clone());
+        let right = at_offset(b.clone(), y.clone());
+        assert!(!trunk.equality_graph.are_equal(&left, &right));
+        assert!(branch.equality_graph.are_equal(&left, &right));
+        assert!(branch.equality_graph.are_equal(&right, &left));
+        assert_eq!(
+            branch.decide(&ConditionTerm::pointer_equal(left.clone(), right.clone())),
+            Some(true)
+        );
+        assert!(
+            !branch
+                .equality_graph
+                .are_equal(&left, &at_offset(b.clone(), x.clone()))
+        );
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(pointer_fact, true));
+        assert!(!withdrawn.equality_graph.are_equal(&left, &right));
+        let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
+        assert!(!restricted.equality_graph.are_equal(&left, &right));
+
+        let mut other_spelling = EqualityGraph::default();
+        other_spelling.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
+        other_spelling.add_offset_equality(
+            &x,
+            &PointerOffsetTerm::add(y.clone(), PointerOffsetTerm::Constant(-8)),
+        );
+        assert!(other_spelling.are_equal(&left, &right));
+        assert!(other_spelling.are_equal(&right, &left));
+
+        let mut unspellable = EqualityGraph::default();
+        unspellable.add_equality(&at(a, 0), &at(b, i64::MIN));
+        unspellable.add_offset_equality(
+            &PointerOffsetTerm::Add(
+                Box::new(x.clone()),
+                Box::new(PointerOffsetTerm::Constant(i64::MIN)),
+            ),
+            &y,
+        );
+        assert!(!unspellable.are_equal(&left, &right));
+        assert!(!unspellable.are_equal(&right, &left));
+    }
+
+    #[test]
+    fn constant_displacement_queries_ignore_unrelated_class_members() {
+        for size in [16u64, 64, 256, 1024] {
+            let a = symbolic(40_000);
+            let b = symbolic(40_001);
+            let x = PointerOffsetTerm::Variable(Variable(11_070));
+            let y = PointerOffsetTerm::Variable(Variable(11_071));
+            let mut graph = EqualityGraph::default();
+            graph.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
+            for i in 1..size {
+                graph.add_equality(&at(symbolic(40_000 + i), 0), &at(symbolic(40_001 + i), 0));
+            }
+            graph.add_offset_equality(
+                &PointerOffsetTerm::add(x.clone(), PointerOffsetTerm::Constant(8)),
+                &y,
+            );
+            let left = at_offset(a, x);
+            let right = at_offset(symbolic(40_000 + size), y);
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                graph.are_equal(&left, &right)
+            });
+            assert!(equal);
+            assert!(work < 96, "size={size}, work={work}");
+            let (equal, map_work) =
+                crate::persistent::measure_persistent_work(|| graph.are_equal(&left, &right));
+            assert!(equal);
+            assert!(
+                map_work < 96 * (size.ilog2() as usize + 1),
                 "size={size}, map work={map_work}"
             );
         }

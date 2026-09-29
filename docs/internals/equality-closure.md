@@ -73,9 +73,11 @@ without enumerating pointer aliases; withdrawal and restriction rebuild the
 offset edge from the remaining exact premises.
 An exact offset edge can also cross two blocks whose graph bases have the same
 known displacement from their class representative. This handles zero-offset
-cross-block aliases and their transitive chains by a keyed query. A displaced
-block relation still needs an equality of the translated offsets; an offset
-edge alone does not supply it.
+cross-block aliases and their transitive chains by a keyed query. For a
+constant displacement, the graph can now compare either translated offset
+spelling, such as `x + 8 == y` under `base(A) == base(B) + 8`. Both signs must
+fit the offset term's `i64` constant; otherwise the query stays unknown.
+Symbolic displacements still need a checked proof of the translated equality.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition has its own application signature and shallow child
@@ -136,9 +138,9 @@ longer scans all ambient condition facts for a matching translated equality
 or walks their alias component. Overflow-guarded translation such as
 `p == arr + i` after incrementing `p` and `i` instead uses an explicit
 `arithmetic() using` proof with the entry pointer relation and strict index
-bound. The graph does not yet compose an exact offset edge through a displaced
-cross-block pointer class; that Boolean query can remain unknown until a
-checked proof supplies the translated equality.
+bound. A displaced cross-block query now uses an exact translated offset edge
+only for a representable constant base displacement. Symbolic displacements
+can remain unknown until a checked proof supplies the translated equality.
 
 The memory-separation reader now takes a positive graph answer for same-block
 offset equality before considering exact alias spellings. A long chain of
