@@ -2261,6 +2261,7 @@ fn ensure_comparison(
     })
 }
 
+mod authority_private_body_tests;
 mod contract_tests;
 mod diagnostic_tests;
 mod execution_tests;

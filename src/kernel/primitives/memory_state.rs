@@ -4382,6 +4382,58 @@ impl CState {
         self.population_effects.creation.is_some()
     }
 
+    /// Admit exactly one explicitly owned helper input as an opaque existing
+    /// population. A standalone proof receives no count or creator right.
+    pub(crate) fn import_opaque_population(
+        &self,
+        authority: &CResourceFact,
+        owned_members: u32,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(description), quantity) = authority
+        else {
+            return Err("opaque import requires owns authority(R(p))".into());
+        };
+        if quantity.as_const() != Some(1)
+            || !self.resources.contains_exact_representation(authority)
+        {
+            return Err("opaque import requires one declared owned authority".into());
+        }
+        if owned_members > 1 {
+            return Err("opaque import supports at most one declared member".into());
+        }
+        if owned_members == 1 {
+            let member = CResourceFact::own(CResource::Composite {
+                name: description.family().to_owned(),
+                arguments: description.arguments().to_vec().into(),
+            });
+            if !self.resources.contains_exact_representation(&member) {
+                return Err("opaque import requires the declared owned member".into());
+            }
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("opaque import requires authority mode")?
+            .import_opaque_contract_population(description, owned_members)
+            .map_err(|refusal| format!("opaque population import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
+    /// Contract lowering may name an established real population or the one
+    /// opaque population explicitly imported from a standalone proof's entry.
+    pub(crate) fn recognizes_population_authority(
+        &self,
+        description: &super::super::ResourceDescription,
+    ) -> bool {
+        self.population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|events| events.recognizes_population_authority(description))
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
         pointer.offset == PointerOffsetTerm::Constant(0)
@@ -4457,13 +4509,14 @@ impl CState {
         Ok((next, evidence))
     }
 
-    /// Change one exact, field-free member only while the matching authority
-    /// is owned. The resource exchange and the population ledger advance as
-    /// one checked event; neither side can be updated independently.
+    /// Exchange one member and its private owned-memory body while the
+    /// matching authority is owned. The resource and population ledgers
+    /// advance together.
     pub(crate) fn checked_population_member_exchange(
         &self,
         selected: &CResourceFact,
         produce: bool,
+        definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(CState, CheckedPopulationMemberExchange), String> {
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
@@ -4472,6 +4525,28 @@ impl CState {
         };
         if quantity.as_const() != Some(1) {
             return Err("Requires one owned R(p)".into());
+        }
+        if definition.name != *name
+            || !definition.resource_parameters.is_empty()
+            || definition.guarded_by.is_some()
+            || definition.matched.is_some()
+            || !definition.witnesses.is_empty()
+            || definition.condition.is_some()
+            || !definition.children.is_empty()
+            || !definition.facts.is_empty()
+            || definition
+                .instance_schema
+                .as_ref()
+                .is_some_and(|schema| !schema.fields().is_empty())
+            || definition.contains().iter().any(|spec| {
+                !matches!(spec.term(), super::super::CResourceTerm::Memory(_))
+                    || spec.access() != super::super::CResourceAccessMode::Own
+                    || spec.quantity() != &super::super::CResourceQuantity::One
+                    || spec.guard().is_some()
+                    || !spec.resource_arguments().is_empty()
+            })
+        {
+            return Err("member exchange requires a field-free private owned-memory body".into());
         }
         let description = super::super::ResourceDescription::new(
             name.clone(),
@@ -4493,21 +4568,75 @@ impl CState {
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
+        if self.population_body_is_open(name, arguments, assumptions) {
+            return Err("close the member's private body before changing its population".into());
+        }
         let events = self
             .population_effects
             .creation
             .as_ref()
             .ok_or("authority mode has no creation history")?;
+        let body = if definition.contains().is_empty() {
+            Vec::new()
+        } else {
+            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let expanded = crate::kernel::functions::expand_composite_resource_fact(
+                &singleton,
+                selected,
+                std::slice::from_ref(definition),
+                &self.memory,
+                assumptions,
+            )
+            .ok_or("cannot instantiate the member's private body")?;
+            expanded.facts().to_vec()
+        };
+        if body.iter().any(|fact| fact.memory_own_range().is_none()) {
+            return Err("member body must contain only owned memory".into());
+        }
+        for child in &body {
+            let range = child.memory_own_range().expect("body shape checked above");
+            let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
+            else {
+                return Err("member private memory needs concrete bounds".into());
+            };
+            let (start, end) = (start as i32, end as i32);
+            let bytes = end
+                .checked_sub(start)
+                .filter(|length| *length > 0)
+                .and_then(|length| length.checked_mul(range.element_width() as i32))
+                .and_then(|bytes| u32::try_from(bytes).ok())
+                .ok_or("member private memory needs a positive bounded range")?;
+            let base = range
+                .base()
+                .offset_by_elements(range.start().clone(), range.element_width());
+            if !self.memory.access_in_bounds(&base, bytes) {
+                return Err("member private memory exceeds live storage".into());
+            }
+            if let Some(ledger) = self.loan_ledger() {
+                ledger
+                    .permits_memory_access_with_assumptions(range, assumptions)
+                    .map_err(|_| "member private memory has an active borrow")?;
+            }
+        }
         let resources = if produce {
-            self.resources
-                .clone()
+            let mut resources = self.resources.clone();
+            for child in &body {
+                resources = resources
+                    .without_fact_incrementally(child, assumptions)
+                    .ok_or_else(|| format!("Requires the private body of {name}(p)"))?;
+            }
+            resources
                 .try_compose_with_fact(selected.clone(), assumptions)
                 .map_err(|error| format!("member ownership refused: {error:?}"))?
         } else {
-            self.resources
+            let resources = self
+                .resources
                 .clone()
                 .without_fact_incrementally(selected, assumptions)
-                .ok_or_else(|| format!("Requires owns {name}(p)"))?
+                .ok_or_else(|| format!("Requires owns {name}(p)"))?;
+            resources
+                .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
+                .map_err(|error| format!("member body ownership refused: {error:?}"))?
         };
         let (history, evidence) = events
             .checked_member_exchange(&anchor.block, &description, produce)

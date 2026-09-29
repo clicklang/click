@@ -1935,21 +1935,6 @@ pub(super) struct InitialClaimContext {
     pub(super) surface_propositions: SurfacePropositionMap,
 }
 
-fn authority_mode_member_contract_resource(resource: &ResourceClause) -> bool {
-    match resource {
-        ResourceClause::Declared { .. }
-        | ResourceClause::Named { .. }
-        | ResourceClause::Iterated(_) => true,
-        ResourceClause::Conditional { resource, .. }
-        | ResourceClause::Quantified { resource, .. } => {
-            authority_mode_member_contract_resource(resource)
-        }
-        ResourceClause::ViewMemory(_)
-        | ResourceClause::OwnMemory(_)
-        | ResourceClause::MemoryAggregate { .. } => false,
-    }
-}
-
 pub(super) fn initial_claim_context(
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
@@ -2025,30 +2010,6 @@ pub(super) fn initial_claim_context_with_mode(
     caller_owner: Option<&CallerSourceOwnerId>,
     resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<InitialClaimContext, ClickError> {
-    if resource_semantics_mode == ResourceSemanticsMode::Authority {
-        for requirement in function_block.requires() {
-            if let Requirement::Resource(resource) = requirement.inner()
-                && authority_mode_member_contract_resource(resource)
-            {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` requires a declared resource; authority-mode member and authority contract transfer is not yet checked"
-                )));
-            }
-        }
-        for ensure in function_block
-            .ensures()
-            .iter()
-            .chain(function_block.exceptional_ensures())
-        {
-            if let Ensure::Resource(resource) = ensure.ensure()
-                && authority_mode_member_contract_resource(resource)
-            {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` produces a declared resource; authority-mode member and authority contract transfer is not yet checked"
-                )));
-            }
-        }
-    }
     let (mut state, arguments) = if let Some(startup) = &parsed_function.program_entry_state {
         if !function_block.requires().is_empty() || !parsed_function.parameters().is_empty() {
             return Err(ClickError::new(
@@ -2134,28 +2095,25 @@ pub(super) fn initial_claim_context_with_mode(
         })
         .map(str::to_string)
         .collect::<BTreeSet<_>>();
-    let (population_state, population_facts) = if resource_semantics_mode
-        == ResourceSemanticsMode::Authority
-    {
-        if !symbolic_population_families.is_empty() {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` cannot materialize legacy resource populations in authority mode"
-            )));
-        }
-        (state, Vec::new())
-    } else {
-        materialize_counted_population_bodies(
-            resource_environment,
-            parsed_function.parameters(),
-            &arguments,
-            state,
-            &observed_population_families,
-            &symbolic_population_families,
-            predicate_environment,
-            click_function_environment,
-            claim_label,
-        )?
-    };
+    let (population_state, population_facts) =
+        if resource_semantics_mode == ResourceSemanticsMode::Authority {
+            // The checked authority-mode function boundary accepts only
+            // borrow-and-return contracts for declared resources. Entry claims
+            // do not initialize or read a legacy population.
+            (state, Vec::new())
+        } else {
+            materialize_counted_population_bodies(
+                resource_environment,
+                parsed_function.parameters(),
+                &arguments,
+                state,
+                &observed_population_families,
+                &symbolic_population_families,
+                predicate_environment,
+                click_function_environment,
+                claim_label,
+            )?
+        };
     state = population_state;
     // Keep an authority-only snapshot before folded composite cells or
     // observable body facts are materialized.  Those conveniences are valid
@@ -2806,7 +2764,7 @@ fn evaluate_entry_resource_context(
         .filter(|fact| {
             matches!(
                 fact.resource(),
-                CResource::Instance(_) | CResource::Memory(_)
+                CResource::Instance(_) | CResource::Memory(_) | CResource::PopulationAuthority(_)
             )
         })
         .cloned()

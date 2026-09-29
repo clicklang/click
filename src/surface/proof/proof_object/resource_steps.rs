@@ -32,12 +32,15 @@ impl<'a> Proof<'a> {
             || body.guarded_by.is_some()
             || body.matched.is_some()
             || body.condition.is_some()
-            || !body.contains.is_empty()
+            || body
+                .contains
+                .iter()
+                .any(|clause| !matches!(clause, ResourceClause::OwnMemory(_)))
             || !body.facts.is_empty()
             || !body.witnesses.is_empty()
         {
             return Err(self.step_error(format!(
-                "authority-mode fold/unfold of `{name}` currently requires an empty field-free body"
+                "authority-mode fold/unfold of `{name}` requires a private owned-memory body"
             )));
         }
         self.require_execution_frontier("population member change")?;
@@ -55,10 +58,19 @@ impl<'a> Proof<'a> {
             context.arguments,
             &execution.core.state,
         )?;
+        let compiled_definition = context
+            .function
+            .composite_resource_definition(name)
+            .ok_or_else(|| self.step_error(format!("unknown compiled resource `{name}`")))?;
         let (after_state, witness) = execution
             .core
             .state
-            .checked_population_member_exchange(&selected, produce, before_facts.assumptions())
+            .checked_population_member_exchange(
+                &selected,
+                produce,
+                compiled_definition,
+                before_facts.assumptions(),
+            )
             .map_err(|message| self.step_error(message))?;
         execution
             .core

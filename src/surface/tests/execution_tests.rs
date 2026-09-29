@@ -342,6 +342,81 @@ fn authority_mode_refuses_plain_c_helper_call() {
 }
 
 #[test]
+fn authority_mode_calls_a_verified_helper_without_population_effects() {
+    let c_source = r#"
+        int32 helper(void) { return 7; }
+        int32 value(void) { return helper(); }
+    "#;
+    let click_source = r#"
+        verifying "authority_stack.c";
+
+        int32 helper() {
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect("an independently verified helper preserves an untouched population ledger");
+}
+
+#[test]
+fn authority_mode_helper_returns_the_same_authority_and_member() {
+    let c_source = r#"
+        int32 helper(int32* p) { return 7; }
+        int32 value(void) {
+            int32 x = 7;
+            int32 result = helper(&x);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 helper(int32* p) {
+            owns authority(reference(p));
+            owns reference(p);
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            fold(reference(&x));
+            step();
+            step();
+            step();
+            unfold(reference(&x));
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect("a verified helper returns the exact authority and member it received");
+}
+
+#[test]
 fn verifies_loadable_segment_proposition_for_indexed_read() {
     let c_source = r#"
             int32 read_index(int32 p[], int32 index, int32 n) {

@@ -108,9 +108,24 @@ fn only_successful_real_malloc_records_creation() {
     let mut resumed = succeeded.clone();
     Arc::make_mut(&mut resumed.population_effects).creation = Some(returned);
     assert!(resumed.population_storage_created_here(created));
+    assert_ne!(
+        resumed.population_effects.creation, succeeded.population_effects.creation,
+        "a call return advances invocation identity even when its ownership is unchanged"
+    );
     assert_eq!(
-        resumed.population_effects.creation,
-        succeeded.population_effects.creation
+        resumed
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .created_here(&created.block),
+        succeeded
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .created_here(&created.block),
+        "the new identity preserves the caller's creation right"
     );
 
     let freed = execute_c_statement_paths(
@@ -385,6 +400,22 @@ fn repeated_entry_recheck_reuses_the_same_creation_environment() {
     assert_ne!(first, advanced.enter_call());
 }
 
+#[test]
+fn rechecking_c_creation_events_reuses_exact_successor_roots() {
+    let live = PointerBlock::Heap(940_107);
+    let start = CreationEvents::new();
+    assert_eq!(start.created(live.clone()), start.created(live));
+
+    let pending = PointerBlock::Symbolic(Variable(940_108));
+    let first = start.pending_creation(pending.clone());
+    assert_eq!(first, start.pending_creation(pending.clone()));
+    let resolved = first.resolve_pending(&pending, Some(PointerBlock::Heap(940_109)));
+    assert_eq!(
+        resolved,
+        first.resolve_pending(&pending, Some(PointerBlock::Heap(940_109)))
+    );
+}
+
 fn member_description(block: PointerBlock) -> ResourceDescription {
     ResourceDescription::new(
         "reference".into(),
@@ -398,6 +429,106 @@ fn member_description(block: PointerBlock) -> ResourceDescription {
         .into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     )
+}
+
+#[test]
+fn opaque_helper_import_has_no_count_or_creation_right() {
+    let description = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::pointer(Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(940_110)),
+            })
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population(&description, 1)
+        .unwrap();
+    assert!(entry.owns_population_authority(&description));
+    assert!(entry.owns_population_member(&description));
+    let proof_entry = entry.enter_proof_entry();
+    assert!(proof_entry.owns_population_authority(&description));
+    assert_eq!(proof_entry, entry.enter_proof_entry());
+    let nested_call = proof_entry.enter_call();
+    assert!(!nested_call.owns_population_authority(&description));
+    assert!(!nested_call.owns_population_member(&description));
+    assert_eq!(
+        entry.observe(&PointerBlock::ExternalArgument, "reference"),
+        Err(CreationRefusal::UnknownTotal)
+    );
+    assert!(matches!(
+        entry.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
+        Err(CreationRefusal::InvalidMember)
+    ));
+    let other = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::pointer(Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(940_111)),
+            })
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    assert_eq!(
+        entry.import_opaque_contract_population(&other, 1),
+        Err(CreationRefusal::OpaqueImportConflict)
+    );
+
+    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let member = CResourceFact::own(CResource::Composite {
+        name: "reference".into(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(
+            ResourceContext::new().unchecked_with_facts([authority.clone(), member]),
+        );
+    assert!(!state.recognizes_population_authority(&description));
+    let imported = state.import_opaque_population(&authority, 1).unwrap();
+    assert!(imported.recognizes_population_authority(&description));
+}
+
+#[test]
+fn helper_call_transfers_authority_and_member_without_changing_total() {
+    let block = PointerBlock::Heap(940_106);
+    let description = member_description(block.clone());
+    let caller = CreationEvents::new().created(block.clone());
+    let (caller, _) = caller.checked_establish(&block, &description).unwrap();
+    let (caller, _) = caller
+        .checked_member_exchange(&block, &description, true)
+        .unwrap();
+    let callee = caller.enter_call();
+    let entry = callee
+        .transfer_call_fact(&caller, &callee, &description, true)
+        .unwrap()
+        .transfer_call_fact(&caller, &callee, &description, false)
+        .unwrap();
+    assert_eq!(entry.observe(&block, "reference"), Ok(1));
+    assert_eq!(
+        entry.finish_call(&caller),
+        Err(CreationRefusal::OutstandingOwnership)
+    );
+    let returned = entry
+        .transfer_call_fact(&callee, &caller, &description, false)
+        .unwrap()
+        .transfer_call_fact(&callee, &caller, &description, true)
+        .unwrap();
+    let resumed = returned.finish_call(&caller).unwrap();
+    assert_eq!(resumed.observe(&block, "reference"), Ok(1));
+    assert_eq!(returned.finish_call(&caller).unwrap(), resumed);
+    assert_ne!(resumed.enter_call(), callee);
+    assert_eq!(
+        resumed.transfer_call_fact(&callee, &caller, &description, false),
+        Err(CreationRefusal::MissingMembers)
+    );
 }
 
 #[test]

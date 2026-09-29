@@ -293,10 +293,35 @@ pub(in crate::surface) fn initial_call_state(
         materialize_symbolic_access_resource_cells(memory, requires, parameters, &arguments)?;
     let state = state.with_memory(memory);
     let resources = resource_context_from_requirements(requires, parameters, &arguments, &state)?;
-    Ok((
-        crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources)),
-        arguments,
-    ))
+    let mut state =
+        crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
+    if resource_semantics_mode == ResourceSemanticsMode::Authority {
+        // A standalone helper is proved for an arbitrary population supplied
+        // by its caller. Import only the explicitly declared ownership, with
+        // no count or C creation right; the call site later checks the actual
+        // authority and member transfer against its concrete ledger.
+        let authorities = state
+            .resources()
+            .facts()
+            .iter()
+            .filter(|fact| matches!(fact.resource(), CResource::PopulationAuthority(_)))
+            .cloned()
+            .collect::<Vec<_>>();
+        for authority in authorities {
+            let CResource::PopulationAuthority(description) = authority.resource() else {
+                unreachable!();
+            };
+            let member = CResourceFact::own(CResource::Composite {
+                name: description.family().to_owned(),
+                arguments: description.arguments().to_vec().into(),
+            });
+            let owned_members = u32::from(state.resources().contains_exact_representation(&member));
+            state = state
+                .import_opaque_population(&authority, owned_members)
+                .map_err(ClickError::new)?;
+        }
+    }
+    Ok((state, arguments))
 }
 
 /// A contract may transfer memory reached through a copied pointer value,

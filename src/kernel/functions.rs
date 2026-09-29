@@ -429,6 +429,70 @@ fn callee_state_with_resource_transfer(
         .with_loan_view_bindings(plan.callee_view_bindings().clone())
 }
 
+/// Mirror the checked owned contract partition in the population ledger.
+/// A composite outside a registered population follows ordinary resource
+/// transfer; authority itself must always name a registered population.
+fn transfer_population_call_facts<'a>(
+    mut state: CState,
+    from: &CState,
+    to: &CState,
+    facts: impl Iterator<Item = &'a CResourceFact>,
+) -> Result<CState, CRuntimeError> {
+    let Some(from_events) = from.population_effects.creation.as_ref() else {
+        return Ok(state);
+    };
+    let Some(to_events) = to.population_effects.creation.as_ref() else {
+        return Err(CRuntimeError::FunctionContract(
+            "population call lost its invocation identity".into(),
+        ));
+    };
+    let Some(mut events) = state.population_effects.creation.clone() else {
+        return Err(CRuntimeError::FunctionContract(
+            "population call lost its creation history".into(),
+        ));
+    };
+    for fact in facts {
+        let (description, authority_fact) = match fact {
+            CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
+                if quantity.as_const() == Some(1) =>
+            {
+                (description.clone(), true)
+            }
+            CResourceFact::Own(CResource::Composite { name, arguments }, quantity)
+                if quantity.as_const() == Some(1) =>
+            {
+                (
+                    ResourceDescription::new(
+                        name.clone(),
+                        arguments.clone(),
+                        ResourceFieldSchema::new(vec![]).expect("empty schema"),
+                    ),
+                    false,
+                )
+            }
+            CResourceFact::Own(CResource::PopulationAuthority(_), _)
+            | CResourceFact::Own(CResource::Composite { .. }, _) => {
+                return Err(CRuntimeError::FunctionContract(
+                    "population call requires one exact owned resource".into(),
+                ));
+            }
+            _ => continue,
+        };
+        if !authority_fact && !events.tracks_population(&description) {
+            continue;
+        }
+        events = events
+            .transfer_call_fact(from_events, to_events, &description, authority_fact)
+            .map_err(|refusal| {
+                CRuntimeError::FunctionContract(format!(
+                    "population call transfer refused: {refusal:?}"
+                ))
+            })?;
+    }
+    Arc::make_mut(&mut state.population_effects).creation = Some(events);
+    Ok(state)
+}
+
 /// Re-spell symbolic pointer values that a field-derived borrowed owner was
 /// checked against with the exact caller pointer selected by the reservation
 /// planner. This is used only to instantiate verified postconditions: the
@@ -1832,6 +1896,74 @@ fn authority_mode_call_refusal(caller_state: &CState) -> Option<CRuntimeError> {
     })
 }
 
+/// Until checked contract birth/death is available, a helper may only borrow
+/// and return the same declared resources and population authorities. The
+/// ordinary contract checker validates the concrete resource transfer; this
+/// admission rule prevents a summary from changing the tracked population.
+fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInterface) -> bool {
+    // The checked bridge below moves only exact, already established owned
+    // population facts. Constructors and mutex protocols have independent
+    // authority transitions and cannot be justified by this conservation rule.
+    if !interface.resource_constructors().is_empty()
+        || interface
+            .resource_requires()
+            .iter()
+            .chain(interface.resource_ensures())
+            .any(|spec| spec_contains_mutex_authority(interface, spec))
+    {
+        return false;
+    }
+    let tracked = |spec: &&CResourceSpec| {
+        matches!(
+            spec.family(),
+            ResourceFamily::Composite | ResourceFamily::PopulationAuthority
+        )
+    };
+    let admitted = |spec: &&CResourceSpec| {
+        spec.role() == CResourceTransferRole::Borrow
+            && spec.access() == CResourceAccessMode::Own
+            && spec.quantity() == &CResourceQuantity::One
+            && spec.guard().is_none()
+            && spec.resource_arguments().is_empty()
+    };
+    let mut inputs = interface
+        .resource_requires()
+        .iter()
+        .filter(tracked)
+        .collect::<Vec<_>>();
+    let mut outputs = interface
+        .resource_ensures()
+        .iter()
+        .filter(tracked)
+        .collect::<Vec<_>>();
+    if !inputs.iter().all(admitted) || !outputs.iter().all(admitted) {
+        return false;
+    }
+    inputs.sort_by_key(|spec| spec.term());
+    outputs.sort_by_key(|spec| spec.term());
+    inputs
+        .iter()
+        .zip(&outputs)
+        .all(|(left, right)| left.term() == right.term())
+        && inputs.len() == outputs.len()
+}
+
+#[cfg(test)]
+mod authority_helper_admission_tests {
+    use super::*;
+
+    #[test]
+    fn authority_helper_rejects_resource_constructors() {
+        let mut interface = CFunctionContractInterface::new(CType::Int32, Vec::new());
+        interface.resource_constructors = vec![CResourceSpec::owned_memory(CMemorySegment::new(
+            c_int32_literal(0),
+            c_int32_literal(0),
+            c_int32_literal(1),
+        ))];
+        assert!(!authority_mode_preserves_resource_contract(&interface));
+    }
+}
+
 pub(super) fn execute_c_function_call_paths(
     caller_state: &CState,
     function: &CFunction,
@@ -1841,7 +1973,11 @@ pub(super) fn execute_c_function_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
-    if let Some(error) = authority_mode_call_refusal(caller_state) {
+    if let Some(error) = authority_mode_call_refusal(caller_state)
+        && environment
+            .get_verified_function_rule(function.name())
+            .is_none()
+    {
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
             facts: Vec::new(),
@@ -3689,11 +3825,54 @@ fn execute_verified_function_applications_with_suspension(
             }
         }
         return_state.population_access = post_state.population_access.clone();
-        return_state.counted_populations = post_state.counted_populations;
-        return_state.restore_population_creation_after_call(
-            caller_state.population_effects.creation.as_ref(),
-            post_state.population_effects.creation.as_ref(),
-        );
+        return_state.counted_populations = post_state.counted_populations.clone();
+        if caller_state.uses_population_authority_semantics() {
+            let returned = match transfer_population_call_facts(
+                post_state.clone(),
+                &entry_state,
+                caller_state,
+                output_resources.facts().iter(),
+            ) {
+                Ok(state) => state,
+                Err(error) => {
+                    paths.push(CFunctionPath {
+                        outcome: CFunctionOutcome::RuntimeError(error),
+                        facts,
+                        obligations,
+                        loan_evidence: empty_checked_loan_evidence_sequence(),
+                    });
+                    continue;
+                }
+            };
+            let finished = returned
+                .population_effects
+                .creation
+                .as_ref()
+                .expect("checked population call has a ledger")
+                .finish_call(
+                    caller_state
+                        .population_effects
+                        .creation
+                        .as_ref()
+                        .expect("checked population caller has a ledger"),
+                );
+            match finished {
+                Ok(events) => {
+                    Arc::make_mut(&mut return_state.population_effects).creation = Some(events)
+                }
+                Err(refusal) => {
+                    paths.push(resource_call_failure(&format!(
+                        "population helper retained ownership: {refusal:?}"
+                    )));
+                    continue;
+                }
+            }
+        } else {
+            return_state.restore_population_creation_after_call(
+                caller_state.population_effects.creation.as_ref(),
+                post_state.population_effects.creation.as_ref(),
+            );
+        }
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = CFunctionOutcome::Return {
@@ -3985,13 +4164,22 @@ fn prepare_verified_function_call<'a>(
     suspend_worker: bool,
 ) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
     let contract_interface = application.interface;
-    if let Some(error) = authority_mode_call_refusal(caller_state) {
+    if let Some(error) = authority_mode_call_refusal(caller_state)
+        && (application.evidence.is_none() || suspend_worker)
+    {
         return Ok(Err(CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
             facts: arguments_path.facts,
             obligations: arguments_path.obligations,
             loan_evidence: empty_checked_loan_evidence_sequence(),
         }));
+    }
+    if caller_state.uses_population_authority_semantics()
+        && !authority_mode_preserves_resource_contract(contract_interface)
+    {
+        return Ok(Err(resource_call_failure(
+            "authority-mode helper requires the same borrowed resources on entry and return",
+        )));
     }
     if contract_interface.contract_requirement_sources().len()
         != contract_interface.contract_requires().len()
@@ -4198,7 +4386,21 @@ fn prepare_verified_function_call<'a>(
             }));
         }
     };
+    let callee_identity_state = entry_state.clone();
     entry_state = callee_state_with_resource_transfer(entry_state, &transfer);
+    entry_state = match transfer_population_call_facts(
+        entry_state,
+        caller_state,
+        &callee_identity_state,
+        transfer
+            .borrowed_inputs
+            .iter()
+            .chain(&transfer.consumed_inputs)
+            .map(|checked| &checked.fact),
+    ) {
+        Ok(state) => state,
+        Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
+    };
     // The checked loan plan identifies each selected use source and its
     // derived callee share. Move only those names, then rebind unchanged raw
     // authorities to their newly inserted occurrences.
@@ -14747,6 +14949,24 @@ fn evaluate_resource_population_body_resources(
     Ok(Ok(body_resources))
 }
 
+fn bind_contract_proof_arguments(
+    caller_state: &CState,
+    function: &CFunction,
+    argument_values: &[CValue],
+) -> Option<CState> {
+    let mut callee_state = bind_c_function_arguments(caller_state, function, argument_values)?;
+    if let Some(events) = caller_state
+        .population_effects
+        .creation
+        .as_ref()
+        .filter(|events| events.has_opaque_import())
+    {
+        Arc::make_mut(&mut callee_state.population_effects).creation =
+            Some(events.enter_proof_entry());
+    }
+    Some(callee_state)
+}
+
 fn prepare_function_resource_transfer(
     caller_state: &CState,
     callee_state: &CState,
@@ -18009,7 +18229,7 @@ pub(super) fn prepare_function_contract_entry_state_with_values(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CState, CRuntimeError>> {
-    let Some(callee_state) = bind_c_function_arguments(caller_state, function, argument_values)
+    let Some(callee_state) = bind_contract_proof_arguments(caller_state, function, argument_values)
     else {
         return Ok(Err(CRuntimeError::FunctionContract(format!(
             "could not bind contract-entry arguments for {}",
@@ -24462,10 +24682,23 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 Ok(description) => description,
                 Err(error) => return Ok(Err(error)),
             };
-            Ok(Err(CRuntimeError::FunctionContract(format!(
-                "population authority for {} requires a checked creation event and population state",
-                description.family(),
-            ))))
+            let owned = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+            if resource.role() == CResourceTransferRole::Borrow
+                && resource.access() == CResourceAccessMode::Own
+                && resource.quantity() == &CResourceQuantity::One
+                && state.recognizes_population_authority(&description)
+                && state.resources().satisfies_fact(&owned, assumptions)
+            {
+                // Evaluation only names an already owned authority. The
+                // concrete call boundary transfers its registered holder;
+                // standalone proof entry may recognize one opaque input.
+                Ok(Ok(owned))
+            } else {
+                Ok(Err(CRuntimeError::FunctionContract(format!(
+                    "Requires owns authority({}(...))",
+                    description.family(),
+                ))))
+            }
         }
         CResourceTerm::MutexGuard { mutex, snapshot } => {
             let selected = match snapshot {
@@ -26002,7 +26235,8 @@ pub(super) fn contract_exit_outcome(
         }
         other => other,
     };
-    let Some(callee_state) = bind_c_function_arguments(caller_state, function, &argument_values)
+    let Some(callee_state) =
+        bind_contract_proof_arguments(caller_state, function, &argument_values)
     else {
         return Ok(Err(CRuntimeError::TypeMismatch));
     };
@@ -26176,8 +26410,12 @@ pub(super) fn apply_verified_contract_resource_transition(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<(CFunctionOutcome, Vec<ProofObligation>), CRuntimeError>> {
-    if let Some(error) = authority_mode_call_refusal(caller_state) {
-        return Ok(Err(error));
+    if caller_state.uses_population_authority_semantics()
+        && !authority_mode_preserves_resource_contract(function.contract_interface())
+    {
+        return Ok(Err(CRuntimeError::FunctionContract(
+            "authority-mode helper requires the same borrowed resources on entry and return".into(),
+        )));
     }
     let Some(argument_values) = arguments
         .iter()
@@ -26191,7 +26429,8 @@ pub(super) fn apply_verified_contract_resource_transition(
             "contract resource transition requires symbolic value arguments".to_string(),
         )));
     };
-    let Some(callee_state) = bind_c_function_arguments(caller_state, function, &argument_values)
+    let Some(callee_state) =
+        bind_contract_proof_arguments(caller_state, function, &argument_values)
     else {
         return Ok(Err(CRuntimeError::TypeMismatch));
     };

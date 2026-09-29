@@ -2544,6 +2544,14 @@ pub fn c_function_entry_state(
         })
         .collect::<Option<Vec<_>>>()?;
     let mut entry = bind_c_function_arguments(caller_state, function, &values)?;
+    if let Some(events) = caller_state
+        .population_effects
+        .creation
+        .as_ref()
+        .filter(|events| events.has_opaque_import())
+    {
+        Arc::make_mut(&mut entry.population_effects).creation = Some(events.enter_proof_entry());
+    }
     // This API rebinds a proof frontier, including an explicitly unfolded
     // entry representation. It is not the modular call ownership transfer.
     entry.instance_field_scope = caller_state.instance_field_scope.clone();

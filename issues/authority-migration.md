@@ -183,15 +183,19 @@ prevents late establishment after members were transferred away. Project-level
 mode selection and `authority(R(p))` parsing/lowering are additive. A restricted
 source bridge checks `fold(authority(R(p)))` for empty establishment and
 `unfold(authority(R(p)))` for zero-count retirement against actual C creation
-events. A partial checkpoint 2 now checks one empty-body member's
-`fold(R(p))`/`unfold(R(p))` as birth/consumption paired with the owned resource
-exchange. Current exact `count(R(p))` observes the authority ledger. Both
-transitions have independent certificate checks. Authority mode still refuses
-nonempty member bodies, resource contracts, recorded-state count, and C calls
-rather than falling back to legacy accounting. This is not yet a usable
-counted-resource implementation: transfer, symbolic totals, and full fact
-dependency handling remain outstanding. `construct(...)` has not been extended.
-The remainder of checkpoint 2 and checkpoints 3–12 remain pending.
+events. A partial checkpoint 2 checks one member's `fold(R(p))`/`unfold(R(p))`
+as birth/consumption paired with its owned resource exchange. Members may have
+a field-free body of private, concrete, owned C memory; opening such a member
+exposes that body without changing its count. Current exact `count(R(p))`
+observes the authority ledger. The transitions have independent certificate
+checks. Verified ordinary C helpers can borrow and return the same exact
+authority and member; standalone helper proofs treat their declared input as
+an opaque population with no count or creator permission. Other contract
+transitions, symbolic totals, recorded-state count, field-bearing or nested
+member bodies, and worker calls remain unsupported in authority mode. This is
+not yet a usable general counted-resource implementation. `construct(...)` has
+not been extended. The remainder of checkpoint 2 and checkpoints 3–12 remain
+pending.
 Update this status and the inventory as commits land.
 
 | Checkpoints | Deliverable | What happens to old clients |

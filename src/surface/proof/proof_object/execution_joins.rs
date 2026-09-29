@@ -221,10 +221,11 @@ impl<'a> Proof<'a> {
                 ProgramPointKind::Entry,
                 current_state.clone(),
             );
-            let resolved_state = crate::kernel::resolve_pending_heap_allocations(
-                &current_state,
-                transition.pure_facts.assumptions(),
-            );
+            // Condition certification already resolved pending allocation
+            // outcomes and retained that exact successor. Recomputing it
+            // here creates an equal resource context with different mutation
+            // ancestry, so a later checked resource exchange rejects it.
+            let resolved_state = arm_execution.core.reached_state().clone();
             arm_execution.core.frontier.next_statement_index = if take_then {
                 then_statement_index
             } else {

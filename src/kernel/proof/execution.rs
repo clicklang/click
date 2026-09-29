@@ -639,7 +639,13 @@ fn checks_population_member_exchange(
         || definition.matched.is_some()
         || !definition.witnesses.is_empty()
         || definition.condition.is_some()
-        || !definition.contains.is_empty()
+        || definition.contains.iter().any(|spec| {
+            !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
+                || spec.access() != crate::kernel::CResourceAccessMode::Own
+                || spec.quantity() != &crate::kernel::CResourceQuantity::One
+                || spec.guard().is_some()
+                || !spec.resource_arguments().is_empty()
+        })
         || !definition.children.is_empty()
         || !definition.facts.is_empty()
         || definition
@@ -647,7 +653,7 @@ fn checks_population_member_exchange(
             .as_ref()
             .is_some_and(|schema| !schema.fields().is_empty())
     {
-        return Err("population member rewrite requires an empty field-free resource body".into());
+        return Err("population member rewrite requires a private owned-memory body".into());
     }
     let description = crate::kernel::ResourceDescription::new(
         name.clone(),
@@ -679,19 +685,9 @@ fn checks_population_member_exchange(
     if !witness.matches(before_events, after_events, &description, produce) {
         return Err("population member rewrite has mismatched conservation evidence".into());
     }
-    let expected_resources = if produce {
-        before
-            .resources
-            .clone()
-            .try_compose_with_fact(selected.clone(), assumptions)
-            .map_err(|_| "population member production has invalid ownership")?
-    } else {
-        before
-            .resources
-            .clone()
-            .without_fact_incrementally(selected, assumptions)
-            .ok_or("population member consumption lacks the owned member")?
-    };
+    let (expected, _) =
+        before.checked_population_member_exchange(selected, produce, definition, assumptions)?;
+    let expected_resources = expected.resources;
     if !after
         .resources
         .same_exchange_from(&expected_resources, &before.resources)
@@ -1032,7 +1028,252 @@ impl CheckedResourceRewrite {
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
         if before_state.uses_population_authority_semantics() {
-            return Err("generic resource rewriting is unavailable in authority mode".into());
+            let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
+            else {
+                return Err("authority-mode body access requires one owned member".into());
+            };
+            let definition = function
+                .composite_resource_definition(name)
+                .ok_or("authority-mode body access needs its registered definition")?;
+            if quantity.as_const() != Some(1)
+                || !definition.resource_parameters.is_empty()
+                || definition.guarded_by.is_some()
+                || definition.matched.is_some()
+                || !definition.witnesses.is_empty()
+                || definition.condition.is_some()
+                || !definition.children.is_empty()
+                || !definition.facts.is_empty()
+                || definition
+                    .instance_schema
+                    .as_ref()
+                    .is_some_and(|schema| !schema.fields().is_empty())
+                || definition.contains.iter().any(|spec| {
+                    !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
+                        || spec.access() != crate::kernel::CResourceAccessMode::Own
+                        || spec.quantity() != &crate::kernel::CResourceQuantity::One
+                        || spec.guard().is_some()
+                        || !spec.resource_arguments().is_empty()
+                })
+                || selected_children.is_some()
+            {
+                return Err(
+                    "authority-mode body access requires a private owned-memory body".into(),
+                );
+            }
+            if !before_state.loan_bindings_are_consistent()
+                || !after_state.loan_bindings_are_consistent()
+            {
+                return Err("authority-mode body access changed loan bindings".into());
+            }
+            if !before_state
+                .resources()
+                .satisfies_fact(selected, before_facts.assumptions())
+                || !after_state
+                    .resources()
+                    .satisfies_fact(selected, after_facts.assumptions())
+            {
+                return Err(
+                    "authority-mode body access requires the folded member throughout".into(),
+                );
+            }
+            let introduced = after_facts
+                .introduced_since(before_facts)
+                .ok_or("authority-mode body access facts do not descend from their input")?;
+            let assumptions = before_facts.assumptions();
+            let was_open = before_state.population_body_is_open(name, arguments, assumptions);
+            let now_open = after_state.population_body_is_open(name, arguments, assumptions);
+            if was_open == now_open {
+                return Err("authority-mode body access must open or close one member".into());
+            }
+            if !before_state.population_access.checks_rewrite(
+                &after_state.population_access,
+                &(name.clone(), arguments.clone()),
+            ) {
+                return Err("authority-mode body access changed another open scope".into());
+            }
+            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let expanded = crate::kernel::functions::expand_composite_resource_fact(
+                &singleton,
+                selected,
+                std::slice::from_ref(definition),
+                before_state.memory(),
+                assumptions,
+            )
+            .ok_or("authority-mode body access cannot instantiate its private body")?;
+            let children = expanded.facts();
+            if children
+                .iter()
+                .any(|fact| fact.memory_own_range().is_none())
+            {
+                return Err("authority-mode body access contains a nonprivate resource".into());
+            }
+            for child in children {
+                let range = child.memory_own_range().expect("body shape checked above");
+                let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
+                else {
+                    return Err("authority-mode private body needs concrete bounds".into());
+                };
+                let bytes = (end as i32)
+                    .checked_sub(start as i32)
+                    .filter(|length| *length > 0)
+                    .and_then(|length| length.checked_mul(range.element_width() as i32))
+                    .and_then(|bytes| u32::try_from(bytes).ok())
+                    .ok_or("authority-mode private body needs a positive bounded range")?;
+                let base = range
+                    .base()
+                    .offset_by_elements(range.start().clone(), range.element_width());
+                if !before_state.memory().access_in_bounds(&base, bytes) {
+                    return Err("authority-mode private body exceeds live storage".into());
+                }
+                if let Some(ledger) = before_state.loan_ledger() {
+                    ledger
+                        .permits_memory_access_with_assumptions(range, assumptions)
+                        .map_err(|_| "authority-mode private body has an active borrow")?;
+                }
+            }
+            let child_context =
+                ResourceContext::new().unchecked_with_facts(children.iter().cloned());
+            let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
+            allowed.push(Proposition::CResourceComposition(child_context.clone()));
+            if let Some(propositions) =
+                crate::kernel::functions::evaluate_composite_resource_relation_propositions(
+                    selected,
+                    function.composite_resource_definitions(),
+                    after_state.memory(),
+                    assumptions,
+                )
+            {
+                allowed.extend(propositions);
+            }
+            if let Some(propositions) =
+                crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
+                    selected,
+                    function.composite_resource_definitions(),
+                    after_state.memory(),
+                    assumptions,
+                )
+            {
+                allowed.extend(propositions);
+            }
+            let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
+                facts.assume_proposition(fact.clone())
+            });
+            if let Some(unchecked) = introduced.iter().find(|fact| {
+                !allowed.contains(fact)
+                    && !allowed_assumptions.proves_exact(fact)
+                    && !resource_composition_is_supported_by(fact, &child_context, assumptions)
+                    && !resource_composition_is_supported_by(
+                        fact,
+                        after_state.resources(),
+                        after_facts.assumptions(),
+                    )
+            }) {
+                return Err(format!(
+                    "authority-mode body access introduced an unchecked pure fact: {}",
+                    truncate_debug(unchecked, 240)
+                ));
+            }
+            let expected_resources = if now_open {
+                before_state
+                    .resources()
+                    .clone()
+                    .try_compose_with_facts_delaying_normalization(
+                        children.iter().cloned(),
+                        assumptions,
+                    )
+                    .map_err(|_| "authority-mode body access duplicates private ownership")?
+            } else {
+                let mut resources = before_state.resources().clone();
+                for child in children {
+                    resources = resources
+                        .without_fact_incrementally(child, assumptions)
+                        .ok_or("authority-mode body close lacks its private ownership")?;
+                }
+                resources
+            };
+            if !after_state
+                .resources()
+                .same_exchange_from(&expected_resources, before_state.resources())
+                || !Arc::ptr_eq(
+                    &after_state.resources.loan_dependencies,
+                    &expected_resources.loan_dependencies,
+                )
+            {
+                return Err("authority-mode body access has the wrong resource exchange".into());
+            }
+            if now_open {
+                memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+            } else if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
+                before_state.memory(),
+                after_state.memory(),
+                assumptions,
+            ) {
+                return Err("authority-mode body close changed C memory".into());
+            }
+            let same_bindings = match (
+                &before_state.resource_bindings,
+                &after_state.resource_bindings,
+            ) {
+                (None, None) => true,
+                (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                _ => false,
+            };
+            if !same_bindings
+                || !Arc::ptr_eq(&before_state.locals.bindings, &after_state.locals.bindings)
+                || !Arc::ptr_eq(&before_state.locals.slots, &after_state.locals.slots)
+                || !Arc::ptr_eq(
+                    &before_state.instance_field_scope.storage,
+                    &after_state.instance_field_scope.storage,
+                )
+                || !Arc::ptr_eq(
+                    &before_state.instance_field_scope.loan_dependencies,
+                    &after_state.instance_field_scope.loan_dependencies,
+                )
+                || before_state.loan_ledger != after_state.loan_ledger
+                || before_state.loan_participant != after_state.loan_participant
+                || before_state.loan_view_bindings != after_state.loan_view_bindings
+                || before_state.thread_ledger != after_state.thread_ledger
+                || before_state.mutex_ledger != after_state.mutex_ledger
+                || before_state.preserves_mutex_protocols != after_state.preserves_mutex_protocols
+                || before_state.mutex_input_reservations != after_state.mutex_input_reservations
+                || before_state.opaque_mutex_acquisitions != after_state.opaque_mutex_acquisitions
+                || before_state.named_mutex_authorities != after_state.named_mutex_authorities
+                || before_state.pending_thread_create != after_state.pending_thread_create
+                || before_state.population_effects.creation
+                    != after_state.population_effects.creation
+                || !before_state
+                    .counted_populations
+                    .shares_storage_with(&after_state.counted_populations)
+                || !before_state
+                    .population_effects
+                    .committed_consumptions
+                    .shares_storage_with(&after_state.population_effects.committed_consumptions)
+                || !before_state
+                    .population_effects
+                    .pending_counts
+                    .shares_storage_with(&after_state.population_effects.pending_counts)
+                || before_state.next_local_frame != after_state.next_local_frame
+                || before_state.next_local_lifetime != after_state.next_local_lifetime
+                || before_state.enclosing_frame_holds_locals
+                    != after_state.enclosing_frame_holds_locals
+            {
+                return Err("authority-mode body access changed unrelated execution state".into());
+            }
+            return Ok(Self {
+                before_state: before_state.clone(),
+                after_state: after_state.clone(),
+                before_facts: before_facts.clone(),
+                after_facts: after_facts.clone(),
+                definition: definition.clone(),
+                consumption_contract: None,
+                instance: None,
+                selected_children: None,
+                load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
+                    call_events,
+                )
+                .finish(),
+                delta_proofs: Arc::new(Vec::new()),
+            });
         }
         if !before_state.loan_bindings_are_consistent()
             || !after_state.loan_bindings_are_consistent()
@@ -1535,8 +1776,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         facts: &ProofFacts,
         call_events: &CheckedCallEvents,
     ) -> Option<ProofFacts> {
-        if state.uses_population_authority_semantics()
-            || state != &self.before_state
+        if state != &self.before_state
             || facts.introduced_since(&self.before_facts).is_none()
             || self
                 .delta_proofs
@@ -11283,8 +11523,9 @@ mod population_authority_rewrite_tests {
             .with_composite_resource_definitions(vec![
                 CCompositeResourceDefinition::new("reference", vec![], None, false, vec![], vec![]),
             ]);
+        let definition = function.composite_resource_definition("reference").unwrap();
         let (one, birth) = established
-            .checked_population_member_exchange(&member, true, facts.assumptions())
+            .checked_population_member_exchange(&member, true, definition, facts.assumptions())
             .unwrap();
         let event = CheckedPopulationMemberRewrite::check(
             &function,
@@ -11300,7 +11541,7 @@ mod population_authority_rewrite_tests {
         assert!(event.advance_checked(&established, &facts).is_some());
         assert!(
             established
-                .checked_population_member_exchange(&member, false, facts.assumptions())
+                .checked_population_member_exchange(&member, false, definition, facts.assumptions())
                 .is_err()
         );
         assert!(
@@ -11334,7 +11575,7 @@ mod population_authority_rewrite_tests {
             .is_err()
         );
         let (zero, death) = one
-            .checked_population_member_exchange(&member, false, facts.assumptions())
+            .checked_population_member_exchange(&member, false, definition, facts.assumptions())
             .unwrap();
         assert!(
             CheckedPopulationMemberRewrite::check(
@@ -11349,8 +11590,192 @@ mod population_authority_rewrite_tests {
             .is_err()
         );
         assert!(
-            zero.checked_population_member_exchange(&member, false, facts.assumptions())
+            zero.checked_population_member_exchange(
+                &member,
+                false,
+                definition,
+                facts.assumptions()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
+        use crate::kernel::{CMemorySegment, c_int32_literal, c_parameter, c_variable};
+
+        let (before, authority) = source_state();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: description.family().to_owned(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+        else {
+            unreachable!()
+        };
+        let memory = CResourceFact::own_memory(CMemoryRange::new(
+            pointer.pointer().clone(),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ));
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            ))],
+            vec![],
+        );
+        let function = c_function(
+            CType::Void,
+            "value",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition]);
+        let definition = function.composite_resource_definition("reference").unwrap();
+        let facts = ProofFacts::default();
+        let (established, _) = before
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(memory.clone()))
+            .checked_population_authority_exchange(&authority, true, facts.assumptions())
+            .unwrap();
+        let (one, birth) = established
+            .checked_population_member_exchange(&member, true, definition, facts.assumptions())
+            .unwrap();
+        assert!(!one.resources().satisfies_fact(&memory, facts.assumptions()));
+        assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function,
+                &established,
+                &facts,
+                &member,
+                true,
+                &birth,
+                &one,
+                &facts,
+            )
+            .is_ok()
+        );
+        assert!(
+            one.checked_population_member_exchange(&member, true, definition, facts.assumptions())
                 .is_err()
+        );
+        let CResource::Composite { name, arguments } = member.resource() else {
+            unreachable!()
+        };
+        let expanded = crate::kernel::functions::expand_composite_resource_fact(
+            &ResourceContext::new().unchecked_with_fact(member.clone()),
+            &member,
+            std::slice::from_ref(definition),
+            one.memory(),
+            facts.assumptions(),
+        )
+        .unwrap();
+        let opened = one
+            .clone()
+            .with_resource_context(
+                one.resources()
+                    .clone()
+                    .try_compose_with_facts_delaying_normalization(
+                        expanded.facts().iter().cloned(),
+                        facts.assumptions(),
+                    )
+                    .unwrap(),
+            )
+            .open_population_body(name.clone(), arguments.clone())
+            .unwrap();
+        CheckedResourceRewrite::check(
+            &function,
+            &one,
+            &facts,
+            &member,
+            &opened,
+            &facts,
+            &CheckedCallEvents::default(),
+        )
+        .unwrap();
+        assert!(
+            CheckedResourceRewrite::check(
+                &function,
+                &one,
+                &facts,
+                &member,
+                &opened.clone().with_memory(CMemory::new()),
+                &facts,
+                &CheckedCallEvents::default(),
+            )
+            .is_err()
+        );
+        assert!(
+            CheckedResourceRewrite::check(
+                &function,
+                &one,
+                &facts,
+                &member,
+                &opened
+                    .clone()
+                    .with_resource_context(established.resources().clone()),
+                &facts,
+                &CheckedCallEvents::default(),
+            )
+            .is_err()
+        );
+        let closed = opened
+            .clone()
+            .with_resource_context(
+                opened
+                    .resources()
+                    .clone()
+                    .without_fact_incrementally(&expanded.facts()[0], facts.assumptions())
+                    .unwrap(),
+            )
+            .close_population_body(name.clone(), arguments.clone())
+            .unwrap();
+        CheckedResourceRewrite::check(
+            &function,
+            &opened,
+            &facts,
+            &member,
+            &closed,
+            &facts,
+            &CheckedCallEvents::default(),
+        )
+        .unwrap();
+        assert_eq!(closed, one);
+        let (zero, death) = one
+            .checked_population_member_exchange(&member, false, definition, facts.assumptions())
+            .unwrap();
+        assert!(
+            zero.resources()
+                .satisfies_fact(&memory, facts.assumptions())
+        );
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &one, &facts, &member, false, &death, &zero, &facts,
+            )
+            .is_ok()
+        );
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function,
+                &established,
+                &facts,
+                &member,
+                true,
+                &birth,
+                &one.clone()
+                    .with_resource_context(established.resources().clone()),
+                &facts,
+            )
+            .is_err()
         );
     }
 

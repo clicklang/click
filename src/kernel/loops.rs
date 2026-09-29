@@ -434,7 +434,11 @@ pub(super) fn execute_c_call_assign_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if state.uses_population_authority_semantics() {
+    if state.uses_population_authority_semantics()
+        && environment
+            .get_verified_function_rule(function_name)
+            .is_none()
+    {
         return Ok(vec![authority_mode_call_refusal_path()]);
     }
     if environment
@@ -716,7 +720,11 @@ pub(super) fn execute_c_call_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
-    if state.uses_population_authority_semantics() {
+    if state.uses_population_authority_semantics()
+        && environment
+            .get_verified_function_rule(function_name)
+            .is_none()
+    {
         return Ok(vec![authority_mode_call_refusal_path()]);
     }
     if environment

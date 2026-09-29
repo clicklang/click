@@ -117,6 +117,16 @@ impl AuthorityState {
                 }
             })
     }
+
+    pub(super) fn holder_owns_authority(&self, holder: Holder, population: Population) -> bool {
+        self.authority_owned(holder, population).is_ok()
+    }
+
+    pub(super) fn holder_owns_member(&self, holder: Holder, population: Population) -> bool {
+        self.members
+            .get(&(holder, population))
+            .is_some_and(|count| *count > 0)
+    }
     fn set_members(&mut self, holder: Holder, population: Population, quantity: u32) {
         if quantity == 0 {
             self.members.remove(&(holder, population));

@@ -7,9 +7,10 @@
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{AlgebraicValue, CValue, PointerBlock, PointerOffsetTerm, ResourceDescription};
 use crate::persistent::{PersistentMap, PersistentSet};
+use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 fn fresh_identity() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -17,12 +18,17 @@ fn fresh_identity() -> u64 {
         .expect("C population creation identity exhausted")
 }
 
-#[derive(Clone)]
 struct Root {
     identity: u64,
     /// Stable rechecking of the same function-entry transition. Authority-mode C
     /// calls remain closed until each occurrence has its own identity.
     entry_call: OnceLock<CreationEvents>,
+    proof_entry: OnceLock<CreationEvents>,
+    /// Rechecking a transfer or return uses the same successor identity.
+    /// Keys contain only small holder/population IDs, never resource trees.
+    transfers: Mutex<BTreeMap<(Holder, Holder, super::Population, bool), CreationEvents>>,
+    returns: Mutex<BTreeMap<u64, CreationEvents>>,
+    c_events: Mutex<BTreeMap<CEvent, CreationEvents>>,
     invocation: Holder,
     pending: PersistentMap<PointerBlock, Holder>,
     creators: PersistentMap<PointerBlock, Holder>,
@@ -30,6 +36,26 @@ struct Root {
     authority: AuthorityState,
     /// Per-storage family history; never inferred from the current owner.
     tainted: PersistentMap<PointerBlock, PersistentSet<String>>,
+    /// A standalone helper may assume exactly one declared population input.
+    /// It carries no creator right, storage event, or asserted total.
+    opaque_import: Option<OpaqueImport>,
+}
+
+#[derive(Clone)]
+struct OpaqueImport {
+    description: ResourceDescription,
+    owned_members: u32,
+}
+
+/// Inputs of a checked C lifetime event. Each key is proportional to the
+/// pointer or family named by that one operation.
+#[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
+enum CEvent {
+    Pending(PointerBlock),
+    Resolve(PointerBlock, Option<PointerBlock>),
+    Created(PointerBlock),
+    MemberCreated(PointerBlock, String),
+    Retired(PointerBlock),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,6 +69,9 @@ pub(in crate::kernel) enum CreationRefusal {
     InvalidQuantity,
     OutstandingMembers,
     OutstandingAuthority,
+    OutstandingOwnership,
+    UnknownTotal,
+    OpaqueImportConflict,
 }
 
 impl From<Refusal> for CreationRefusal {
@@ -54,6 +83,7 @@ impl From<Refusal> for CreationRefusal {
             Refusal::MissingAuthority | Refusal::UnknownPopulation => Self::MissingAuthority,
             Refusal::MissingMembers => Self::MissingMembers,
             Refusal::InvalidQuantity => Self::InvalidQuantity,
+            Refusal::OutstandingOwnership => Self::OutstandingOwnership,
             _ => Self::NotCreationEnvironment,
         }
     }
@@ -151,6 +181,148 @@ impl Hash for CreationEvents {
 }
 
 impl CreationEvents {
+    fn memoized_c_event(&self, key: CEvent, create: impl FnOnce() -> Self) -> Self {
+        if let Some(existing) = self.0.c_events.lock().expect("C event cache").get(&key) {
+            return existing.clone();
+        }
+        let next = create();
+        self.0
+            .c_events
+            .lock()
+            .expect("C event cache")
+            .entry(key)
+            .or_insert(next)
+            .clone()
+    }
+
+    /// Standalone helper entry may assume one already existing population
+    /// named by an exact external-argument pointer. This records only the
+    /// contract's input custody; it cannot create storage or assert a total.
+    pub(in crate::kernel) fn import_opaque_contract_population(
+        &self,
+        description: &ResourceDescription,
+        owned_members: u32,
+    ) -> Result<Self, CreationRefusal> {
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err(CreationRefusal::InvalidMember);
+        };
+        if pointer.pointer().block != PointerBlock::ExternalArgument
+            || !description.schema().is_countable()
+            || !description.resource_arguments().is_empty()
+            || owned_members > 1
+        {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        if let Some(existing) = &self.0.opaque_import {
+            if existing.description == *description && existing.owned_members == owned_members {
+                return Ok(self.clone());
+            }
+            return Err(CreationRefusal::OpaqueImportConflict);
+        }
+        if !self.0.creators.is_empty() || !self.0.anchors.is_empty() {
+            return Err(CreationRefusal::NotCreationEnvironment);
+        }
+        Ok(Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
+            invocation: self.0.invocation,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority: self.0.authority.clone(),
+            tainted: self.0.tainted.clone(),
+            opaque_import: Some(OpaqueImport {
+                description: description.clone(),
+                owned_members,
+            }),
+        })))
+    }
+
+    pub(in crate::kernel) fn owns_population_authority(
+        &self,
+        description: &ResourceDescription,
+    ) -> bool {
+        if self
+            .0
+            .opaque_import
+            .as_ref()
+            .is_some_and(|import| import.description == *description)
+        {
+            return true;
+        }
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return false;
+        };
+        let Ok(block) = self.exact_member_block(&pointer.pointer().block, description) else {
+            return false;
+        };
+        self.0
+            .anchors
+            .get(block)
+            .and_then(|anchor| {
+                self.0
+                    .authority
+                    .population_at(*anchor, description.family())
+            })
+            .is_some_and(|population| {
+                self.0
+                    .authority
+                    .holder_owns_authority(self.0.invocation, population)
+            })
+    }
+
+    pub(in crate::kernel) fn owns_population_member(
+        &self,
+        description: &ResourceDescription,
+    ) -> bool {
+        if self
+            .0
+            .opaque_import
+            .as_ref()
+            .is_some_and(|import| import.description == *description && import.owned_members == 1)
+        {
+            return true;
+        }
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return false;
+        };
+        let Ok(block) = self.exact_member_block(&pointer.pointer().block, description) else {
+            return false;
+        };
+        self.0
+            .anchors
+            .get(block)
+            .and_then(|anchor| {
+                self.0
+                    .authority
+                    .population_at(*anchor, description.family())
+            })
+            .is_some_and(|population| {
+                self.0
+                    .authority
+                    .holder_owns_member(self.0.invocation, population)
+            })
+    }
+
+    pub(in crate::kernel) fn recognizes_population_authority(
+        &self,
+        description: &ResourceDescription,
+    ) -> bool {
+        self.0
+            .opaque_import
+            .as_ref()
+            .is_some_and(|import| import.description == *description)
+            || self.tracks_population(description)
+    }
+
+    pub(in crate::kernel) fn has_opaque_import(&self) -> bool {
+        self.0.opaque_import.is_some()
+    }
+
     fn exact_member_block<'a>(
         &self,
         block: &'a PointerBlock,
@@ -175,6 +347,15 @@ impl CreationEvents {
         block: &PointerBlock,
         family: &str,
     ) -> Result<u32, CreationRefusal> {
+        if *block == PointerBlock::ExternalArgument
+            && self
+                .0
+                .opaque_import
+                .as_ref()
+                .is_some_and(|import| import.description.family() == family)
+        {
+            return Err(CreationRefusal::UnknownTotal);
+        }
         let anchor = *self
             .0
             .anchors
@@ -228,12 +409,17 @@ impl CreationEvents {
         let after = Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
             authority,
             tainted,
+            opaque_import: self.0.opaque_import.clone(),
         }));
         let evidence = CheckedPopulationMemberExchange {
             before: self.0.identity,
@@ -248,12 +434,17 @@ impl CreationEvents {
         Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: Holder::fresh(),
             pending: PersistentMap::default(),
             creators: PersistentMap::default(),
             anchors: PersistentMap::default(),
             authority: AuthorityState::default(),
             tainted: PersistentMap::default(),
+            opaque_import: None,
         }))
     }
 
@@ -269,44 +460,188 @@ impl CreationEvents {
                 Self(Arc::new(Root {
                     identity: fresh_identity(),
                     entry_call: OnceLock::new(),
+                    proof_entry: OnceLock::new(),
+                    transfers: Mutex::new(BTreeMap::new()),
+                    returns: Mutex::new(BTreeMap::new()),
+                    c_events: Mutex::new(BTreeMap::new()),
                     invocation: Holder::fresh(),
                     pending: self.0.pending.clone(),
                     creators: self.0.creators.clone(),
                     anchors: self.0.anchors.clone(),
                     authority: self.0.authority.clone(),
                     tainted: self.0.tainted.clone(),
+                    opaque_import: None,
                 }))
             })
             .clone()
     }
 
+    /// Rebind a standalone proof's declared input to its checked function
+    /// entry. Unlike an ordinary nested call, this retains the one opaque
+    /// assumption that the proof entry itself is required to establish.
+    pub(in crate::kernel) fn enter_proof_entry(&self) -> Self {
+        self.0
+            .proof_entry
+            .get_or_init(|| {
+                Self(Arc::new(Root {
+                    identity: fresh_identity(),
+                    entry_call: OnceLock::new(),
+                    proof_entry: OnceLock::new(),
+                    transfers: Mutex::new(BTreeMap::new()),
+                    returns: Mutex::new(BTreeMap::new()),
+                    c_events: Mutex::new(BTreeMap::new()),
+                    invocation: Holder::fresh(),
+                    pending: self.0.pending.clone(),
+                    creators: self.0.creators.clone(),
+                    anchors: self.0.anchors.clone(),
+                    authority: self.0.authority.clone(),
+                    tainted: self.0.tainted.clone(),
+                    opaque_import: self.0.opaque_import.clone(),
+                }))
+            })
+            .clone()
+    }
+
+    /// Move one exact owned contract fact between invocation holders. The
+    /// visible resource planner must perform the matching owned exchange;
+    /// this ledger operation changes neither the population total nor C memory.
+    pub(in crate::kernel) fn transfer_call_fact(
+        &self,
+        from: &Self,
+        to: &Self,
+        description: &ResourceDescription,
+        authority_fact: bool,
+    ) -> Result<Self, CreationRefusal> {
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err(CreationRefusal::InvalidMember);
+        };
+        let block = self.exact_member_block(&pointer.pointer().block, description)?;
+        let anchor = *self
+            .0
+            .anchors
+            .get(block)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        let population = self
+            .0
+            .authority
+            .population_at(anchor, description.family())
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        let key = (
+            from.0.invocation,
+            to.0.invocation,
+            population,
+            authority_fact,
+        );
+        if let Some(cached) = self.0.transfers.lock().expect("transfer cache").get(&key) {
+            return Ok(cached.clone());
+        }
+        let authority = if authority_fact {
+            self.0
+                .authority
+                .transfer_authority(from.0.invocation, to.0.invocation, population)
+        } else {
+            self.0
+                .authority
+                .transfer_members(from.0.invocation, to.0.invocation, population, 1)
+        }
+        .map_err(CreationRefusal::from)?;
+        let successor = Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
+            invocation: self.0.invocation,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority,
+            tainted: self.0.tainted.clone(),
+            opaque_import: self.0.opaque_import.clone(),
+        }));
+        Ok(self
+            .0
+            .transfers
+            .lock()
+            .expect("transfer cache")
+            .entry(key)
+            .or_insert(successor)
+            .clone())
+    }
+
+    pub(in crate::kernel) fn tracks_population(&self, description: &ResourceDescription) -> bool {
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return false;
+        };
+        self.0
+            .anchors
+            .get(&pointer.pointer().block)
+            .and_then(|anchor| {
+                self.0
+                    .authority
+                    .population_at(*anchor, description.family())
+            })
+            .is_some()
+    }
+
+    /// A helper can finish only after returning or consuming all abstract
+    /// ownership it received. In particular it cannot strand a member while
+    /// returning the authority, or retain a creator anchor from local storage.
+    pub(in crate::kernel) fn finish_call(&self, caller: &Self) -> Result<Self, CreationRefusal> {
+        self.0
+            .authority
+            .finish_holder(self.0.invocation)
+            .map_err(CreationRefusal::from)?;
+        Ok(self.return_to(caller))
+    }
+
     /// Return keeps creation events from the callee but restores the caller's
     /// environment. A callee-created object cannot be established by caller.
     pub(in crate::kernel) fn return_to(&self, caller: &Self) -> Self {
-        if self.0.creators.shares_root_with(&caller.0.creators)
-            && self.0.pending.shares_root_with(&caller.0.pending)
-            && self.0.tainted.shares_root_with(&caller.0.tainted)
-            && self.0.authority.shares_roots_with(&caller.0.authority)
-            && self.0.anchors.shares_root_with(&caller.0.anchors)
+        if let Some(cached) = self
+            .0
+            .returns
+            .lock()
+            .expect("return cache")
+            .get(&caller.0.identity)
         {
-            return caller.clone();
+            return cached.clone();
         }
-        Self(Arc::new(Root {
+        let successor = Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: caller.0.invocation,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
             authority: self.0.authority.clone(),
             tainted: self.0.tainted.clone(),
-        }))
+            opaque_import: caller.0.opaque_import.clone(),
+        }));
+        self.0
+            .returns
+            .lock()
+            .expect("return cache")
+            .entry(caller.0.identity)
+            .or_insert(successor)
+            .clone()
     }
 
     /// The C `malloc`/`calloc` statement owns an unresolved result. Record
     /// its creator before another function can test the pointer and resolve
     /// the outcome. This is not yet a live-storage creation grant.
     pub(in crate::kernel) fn pending_creation(&self, block: PointerBlock) -> Self {
+        self.memoized_c_event(CEvent::Pending(block.clone()), || {
+            self.pending_creation_uncached(block)
+        })
+    }
+
+    fn pending_creation_uncached(&self, block: PointerBlock) -> Self {
         debug_assert!(matches!(&block, PointerBlock::Symbolic(_)));
         assert!(
             !self.0.pending.contains_key(&block),
@@ -317,12 +652,17 @@ impl CreationEvents {
         Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending,
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
             authority: self.0.authority.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_import: self.0.opaque_import.clone(),
         }))
     }
 
@@ -330,6 +670,17 @@ impl CreationEvents {
     /// success attaches the original creator to the trusted Heap block even
     /// when a helper made the deciding branch.
     pub(in crate::kernel) fn resolve_pending(
+        &self,
+        pending_block: &PointerBlock,
+        live_block: Option<PointerBlock>,
+    ) -> Self {
+        self.memoized_c_event(
+            CEvent::Resolve(pending_block.clone(), live_block.clone()),
+            || self.resolve_pending_uncached(pending_block, live_block),
+        )
+    }
+
+    fn resolve_pending_uncached(
         &self,
         pending_block: &PointerBlock,
         live_block: Option<PointerBlock>,
@@ -360,18 +711,29 @@ impl CreationEvents {
         Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending,
             creators,
             anchors,
             authority,
             tainted,
+            opaque_import: self.0.opaque_import.clone(),
         }))
     }
 
     /// Called only at checked C storage creation, never at resource lowering,
     /// contract allocation import, or generic memory-block construction.
     pub(in crate::kernel) fn created(&self, block: PointerBlock) -> Self {
+        self.memoized_c_event(CEvent::Created(block.clone()), || {
+            self.created_uncached(block)
+        })
+    }
+
+    fn created_uncached(&self, block: PointerBlock) -> Self {
         debug_assert!(matches!(block, PointerBlock::Heap(_)) || block.starts_with("local:"));
         let mut creators = self.0.creators.clone();
         assert!(
@@ -385,12 +747,17 @@ impl CreationEvents {
         Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending: self.0.pending.clone(),
             creators,
             anchors,
             authority,
             tainted: self.0.tainted.clone(),
+            opaque_import: self.0.opaque_import.clone(),
         }))
     }
 
@@ -417,6 +784,16 @@ impl CreationEvents {
         if !self.0.creators.contains_key(block) && !self.0.pending.contains_key(block) {
             return self.clone();
         }
+        self.memoized_c_event(
+            CEvent::MemberCreated(block.clone(), family.to_owned()),
+            || self.member_created_uncached(block, family),
+        )
+    }
+
+    fn member_created_uncached(&self, block: &PointerBlock, family: &str) -> Self {
+        if !self.0.creators.contains_key(block) && !self.0.pending.contains_key(block) {
+            return self.clone();
+        }
         let mut tainted = self.0.tainted.clone();
         let families = tainted
             .get(block)
@@ -427,12 +804,17 @@ impl CreationEvents {
         Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
             authority: self.0.authority.clone(),
             tainted,
+            opaque_import: self.0.opaque_import.clone(),
         }))
     }
 
@@ -467,12 +849,17 @@ impl CreationEvents {
         Ok(Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
             authority,
             tainted: self.0.tainted.clone(),
+            opaque_import: self.0.opaque_import.clone(),
         })))
     }
 
@@ -529,18 +916,36 @@ impl CreationEvents {
         Ok(Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
             authority,
             tainted: self.0.tainted.clone(),
+            opaque_import: self.0.opaque_import.clone(),
         })))
     }
 
     /// End of an automatic or heap lifetime removes its provenance. Future
     /// reuse at the same address needs an independently checked creation.
     pub(in crate::kernel) fn retired(&self, block: &PointerBlock) -> Result<Self, CreationRefusal> {
+        if !self.0.creators.contains_key(block) {
+            return Ok(self.clone());
+        }
+        if let Some(refusal) = self.retirement_refusal(block) {
+            return Err(refusal);
+        }
+        Ok(self.memoized_c_event(CEvent::Retired(block.clone()), || {
+            self.retired_uncached(block)
+                .expect("retirement was checked before memoizing")
+        }))
+    }
+
+    fn retired_uncached(&self, block: &PointerBlock) -> Result<Self, CreationRefusal> {
         if !self.0.creators.contains_key(block) {
             return Ok(self.clone());
         }
@@ -561,12 +966,17 @@ impl CreationEvents {
         Ok(Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
             pending: self.0.pending.clone(),
             creators,
             anchors,
             authority,
             tainted: self.0.tainted.without_key(block),
+            opaque_import: self.0.opaque_import.clone(),
         })))
     }
 }

@@ -7,12 +7,15 @@ The new abstract kernel model is additive; existing projects still use legacy
 counting. An authority-mode project can be selected with
 `{"resource_semantics":"authority"}` in `click.project.json`. Its restricted
 source slice admits an exact unary population established in the storage
-creator's execution proof. A field-free resource with an empty body can be
-folded to create one member and unfolded to consume it while matching authority
-is owned. Current `count(R(p))` reads the checked total only with that authority.
-Retirement requires zero members. Resource contracts, C calls, recorded-state
-count, and nonempty member bodies remain refused until their checked transfers
-exist.
+creator's execution proof. A field-free resource with a private owned-memory
+body can be folded to create one member and unfolded to consume it while
+matching authority is owned. Opening an existing member temporarily exposes
+its body without changing membership. Current `count(R(p))` reads the checked
+total only with that authority. Retirement requires zero members. Verified
+ordinary C helpers may borrow and return the same exact authority and member;
+their standalone proofs receive an opaque population with no known count or
+creator right. Other contract transitions, worker calls, recorded-state count,
+and field-bearing or nested member bodies remain refused.
 
 ## Establishment and uniqueness
 
@@ -32,8 +35,9 @@ members nor recovery of raw memory ownership permits duplicate establishment.
 Aliases must resolve to the same anchor lifetime and registration. Reuse of a
 C address after deallocation must resolve to a new lifetime.
 
-The eventual C bridge must preserve this registration through calls, wrappers,
-frames, and thread transfers. The initial source slice rejects C calls.
+The C bridge preserves this registration through ordinary verified helpers
+that return the same borrowed authority and member. Wrappers, frames, and
+thread transfers still need checked integration.
 Minting a fresh internal identifier whenever a pointer is encountered would
 violate this rule. The abstract kernel allocator
 creates fresh abstract lifetimes only; it grants no C memory permission and is
@@ -42,9 +46,10 @@ not a source-level authority constructor.
 Establishment must also precede any member creation for that population. The
 creation environment alone does not prove emptiness at an arbitrary later
 point: it might already have produced and transferred ordinary `reference(p)`
-instances. The source slice checks production and consumption of one empty-body member at
-a time, updating the owned member fact and exact total in the same certificate
-event. Its creation ledger retains per-family member history, so local absence
+instances. The source slice checks production and consumption of one field-free
+member with a private owned-memory body at a time, exchanging that body and the
+owned member fact while changing the exact total in one certificate event. Its
+creation ledger retains per-family member history, so local absence
 after consumption or future transfer cannot justify re-establishment. Other
 member forms still require checked integration.
 
@@ -169,9 +174,15 @@ pointer-anchored declared family, and lowers it to a distinct exclusive kernel
 resource. Ordinary resource evaluation refuses to mint it. The explicit
 project mode and proof artifacts carry the semantics choice. Checked source
 `fold`/`unfold` establish and retire authority; direct `fold(R(p))` and
-`unfold(R(p))` create and consume one empty-body member. The latter exchange
-requires matching owned authority and is rechecked by the certificate checker.
-Current exact `count(R(p))` reads that ledger, never the legacy population
-state. Authority transfer through contracts, C calls, nonempty member bodies,
-and historical count observations still need integration before authority mode
-can verify a real counted-resource program.
+`unfold(R(p))` create and consume one field-free member, exchanging its private
+owned-memory body. The exchange requires matching owned authority and is
+rechecked by the certificate checker. `open(R(p))` exposes that body while
+preserving membership, and its close restores the body. Current exact
+`count(R(p))` reads the ledger, never the legacy population state. A verified
+ordinary helper can borrow and return the same authority and member through
+the checked resource contract and creation ledger. Its standalone proof imports
+only that declared custody as an opaque population: it cannot observe a total,
+create or consume members, or retire authority. Other contract transitions,
+worker calls, field-bearing or nested member bodies, and historical count
+observations still need integration before authority mode can verify a real
+counted-resource program.
