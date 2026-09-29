@@ -117,3 +117,45 @@ Run only the markdown integration examples with:
 ```sh
 cargo test --test mdtests
 ```
+
+## Install Click
+
+On macOS or Linux, install the latest release with:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/lacker/click/main/install.sh | sh
+```
+
+Set `CLICK_VERSION` to install a specific release instead:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/lacker/click/main/install.sh | CLICK_VERSION=0.8.2 sh
+```
+
+On Windows, run the matching PowerShell installer. It installs the latest
+release by default and also accepts `CLICK_VERSION`:
+
+```powershell
+irm https://raw.githubusercontent.com/lacker/click/main/install.ps1 | iex
+```
+
+```powershell
+$env:CLICK_VERSION = '0.8.2'; irm https://raw.githubusercontent.com/lacker/click/main/install.ps1 | iex
+```
+
+Once `clicklang` is published to crates.io, install just the main command with:
+
+```sh
+cargo install clicklang --bin click
+```
+
+Click keeps its launcher and installed versions under `~/.click`. The launcher
+uses the nearest `.click-version` file for a project, then the global default.
+Use `click install 0.8.2` to add a version, `click use 0.8.2` to pin the
+current directory for the project, and `click default 0.9.0` to change the
+global fallback. Without either, Click runs the launcher version. `click versions`
+lists installed versions. A project can commit `.click-version` to share its
+pin with collaborators.
+
+Set `CLICK_HOME` to choose a different install directory. Set
+`CLICK_RELEASE_REPOSITORY=owner/name` to install from another GitHub repository.
