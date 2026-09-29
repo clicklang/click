@@ -934,6 +934,14 @@ allocation. The reserved ranges are:
 | `1 << 42 .. 1 << 43` | universal-introduction witnesses (`UNIVERSAL_WITNESS_VARIABLE_BASE`) |
 | `1 << 43 .. 1 << 44` | spec fold binders (`spec_fold_bound_variable`, base plus hash) |
 
+Direct contract `forall` certification now introduces its witness through
+`Variable::allocate_fresh`. This kernel allocator uses a private identity
+origin and a process-wide counter, so `Variable(n)` cannot forge its result
+even when `n` is the same number. The rule substitutes that witness in the
+body and keeps the ambient fact context intact. Numeric allocation by the
+older producers above remains separate; new kernel rules needing an arbitrary
+fresh variable should use the allocator rather than invent another range.
+
 The match-binder and spec-fold-binder ranges carry soundness obligations:
 a binder that equals an unrelated free identity can capture it. The
 `the_match_binder_range_is_disjoint_from_every_other_producer` and

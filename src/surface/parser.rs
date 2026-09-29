@@ -5164,133 +5164,7 @@ impl Parser {
     fn parse_proof_tactic_inner(&mut self) -> Result<ProofTactic, ClickError> {
         let name = self.expect_ident("tactic")?;
         match name.as_str() {
-            "let" => {
-                if self.peek() == Some(&Token::LParen) {
-                    return self.parse_let_satisfy();
-                }
-                let output = self.parse_let_output_pattern()?;
-                self.expect(Token::Equal)?;
-                if self.peek_ident() == Some("step") {
-                    self.position += 1;
-                    self.expect(Token::LParen)?;
-                    if !self.call_binder_transport_follows() {
-                        return Err(self.error(
-                            "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",
-                        ));
-                    }
-                    let transport = self.parse_call_binder_transport(Some(output))?;
-                    self.expect(Token::RParen)?;
-                    self.expect(Token::Semicolon)?;
-                    return Ok(ProofTactic::StepCall(transport));
-                }
-                if self.peek_ident() == Some("unfold") {
-                    let CallOutputPattern::Named(bindings) = output else {
-                        return Err(self.error(
-                            "resource unfold outputs require a labeled pattern: `let { slot: name } = unfold(resource)`",
-                        ));
-                    };
-                    self.position += 1;
-                    self.expect(Token::LParen)?;
-                    let ResourceClause::Named {
-                        mut binding,
-                        resource,
-                    } = self.parse_owned_resource_target()?
-                    else {
-                        return Err(self.error("resource unfold outputs require a named resource"));
-                    };
-                    self.expect(Token::RParen)?;
-                    binding.child_bindings = Some(
-                        self.bind_resource_child_names(&resource, bindings, true)?
-                            .into(),
-                    );
-                    self.expect(Token::Semicolon)?;
-                    return Ok(ProofTactic::UnfoldResource(ResourceClause::Named {
-                        binding,
-                        resource,
-                    }));
-                }
-                let CallOutputPattern::Single(name) = output else {
-                    return Err(self.error(
-                        "resource construction requires one result name: `let name = fold(resource, { ... })`",
-                    ));
-                };
-                self.expect_ident_spelling("fold")?;
-                self.expect(Token::LParen)?;
-                let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
-                let ResourceClause::Declared {
-                    name: resource_name,
-                    ..
-                } = &resource
-                else {
-                    return Err(self.error("fold construction requires a declared resource"));
-                };
-                if self.current_contract_bindings.contains(&name)
-                    || self.current_integer_params.contains(&name)
-                    || self.current_integer_lets.contains(&name)
-                {
-                    return Err(self.error("fold result conflicts with a C or pure binding"));
-                }
-                let identity = if let Some((identity, previous)) =
-                    self.current_resource_bindings.get(&name)
-                {
-                    if previous != resource_name && !self.child_slot_identities.contains(identity) {
-                        return Err(self.error("fold result changes the named resource family"));
-                    }
-                    *identity
-                } else {
-                    let identity = Variable(self.next_resource_identity);
-                    self.next_resource_identity += 1;
-                    identity
-                };
-                self.expect(Token::Comma)?;
-                self.expect(Token::LBrace)?;
-                let mut fields = Vec::new();
-                while self.peek() != Some(&Token::RBrace) {
-                    let field = self.expect_ident("resource field name")?;
-                    self.expect(Token::Colon)?;
-                    let value = self.parse_contract_expression()?;
-                    fields.push((field, value));
-                    if self.peek() != Some(&Token::Comma) {
-                        break;
-                    }
-                    self.position += 1;
-                }
-                self.expect(Token::RBrace)?;
-                let child_bindings = if self.peek() == Some(&Token::Comma) {
-                    self.position += 1;
-                    self.parse_resource_child_bindings(&resource, false)?
-                } else {
-                    Vec::new()
-                };
-                self.expect(Token::RParen)?;
-                self.expect(Token::Semicolon)?;
-                let binding = ResourceInstanceBinding {
-                    name: name.clone(),
-                    identity,
-                    children: vec![],
-                    schema: None,
-                    fields: None,
-                    fold_fields: None,
-                    child_bindings: Some(Vec::new().into()),
-                };
-                self.current_resource_bindings
-                    .insert(name.clone(), (identity, resource_name.clone()));
-                self.current_resource_targets.insert(
-                    name,
-                    ResourceClause::Named {
-                        binding: binding.clone(),
-                        resource: Box::new(resource.clone()),
-                    },
-                );
-                Ok(ProofTactic::FoldResource(ResourceClause::Named {
-                    binding: ResourceInstanceBinding {
-                        fold_fields: Some(fields),
-                        child_bindings: Some(child_bindings.into()),
-                        ..binding
-                    },
-                    resource: Box::new(resource),
-                }))
-            }
+            "let" => self.parse_let_proof_tactic(),
             "both" => self.parse_both_proof_tactic(),
             "close_invariants" if self.peek_ident() == Some("by") => {
                 self.position += 1;
@@ -5302,6 +5176,136 @@ impl Parser {
             }
             _ => self.parse_other_proof_tactic(name),
         }
+    }
+
+    // `let ... = fold(...)` has a large parsing frame. Keep it out of the
+    // common tactic dispatcher so nested proof bodies fit the bounded stack.
+    #[inline(never)]
+    fn parse_let_proof_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        if self.peek() == Some(&Token::LParen) {
+            return self.parse_let_satisfy();
+        }
+        let output = self.parse_let_output_pattern()?;
+        self.expect(Token::Equal)?;
+        if self.peek_ident() == Some("step") {
+            self.position += 1;
+            self.expect(Token::LParen)?;
+            if !self.call_binder_transport_follows() {
+                return Err(self.error(
+                            "a call output binding requires a call and binder map: `let name = step(callee(...), { binder: instance })`",
+                        ));
+            }
+            let transport = self.parse_call_binder_transport(Some(output))?;
+            self.expect(Token::RParen)?;
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::StepCall(transport));
+        }
+        if self.peek_ident() == Some("unfold") {
+            let CallOutputPattern::Named(bindings) = output else {
+                return Err(self.error(
+                            "resource unfold outputs require a labeled pattern: `let { slot: name } = unfold(resource)`",
+                        ));
+            };
+            self.position += 1;
+            self.expect(Token::LParen)?;
+            let ResourceClause::Named {
+                mut binding,
+                resource,
+            } = self.parse_owned_resource_target()?
+            else {
+                return Err(self.error("resource unfold outputs require a named resource"));
+            };
+            self.expect(Token::RParen)?;
+            binding.child_bindings = Some(
+                self.bind_resource_child_names(&resource, bindings, true)?
+                    .into(),
+            );
+            self.expect(Token::Semicolon)?;
+            return Ok(ProofTactic::UnfoldResource(ResourceClause::Named {
+                binding,
+                resource,
+            }));
+        }
+        let CallOutputPattern::Single(name) = output else {
+            return Err(self.error(
+                        "resource construction requires one result name: `let name = fold(resource, { ... })`",
+                    ));
+        };
+        self.expect_ident_spelling("fold")?;
+        self.expect(Token::LParen)?;
+        let resource = self.parse_resource_target(ResourceAccessMode::Own)?;
+        let ResourceClause::Declared {
+            name: resource_name,
+            ..
+        } = &resource
+        else {
+            return Err(self.error("fold construction requires a declared resource"));
+        };
+        if self.current_contract_bindings.contains(&name)
+            || self.current_integer_params.contains(&name)
+            || self.current_integer_lets.contains(&name)
+        {
+            return Err(self.error("fold result conflicts with a C or pure binding"));
+        }
+        let identity = if let Some((identity, previous)) = self.current_resource_bindings.get(&name)
+        {
+            if previous != resource_name && !self.child_slot_identities.contains(identity) {
+                return Err(self.error("fold result changes the named resource family"));
+            }
+            *identity
+        } else {
+            let identity = Variable(self.next_resource_identity);
+            self.next_resource_identity += 1;
+            identity
+        };
+        self.expect(Token::Comma)?;
+        self.expect(Token::LBrace)?;
+        let mut fields = Vec::new();
+        while self.peek() != Some(&Token::RBrace) {
+            let field = self.expect_ident("resource field name")?;
+            self.expect(Token::Colon)?;
+            let value = self.parse_contract_expression()?;
+            fields.push((field, value));
+            if self.peek() != Some(&Token::Comma) {
+                break;
+            }
+            self.position += 1;
+        }
+        self.expect(Token::RBrace)?;
+        let child_bindings = if self.peek() == Some(&Token::Comma) {
+            self.position += 1;
+            self.parse_resource_child_bindings(&resource, false)?
+        } else {
+            Vec::new()
+        };
+        self.expect(Token::RParen)?;
+        self.expect(Token::Semicolon)?;
+        let binding = ResourceInstanceBinding {
+            name: name.clone(),
+            identity,
+            children: vec![],
+            schema: None,
+            fields: None,
+            fold_fields: None,
+            child_bindings: Some(Vec::new().into()),
+        };
+        self.current_resource_bindings
+            .insert(name.clone(), (identity, resource_name.clone()));
+        self.current_resource_targets.insert(
+            name,
+            ResourceClause::Named {
+                binding: binding.clone(),
+                resource: Box::new(resource.clone()),
+            },
+        );
+        Ok(ProofTactic::FoldResource(ResourceClause::Named {
+            binding: ResourceInstanceBinding {
+                fold_fields: Some(fields),
+                child_bindings: Some(child_bindings.into()),
+                ..binding
+            },
+            resource: Box::new(resource),
+        }))
     }
 
     fn parse_let_satisfy(&mut self) -> Result<ProofTactic, ClickError> {

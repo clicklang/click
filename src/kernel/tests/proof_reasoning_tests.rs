@@ -7122,8 +7122,8 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
     // exclude the concrete assignments that falsify an unguarded equality.
     fn bits(term: &Bitvector32Term, a: i32, b: i32) -> u32 {
         match term {
-            Bitvector32Term::Variable(Variable(910)) => a as u32,
-            Bitvector32Term::Variable(Variable(911)) => b as u32,
+            Bitvector32Term::Variable(variable) if *variable == Variable(910) => a as u32,
+            Bitvector32Term::Variable(variable) if *variable == Variable(911) => b as u32,
             Bitvector32Term::Constant(value) => *value,
             Bitvector32Term::Add(left, right) => bits(left, a, b).wrapping_add(bits(right, a, b)),
             Bitvector32Term::Subtract(left, right) => {
@@ -7259,8 +7259,8 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
 fn int32_order_observation_axiom_agrees_with_boundary_model() {
     fn bits(term: &Bitvector32Term, left: i32, right: i32) -> i32 {
         match term {
-            Bitvector32Term::Variable(Variable(920)) => left,
-            Bitvector32Term::Variable(Variable(921)) => right,
+            Bitvector32Term::Variable(variable) if *variable == Variable(920) => left,
+            Bitvector32Term::Variable(variable) if *variable == Variable(921) => right,
             Bitvector32Term::Constant(value) => *value as i32,
             _ => panic!("unexpected machine term: {term:?}"),
         }
@@ -7327,7 +7327,7 @@ fn integer_machine_round_trip_axioms_hold_in_independent_boundary_models() {
     fn integer(term: &IntegerTerm, input: &BigInt) -> BigInt {
         match term {
             IntegerTerm::Constant(value) => value.clone(),
-            IntegerTerm::Variable(Variable(971)) => input.clone(),
+            IntegerTerm::Variable(variable) if *variable == Variable(971) => input.clone(),
             IntegerTerm::Machine(observation) => {
                 let Bitvector32Term::IntegerToMachine { value, destination } = observation.value()
                 else {

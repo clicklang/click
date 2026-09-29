@@ -2825,11 +2825,10 @@ pub(crate) fn certification_proves_proposition(
                     conclusion,
                 )
         }
-        // A binder-free body is independent of the quantified variable, so
-        // all ambient facts remain available, including facts about an outer
-        // variable with the same identity. The binder-dependent case still
-        // uses the legacy filtered context below; replace it with a fresh
-        // witness or checked premise evidence, not another fact-removal path.
+        // Introduce an arbitrary fresh identity while retaining the entire
+        // ambient context. Its private origin prevents capture even when an
+        // ambient fact uses the same numeric ID, and nested introductions
+        // receive distinct identities.
         Proposition::ForAll {
             var,
             sort: Sort::CInt32 | Sort::Bitvector32,
@@ -2837,10 +2836,15 @@ pub(crate) fn certification_proves_proposition(
             ..
         } => {
             if crate::kernel::proposition_has_free_bitvector_variable(body, *var) {
-                certification_proves_proposition(
-                    &assumptions.without_free_bitvector_variable(*var),
+                let Some(witness) = Variable::allocate_fresh() else {
+                    return false;
+                };
+                let introduced = crate::kernel::substitute_int32_variable_in_proposition(
                     body,
-                )
+                    *var,
+                    Bitvector32Term::Variable(witness),
+                );
+                certification_proves_proposition(assumptions, &introduced)
             } else {
                 certification_proves_proposition(assumptions, body)
             }

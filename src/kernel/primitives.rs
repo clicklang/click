@@ -77,8 +77,72 @@ pub(super) const C_POINTER_BYTE_WIDTH: u32 = 8;
 /// contract rather than copying a second limit into a checker.
 pub(crate) const HEAP_ALLOCATION_ALIGNMENT: u64 = 16;
 
+/// A symbolic identity. Source and execution producers still use the numeric
+/// constructor below; a kernel-allocated fresh variable carries a private
+/// origin as well, so even a caller-constructed variable with the same number
+/// cannot capture it. Names in source text are separate from this identity.
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Variable {
+    number: (u64,),
+    origin: VariableOrigin,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Variable(pub u64);
+enum VariableOrigin {
+    Ordinary,
+    KernelFresh,
+}
+
+impl std::fmt::Debug for Variable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.origin {
+            VariableOrigin::Ordinary => formatter.debug_tuple("Variable").field(&self.0).finish(),
+            VariableOrigin::KernelFresh => formatter
+                .debug_tuple("FreshVariable")
+                .field(&self.0)
+                .finish(),
+        }
+    }
+}
+
+// Preserve existing numeric producers while migrating them to explicit kernel
+// allocation APIs. New code needing a fresh identity uses `allocate_fresh`
+// rather than inventing another numeric band. Variable(n) cannot forge one.
+#[allow(non_snake_case)]
+pub const fn Variable(number: u64) -> Variable {
+    Variable {
+        number: (number,),
+        origin: VariableOrigin::Ordinary,
+    }
+}
+
+impl std::ops::Deref for Variable {
+    type Target = (u64,);
+
+    fn deref(&self) -> &Self::Target {
+        &self.number
+    }
+}
+
+impl Variable {
+    /// Mint a free symbolic identity. This stream is process-wide so nested
+    /// and forked checks cannot reuse an identity; the private origin
+    /// separates it from every existing numeric producer. New kernel rules
+    /// that need arbitrary fresh variables should allocate through here.
+    pub(in crate::kernel) fn allocate_fresh() -> Option<Self> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1 << 44);
+        let number = NEXT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |number| {
+                (number < (1 << 45)).then_some(number + 1)
+            })
+            .ok()?;
+        Some(Self {
+            number: (number,),
+            origin: VariableOrigin::KernelFresh,
+        })
+    }
+}
 
 /// A derived index of the free symbolic variables stored in one immutable
 /// execution-environment version. Environment clones share the initialized
@@ -7226,7 +7290,7 @@ pub enum Term {
     CState(Box<CState>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Proposition {
     Equal(Term, Term),
     ConditionIs(ConditionTerm, bool),
@@ -7349,6 +7413,12 @@ pub enum Proposition {
     },
 }
 
+impl Clone for Proposition {
+    fn clone(&self) -> Self {
+        clone_proposition_iteratively(self)
+    }
+}
+
 impl Hash for Proposition {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let mut pending = vec![self];
@@ -7404,9 +7474,9 @@ impl Hash for Proposition {
     }
 }
 
-/// Clones the logical tree without recursing through a long connective
-/// chain. The ordinary derived clone remains sufficient for atomic terms;
-/// only the proposition topology needs an explicit work stack.
+/// Clones the logical tree without recursing through a long connective chain.
+/// This is also `Proposition::clone`, so callers cannot accidentally restore
+/// recursive cloning by using the trait method on a deep implication.
 pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Proposition {
     enum Frame<'a> {
         Visit(&'a Proposition),
@@ -7469,7 +7539,7 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
                     });
                     frames.push(Frame::Visit(body));
                 }
-                atomic => values.push(atomic.clone()),
+                atomic => values.push(clone_atomic_proposition(atomic)),
             },
             Frame::BuildAnd => {
                 let right = values.pop().expect("the right proposition is cloned");
@@ -7510,6 +7580,173 @@ pub(crate) fn clone_proposition_iteratively(proposition: &Proposition) -> Propos
         }
     }
     values.pop().expect("the root proposition is cloned")
+}
+
+fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
+    match proposition {
+        Proposition::Equal(left, right) => Proposition::Equal(left.clone(), right.clone()),
+        Proposition::ConditionIs(condition, value) => {
+            Proposition::ConditionIs(condition.clone(), *value)
+        }
+        Proposition::Predicate { name, arguments } => Proposition::Predicate {
+            name: name.clone(),
+            arguments: arguments.clone(),
+        },
+        Proposition::CExpressionEvaluates {
+            state,
+            expression,
+            outcome,
+        } => Proposition::CExpressionEvaluates {
+            state: state.clone(),
+            expression: expression.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CConditionEvaluates {
+            state,
+            condition,
+            outcome,
+        } => Proposition::CConditionEvaluates {
+            state: state.clone(),
+            condition: condition.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CStatementExecutes {
+            state,
+            statement,
+            outcome,
+        } => Proposition::CStatementExecutes {
+            state: state.clone(),
+            statement: statement.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CStatementVerifies {
+            state,
+            statement,
+            outcome,
+        } => Proposition::CStatementVerifies {
+            state: state.clone(),
+            statement: statement.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CFunctionExecutes {
+            state,
+            function,
+            arguments,
+            outcome,
+        } => Proposition::CFunctionExecutes {
+            state: state.clone(),
+            function: function.clone(),
+            arguments: arguments.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CFunctionVerifies {
+            state,
+            function,
+            arguments,
+            outcome,
+        } => Proposition::CFunctionVerifies {
+            state: state.clone(),
+            function: function.clone(),
+            arguments: arguments.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CFunctionSatisfiesSpecification {
+            function,
+            specification,
+        } => Proposition::CFunctionSatisfiesSpecification {
+            function: function.clone(),
+            specification: specification.clone(),
+        },
+        Proposition::CFunctionPartiallySatisfiesSpecification {
+            function,
+            specification,
+        } => Proposition::CFunctionPartiallySatisfiesSpecification {
+            function: function.clone(),
+            specification: specification.clone(),
+        },
+        Proposition::CMemoryLoads {
+            memory,
+            pointer,
+            outcome,
+        } => Proposition::CMemoryLoads {
+            memory: memory.clone(),
+            pointer: pointer.clone(),
+            outcome: outcome.clone(),
+        },
+        Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width,
+        } => Proposition::CMemoryCanStore {
+            memory: memory.clone(),
+            pointer: pointer.clone(),
+            byte_width: *byte_width,
+        },
+        Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes,
+        } => Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+        },
+        Proposition::CMemoryReadDefined {
+            memory,
+            pointer,
+            value_type,
+        } => Proposition::CMemoryReadDefined {
+            memory: memory.clone(),
+            pointer: pointer.clone(),
+            value_type: *value_type,
+        },
+        Proposition::CResourceSeparate { left, right } => Proposition::CResourceSeparate {
+            left: left.clone(),
+            right: right.clone(),
+        },
+        Proposition::CResourceComposition(resources) => {
+            Proposition::CResourceComposition(resources.clone())
+        }
+        Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
+            parent: parent.clone(),
+            child: child.clone(),
+        },
+        Proposition::CMemoryMutatesOnly {
+            before,
+            after,
+            writes,
+        } => Proposition::CMemoryMutatesOnly {
+            before: before.clone(),
+            after: after.clone(),
+            writes: writes.clone(),
+        },
+        Proposition::CMemoryEffectSummary {
+            before,
+            after,
+            mutable_ranges,
+        } => Proposition::CMemoryEffectSummary {
+            before: before.clone(),
+            after: after.clone(),
+            mutable_ranges: mutable_ranges.clone(),
+        },
+        Proposition::CHeapAllocationFreed {
+            before,
+            after,
+            allocation_base,
+            bytes,
+        } => Proposition::CHeapAllocationFreed {
+            before: before.clone(),
+            after: after.clone(),
+            allocation_base: allocation_base.clone(),
+            bytes: bytes.clone(),
+        },
+        Proposition::And(..)
+        | Proposition::Or(..)
+        | Proposition::Not(..)
+        | Proposition::Implies(..)
+        | Proposition::ForAll { .. }
+        | Proposition::Exists { .. } => unreachable!("connectives are cloned by the work stack"),
+    }
 }
 
 /// Compares a proposition tree without consuming stack per logical connective.
@@ -7813,14 +8050,14 @@ pub(crate) enum PropositionDerivationRule {
     /// Constructor injectivity: an exact equality between two applications
     /// of one constructor entails equality of the selected fields.
     AlgebraicConstructorInjectivity {
-        source: Proposition,
+        source: Box<Proposition>,
         field_index: usize,
     },
     OrLeft(Box<PropositionDerivation>),
     OrRight(Box<PropositionDerivation>),
     DoubleNegation(Box<PropositionDerivation>),
     Implies {
-        antecedent: Proposition,
+        antecedent: Box<Proposition>,
         body: Box<PropositionDerivation>,
     },
     ImpliesFalseAntecedent(Box<PropositionDerivation>),
@@ -7829,7 +8066,7 @@ pub(crate) enum PropositionDerivationRule {
     /// existential fact and checking the target body under that witness's
     /// conjuncts.
     ExistsFromFact {
-        source: Proposition,
+        source: Box<Proposition>,
         body: Box<PropositionDerivation>,
     },
     /// Prove an existential by selecting a free witness term and checking the
@@ -7841,12 +8078,12 @@ pub(crate) enum PropositionDerivationRule {
     /// Prove an in-range one-byte loadability universal from one exact wider
     /// loadability range and the universal body's guard premises.
     ForAllLoadableRange {
-        source: Proposition,
+        source: Box<Proposition>,
     },
     /// Prove an existential one-byte loadability fact by selecting the
     /// constant zero index from one exact wider range.
     ExistsLoadableRange {
-        source: Proposition,
+        source: Box<Proposition>,
         witness: Bitvector32Term,
     },
     FiniteForAll {
@@ -7861,7 +8098,7 @@ pub(crate) enum PropositionDerivationRule {
         body: Box<PropositionDerivation>,
     },
     DisjunctionCases {
-        disjunction: Proposition,
+        disjunction: Box<Proposition>,
         cases: Vec<PropositionDerivation>,
     },
 }

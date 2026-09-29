@@ -689,7 +689,10 @@ impl PropositionSearch for PureFactContext {
             self.clone()
                 .assume_proposition(antecedent.clone())
                 .derive_proposition_using(right, for_simp)
-                .map(|body| PropositionDerivationRule::Implies { antecedent, body })
+                .map(|body| PropositionDerivationRule::Implies {
+                    antecedent: Box::new(antecedent),
+                    body,
+                })
                 .or_else(|| {
                     self.derive_proposition_using(&negated_antecedent, for_simp)
                         .map(PropositionDerivationRule::ImpliesFalseAntecedent)
@@ -759,7 +762,7 @@ impl PropositionSearch for PureFactContext {
             .next()
             .map(|(source, field_index)| {
                 PropositionDerivationRule::AlgebraicConstructorInjectivity {
-                    source: source.clone(),
+                    source: Box::new(source.clone()),
                     field_index: *field_index,
                 }
             })
@@ -828,7 +831,7 @@ impl PropositionSearch for PureFactContext {
             let derivation = witness_assumptions.derive_proposition_using(body, false);
             if let Some(derivation) = derivation {
                 return Some(PropositionDerivationRule::ExistsFromFact {
-                    source,
+                    source: Box::new(source),
                     body: derivation,
                 });
             }
@@ -890,7 +893,7 @@ impl PropositionSearch for PureFactContext {
             let covered = crate::kernel::api::loadable_covered_by_fact(&candidate, conclusion);
             if covered {
                 return Some(PropositionDerivationRule::ForAllLoadableRange {
-                    source: source.clone(),
+                    source: Box::new(source.clone()),
                 });
             }
         }
@@ -918,7 +921,7 @@ impl PropositionSearch for PureFactContext {
             let candidate = self.with_only_proposition_facts(std::slice::from_ref(source));
             if crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated) {
                 return Some(PropositionDerivationRule::ExistsLoadableRange {
-                    source: source.clone(),
+                    source: Box::new(source.clone()),
                     witness,
                 });
             }
@@ -1008,7 +1011,7 @@ impl PropositionSearch for PureFactContext {
                 continue;
             };
             return Some(PropositionDerivationRule::DisjunctionCases {
-                disjunction: disjunction.clone(),
+                disjunction: Box::new(disjunction.clone()),
                 cases: proofs,
             });
         }

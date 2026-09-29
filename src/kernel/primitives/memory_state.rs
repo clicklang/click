@@ -2501,11 +2501,11 @@ impl CMemory {
             .zeroed_pending_allocations
             .remove(base);
         let resolved_base = if succeeds {
-            let PointerBlock::Symbolic(Variable(identity)) = base.block else {
+            let PointerBlock::Symbolic(variable) = base.block else {
                 return None;
             };
             Pointer {
-                block: PointerBlock::Heap(identity),
+                block: PointerBlock::Heap(variable.0),
                 offset: PointerOffsetTerm::Constant(0),
             }
         } else {

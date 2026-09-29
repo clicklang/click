@@ -2308,11 +2308,11 @@ fn execute_c_return_expression_paths(
                     );
                     let resolved_state = resolve_pending_heap_allocations(state, &path_assumptions);
                     let resolved_pointer = if truthiness_path.is_true {
-                        let PointerBlock::Symbolic(Variable(identity)) = pointer.block else {
+                        let PointerBlock::Symbolic(variable) = pointer.block else {
                             unreachable!("pending malloc results have symbolic heap identities");
                         };
                         Pointer {
-                            block: PointerBlock::Heap(identity),
+                            block: PointerBlock::Heap(variable.0),
                             offset: PointerOffsetTerm::Constant(0),
                         }
                     } else {

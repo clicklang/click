@@ -596,7 +596,7 @@ impl PropositionDerivation {
                 }
             }
             PropositionDerivationRule::AlgebraicConstructorInjectivity { source, .. } => {
-                premises.insert(source.clone());
+                premises.insert(source.as_ref().clone());
             }
             PropositionDerivationRule::OrLeft(proof)
             | PropositionDerivationRule::OrRight(proof)
@@ -606,7 +606,7 @@ impl PropositionDerivation {
                 proof.collect_context_premises(premises);
             }
             PropositionDerivationRule::ExistsFromFact { source, body } => {
-                premises.insert(source.clone());
+                premises.insert(source.as_ref().clone());
                 let mut body_premises = BTreeSet::new();
                 body.collect_context_premises(&mut body_premises);
                 if let Proposition::Exists {
@@ -614,7 +614,7 @@ impl PropositionDerivation {
                     sort,
                     body: source_body,
                     ..
-                } = source
+                } = source.as_ref()
                     && let Some(renamed) =
                         crate::kernel::api::substitute_quantified_body_capture_free(
                             source_body,
@@ -638,10 +638,10 @@ impl PropositionDerivation {
                 body.collect_context_premises(premises);
             }
             PropositionDerivationRule::ForAllLoadableRange { source } => {
-                premises.insert(source.clone());
+                premises.insert(source.as_ref().clone());
             }
             PropositionDerivationRule::ExistsLoadableRange { source, .. } => {
-                premises.insert(source.clone());
+                premises.insert(source.as_ref().clone());
             }
             PropositionDerivationRule::Implies { antecedent, body } => {
                 let mut body_premises = BTreeSet::new();
@@ -663,7 +663,7 @@ impl PropositionDerivation {
                 body.collect_context_premises(premises);
             }
             PropositionDerivationRule::DisjunctionCases { disjunction, cases } => {
-                premises.insert(disjunction.clone());
+                premises.insert(disjunction.as_ref().clone());
                 let mut case_propositions = Vec::new();
                 collect_or_cases(disjunction, &mut case_propositions);
                 for (case, local) in cases.iter().zip(case_propositions) {

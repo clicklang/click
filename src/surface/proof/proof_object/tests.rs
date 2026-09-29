@@ -11876,8 +11876,8 @@ fn generated_load_source_events_are_idempotent_and_tombstone_conflicts() {
             .generated_load_source_resolutions
             .get(&Variable(70_001)),
         Some(crate::kernel::GeneratedLoadSourceResolution::Ambiguous {
-            variable: Variable(70_001)
-        })
+            variable
+        }) if *variable == Variable(70_001)
     ));
     assert_eq!(execution.presentation.generated_load_source_events.len(), 2);
     execution
@@ -11978,8 +11978,8 @@ fn generated_load_source_event_forks_merge_by_suffix_without_cross_path_leaks() 
             .generated_load_source_resolutions
             .get(&Variable(70_002)),
         Some(crate::kernel::GeneratedLoadSourceResolution::Ambiguous {
-            variable: Variable(70_002)
-        })
+            variable
+        }) if *variable == Variable(70_002)
     ));
 
     // A sibling's event is not visible from the root or an unrelated key.
@@ -12023,8 +12023,8 @@ fn duplicate_terminal_outcomes_merge_source_ambiguity_per_outcome() {
             .generated_load_source_resolutions
             .get(&Variable(70_005)),
         Some(crate::kernel::GeneratedLoadSourceResolution::Ambiguous {
-            variable: Variable(70_005)
-        })
+            variable
+        }) if *variable == Variable(70_005)
     ));
 }
 

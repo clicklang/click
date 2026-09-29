@@ -5616,6 +5616,52 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
 }
 
 #[test]
+fn kernel_fresh_identity_cannot_be_forged_by_the_numeric_constructor() {
+    let first = Variable::allocate_fresh().expect("fresh identity");
+    let second = Variable::allocate_fresh().expect("another fresh identity");
+    assert_ne!(first, second);
+    assert_ne!(first, Variable(first.0));
+}
+
+#[test]
+fn certification_generalization_retains_outer_facts_for_a_binder_dependent_body() {
+    let outer = Variable(140);
+    let other = Variable(141);
+    let equal = |left, right| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            true,
+        )
+    };
+    let facts = PureFactContext::new()
+        .assume_proposition(equal(
+            Bitvector32Term::Variable(outer),
+            Bitvector32Term::Constant(0),
+        ))
+        .assume_proposition(equal(
+            Bitvector32Term::Variable(outer),
+            Bitvector32Term::Variable(other),
+        ));
+    let goal = Proposition::ForAll {
+        var: outer,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::And(
+            Box::new(equal(
+                Bitvector32Term::Variable(outer),
+                Bitvector32Term::Variable(outer),
+            )),
+            Box::new(equal(
+                Bitvector32Term::Variable(other),
+                Bitvector32Term::Constant(0),
+            )),
+        )),
+    };
+    assert!(
+        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal,)
+    );
+}
+
+#[test]
 fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
     let mut samples = Vec::new();
     for size in [32, 64, 128, 256] {

@@ -3288,6 +3288,7 @@ impl PureFactContext {
 
     /// Rebuilds the anchor separation index from the stated memory
     /// separations it mirrors.
+    #[cfg(test)]
     pub(super) fn rebuild_separated_anchor_offsets(&mut self) {
         self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
         let stated = self
@@ -3758,6 +3759,7 @@ impl PureFactContext {
         self.recompute_content_fingerprint();
     }
 
+    #[cfg(test)]
     pub(super) fn retain_proposition_facts(&mut self, keep: impl FnMut(&Proposition) -> bool) {
         let mut keep = keep;
         self.prop_facts = self
@@ -3815,6 +3817,7 @@ impl PureFactContext {
         }
     }
 
+    #[cfg(test)]
     fn rebuild_function_contract_facts(&mut self) {
         self.function_contract_facts = std::sync::Arc::new(BTreeMap::new());
         let facts = self.prop_facts.iter().cloned().collect::<Vec<_>>();
@@ -3917,6 +3920,7 @@ impl PureFactContext {
         self.memory_loadable_shape_facts = std::sync::Arc::new(std::sync::OnceLock::new());
     }
 
+    #[cfg(test)]
     fn rebuild_memory_loadable_facts(&mut self) {
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
@@ -4147,6 +4151,7 @@ impl PureFactContext {
         }
     }
 
+    #[cfg(test)]
     fn rebuild_algebraic_constructor_field_equalities(&mut self) {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
@@ -4282,6 +4287,7 @@ impl PureFactContext {
         }
     }
 
+    #[cfg(test)]
     fn rebuild_memory_separation_facts(&mut self) {
         self.memory_separation_facts = std::sync::Arc::new(BTreeMap::new());
         self.nonmemory_separation_facts = std::sync::Arc::new(Vec::new());
@@ -4959,36 +4965,6 @@ impl PureFactContext {
         restricted
     }
 
-    /// Legacy compatibility for direct quantified contract certification.
-    /// This discards facts and rebuilds their indexes to work around a reused
-    /// binder identity. Do not use it for new proof rules: introduction should
-    /// choose a fresh identity, or check the premises actually used by a proof.
-    /// Remove this helper when direct certification has that evidence.
-    pub(crate) fn without_free_bitvector_variable(&self, variable: Variable) -> Self {
-        let mut assumptions = self.clone();
-        assumptions.condition_facts = self
-            .condition_facts
-            .iter()
-            .filter(|(condition, _)| {
-                let mut variables = BTreeSet::new();
-                collect_condition_bitvector_variables(condition, &mut variables);
-                !variables.contains(&variable)
-            })
-            .fold(
-                crate::persistent::PersistentMap::default(),
-                |facts, (condition, value)| facts.with_inserted(condition.clone(), *value),
-            );
-        assumptions.rebuild_signed_order_bounds();
-        assumptions.rebuild_null_pointer_offsets();
-        assumptions.rebuild_memory_load_condition_facts();
-        assumptions.rebuild_condition_match_indexes();
-        assumptions.retain_proposition_facts(|proposition| {
-            !proposition_has_free_bitvector_variable(proposition, variable)
-        });
-        assumptions.recompute_content_fingerprint();
-        assumptions
-    }
-
     pub(super) fn includes(&self, required: &Self) -> bool {
         required
             .condition_facts
@@ -5081,7 +5057,7 @@ impl PropositionDerivation {
                 else {
                     return false;
                 };
-                expected == self.conclusion && available.prop_facts.contains(source)
+                expected == self.conclusion && available.prop_facts.contains(source.as_ref())
             }
             PropositionDerivationRule::OrLeft(proof) => {
                 let Proposition::Or(expected, _) = &self.conclusion else {
@@ -5109,9 +5085,13 @@ impl PropositionDerivation {
                 else {
                     return false;
                 };
-                antecedent == expected_antecedent.as_ref()
+                antecedent.as_ref() == expected_antecedent.as_ref()
                     && body.conclusion == **expected_body
-                    && body.check(&available.clone().assume_proposition(antecedent.clone()))
+                    && body.check(
+                        &available
+                            .clone()
+                            .assume_proposition(antecedent.as_ref().clone()),
+                    )
             }
             PropositionDerivationRule::ImpliesFalseAntecedent(proof) => {
                 let Proposition::Implies(expected_antecedent, _) = &self.conclusion else {
@@ -5147,7 +5127,7 @@ impl PropositionDerivation {
                     sort: source_sort,
                     body: source_body,
                     ..
-                } = source
+                } = source.as_ref()
                 else {
                     return false;
                 };
@@ -5226,7 +5206,7 @@ impl PropositionDerivation {
                     && body.check(available)
             }
             PropositionDerivationRule::DisjunctionCases { disjunction, cases } => {
-                if !available.prop_facts.contains(disjunction) {
+                if !available.prop_facts.contains(disjunction.as_ref()) {
                     return false;
                 }
                 let mut expected_cases = Vec::new();

@@ -4239,10 +4239,9 @@ mod tests {
             value: payload,
             destination: crate::kernel::MachineIntegerType::UInt32,
         });
-        let mut rewrite = TermRewrite::for_bits(
-            &Bitvector32Term::Variable(Variable(880)),
-            &Bitvector32Term::Variable(Variable(881)),
-        );
+        let from = Bitvector32Term::Variable(Variable(880));
+        let to = Bitvector32Term::Variable(Variable(881));
+        let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&input);
         assert!(
             matches!(output, Term::Bitvector32(Bitvector32Term::IntegerToMachine {
@@ -4324,7 +4323,7 @@ mod tests {
                 if matches!(value.as_ref(), Bitvector32Term::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
-                } if matches!(value.as_ref(), IntegerTerm::Variable(Variable(3_103_903))))
+                } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903)))
         ));
     }
 

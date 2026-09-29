@@ -1645,8 +1645,8 @@ mod condition_transition_tests {
         assert!(matches!(
             conflicting.as_slice(),
             [crate::kernel::GeneratedLoadBinding::Ambiguous {
-                variable: Variable(0xfeed)
-            }]
+                variable
+            }] if *variable == Variable(0xfeed)
         ));
     }
 
