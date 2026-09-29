@@ -15,13 +15,25 @@ execution prefixes that never complete. Exact results are conditional on the
 relevant operations completing; they do not establish fairness, deadlock
 freedom, or termination of polling.
 
-This issue is the current implementation roadmap. The older
-[contract and diagnostics record](../docs/internals/concurrency-contracts-and-diagnostics.md),
+## Dependency: authority migration first
+
+Complete [P1: Authority migration](authority-migration.md) before extending
+counted populations to shared workers or completing the exact counter result.
+That issue owns explicit `authority(...)`, consistent resource-instance and
+population semantics, migration of count-based examples, removal of
+`guarded_by`, and a mutex-protected shared-refcount acceptance example.
+
+This issue retains the concurrent-program milestones, runtime trust boundary,
+and synchronization obligations. Do not continue the superseded plan to infer
+shared-body access from a membership unit or extend local whole-population
+mutex custody as the long-term interface. Existing local proofs remain useful
+migration regressions, not evidence of a completed concurrent counting rule.
+
+The [contract and diagnostics record](../docs/internals/concurrency-contracts-and-diagnostics.md),
 [mutex contract design](../docs/internals/mutex-resource-contracts.md), and
-[resource-argument record](../docs/internals/resource-parameters.md) retain
-historical checkpoints and proposals. Their chronological status statements
-must not override the current state below. Consolidating those records is the
-first cleanup step, not a reason to implement every earlier proposal.
+[resource-argument record](../docs/internals/resource-parameters.md) contain
+historical checkpoints. The authority issue takes precedence for population
+semantics and `guarded_by`; this issue states the remaining concurrency scope.
 
 ## Current state
 
@@ -63,8 +75,9 @@ ordinary quantity-bearing wrapper. The [held-helper test](../mdtests/population_
 verifies; the [unheld-helper test](../mdtests/population_mutex_helper_unheld.md)
 requires `owns mutex_guard(&p->mutex)`. Publication and release account for the
 complete population, and retained units do not grant body access while unlocked.
-These payloads cannot yet lend use authority or transfer units to workers;
-current-count observations and join reconciliation remain the counter's next step.
+These payloads cannot yet lend use authority or transfer units to workers.
+The authority migration replaces their special access rules before further
+shared-population observation or join work.
 
 ### Mutex model boundary
 
@@ -103,7 +116,7 @@ atomic access are semantic disciplines, not three new declaration keywords.
 | `mutex_use(mu)` | Permission to participate while lifetime is guaranteed | Keep; unary use does not expose a guessed payload |
 | `mutex_use(mu, counter_state(p))` | Use authority with an authenticated protected resource type | Keep the accepted shape; generalize only when a concrete ordinary-resource example needs it |
 | `mutex_guard(mu)` | Exclusive ownership of an acquisition | Keep |
-| `guarded_by p->mutex;` | Optional legacy restriction to a pthread mutex field | Initialization now establishes the checked association without this annotation; existing annotations still constrain the address |
+| `guarded_by p->mutex;` | Legacy mutex-address restriction, still implemented | Remove in the authority migration; preserve authenticated associations through initialization and ordinary transfer |
 | `held(mu)` | Checked fact about the current path's acquisition | Convenience predicate; never a substitute for owned guard authority |
 | `runtime "modeled-pthread";` | Explicit selection of the trusted runtime specification | Keep the assumption visible |
 
@@ -116,14 +129,12 @@ recovers protected state.
 Do not introduce angle-bracket resource parameters, a `protecting` modifier,
 a `uses` clause, or public acquisition/continuity identifiers. Existing
 algebraic type applications such as `List<int32>` are unrelated to this
-restriction. The shelved `count_authority` and `create_count` proposal is not
-an accepted language extension.
-
-The current `guarded_by` parser requires a struct pointer's pthread mutex
-field with the modeled layout. That excludes a direct standalone mutex-pointer
-annotation. Any redesign must retain authenticated initialization associations,
-resource ownership checks, and stale-initialization rejection; merely deleting
-the check is not sufficient.
+restriction. `authority(...)` is the selected proposed population interface in
+[the authority migration](authority-migration.md); it is not implemented yet.
+The old `count_authority`/`create_count` and sum-specific interfaces remain
+superseded proposals. The migration removes `guarded_by` rather than expanding
+its parser to more mutex-address forms. Preserve initialization association,
+owned-state checks, and stale-initialization rejection during removal.
 
 ## Relationship to Iris
 
@@ -140,130 +151,72 @@ resources. The basic Iris interface does not include destruction. These are
 explicit differences, not grounds for treating use authority as a stable view
 of mutable payload.
 
-Exact concurrent results need a relation between contributions held by workers
-and the state protected by the invariant. Iris's
-[counter construction](https://plv.mpi-sws.org/coqdoc/iris/iris.heap_lang.lib.counter.html)
-uses ghost resources for such a relationship. This motivates checked
-conservation; it does not choose a Click surface interface.
+Exact concurrent results need a checked relation between resources held by
+workers and state protected by the invariant. The authority migration specifies
+that relation and its permitted updates. Similarity to Iris's lock interface
+alone does not establish population conservation or exact totals.
 
-## Ordered implementation plan
+## Ordered implementation plan after authority migration
 
-Current investigation: [whole-population publication](../design/concurrency-probes/shared-count-authority.md#investigation-one-mutex-protects-a-counted-population)
-appears sufficient for the exact-two milestone: require all units when placing
-the shared body under a mutex, then guard all body access and count changes.
-Implement and test that restricted rule before adding the alternative
-[explicit algebra interface](../design/concurrency-probes/explicit-authority.md).
-Neither proposal is implemented; existing population features and the completed
-steps below retain their current semantics.
-
-### 1. Remove abandoned machinery and consolidate status
-
-The unused resource-description parameter substitution and opaque parameter
-scaffolding have been removed. `<P: Resource>` was never accepted by the
-parser. `ResourceDescription` remains for current mutex associations.
-Status consolidation in the linked design records remains.
-
-Retain the implemented, tested named resource-reference arguments. A parameter
-such as `target: cell(p)` denotes an occurrence, not a resource-type template.
-Its ordinary ownership and reference checks are useful independently of locks.
-
-Record the separate limitation that nested resource-type syntax currently has
-special parser handling for `mutex_use`; user-defined resource constructors do
-not have general resource-type parameters. Do not activate the abandoned
-templating implementation merely to remove this special case.
-
-Replace contradictory historical status statements in the linked design
-records with one supported-feature inventory and clearly marked proposals.
-Keep disabled runtime binder entries identified as unfinished work.
-
-### 2. Make acquiring and releasing helpers ordinary contracts
-
-Implemented for the direct named subset above; pause here for contract and
-implementation review before starting step 3. A verified C helper can lock and
-return a fresh guard and protected state, and a releasing helper consumes those
-resources and unlocks. The [contract record](../docs/internals/mutex-resource-contracts.md#acquiring-and-releasing-helpers)
-and executable example show the existing syntax and current boundaries.
-
-The body must establish the actual protocol effect; a declared output cannot
-invent a guard and a consumed guard cannot simply be discarded. Caller
-summaries retain initialization and lifetime dependencies and forget protected
-observations affected by the helper. The acceptance requirements remain:
-reject duplicate or stale acquisitions, replacement of a promised preserved
-guard, release without restored state, and destruction while a guard or use
-loan survives. These transfers do not authorize moving pthread guards between
-threads. Direct `pthread_mutex_t *` sidecar parameter spelling is a separate
-existing parser limitation, retained as a frozen negative regression.
-
-### 3. Complete the mutex-protected counter
+### 1. Complete the mutex-protected counter
 
 Prove that the unchanged [counter C](../design/concurrency-probes/mutex_counter.c)
 finishes at exactly two when both workers are created and joined successfully.
 Preserve safety and cleanup for both create-failure paths and either join order.
 
-The [ordinary-resource control](../design/concurrency-probes/shared-count-authority.md)
-now proves exact two sequentially using a memory-backed `remaining(p)`
-population and `p->value == 3 - count(remaining(p))`. Checked local
-initialization creates three units from the owned memory body. Each contribution
-consumes one; the retained unit keeps the body alive. Full-population cleanup
-recovers the body from a positive exact total, including a symbolic quantity.
-These implemented rules do not yet establish the concurrent result.
+Use ordinary protected resources containing population authority and the
+counter invariant. Workers hold contribution members; checked updates connect
+member consumption with the C increment. A join recovers checked outputs and
+permissions exactly once; it cannot invent that connection after execution.
+Acquisition authorizes fresh observations through the returned control resource.
+Joining one worker cannot establish a current total from a stale snapshot while
+another worker can still update it.
 
-The [scope-close consumption rule](../design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
-is implemented for a single unconditional unit effect. Join now commits checked
-Count effects for ordinary abstract populations, reserves current Count until
-the last join, and supports fixed non-increasing abstract effects from multiple
-workers on one population in either join order. Count-dependent worker contracts
-remain excluded from overlap. A separate ordinary-resource control now puts
-memory directly in `counter_state` and gives each worker an abstract
-contribution unit. The unchanged counter C verifies memory access and join
-accounting, including calls to ordinary memory helpers under a held lock.
-It receives the initial units as contract inputs and does not yet establish
-the relation between consumption and the final value. The corresponding
-exact-two postcondition remains a failing regression. Prefer this protected
-resource transfer for body ownership over inferring body ownership from a
-membership unit; conservation still needs a checked relation to the units.
-
-For the sequential memory-backed population, `open` closure first attempts ordinary restoration;
-otherwise it may fulfill an outstanding `consumes` effect, spending owned units
-and proving the invariant at the decreased Count. The same effect must not be
-applied again at another scope or at return. The checked rule uses existing syntax.
-Symbolic partial effects, competing effects, and consumption inside loops
-remain outside the implemented slice.
-
-Mutex acquisition must preserve population identity and authorize current
-observations. Joining one worker must not publish an exact current total while
-another worker may have changed it. Existing sequential `count(...)` alone
-does not provide this authority. Keep the separate authority-resource proposal
-shelved; any further surface interface requires review before implementation.
+The [counted counter record](../design/concurrency-probes/shared-count-authority.md)
+contains historical sequential and local-mutex controls. Its recommendation to
+extend whole-population publication first is superseded. The migration retains
+those test properties with explicit authority. Existing abstract-ticket join
+accounting is also a migration input, not an exception to the new update rules.
 
 Reject missing or doubled contributions, incorrect increments, fabricated
 credits, mismatched populations, and reuse of old counter observations. Preserve
-the [current missing-conservation regression](../mdtests/mutex_resource_quantity_requires_conservation.md)
+the [missing-conservation regression](../mdtests/mutex_resource_quantity_requires_conservation.md)
 until a stronger contract actually supplies the missing relationship.
 
-### 4. Test protected-resource composition
+### 2. Test protected-resource composition
 
-First verify a mutex protecting an ordinary resource with a named child. Then
-verify a small example whose protected ownership footprint changes, such as
-an allocated collection that grows while locked. Freeze each C example before
-adapting the verifier; do not flatten the source or resource structure just to
-fit the current leaf restriction.
+Authority nested inside an ordinary protected control resource is exercised by
+the prerequisite migration. Extend that support with an ordinary named child
+and a protected ownership footprint that changes, such as an allocated
+collection growing while locked. Freeze the C before adapting the verifier;
+do not flatten source or resources to fit a leaf restriction.
 
-Use these examples to decide what support for nested resources, recursive
-assertions, changing footprints, and payload-bearing conditional loop guards
-is required. They should extend ordinary resource reasoning, not create a
-parallel mutex-specific assertion language.
+Use these examples to determine needed support for recursive assertions,
+changing footprints, and payload-bearing conditional loop guards. Extend
+ordinary resource reasoning rather than adding a mutex-specific assertion
+language. Retain the parity loop and both forms of its guard contract.
 
-### 5. Review the language against what the proofs use
+### 3. Review the contracts actually used
 
-Compare the implemented interfaces, the intended design, and the contracts
-actually used by the helper, counter, and composition examples. Decide whether
-`guarded_by` adds necessary information beyond initialization, and whether a
-user-defined resource genuinely needs resource-type parameters. Do not add a
-general parameter language in anticipation of possible future examples.
+Compare the helper, counter, shared-refcount, and composition proofs with the
+implemented interfaces. Keep `owns`/`views`/`consumes`/`produces` and precise
+missing-fact/resource diagnostics. Removal of `guarded_by` is already decided
+and belongs to the prerequisite; do not reopen it as an undecided feature.
 
-This review precedes further expansion of concurrency vocabulary. One-shot
-publication remains the next independent launch milestone below.
+The abandoned resource-description parameter scaffolding has been removed;
+`<P: Resource>` was never accepted. Keep useful implemented named
+resource-reference arguments, whose values select owned occurrences. General
+resource-type parameters remain deferred unless an example requires them.
+Disabled runtime binder projections remain unfinished, not implicitly accepted.
+
+Acquiring/releasing helpers already work for the named subset described above.
+Maintain checks against fabricated guards, replacement of preserved acquisitions,
+release without restored state, and destruction with surviving loans or guards.
+Do not move pthread guards across threads. Direct `pthread_mutex_t *` sidecar
+parameters remain a separate parser limitation with a frozen negative test.
+
+One-shot publication is the next launch milestone; it is not part of the
+authority migration's initial implementation scope.
 
 ## Remaining launch obligations
 
@@ -317,6 +270,8 @@ schedule. Proof tactics may propose transitions; certificates must check them.
 
 ## Acceptance
 
+- The authority migration is complete; these proofs use its population rules
+  and do not retain a second legacy counted-body synchronization mechanism.
 - The helper transfer and protected-resource composition examples establish
   that runtime and ordinary resources follow the same contract rules.
 - Fork/join, exact mutex counter, and one-shot publication verify through
