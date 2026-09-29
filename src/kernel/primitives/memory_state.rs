@@ -4434,6 +4434,165 @@ impl CState {
             .is_some_and(|events| events.recognizes_population_authority(description))
     }
 
+    /// Project the exact body of a folded, field-free control resource for
+    /// checking its current facts. This does not publish the projection: the
+    /// resource-rewrite certificate independently checks the eventual exchange.
+    pub(crate) fn checked_authority_wrapper_projection(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<(ResourceContext, u32), String> {
+        let (children, count) =
+            self.checked_authority_wrapper_body(selected, definition, assumptions)?;
+        let projected = self
+            .resources
+            .clone()
+            .try_compose_with_facts_delaying_normalization(children, assumptions)
+            .map_err(|error| format!("control body ownership refused: {error:?}"))?;
+        Ok((projected, count))
+    }
+
+    pub(crate) fn checked_authority_wrapper_body(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<(Vec<CResourceFact>, u32), String> {
+        self.authority_wrapper_body(selected, definition, assumptions, true)
+    }
+
+    /// Before a fold, require the exact body already owned. The certificate
+    /// still checks the resulting exchange; this preflight only permits the
+    /// surface tactic to avoid legacy counted-population bookkeeping.
+    pub(crate) fn checked_authority_wrapper_fold_preflight(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<u32, String> {
+        let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
+        Ok(count)
+    }
+
+    fn authority_wrapper_body(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+        require_folded: bool,
+    ) -> Result<(Vec<CResourceFact>, u32), String> {
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
+        else {
+            return Err("Requires owns control resource".into());
+        };
+        if name != definition.name()
+            || quantity.as_const() != Some(1)
+            || (require_folded && !self.resources.satisfies_fact(selected, assumptions))
+            || definition.parameters().len() != arguments.len()
+            || definition
+                .instance_schema
+                .as_ref()
+                .is_some_and(|schema| !schema.fields().is_empty())
+            || definition.guarded_by.is_some()
+            || definition.matched.is_some()
+            || !definition.witnesses.is_empty()
+            || definition.condition.is_some()
+            || !definition.children.is_empty()
+            || !definition.resource_parameters.is_empty()
+        {
+            return Err("Requires one folded authority control resource".into());
+        }
+        let mut evaluation = CState::new().with_memory(self.memory.clone());
+        evaluation.population_effects = self.population_effects.clone();
+        for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
+            let value = argument
+                .as_c_value()
+                .ok_or("control resource needs concrete arguments")?;
+            if parameter.c_type() != value.c_type() {
+                return Err("control resource argument has the wrong type".into());
+            }
+            evaluation.locals.set_typed(
+                parameter.name().to_string(),
+                value.clone(),
+                parameter.c_type(),
+            );
+        }
+        let mut children = Vec::with_capacity(definition.contains().len());
+        let mut authority = None;
+        let mut budget = ExecutionBudget::beside_live_state();
+        for spec in definition.contains() {
+            if spec.access() != super::super::CResourceAccessMode::Own
+                || spec.quantity() != &super::super::CResourceQuantity::One
+                || spec.guard().is_some()
+                || !spec.resource_arguments().is_empty()
+            {
+                return Err("control body requires exact owned resources".into());
+            }
+            let child = match spec.term() {
+                super::super::CResourceTerm::PopulationAuthority { .. } => {
+                    if authority.is_some() {
+                        return Err("control body requires one authority".into());
+                    }
+                    super::super::functions::evaluate_population_authority_candidate(
+                        &evaluation,
+                        &evaluation,
+                        spec,
+                        assumptions,
+                        &mut budget,
+                    )
+                    .map_err(|error| format!("control authority evaluation failed: {error:?}"))?
+                    .map_err(|error| format!("control authority evaluation failed: {error:?}"))?
+                }
+                super::super::CResourceTerm::Memory(_) => {
+                    super::super::functions::evaluate_function_resource_spec(
+                        &evaluation,
+                        spec,
+                        assumptions,
+                        &mut budget,
+                    )
+                    .map_err(|error| format!("control memory evaluation failed: {error:?}"))?
+                    .map_err(|error| format!("control memory evaluation failed: {error:?}"))?
+                }
+                _ => return Err("control body supports owned memory and one authority".into()),
+            };
+            if let CResource::PopulationAuthority(description) = child.resource() {
+                authority = Some(description.clone());
+            }
+            children.push(child);
+        }
+        let description = authority.ok_or("control body requires one authority")?;
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err("control authority needs one pointer anchor".into());
+        };
+        let anchor = pointer.pointer();
+        if anchor.offset != PointerOffsetTerm::Constant(0) {
+            return Err("control authority needs an exact base pointer".into());
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("control resource requires authority mode")?;
+        if !events.owns_population_authority(&description) {
+            return Err("Requires owns authority(R(p))".into());
+        }
+        let count = events
+            .observe(&anchor.block, description.family())
+            .map_err(|_| "Requires a current authority count")?;
+        if count > i32::MAX as u32 {
+            return Err("current authority count exceeds int32".into());
+        }
+        if !require_folded
+            && children
+                .iter()
+                .any(|child| !self.resources.satisfies_fact(child, assumptions))
+        {
+            return Err("Requires the owned authority control body".into());
+        }
+        Ok((children, count))
+    }
+
     #[cfg(test)]
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
         pointer.offset == PointerOffsetTerm::Constant(0)

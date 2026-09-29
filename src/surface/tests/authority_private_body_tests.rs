@@ -344,3 +344,160 @@ fn authority_mode_malloc_statement_evidence_starts_at_running_state() {
     verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
         .expect("malloc statement evidence must start at the current proof state");
 }
+
+#[test]
+fn authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes() {
+    let c_source = r#"
+        int32 value(void) {
+            int32* p = malloc(4);
+            if (p == 0) return -1;
+            p[0] = 0;
+            p[0] = 1;
+            p[0] = 0;
+            int32 result = p[0];
+            free(p);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        resource control(p: int32*) {
+            owns p[0..1];
+            owns authority(reference(p));
+            fact p[0] == count(reference(p));
+        }
+        verifying "private_body.c";
+        int32 value() { ensures result == -1 or result == 0; } by {
+            step(); step();
+            branch { then { execute(); simp(); } else {} }
+            step();
+            fold(authority(reference(p)));
+            fold(control(p));
+            open(control(p)) {
+                fold(reference(p));
+                step();
+            }
+            open(control(p)) {
+                unfold(reference(p));
+                step();
+            }
+            unfold(control(p));
+            unfold(authority(reference(p)));
+            execute(); simp();
+        }
+    "#;
+    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect("control owns the counter and authority through both count changes");
+}
+
+#[test]
+fn authority_control_wrapper_rejects_a_false_close_invariant() {
+    let c_source = r#"
+        int32 value(void) {
+            int32* p = malloc(4);
+            if (p == 0) return -1;
+            p[0] = 0;
+            p[0] = 1;
+            p[0] = 0;
+            int32 result = p[0];
+            free(p);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        resource control(p: int32*) {
+            owns p[0..1];
+            owns authority(reference(p));
+            fact p[0] == count(reference(p));
+        }
+        verifying "private_body.c";
+        int32 value() { ensures result == -1 or result == 0; } by {
+            step(); step();
+            branch { then { execute(); simp(); } else {} }
+            step();
+            fold(authority(reference(p)));
+            fold(control(p));
+            open(control(p)) {
+                step();
+            }
+        }
+    "#;
+    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect_err("changing counter memory without a member birth violates control's fact");
+    assert!(
+        error.message().contains("p[0] == count(reference(p))"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn authority_control_wrapper_requires_its_contained_authority() {
+    let c_source = r#"
+        int32 value(void) {
+            int32* p = malloc(4);
+            if (p == 0) return -1;
+            p[0] = 0;
+            int32 result = p[0];
+            free(p);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        resource control(p: int32*) {
+            owns p[0..1];
+            owns authority(reference(p));
+            fact p[0] == count(reference(p));
+        }
+        verifying "private_body.c";
+        int32 value() { ensures result == -1 or result == 0; } by {
+            step(); step();
+            branch { then { execute(); simp(); } else {} }
+            step();
+            fold(control(p));
+        }
+    "#;
+    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect_err("counter memory alone cannot create a population authority");
+    assert!(error.message().contains("authority"), "{error:?}");
+}
+
+#[test]
+fn authority_control_wrapper_requires_its_counter_memory() {
+    let c_source = r#"
+        int32 value(void) {
+            int32* p = malloc(4);
+            if (p == 0) return -1;
+            p[0] = 0;
+            p[0] = 1;
+            int32 result = p[0];
+            free(p);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) { owns p[0..1]; }
+        resource control(p: int32*) {
+            owns p[0..1];
+            owns authority(reference(p));
+            fact p[0] == count(reference(p));
+        }
+        verifying "private_body.c";
+        int32 value() { ensures result == -1 or result == 1; } by {
+            step(); step();
+            branch { then { execute(); simp(); } else {} }
+            step();
+            fold(authority(reference(p)));
+            step();
+            fold(reference(p));
+            fold(control(p));
+        }
+    "#;
+    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect_err("the member's private body cannot also be control's counter memory");
+    assert!(
+        error.message().contains("authority control body"),
+        "{error:?}"
+    );
+}

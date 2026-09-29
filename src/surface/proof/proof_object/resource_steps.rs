@@ -4,6 +4,26 @@ use super::*;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
 
 impl<'a> Proof<'a> {
+    fn is_authority_control_resource(&self, resource: &ResourceClause) -> bool {
+        let ResourceClause::Declared { name, .. } = resource else {
+            return false;
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return false;
+        };
+        context
+            .function
+            .composite_resource_definition(name)
+            .is_some_and(|definition| {
+                definition.contains().iter().any(|spec| {
+                    matches!(
+                        spec.term(),
+                        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                    )
+                })
+            })
+    }
+
     fn apply_execution_population_member_exchange(
         &self,
         resource: &ResourceClause,
@@ -1800,6 +1820,7 @@ impl<'a> Proof<'a> {
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
+            && !self.is_authority_control_resource(resource)
         {
             return self.apply_execution_population_member_exchange(resource, false);
         }
@@ -1877,6 +1898,7 @@ impl<'a> Proof<'a> {
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
+            && !self.is_authority_control_resource(resource)
         {
             return self.apply_execution_population_member_exchange(resource, true);
         }

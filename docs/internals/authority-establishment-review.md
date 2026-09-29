@@ -23,7 +23,10 @@ owned-memory body. Creation consumes exactly the body's ordinary owned memory
 clauses and produces the member; consumption consumes the member and produces
 those same memory clauses. The standalone proof checks `fold` or `unfold`, and
 the concrete call updates the caller's population under transferred authority.
-Creation also checks that the caller's anchor is still live. Other contract
+Creation also checks that the caller's anchor is still live. An ordinary
+field-free `control(p)` may now own both the counter cell and
+`authority(reference(p))`, with a fact equating the cell to the current count.
+Its direct proof can fold, open, close, and unfold that body. Other contract
 transitions, worker calls, recorded-state count, and field-bearing or nested
 member bodies remain refused.
 
@@ -105,7 +108,11 @@ ownership. Moving these obligations to another owner is allowed.
 A closed control resource packages authority along with its counter ownership
 and invariant. Opening that ordinary resource exposes the permissions needed
 to change membership and counter together; closing must reestablish its facts.
-The standalone kernel model does not yet implement this wrapper integration.
+The authority-mode resource-rewrite checker now validates this exact
+memory-plus-authority exchange and rechecks the body fact against the current
+ledger total. Its supported shape is field-free, unconditional, and has one
+contained authority plus owned memory; broader wrapper bodies remain future
+work.
 
 ## Syntax and staged implementation
 
@@ -116,9 +123,10 @@ contract; it does not establish the lifetime or registration evidence above.
 The proposed reuse of `construct` has not been adopted. The selected source
 operations are `fold(authority(reference(p)))` for empty establishment and
 `unfold(authority(reference(p)))` for zero-count retirement. These reuse the
-existing tactic syntax and record a dedicated checked certificate event. In
-the initial source slice, ordinary wrapper folding is refused until its
-member and authority exchange is checked.
+existing tactic syntax and record a dedicated checked certificate event.
+Ordinary `fold(control(p))`, `open(control(p))`, and `unfold(control(p))` now use
+the checked resource-body exchange for the restricted shape above; folding
+cannot establish or duplicate authority.
 
 The additive kernel model exercises ownership, registration, membership,
 transfer, retirement, and cleanup with concrete totals. It does not yet admit

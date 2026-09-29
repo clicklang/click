@@ -1030,6 +1030,273 @@ impl CheckedResourceRewrite {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn check_authority_wrapper(
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        call_events: &CheckedCallEvents,
+        definition: &CCompositeResourceDefinition,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
+        else {
+            return Err("authority control requires one owned composite".into());
+        };
+        if quantity.as_const() != Some(1) || selected_children.is_some() {
+            return Err("authority control requires one whole owned composite".into());
+        }
+        let assumptions = before_facts.assumptions();
+        if !before_state.loan_bindings_are_consistent()
+            || !after_state.loan_bindings_are_consistent()
+        {
+            return Err("authority control changed loan bindings".into());
+        }
+        let before_folded = before_state
+            .resources()
+            .satisfies_fact(selected, assumptions);
+        let after_folded = after_state
+            .resources()
+            .satisfies_fact(selected, after_facts.assumptions());
+        let was_open = before_state.population_body_is_open(name, arguments, assumptions);
+        let now_open = after_state.population_body_is_open(name, arguments, assumptions);
+        let (exposing, folded) = match (before_folded, after_folded, was_open, now_open) {
+            (false, true, false, false) => (false, after_state),
+            (true, false, false, false) => (true, before_state),
+            (true, true, false, true) => (true, before_state),
+            (true, true, true, false) => (false, after_state),
+            _ => return Err("authority control requires one fold, unfold, open, or close".into()),
+        };
+        if (was_open != now_open
+            && !before_state.population_access.checks_rewrite(
+                &after_state.population_access,
+                &(name.clone(), arguments.clone()),
+            ))
+            || (was_open == now_open
+                && before_state.population_access != after_state.population_access)
+        {
+            return Err("authority control changed another open scope".into());
+        }
+        let (children, _) =
+            folded.checked_authority_wrapper_body(selected, definition, assumptions)?;
+        if children.len() != definition.contains().len()
+            || children
+                .iter()
+                .filter(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
+                .count()
+                != 1
+        {
+            return Err("authority control has an unsupported body".into());
+        }
+        for child in &children {
+            let Some(range) = child.memory_own_range() else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
+            else {
+                return Err("authority control memory needs concrete bounds".into());
+            };
+            let bytes = (end as i32)
+                .checked_sub(start as i32)
+                .filter(|length| *length > 0)
+                .and_then(|length| length.checked_mul(range.element_width() as i32))
+                .and_then(|bytes| u32::try_from(bytes).ok())
+                .ok_or("authority control memory needs a positive bounded range")?;
+            let base = range
+                .base()
+                .offset_by_elements(range.start().clone(), range.element_width());
+            if !folded.memory().access_in_bounds(&base, bytes) {
+                return Err("authority control body exceeds live storage".into());
+            }
+            if let Some(ledger) = folded.loan_ledger() {
+                ledger
+                    .permits_memory_access_with_assumptions(range, assumptions)
+                    .map_err(|_| "authority control body has an active borrow")?;
+            }
+        }
+        let expected_resources = if exposing {
+            let base = if after_folded {
+                before_state.resources().clone()
+            } else {
+                before_state
+                    .resources()
+                    .clone()
+                    .without_fact_incrementally(selected, assumptions)
+                    .ok_or("authority control cannot consume its folded resource")?
+            };
+            base.try_compose_with_facts_delaying_normalization(
+                children.iter().cloned(),
+                assumptions,
+            )
+            .map_err(|_| "authority control body overlaps existing ownership")?
+        } else {
+            let mut base = before_state.resources().clone();
+            for child in &children {
+                base = base
+                    .without_fact_incrementally(child, assumptions)
+                    .ok_or("Requires the authority control body")?;
+            }
+            if before_folded {
+                base
+            } else {
+                base.try_compose_with_facts_delaying_normalization(
+                    std::iter::once(selected.clone()),
+                    assumptions,
+                )
+                .map_err(|_| "authority control duplicates its folded resource")?
+            }
+        };
+        if !after_state
+            .resources()
+            .same_exchange_from(&expected_resources, before_state.resources())
+            || !Arc::ptr_eq(
+                &after_state.resources.loan_dependencies,
+                &expected_resources.loan_dependencies,
+            )
+        {
+            return Err("authority control has the wrong resource exchange".into());
+        }
+        if exposing {
+            memory_only_adds_named_cells(before_state.memory(), after_state.memory())?;
+        } else if !crate::kernel::api::contract_certification::c_memories_definitionally_equal(
+            before_state.memory(),
+            after_state.memory(),
+            assumptions,
+        ) {
+            return Err("authority control close changed C memory".into());
+        }
+        let mut unchanged = after_state.clone();
+        unchanged.memory = before_state.memory.clone();
+        unchanged.resources = before_state.resources.clone();
+        unchanged.population_access = before_state.population_access.clone();
+        if unchanged != *before_state {
+            return Err(format!(
+                "authority control changed {} outside its body",
+                describe_changed_state_field(&unchanged, before_state),
+            ));
+        }
+        let (projected, _) =
+            folded.checked_authority_wrapper_projection(selected, definition, assumptions)?;
+        let mut evaluation = folded.clone().with_resource_context(projected);
+        for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
+            let value = argument
+                .as_c_value()
+                .ok_or("authority control requires C arguments")?;
+            if value.c_type() != parameter.c_type() {
+                return Err("authority control argument type mismatch".into());
+            }
+            evaluation.locals.set_typed(
+                parameter.name().to_string(),
+                value.clone(),
+                parameter.c_type(),
+            );
+        }
+        let child_context = ResourceContext::new().unchecked_with_facts(children.clone());
+        let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
+        for child in &children {
+            if let Some(owned) = child.owned_resource() {
+                allowed.push(Proposition::CResourceContains {
+                    parent: selected.resource().clone(),
+                    child: owned.clone(),
+                });
+            }
+        }
+        allowed.push(Proposition::CResourceComposition(
+            ResourceContext::new().unchecked_with_facts(children),
+        ));
+        if let Some(loadable) =
+            crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
+                selected,
+                std::slice::from_ref(definition),
+                after_state.memory(),
+                assumptions,
+            )
+        {
+            allowed.extend(loadable);
+        }
+        let mut budget = ExecutionBudget::beside_live_state();
+        for (index, source) in definition.facts().iter().enumerate() {
+            let paths =
+                crate::kernel::spec::lower_spec_proposition_at_state_with_algebraic_bindings(
+                    &evaluation,
+                    source,
+                    None,
+                    assumptions,
+                    &BTreeMap::new(),
+                    &mut budget,
+                )
+                .map_err(|_| "authority control could not lower its invariant")?;
+            let path =
+                crate::kernel::api::exactly_selected_spec_proposition_path(&paths, assumptions)
+                    .ok_or("authority control invariant needs one checked path")?;
+            if !path
+                .facts
+                .iter()
+                .all(|fact| assumptions.states_required_goal(fact.proposition()))
+                || !path
+                    .obligations
+                    .iter()
+                    .all(|obligation| assumptions.states_required_goal(obligation.proposition()))
+            {
+                return Err(
+                    "authority control invariant has an unproved evaluation condition".into(),
+                );
+            }
+            if !exposing
+                && !crate::kernel::api::contract_certification::certification_proves_proposition(
+                    assumptions,
+                    &path.proposition,
+                )
+            {
+                return Err(format!(
+                    "Requires {}",
+                    definition
+                        .fact_source_spelling(index)
+                        .unwrap_or("the control resource fact"),
+                ));
+            }
+            allowed.push(path.proposition.clone());
+        }
+        let introduced = after_facts
+            .introduced_since(before_facts)
+            .ok_or("authority control facts do not descend from their input")?;
+        let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
+            facts.assume_proposition(fact.clone())
+        });
+        if let Some(unchecked) = introduced.iter().find(|fact| {
+            !allowed.contains(fact)
+                && !allowed_assumptions.proves_exact(fact)
+                && !resource_composition_is_supported_by(
+                    fact,
+                    &ResourceContext::new()
+                        .unchecked_with_facts(expected_resources.facts().iter().cloned()),
+                    assumptions,
+                )
+        }) {
+            return Err(format!(
+                "authority control introduced an unchecked pure fact: {}",
+                truncate_debug(unchecked, 240)
+            ));
+        }
+        Ok(Self {
+            before_state: before_state.clone(),
+            after_state: after_state.clone(),
+            before_facts: before_facts.clone(),
+            after_facts: after_facts.clone(),
+            definition: definition.clone(),
+            consumption_contract: None,
+            instance: None,
+            selected_children: None,
+            load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
+                call_events,
+            )
+            .finish(),
+            delta_proofs: Arc::new(Vec::new()),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn check_with_children(
         function: &CFunction,
         before_state: &CState,
@@ -1041,6 +1308,26 @@ impl CheckedResourceRewrite {
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
         if before_state.uses_population_authority_semantics() {
+            if let CResource::Composite { name, .. } = selected.resource()
+                && let Some(definition) = function.composite_resource_definition(name)
+                && definition.contains().iter().any(|spec| {
+                    matches!(
+                        spec.term(),
+                        crate::kernel::CResourceTerm::PopulationAuthority { .. }
+                    )
+                })
+            {
+                return Self::check_authority_wrapper(
+                    before_state,
+                    before_facts,
+                    selected,
+                    after_state,
+                    after_facts,
+                    call_events,
+                    definition,
+                    selected_children,
+                );
+            }
             let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
             else {
                 return Err("authority-mode body access requires one owned member".into());

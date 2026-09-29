@@ -105,11 +105,15 @@ one population of the declared resource type `reference(p)`. The empty
 population may be established with `fold(authority(reference(p)))` only in the
 execution proof that created `p`'s storage. It may be retired with
 `unfold(authority(reference(p)))` only when its member count is zero. The
-current authority mode admits these empty-population operations; member
-changes, `count(...)`, resource contracts, and C calls remain closed until
-their checked transitions are implemented.
+current authority mode also admits exact field-free members with private owned
+memory, their current `count(...)`, and direct authority/member helper
+contracts. An ordinary field-free resource can package owned counter memory,
+one authority, and a fact such as `p[0] == count(reference(p))`; opening it
+exposes both permissions, and closing it checks the fact at the updated count.
+Packaged control transfer through a helper contract and broader member shapes
+remain pending.
 
-**Verified use:** [`authority_mode_establishes_and_retires_empty_stack_population`](https://github.com/lacker/click/blob/master/src/surface/tests/execution_tests.rs).
+**Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/lacker/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
 
 ## Allocation authority
 

@@ -3115,24 +3115,64 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         .facts()
         .iter()
         .any(proposition_contains_resource_count);
-    let (population_name, population_arguments, population_count) = match state
-        .counted_population_proven_equal(
+    let authority_control_body = state.uses_population_authority_semantics()
+        && composite_body.contains().iter().any(|contained| {
+            matches!(contained, ResourceClause::Declared { name, .. } if name == "authority")
+        });
+    // The authority inside a folded control resource is the count witness.
+    // Authenticate and project it before taking apart the folded resource;
+    // this projection is used only to lower its invariant, while the kernel
+    // independently checks the actual body exchange.
+    let authority_projection = if authority_control_body {
+        let definitions = crate::surface::verification::composite_resource_definitions(
+            resource_environment,
+            predicate_environment,
+            click_function_environment,
+        )?;
+        let definition = definitions
+            .iter()
+            .find(|definition| definition.name() == requested_population_name)
+            .ok_or_else(|| ClickError::new("control resource has no compiled definition"))?;
+        Some(
+            state
+                .checked_authority_wrapper_projection(&abstract_resource, definition, &assumptions)
+                .map_err(|message| {
+                    ClickError::new(format!(
+                        "`{claim_label}` tactic {tactic_index}: `unfold({})` {message}",
+                        describe_resource_clause(resource)
+                    ))
+                })?,
+        )
+    } else {
+        None
+    };
+    let (population_name, population_arguments, population_count) = if authority_projection
+        .is_some()
+    {
+        (
+            requested_population_name,
+            requested_population_arguments,
+            Bitvector32Term::Constant(1),
+        )
+    } else {
+        match state.counted_population_proven_equal(
             &requested_population_name,
             &requested_population_arguments,
             &assumptions,
         ) {
-        Some(population) => population,
-        None if tracks_population_in_body => {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `unfold({})` requires an active resource population",
-                describe_resource_clause(resource)
-            )));
+            Some(population) => population,
+            None if tracks_population_in_body => {
+                return Err(ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `unfold({})` requires an active resource population",
+                    describe_resource_clause(resource)
+                )));
+            }
+            None => (
+                requested_population_name,
+                requested_population_arguments,
+                Bitvector32Term::Constant(1),
+            ),
         }
-        None => (
-            requested_population_name,
-            requested_population_arguments,
-            Bitvector32Term::Constant(1),
-        ),
     };
     if state.population_body_is_open(&population_name, &population_arguments, &assumptions) {
         return Err(ClickError::new("population body is already open"));
@@ -3332,11 +3372,16 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                     describe_resource_clause(resource)
                 ))
             })?;
+        let fact_state = if let Some((projected, _)) = &authority_projection {
+            state.clone().with_resource_context(projected.clone())
+        } else {
+            state.clone()
+        };
         let lowered_fact = lower_outcome_proposition_with_assumptions(
             parameters,
             arguments,
-            &state,
-            &state,
+            &fact_state,
+            &fact_state,
             &CValue::Int32(Bitvector32Term::Constant(0)),
             available_pure_facts.assumptions(),
             &fact,
@@ -3702,6 +3747,10 @@ fn fold_composite_resources_on_outcome_with_facts(
         let mut closing_view = false;
         let mut folded_representation_already_present = false;
         let mut folded_authority_occurrence = None;
+        let authority_control_body = guard_state.uses_population_authority_semantics()
+            && composite_body.contains().iter().any(|contained| {
+                matches!(contained, ResourceClause::Declared { name, .. } if name == "authority")
+            });
         if closure == ResourceBodyClosure::Initialize {
             let CFunctionOutcome::Return { value, state } = &mut outcome else {
                 unreachable!("the return outcome was checked above");
@@ -3767,7 +3816,27 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // needs a persistent population ledger.
                 folded_representation_already_present = true;
             }
-            if let Some(count) = state.counted_population(name, population_arguments) {
+            if authority_control_body {
+                let definitions = crate::surface::verification::composite_resource_definitions(
+                    resource_environment,
+                    predicate_environment,
+                    click_function_environment,
+                )?;
+                let definition = definitions
+                    .iter()
+                    .find(|definition| definition.name() == name)
+                    .ok_or_else(|| {
+                        ClickError::new("control resource has no compiled definition")
+                    })?;
+                state
+                    .checked_authority_wrapper_fold_preflight(&population, definition, assumptions)
+                    .map_err(|message| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: `fold({})` {message}",
+                            describe_resource_clause(resource)
+                        ))
+                    })?;
+            } else if let Some(count) = state.counted_population(name, population_arguments) {
                 let matching_quantity = Proposition::ConditionIs(
                     ConditionTerm::Bitvector32Equal(
                         Box::new(count.clone()),
@@ -3819,7 +3888,27 @@ fn fold_composite_resources_on_outcome_with_facts(
                     ));
                 }
             };
-            if state
+            if authority_control_body {
+                let definitions = crate::surface::verification::composite_resource_definitions(
+                    resource_environment,
+                    predicate_environment,
+                    click_function_environment,
+                )?;
+                let definition = definitions
+                    .iter()
+                    .find(|definition| definition.name() == name)
+                    .ok_or_else(|| {
+                        ClickError::new("control resource has no compiled definition")
+                    })?;
+                state
+                    .checked_authority_wrapper_body(&population, definition, assumptions)
+                    .map_err(|message| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: closing `open({})` {message}",
+                            describe_resource_clause(resource)
+                        ))
+                    })?;
+            } else if state
                 .counted_population(name, population_arguments)
                 .is_none()
                 && composite_body
@@ -3980,6 +4069,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                 } else {
                     String::new()
                 };
+                if authority_control_body {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` path {path_index}: `fold({})` Requires {}",
+                        describe_resource_clause(resource),
+                        describe_click_proposition(&fact),
+                    )));
+                }
                 return Err(ClickError::new(format!(
                     "`{claim_label}` path {path_index}: `fold({})` requires an exact body fact: {}{snapshot_note}",
                     describe_resource_clause(resource),
@@ -4203,17 +4299,41 @@ fn fold_composite_resources_on_outcome_with_facts(
                 binding.hold = Some(hold);
                 post_state = post_state.with_loan_ledger(Some(ledger));
             }
-            let (resources, inserted_occurrence) = post_state
-                .resources()
-                .clone()
-                .try_compose_with_fact_with_occurrence(abstract_resource.clone(), &assumptions)
-                .map_err(|error| {
-                    ClickError::new(format!(
-                        "`{claim_label}` path {path_index}: `fold({})` produced {}",
-                        describe_resource_clause(resource),
-                        describe_resource_context_validity_error(error, parameters, arguments)
-                    ))
-                })?;
+            let (resources, inserted_occurrence) = if authority_control_body {
+                let (resources, inserted) = post_state
+                    .resources()
+                    .clone()
+                    .try_compose_with_facts_delaying_normalization_with_occurrences(
+                        std::iter::once(abstract_resource.clone()),
+                        &assumptions,
+                    )
+                    .map_err(|error| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: `fold({})` produced {}",
+                            describe_resource_clause(resource),
+                            describe_resource_context_validity_error(error, parameters, arguments)
+                        ))
+                    })?;
+                (
+                    resources,
+                    inserted
+                        .into_iter()
+                        .next()
+                        .map(|(_, occurrence)| occurrence),
+                )
+            } else {
+                post_state
+                    .resources()
+                    .clone()
+                    .try_compose_with_fact_with_occurrence(abstract_resource.clone(), &assumptions)
+                    .map_err(|error| {
+                        ClickError::new(format!(
+                            "`{claim_label}` path {path_index}: `fold({})` produced {}",
+                            describe_resource_clause(resource),
+                            describe_resource_context_validity_error(error, parameters, arguments)
+                        ))
+                    })?
+            };
             folded_authority_occurrence = inserted_occurrence;
             post_state = post_state.with_resource_context(resources);
             if let (Some(occurrence), Some(binding)) =
@@ -4237,7 +4357,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                 );
             }
         }
-        if closure == ResourceBodyClosure::Initialize && !lowered_contained.is_empty() {
+        if closure == ResourceBodyClosure::Initialize
+            && !authority_control_body
+            && !lowered_contained.is_empty()
+        {
             let abstract_resource = lower_resource_clause_at_state_with_result(
                 resource,
                 parameters,
