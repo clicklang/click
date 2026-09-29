@@ -67,7 +67,10 @@ now uses its exact offset classes after affine comparison misses **only when
 both pointers have the same block**. This admits explicit offset equalities
 and scaled int32 congruence at that one base without treating wrapping scalar
 residues as exact byte differences or extending the cross-block affine rule.
-Same-block pointer premises are not yet converted into offset edges.
+A true pointer premise whose two pointers name the same block now joins their
+whole offsets as well. This lets offset addition use that established equality
+without enumerating pointer aliases; withdrawal and restriction rebuild the
+offset edge from the remaining exact premises.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition has its own application signature and shallow child

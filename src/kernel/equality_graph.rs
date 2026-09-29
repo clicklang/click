@@ -42,8 +42,9 @@
 //! map access and each moved block/use is charged to a growing class. Affine
 //! payload work is charged separately. Same-snapshot load signatures propagate
 //! merges iteratively through indexed parent uses, with no nesting cutoff. An
-//! equality between two blocks already in one class adds nothing here: it
-//! relates offsets, not bases, and stays with the offset facts.
+//! equality between two blocks already in one class adds no base relation.
+//! An explicit equality of pointers in the same block instead joins their
+//! whole offsets in the term classes.
 
 use super::prelude::*;
 
@@ -481,12 +482,16 @@ impl EqualityGraph {
     }
 
     /// Admit an equality already established in this proof context and
-    /// propagate its supported congruence consequences. Returns whether a
-    /// class merge occurred, not whether the supplied equality is valid.
+    /// propagate its supported congruence consequences. A same-block premise
+    /// also equates its whole offsets. Returns whether any class merge
+    /// occurred, not whether the supplied equality is valid.
     pub(in crate::kernel) fn add_equality(&mut self, left: &Pointer, right: &Pointer) -> bool {
         let state = self.state.get_mut().expect("equality graph");
         state.register_blocks([left.block.clone(), right.block.clone()]);
-        state.close(vec![(left.clone(), right.clone())])
+        let offset_changed =
+            left.block == right.block && state.terms.add_equality(&left.offset, &right.offset);
+        let pointer_changed = state.close(vec![(left.clone(), right.clone())]);
+        offset_changed || pointer_changed
     }
 }
 
@@ -824,6 +829,67 @@ mod tests {
         assert!(branch.are_equal(&left, &right));
         assert!(!trunk.are_equal(&left, &right));
         assert!(!branch.are_equal(&left, &other_block));
+    }
+
+    #[test]
+    fn same_block_pointer_premise_joins_offsets_and_survives_only_in_its_context() {
+        let block = symbolic(11_020);
+        let x = PointerOffsetTerm::Variable(Variable(11_021));
+        let y = PointerOffsetTerm::Variable(Variable(11_022));
+        let z = PointerOffsetTerm::Variable(Variable(11_023));
+        let left = at_offset(block.clone(), x.clone());
+        let middle = at_offset(block, y.clone());
+        let pointer_fact = ConditionTerm::pointer_equal(left.clone(), middle.clone());
+        let offset_fact = ConditionTerm::pointer_offset_equal(y.clone(), z.clone());
+        let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
+        let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
+        assert!(!trunk.equality_graph.are_offsets_equal(&x, &z));
+        assert!(branch.equality_graph.are_offsets_equal(&x, &z));
+        assert!(branch.equality_graph.are_equal(
+            &at_offset(
+                left.block.clone(),
+                PointerOffsetTerm::add(x.clone(), PointerOffsetTerm::Constant(8))
+            ),
+            &at_offset(
+                left.block.clone(),
+                PointerOffsetTerm::add(z.clone(), PointerOffsetTerm::Constant(8))
+            ),
+        ));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(pointer_fact, true));
+        assert!(!withdrawn.equality_graph.are_offsets_equal(&x, &z));
+        assert!(withdrawn.equality_graph.are_offsets_equal(&y, &z));
+        let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
+        assert!(!restricted.equality_graph.are_offsets_equal(&x, &z));
+
+        let mut cross_block = EqualityGraph::default();
+        cross_block.add_equality(&left, &at_offset(symbolic(11_024), y.clone()));
+        assert!(!cross_block.are_offsets_equal(&x, &y));
+    }
+
+    #[test]
+    fn same_block_pointer_premise_chains_have_indexed_work() {
+        for size in [16u64, 64, 256, 1024] {
+            let block = symbolic(11_030);
+            let offset = |i| PointerOffsetTerm::Variable(Variable(20_000 + i));
+            let mut graph = EqualityGraph::default();
+            let (_, insertion_work) = crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..size {
+                    assert!(graph.add_equality(
+                        &at_offset(block.clone(), offset(i)),
+                        &at_offset(block.clone(), offset(i + 1)),
+                    ));
+                }
+            });
+            assert!(
+                insertion_work <= 128 * size as usize,
+                "size={size}, insertion work={insertion_work}"
+            );
+            let (equal, query_work) = crate::instrumentation::measure_deterministic_work(|| {
+                graph.are_offsets_equal(&offset(0), &offset(size))
+            });
+            assert!(equal);
+            assert!(query_work < 64, "size={size}, query work={query_work}");
+        }
     }
 
     #[test]
