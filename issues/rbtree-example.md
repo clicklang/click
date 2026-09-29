@@ -61,9 +61,9 @@ fields already did, but `fold(rb_at(yid), ...)` still cannot consume cells the
 unfold published under the loaded pointer's spelling ("fold requires
 ownership of the complete instance body", from `without_fact_incrementally`). The same class
 shows in `have id->word == 5` failing after `p->word = 5` with `p == id`
-proved. Both are tracked in [egraph.md](egraph.md), which replaces the
-per-site alias handling with one congruence closure; those two leaves wait on
-its first stage.
+  proved. Both are tracked in [egraph.md](egraph.md), which scopes the P1
+  equality work to pointer reads and fold consumption; those two leaves wait
+  on that integration.
 
 The remaining C3b work after that gap: the empty-uncle leaves of the same
 combination (the text is the same after refolding the uncle as `Empty`), the

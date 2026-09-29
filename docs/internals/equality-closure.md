@@ -6,8 +6,9 @@ same-snapshot pointer and four-byte scalar loads. Selected normalization,
 transport, memory, resource-value, and range consumers query it. Ordinary C
 pointer loads still have a storage-relative representation; equality-aware
 resource indexing and the other theories described here remain planned work.
-The repository's `issues/egraph.md` owns milestones, regressions, the
-handoff checklist, and historical implementation anchors.
+The repository's `issues/egraph.md` tracks only the P1 pointer-read and
+read/fold behavior needed by the rbtree proof. The wider design in this note
+is reference material, not additional P1 acceptance criteria.
 
 ## Current interface and trust boundary
 
