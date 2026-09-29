@@ -410,10 +410,15 @@ impl EqualityGraph {
             _ => false,
         };
         affine_equal
-            // Term-class offset equality is exact byte-offset equality. For
-            // one block, it can close explicit offset edges and int32-scaled
-            // congruence without changing the affine relation between blocks.
-            || (left.block == right.block && state.terms.are_equal(&left.offset, &right.offset))
+            // An exact offset equality can cross blocks only when their
+            // bases have the same known displacement from the representative.
+            // Otherwise the offset terms alone say nothing about the
+            // displacement between the two addresses. In one block retain
+            // the existing exact-offset query; across blocks avoid interning
+            // unrelated offsets when no term classes have merged.
+            || ((left.block == right.block
+                || (left_delta == right_delta && state.terms.has_equivalences()))
+                && state.terms.are_equal(&left.offset, &right.offset))
     }
 
     /// Query explicit offset equality, addition and int32 scaling congruence.
@@ -889,6 +894,63 @@ mod tests {
             });
             assert!(equal);
             assert!(query_work < 64, "size={size}, query work={query_work}");
+        }
+    }
+
+    #[test]
+    fn equal_base_displacements_transport_exact_offset_edges_across_blocks() {
+        let a = symbolic(11_040);
+        let b = symbolic(11_041);
+        let c = symbolic(11_042);
+        let x = PointerOffsetTerm::Variable(Variable(11_043));
+        let y = PointerOffsetTerm::Variable(Variable(11_044));
+        let offset_fact = ConditionTerm::pointer_offset_equal(x.clone(), y.clone());
+        let ab = ConditionTerm::pointer_equal(at(a.clone(), 0), at(b.clone(), 0));
+        let bc = ConditionTerm::pointer_equal(at(b.clone(), 0), at(c.clone(), 0));
+        let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
+        let branch = trunk
+            .clone()
+            .assume_condition(ab.clone(), true)
+            .assume_condition(bc.clone(), true);
+        let left = at_offset(a.clone(), x.clone());
+        let right = at_offset(c.clone(), y.clone());
+        assert!(!trunk.equality_graph.are_equal(&left, &right));
+        assert!(branch.equality_graph.are_equal(&left, &right));
+        let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(bc, true));
+        assert!(!withdrawn.equality_graph.are_equal(&left, &right));
+        let restricted = branch.restricted_to_facts(&[(offset_fact, true)], &[]);
+        assert!(!restricted.equality_graph.are_equal(&left, &right));
+
+        let mut displaced = EqualityGraph::default();
+        displaced.add_offset_equality(&x, &y);
+        displaced.add_equality(&at(a.clone(), 0), &at(b.clone(), 8));
+        assert!(!displaced.are_equal(&at_offset(a, x), &at_offset(b, y)));
+    }
+
+    #[test]
+    fn equal_base_offset_queries_ignore_unrelated_class_members() {
+        for size in [16u64, 64, 256, 1024] {
+            let x = PointerOffsetTerm::Variable(Variable(11_050));
+            let y = PointerOffsetTerm::Variable(Variable(11_051));
+            let mut graph = EqualityGraph::default();
+            for i in 0..size {
+                graph.add_equality(&at(symbolic(30_000 + i), 0), &at(symbolic(30_001 + i), 0));
+            }
+            graph.add_offset_equality(&x, &y);
+            let left = at_offset(symbolic(30_000), x.clone());
+            let right = at_offset(symbolic(30_000 + size), y.clone());
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                graph.are_equal(&left, &right)
+            });
+            assert!(equal);
+            assert!(work < 64, "size={size}, work={work}");
+            let (equal, map_work) =
+                crate::persistent::measure_persistent_work(|| graph.are_equal(&left, &right));
+            assert!(equal);
+            assert!(
+                map_work < 64 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
         }
     }
 

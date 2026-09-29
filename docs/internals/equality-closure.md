@@ -71,6 +71,11 @@ A true pointer premise whose two pointers name the same block now joins their
 whole offsets as well. This lets offset addition use that established equality
 without enumerating pointer aliases; withdrawal and restriction rebuild the
 offset edge from the remaining exact premises.
+An exact offset edge can also cross two blocks whose graph bases have the same
+known displacement from their class representative. This handles zero-offset
+cross-block aliases and their transitive chains by a keyed query. A displaced
+block relation still needs an equality of the translated offsets; an offset
+edge alone does not supply it.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition has its own application signature and shallow child
@@ -131,9 +136,9 @@ longer scans all ambient condition facts for a matching translated equality
 or walks their alias component. Overflow-guarded translation such as
 `p == arr + i` after incrementing `p` and `i` instead uses an explicit
 `arithmetic() using` proof with the entry pointer relation and strict index
-bound. The graph does not yet compose an exact offset edge through a separate
+bound. The graph does not yet compose an exact offset edge through a displaced
 cross-block pointer class; that Boolean query can remain unknown until a
-checked proof supplies the equality.
+checked proof supplies the translated equality.
 
 The memory-separation reader now takes a positive graph answer for same-block
 offset equality before considering exact alias spellings. A long chain of
