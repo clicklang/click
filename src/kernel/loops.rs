@@ -1047,7 +1047,7 @@ fn execute_modeled_pthread_mutex_paths(
                         .publish_declared(
                             mutex.pointer(),
                             *identity,
-                            &environment.modeled_mutex_guards,
+                            &environment.modeled_mutex_definitions,
                             &current,
                             binding.mutex_storage_bytes,
                         )

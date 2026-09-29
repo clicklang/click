@@ -95,7 +95,7 @@ atomic access are semantic disciplines, not three new declaration keywords.
 | `mutex_use(mu)` | Permission to participate while lifetime is guaranteed | Keep; unary use does not expose a guessed payload |
 | `mutex_use(mu, counter_state(p))` | Use authority with an authenticated protected resource type | Keep the accepted shape; generalize only when a concrete ordinary-resource example needs it |
 | `mutex_guard(mu)` | Exclusive ownership of an acquisition | Keep |
-| `guarded_by p->mutex;` | Declaration-level association with a pthread mutex field | Supported today; review whether initialization's checked association can replace or generalize it |
+| `guarded_by p->mutex;` | Optional legacy restriction to a pthread mutex field | Initialization now establishes the checked association without this annotation; existing annotations still constrain the address |
 | `held(mu)` | Checked fact about the current path's acquisition | Convenience predicate; never a substitute for owned guard authority |
 | `runtime "modeled-pthread";` | Explicit selection of the trusted runtime specification | Keep the assumption visible |
 

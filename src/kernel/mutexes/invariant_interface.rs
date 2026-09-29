@@ -4,6 +4,7 @@ use super::*;
 use crate::kernel::{
     AlgebraicValue, CMutexGuardDeclaration, CValue, ResourceDescription, ResourceInstance,
 };
+#[cfg(test)]
 use std::collections::BTreeMap;
 
 /// This description grants no ownership and retains neither an instance binder
@@ -16,6 +17,32 @@ pub(super) struct MutexInvariantInterface {
 }
 
 impl MutexInvariantInterface {
+    /// Initialization authenticates the protected assertion from an owned
+    /// instance. A declaration may constrain the mutex, but is not itself
+    /// the source of the association or of ownership.
+    pub(super) fn check_definition(
+        instance: &ResourceInstance,
+        mutex: &Pointer,
+        definition: &crate::kernel::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, &'static str> {
+        if definition.name() != instance.name()
+            || definition.instance_field_schema() != Some(instance.schema())
+            || definition.parameters().len() != instance.arguments().len()
+            || definition
+                .parameters()
+                .iter()
+                .zip(instance.arguments())
+                .any(|(parameter, argument)| {
+                    argument.as_c_value().map(|value| value.c_type()) != Some(parameter.c_type())
+                })
+        {
+            return Err("selected mutex resource does not match its declaration");
+        }
+        Self::check_association(instance, mutex, definition.mutex_guard(), assumptions)
+    }
+
+    #[cfg(test)]
     pub(super) fn check(
         instance: &ResourceInstance,
         mutex: &Pointer,
@@ -25,6 +52,21 @@ impl MutexInvariantInterface {
         let declaration = declarations
             .get(instance.name())
             .ok_or("selected resource has no `guarded_by` mutex field")?;
+        Self::check_association(instance, mutex, Some(declaration), assumptions)
+    }
+
+    fn check_association(
+        instance: &ResourceInstance,
+        mutex: &Pointer,
+        declaration: Option<&CMutexGuardDeclaration>,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, &'static str> {
+        let Some(declaration) = declaration else {
+            return Ok(Self {
+                description: ResourceDescription::from_instance(instance),
+                mutex: mutex.clone(),
+            });
+        };
         let Some(AlgebraicValue::C(CValue::Pointer(base))) =
             instance.arguments().get(declaration.parameter_index)
         else {
@@ -86,6 +128,122 @@ mod tests {
 
     fn address() -> Pointer {
         Pointer::symbolic(Variable(70)).offset_by_bytes(8)
+    }
+
+    fn definitions() -> BTreeMap<String, crate::kernel::CCompositeResourceDefinition> {
+        let definition = crate::kernel::CCompositeResourceDefinition::new(
+            "counter_state",
+            vec![crate::kernel::CParameter::new("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![],
+            vec![],
+        )
+        .with_instance_schema(Some(instance(1, 0).schema().clone()))
+        .with_mutex_guard(declarations().remove("counter_state"));
+        BTreeMap::from([("counter_state".into(), definition)])
+    }
+
+    #[test]
+    fn unannotated_publication_requires_owned_state_and_preserves_its_type() {
+        let assumptions = PureFactContext::new();
+        let resource = instance(1, 7);
+        let mut definitions = definitions();
+        let definition = definitions.remove("counter_state").unwrap();
+        definitions.insert("counter_state".into(), definition.with_mutex_guard(None));
+        let context = MutexContext::new(
+            CState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own(CResource::Instance(resource.clone())),
+                )),
+        );
+        let mutex = Pointer::symbolic(Variable(99));
+        let published = context
+            .publish_declared(&mutex, resource.identity(), &definitions, &assumptions, 40)
+            .unwrap();
+        assert_eq!(
+            published
+                .state
+                .mutex_ledger
+                .as_ref()
+                .unwrap()
+                .protected_type(&mutex),
+            Some(&ResourceDescription::from_instance(&resource))
+        );
+        assert!(
+            published
+                .publish_declared(
+                    &address(),
+                    resource.identity(),
+                    &definitions,
+                    &assumptions,
+                    40
+                )
+                .is_err()
+        );
+        let (held, guard) = published.acquire(&mutex, &assumptions).unwrap();
+        let released = held
+            .release(
+                guard,
+                CResourceFact::own(CResource::Instance(resource.clone())),
+                &assumptions,
+            )
+            .unwrap();
+        let recovered = released.destroy(&mutex, &assumptions).unwrap();
+        assert!(
+            recovered
+                .state
+                .resources
+                .owned_instance(resource.identity())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn publication_rejects_unchecked_or_mismatched_schemas_without_annotations() {
+        let assumptions = PureFactContext::new();
+        let resource = instance(1, 7);
+        let context = MutexContext::new(
+            CState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own(CResource::Instance(resource.clone())),
+                )),
+        );
+        assert!(
+            context
+                .publish_declared(
+                    &address(),
+                    resource.identity(),
+                    &BTreeMap::new(),
+                    &assumptions,
+                    40
+                )
+                .is_err()
+        );
+        let mut definitions = definitions();
+        let definition = definitions.remove("counter_state").unwrap();
+        let wrong_schema = ResourceFieldSchema::new(vec![(
+            "different".into(),
+            ResourceFieldType::C(CType::Int32),
+        )])
+        .unwrap();
+        definitions.insert(
+            "counter_state".into(),
+            definition
+                .with_mutex_guard(None)
+                .with_instance_schema(Some(wrong_schema)),
+        );
+        assert!(
+            context
+                .publish_declared(
+                    &address(),
+                    resource.identity(),
+                    &definitions,
+                    &assumptions,
+                    40
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -175,7 +333,7 @@ mod tests {
                 .publish_declared(
                     &address(),
                     resource.identity(),
-                    &declarations(),
+                    &definitions(),
                     &assumptions,
                     40
                 )
@@ -191,7 +349,7 @@ mod tests {
                 .publish_declared(
                     &address().offset_by_bytes(8),
                     resource.identity(),
-                    &declarations(),
+                    &definitions(),
                     &assumptions,
                     40
                 )
@@ -201,7 +359,7 @@ mod tests {
             .publish_declared(
                 &address(),
                 resource.identity(),
-                &declarations(),
+                &definitions(),
                 &assumptions,
                 40,
             )
@@ -227,7 +385,7 @@ mod tests {
                 .publish_declared(
                     &address(),
                     resource.identity(),
-                    &declarations(),
+                    &definitions(),
                     &PureFactContext::new(),
                     40,
                 )
@@ -408,7 +566,7 @@ mod tests {
             .publish_declared(
                 &address(),
                 crate::kernel::Variable(1),
-                &declarations(),
+                &definitions(),
                 &assumptions,
                 40,
             )

@@ -569,24 +569,22 @@ pub(super) fn fresh_protected_payload(
     {
         return Err("protected mutex acquisition requires an unconditional leaf resource".into());
     }
-    let declaration = definition
-        .guarded_by
-        .as_ref()
-        .ok_or("protected resource requires a guarded_by declaration")?;
-    let Some(crate::kernel::AlgebraicValue::C(crate::kernel::CValue::Pointer(base))) =
-        description.arguments().get(declaration.parameter_index)
-    else {
-        return Err("guarded resource parameter is not a pointer".into());
-    };
-    let expected = base
-        .pointer()
-        .offset_by_bytes(declaration.field_offset_bytes);
-    if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-        &expected,
-        mutex,
-        assumptions,
-    ) {
-        return Err("protected resource is guarded by a different mutex".into());
+    if let Some(declaration) = definition.guarded_by.as_ref() {
+        let Some(crate::kernel::AlgebraicValue::C(crate::kernel::CValue::Pointer(base))) =
+            description.arguments().get(declaration.parameter_index)
+        else {
+            return Err("guarded resource parameter is not a pointer".into());
+        };
+        let expected = base
+            .pointer()
+            .offset_by_bytes(declaration.field_offset_bytes);
+        if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+            &expected,
+            mutex,
+            assumptions,
+        ) {
+            return Err("protected resource is guarded by a different mutex".into());
+        }
     }
     let identity = match output {
         Some(identity) => identity,

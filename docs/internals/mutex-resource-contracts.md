@@ -100,10 +100,14 @@ consumes state: P;
 produces lifetime: mutex_live(mu);
 ```
 
-The resource definition's `guarded_by` declaration must identify this mutex.
-The caller must actually own the folded state; a resource definition or an
-association alone supplies no ownership. Initialization establishes the
-association from that input and gives it a fresh initialization identity.
+The caller must actually own the folded state, with a schema matching its
+checked resource declaration. Initialization establishes the association from
+that input and the selected mutex, and gives it a fresh initialization identity.
+A resource definition or an association alone supplies no ownership.
+`guarded_by` is optional: legacy declarations that include it still constrain
+the mutex address, while an ordinary resource can be associated at initialization
+without any mutex-specific member. Typed use, acquisition, release, and helper
+calls retain and check that authenticated association.
 
 Consuming storage removes ordinary write authority over the initialized mutex
 representation. It does not consume ownership of the surrounding allocation

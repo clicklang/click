@@ -10,7 +10,7 @@ A sequential control verifies exact
 value two with existing resource declarations, `count`, `owns`/`consumes`/
 `produces`, `fold`, `open`, and `unfold`. The unchanged pthread example is not
 yet verified for its exact result. The bounded-completion-pool proposal stays
-shelved. This investigation changes no existing resource semantics or C source.
+shelved. The unannotated-publication prerequisite is implemented below; counted-population semantics and C source are unchanged.
 
 ## Investigation: one mutex protects a counted population
 
@@ -48,9 +48,12 @@ one nested unit must never create a second copy of that custody.
 
 Initialization establishes the association from actual ownership and the
 selected resource. The proposed rule does not depend on `guarded_by`.
-Declaration-level `guarded_by` checks still exist in the implementation;
-replacing them must preserve the authenticated initialization association in
-both concrete and independently checked typed-use paths.
+Initialization now supports ordinary unannotated exclusive resources, with
+declaration/schema and actual ownership checks. Legacy `guarded_by` annotations
+still constrain the mutex when present. Both concrete and independently checked
+typed-use paths accept the unannotated form. The frozen counter's existing
+memory-safety sidecar uses this form; this does not yet implement counted
+payloads or the population transfer rules below.
 
 ### Publication and its ownership precondition
 
@@ -185,7 +188,7 @@ The implementation was inspected at `205ba54e7`; the subsequent master change
 | --- | --- |
 | `src/kernel/proof/execution.rs`, full-population cleanup | Reuse the ownership-equals-count premise for publication, while preserving units and transferring body custody instead of destroying the population representation. |
 | `src/kernel/mutexes.rs`, `publish_declared` / `publish_with_interface` | Currently escrow one exclusive instance. Admit checked counted payloads and bind custody to the non-reused initialization identity. |
-| `src/kernel/mutexes/assumed_protocol.rs`, `fresh_protected_payload` | Currently requires `guarded_by` and a leaf instance. Freshen a guarded population's observation without allocating a new population or new units. |
+| `src/kernel/mutexes/assumed_protocol.rs`, `fresh_protected_payload` | Accepts unannotated leaf instances. Extend this to freshen a guarded population's observation without allocating a new population or new units. |
 | `src/surface/proof/resources.rs`, entry/body materialization | Do not derive body memory and current facts from a guarded unit at entry. |
 | `src/kernel/functions.rs`, body expansion and call transfer | Require body access at every authority-bearing projection and helper boundary. Static footprint calculation alone grants no ownership. |
 | `src/kernel/proof/population_consumption.rs` | Retain invariant checking and effect fulfillment; add guarded body-access admission. |

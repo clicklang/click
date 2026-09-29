@@ -2328,7 +2328,6 @@ fn verify_c0_sources_with_context(
                 &click_function_environment,
             )?
             .into_iter()
-            .filter(|definition| definition.mutex_guard().is_some())
             .map(|definition| (definition.name().to_string(), definition))
             .collect()
         } else {
@@ -2336,7 +2335,11 @@ fn verify_c0_sources_with_context(
         };
         let modeled_mutex_guards = modeled_mutex_definitions
             .iter()
-            .map(|(name, definition)| (name.clone(), definition.mutex_guard().unwrap().clone()))
+            .filter_map(|(name, definition)| {
+                definition
+                    .mutex_guard()
+                    .map(|guard| (name.clone(), guard.clone()))
+            })
             .collect();
         let mut function_environment = initial_function_environment
             .unwrap_or(built_function_environment)

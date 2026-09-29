@@ -46,7 +46,7 @@ old fields and memory observations. Neither passing the type nor retaining an
 old instance name supplies current ownership.
 
 Initial implementation boundaries: the protected type must be a declared,
-field-bearing, unconditional leaf resource with `guarded_by`; its memory
+field-bearing, unconditional leaf resource; its memory
 footprint must not depend on changing model fields. Model fields currently
 support C and integer types. Nested type/reference arguments, owned children,
 and resource-type parameters on user-defined resource constructors remain
@@ -138,8 +138,10 @@ This remains a target, not implemented protected-state output syntax. The
 checked lifetime-to-use loan determines the association. There is no separate
 resource-description argument to infer or supply.
 
-Initialization continues to check the supplied resource's `guarded_by`
-annotation. No new public `guarded_by(P, mu)` query is required by this plan.
+Initialization establishes the association from the owned state and mutex.
+An optional legacy `guarded_by` annotation further constrains the address;
+ordinary protected resources need no such annotation. No public
+`guarded_by(P, mu)` query is required.
 Unlock requires the exact acquisition and actual ownership of the full
 protected assertion. A replacement instance is valid when that assertion
 permits it; matching only the family is insufficient. Outstanding payload

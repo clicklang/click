@@ -1006,7 +1006,7 @@ impl MutexContext {
         &self,
         mutex: &Pointer,
         identity: super::Variable,
-        declarations: &std::collections::BTreeMap<String, super::CMutexGuardDeclaration>,
+        definitions: &std::collections::BTreeMap<String, super::CCompositeResourceDefinition>,
         assumptions: &PureFactContext,
         storage_bytes: u32,
     ) -> Result<Self, &'static str> {
@@ -1015,10 +1015,13 @@ impl MutexContext {
             .resources
             .owned_instance(identity)
             .ok_or("selected mutex invariant is not held folded")?;
-        let interface = invariant_interface::MutexInvariantInterface::check(
+        let definition = definitions
+            .get(instance.name())
+            .ok_or("selected mutex resource has no checked declaration")?;
+        let interface = invariant_interface::MutexInvariantInterface::check_definition(
             instance,
             mutex,
-            declarations,
+            definition,
             assumptions,
         )?;
         self.publish_with_interface(
@@ -4607,7 +4610,6 @@ mod tests {
             parameter_index: 0,
             field_offset_bytes: 0,
         };
-        let definitions = BTreeMap::from([("counter_state".into(), declaration.clone())]);
         let definition = CCompositeResourceDefinition::new(
             "counter_state",
             vec![CParameter::new("p", CType::Int32Pointer)],
@@ -4618,6 +4620,7 @@ mod tests {
         )
         .with_instance_schema(Some(schema))
         .with_mutex_guard(Some(declaration));
+        let definitions = BTreeMap::from([("counter_state".into(), definition.clone())]);
         let initialized = context(CResourceFact::own(CResource::Instance(instance.clone())))
             .publish_declared(
                 &address,

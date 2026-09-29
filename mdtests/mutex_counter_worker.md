@@ -50,7 +50,6 @@ verifying "mutex_counter.c";
 
 resource counter_state(counter: struct mutex_counter*) {
     field value: uint32;
-    guarded_by counter->mutex;
     owns counter->value;
     fact counter->value == value;
 }
