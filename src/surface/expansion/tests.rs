@@ -1,6 +1,55 @@
 use super::*;
 
 #[test]
+fn tactic_expansion_can_name_an_outer_shadowed_binder() {
+    let source = r#"
+theorem shadowed(x: int32) {
+    requires x == 0;
+    ensures forall (x: int32) { x == x } by {
+        intro();
+        have outer.x == 0 by { simp(); }
+        simp();
+    }
+}
+"#;
+    verify_c0_sources(source, &[]).expect("smart proof should use the outer binder");
+    let position = position_at_offset(source, source.find("simp();").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+        .expect("selected smart tactic should expand");
+    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("outer.x"), "{expanded}");
+    verify_c0_sources(&expanded, &[]).expect("expanded proof must reverify");
+}
+
+#[test]
+fn tactic_expansion_can_name_two_levels_of_shadowed_binders() {
+    let source = r#"
+theorem shadowed_twice(x: int32) {
+    requires x == 0;
+    ensures forall (x: int32) { forall (x: int32) { x == x } } by {
+        intro();
+        intro();
+        have outer.outer.x == 0 by { simp(); }
+        simp();
+    }
+}
+"#;
+    verify_c0_sources(source, &[]).expect("the oldest x should remain available");
+    let position = position_at_offset(source, source.find("simp();").unwrap());
+    let expanded = expand_c0_tactic_source_at(source, &[], position.line, position.column)
+        .expect("selected smart tactic should expand");
+    assert!(!expanded.contains("simp();"), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
+    assert!(expanded.contains("outer.outer.x"), "{expanded}");
+    verify_c0_sources(&expanded, &[]).expect("expanded proof must reverify");
+
+    let wrong_depth = source.replace("outer.outer.x", "outer.outer.outer.x");
+    verify_c0_sources(&wrong_depth, &[])
+        .expect_err("a qualifier beyond the enclosing x bindings must fail");
+}
+
+#[test]
 fn tactic_line_disambiguation_uses_columns_only_for_shared_lines() {
     let source = "by { step(); step(); }\nby {\n    step();\n}\n";
     assert!(tactic_line_has_multiple_starts(source, &SourcePosition::new(1, 6)).unwrap());

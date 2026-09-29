@@ -8941,6 +8941,27 @@ impl Parser {
     }
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        // A proof may need the previous binding of a name shadowed by an
+        // introduced quantifier. Keep the qualification on the variable name
+        // until the proof scope substitutes its checked binder identity.
+        if self.proof_nesting > 0
+            && self.peek_ident() == Some("outer")
+            && self.peek_next() == Some(&Token::Dot)
+        {
+            let start = self.position;
+            let mut depth = 0;
+            while self.peek_ident() == Some("outer") && self.peek_next() == Some(&Token::Dot) {
+                self.position += 2;
+                depth += 1;
+            }
+            if let Some(name) = self.peek_ident().map(str::to_string) {
+                self.position += 1;
+                return Ok(ContractExpression::CFragment(CExpression::Variable(
+                    format!("{}{}", "outer.".repeat(depth), name),
+                )));
+            }
+            self.position = start;
+        }
         if self.is_qualified_c_name() {
             let (name, lowered) = self.parse_qualified_c_name()?;
             return Ok(ContractExpression::QualifiedC { name, lowered });

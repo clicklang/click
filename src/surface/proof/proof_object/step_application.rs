@@ -2161,6 +2161,48 @@ impl<'a> Proof<'a> {
                 let mut surface_bindings = current.surface_bindings.clone();
                 let mut introduced_antecedents = current.introduced_antecedents.clone();
                 let recorded = current.introductions.head();
+                let introduced_name = match (&introduction, recorded, current.surface.as_deref()) {
+                    (
+                        PropositionIntroduction::Universal { .. },
+                        Some(LoweringIntroduction::WrittenUniversal { name, .. }),
+                        _,
+                    ) => Some(name),
+                    (
+                        PropositionIntroduction::Universal { .. },
+                        _,
+                        Some(ClickProposition::ForAll { name, .. }),
+                    ) => Some(name),
+                    _ => None,
+                };
+                if let Some(name) = introduced_name {
+                    let previous = current.surface_bindings.get(name).cloned().or_else(|| {
+                        let value = match self.context.as_ref() {
+                            ProofContext::Pure(context) => {
+                                context.theorem_context.values.get(name).cloned()
+                            }
+                            ProofContext::FixedState(_) | ProofContext::Execution(_) => None,
+                        };
+                        value.map(|value| {
+                            ContractExpression::CFragment(CExpression::Value(value))
+                        })
+                    });
+                    if let Some(previous) = previous {
+                        let mut depth = 1;
+                        loop {
+                            let alias = format!("{}{}", "outer.".repeat(depth), name);
+                            let Some(older) = current.surface_bindings.get(&alias) else {
+                                break;
+                            };
+                            surface_bindings = surface_bindings.with_inserted(
+                                format!("{}{}", "outer.".repeat(depth + 1), name),
+                                older.clone(),
+                            );
+                            depth += 1;
+                        }
+                        surface_bindings =
+                            surface_bindings.with_inserted(format!("outer.{name}"), previous);
+                    }
+                }
                 let surface = match (recorded, introduction, current.surface.as_deref()) {
                     // Lowering inserts implications that guard a body with a
                     // path fact it established or with a load obligation the

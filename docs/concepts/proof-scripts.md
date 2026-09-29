@@ -64,6 +64,13 @@ proofs. Both can use simplification, theorem application, exact derivation,
 logical tactics, and proof-level `if`; fixed-state proofs can additionally
 transform logical resources.
 
+In a pure theorem proof, an introduced `int32` binder may shadow an earlier
+name. After `intro()`, `x` names the newest binding and `outer.x` names the
+previous binding of `x`; `outer.outer.x` names the one before that. The
+qualifier is resolved to the retained binder identity, including in a nested
+`have` and in its checked expansion. A qualifier with no corresponding
+enclosing binding is rejected.
+
 Whichever kind it is, a proposition a step writes down is lowered against the
 premises in scope where it is written: the claim's own `requires` and every
 fact the proof has established before that point. That is what makes the
