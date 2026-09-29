@@ -59,8 +59,11 @@ execution. A completed nonvolatile typed read registers its exact defining
 equation with the path context, which files an equality between that existing
 C value and `load(snapshot, address)` in the graph. Pointer equality queries
 use the resulting closure, including address equality learned after the read.
-This adds no theorem premise or read permission. Resource lookup still has
-compatibility spelling retries.
+This adds no theorem premise or read permission. An owned range's
+read/write membership check now uses graph equality when comparing an access
+to that range's selected base; the held range still supplies authority and its
+bounds still decide coverage. Resource candidate selection and fold consumption
+still have compatibility spelling retries.
 
 The previous attempt to publish `load(M, p) == value` as a certified
 `ExecutionPureFact` was reverted: it changed execution theorem shapes by

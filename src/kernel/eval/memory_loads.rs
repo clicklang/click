@@ -4233,6 +4233,13 @@ mod tests {
                 .are_pointer_loads_equal(&snapshot, &a, &b)
         );
         assert!(branch.pointer_equality_in_graph(&x, &y));
+        let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(x.clone(), 0u32.into(), 1u32.into(), 4),
+        ));
+        assert!(!owner.permits_memory_read(&y, 4, &available));
+        assert!(owner.memory_write_range(&y, 4, &available).is_none());
+        assert!(owner.permits_memory_read(&y, 4, &branch));
+        assert!(owner.memory_write_range(&y, 4, &branch).is_some());
         let address_first = empty
             .clone()
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
@@ -4246,6 +4253,7 @@ mod tests {
         assert!(!empty.pointer_equality_in_graph(&x, &y));
         let withdrawn = branch.without_exact_fact(x_facts[0].proposition());
         assert!(!withdrawn.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!owner.permits_memory_read(&y, 4, &withdrawn));
         let restricted = address_first
             .restricted_to_facts(&[(ConditionTerm::pointer_equal(a.clone(), b), true)], &[]);
         assert!(!restricted.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));

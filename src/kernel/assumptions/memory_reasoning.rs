@@ -2846,15 +2846,12 @@ impl PureFactContext {
         end: &Bitvector32Term,
         element_width: u32,
     ) -> bool {
-        // Keep an access at its selected range base when their equality is
-        // explicit. Resolving only the access can otherwise lose an exact
-        // match after learning that a symbolic callback result aliases an
-        // external argument. This probes one equality, not ambient facts.
-        let resolved = if pointer == base
-            || self
-                .exact_condition_value(&ConditionTerm::pointer_equal(pointer.clone(), base.clone()))
-                == Some(true)
-        {
+        // An owned range keeps its own base spelling. Once the trusted graph
+        // proves the access names that base, use that spelling for the range
+        // check; a late or transitive equality needs no alias walk. This
+        // changes address matching only: the range still supplies authority
+        // and its bounds still decide whether the access is covered.
+        let resolved = if pointer == base || self.pointer_equality_in_graph(pointer, base) {
             base.clone()
         } else {
             crate::kernel::reasoning::resolve_symbolic_pointer_alias(pointer, self)

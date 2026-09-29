@@ -7148,6 +7148,33 @@ fn memory_resource_fact_permits_write(
     }
 }
 
+#[cfg(test)]
+#[test]
+fn owned_cell_access_uses_transitive_graph_address_equality() {
+    let pointer = |id| Pointer::symbolic(Variable(id));
+    let (a, b, c, d) = (
+        pointer(91_100),
+        pointer(91_101),
+        pointer(91_102),
+        pointer(91_103),
+    );
+    let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+        CMemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
+    ));
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true)
+        .assume_condition(ConditionTerm::pointer_equal(c.clone(), d.clone()), true);
+    assert!(!owner.permits_memory_read(&d, 4, &facts));
+    let connected = facts
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(b, c), true);
+    assert!(connected.pointer_equality_in_graph(&a, &d));
+    assert!(owner.permits_memory_read(&d, 4, &connected));
+    assert!(owner.memory_write_range(&d, 4, &connected).is_some());
+    assert!(!owner.permits_memory_read(&d, 12, &connected));
+    assert!(!owner.permits_memory_read(&d, 4, &facts));
+}
+
 fn pointer_has_structural_range_base(pointer: &Pointer, base: &Pointer) -> bool {
     if pointer.block != base.block {
         return false;
