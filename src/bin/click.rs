@@ -1,5 +1,10 @@
 use std::env;
 
+#[path = "click/version_dispatch.rs"]
+mod version_dispatch;
+#[path = "click/version_manager.rs"]
+mod version_manager;
+
 #[path = "click-audit.rs"]
 #[allow(dead_code)]
 mod audit;
@@ -23,22 +28,36 @@ commands:\n  \
   profile  measure verification and identify slow tactics\n  \
   expand   replace one smart tactic with its checked simple certificate\n  \
   audit    check expansion across a project or repository\n  \
-  import   prepare and lock compiler-selected sources";
+  import   prepare and lock compiler-selected sources\n  \
+  install  download a Click version\n  \
+  use      pin a version for the current project\n  \
+  default  select the global fallback version\n  \
+  versions list installed versions";
 
 fn main() {
-    if let Err(message) = entry(env::args().skip(1)) {
-        if message.starts_with("proof error:")
-            || message.starts_with("proof error in `")
-            || message.starts_with("syntax error:")
-            || message.starts_with("type error:")
-            || message.starts_with("internal error:")
-        {
-            eprintln!("{message}");
-        } else {
-            eprintln!("click: {message}");
-        }
-        std::process::exit(1);
+    let arguments = env::args().skip(1).collect::<Vec<_>>();
+    match version_dispatch::maybe_dispatch("click", &arguments) {
+        Ok(Some(status)) => std::process::exit(status),
+        Ok(None) => {}
+        Err(message) => report_error(message),
     }
+    if let Err(message) = entry(arguments) {
+        report_error(message);
+    }
+}
+
+fn report_error(message: String) -> ! {
+    if message.starts_with("proof error:")
+        || message.starts_with("proof error in `")
+        || message.starts_with("syntax error:")
+        || message.starts_with("type error:")
+        || message.starts_with("internal error:")
+    {
+        eprintln!("{message}");
+    } else {
+        eprintln!("click: {message}");
+    }
+    std::process::exit(1);
 }
 
 fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
@@ -46,6 +65,10 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
     let Some(command) = arguments.next() else {
         return Err(USAGE.to_string());
     };
+    if command == "--version" || command == "-V" {
+        println!("click {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if command == "--help" || command == "-h" {
         println!("{USAGE}");
         return Ok(());
@@ -56,6 +79,9 @@ fn entry(arguments: impl IntoIterator<Item = String>) -> Result<(), String> {
         "expand" => expand::entry_with(arguments),
         "audit" => audit::entry_with(arguments),
         "import" => import::entry_with(arguments),
+        "install" | "use" | "default" | "versions" => {
+            version_manager::entry_with(&command, arguments.collect())
+        }
         _ => Err(format!("unknown command `{command}`\n{USAGE}")),
     }
 }

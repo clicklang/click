@@ -1,10 +1,25 @@
 [package]
-name = "click"
+name = "clicklang"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
+description = "A language and verifier for proving properties of existing C programs"
+homepage = "https://github.com/lacker/click"
+repository = "https://github.com/lacker/click"
+readme = "README.md"
+keywords = ["formal-verification", "program-verification", "c"]
+categories = ["command-line-utilities", "development-tools"]
+default-run = "click"
+
+[lib]
+name = "click"
+
+[[bin]]
+name = "click"
+path = "src/bin/click.rs"
 
 [dependencies]
+flate2 = "1"
 imbl = "7"
 libc = "0.2"
 num-bigint = "0.4"
@@ -12,6 +27,7 @@ num-traits = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+tar = "0.4.45"
 
 # Keep filename/line backtraces without duplicating full type and variable
 # debug information in every worktree. The test profile inherits this setting.
@@ -26,3 +42,44 @@ debug = "line-tables-only"
 inherits = "release"
 debug = true
 strip = false
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[workspace]
+resolver = "3"
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.33.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl", "aarch64-pc-windows-msvc", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# The archive format to use for non-windows builds (defaults .tar.xz)
+unix-archive = ".tar.gz"
+# Use tarballs for Windows too so the built-in version manager has one format to extract.
+windows-archive = ".tar.gz"
+# Checksums to generate for each App
+checksum = "sha256"
+# Path that installers should place binaries in
+install-path = "~/.click/bin"
+# Where to host releases
+hosting = "github"
+# Whether to install an updater program
+install-updater = false
+
+[workspace.metadata.dist.binaries]
+aarch64-apple-darwin = ["click"]
+aarch64-unknown-linux-gnu = ["click"]
+aarch64-unknown-linux-musl = ["click"]
+aarch64-pc-windows-msvc = ["click"]
+x86_64-apple-darwin = ["click"]
+x86_64-unknown-linux-gnu = ["click"]
+x86_64-unknown-linux-musl = ["click"]
+x86_64-pc-windows-msvc = ["click"]
