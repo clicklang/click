@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn tactic_expansion_can_name_an_outer_c_parameter_after_intro() {
+    let c_source = "int32 shadowed_c(int32 x) { return 0; }";
+    let click_source = r#"
+verifying "shadowed.c";
+
+int32 shadowed_c(int32 x) {
+    requires x == 0;
+    ensures forall (x: int32) { x == x };
+} by {
+    execute();
+    intro();
+    have outer.x == 0 by { simp(); }
+    simp();
+}
+"#;
+    let sources = [("shadowed.c", c_source)];
+    verify_c0_sources(click_source, &sources).expect("C proof should retain the outer x");
+    let position = position_at_offset(click_source, click_source.find("simp();").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+            .expect("selected smart tactic should expand");
+    assert!(
+        expanded.contains("have outer.x == 0 by {\n        assumption();"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("outer.x"), "{expanded}");
+    verify_c0_sources(&expanded, &sources).expect("expanded C proof must reverify");
+
+    let wrong_binder = click_source.replace("have outer.x == 0", "have x == 0");
+    verify_c0_sources(&wrong_binder, &sources)
+        .expect_err("the fresh universal x must not inherit the parameter's equality");
+}
+
+#[test]
+fn tactic_expansion_can_name_two_outer_c_binders_after_intro() {
+    let c_source = "int32 shadowed_twice_c(int32 x) { return 0; }";
+    let click_source = r#"
+verifying "shadowed.c";
+
+int32 shadowed_twice_c(int32 x) {
+    requires x == 0;
+    ensures forall (x: int32) { forall (x: int32) { x == x } };
+} by {
+    execute();
+    intro();
+    intro();
+    have outer.outer.x == 0 by { simp(); }
+    simp();
+}
+"#;
+    let sources = [("shadowed.c", c_source)];
+    verify_c0_sources(click_source, &sources).expect("both shadowed binders stay distinct");
+    let position = position_at_offset(click_source, click_source.find("simp();").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
+            .expect("selected smart tactic should expand");
+    assert!(
+        expanded.contains("have outer.outer.x == 0 by {\n        assumption();"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
+}
+
+#[test]
 fn tactic_expansion_can_name_an_outer_shadowed_binder() {
     let source = r#"
 theorem shadowed(x: int32) {

@@ -2069,7 +2069,12 @@ pub(super) fn finish_ordered_proof<'a>(
                     // result-aware claim. Retain that typed judgment between
                     // source operations; syntax is recorded only for surface
                     // attribution, never reapplied as a candidate certificate.
-                    let mut existence_proof = None;
+                    let mut existence_proof: Option<(usize, ClickProposition, Proof<'_>)> = None;
+                    // Only `intro` opens a shadowing scope for subsequent
+                    // top-level `have` steps. Existential witness operations
+                    // retain a claim proof too, but their `have` steps still
+                    // extend the ambient outcome as before.
+                    let mut introduced_claim_scope = false;
                     let mut has_return_instance_rewrite = false;
                     // Frame closure also applies the contract's returned
                     // resource transition. Track that ownership transition
@@ -2480,14 +2485,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `have` requires a return outcome"
                                     )));
                                 };
-                                let Some(evolving_root) = outcome_proof.take() else {
-                                    // The unconditional substrate makes this
-                                    // unreachable; fail loudly rather than
-                                    // silently routing the whole `have`
-                                    // through the deleted legacy fixed-state root.
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
-                                    )));
+                                // A `have` after `intro` belongs to the active
+                                // claim proof, which owns the introduced binder.
+                                // Earlier `have` steps extend the outcome proof.
+                                let active_claim = if introduced_claim_scope {
+                                    existence_proof.take()
+                                } else {
+                                    None
+                                };
+                                let evolving_root = match &active_claim {
+                                    Some((_, _, proof)) => proof
+                                        .refresh_outcome_from(required_outcome(&outcome_proof)?)?,
+                                    None => outcome_proof.take().ok_or_else(|| {
+                                        ClickError::new(format!(
+                                            "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
+                                        ))
+                                    })?,
                                 };
                                 let evolving_have = {
                                     let evolving = evolving_root;
@@ -2495,8 +2508,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                         Option<(Proof<'_>, Proposition, ProofCertificate)>,
                                         ClickError,
                                     > {
-                                        let prepared = evolving
-                                            .with_outcome_store_consequences()?;
+                                        let prepared = if active_claim.is_some() {
+                                            evolving.clone()
+                                        } else {
+                                            evolving.with_outcome_store_consequences()?
+                                        };
                                         let before = prepared.checkpoint();
                                         let scope =
                                             prepared.begin_have(have.proposition.clone())?;
@@ -2524,11 +2540,31 @@ pub(super) fn finish_ordered_proof<'a>(
                                     })();
                                     match attempt? {
                                         Some((joined, fact, certificate)) => {
-                                            outcome_proof = Some(joined);
+                                            if let Some((claim_index, surface_goal, _)) =
+                                                &active_claim
+                                            {
+                                                existence_proof = Some((
+                                                    *claim_index,
+                                                    surface_goal.clone(),
+                                                    joined,
+                                                ));
+                                            } else {
+                                                outcome_proof = Some(joined);
+                                            }
                                             Some((fact, Some(certificate)))
                                         }
                                         None => {
-                                            outcome_proof = Some(evolving);
+                                            if let Some((claim_index, surface_goal, _)) =
+                                                &active_claim
+                                            {
+                                                existence_proof = Some((
+                                                    *claim_index,
+                                                    surface_goal.clone(),
+                                                    evolving,
+                                                ));
+                                            } else {
+                                                outcome_proof = Some(evolving);
+                                            }
                                             None
                                         }
                                     }
@@ -2545,8 +2581,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                     )));
                                 };
                                 let surface_have = surface_have.clone();
-                                outcome_surface_propositions
-                                    .record_lowering(&have.proposition, &fact)?;
+                                if active_claim.is_none() {
+                                    outcome_surface_propositions
+                                        .record_lowering(&have.proposition, &fact)?;
+                                }
                                 record_post_execution_surface_tactic(
                                     deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
@@ -2801,6 +2839,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .refresh_outcome_from(required_outcome(&outcome_proof)?)?
                                     .apply_step(ProofStep::Intro)?;
                                 existence_proof = Some((claim_index, surface_goal, proof));
+                                introduced_claim_scope = true;
                                 record_post_execution_surface_tactic(
                                     deferred.surface_recorded,
                                     &mut path_surface_post_tactics,
@@ -3637,6 +3676,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 if let Some((claim_index, surface_goal, proof)) =
                                     existence_proof.take()
                                 {
+                                    introduced_claim_scope = false;
                                     let proof = proof
                                         .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
                                     let completed = if let Some(completed) =

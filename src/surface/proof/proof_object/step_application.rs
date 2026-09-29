@@ -2178,13 +2178,23 @@ impl<'a> Proof<'a> {
                     let previous = current.surface_bindings.get(name).cloned().or_else(|| {
                         let value = match self.context.as_ref() {
                             ProofContext::Pure(context) => {
-                                context.theorem_context.values.get(name).cloned()
+                                context.theorem_context.values.get(name).cloned().map(CExpression::Value)
                             }
-                            ProofContext::FixedState(_) | ProofContext::Execution(_) => None,
+                            ProofContext::FixedState(context) => context
+                                .parameters
+                                .iter()
+                                .zip(context.arguments)
+                                .find(|(parameter, _)| parameter.name() == name)
+                                .map(|(_, argument)| argument.clone()),
+                            ProofContext::Execution(context) => context
+                                .parsed_function
+                                .parameters()
+                                .iter()
+                                .zip(context.arguments)
+                                .find(|(parameter, _)| parameter.name() == name)
+                                .map(|(_, argument)| argument.clone()),
                         };
-                        value.map(|value| {
-                            ContractExpression::CFragment(CExpression::Value(value))
-                        })
+                        value.map(ContractExpression::CFragment)
                     });
                     if let Some(previous) = previous {
                         let mut depth = 1;
