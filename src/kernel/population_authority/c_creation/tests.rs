@@ -462,7 +462,16 @@ fn opaque_helper_import_has_no_count_or_creation_right() {
     );
     assert!(matches!(
         entry.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
-        Err(CreationRefusal::InvalidMember)
+        Err(CreationRefusal::NotCreationEnvironment)
+    ));
+    let (spent, _) = entry
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .expect("an opaque helper can spend its exact imported member once");
+    assert!(spent.spent_imported_member_since(&entry));
+    assert!(!spent.owns_population_member(&description));
+    assert!(matches!(
+        spent.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        Err(CreationRefusal::MissingMembers)
     ));
     let other = ResourceDescription::new(
         "reference".into(),

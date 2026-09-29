@@ -17,7 +17,11 @@ their standalone proofs receive an opaque population with no known count or
 creator right. An imported member can be opened to use its private owned-memory
 body, then closed before return. The helper does not need a concrete caller
 allocation in its standalone proof; the caller established the member against
-live storage before transferring it. Other contract transitions, worker calls,
+live storage before transferring it. A verified helper may also consume one
+empty-bodied imported member while returning its authority. Its proof must
+perform the checked `unfold`, and the concrete call decrements the caller's
+population under transferred authority. Helper-side member creation,
+nonempty-body consumption, other contract transitions, worker calls,
 recorded-state count, and field-bearing or nested member bodies remain refused.
 
 ## Establishment and uniqueness

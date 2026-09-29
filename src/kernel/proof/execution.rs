@@ -665,10 +665,18 @@ fn checks_population_member_exchange(
         return Err("population member rewrite requires one pointer anchor".into());
     };
     let anchor = pointer.pointer();
-    if anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
-        || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-            && before.memory.live_heap_block_size(anchor).is_some()
-            || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block))
+    let imported_empty_member_consumption = !produce
+        && definition.contains.is_empty()
+        && before
+            .population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|events| events.owns_imported_population_member(&description));
+    if !imported_empty_member_consumption
+        && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
+            || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
+                && before.memory.live_heap_block_size(anchor).is_some()
+                || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block)))
     {
         return Err("population member rewrite requires live base storage".into());
     }
@@ -4351,6 +4359,9 @@ pub(crate) struct ExecutionFrontier {
     pub(crate) position: FrontierPosition,
     pub(crate) region: ExecutionRegionKind,
     pub(crate) execution_start_state: Option<CState>,
+    /// A checked member exchange has materialized the function entry before
+    /// its first C statement. The first step must use that checked successor.
+    pub(crate) entry_member_prefix: bool,
     pub(crate) next_statement_index: usize,
     pub(crate) continuations: PersistentSequence<ProofExecutionContinuation>,
     /// Whether this frontier executes inside one loop-body region, directly
@@ -7253,7 +7264,7 @@ impl ExecutionProofCore {
             &self.function_entry_derivations,
             &self.checked_call_events,
         )?;
-        if self.frontier.is_at_function_entry() {
+        if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             observation.before_state = crate::kernel::c_function_entry_state(
                 &observation.before_state,
                 function,
@@ -7410,8 +7421,8 @@ impl ExecutionProofCore {
         witness: &CheckedPopulationMemberExchange,
         after_state: &CState,
         after_facts: &ProofFacts,
-    ) -> Result<(), String> {
-        if self.evidence_completed || self.frontier.is_at_function_entry() {
+    ) -> Result<Option<CState>, String> {
+        if self.evidence_completed {
             return Err("population member rewrite requires an active function body".into());
         }
         let rewrite = CheckedPopulationMemberRewrite::check(
@@ -7424,7 +7435,41 @@ impl ExecutionProofCore {
             after_state,
             after_facts,
         )?;
-        if self.evidence_state.is_some() {
+        let (rewrite, entry_successor) = if self.frontier.is_at_function_entry()
+            && !self.frontier.entry_member_prefix
+        {
+            let entry = self
+                .function_entry
+                .as_ref()
+                .ok_or("entry member change requires a checked function entry")?;
+            if self.reached_state() != entry.caller_state() {
+                return Err("entry member change has a different checked caller state".into());
+            }
+            let bound_before = entry.entry_state.clone();
+            let (bound_after, bound_witness) = bound_before.checked_population_member_exchange(
+                selected,
+                produce,
+                &rewrite.definition,
+                before_facts.assumptions(),
+            )?;
+            let bound_rewrite = CheckedPopulationMemberRewrite::check(
+                function,
+                &bound_before,
+                before_facts,
+                selected,
+                produce,
+                &bound_witness,
+                &bound_after,
+                after_facts,
+            )?;
+            self.frontier.execution_start_state = Some(entry.caller_state().clone());
+            self.frontier.entry_member_prefix = true;
+            self.evidence_source = Some(Arc::new(function.body().clone()));
+            (bound_rewrite, Some(bound_after))
+        } else {
+            (rewrite, None)
+        };
+        if self.evidence_state.is_some() || entry_successor.is_some() {
             self.evidence_state = Some(rewrite.after_state.clone());
         }
         for trace in &mut *self.execution_evidence {
@@ -7432,7 +7477,7 @@ impl ExecutionProofCore {
                 rewrite.clone(),
             ));
         }
-        Ok(())
+        Ok(entry_successor)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -7459,7 +7504,7 @@ impl ExecutionProofCore {
             &self.checked_call_events,
             selected_children,
         )?;
-        if self.frontier.is_at_function_entry() {
+        if self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix {
             rewrite.before_state =
                 crate::kernel::c_function_entry_state(&rewrite.before_state, function, arguments)
                     .ok_or_else(|| {

@@ -1108,13 +1108,23 @@ pub(super) fn next_top_level_statement_from_frontier_position(
 ) -> Result<NextTopLevelStatement, ClickError> {
     match &view.frontier.position {
         FrontierPosition::FunctionEntry => {
-            let execution_start_state = state.clone();
-            let current_state = c_function_entry_state(&execution_start_state, function, arguments)
-                .ok_or_else(|| {
-                    ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not bind function arguments"
-                    ))
-                })?;
+            let (execution_start_state, current_state) = if view.frontier.entry_member_prefix {
+                (
+                    view.frontier.execution_start_state.clone().ok_or_else(|| {
+                        ClickError::new("checked entry member change lost its caller state")
+                    })?,
+                    state.clone(),
+                )
+            } else {
+                let execution_start_state = state.clone();
+                let current_state = c_function_entry_state(&execution_start_state, function, arguments)
+                    .ok_or_else(|| {
+                        ClickError::new(format!(
+                            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not bind function arguments"
+                        ))
+                    })?;
+                (execution_start_state, current_state)
+            };
             let (statement, remaining) =
                 split_next_source_operation(function.body()).map_err(|message| {
                     ClickError::new(format!(

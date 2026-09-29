@@ -417,6 +417,138 @@ fn authority_mode_helper_returns_the_same_authority_and_member() {
 }
 
 #[test]
+fn authority_mode_helper_consumes_one_member_and_returns_authority() {
+    let c_source = r#"
+        int32 drop_reference(int32* p) { return 7; }
+        int32 value(void) {
+            int32 x = 7;
+            int32 result = drop_reference(&x);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 drop_reference(int32* p) {
+            owns authority(reference(p));
+            consumes reference(p);
+            ensures result == 7;
+        } by {
+            unfold(reference(p));
+            execute();
+            simp();
+        }
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            fold(reference(&x));
+            step();
+            step();
+            step();
+            have count(reference(&x)) == 0 by { simp(); }
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect("a verified helper consumes one owned member and returns authority");
+}
+
+#[test]
+fn authority_mode_helper_cannot_claim_consumption_without_spending_member() {
+    let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+        int32 drop_reference(int32* p) {
+            owns authority(reference(p));
+            consumes reference(p);
+            ensures result == 7;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("a declared consume needs a checked member death in the helper proof");
+    assert!(error.message().contains("reference"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_helper_cannot_spend_imported_member_twice() {
+    let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+        int32 drop_reference(int32* p) {
+            owns authority(reference(p));
+            consumes reference(p);
+            ensures result == 7;
+        } by {
+            unfold(reference(p));
+            unfold(reference(p));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("one imported member cannot be consumed twice");
+    assert!(error.message().contains("reference"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_consuming_helper_requires_caller_member() {
+    let c_source = r#"
+        int32 drop_reference(int32* p) { return 7; }
+        int32 value(void) {
+            int32 x = 7;
+            return drop_reference(&x);
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+        int32 drop_reference(int32* p) {
+            owns authority(reference(p));
+            consumes reference(p);
+            ensures result == 7;
+        } by {
+            unfold(reference(p));
+            execute();
+            simp();
+        }
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("authority alone cannot supply a member consumed by a helper");
+    assert!(error.message().contains("reference"), "{error:?}");
+}
+
+#[test]
 fn verifies_loadable_segment_proposition_for_indexed_read() {
     let c_source = r#"
             int32 read_index(int32 p[], int32 index, int32 n) {

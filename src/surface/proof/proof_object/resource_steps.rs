@@ -72,7 +72,7 @@ impl<'a> Proof<'a> {
                 before_facts.assumptions(),
             )
             .map_err(|message| self.step_error(message))?;
-        execution
+        let entry_successor = execution
             .core
             .record_population_member_rewrite(
                 context.function,
@@ -88,7 +88,7 @@ impl<'a> Proof<'a> {
                     "kernel rejected checked population member change: {message}"
                 ))
             })?;
-        execution.core.state = after_state.into();
+        execution.core.state = entry_successor.unwrap_or(after_state).into();
         let branch = self
             .focused_branch()
             .expect("population member change requires an open goal")

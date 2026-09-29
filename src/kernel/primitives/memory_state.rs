@@ -4557,10 +4557,18 @@ impl CState {
             return Err("Requires an exact pointer-anchored resource R(p)".into());
         };
         let anchor = pointer.pointer();
-        if anchor.offset != PointerOffsetTerm::Constant(0)
-            || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                && self.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block))
+        let imported_empty_member_consumption = !produce
+            && definition.contains().is_empty()
+            && self
+                .population_effects
+                .creation
+                .as_ref()
+                .is_some_and(|events| events.owns_imported_population_member(&description));
+        if !imported_empty_member_consumption
+            && (anchor.offset != PointerOffsetTerm::Constant(0)
+                || !(matches!(&anchor.block, PointerBlock::Heap(_))
+                    && self.memory.live_heap_block_size(anchor).is_some()
+                    || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for R(p)".into());
         }

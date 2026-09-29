@@ -313,6 +313,18 @@ impl CreationEvents {
             .is_some_and(|import| import.description == *description && import.owned_members == 1)
     }
 
+    pub(in crate::kernel) fn spent_imported_member_since(&self, before: &Self) -> bool {
+        match (&before.0.opaque_import, &self.0.opaque_import) {
+            (Some(start), Some(end)) => {
+                start.description == end.description
+                    && start.owned_members == 1
+                    && end.owned_members == 0
+                    && before.0.invocation == self.0.invocation
+            }
+            _ => false,
+        }
+    }
+
     pub(in crate::kernel) fn recognizes_population_authority(
         &self,
         description: &ResourceDescription,
@@ -385,6 +397,52 @@ impl CreationEvents {
         description: &ResourceDescription,
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
+        if let Some(import) = self
+            .0
+            .opaque_import
+            .as_ref()
+            .filter(|import| import.description == *description)
+        {
+            // An opaque proof can spend only its exact imported member.
+            // Producing an external member needs a storage-backed call rule.
+            if produce {
+                return Err(CreationRefusal::NotCreationEnvironment);
+            }
+            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                return Err(CreationRefusal::InvalidMember);
+            };
+            if &pointer.pointer().block != block {
+                return Err(CreationRefusal::InvalidMember);
+            }
+            if import.owned_members != 1 {
+                return Err(CreationRefusal::MissingMembers);
+            }
+            let after = Self(Arc::new(Root {
+                identity: fresh_identity(),
+                entry_call: OnceLock::new(),
+                proof_entry: OnceLock::new(),
+                transfers: Mutex::new(BTreeMap::new()),
+                returns: Mutex::new(BTreeMap::new()),
+                c_events: Mutex::new(BTreeMap::new()),
+                invocation: self.0.invocation,
+                pending: self.0.pending.clone(),
+                creators: self.0.creators.clone(),
+                anchors: self.0.anchors.clone(),
+                authority: self.0.authority.clone(),
+                tainted: self.0.tainted.clone(),
+                opaque_import: Some(OpaqueImport {
+                    description: description.clone(),
+                    owned_members: 0,
+                }),
+            }));
+            let evidence = CheckedPopulationMemberExchange {
+                before: self.0.identity,
+                after: after.0.identity,
+                description: description.clone(),
+                produce,
+            };
+            return Ok((after, evidence));
+        }
         self.exact_member_block(block, description)?;
         let anchor = *self
             .0
