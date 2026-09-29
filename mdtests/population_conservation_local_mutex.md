@@ -33,22 +33,28 @@ resource remaining(p: struct counter*) {
     fact p->value == 3 - count(remaining(p));
 }
 resource counter_state(p: struct counter*) {
-    field marker: int32;
+    field retained: int32;
     guarded_by p->mutex;
-    owns remaining(p);
-    fact marker == 0;
+    owns retained of remaining(p);
+    fact retained > 0;
 }
 void contribute(struct counter* p) {
     owns state: counter_state(p);
     consumes remaining(p);
     requires count(remaining(p)) > 1;
+    requires state.retained > 0;
+    requires count(remaining(p)) == state.retained + 1;
     owns &p->mutex;
     requires aligned(&p->mutex, 8);
+    ensures state.retained == old(state.retained);
 } by {
     let { lifetime: lifetime } = step(pthread_mutex_init(&p->mutex, 0), { state: state });
     step();
-    unfold(state);
+    let { retained: kept } = unfold(state);
     open(remaining(p)) {
+        have count(remaining(p)) - 1 == kept by {
+            simp();
+        }
         have count(remaining(p)) - 1 >= 1 by {
             arithmetic() using { count(remaining(p)) > 1; count(remaining(p)) <= 3; }
         }
@@ -74,10 +80,12 @@ uint32 twice(struct counter* p) {
 } by {
     step();
     fold(3 of remaining(p));
-    let state = fold(counter_state(p), { marker: 0 });
-    step(contribute(p), { state: state });
+    let state = fold(counter_state(p), { retained: 2 });
     step(contribute(p), { state: state });
     unfold(state);
+    let next = fold(counter_state(p), { retained: 1 });
+    step(contribute(p), { state: next });
+    unfold(next);
     unfold(remaining(p));
     step();
     simp();

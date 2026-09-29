@@ -2860,7 +2860,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         };
         let owned = &owned;
         match owned.resource() {
-            CResource::Instance(_)
+            CResource::GuardedPopulation { .. }
+            | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -5573,6 +5574,7 @@ impl LoanLedger {
                     CResource::Memory(range) => vec![range.clone()],
                     CResource::Token { .. } | CResource::MutexLive(_) => Vec::new(),
                     CResource::Composite { .. }
+                    | CResource::GuardedPopulation { .. }
                     | CResource::Instance(_)
                     | CResource::MutexGuard(_)
                     | CResource::MutexUse(_)

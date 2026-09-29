@@ -58,6 +58,14 @@ GCC/glibc import verifies through the ordinary import path, including on
 macOS; that is an artifact and declaration-identity regression, not a native
 runtime guarantee.
 
+Local mutexes can now protect a memory-backed counted population through an
+ordinary quantity-bearing wrapper. The [held-helper test](../mdtests/population_mutex_helper_held.md)
+verifies; the [unheld-helper test](../mdtests/population_mutex_helper_unheld.md)
+requires `owns mutex_guard(&p->mutex)`. Publication and release account for the
+complete population, and retained units do not grant body access while unlocked.
+These payloads cannot yet lend use authority or transfer units to workers;
+current-count observations and join reconciliation remain the counter's next step.
+
 ### Mutex model boundary
 
 A successful acquisition supplies a unique owned guard and resources satisfying

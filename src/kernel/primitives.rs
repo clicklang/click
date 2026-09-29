@@ -5771,6 +5771,13 @@ pub enum CResource {
         name: String,
         arguments: ResourceArguments,
     },
+    /// Membership in a population whose body is held by an initialized mutex.
+    /// This atom carries units, but never the population's body permission.
+    GuardedPopulation {
+        name: String,
+        arguments: ResourceArguments,
+        mutex: MutexIdentity,
+    },
     Instance(ResourceInstance),
     /// Opaque exclusive authority for one acquisition of a modeled mutex.
     MutexGuard(MutexIdentity),
@@ -6007,7 +6014,9 @@ pub(super) trait ResourceFamilyAlgebra {
                     });
                 }
             }
-            ResourceFamily::Composite | ResourceFamily::Token => {
+            ResourceFamily::Composite
+            | ResourceFamily::Token
+            | ResourceFamily::GuardedPopulation => {
                 if matches!(spec.quantity, CResourceQuantity::Count(_))
                     && spec.access != CResourceAccessMode::Own
                 {
@@ -6061,6 +6070,10 @@ pub(super) trait ResourceFamilyAlgebra {
 }
 
 struct MemoryResourceAlgebra;
+struct GuardedPopulationResourceAlgebra;
+static GUARDED_POPULATION_RESOURCE_ALGEBRA: GuardedPopulationResourceAlgebra =
+    GuardedPopulationResourceAlgebra;
+
 struct TokenResourceAlgebra;
 /// The kernel algebra for a folded composite fact is exact-match ownership and
 /// viewing. Source-declared body equivalences are applied as fold, unfold, and
@@ -6094,6 +6107,7 @@ pub enum ResourceFamily {
     Memory,
     Composite,
     Token,
+    GuardedPopulation,
     Instance,
     MutexGuard,
     MutexLive,
@@ -6488,7 +6502,8 @@ impl CResourceSpec {
                 argument_snapshots,
                 parameter_types,
             },
-            ResourceFamily::Memory
+            ResourceFamily::GuardedPopulation
+            | ResourceFamily::Memory
             | ResourceFamily::Instance
             | ResourceFamily::Iterated
             | ResourceFamily::MutexGuard

@@ -1,16 +1,17 @@
 # Exact-two counter using ordinary counted resources
 
-Status: implemented sequential controls plus a proposed shared-population
-publication rule. The investigation below recommends testing that rule before
-adding another algebra interface. [Explicit fractional authority](explicit-authority.md)
-remains an alternative, not the selected implementation plan. Neither shared
-custody nor the alternative algebra interface is implemented.
+Status: implemented sequential controls and local counted-body mutex custody.
+Worker transfer and shared-population observations remain proposed. The
+investigation below recommends testing those rules before adding another
+algebra interface. [Explicit fractional authority](explicit-authority.md)
+remains an unimplemented alternative, not the selected plan.
 
-A sequential control verifies exact
-value two with existing resource declarations, `count`, `owns`/`consumes`/
-`produces`, `fold`, `open`, and `unfold`. The unchanged pthread example is not
-yet verified for its exact result. The bounded-completion-pool proposal stays
-shelved. The unannotated-publication prerequisite is implemented below; counted-population semantics and C source are unchanged.
+A sequential control verifies exact value two with existing resource
+declarations, `count`, `owns`/`consumes`/`produces`, `fold`, `open`, and `unfold`.
+The unchanged pthread example is not yet verified for its exact result. The
+bounded-completion-pool proposal stays shelved. Publication now restricts local
+population body access as described below; concurrent exact-two accounting
+remains open.
 
 ## Investigation: one mutex protects a counted population
 
@@ -51,9 +52,45 @@ selected resource. The proposed rule does not depend on `guarded_by`.
 Initialization now supports ordinary unannotated exclusive resources, with
 declaration/schema and actual ownership checks. Legacy `guarded_by` annotations
 still constrain the mutex when present. Both concrete and independently checked
-typed-use paths accept the unannotated form. The frozen counter's existing
-memory-safety sidecar uses this form; this does not yet implement counted
-payloads or the population transfer rules below.
+typed-use paths accept the unannotated exclusive form. The frozen counter's
+existing memory-safety sidecar uses it. Counted wrappers have the local custody
+implementation below, but typed-use sharing of them remains refused.
+
+### Implemented local access test
+
+The local test now distinguishes membership from body permission:
+
+- `mdtests/population_mutex_helper_held.md` initializes three units, deposits a
+  wrapper containing one, and retains two. An ordinary helper whose contract
+  says `owns member(p)` opens the population and reads its body under the lock.
+- `mdtests/population_mutex_helper_unheld.md` calls the same helper without
+  acquisition and fails with `Requires owns mutex_guard(&p->mutex)`.
+- Companion negative fixtures reject a unit hidden in another wrapper at
+  publication or release, a second mutex for the same population, and full
+  population cleanup before mutex destruction.
+
+The implemented payload is an ordinary field-bearing wrapper containing one
+unconditional counted resource. Its `retained` field determines how many units
+it contains (`owns retained of member(p)`). This uses existing syntax and a
+meaningful quantity field; direct named counted payloads are still unsupported.
+The previous local conservation fixture now uses this quantity instead of its
+old dummy marker. Its C is unchanged and its contract supplies the complete
+population for each initialization.
+
+Publication checks that directly held units plus the wrapper's units equal the
+current positive count. Acquiring returns the wrapper and restores body access
+to the caller's retained units. Release requires the complete population again,
+with no open body or memory loan, and makes retained units opaque. Destruction
+recovers the local population representation. Count itself is unchanged by
+these exchanges. Hidden units are refused rather than found by traversing
+unrelated ownership. Custody uses an indexed population-to-mutex association;
+resource updates visit only the selected population's occurrences.
+
+This is a deliberately local slice. It cannot lend mutex-use authority for
+this payload or transfer its units to workers. It does not implement fresh
+counts across interference, worker effects, or join reconciliation. The checks
+below remain the requirements for that next stage; passing this local pair is
+not a concurrent exact-two proof.
 
 ### Publication and its ownership precondition
 
@@ -204,10 +241,10 @@ must not bypass permissions on any matched population.
 
 ### First implementation and acceptance
 
-Start with one unconditional memory-backed population and a direct counted
-mutex payload. Check publication/failed initialization, guarded `open`, unit
-transfer, ordinary helper admission, release, destruction, and full cleanup
-without threads. Include both successful access and missing-lock helper
+The local wrapper slice now checks publication/failed initialization, guarded
+body access, ordinary helper admission, release, destruction, and full cleanup
+without threads. Direct named counted payloads remain a separate representation
+extension; they are not required by this local wrapper test. Include both successful access and missing-lock helper
 counterexamples before permitting worker transfer.
 
 Then add arbitrary acquired counts, checked consumption effects across workers,

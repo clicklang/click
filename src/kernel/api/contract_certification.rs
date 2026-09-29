@@ -1389,6 +1389,9 @@ pub(super) fn c_function_contract_certification_assumptions(
                     }
                     CResource::Composite { name, .. } => format!("composite {name}"),
                     CResource::Token { name, .. } => format!("token {name}"),
+                    CResource::GuardedPopulation { name, .. } => {
+                        format!("guarded population {name}")
+                    }
                     CResource::MutexGuard(_) => "mutex guard".to_string(),
                     CResource::MutexLive(_) => "mutex lifetime".to_string(),
                     CResource::MutexUse(_) => "mutex use".to_string(),
@@ -1428,6 +1431,7 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
+            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)

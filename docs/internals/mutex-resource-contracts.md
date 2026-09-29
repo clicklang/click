@@ -412,3 +412,32 @@ The worker admission restriction remains separate: this change does not relax
 suspended-worker protocol transfer or stateful population confinement.
 `mdtests/mutex_population_body_helper.md` and
 `mdtests/mutex_guard_frames_ordinary_call.md` exercise ordinary helper framing.
+
+
+## Local counted-population payloads
+
+A field-bearing payload may contain a positive quantity of one unconditional
+counted resource with a memory body. Initialization must own the complete
+population: the wrapper's quantity plus all directly held units must equal
+`count`. Resource parameters alone determine which population the wrapper
+contains; the wrapper's fields may determine its retained quantity.
+
+While unlocked, retained units carry membership without body access. An
+ordinary unit-taking helper therefore also needs the acquisition; a missing
+acquisition reports `Requires owns mutex_guard(mu)`. Acquisition restores the
+body permission. Release requires every unit accounted for, a closed body,
+and no active memory loan before withdrawing that permission. Destroy returns
+the local population representation; full-population cleanup is forbidden
+until then. A second mutex cannot acquire custody of the same population.
+
+The kernel represents guarded membership separately from body-bearing units,
+bound to the initialization identity. This adds no source keyword or declared
+resource type. Converting membership does not change Count. Hidden units are
+not collected from arbitrary wrappers: missing complete ownership is a refusal.
+
+This slice supports local concrete mutexes only. Lending typed use authority,
+worker transfer, independent acquisition observations, and join accounting for
+these payloads remain unsupported. The positive and negative helper fixtures
+are `mdtests/population_mutex_helper_held.md` and
+`mdtests/population_mutex_helper_unheld.md`; the quantity-bearing consumption
+control is `mdtests/population_conservation_local_mutex.md`.

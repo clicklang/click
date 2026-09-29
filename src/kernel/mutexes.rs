@@ -19,6 +19,7 @@ mod direct_loop_guard;
 mod direct_loop_guard_tests;
 mod invariant_interface;
 mod loop_protocol;
+mod population;
 pub(super) use direct_loop_guard::{
     normalize_direct_loop_guards, prepare_direct_loop_guard, select_direct_loop_guards,
 };
@@ -137,6 +138,13 @@ impl MutexInitializationId {
 }
 
 impl MutexInitialization {
+    fn identity(self, mutex: &Pointer) -> super::MutexIdentity {
+        super::MutexIdentity {
+            epoch: Some(self.0.0),
+            mutex: mutex.clone(),
+        }
+    }
+
     fn resource_fact(self, mutex: &Pointer) -> CResourceFact {
         self.0.description(mutex)
     }
@@ -219,6 +227,7 @@ impl StorageProvenance {
 struct MutexLedgerStorage {
     identity: u64,
     entries: PersistentMap<Pointer, MutexEntry>,
+    populations: PersistentMap<(String, super::ResourceArguments), Pointer>,
     direct_loop_carriers: PersistentMap<Pointer, Arc<direct_loop_guard::DirectLoopGuard>>,
     direct_loop_selection: Arc<Vec<Pointer>>,
     by_block: PersistentMap<super::PointerBlock, PersistentMap<Pointer, u32>>,
@@ -759,6 +768,61 @@ pub(super) fn guard_resource(
     })
 }
 
+pub(super) fn population_custodian(
+    state: &CState,
+    name: &str,
+    arguments: &super::ResourceArguments,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
+    let (name, arguments, _) =
+        state.counted_population_proven_equal(name, arguments, assumptions)?;
+    state
+        .mutex_ledger
+        .as_ref()?
+        .storage
+        .populations
+        .get(&(name, arguments))
+        .cloned()
+}
+
+/// A unit-only helper requires body access as well as membership. Report the
+/// missing guard when the caller does own enough guarded units.
+pub(super) fn missing_population_guard(
+    state: &CState,
+    required: &CResourceFact,
+    assumptions: &PureFactContext,
+) -> Option<Pointer> {
+    let CResource::Composite { name, arguments } = required.resource() else {
+        return None;
+    };
+    let (name, arguments, _) =
+        state.counted_population_proven_equal(name, arguments, assumptions)?;
+    let ledger = state.mutex_ledger.as_ref()?;
+    let mutex = ledger
+        .storage
+        .populations
+        .get(&(name.clone(), arguments.clone()))?;
+    let MutexEntry::Unlocked { initialization, .. } = ledger.get(mutex)? else {
+        return None;
+    };
+    let member = CResource::GuardedPopulation {
+        name,
+        arguments,
+        mutex: super::MutexIdentity {
+            epoch: Some(initialization.0.0),
+            mutex: mutex.clone(),
+        },
+    };
+    let required = match required {
+        CResourceFact::Own(_, quantity) => CResourceFact::Own(member, quantity.clone()),
+        CResourceFact::View(_) => CResourceFact::View(member),
+    };
+    state
+        .resources
+        .satisfies_fact(&required, assumptions)
+        .then(|| mutex.clone())
+}
+
 /// Current conservative call discipline: use helpers may acquire, so an
 /// entry guard or another outstanding local acquisition must be separate.
 pub(super) fn acquisition_availability_refusal(
@@ -766,6 +830,17 @@ pub(super) fn acquisition_availability_refusal(
     mutex: &Pointer,
     assumptions: &PureFactContext,
 ) -> Option<MutexTransitionError> {
+    if state
+        .mutex_ledger
+        .as_ref()
+        .and_then(|l| l.get(mutex))
+        .and_then(MutexEntry::population)
+        .is_some()
+    {
+        return Some(MutexTransitionError::Refusal(
+            "sharing a counted population mutex is not implemented",
+        ));
+    }
     if abstract_guard_acquisition_refusal(state, mutex, assumptions).is_some()
         || state
             .opaque_mutex_acquisitions
@@ -1018,10 +1093,17 @@ impl MutexContext {
         let definition = definitions
             .get(instance.name())
             .ok_or("selected mutex resource has no checked declaration")?;
-        let interface = invariant_interface::MutexInvariantInterface::check_definition(
+        let mut interface = invariant_interface::MutexInvariantInterface::check_definition(
             instance,
             mutex,
             definition,
+            assumptions,
+        )?;
+        interface.population = population::PopulationCustody::select(
+            &self.state,
+            instance,
+            definition,
+            definitions,
             assumptions,
         )?;
         self.publish_with_interface(
@@ -1097,6 +1179,19 @@ impl MutexContext {
             .ok_or("mutex invariant cannot be moved to escrow")?;
         let mut state = self.state.clone();
         let initialization = MutexInitialization::fresh(storage_bytes)?;
+        let resources =
+            if let Some(population) = interface.as_ref().and_then(|i| i.population.as_ref()) {
+                population.exchange(
+                    &state,
+                    resources,
+                    &initialization.identity(&mutex),
+                    &invariant,
+                    false,
+                    assumptions,
+                )?
+            } else {
+                resources
+            };
         state.resources = resources
             .try_compose_with_facts_delaying_normalization(
                 [initialization.resource_fact(&mutex)],
@@ -1130,6 +1225,16 @@ impl MutexContext {
         mutex: &Pointer,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexUseLoan), MutexTransitionError> {
+        if self
+            .state
+            .mutex_ledger
+            .as_ref()
+            .and_then(|l| l.get(mutex))
+            .and_then(MutexEntry::population)
+            .is_some()
+        {
+            return Err("sharing a counted population mutex is not implemented".into());
+        }
         if self
             .state
             .mutex_ledger
@@ -1442,10 +1547,23 @@ impl MutexContext {
             }
             (self.state.loan_ledger.clone(), None)
         };
+        let resources = if let Some(population) = interface
+            .as_ref()
+            .and_then(|i| i.declaration.population.as_ref())
+        {
+            population.exchange(
+                &self.state,
+                self.state.resources.clone(),
+                &initialization.identity(mutex),
+                invariant.as_ref().unwrap(),
+                true,
+                assumptions,
+            )?
+        } else {
+            self.state.resources.clone()
+        };
         let resources = if let Some(invariant) = &invariant {
-            self.state
-                .resources
-                .clone()
+            resources
                 .try_compose_with_facts_delaying_normalization([invariant.clone()], assumptions)
                 .map_err(|_| {
                     MutexTransitionError::Refusal(
@@ -1453,7 +1571,7 @@ impl MutexContext {
                     )
                 })?
         } else {
-            self.state.resources.clone()
+            resources
         };
         let epoch = fresh_acquisition_epoch()?;
         let mut state = self.state.clone();
@@ -1598,6 +1716,19 @@ impl MutexContext {
             .clone()
             .without_fact_delaying_normalization(&live, assumptions)
             .ok_or_else(|| MutexTransitionError::MissingLive(mutex.clone()))?;
+        let resources = if let Some(population) = ledger.get(mutex).and_then(MutexEntry::population)
+        {
+            population.exchange(
+                &self.state,
+                resources,
+                &ledger.get(mutex).unwrap().initialization().identity(mutex),
+                invariant.as_ref().unwrap(),
+                true,
+                assumptions,
+            )?
+        } else {
+            resources
+        };
         let resources = if let Some(invariant) = invariant {
             resources
                 .try_compose_with_facts_delaying_normalization([invariant], assumptions)
@@ -1702,6 +1833,21 @@ impl MutexContext {
         } else {
             self.state.resources.clone()
         };
+        let resources = if let Some(population) = interface
+            .as_ref()
+            .and_then(|i| i.declaration.population.as_ref())
+        {
+            population.exchange(
+                &self.state,
+                resources,
+                &guard.initialization.identity(&guard.mutex),
+                restored.as_ref().unwrap(),
+                false,
+                assumptions,
+            )?
+        } else {
+            resources
+        };
         let mut state = self.state.clone();
         let mut runtime_loan_transition = None;
         if let Some((hold, participant, usage)) = lifetime_hold {
@@ -1752,6 +1898,7 @@ impl MutexLedger {
             storage: Arc::new(MutexLedgerStorage {
                 identity: Self::fresh_identity(),
                 entries: PersistentMap::default(),
+                populations: PersistentMap::default(),
                 direct_loop_carriers: PersistentMap::default(),
                 direct_loop_selection: Arc::new(Vec::new()),
                 by_block: PersistentMap::default(),
@@ -2058,6 +2205,13 @@ impl MutexLedger {
                 } else {
                     self.storage.ambiguous_automatic_storage.clone()
                 },
+                populations: if let Some(population) = entry.population() {
+                    self.storage
+                        .populations
+                        .with_inserted(population.key(), mutex.clone())
+                } else {
+                    self.storage.populations.clone()
+                },
                 entries: self.storage.entries.with_inserted(mutex.clone(), entry),
                 locked_count: self.storage.locked_count + usize::from(now_locked)
                     - usize::from(was_locked),
@@ -2089,6 +2243,13 @@ impl MutexLedger {
                         .1,
                     false,
                 ),
+                populations: self
+                    .get(mutex)
+                    .and_then(MutexEntry::population)
+                    .map_or_else(
+                        || self.storage.populations.clone(),
+                        |p| self.storage.populations.without_key(&p.key()),
+                    ),
                 entries: self.storage.entries.without_key(mutex),
                 direct_loop_carriers: self.storage.direct_loop_carriers.without_key(mutex),
                 direct_loop_selection: self.storage.direct_loop_selection.clone(),
@@ -2246,6 +2407,15 @@ impl MutexEntry {
             Self::Unlocked { initialization, .. }
             | Self::Locked { initialization, .. }
             | Self::ConditionalLoop { initialization, .. } => *initialization,
+        }
+    }
+
+    fn population(&self) -> Option<&population::PopulationCustody> {
+        match self {
+            Self::Unlocked { interface, .. } | Self::Locked { interface, .. } => {
+                interface.as_ref()?.declaration.population.as_ref()
+            }
+            Self::ConditionalLoop { .. } => None,
         }
     }
 

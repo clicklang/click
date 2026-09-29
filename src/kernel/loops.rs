@@ -6384,6 +6384,7 @@ fn viewed_form_of_resource_fact(fact: &CResourceFact) -> Option<CResourceFact> {
         }
         CResourceFact::Own(
             CResource::Token { .. }
+            | CResource::GuardedPopulation { .. }
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)

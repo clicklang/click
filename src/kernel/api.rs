@@ -4991,6 +4991,7 @@ pub fn prove_owned_resource_count_lower_bound(
         }
         CResource::Memory(_)
         | CResource::Instance(_)
+        | CResource::GuardedPopulation { .. }
         | CResource::MutexGuard(_)
         | CResource::MutexLive(_)
         | CResource::MutexUse(_)
@@ -5061,7 +5062,9 @@ pub fn prove_owned_resource_quantity_nonnegative(
 fn describe_contract_reuse_premise(premise: &Proposition) -> String {
     fn resource_name(resource: &CResource) -> &str {
         match resource {
-            CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
+            CResource::Composite { name, .. }
+            | CResource::Token { name, .. }
+            | CResource::GuardedPopulation { name, .. } => name,
             CResource::Memory(_) => "memory",
             CResource::MutexGuard(_) => "mutex guard",
             CResource::MutexLive(_) => "mutex lifetime",

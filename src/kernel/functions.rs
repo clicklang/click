@@ -7529,7 +7529,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             }
             // A token and a mutex guard own no bytes; a guard's guarded
             // resources are separate facts that reach here on their own.
-            CResource::Token { .. } => {}
+            CResource::Token { .. } | CResource::GuardedPopulation { .. } => {}
             CResource::MutexUse(identity) if !self.mutex_guard_only => {
                 if let Some(bytes) = self.mutex_storage_bytes {
                     self.ranges.push(CMemoryRange::new_with_element_width(
@@ -14539,6 +14539,7 @@ fn evaluate_resource_population_body_resources(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
+            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -15143,6 +15144,13 @@ fn prepare_contract_resource_transfer(
             }));
         };
         checked.selected_mutex_source = Some(std::sync::Arc::new((actual, source.clone())));
+    }
+    for required in &checked_required_resources {
+        if let Some(mutex) =
+            super::mutexes::missing_population_guard(caller_state, &required.fact, assumptions)
+        {
+            return Ok(Err(CRuntimeError::MissingMutexGuard { mutex }));
+        }
     }
     let helper_contract = match super::mutexes::helper_contracts::classify(interface) {
         Ok(contract) => contract,
@@ -16911,6 +16919,7 @@ fn counted_population_quantities(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
+            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -19541,7 +19550,7 @@ fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec]) -> bool {
                 | ResourceFamily::MutexLive
                 | ResourceFamily::MutexUse => true,
                 ResourceFamily::Composite | ResourceFamily::Token => true,
-                ResourceFamily::Instance => false,
+                ResourceFamily::Instance | ResourceFamily::GuardedPopulation => false,
             }
     })
 }
@@ -19856,7 +19865,7 @@ pub fn select_resource_model_arm(
     }
 }
 
-fn instance_body_evaluation(
+pub(super) fn instance_body_evaluation(
     state: &CState,
     instance: &ResourceInstance,
     definition: &CCompositeResourceDefinition,
@@ -20777,6 +20786,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             }
             CResource::Memory(_)
             | CResource::Instance(_)
+            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -23872,6 +23882,7 @@ fn resource_clause_supply_with_fact(
                 // element is read only after it is taken out.
                 CResource::Token { .. }
                 | CResource::Instance(_)
+                | CResource::GuardedPopulation { .. }
                 | CResource::MutexGuard(_)
                 | CResource::MutexLive(_)
                 | CResource::MutexUse(_)
@@ -24839,7 +24850,8 @@ fn evaluate_function_declared_resource_spec(
             name: name.to_string(),
             arguments: values.into_iter().map(AlgebraicValue::C).collect(),
         },
-        ResourceFamily::Memory
+        ResourceFamily::GuardedPopulation
+        | ResourceFamily::Memory
         | ResourceFamily::Instance
         | ResourceFamily::MutexGuard
         | ResourceFamily::MutexLive
@@ -24864,6 +24876,7 @@ fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
             CResource::Composite { .. }
             | CResource::Token { .. }
             | CResource::Instance(_)
+            | CResource::GuardedPopulation { .. }
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)

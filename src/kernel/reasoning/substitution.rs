@@ -1629,7 +1629,9 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
                 collect_bitvector_bound_variables(term, variables);
             }
         }
-        CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+        CResource::Composite { arguments, .. }
+        | CResource::Token { arguments, .. }
+        | CResource::GuardedPopulation { arguments, .. } => {
             for argument in arguments.iter() {
                 collect_algebraic_value_bound_variables(argument, variables);
             }
@@ -4076,6 +4078,20 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
                     substitute_bitvector_variable_in_algebraic_value(argument, from, to)
                 })
                 .collect(),
+        },
+        CResource::GuardedPopulation {
+            name,
+            arguments,
+            mutex,
+        } => CResource::GuardedPopulation {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| {
+                    substitute_bitvector_variable_in_algebraic_value(argument, from, to)
+                })
+                .collect(),
+            mutex: mutex.clone(),
         },
         CResource::Token { name, arguments } => CResource::Token {
             name: name.clone(),
@@ -6800,6 +6816,18 @@ fn substitute_pointer_variable_in_c_resource(
                 .iter()
                 .map(|argument| substitute_pointer_variable_in_algebraic_value(argument, from, to))
                 .collect(),
+        },
+        CResource::GuardedPopulation {
+            name,
+            arguments,
+            mutex,
+        } => CResource::GuardedPopulation {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| substitute_pointer_variable_in_algebraic_value(argument, from, to))
+                .collect(),
+            mutex: mutex.clone(),
         },
         CResource::Token { name, arguments } => CResource::Token {
             name: name.clone(),

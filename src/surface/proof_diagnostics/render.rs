@@ -1194,7 +1194,10 @@ impl Renderer<'_> {
                 "composite-resource({name}, {} args)",
                 arguments.len()
             )),
-            CResource::Token { name, arguments } => self.fmt(format_args!(
+            CResource::Token { name, arguments }
+            | CResource::GuardedPopulation {
+                name, arguments, ..
+            } => self.fmt(format_args!(
                 "token-resource({name}, {} args)",
                 arguments.len()
             )),
@@ -1223,7 +1226,11 @@ impl Renderer<'_> {
                 self.pointer(identity.mutex());
                 self.push(")");
             }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            CResource::Composite { name, arguments }
+            | CResource::Token { name, arguments }
+            | CResource::GuardedPopulation {
+                name, arguments, ..
+            } => {
                 self.push(name);
                 self.push("(");
                 for (index, argument) in arguments.iter().take(4).enumerate() {
