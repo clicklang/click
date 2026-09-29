@@ -4479,6 +4479,28 @@ fn forall_derivation_check_shadows_ambient_uses_of_the_binder_id() {
 }
 
 #[test]
+fn forall_introduction_finds_independent_path_through_a_connected_component() {
+    let bound = Bitvector32Term::Variable(Variable(188));
+    let left = Bitvector32Term::Variable(Variable(189));
+    let middle = Bitvector32Term::Variable(Variable(190));
+    let right = Bitvector32Term::Variable(Variable(191));
+    let equality = |a, b| Proposition::ConditionIs(ConditionTerm::equal(a, b), true);
+    let goal = forall_int32(Variable(188), equality(left.clone(), right.clone()));
+    let first = equality(left.clone(), middle.clone());
+    let second = equality(middle, right);
+    let assumptions = PureFactContext::new()
+        .assume_proposition(first.clone())
+        .assume_proposition(second.clone())
+        .assume_proposition(equality(bound, left));
+
+    let derivation = assumptions
+        .derive_proposition(&goal)
+        .expect("the independent equality path proves the universal");
+    assert!(derivation.check(&assumptions));
+    assert_eq!(derivation.context_premises(), vec![first, second]);
+}
+
+#[test]
 fn singleton_substitution_derivation_records_only_its_bound_premises() {
     let variable = Variable(87);
     let value = Bitvector32Term::Variable(variable);
