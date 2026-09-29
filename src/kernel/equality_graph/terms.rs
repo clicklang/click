@@ -498,8 +498,10 @@ mod tests {
 
     #[test]
     fn addition_congruence_matches_a_small_exhaustive_closure() {
-        // Independent oracle: repeatedly scan every pair of applications,
-        // relabeling a flat partition. Production must instead use indexes.
+        // Independent oracle for the term-class fragment: repeatedly scan
+        // every pair of applications, relabeling a flat partition. The public
+        // graph query additionally accepts affine equalities, so compare the
+        // indexed term classes directly with this congruence-only oracle.
         let mut terms = vec![var(300), var(301), var(302)];
         let mut applications = Vec::new();
         for left in 0..3 {
@@ -525,9 +527,9 @@ mod tests {
             true
         }
         for seed in 1..=4u64 {
-            let mut graph = EqualityGraph::default();
+            let mut graph = TermClasses::default();
             for term in &terms {
-                assert!(graph.are_offsets_equal(term, term));
+                assert!(graph.are_equal(term, term));
             }
             let mut classes = (0..terms.len()).collect::<Vec<_>>();
             let mut random = seed;
@@ -536,7 +538,7 @@ mod tests {
                 let left = (random >> 32) as usize % terms.len();
                 random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
                 let right = (random >> 32) as usize % terms.len();
-                graph.add_offset_equality(&terms[left], &terms[right]);
+                graph.add_equality(&terms[left], &terms[right]);
                 join(&mut classes, left, right);
                 loop {
                     let mut changed = false;
@@ -554,7 +556,7 @@ mod tests {
                 for (a, left) in terms.iter().enumerate() {
                     for (b, right) in terms.iter().enumerate() {
                         assert_eq!(
-                            graph.are_offsets_equal(left, right),
+                            graph.are_equal(left, right),
                             classes[a] == classes[b],
                             "seed={seed}, a={a}, b={b}"
                         );

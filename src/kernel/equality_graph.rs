@@ -458,6 +458,16 @@ impl EqualityGraph {
         left: &PointerOffsetTerm,
         right: &PointerOffsetTerm,
     ) -> bool {
+        if left == right {
+            return true;
+        }
+        // Offset addition is exact byte arithmetic. Its affine form catches
+        // reordering and regrouping without a premise or term-class merge.
+        if let (Some(left), Some(right)) = (AffineOffset::of(left), AffineOffset::of(right))
+            && left == right
+        {
+            return true;
+        }
         self.state
             .lock()
             .expect("equality graph")
@@ -847,6 +857,50 @@ mod tests {
 
     fn at_offset(block: PointerBlock, offset: PointerOffsetTerm) -> Pointer {
         Pointer { block, offset }
+    }
+
+    #[test]
+    fn affine_offset_equality_reaches_same_block_simp() {
+        let base = symbolic(11_080);
+        let x = PointerOffsetTerm::Variable(Variable(11_081));
+        let nested = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(x.clone()),
+                Box::new(PointerOffsetTerm::Constant(4)),
+            )),
+            Box::new(PointerOffsetTerm::Constant(4)),
+        );
+        let reordered = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Constant(8)),
+            Box::new(x.clone()),
+        );
+        let wrong = PointerOffsetTerm::add(x, PointerOffsetTerm::Constant(9));
+        let context = PureFactContext::new();
+        assert!(
+            context
+                .equality_graph
+                .are_offsets_equal(&nested, &reordered)
+        );
+        assert!(
+            context
+                .equality_graph
+                .are_offsets_equal(&reordered, &nested)
+        );
+        assert_eq!(
+            context.decide_condition_for_simp(&ConditionTerm::pointer_equal(
+                at_offset(base.clone(), nested.clone()),
+                at_offset(base.clone(), reordered.clone()),
+            )),
+            Some(true)
+        );
+        assert!(!context.equality_graph.are_offsets_equal(&nested, &wrong));
+        assert_ne!(
+            context.decide_condition_for_simp(&ConditionTerm::pointer_equal(
+                at_offset(base.clone(), nested),
+                at_offset(base, wrong),
+            )),
+            Some(true)
+        );
     }
 
     #[test]

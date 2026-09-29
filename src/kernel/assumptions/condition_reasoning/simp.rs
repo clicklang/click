@@ -40,7 +40,9 @@ impl PureFactContext {
                 }
             }
             ConditionTerm::PointerOffsetEqual(left, right) => {
-                if pointer_offsets_proven_equal_for_memory_resolution(left, right, self) {
+                if self.equality_graph.are_offsets_equal(left, right)
+                    || pointer_offsets_proven_equal_for_memory_resolution(left, right, self)
+                {
                     Some(true)
                 } else {
                     match (left.as_ref().as_const(), right.as_ref().as_const()) {

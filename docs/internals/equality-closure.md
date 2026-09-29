@@ -53,8 +53,11 @@ C pointer parameters, which lower to offsets in a shared block, without
 changing their representation.
 
 The offset fragment interns whole terms with shallow keys and uses persistent
-union-find weighted by members and parent uses. Addition signatures identify
-operand classes, so equal operands establish equal sums. Indexed parent uses
+union-find weighted by members and parent uses. Its query first recognizes
+exact affine-equivalent byte offsets, including regrouped or reordered sums
+without a premise. `simp` uses that query for same-block pointer conditions,
+which lower to offset equality. Addition signatures identify operand classes,
+so equal operands establish equal sums. Indexed parent uses
 propagate late merges through nested additions with an iterative worklist;
 parents of the lighter class are revisited. When a class first acquires a
 literal value, its existing parents also receive constant evaluation. It preserves widths,
