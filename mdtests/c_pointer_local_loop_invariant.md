@@ -3,9 +3,10 @@
 An explicit invariant can relate a pointer local that is advanced by the loop
 to the current array index.
 
-The preservation proof's `simp` emits `arithmetic() using` with the entry
-pointer relation and strict index bound. The bound excludes index overflow;
-the checked step compares exact byte advances, not wrapped int32 offsets.
+The preservation proof names the entry pointer relation and strict index
+bound in `arithmetic() using`. The bound excludes index overflow; the checked
+step compares exact byte advances, not wrapped int32 offsets. The kernel's
+ordinary pointer-equality query need not search ambient facts to find them.
 
 ```c filename=c_pointer_local_loop_invariant.c
 int32 last_element(int32 arr[], int32 n, int32 cap) {
@@ -43,12 +44,29 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
         preserve by {
             step();
             step();
-            have p == arr + i by simp;
+            have p == arr + i by {
+                arithmetic() using {
+                    at(statement(5).entry, p) == at(statement(5).entry, arr + i);
+                    at(statement(5).entry, i) < at(statement(5).entry, n);
+                }
+            }
             close_invariants by { simp(); }
         }
     }
     step();
-    simp();
+    have result == arr[n] by {
+        extract(at(loop(0).exit, i) <= at(loop(0).exit, n));
+        have at(loop(0).exit, i) == at(loop(0).exit, n) by {
+            apply(int32_le_and_not_lt_implies_eq(at(loop(0).exit, i), at(loop(0).exit, n))) using {
+                at(loop(0).exit, i) <= at(loop(0).exit, n);
+                not at(loop(0).exit, i) < at(loop(0).exit, n);
+            }
+        }
+        rewrite(at(loop(0).exit, p) == at(loop(0).exit, arr + i));
+        rewrite(at(loop(0).exit, i) == at(loop(0).exit, n));
+        normalize();
+    }
+    assumption();
 }
 ```
 

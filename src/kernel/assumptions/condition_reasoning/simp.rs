@@ -13,7 +13,7 @@ impl PureFactContext {
             ConditionTerm::Constant(value) => Some(*value),
             ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
             ConditionTerm::PointerEqual(left, right)
-                if self.has_pointer_equality_path(left, right) =>
+                if self.pointer_equality_in_graph(left, right) =>
             {
                 Some(true)
             }

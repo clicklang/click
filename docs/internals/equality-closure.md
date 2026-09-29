@@ -123,6 +123,15 @@ building the legacy scalar fact index. Context forks, fact withdrawal, and
 restriction keep these answers scoped to their supporting premises. Broader
 memory arithmetic and framing rules remain in the resolver.
 
+The simple pointer-equality decision now uses typed graph queries only. It no
+longer scans all ambient condition facts for a matching translated equality
+or walks their alias component. Overflow-guarded translation such as
+`p == arr + i` after incrementing `p` and `i` instead uses an explicit
+`arithmetic() using` proof with the entry pointer relation and strict index
+bound. The graph does not yet compose an exact offset edge through a separate
+cross-block pointer class; that Boolean query can remain unknown until a
+checked proof supplies the equality.
+
 The full `Bitvector32Equal` condition decision now uses the same graph query
 before memory resolution and its other arithmetic rules when the graph has
 established term equivalences. An empty graph skips interning unrelated scalar

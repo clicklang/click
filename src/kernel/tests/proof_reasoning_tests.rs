@@ -6091,7 +6091,7 @@ fn same_block_pointer_equality_transports_through_equal_offsets() {
 }
 
 #[test]
-fn symbolic_pointer_equality_transports_through_equal_displacements() {
+fn symbolic_pointer_equality_needs_explicit_guarded_arithmetic() {
     let base = Bitvector32Term::Variable(Variable(100_000));
     let index = Bitvector32Term::Variable(Variable(1_000_000));
     let source_left = Pointer {
@@ -6136,9 +6136,12 @@ fn symbolic_pointer_equality_transports_through_equal_displacements() {
         )),
         Some(false),
     );
+    // The graph does not distribute a scaled int32 addition merely because
+    // the ambient context can prove its no-overflow guard. A proof can name
+    // the pointer relation and guard in `arithmetic() using` instead.
     assert_eq!(
         assumptions.decide(&ConditionTerm::pointer_equal(goal_left, goal_right)),
-        Some(true),
+        None,
     );
 }
 

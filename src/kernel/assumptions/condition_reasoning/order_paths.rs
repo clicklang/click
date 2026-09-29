@@ -67,7 +67,7 @@ impl PureFactContext {
         match condition {
             ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
             ConditionTerm::PointerEqual(left, right) => {
-                if self.has_pointer_equality_path(left, right) {
+                if self.pointer_equality_in_graph(left, right) {
                     Some(true)
                 } else {
                     left.blocks_proven_distinct(right).then_some(false)
@@ -470,102 +470,19 @@ impl PureFactContext {
         }
     }
 
-    pub(in crate::kernel) fn has_pointer_equality_path(
+    pub(in crate::kernel) fn pointer_equality_in_graph(
         &self,
         left: &Pointer,
         right: &Pointer,
     ) -> bool {
-        // As in `has_indexed_pointer_equality_path`: the classes first, the
-        // scan below only for what they do not hold.
-        if left.block != right.block && self.equality_graph.are_equal(left, right) {
-            return true;
+        if left.block == right.block {
+            self.equality_graph.has_term_equivalences()
+                && self
+                    .equality_graph
+                    .are_offsets_equal(&left.offset, &right.offset)
+        } else {
+            self.equality_graph.are_equal(left, right)
         }
-        let canonical_pointer =
-            |pointer: &Pointer| crate::kernel::api::canonicalize_pointer_loads(pointer);
-        let matches = |candidate: &Pointer, expected: &Pointer| {
-            candidate == expected
-                || candidate.block == expected.block
-                    && canonical_pointer(candidate) == canonical_pointer(expected)
-        };
-        let offsets_match = |left: &PointerOffsetTerm, right: &PointerOffsetTerm| {
-            canonical_pointer(&Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: left.clone(),
-            }) == canonical_pointer(&Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: right.clone(),
-            })
-        };
-        let translated = |goal_left: &Pointer,
-                          goal_right: &Pointer,
-                          fact_left: &Pointer,
-                          fact_right: &Pointer| {
-            goal_left.block == fact_left.block
-                && goal_right.block == fact_right.block
-                && pointer_offsets_have_same_advance(
-                    &goal_left.offset,
-                    &fact_left.offset,
-                    &goal_right.offset,
-                    &fact_right.offset,
-                    self,
-                )
-        };
-        if self.condition_facts.iter().any(|(condition, value)| {
-            let ConditionTerm::PointerEqual(fact_left, fact_right) = condition else {
-                return false;
-            };
-            *value
-                && (translated(left, right, fact_left, fact_right)
-                    || translated(left, right, fact_right, fact_left))
-        }) {
-            return true;
-        }
-        let mut seen = BTreeSet::from([left.clone()]);
-        let mut frontier = vec![left.clone()];
-        while let Some(current) = frontier.pop() {
-            for (condition, value) in self.condition_facts.iter() {
-                if !*value {
-                    continue;
-                }
-                let next = match condition {
-                    ConditionTerm::PointerEqual(edge_left, edge_right) => {
-                        if matches(edge_left, &current) {
-                            Some(edge_right.as_ref().clone())
-                        } else if matches(edge_right, &current) {
-                            Some(edge_left.as_ref().clone())
-                        } else {
-                            None
-                        }
-                    }
-                    ConditionTerm::PointerOffsetEqual(edge_left, edge_right) => {
-                        if offsets_match(edge_left, &current.offset) {
-                            Some(Pointer {
-                                block: current.block.clone(),
-                                offset: edge_right.as_ref().clone(),
-                            })
-                        } else if offsets_match(edge_right, &current.offset) {
-                            Some(Pointer {
-                                block: current.block.clone(),
-                                offset: edge_left.as_ref().clone(),
-                            })
-                        } else {
-                            None
-                        }
-                    }
-                    _ => None,
-                };
-                let Some(next) = next else {
-                    continue;
-                };
-                if matches(&next, right) {
-                    return true;
-                }
-                if seen.insert(next.clone()) {
-                    frontier.push(next);
-                }
-            }
-        }
-        false
     }
 
     /// True when some exact order fact strictly bounds `term` above
@@ -1209,102 +1126,6 @@ impl PureFactContext {
                 },
             )
         })
-    }
-}
-
-/// Whether both goal pointers advance their corresponding fact pointers by
-/// the same exact offset. This is the pointer-congruence case needed by an
-/// induction step such as `p == arr + i` followed by `p = p + 1` and
-/// `i = i + 1`. Integer additions inside scaled offsets are distributed only
-/// when their signed-overflow predicate is already known false; otherwise
-/// exact pointer offsets must remain opaque.
-fn pointer_offsets_have_same_advance(
-    goal_left: &PointerOffsetTerm,
-    fact_left: &PointerOffsetTerm,
-    goal_right: &PointerOffsetTerm,
-    fact_right: &PointerOffsetTerm,
-    assumptions: &PureFactContext,
-) -> bool {
-    let Some(left_delta) = pointer_offset_additive_delta(goal_left, fact_left, assumptions) else {
-        return false;
-    };
-    let Some(right_delta) = pointer_offset_additive_delta(goal_right, fact_right, assumptions)
-    else {
-        return false;
-    };
-    left_delta == right_delta
-}
-
-fn pointer_offset_additive_delta(
-    goal: &PointerOffsetTerm,
-    fact: &PointerOffsetTerm,
-    assumptions: &PureFactContext,
-) -> Option<Vec<PointerOffsetTerm>> {
-    let mut goal = pointer_offset_addends(goal, assumptions)?;
-    for fact_addend in pointer_offset_addends(fact, assumptions)? {
-        let index = goal
-            .iter()
-            .position(|addend| pointer_offset_addends_equal(addend, &fact_addend, assumptions))?;
-        goal.remove(index);
-    }
-    Some(goal)
-}
-
-fn pointer_offset_addends_equal(
-    left: &PointerOffsetTerm,
-    right: &PointerOffsetTerm,
-    assumptions: &PureFactContext,
-) -> bool {
-    if left == right {
-        return true;
-    }
-    let (
-        PointerOffsetTerm::Int32Scaled {
-            value: left_value,
-            byte_width: left_width,
-        },
-        PointerOffsetTerm::Int32Scaled {
-            value: right_value,
-            byte_width: right_width,
-        },
-    ) = (left, right)
-    else {
-        return false;
-    };
-    left_width == right_width
-        && assumptions.decide(&ConditionTerm::equal(
-            left_value.as_ref().clone(),
-            right_value.as_ref().clone(),
-        )) == Some(true)
-}
-
-fn pointer_offset_addends(
-    offset: &PointerOffsetTerm,
-    assumptions: &PureFactContext,
-) -> Option<Vec<PointerOffsetTerm>> {
-    match offset {
-        PointerOffsetTerm::Constant(0) => Some(Vec::new()),
-        PointerOffsetTerm::Add(left, right) => {
-            let mut addends = pointer_offset_addends(left, assumptions)?;
-            addends.extend(pointer_offset_addends(right, assumptions)?);
-            Some(addends)
-        }
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => match value.as_ref() {
-            Bitvector32Term::Add(left, right)
-                if assumptions.decide(&ConditionTerm::signed_add_overflows(
-                    left.as_ref().clone(),
-                    right.as_ref().clone(),
-                )) == Some(false) =>
-            {
-                let left = PointerOffsetTerm::scale_int32(left.as_ref().clone(), *byte_width);
-                let right = PointerOffsetTerm::scale_int32(right.as_ref().clone(), *byte_width);
-                let mut addends = pointer_offset_addends(&left, assumptions)?;
-                addends.extend(pointer_offset_addends(&right, assumptions)?);
-                Some(addends)
-            }
-            _ => Some(vec![offset.clone()]),
-        },
-        _ => Some(vec![offset.clone()]),
     }
 }
 

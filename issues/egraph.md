@@ -278,6 +278,15 @@ before it can establish
 byte-offset equality. Fork, withdrawal, restriction, and multi-size regressions
 cover the new consumer; other memory arithmetic and framing rules are unchanged.
 
+The general simple pointer-equality decision no longer scans ambient facts or
+walks their alias component on a graph miss. The pointer-loop invariant now
+states its guarded translation with `arithmetic() using` and two exact entry
+premises, and its final result proof uses explicit equality rewrites. Graph
+classes still do not compose an exact same-block offset edge through a
+different pointer-block class, so this simple Boolean query may return unknown.
+The separately indexed alias walk remains available to specific memory
+reasoning consumers; removing that remaining component walk is a later audit.
+
 The full int32 equality condition decision now also queries a graph with
 established term equivalences before memory resolution and its other arithmetic
 rules. An empty graph skips interning unrelated terms. Regressions cover

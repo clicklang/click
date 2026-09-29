@@ -2741,7 +2741,7 @@ pub(crate) fn certification_proves_proposition(
         }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
-                || assumptions.has_pointer_equality_path(left, right)
+                || assumptions.pointer_equality_in_graph(left, right)
         }
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)

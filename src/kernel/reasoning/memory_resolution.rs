@@ -946,25 +946,20 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     else {
         return false;
     };
-    // Same-block addresses use the exact-offset resolver below, including
-    // its graph query. Ask pointer classes only across blocks: registering
-    // both sides of every same-block cell comparison inside a smart tactic
-    // exceeds its work budget for large unfolded runs.
-    let candidate = if left.block == right.block {
-        pointer_offsets_proven_equal_for_memory_resolution(&left.offset, &right.offset, assumptions)
-    } else {
-        assumptions.equality_graph.are_equal(left, right)
-    }
+    // Same-block addresses use exact offset classes. Cross-block classes
+    // are queried by the indexed equality path below, only once per miss.
+    let candidate = left.block == right.block
+        && pointer_offsets_proven_equal_for_memory_resolution(
+            &left.offset,
+            &right.offset,
+            assumptions,
+        )
         || assumptions
             .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
             == Some(true)
-        // A loop invariant may establish an equality for a pointer local at
-        // the loop head. After the loop, both the local and the argument
-        // pointer can have advanced by the same proven displacement. Reuse
-        // the bounded pointer congruence relation here so memory-load
-        // equality sees the same certified address fact as ordinary pointer
-        // simplification.
-        || assumptions.has_pointer_equality_path(left, right);
+        // Ask cross-block graph classes once. A miss must not scan the fact
+        // context or revisit the same-block offset query.
+        || left.block != right.block && assumptions.pointer_equality_in_graph(left, right);
     candidate
         && !assumptions
             .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)

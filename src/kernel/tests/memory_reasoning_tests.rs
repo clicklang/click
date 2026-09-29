@@ -1803,7 +1803,7 @@ fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
 }
 
 #[test]
-fn pointer_equality_composes_across_same_block_offset_equalities() {
+fn simple_pointer_equality_does_not_walk_interleaved_aliases() {
     let final_pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Variable(Variable(120)),
@@ -1833,12 +1833,16 @@ fn pointer_equality_composes_across_same_block_offset_equalities() {
             true,
         );
 
+    // The separate indexed alias relation still records this equality, but
+    // the simple Boolean decision does not enumerate its component. The
+    // trusted graph has not yet joined exact offset edges to block classes.
+    assert!(assumptions.has_indexed_pointer_equality_path(&final_pointer, &Pointer::null()));
     assert_eq!(
         assumptions.decide(&ConditionTerm::pointer_equal(
             final_pointer,
             Pointer::null()
         )),
-        Some(true)
+        None
     );
 }
 
