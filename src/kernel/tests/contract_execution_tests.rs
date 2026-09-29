@@ -5556,6 +5556,66 @@ fn certification_generalization_keeps_facts_about_an_outer_variable() {
 }
 
 #[test]
+fn certification_generalization_handles_nested_binders() {
+    let outer = Variable(120);
+    let inner = Variable(121);
+    let equality = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(outer)),
+            Box::new(Bitvector32Term::Variable(outer)),
+        ),
+        true,
+    );
+    let goal = Proposition::ForAll {
+        var: outer,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::ForAll {
+            var: inner,
+            sort: Sort::CInt32,
+            body: Box::new(equality),
+        }),
+    };
+    assert!(
+        crate::kernel::api::contract_certification::certification_proves_proposition(
+            &PureFactContext::new(),
+            &goal,
+        )
+    );
+}
+
+#[test]
+fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
+    let binder = Variable(130);
+    // A future freshening rule must not assume a reserved numeric range alone
+    // makes its first identity absent from an arbitrary kernel fact context.
+    let would_be_witness = Variable(1 << 44);
+    let assumed = Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(would_be_witness)),
+            Box::new(Bitvector32Term::Constant(0)),
+        ),
+        true,
+    );
+    let goal = Proposition::ForAll {
+        var: binder,
+        sort: Sort::CInt32,
+        body: Box::new(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::Variable(binder)),
+                Box::new(Bitvector32Term::Constant(0)),
+            ),
+            true,
+        )),
+    };
+    let facts = PureFactContext::new().assume_proposition(assumed);
+    assert!(
+        !crate::kernel::api::contract_certification::certification_proves_proposition(
+            &facts, &goal
+        )
+    );
+}
+
+#[test]
 fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
     let mut samples = Vec::new();
     for size in [32, 64, 128, 256] {
