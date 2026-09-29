@@ -132,6 +132,13 @@ bound. The graph does not yet compose an exact offset edge through a separate
 cross-block pointer class; that Boolean query can remain unknown until a
 checked proof supplies the equality.
 
+The memory-separation reader now takes a positive graph answer for same-block
+offset equality before considering exact alias spellings. A long chain of
+offset facts therefore has bounded query work there. Its indexed component
+walk remains for mixed offset and cross-block alias chains that the graph
+cannot yet compose; this path still needs a separate design review before it
+can be removed.
+
 The full `Bitvector32Equal` condition decision now uses the same graph query
 before memory resolution and its other arithmetic rules when the graph has
 established term equivalences. An empty graph skips interning unrelated scalar

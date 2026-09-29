@@ -3051,14 +3051,21 @@ impl PureFactContext {
         left: &Pointer,
         right: &Pointer,
     ) -> bool {
-        // The pointer classes answer a chain of cross-block equalities, and a
-        // displaced one, in two lookups; the walk below remains for the
-        // same-block offset equalities the classes do not hold yet. A
-        // same-block question is left to the walk: answering it by the affine
-        // normal form alone would equate offsets whose loads are still named
-        // by their exact spelling, which the load stage of the equality
-        // closure has to change first.
-        if left.block != right.block && self.equality_graph.are_equal(left, right) {
+        // An equality already established by the trusted graph needs no
+        // component walk. For one block, ask the exact offset fragment rather
+        // than expanding the pointer affine fragment's scope here. Skip that
+        // query when there are no term merges, so unrelated owned cells do
+        // not each pay to intern their offsets. The walk remains for mixed
+        // exact offset and block alias chains the graph cannot yet compose.
+        let graph_equal = if left.block == right.block {
+            self.equality_graph.has_term_equivalences()
+                && self
+                    .equality_graph
+                    .are_offsets_equal(&left.offset, &right.offset)
+        } else {
+            self.equality_graph.are_equal(left, right)
+        };
+        if graph_equal {
             return true;
         }
         let matches = |candidate: &Pointer, expected: &Pointer| {
@@ -3070,6 +3077,7 @@ impl PureFactContext {
         let mut seen = std::collections::BTreeSet::from([left.clone()]);
         let mut frontier = vec![left.clone()];
         while let Some(current) = frontier.pop() {
+            crate::instrumentation::record_deterministic_work(1);
             if matches(&current, right) {
                 return true;
             }

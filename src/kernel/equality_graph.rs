@@ -1324,6 +1324,27 @@ mod tests {
     }
 
     #[test]
+    fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
+        for size in [16u64, 64, 256, 1024] {
+            let offset = |i| PointerOffsetTerm::Variable(Variable(500_000 + i));
+            let mut context = PureFactContext::new();
+            for i in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::pointer_offset_equal(offset(i), offset(i + 1)),
+                    true,
+                );
+            }
+            let left = at_offset(symbolic(499_999), offset(0));
+            let right = at_offset(symbolic(499_999), offset(size));
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.pointers_proven_equal_ignoring_memory_separation(&left, &right)
+            });
+            assert!(equal);
+            assert!(work < 64, "size={size}, work={work}");
+        }
+    }
+
+    #[test]
     fn a_small_load_is_not_a_pointer_load_and_can_later_be_registered_as_one() {
         let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(symbolic(901), 16));
         let p = at(symbolic(902), 0);
