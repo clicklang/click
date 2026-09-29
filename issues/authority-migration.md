@@ -129,8 +129,9 @@ examples. Review additional surface syntax before implementing it.
    predicate containing `count` cannot bypass them. Authority borrowed through
    a call must be recovered with its updated state, not stale entry facts.
 
-Start with explicit authority for tracked populations. Do not invent an
-implicit sequential-authority fallback to keep old examples passing. Keep
+The new model requires explicit authority for tracked populations. Do not
+invent an implicit sequential-authority fallback within it. The staged rollout
+below temporarily retains the unchanged old model for unmigrated clients. Keep
 `count`, ordinary resource binders, and named call maps; do not revive `<>`
 resource templates, add a general algebra-definition language, or introduce
 separate sum-specific built-ins in this migration.
@@ -159,47 +160,258 @@ A control resource must also be usable sequentially with no mutex annotation.
 Retain existing `mutex_live`, `mutex_use`, and `mutex_guard` behavior except
 where integrating ordinary authority ownership requires a justified change.
 
-## Ordered implementation and examples
+## Staged rollout: build, migrate, then remove
 
-Keep each landed checkpoint green. Preserve the original C and properties;
-migrate sidecars and checker rules rather than weakening assertions or rewriting
-programs. Temporary implementation coexistence must have a removal endpoint,
-not become a permanent alternate public counting mode.
+Build authority support additively before changing existing examples or the
+public default. The checkpoints below are ordered dependencies, not one large
+patch. Each may take several coherent commits, but must meet its exit gate
+before the next checkpoint starts. Keep the original C and properties fixed.
 
-1. **Specify and implement authority fundamentals.** Establishment, identity,
-   ownership transfer, current observation, and checked member updates. Test
-   the permission rules independently of mutexes. Remove field-based semantic
-   classification as ordinary instances and tracked membership are separated.
-2. **Migrate sequential refcount.** Preserve
-   [the complete refcount example](../examples/refcount/README.md): initialize,
-   retain, symbolic retain/release, nonfinal release, final free, allocation
-   failure, and callers. References are members; control owns the C counter,
-   allocation/lifetime obligations as appropriate, and population authority.
-3. **Migrate shared-parent lifetimes and bounded pool.** Preserve
-   [both parent destruction orders](../mdtests/shared_heap_population_lifecycles.md),
-   surviving-parent reads, and final reclamation. Preserve
-   [bounded pool](../examples/bounded-pool/README.md) checkout/return, resizing,
-   zero capacity, wildcard counts, and cross-pool transfer. Pool object memory
-   remains individually owned; opening it need not acquire pool authority.
-4. **Migrate contribution and join accounting.** Preserve
-   [sequential exact two](../mdtests/counted_resource_contribution_counter.md),
-   [local mutex conservation](../mdtests/population_conservation_local_mutex.md),
-   and existing abstract worker-ticket regressions. Worker consumption must
-   obtain authority or use an explicitly justified deferred transfer; a join
-   cannot retroactively authorize an invalid worker transition. Preserve either
-   join order, create failures, and rejection of premature exact observations.
-5. **Verify a mutex-protected shared refcount.** Freeze a small ordinary C
-   program with two users, a retained owner reference, locked retain/release,
-   and final reclamation after users finish. It must keep the object and its
-   mutex alive before acquisition, reject reclamation while references remain,
-   and free exactly once. Model failure cleanup. This is the migration's
-   concurrency acceptance example, not an atomic-refcount or lock-free claim.
-6. **Remove superseded machinery and document the result.** Delete the
-   count-in-body semantic switch, single-member access to a shared invariant,
-   and population-specific mutex custody made redundant by ordinary authority
-   transfer. Remove `guarded_by`. Migrate every affected example and fixture;
-   revise public resource docs and historical design statuses to identify the
-   replacement. Then unblock the concurrency demo's exact worker counter.
+All checkpoints below are pending; this issue records the rollout, not completed
+implementation. Update their status and consumer inventory as commits land.
+
+| Checkpoints | Deliverable | What happens to old clients |
+| --- | --- | --- |
+| 0 | Baseline inventory and settled permission rules | Unchanged |
+| 1–3 | Kernel support, checked updates, and usable source interface | Unchanged; new focused fixtures exercise authority |
+| 4–7 | Sequential refcount, parents, field-bearing members, and pool | Migrate one dependency group at a time |
+| 8–10 | Mutex integration, shared refcount, contribution/join accounting | Migrate remaining groups after their prerequisites pass |
+| 11 | New semantics become the sole execution path | No unmigrated clients remain |
+| 12 | Delete legacy code and `guarded_by` | Already verified without legacy execution |
+
+### Rollout safeguards
+
+- Keep the full existing corpus green at every landed checkpoint. No mass
+  expected-failure changes, quarantine, weakened postconditions, or discarded
+  negative tests to make a migration pass.
+- Keep the legacy path temporarily for **unmigrated** verification units. A new
+  authority proof must never retry through legacy rules when checking fails.
+  This is implementation coexistence, not implicit authority in the new model.
+- Select the temporary implementation path at an explicit verification-unit or
+  project boundary, recorded in migration/test metadata and proof provenance.
+  All reachable contracts, imported summaries, caches, and certificates must
+  agree on the semantics. Reject mixed unchecked boundaries. Do not select the
+  model from the presence of fields, discovery of a `count` expression, or
+  whether a proof happens to succeed. Settle this boundary in checkpoint 0;
+  do not add a permanent public `legacy` keyword.
+- Maintain a migration inventory here or in a linked checked-in table. Record
+  each affected project/fixture group, selected path, original property, and
+  replacement regression. A group leaves legacy only when every dependency
+  and its positive/negative proofs are ready.
+- Run focused tests and the full `scripts/check.sh` before merging executable
+  changes. Verify affected proofs before profile/expand/reverify/audit. Apply
+  the repository's documentation gate to prose-only checkpoints. Rebase and
+  rerun affected checks when the integration base moves.
+- If a checkpoint fails, keep the incomplete work isolated. Retain the previous
+  green checkpoint; never weaken the permission rule or mix old and new
+  certificates as a fallback. Build scaling tests alongside new representations.
+
+### 0. Inventory and freeze the migration contract (documentation/tests)
+
+**Work:** Inventory `count`, quantity syntax, proof-field count refusals,
+count-dependent bodies/predicates, abstract worker populations, and `guarded_by`
+across examples, mdtests, design probes, kernel tests, and source-backed docs.
+Group consumers by project/call dependencies. Record the existing pass/fail
+properties, including tests whose current field-based rejection must become a
+positive with explicit authority.
+
+Resolve the decisions above into concrete allocation, observation, transition,
+and retirement rules. In particular, fix fresh-population establishment and
+exact-count meaning, and choose the temporary isolation boundary. Specify
+wildcard scope semantics now; implementation may wait for checkpoint 6.
+Identify any additional source syntax requiring user review before coding it.
+
+**Exit gate:** A reviewer can tell which operations require authority and why,
+how an authority is first obtained, and how new proofs cannot enter old rules.
+Baseline gates pass. No existing resource semantics change.
+
+### 1. Add kernel authority ownership (no existing client migration)
+
+**Work:** Add population identities, exclusive authority ownership, tracked
+membership, indexed scope lookup, and ownership transport. Supply checked
+fresh allocation and retirement. Add exact-population observations for kernel
+clients; authority allocation must not arise from ordinary folding. Keep the
+new representation inaccessible to legacy rules and maintain separate proof
+provenance/cache identities as needed.
+
+**Tests:** Duplicate authority, wrong population, aliases, pointer reuse,
+retirement with outstanding members, quantity regrouping, transfer without
+authority, and independence from unrelated resources. Deterministic scaling
+covers allocation, lookup, and transfer.
+
+**Exit gate:** Kernel ownership and observation tests pass; existing source
+examples still use their unchanged implementation path. Do not remove
+`is_countable`, the old population representation, or `guarded_by` yet.
+
+### 2. Add checked population transitions and fact dependencies
+
+**Work:** Implement creation/consumption with the appropriate authority and
+owned members. Define the exact-total conservation evidence. Connect updates
+to checked resource exchanges, function entry/return, scoped restoration, and
+current versus historical observations. Establish how private member contents
+can be unfolded/refolded without deleting and recreating membership. Ordinary
+ownership of shared C memory remains with the control resource.
+
+**Tests:** Missing authority, missing consumed unit, double consumption, stale
+count reuse, a closed control invariant surviving an unauthorized update, and
+forged certificates. Include opaque-call and snapshot bypass attempts, not only
+successful tactic execution. Test fact invalidation and update scaling.
+
+**Exit gate:** The kernel independently checks both observation and transition
+permissions. No source-level authority feature is enabled with unchecked
+updates or a legacy fallback. Existing examples remain untouched and green.
+
+### 3. Wire the source interface end to end on new focused fixtures
+
+**Work:** Parse/lower `authority(R(...))` through ordinary ownership clauses,
+resource composition, named binders, and call maps. Wire the approved
+establishment/retirement interface. Implement authority-dependent `count` in
+facts, predicates, contracts, snapshots, and simple loop invariants. In the
+new path, resource fields must not select population semantics. Initially use
+exact populations and small members; broader cases have explicit later gates.
+
+**Tests:** New tiny positive and negative fixtures for initialization, retain,
+release, current count, zero, and a control resource opened/restored through
+ordinary helper contracts. Add a test that new-mode proofs/certificates cannot
+obtain legacy population-body permission.
+
+**Exit gate:** A complete new proof passes verify, expand/reverify, and audit
+using authority throughout. Diagnostics name missing source resources/facts.
+The whole old corpus remains green. This is the first usable authority support;
+only now start migrating existing clients.
+
+### 4. Migrate the sequential refcount project
+
+**Work:** First prove the same frozen C with an authority-based sidecar while
+the old project remains the baseline. Then replace its sidecars and migrate
+its fixture group in one green checkpoint. Cover
+[the complete refcount example](../examples/refcount/README.md): initialize,
+retain, symbolic retain/release, nonfinal release, final free, allocation
+failure, and callers. Control owns the counter, authority, and appropriate
+allocation/lifetime obligations; references are separate members.
+
+**Exit gate:** All original claims hold on the new path, including exact totals
+and final reclamation. The negative variants fail for the relevant missing
+permission or false equality. This group has no legacy dependency; unrelated
+examples have not changed semantics.
+
+### 5. Migrate shared-parent ownership
+
+**Work:** Move references through ordinary parent wrappers and nested helpers.
+Migrate [both parent destruction orders](../mdtests/shared_heap_population_lifecycles.md)
+and their related alias, allocation-failure, and final-release fixtures.
+Preserve reads through the surviving parent and exact final reclamation.
+
+**Exit gate:** Wrapped members retain their population identity, opaque calls
+cannot change them without authority, and both frozen caller paths verify and
+audit. Refcount and all unmigrated consumers remain green.
+
+### 6. Build wildcard and field-bearing member support before pool migration
+
+**Work:** Implement disjoint per-pool scopes, exact observations governed by a
+wildcard authority, and a checked transfer between two authorities. Count
+individually identified members without erasing fields or treating equal
+parameters as interchangeable instances. Add the private-slot example below.
+
+**Tests:** Overlapping authorities, wrong-pool updates, aliasing, cross-pool
+transfer, two disjoint field-bearing instances, exclusive-memory conflicts,
+and private field changes that preserve membership. Wildcard queries/updates
+need indexed, output-sensitive scaling coverage.
+
+**Exit gate:** Small dedicated fixtures establish these capabilities before any
+bounded-pool sidecar depends on them. The legacy field-based restriction still
+exists only for remaining old clients; do not globally flip it yet.
+
+### 7. Migrate bounded pool and remaining sequential count consumers
+
+**Work:** Migrate [bounded pool](../examples/bounded-pool/README.md), preserving
+checkout/return, resize, zero capacity, wildcard totals, private object writes,
+and source-to-destination transfer. Move the pool invariant and population
+authorities into its control ownership. Then migrate the remaining sequential
+count/predicate/loop fixtures from the inventory in small dependency groups.
+
+**Exit gate:** Original pool C and all claims verify with explicit authority.
+Private object writes need no pool authority when they do not change the pool
+invariant. No sequential consumer remains unaccounted for in the inventory;
+concurrent and local-mutex legacy groups are listed explicitly.
+
+### 8. Integrate authority with existing mutex transfers
+
+**Work:** Allow an ordinary mutex-protected control resource to contain authority.
+Verify concrete lock/unlock and independently checked acquiring/releasing
+helpers, including fresh count observations, replacement state, and lifetime
+holds. First add authority-based counterparts to the held/unheld population
+helper and local-conservation fixtures, then switch those groups over.
+
+Migrate `guarded_by` examples to initialization-established associations in
+small groups. Preserve wrong-mutex, stale-initialization, and missing-state
+negative coverage. Keep the old parser/metadata until the final removal gate.
+
+**Exit gate:** Lock gives control ownership, unlock requires its restored
+invariant, and a member alone cannot expose it. Neither the new proofs nor
+helper certificates use special counted-population mutex custody. Parity,
+ordinary mutex helpers, and all previous migrations stay green.
+
+### 9. Add shared-refcount concurrency support and its acceptance example
+
+**Work:** First test authority/member lifetime dependencies across create,
+worker contracts, and join without admitting premature observations. Then
+freeze and verify a small ordinary C program with two users, a retained owner
+reference, locked retain/release, and final reclamation after users finish.
+Handle creation failure and both completion/join orders.
+
+**Exit gate:** References keep the object and mutex alive before acquisition;
+updates cannot invalidate references held elsewhere; reclamation occurs once
+only after the necessary references and use loans are recovered. Verify,
+expand/reverify, and audit pass without a refcount-specific mutex rule. This
+is a mutex-protected example, not an atomic-refcount or lock-free claim.
+
+### 10. Migrate contribution and abstract worker-accounting fixtures
+
+**Work:** Migrate [sequential exact two](../mdtests/counted_resource_contribution_counter.md)
+and local contribution consumption, retaining scope-close and return
+single-consumption checks. Separately migrate abstract worker-ticket/join
+fixtures. A worker transition must possess authority or use a specifically
+justified deferred transfer; join cannot retroactively authorize consumption.
+
+Existing no-lock workers may expose a real expressibility gap under the new
+rules. Resolve the protocol/contract design before migrating that group; do
+not rewrite their C, drop their exact claims, or retain a hidden authority
+bypass. Preserve create failures, either join order, and early/stale count
+refusals. The shared-worker counter's final exact-two proof remains the next
+concurrency-demo task after migration, rather than an extra completion gate here.
+
+**Exit gate:** Every count consumer in the inventory has a checked new-model
+replacement, including worker accounting. No legacy-only fixture is quietly
+skipped or weakened. All new groups pass the full gate together.
+
+### 11. Switch the default only when the migration inventory is empty
+
+**Work:** Audit all production verification paths, runtime specs, public docs,
+examples, fixtures, imported summaries, and cached certificates. Enable the
+new authority semantics globally; current count without authority now fails
+uniformly. Remove temporary per-project selection and reject incompatible old
+certificates/caches. Keep old implementation code unreachable for this
+checkpoint if that makes the switch independently reviewable.
+
+**Exit gate:** The full corpus passes with legacy execution disabled. Tests
+prove there is no fallback and field presence no longer selects countability.
+There are zero active `guarded_by` consumers except targeted rejection tests.
+Only after this gate may the old implementation be deleted.
+
+### 12. Delete legacy machinery in separately green cleanup commits
+
+**Work:** Remove the unreachable implicit-population access and count-in-body
+classification, field-based countability checks, and obsolete population mutex
+custody. Remove `guarded_by` parser/lowering/kernel metadata in a separate
+reviewable commit, retaining a useful diagnostic for the retired spelling.
+Remove migration metadata and dead tests only after their replacement coverage
+is recorded. Update historical design statuses and public resource docs.
+
+**Exit gate:** Source and test inventory confirms no old permission path,
+scaffolding, or active syntax remains. The full gate and affected proof audits
+pass. Mark the authority migration complete and resume the concurrency demo
+on the new foundation.
 
 An identified-slot example should test that a field-bearing member can change
 its privately owned memory while the control resource stays closed, provided
