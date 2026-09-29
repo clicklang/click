@@ -279,12 +279,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> bool {
-        if self
-            .0
-            .opaque_import
-            .as_ref()
-            .is_some_and(|import| import.description == *description && import.owned_members == 1)
-        {
+        if self.owns_imported_population_member(description) {
             return true;
         }
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
@@ -306,6 +301,16 @@ impl CreationEvents {
                     .authority
                     .holder_owns_member(self.0.invocation, population)
             })
+    }
+
+    pub(in crate::kernel) fn owns_imported_population_member(
+        &self,
+        description: &ResourceDescription,
+    ) -> bool {
+        self.0
+            .opaque_import
+            .as_ref()
+            .is_some_and(|import| import.description == *description && import.owned_members == 1)
     }
 
     pub(in crate::kernel) fn recognizes_population_authority(

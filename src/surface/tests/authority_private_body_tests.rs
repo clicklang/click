@@ -96,6 +96,57 @@ fn authority_member_private_heap_body_round_trip() {
 }
 
 #[test]
+fn authority_helper_returns_member_with_private_memory_body() {
+    let c_source = r#"
+        int32 helper(int32* p) { *p = 7; return 7; }
+        int32 value(void) {
+            int32* p = malloc(4);
+            if (p == 0) return 0;
+            int32 result = helper(p);
+            free(p);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {
+            owns p[0..1];
+        }
+        verifying "private_body.c";
+
+        int32 helper(int32* p) {
+            owns authority(reference(p));
+            owns reference(p);
+            ensures result == 7;
+        } by {
+            open(reference(p)) { step(); }
+            execute();
+            simp();
+        }
+
+        int32 value() {
+            ensures result == 0 or result == 7;
+        } by {
+            step();
+            step();
+            branch {
+                then { execute(); simp(); }
+                else {}
+            }
+            fold(authority(reference(p)));
+            fold(reference(p));
+            step();
+            step();
+            unfold(reference(p));
+            unfold(authority(reference(p)));
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect("a checked helper returns the same private-body member");
+}
+
+#[test]
 fn authority_member_private_heap_body_cannot_back_two_births() {
     let c_source = r#"
         int32 value(void) {

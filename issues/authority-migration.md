@@ -190,11 +190,13 @@ exposes that body without changing its count. Current exact `count(R(p))`
 observes the authority ledger. The transitions have independent certificate
 checks. Verified ordinary C helpers can borrow and return the same exact
 authority and member; standalone helper proofs treat their declared input as
-an opaque population with no count or creator permission. Other contract
-transitions, symbolic totals, recorded-state count, field-bearing or nested
-member bodies, and worker calls remain unsupported in authority mode. This is
-not yet a usable general counted-resource implementation. `construct(...)` has
-not been extended. The remainder of checkpoint 2 and checkpoints 3–12 remain
+an opaque population with no count or creator permission. Such a helper can
+open a transferred member's private memory body, use it, and close it before
+return. Other contract transitions, symbolic totals, recorded-state count,
+field-bearing or nested member bodies, and worker calls remain unsupported in
+authority mode. This is not yet a usable general counted-resource
+implementation. `construct(...)` has not been extended. The remainder of
+checkpoint 2 and checkpoints 3–12 remain
 pending.
 Update this status and the inventory as commits land.
 

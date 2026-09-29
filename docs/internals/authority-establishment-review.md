@@ -14,8 +14,11 @@ its body without changing membership. Current `count(R(p))` reads the checked
 total only with that authority. Retirement requires zero members. Verified
 ordinary C helpers may borrow and return the same exact authority and member;
 their standalone proofs receive an opaque population with no known count or
-creator right. Other contract transitions, worker calls, recorded-state count,
-and field-bearing or nested member bodies remain refused.
+creator right. An imported member can be opened to use its private owned-memory
+body, then closed before return. The helper does not need a concrete caller
+allocation in its standalone proof; the caller established the member against
+live storage before transferring it. Other contract transitions, worker calls,
+recorded-state count, and field-bearing or nested member bodies remain refused.
 
 ## Establishment and uniqueness
 
