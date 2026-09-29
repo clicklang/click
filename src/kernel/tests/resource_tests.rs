@@ -365,6 +365,79 @@ fn owned_range_read_survives_learning_a_symbolic_pointer_alias() {
     assert!(!resources.permits_memory_read(&cell, 16, &assumptions));
 }
 
+#[test]
+fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
+    // An unfold can publish a cell before a later proof arm establishes the
+    // equality used by fold. Keep the resource snapshot fixed while the pure
+    // context forks and learns the two links in either order.
+    let owner_root = Pointer::symbolic(Variable(210));
+    let owner = Pointer {
+        block: owner_root.block.clone(),
+        offset: PointerOffsetTerm::Constant(8),
+    };
+    let middle = Pointer::symbolic(Variable(211));
+    let requested = Pointer {
+        block: PointerBlock::Symbolic(Variable(212)),
+        offset: PointerOffsetTerm::Constant(8),
+    };
+    let cell = |base| {
+        CResourceFact::own_memory(CMemoryRange::new(
+            base,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ))
+    };
+    let resources = ResourceContext::new().unchecked_with_fact(cell(owner.clone()));
+    let required = cell(requested.clone());
+    let empty = PureFactContext::new();
+    assert!(
+        resources
+            .clone()
+            .without_fact_incrementally(&required, &empty)
+            .is_none()
+    );
+    for reverse in [false, true] {
+        let links = [
+            ConditionTerm::pointer_equal(owner_root.clone(), middle.clone()),
+            ConditionTerm::pointer_equal(middle.clone(), Pointer::symbolic(Variable(212))),
+        ];
+        let mut assumptions = empty.clone();
+        for link in if reverse {
+            links.into_iter().rev().collect::<Vec<_>>()
+        } else {
+            links.to_vec()
+        } {
+            assumptions = assumptions.assume_condition(link, true);
+        }
+        assert!(assumptions.equality_graph.are_equal(&owner, &requested));
+        assert!(
+            resources
+                .clone()
+                .without_fact_incrementally(&required, &assumptions)
+                .expect("fold must consume the owned cell through the late alias")
+                .facts()
+                .is_empty()
+        );
+        assert!(
+            resources
+                .clone()
+                .without_fact_incrementally(
+                    &cell(Pointer {
+                        block: requested.block.clone(),
+                        offset: PointerOffsetTerm::Constant(12)
+                    }),
+                    &assumptions,
+                )
+                .is_none()
+        );
+    }
+    assert!(
+        resources
+            .without_fact_incrementally(&required, &empty)
+            .is_none()
+    );
+}
+
 fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition, CState) {
     let schema =
         ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
