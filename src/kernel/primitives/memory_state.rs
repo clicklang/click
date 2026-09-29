@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::CheckedPopulationAuthorityExchange;
 use crate::kernel::CheckedPopulationMemberExchange;
+use crate::kernel::ResourceDescription;
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -4442,7 +4443,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, u32), String> {
+    ) -> Result<(ResourceContext, Bitvector32Term), String> {
         let (children, count) =
             self.checked_authority_wrapper_body(selected, definition, assumptions)?;
         let projected = self
@@ -4458,7 +4459,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<CResourceFact>, u32), String> {
+    ) -> Result<(Vec<CResourceFact>, Bitvector32Term), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
@@ -4470,7 +4471,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<u32, String> {
+    ) -> Result<Bitvector32Term, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
         Ok(count)
     }
@@ -4481,7 +4482,155 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, u32), String> {
+    ) -> Result<(Vec<CResourceFact>, Bitvector32Term), String> {
+        let (children, description) =
+            self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err("control authority needs one pointer anchor".into());
+        };
+        let anchor = pointer.pointer();
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("control resource requires authority mode")?;
+        if !events.owns_population_authority(&description) {
+            return Err("Requires owns authority(R(p))".into());
+        }
+        let count = if anchor.offset == PointerOffsetTerm::Constant(0) {
+            let count = events
+                .observe(&anchor.block, description.family())
+                .map_err(|_| "Requires a current authority count")?;
+            if count > i32::MAX as u32 {
+                return Err("current authority count exceeds int32".into());
+            }
+            Bitvector32Term::Constant(count)
+        } else {
+            let imported = events
+                .observe_symbolic(&description)
+                .ok_or("Requires a current authority count")?;
+            match imported.delta {
+                0 => imported.entry_count,
+                1 => Bitvector32Term::add(imported.entry_count, Bitvector32Term::Constant(1)),
+                -1 => Bitvector32Term::subtract(imported.entry_count, Bitvector32Term::Constant(1)),
+                _ => return Err("control authority has an unsupported count change".into()),
+            }
+        };
+        Ok((children, count))
+    }
+
+    /// A standalone helper assumes a folded control from its caller. Only the
+    /// checked body of that exact owned wrapper may seed one opaque population
+    /// input; no direct authority or creator right is manufactured here.
+    pub(crate) fn import_opaque_control_wrapper(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("opaque control requires authority mode")?
+            .import_checked_control_wrapper(self, selected, definition, assumptions)?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
+    /// Authenticate the only symbolic-count import shape. The control's
+    /// declared fact ties the entry counter cell to this exact population;
+    /// neither an arbitrary memory load nor an unrelated count is accepted.
+    pub(in crate::kernel) fn checked_authority_wrapper_import_components(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<(ResourceDescription, Bitvector32Term), String> {
+        if !self.resources.contains_exact_representation(selected) {
+            return Err("Requires the declared owned control resource".into());
+        }
+        let (children, description) =
+            self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
+        let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
+            return Err("control authority needs one pointer anchor".into());
+        };
+        let anchor = anchor_value.pointer().clone();
+        let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
+            return Err("Requires owns control resource".into());
+        };
+        if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
+            return Err("control and authority need the same pointer argument".into());
+        }
+        let parameter = definition.parameters()[0].name();
+        let memory_cells = children
+            .iter()
+            .filter_map(CResourceFact::memory_own_range)
+            .collect::<Vec<_>>();
+        if children.len() != 2
+            || memory_cells.len() != 1
+            || memory_cells[0].base() != &anchor
+            || memory_cells[0].start().as_const() != Some(0)
+            || memory_cells[0].end().as_const() != Some(1)
+            || memory_cells[0].element_width() != 4
+        {
+            return Err("control must own the exact counter cell and authority".into());
+        }
+        let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
+        let is_counter_load = |expression: &SpecExpression| {
+            let SpecExpression::MemoryLoad {
+                memory: SpecMemory::Current,
+                pointer,
+                value_type: CType::Int32,
+            } = expression
+            else {
+                return false;
+            };
+            let SpecExpression::PointerOffset {
+                pointer,
+                elements,
+                byte_width: 4,
+            } = pointer.as_ref()
+            else {
+                return false;
+            };
+            is_parameter(pointer)
+                && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+        };
+        let is_population_count = |expression: &SpecExpression| {
+            matches!(expression, SpecExpression::CountedResourceCount { name, arguments }
+                if name == description.family()
+                    && matches!(arguments.as_slice(), [Some(argument)] if is_parameter(argument)))
+        };
+        let exact_count_fact = matches!(definition.facts(), [SpecProposition::Comparison {
+            left,
+            operator: CComparisonOperator::Equal,
+            right,
+        }] if (is_counter_load(left) && is_population_count(right))
+            || (is_population_count(left) && is_counter_load(right)));
+        if !exact_count_fact {
+            return Err(format!(
+                "Requires {parameter}[0] == count({}({parameter}))",
+                description.family()
+            ));
+        }
+        Ok((
+            description,
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory_ref(&self.memory),
+                Box::new(anchor.clone()),
+            ),
+        ))
+    }
+
+    fn authority_wrapper_candidates(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+        require_folded: bool,
+    ) -> Result<(Vec<CResourceFact>, ResourceDescription), String> {
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
         else {
             return Err("Requires owns control resource".into());
@@ -4561,28 +4710,6 @@ impl CState {
             }
             children.push(child);
         }
-        let description = authority.ok_or("control body requires one authority")?;
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
-            return Err("control authority needs one pointer anchor".into());
-        };
-        let anchor = pointer.pointer();
-        if anchor.offset != PointerOffsetTerm::Constant(0) {
-            return Err("control authority needs an exact base pointer".into());
-        }
-        let events = self
-            .population_effects
-            .creation
-            .as_ref()
-            .ok_or("control resource requires authority mode")?;
-        if !events.owns_population_authority(&description) {
-            return Err("Requires owns authority(R(p))".into());
-        }
-        let count = events
-            .observe(&anchor.block, description.family())
-            .map_err(|_| "Requires a current authority count")?;
-        if count > i32::MAX as u32 {
-            return Err("current authority count exceeds int32".into());
-        }
         if !require_folded
             && children
                 .iter()
@@ -4590,7 +4717,10 @@ impl CState {
         {
             return Err("Requires the owned authority control body".into());
         }
-        Ok((children, count))
+        Ok((
+            children,
+            authority.ok_or("control body requires one authority")?,
+        ))
     }
 
     #[cfg(test)]

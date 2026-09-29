@@ -2029,10 +2029,20 @@ pub(super) fn initial_claim_context_with_mode(
             vec![],
         )
     } else {
+        let authority_definitions = if resource_semantics_mode == ResourceSemanticsMode::Authority {
+            crate::surface::verification::composite_resource_definitions(
+                resource_environment,
+                predicate_environment,
+                click_function_environment,
+            )?
+        } else {
+            Vec::new()
+        };
         initial_call_state(
             function_block.requires(),
             parsed_function.parameters(),
             &parsed_function.to_kernel_function(),
+            &authority_definitions,
             resource_semantics_mode,
         )?
     };

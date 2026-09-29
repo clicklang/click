@@ -5,7 +5,10 @@
 //! allocation claims never enter it.
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
-use crate::kernel::{AlgebraicValue, CValue, PointerBlock, PointerOffsetTerm, ResourceDescription};
+use crate::kernel::{
+    AlgebraicValue, Bitvector32Term, CCompositeResourceDefinition, CResource, CResourceFact,
+    CState, CValue, PointerBlock, PointerOffsetTerm, PureFactContext, ResourceDescription,
+};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
@@ -44,7 +47,16 @@ struct Root {
 #[derive(Clone)]
 struct OpaqueImport {
     description: ResourceDescription,
+    entry_owned_members: u32,
     owned_members: u32,
+    /// Only a checked control wrapper can supply this immutable entry load.
+    entry_count: Option<Bitvector32Term>,
+}
+
+pub(in crate::kernel) struct SymbolicPopulationCount {
+    pub entry_count: Bitvector32Term,
+    pub delta: i8,
+    pub entry_owned_members: u32,
 }
 
 /// Inputs of a checked C lifetime event. Each key is proportional to the
@@ -203,6 +215,50 @@ impl CreationEvents {
         description: &ResourceDescription,
         owned_members: u32,
     ) -> Result<Self, CreationRefusal> {
+        self.import_opaque_contract_population_inner(description, owned_members, None)
+    }
+
+    /// Import a folded control only after independently checking its exact
+    /// owned cell, contained authority, and `cell == count(family)` body fact.
+    /// The entry cell load is then a sound witness for this one population's
+    /// arbitrary initial total. Direct authority imports never receive one.
+    pub(in crate::kernel) fn import_checked_control_wrapper(
+        &self,
+        state: &CState,
+        selected: &CResourceFact,
+        definition: &CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        if state.population_effects.creation.as_ref() != Some(self) {
+            return Err("control import requires the current creation ledger".into());
+        }
+        let (description, entry_count) =
+            state.checked_authority_wrapper_import_components(selected, definition, assumptions)?;
+        let member = CResource::Composite {
+            name: description.family().to_owned(),
+            arguments: description.arguments().to_vec().into(),
+        };
+        let owned = state
+            .resources()
+            .exact_resource_facts(&member)
+            .into_iter()
+            .filter_map(|fact| fact.owned_quantity_term().cloned())
+            .collect::<Vec<_>>();
+        let owned_members = match owned.as_slice() {
+            [] => 0,
+            [quantity] if quantity.as_const() == Some(1) => 1,
+            _ => return Err("control import needs at most one exact owned member".into()),
+        };
+        self.import_opaque_contract_population_inner(&description, owned_members, Some(entry_count))
+            .map_err(|refusal| format!("control import refused: {refusal:?}"))
+    }
+
+    fn import_opaque_contract_population_inner(
+        &self,
+        description: &ResourceDescription,
+        owned_members: u32,
+        entry_count: Option<Bitvector32Term>,
+    ) -> Result<Self, CreationRefusal> {
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -214,7 +270,10 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         }
         if let Some(existing) = &self.0.opaque_import {
-            if existing.description == *description && existing.owned_members == owned_members {
+            if existing.description == *description
+                && existing.owned_members == owned_members
+                && existing.entry_count == entry_count
+            {
                 return Ok(self.clone());
             }
             return Err(CreationRefusal::OpaqueImportConflict);
@@ -237,7 +296,9 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_import: Some(OpaqueImport {
                 description: description.clone(),
+                entry_owned_members: owned_members,
                 owned_members,
+                entry_count,
             }),
         })))
     }
@@ -362,6 +423,23 @@ impl CreationEvents {
         self.0.opaque_import.is_some()
     }
 
+    /// The description includes the exact pointer; another family or offset
+    /// cannot observe this imported count.
+    pub(in crate::kernel) fn observe_symbolic(
+        &self,
+        description: &ResourceDescription,
+    ) -> Option<SymbolicPopulationCount> {
+        let import = self.0.opaque_import.as_ref()?;
+        if import.description != *description {
+            return None;
+        }
+        Some(SymbolicPopulationCount {
+            entry_count: import.entry_count.clone()?,
+            delta: import.owned_members as i8 - import.entry_owned_members as i8,
+            entry_owned_members: import.entry_owned_members,
+        })
+    }
+
     fn exact_member_block<'a>(
         &self,
         block: &'a PointerBlock,
@@ -451,7 +529,9 @@ impl CreationEvents {
                 tainted: self.0.tainted.clone(),
                 opaque_import: Some(OpaqueImport {
                     description: description.clone(),
+                    entry_owned_members: import.entry_owned_members,
                     owned_members: u32::from(produce),
+                    entry_count: import.entry_count.clone(),
                 }),
             }));
             let evidence = CheckedPopulationMemberExchange {

@@ -501,3 +501,79 @@ fn authority_control_wrapper_requires_its_counter_memory() {
         "{error:?}"
     );
 }
+
+#[test]
+fn authority_control_survives_balanced_helper_calls() {
+    let c_source = r#"
+        void retain(int32* p) { p[0] = p[0] + 1; }
+        void release(int32* p) { p[0] = p[0] - 1; }
+
+        int32 value(void) {
+            int32* p = malloc(4);
+            if (p == 0) return -1;
+            p[0] = 0;
+            retain(p);
+            release(p);
+            int32 result = p[0];
+            free(p);
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        resource control(p: int32*) {
+            owns p[0..1];
+            owns authority(reference(p));
+            fact p[0] == count(reference(p));
+        }
+        verifying "private_body.c";
+        void retain(int32* p) {
+            owns control(p);
+            requires p[0] < 2147483647;
+            produces reference(p);
+        } by {
+            open(control(p)) {
+                step();
+                fold(reference(p));
+            }
+            execute(); simp();
+        }
+        void release(int32* p) {
+            owns control(p);
+            consumes reference(p);
+            requires p[0] > 0;
+        } by {
+            open(control(p)) {
+                unfold(reference(p));
+                step();
+            }
+            execute(); simp();
+        }
+        int32 value() { ensures result == -1 or result == 0; } by {
+            step(); step();
+            branch { then { execute(); simp(); } else {} }
+            step();
+            fold(authority(reference(p)));
+            fold(control(p));
+            step();
+            open(control(p)) {
+                have count(reference(p)) == 1 by { simp(); }
+                have p[0] == 1 by { simp(); }
+            }
+            step();
+            unfold(control(p));
+            unfold(authority(reference(p)));
+            execute(); simp();
+        }
+    "#;
+    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect("ordinary control returns through retaining and releasing helpers");
+    let expanded = expand_c0_project_claim_source_by_label(
+        &project(click_source),
+        &[("private_body.c", c_source)],
+        "value.contract",
+    )
+    .expect("the caller expands with checked unselected helper contracts");
+    verify_c0_project(&project(&expanded), &[("private_body.c", c_source)])
+        .expect("the expanded caller proof checks beside both helpers");
+}

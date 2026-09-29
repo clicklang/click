@@ -515,6 +515,180 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
     assert!(!state.recognizes_population_authority(&description));
     let imported = state.import_opaque_population(&authority, 1).unwrap();
     assert!(imported.recognizes_population_authority(&description));
+    assert!(
+        imported
+            .population_effects
+            .creation
+            .as_ref()
+            .unwrap()
+            .observe_symbolic(&description)
+            .is_none()
+    );
+}
+
+#[test]
+fn checked_control_import_observes_only_its_exact_entry_population() {
+    let pointer = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(940_112)),
+    };
+    let selected = CResourceFact::own(CResource::Composite {
+        name: "control".into(),
+        arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+    });
+    let reference = CResourceSpec::composite(
+        CResourceAccessMode::Own,
+        "reference".into(),
+        vec![c_variable("p")],
+        vec![CType::Int32Pointer],
+    );
+    let authority = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(reference),
+                schema: ResourceFieldSchema::new(vec![]).unwrap(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Consume,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    let cell = SpecExpression::MemoryLoad {
+        memory: SpecMemory::Current,
+        pointer: Box::new(SpecExpression::PointerOffset {
+            pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
+            elements: Box::new(SpecExpression::Value(int32(0))),
+            byte_width: 4,
+        }),
+        value_type: CType::Int32,
+    };
+    let count = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::CExpression(c_variable("p")))],
+    };
+    let definition = CCompositeResourceDefinition::new(
+        "control",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            )),
+            authority,
+        ],
+        vec![SpecProposition::Comparison {
+            left: cell,
+            operator: CComparisonOperator::Equal,
+            right: count,
+        }],
+    );
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+    let entry = state.population_effects.creation.as_ref().unwrap();
+    let imported = entry
+        .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
+        .expect("checked control body authenticates its entry count");
+    let description = ResourceDescription::new(
+        "reference".into(),
+        vec![CValue::pointer(pointer.clone()).into()].into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let observed = imported.observe_symbolic(&description).unwrap();
+    assert_eq!(observed.delta, 0);
+    assert_eq!(observed.entry_owned_members, 0);
+    assert!(
+        matches!(observed.entry_count, Bitvector32Term::MemoryLoad(_, loaded) if *loaded == pointer)
+    );
+    let count_expression = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::Value(CValue::pointer(
+            pointer.clone(),
+        )))],
+    };
+    let evaluate_count = |state: &CState| {
+        crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+            state,
+            &count_expression,
+            &PureFactContext::new(),
+            &BTreeMap::new(),
+            &mut ExecutionBudget::default(),
+        )
+    };
+    let mut projected =
+        state
+            .clone()
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_fact(CResourceFact::own(
+                    CResource::PopulationAuthority(description.clone()),
+                )),
+            );
+    Arc::make_mut(&mut projected.population_effects).creation = Some(imported.clone());
+    let paths = evaluate_count(&projected).expect("checked import permits exact count");
+    assert_eq!(paths.len(), 1);
+    assert!(matches!(
+        paths[0].value,
+        CValue::Int32(Bitvector32Term::MemoryLoad(_, _))
+    ));
+    assert!(
+        evaluate_count(&state).is_err(),
+        "a folded wrapper alone cannot read count"
+    );
+    let (with_member, _) = imported
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .unwrap();
+    let born_count = with_member.observe_symbolic(&description).unwrap();
+    assert_eq!(born_count.delta, 1);
+    assert_eq!(born_count.entry_owned_members, 0);
+    let (without_member, _) = with_member
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    assert_eq!(
+        without_member.observe_symbolic(&description).unwrap().delta,
+        0
+    );
+    let wrong = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::pointer(Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(940_113)),
+            })
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    assert!(imported.observe_symbolic(&wrong).is_none());
+    let mut wrong_fact = definition.clone();
+    wrong_fact.facts.clear();
+    assert!(
+        entry
+            .import_checked_control_wrapper(&state, &selected, &wrong_fact, &PureFactContext::new())
+            .is_err()
+    );
+    assert!(
+        entry
+            .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
+            .is_ok()
+    );
+    let missing = CState::new().with_population_creation_tracking();
+    assert!(
+        entry
+            .import_checked_control_wrapper(
+                &missing,
+                &selected,
+                &definition,
+                &PureFactContext::new()
+            )
+            .is_err()
+    );
 }
 
 #[test]

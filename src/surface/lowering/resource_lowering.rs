@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::CResourceTerm;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
@@ -16,6 +17,7 @@ pub(in crate::surface) fn initial_call_state(
     requires: &[Requirement],
     parameters: &[syntax::C0Parameter],
     function: &CFunction,
+    composite_definitions: &[CCompositeResourceDefinition],
     resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<(CState, Vec<CExpression>), ClickError> {
     let aggregate_parameters = parameters
@@ -318,6 +320,29 @@ pub(in crate::surface) fn initial_call_state(
             let owned_members = u32::from(state.resources().contains_exact_representation(&member));
             state = state
                 .import_opaque_population(&authority, owned_members)
+                .map_err(ClickError::new)?;
+        }
+        let controls = state
+            .resources()
+            .facts()
+            .iter()
+            .filter_map(|fact| {
+                let CResource::Composite { name, .. } = fact.resource() else {
+                    return None;
+                };
+                let definition = composite_definitions
+                    .iter()
+                    .find(|definition| definition.name() == name)?;
+                definition
+                    .contains()
+                    .iter()
+                    .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+                    .then(|| (fact.clone(), definition))
+            })
+            .collect::<Vec<_>>();
+        for (control, definition) in controls {
+            state = state
+                .import_opaque_control_wrapper(&control, definition, &PureFactContext::new())
                 .map_err(ClickError::new)?;
         }
     }

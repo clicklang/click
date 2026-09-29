@@ -96,6 +96,7 @@ impl<'a> Proof<'a> {
             .core
             .record_population_member_rewrite(
                 context.function,
+                context.arguments,
                 &before_facts,
                 &selected,
                 produce,

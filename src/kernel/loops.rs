@@ -438,6 +438,9 @@ pub(super) fn execute_c_call_assign_paths(
         && environment
             .get_verified_function_rule(function_name)
             .is_none()
+        && !environment
+            .get_external_function_rule(function_name)
+            .is_some_and(|rule| rule.is_scoped_unselected())
     {
         return Ok(vec![authority_mode_call_refusal_path()]);
     }
@@ -724,6 +727,9 @@ pub(super) fn execute_c_call_paths(
         && environment
             .get_verified_function_rule(function_name)
             .is_none()
+        && !environment
+            .get_external_function_rule(function_name)
+            .is_some_and(|rule| rule.is_scoped_unselected())
     {
         return Ok(vec![authority_mode_call_refusal_path()]);
     }

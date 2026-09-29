@@ -5615,12 +5615,21 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 "contract certification",
                 "contract entry resource expansion",
                 || {
-                    expand_all_composite_resource_facts(
-                        entry_state.resources(),
-                        function.composite_resource_definitions(),
-                        entry_state.memory(),
-                        &assumptions,
-                    )
+                    if entry_state.uses_population_authority_semantics() {
+                        super::functions::expand_all_composite_resource_facts_at_state(
+                            entry_state.resources(),
+                            function.composite_resource_definitions(),
+                            &entry_state,
+                            &assumptions,
+                        )
+                    } else {
+                        expand_all_composite_resource_facts(
+                            entry_state.resources(),
+                            function.composite_resource_definitions(),
+                            entry_state.memory(),
+                            &assumptions,
+                        )
+                    }
                 },
             ) else {
                 return CFunctionContractExecution::failed(

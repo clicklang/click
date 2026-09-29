@@ -3208,12 +3208,19 @@ pub struct RepresentationCopyEffect {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CExternalFunctionRule {
     pub(super) function: CFunction,
+    /// This assumption names a concrete, well-formed function whose proof is
+    /// outside the current partial-verification selection. It never escapes
+    /// that selection's environment.
+    pub(super) scoped_unselected: bool,
     /// Set only for a recognized byte-copy declaration whose checked effect
     /// the kernel applies after the external contract.
     pub(super) representation_copy: Option<RepresentationCopyEffect>,
 }
 
 impl CExternalFunctionRule {
+    pub(in crate::kernel) fn is_scoped_unselected(&self) -> bool {
+        self.scoped_unselected
+    }
     /// Attaches the checked representation-copy effect to this rule. The
     /// caller must have matched an exact declaration, not a bare name.
     pub(crate) fn with_representation_copy(mut self, effect: RepresentationCopyEffect) -> Self {

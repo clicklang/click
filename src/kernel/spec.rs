@@ -6034,7 +6034,7 @@ fn evaluate_resource_count_paths(
     }
     argument_paths
         .into_iter()
-        .map(|(arguments, facts, mut obligations)| {
+        .map(|(arguments, mut facts, mut obligations)| {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             if authority_mode {
                 let [Some(AlgebraicValue::C(CValue::Pointer(pointer)))] = arguments.as_slice()
@@ -6042,26 +6042,70 @@ fn evaluate_resource_count_paths(
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
                 let anchor = pointer.pointer();
-                if anchor.offset != PointerOffsetTerm::Constant(0) {
-                    return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
-                }
                 let description = ResourceDescription::new(
                     name.to_owned(),
                     arguments.iter().flatten().cloned().collect(),
                     ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
                 );
-                let authority = CResourceFact::own(CResource::PopulationAuthority(description));
+                let authority =
+                    CResourceFact::own(CResource::PopulationAuthority(description.clone()));
                 if !state
                     .resources
                     .satisfies_fact(&authority, &path_assumptions)
                 {
                     return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
                 }
-                let count = state
+                let creation = state
                     .population_effects
                     .creation
                     .as_ref()
-                    .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?
+                    .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?;
+                if let Some(symbolic) = creation.observe_symbolic(&description) {
+                    let entry = symbolic.entry_count;
+                    // An imported control's checked equality to a population
+                    // count entails this bound, including any member owned by
+                    // the helper at entry. It is not an arbitrary C assumption.
+                    let minimum = Proposition::ConditionIs(
+                        ConditionTerm::signed_greater_equal(
+                            entry.clone(),
+                            Bitvector32Term::Constant(symbolic.entry_owned_members),
+                        ),
+                        true,
+                    );
+                    facts.push(ExecutionPureFact::certified(minimum.clone()));
+                    let count = match symbolic.delta {
+                        -1 => Bitvector32Term::subtract(entry, Bitvector32Term::Constant(1)),
+                        0 => entry,
+                        1 => {
+                            let overflow = ConditionTerm::signed_add_overflows(
+                                entry.clone(),
+                                Bitvector32Term::Constant(1),
+                            );
+                            let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                            let bounded = path_assumptions.assume_proposition(minimum);
+                            if !bounded.proves_exact(&no_overflow)
+                                && PureFactContext::decide_intrinsically(&overflow) != Some(false)
+                                && bounded.decide(&overflow) != Some(false)
+                            {
+                                obligations.push(
+                                    ProofObligation::verification_condition(no_overflow)
+                                        .with_context("count(reference) fits in int32"),
+                                );
+                            }
+                            Bitvector32Term::add(entry, Bitvector32Term::Constant(1))
+                        }
+                        _ => return Err(ExecutionLimit::AuthorityCountNeedsOwnership),
+                    };
+                    return Ok(SpecExpressionPath {
+                        value: CValue::Int32(count),
+                        facts,
+                        obligations,
+                    });
+                }
+                if anchor.offset != PointerOffsetTerm::Constant(0) {
+                    return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
+                }
+                let count = creation
                     .observe(&anchor.block, name)
                     .map_err(|_| ExecutionLimit::AuthorityCountNeedsOwnership)?;
                 if count > i32::MAX as u32 {

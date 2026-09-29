@@ -1089,6 +1089,17 @@ impl CheckedResourceRewrite {
         {
             return Err("authority control has an unsupported body".into());
         }
+        let imported_count = folded
+            .checked_authority_wrapper_import_components(selected, definition, assumptions)
+            .ok()
+            .and_then(|(description, _)| {
+                folded
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .and_then(|ledger| ledger.observe_symbolic(&description))
+            });
+        let imported_control_cell = imported_count.is_some();
         for child in &children {
             let Some(range) = child.memory_own_range() else {
                 continue;
@@ -1106,7 +1117,7 @@ impl CheckedResourceRewrite {
             let base = range
                 .base()
                 .offset_by_elements(range.start().clone(), range.element_width());
-            if !folded.memory().access_in_bounds(&base, bytes) {
+            if !folded.memory().access_in_bounds(&base, bytes) && !imported_control_cell {
                 return Err("authority control body exceeds live storage".into());
             }
             if let Some(ledger) = folded.loan_ledger() {
@@ -1205,6 +1216,19 @@ impl CheckedResourceRewrite {
         allowed.push(Proposition::CResourceComposition(
             ResourceContext::new().unchecked_with_facts(children),
         ));
+        let evaluation_assumptions = if let Some(imported) = imported_count {
+            let bound = Proposition::ConditionIs(
+                crate::kernel::ConditionTerm::signed_greater_equal(
+                    imported.entry_count,
+                    Bitvector32Term::Constant(imported.entry_owned_members),
+                ),
+                true,
+            );
+            allowed.push(bound.clone());
+            assumptions.clone().assume_proposition(bound)
+        } else {
+            assumptions.clone()
+        };
         if let Some(loadable) =
             crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                 selected,
@@ -1233,11 +1257,10 @@ impl CheckedResourceRewrite {
             if !path
                 .facts
                 .iter()
-                .all(|fact| assumptions.states_required_goal(fact.proposition()))
-                || !path
-                    .obligations
-                    .iter()
-                    .all(|obligation| assumptions.states_required_goal(obligation.proposition()))
+                .all(|fact| evaluation_assumptions.states_required_goal(fact.proposition()))
+                || !path.obligations.iter().all(|obligation| {
+                    evaluation_assumptions.states_required_goal(obligation.proposition())
+                })
             {
                 return Err(
                     "authority control invariant has an unproved evaluation condition".into(),
@@ -7707,6 +7730,7 @@ impl ExecutionProofCore {
     pub(crate) fn record_population_member_rewrite(
         &mut self,
         function: &CFunction,
+        arguments: &[CExpression],
         before_facts: &ProofFacts,
         selected: &CResourceFact,
         produce: bool,
@@ -7734,10 +7758,13 @@ impl ExecutionProofCore {
                 .function_entry
                 .as_ref()
                 .ok_or("entry member change requires a checked function entry")?;
-            if self.reached_state() != entry.caller_state() {
-                return Err("entry member change has a different checked caller state".into());
-            }
-            let bound_before = entry.entry_state.clone();
+            // Earlier proof-only resource rewrites at the function entry may
+            // have opened the authority wrapper. Bind their checked successor
+            // to the callee entry before exchanging the member. The checked
+            // rewrite chain must still connect to the original entry.
+            let bound_before =
+                crate::kernel::c_function_entry_state(self.reached_state(), function, arguments)
+                    .ok_or("entry member change could not bind function arguments")?;
             let (bound_after, bound_witness) = bound_before.checked_population_member_exchange(
                 selected,
                 produce,

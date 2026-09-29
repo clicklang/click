@@ -299,11 +299,14 @@ updates or a legacy fallback. Existing examples remain untouched and green.
 
 **Current slice:** A field-free ordinary control resource with owned counter
 memory, one contained exact authority, and a count fact can be folded, opened,
-closed, and unfolded in one creator proof. The checked rewrite validates both
-the resource exchange and the fact against the current ledger total. The
-focused fixture creates and consumes one reference while changing the counter
-from zero to one and back. Helper-call transfer of that packaged control,
-other body shapes, and the remaining checkpoint tests are still required.
+closed, and unfolded. Checked rewrites validate the resource exchange and fact
+against the current ledger total. A three-function fixture creates the control,
+passes it through ordinary retaining and releasing helper contracts, observes
+the returned count, and retires the empty authority before freeing storage.
+The exact symbolic count at a helper entry is imported only through this
+checked wrapper. Verification, selective expansion/re-verification, and audit
+pass on this fixture. Other body shapes and migration of the existing
+sequential refcount project remain outstanding.
 
 **Work:** Parse/lower `authority(R(...))` through ordinary ownership clauses,
 resource composition, named binders, and call maps. Wire the approved

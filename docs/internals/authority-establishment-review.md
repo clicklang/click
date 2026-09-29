@@ -26,9 +26,14 @@ the concrete call updates the caller's population under transferred authority.
 Creation also checks that the caller's anchor is still live. An ordinary
 field-free `control(p)` may now own both the counter cell and
 `authority(reference(p))`, with a fact equating the cell to the current count.
-Its direct proof can fold, open, close, and unfold that body. Other contract
-transitions, worker calls, recorded-state count, and field-bearing or nested
-member bodies remain refused.
+Its direct proof can fold, open, close, and unfold that body. A checked ordinary
+helper can borrow and return the folded control while creating or consuming one
+reference. The helper entry imports an opaque symbolic count only from that
+exact wrapper and its counter equation; the caller's concrete ledger tracks
+the member exchange across the call. Selective verification may use the scoped
+contract of a concrete helper whose proof is outside the selection. Arbitrary
+external contracts, worker calls, recorded-state count, and field-bearing or
+nested member bodies remain refused.
 
 The supported contract shape uses only ordinary resource clauses:
 

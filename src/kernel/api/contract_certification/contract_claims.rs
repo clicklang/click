@@ -1146,12 +1146,25 @@ fn prepare_function_claim_path(
                 .into());
             }
         };
-    let Some((_, definition_facts)) = expand_all_composite_resource_facts_and_propositions(
-        &required_resources,
-        function.composite_resource_definitions(),
-        entry_state.memory(),
-        &assumptions,
-    ) else {
+    let expanded_required = if entry_state.uses_population_authority_semantics() {
+        let required_state = entry_state
+            .clone()
+            .with_resource_context(required_resources.clone());
+        super::super::super::functions::expand_all_composite_resource_facts_and_propositions_at_state(
+            &required_resources,
+            function.composite_resource_definitions(),
+            &required_state,
+            &assumptions,
+        )
+    } else {
+        expand_all_composite_resource_facts_and_propositions(
+            &required_resources,
+            function.composite_resource_definitions(),
+            entry_state.memory(),
+            &assumptions,
+        )
+    };
+    let Some((_, definition_facts)) = expanded_required else {
         return Err("the required composite resources cannot be expanded"
             .to_string()
             .into());
@@ -1237,12 +1250,14 @@ fn prepare_function_claim_path(
         None
     };
     let outcome = resolved_outcome.as_ref().unwrap_or(outcome);
-    let Some(entry_resources) = expand_all_composite_resource_facts(
-        entry_state.resources(),
-        function.composite_resource_definitions(),
-        entry_state.memory(),
-        &assumptions,
-    ) else {
+    let Some(entry_resources) =
+        super::super::super::functions::expand_all_composite_resource_facts_at_state(
+            entry_state.resources(),
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )
+    else {
         return Err("the entry resource context cannot be expanded"
             .to_string()
             .into());
@@ -1332,12 +1347,14 @@ fn prepare_function_claim_path(
     };
     let mut claim_exit_state = raw_exit_state.clone();
     claim_exit_state.set_memory(exit_memory.clone());
-    let Some(post_resources) = expand_all_composite_resource_facts(
-        claim_exit_state.resources(),
-        function.composite_resource_definitions(),
-        claim_exit_state.memory(),
-        &assumptions,
-    ) else {
+    let Some(post_resources) =
+        super::super::super::functions::expand_all_composite_resource_facts_at_state(
+            claim_exit_state.resources(),
+            function.composite_resource_definitions(),
+            &claim_exit_state,
+            &assumptions,
+        )
+    else {
         return Err("the exit resource context cannot be expanded"
             .to_string()
             .into());
@@ -2857,6 +2874,7 @@ pub fn c_external_function_rule(function: CFunction) -> Option<CExternalFunction
         && function_contract_claims_are_complete(&function))
     .then_some(CExternalFunctionRule {
         function,
+        scoped_unselected: false,
         representation_copy: None,
     })
 }
@@ -2913,6 +2931,7 @@ pub(crate) fn c_unselected_function_contract_assumption(
         && function_contract_claims_are_complete(&function))
     .then_some(CExternalFunctionRule {
         function,
+        scoped_unselected: true,
         representation_copy: None,
     })
 }

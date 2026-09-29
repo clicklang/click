@@ -436,7 +436,10 @@ fn transfer_population_call_facts<'a>(
     mut state: CState,
     from: &CState,
     to: &CState,
+    validation_state: &CState,
     facts: impl Iterator<Item = &'a CResourceFact>,
+    definitions: &[CCompositeResourceDefinition],
+    assumptions: &PureFactContext,
 ) -> Result<CState, CRuntimeError> {
     let Some(from_events) = from.population_effects.creation.as_ref() else {
         return Ok(state);
@@ -452,6 +455,41 @@ fn transfer_population_call_facts<'a>(
         ));
     };
     for fact in facts {
+        if let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = fact
+            && quantity.as_const() == Some(1)
+            && let Some(definition) = definitions
+                .iter()
+                .find(|definition| definition.name() == name)
+            && definition
+                .contains()
+                .iter()
+                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+        {
+            let (children, _) = validation_state
+                .checked_authority_wrapper_body(fact, definition, assumptions)
+                .map_err(|reason| {
+                    CRuntimeError::FunctionContract(format!(
+                        "population call control transfer refused: {reason}"
+                    ))
+                })?;
+            let [
+                CResourceFact::Own(CResource::Memory(_), _),
+                CResourceFact::Own(CResource::PopulationAuthority(description), _),
+            ] = children.as_slice()
+            else {
+                return Err(CRuntimeError::FunctionContract(
+                    "population call control requires one cell and one authority".into(),
+                ));
+            };
+            events = events
+                .transfer_call_fact(from_events, to_events, description, true)
+                .map_err(|refusal| {
+                    CRuntimeError::FunctionContract(format!(
+                        "population call control transfer refused: {refusal:?}"
+                    ))
+                })?;
+            continue;
+        }
         let (description, authority_fact) = match fact {
             CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
                 if quantity.as_const() == Some(1) =>
@@ -2007,6 +2045,40 @@ fn authority_mode_matches_member_body(
     defined == transferred
 }
 
+/// An ordinary control resource can package the exact authority a member
+/// helper borrows. The checked wrapper import and call projection validate
+/// its cell and invariant; this shape check only admits the contract form.
+fn authority_mode_input_protects_member(
+    interface: &CFunctionContractInterface,
+    input: &CResourceSpec,
+    member: &CResourceSpec,
+) -> bool {
+    match input.term() {
+        CResourceTerm::PopulationAuthority { protected, .. } => {
+            protected.resource.term() == member.term()
+        }
+        CResourceTerm::Composite {
+            name, arguments, ..
+        } => {
+            let Some(definition) = interface.composite_resource_definition(name) else {
+                return false;
+            };
+            arguments.len() == definition.parameters().len()
+                && arguments
+                    .iter()
+                    .zip(definition.parameters())
+                    .all(|(argument, parameter)| {
+                        *argument == CExpression::Variable(parameter.name().to_owned())
+                    })
+                && definition.contains().iter().any(|child| {
+                    matches!(child.term(), CResourceTerm::PopulationAuthority { protected, .. }
+                        if protected.resource.term() == member.term())
+                })
+        }
+        _ => false,
+    }
+}
+
 fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
         || interface.resource_requires().len() != 2
@@ -2024,11 +2096,8 @@ fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInte
             && spec.guard().is_none()
             && spec.resource_arguments().is_empty()
     };
-    let CResourceTerm::PopulationAuthority { protected, .. } = authority.term() else {
-        return false;
-    };
     matches!(member.term(), CResourceTerm::Composite { .. })
-        && protected.resource.term() == member.term()
+        && authority_mode_input_protects_member(interface, authority, member)
         && authority.role() == CResourceTransferRole::Borrow
         && member.role() == CResourceTransferRole::Consume
         && returned.role() == CResourceTransferRole::Borrow
@@ -2063,11 +2132,8 @@ fn authority_mode_produces_one_member_contract(interface: &CFunctionContractInte
             && spec.guard().is_none()
             && spec.resource_arguments().is_empty()
     };
-    let CResourceTerm::PopulationAuthority { protected, .. } = authority.term() else {
-        return false;
-    };
     matches!(member.term(), CResourceTerm::Composite { .. })
-        && protected.resource.term() == member.term()
+        && authority_mode_input_protects_member(interface, authority, member)
         && authority.role() == CResourceTransferRole::Borrow
         && returned.role() == CResourceTransferRole::Borrow
         && member.role() == CResourceTransferRole::Produce
@@ -2118,6 +2184,9 @@ pub(super) fn execute_c_function_call_paths(
         && environment
             .get_verified_function_rule(function.name())
             .is_none()
+        && !environment
+            .get_external_function_rule(function.name())
+            .is_some_and(CExternalFunctionRule::is_scoped_unselected)
     {
         return Ok(vec![CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
@@ -3455,18 +3524,23 @@ fn execute_verified_function_applications_with_suspension(
             "verified function rule application",
             "verified call population transition",
         );
-        let population_transition = match apply_counted_population_transitions_with_interface(
-            caller_state,
-            &mut transition_state,
-            storage,
-            interface,
-            &argument_values,
-            &effective_assumptions,
-            true,
-            "after call to",
-            suspended.is_some(),
-            budget,
-        )? {
+        let population_transition = if caller_state.uses_population_authority_semantics() {
+            Ok(CCountedPopulationTransition::default())
+        } else {
+            apply_counted_population_transitions_with_interface(
+                caller_state,
+                &mut transition_state,
+                storage,
+                interface,
+                &argument_values,
+                &effective_assumptions,
+                true,
+                "after call to",
+                suspended.is_some(),
+                budget,
+            )?
+        };
+        let population_transition = match population_transition {
             Ok(transition) => transition,
             Err(error) => {
                 paths.push(CFunctionPath {
@@ -3669,6 +3743,7 @@ fn execute_verified_function_applications_with_suspension(
             &allocation_assumptions,
             post_state.loan_ledger(),
             caller_state,
+            &post_state,
         );
         drop(allocation_delta_timing);
         let (memory, allocation_effects, retired_creations) = match allocation_delta {
@@ -4058,7 +4133,10 @@ fn execute_verified_function_applications_with_suspension(
                 post_state.clone(),
                 &entry_state,
                 caller_state,
+                &post_state,
                 output_resources.facts().iter(),
+                interface.composite_resource_definitions(),
+                &effective_assumptions,
             ) {
                 Ok(state) => state,
                 Err(error) => {
@@ -4392,7 +4470,11 @@ fn prepare_verified_function_call<'a>(
 ) -> ExecutionResult<Result<PreparedVerifiedFunctionCall<'a>, CFunctionPath>> {
     let contract_interface = application.interface;
     if let Some(error) = authority_mode_call_refusal(caller_state)
-        && (application.evidence.is_none() || suspend_worker)
+        && (suspend_worker
+            || (application.evidence.is_none()
+                && !environment
+                    .get_external_function_rule(application.name)
+                    .is_some_and(CExternalFunctionRule::is_scoped_unselected)))
     {
         return Ok(Err(CFunctionPath {
             outcome: CFunctionOutcome::RuntimeError(error),
@@ -4619,11 +4701,14 @@ fn prepare_verified_function_call<'a>(
         entry_state,
         caller_state,
         &callee_identity_state,
+        caller_state,
         transfer
             .borrowed_inputs
             .iter()
             .chain(&transfer.consumed_inputs)
             .map(|checked| &checked.fact),
+        contract_interface.composite_resource_definitions(),
+        &path_assumptions,
     ) {
         Ok(state) => state,
         Err(error) => return Ok(Err(resource_call_failure(&format!("{error:?}")))),
@@ -11926,6 +12011,7 @@ mod allocation_continuity_tests {
                 &PureFactContext::new(),
                 None,
                 &state,
+                &state,
             )
             .expect("checked allocation retirement");
             assert_eq!(retired, vec![base.block.clone()]);
@@ -11996,6 +12082,7 @@ mod allocation_continuity_tests {
                     &interface,
                     &PureFactContext::new(),
                     None,
+                    &state,
                     &state,
                 );
                 if symbolic {
@@ -12292,6 +12379,7 @@ fn apply_verified_heap_allocation_delta(
     assumptions: &PureFactContext,
     ledger: Option<&LoanLedger>,
     mutex_state: &CState,
+    output_state: &CState,
 ) -> Result<(CMemory, Vec<ExecutionPureFact>, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
     let mut retired_creations = Vec::new();
@@ -12299,24 +12387,34 @@ fn apply_verified_heap_allocation_delta(
     // entry. The post-call memory may have rewritten a pointer field the lent
     // resources owned, so an allocation named through it at the post state
     // is not the allocation the caller handed over.
-    let input = expand_all_composite_resource_facts(
-        input_resources,
-        interface.composite_resource_definitions(),
-        entry_memory,
-        assumptions,
-    )
-    .ok_or_else(|| {
-        VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
-            "could not inspect input allocation effects at call".to_string(),
-        ))
-    })?;
-    let output = expand_all_composite_resource_facts(
-        output_resources,
-        interface.composite_resource_definitions(),
-        &memory,
-        assumptions,
-    )
-    .ok_or_else(|| {
+    let expand_allocations = |resources: &ResourceContext, state: &CState, memory: &CMemory| {
+        if state.uses_population_authority_semantics() {
+            let projection_state = state
+                .clone()
+                .with_memory(memory.clone())
+                .with_resource_context(resources.clone());
+            expand_all_composite_resource_facts_at_state(
+                resources,
+                interface.composite_resource_definitions(),
+                &projection_state,
+                assumptions,
+            )
+        } else {
+            expand_all_composite_resource_facts(
+                resources,
+                interface.composite_resource_definitions(),
+                memory,
+                assumptions,
+            )
+        }
+    };
+    let input =
+        expand_allocations(input_resources, mutex_state, entry_memory).ok_or_else(|| {
+            VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+                "could not inspect input allocation effects at call".to_string(),
+            ))
+        })?;
+    let output = expand_allocations(output_resources, output_state, &memory).ok_or_else(|| {
         VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
             "could not inspect output allocation effects at call".to_string(),
         ))
@@ -12325,17 +12423,12 @@ fn apply_verified_heap_allocation_delta(
     // whether an input allocation continues, but they are not resources that
     // survived from the caller and therefore cannot be stale after the old
     // allocation is freed.
-    let preserved = expand_all_composite_resource_facts(
-        preserved_caller_resources,
-        interface.composite_resource_definitions(),
-        &memory,
-        assumptions,
-    )
-    .ok_or_else(|| {
-        VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
-            "could not inspect preserved caller allocation effects at call".to_string(),
-        ))
-    })?;
+    let preserved = expand_allocations(preserved_caller_resources, mutex_state, &memory)
+        .ok_or_else(|| {
+            VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
+                "could not inspect preserved caller allocation effects at call".to_string(),
+            ))
+        })?;
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
         .into_iter()
@@ -15118,7 +15211,10 @@ fn evaluate_resource_population_body_resources(
         else {
             continue;
         };
-        if !include_ordinary && !definition.is_counted_population() {
+        if !include_ordinary
+            && (!definition.is_counted_population()
+                || callee_state.uses_population_authority_semantics())
+        {
             continue;
         }
         if definition.parameters().len() != arguments.len() {
@@ -16282,12 +16378,25 @@ fn prepare_contract_resource_transfer(
             }
         }
     }
-    let Some(canonical_resources) = expand_all_composite_resource_facts(
-        &required_resources,
-        interface.composite_resource_definitions(),
-        callee_state.memory(),
-        assumptions,
-    ) else {
+    let canonical_resources = if caller_state.uses_population_authority_semantics() {
+        let canonical_state = caller_state
+            .clone()
+            .with_resource_context(required_resources.clone());
+        expand_all_composite_resource_facts_at_state(
+            &required_resources,
+            interface.composite_resource_definitions(),
+            &canonical_state,
+            assumptions,
+        )
+    } else {
+        expand_all_composite_resource_facts(
+            &required_resources,
+            interface.composite_resource_definitions(),
+            callee_state.memory(),
+            assumptions,
+        )
+    };
+    let Some(canonical_resources) = canonical_resources else {
         return Ok(Err(CRuntimeError::FunctionContract(format!(
             "could not expand required composite resources before call: {required_resources:?}"
         ))));
@@ -17191,12 +17300,23 @@ fn evaluate_contract_return_resources(
                         .copied()?;
                     *source_rank += 1;
                     let singleton = ResourceContext::new().unchecked_with_fact(support.clone());
-                    let expanded = expand_all_composite_resource_facts(
-                        &singleton,
-                        interface.composite_resource_definitions(),
-                        post_state.memory(),
-                        assumptions,
-                    )?;
+                    let expanded = if post_state.uses_population_authority_semantics() {
+                        let projection_state =
+                            post_state.clone().with_resource_context(singleton.clone());
+                        expand_all_composite_resource_facts_at_state(
+                            &singleton,
+                            interface.composite_resource_definitions(),
+                            &projection_state,
+                            assumptions,
+                        )?
+                    } else {
+                        expand_all_composite_resource_facts(
+                            &singleton,
+                            interface.composite_resource_definitions(),
+                            post_state.memory(),
+                            assumptions,
+                        )?
+                    };
                     let expansion = expanded.facts().to_vec();
                     let projected = expansion
                         .iter()
@@ -21069,6 +21189,54 @@ pub(super) fn expand_all_composite_resource_facts(
         .map(|(resources, _)| resources)
 }
 
+/// Authority controls need their live ledger to expose the contained
+/// authority. Generic composite expansion has only memory and cannot create
+/// that child from a resource declaration.
+fn expand_checked_authority_controls(
+    context: &ResourceContext,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Option<(ResourceContext, Vec<CResourceFact>)> {
+    let mut expanded = context.clone();
+    let mut controls = Vec::new();
+    for fact in context.facts() {
+        let CResource::Composite { name, .. } = fact.resource() else {
+            continue;
+        };
+        let definition = definitions
+            .iter()
+            .find(|definition| definition.name() == name)?;
+        if !definition
+            .contains()
+            .iter()
+            .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+        {
+            continue;
+        }
+        let (children, _) = state
+            .checked_authority_wrapper_body(fact, definition, assumptions)
+            .ok()?;
+        expanded = expanded.without_fact_incrementally(fact, assumptions)?;
+        expanded = expanded
+            .try_compose_with_facts_delaying_normalization(children, assumptions)
+            .ok()?;
+        controls.push(fact.clone());
+    }
+    Some((expanded, controls))
+}
+
+pub(super) fn expand_all_composite_resource_facts_at_state(
+    context: &ResourceContext,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Option<ResourceContext> {
+    let (expanded, _) =
+        expand_checked_authority_controls(context, definitions, state, assumptions)?;
+    expand_all_composite_resource_facts(&expanded, definitions, state.memory(), assumptions)
+}
+
 /// Expands each owned composite of `context` exactly one level, in place of
 /// its head, and leaves every child composite folded. This is the frontier
 /// boundary the composite lend and `project` use: the kernel does not reason
@@ -21318,39 +21486,108 @@ pub(super) fn expand_all_composite_resource_facts_and_propositions(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<(ResourceContext, Vec<Proposition>)> {
+    expand_all_composite_resource_facts_and_propositions_with_state(
+        context,
+        definitions,
+        memory,
+        assumptions,
+        None,
+    )
+}
+
+pub(super) fn expand_all_composite_resource_facts_and_propositions_at_state(
+    context: &ResourceContext,
+    definitions: &[CCompositeResourceDefinition],
+    state: &CState,
+    assumptions: &PureFactContext,
+) -> Option<(ResourceContext, Vec<Proposition>)> {
+    expand_all_composite_resource_facts_and_propositions_with_state(
+        context,
+        definitions,
+        state.memory(),
+        assumptions,
+        Some(state),
+    )
+}
+
+fn expand_all_composite_resource_facts_and_propositions_with_state(
+    context: &ResourceContext,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+    population_state: Option<&CState>,
+) -> Option<(ResourceContext, Vec<Proposition>)> {
+    let (prepared, mut controls) = if let Some(state) = population_state {
+        expand_checked_authority_controls(context, definitions, state, assumptions)?
+    } else {
+        (context.clone(), Vec::new())
+    };
     let (expanded, composites) =
-        expand_composite_resource_context(context, definitions, memory, assumptions)?;
+        expand_composite_resource_context(&prepared, definitions, memory, assumptions)?;
+    controls.extend(composites);
     let mut propositions = Vec::new();
     // `assumptions` extended by `propositions[..extended]`: each composite's
     // facts are evaluated under every proposition before them, and the
     // context grows by the new ones instead of being rebuilt per composite.
     let mut fact_assumptions = assumptions.clone();
     let mut extended = 0;
-    for composite in composites {
+    for composite in controls {
         // Preserve the bounds of each declared leaf before adjacent resources
         // normalize into a larger range. The proof can cite either slice.
-        propositions.extend(evaluate_composite_resource_loadable_propositions(
+        let loadable = evaluate_composite_resource_loadable_propositions(
             &composite,
             definitions,
             memory,
             assumptions,
-        )?);
-        propositions.extend(evaluate_composite_resource_relation_propositions(
-            &composite,
-            definitions,
-            memory,
-            assumptions,
-        )?);
+        )?;
+        propositions.extend(loadable);
+        let relations = if let Some(state) = population_state
+            && let CResource::Composite { name, .. } = composite.resource()
+            && let Some(definition) = definitions
+                .iter()
+                .find(|definition| definition.name() == name)
+            && definition
+                .contains()
+                .iter()
+                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+        {
+            let (children, _) = state
+                .checked_authority_wrapper_body(&composite, definition, assumptions)
+                .ok()?;
+            let child_context = ResourceContext::new()
+                .try_compose_with_facts(children.clone(), assumptions)
+                .ok()?;
+            let mut relations = vec![Proposition::CResourceComposition(child_context)];
+            for child in children {
+                if let Some(owned) = child.owned_resource() {
+                    relations.push(Proposition::CResourceContains {
+                        parent: composite.resource().clone(),
+                        child: owned.clone(),
+                    });
+                }
+            }
+            relations
+        } else {
+            evaluate_composite_resource_relation_propositions(
+                &composite,
+                definitions,
+                memory,
+                assumptions,
+            )?
+        };
+        propositions.extend(relations);
         fact_assumptions =
             assumptions_with_propositions(&fact_assumptions, &propositions[extended..]);
         extended = propositions.len();
-        propositions.extend(evaluate_composite_resource_fact_propositions(
+        let instantiated = instantiate_composite_resource_facts_with_state(
             &composite,
             definitions,
             memory,
             &expanded,
             &fact_assumptions,
-        )?);
+            population_state,
+        )?;
+        propositions.extend(instantiated.propositions);
     }
     Some((expanded, propositions))
 }
@@ -21444,9 +21681,10 @@ pub(super) fn evaluate_resource_population_fact_propositions(
         // to validate those facts; this is deliberately independent of the
         // population-wide accounting policy below. A body with no facts has
         // no additional proposition to validate here.
-        let check_declared_facts = definition.is_counted_population()
-            || include_ordinary
-            || !definition.facts().is_empty();
+        let legacy_counted =
+            definition.is_counted_population() && !state.uses_population_authority_semantics();
+        let check_declared_facts =
+            legacy_counted || include_ordinary || !definition.facts().is_empty();
         if !check_declared_facts {
             continue;
         }
@@ -21482,7 +21720,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
                     &mut budget,
                 )?
             }
-            None if !definition.is_counted_population() && !include_ordinary => {
+            None if !legacy_counted && !include_ordinary => {
                 let mut population_state = state.clone();
                 for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
                     let argument = argument.as_c_value()?;
@@ -21518,7 +21756,7 @@ pub(super) fn evaluate_resource_population_fact_propositions(
             }
             None => return None,
         };
-        if population_count.is_none() && (definition.is_counted_population() || include_ordinary) {
+        if population_count.is_none() && (legacy_counted || include_ordinary) {
             return None;
         }
         let mut population_state = state.clone();
@@ -21546,26 +21784,47 @@ pub(super) fn evaluate_resource_population_fact_propositions(
         // that body is opaque in the surface proof context. Expose the body
         // only in this kernel-local state so heap-dependent invariants can
         // discharge their own loadability obligations.
-        for contained in definition.contains() {
-            let body_resource = evaluate_function_resource_spec(
-                &population_state,
-                contained,
+        if state.uses_population_authority_semantics()
+            && definition
+                .contains()
+                .iter()
+                .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+        {
+            let head = CResourceFact::own(CResource::Composite {
+                name: name.clone(),
+                arguments: arguments.clone(),
+            });
+            let (projected, _) = match population_state.checked_authority_wrapper_projection(
+                &head,
+                definition,
                 &evaluation_assumptions,
-                &mut budget,
-            )
-            .ok()?
-            .ok()?;
-            if !population_state
-                .resources
-                .satisfies_fact(&body_resource, &evaluation_assumptions)
-            {
-                population_state.resources = population_state
+            ) {
+                Ok(projected) => projected,
+                Err(_) => return None,
+            };
+            population_state.resources = projected;
+        } else {
+            for contained in definition.contains() {
+                let body_resource = evaluate_function_resource_spec(
+                    &population_state,
+                    contained,
+                    &evaluation_assumptions,
+                    &mut budget,
+                )
+                .ok()?
+                .ok()?;
+                if !population_state
                     .resources
-                    .try_compose_with_facts_delaying_normalization(
-                        [body_resource],
-                        &evaluation_assumptions,
-                    )
-                    .ok()?;
+                    .satisfies_fact(&body_resource, &evaluation_assumptions)
+                {
+                    population_state.resources = population_state
+                        .resources
+                        .try_compose_with_facts_delaying_normalization(
+                            [body_resource],
+                            &evaluation_assumptions,
+                        )
+                        .ok()?;
+                }
             }
         }
         let mut fact_assumptions = assumptions.clone();
@@ -21854,6 +22113,24 @@ pub(crate) fn instantiate_composite_resource_facts(
     resources: &ResourceContext,
     assumptions: &PureFactContext,
 ) -> Option<InstantiatedCompositeResourceFacts> {
+    instantiate_composite_resource_facts_with_state(
+        composite,
+        definitions,
+        memory,
+        resources,
+        assumptions,
+        None,
+    )
+}
+
+fn instantiate_composite_resource_facts_with_state(
+    composite: &CResourceFact,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    resources: &ResourceContext,
+    assumptions: &PureFactContext,
+    population_state: Option<&CState>,
+) -> Option<InstantiatedCompositeResourceFacts> {
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
@@ -21863,7 +22140,9 @@ pub(crate) fn instantiate_composite_resource_facts(
     if definition.parameters().len() != arguments.len() {
         return None;
     }
-    let mut state = CState::new()
+    let mut state = population_state
+        .cloned()
+        .unwrap_or_else(CState::new)
         .with_memory(memory.clone())
         .with_resource_context(resources.clone());
     for (parameter, argument) in definition.parameters().iter().zip(arguments.iter()) {
@@ -25598,10 +25877,10 @@ fn unreturned_allocation_obligation(
     function: &CFunction,
     assumptions: &PureFactContext,
 ) -> Result<Option<(CResourceFact, Option<CResourceFact>)>, CRuntimeError> {
-    let Some(actual) = expand_all_composite_resource_facts(
+    let Some(actual) = expand_all_composite_resource_facts_at_state(
         actual_state.resources(),
         function.composite_resource_definitions(),
-        actual_state.memory(),
+        actual_state,
         assumptions,
     ) else {
         return Err(CRuntimeError::FunctionContract(

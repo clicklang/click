@@ -2420,7 +2420,24 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         // not re-project its invariant at a newer memory/count snapshot.
         return Ok((memory, ResourceContext::new(), false));
     }
-    let fact_state = state.clone().with_memory(memory.clone());
+    let mut fact_state = state.clone().with_memory(memory.clone());
+    if state.uses_population_authority_semantics()
+        && contained_resources
+            .facts()
+            .iter()
+            .any(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
+    {
+        let owner = CResourceFact::own(CResource::Composite {
+            name: definition.name().to_owned(),
+            arguments: resource_arguments.to_vec().into(),
+        });
+        if !state.resources().contains_exact_representation(&owner) {
+            return Err("Requires the owned authority control resource".into());
+        }
+        // Resource facts are read under the declared body. This temporary
+        // state only lowers the fact; it does not publish body ownership.
+        fact_state = fact_state.with_resource_context(contained_resources.clone());
+    }
 
     append_composite_definition_observable_facts(
         definition,

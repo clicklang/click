@@ -1027,12 +1027,21 @@ pub(super) fn c_function_contract_certification_assumptions(
     // entry resource context has been expanded. Keep the expansion as a
     // capability check here; the propositions it produces are still added
     // below through the ordinary requirement/resource certification path.
-    let entry_resources_for_authority = expand_all_composite_resource_facts(
-        entry_state.resources(),
-        function.composite_resource_definitions(),
-        entry_state.memory(),
-        &assumptions,
-    )
+    let entry_resources_for_authority = if entry_state.uses_population_authority_semantics() {
+        super::super::functions::expand_all_composite_resource_facts_at_state(
+            entry_state.resources(),
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )
+    } else {
+        expand_all_composite_resource_facts(
+            entry_state.resources(),
+            function.composite_resource_definitions(),
+            entry_state.memory(),
+            &assumptions,
+        )
+    }
     .unwrap_or_else(|| entry_state.resources().clone());
     // Selection facts are caller-supplied routing hints, not hypotheses. Only
     // facts whose authority is independently available at this exact entry
@@ -1293,14 +1302,23 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
         }
     }
-    let expanded = expand_all_composite_resource_facts_and_propositions(
-        &required_resources,
-        function.composite_resource_definitions(),
-        entry_state.memory(),
-        &assumptions,
-    );
+    let expanded = if entry_state.uses_population_authority_semantics() {
+        super::super::functions::expand_all_composite_resource_facts_and_propositions_at_state(
+            &required_resources,
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )
+    } else {
+        expand_all_composite_resource_facts_and_propositions(
+            &required_resources,
+            function.composite_resource_definitions(),
+            entry_state.memory(),
+            &assumptions,
+        )
+    };
     let (expanded_resources, resource_definition_facts) = expanded.ok_or_else(|| {
-        "could not expand the composite resources required at the contract entry".to_string()
+        "could not evaluate the composite resource facts required at the contract entry".to_string()
     })?;
     // A composite's contained ranges are stated ranges too, and their
     // byte-count guards ride with the composite wherever it is held. Install
@@ -1338,16 +1356,37 @@ pub(super) fn c_function_contract_certification_assumptions(
     for fact in population_facts {
         assumptions = assumptions.assume_proposition(fact.proposition);
     }
-    let expanded_required_resources = expand_all_composite_resource_facts(
-        &required_resources,
-        function.composite_resource_definitions(),
-        entry_state.memory(),
-        &assumptions,
-    )
+    let expanded_required_resources = (if entry_state.uses_population_authority_semantics() {
+        super::super::functions::expand_all_composite_resource_facts_at_state(
+            &required_resources,
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )
+    } else {
+        expand_all_composite_resource_facts(
+            &required_resources,
+            function.composite_resource_definitions(),
+            entry_state.memory(),
+            &assumptions,
+        )
+    })
     .ok_or_else(|| {
-        "could not expand the composite resources required at the contract entry".to_string()
+        "could not expand the composite resource ownership required at the contract entry"
+            .to_string()
     })?;
-    let mut entry_resources = entry_state.resources().clone().normalized(&assumptions);
+    let mut entry_resources = if entry_state.uses_population_authority_semantics() {
+        super::super::functions::expand_all_composite_resource_facts_at_state(
+            entry_state.resources(),
+            function.composite_resource_definitions(),
+            &entry_state,
+            &assumptions,
+        )
+        .ok_or("could not project the checked authority control at contract entry")?
+    } else {
+        entry_state.resources().clone()
+    }
+    .normalized(&assumptions);
     let mut missing = Vec::new();
     for (index, required) in expanded_required_resources.facts().iter().enumerate() {
         let exposed = expose_composite_resource_fact(
