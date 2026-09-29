@@ -94,6 +94,7 @@ mod threads;
 
 pub use api::*;
 pub(crate) use assumptions::current_memory_loads_in_term;
+pub(crate) use assumptions::proposition_has_free_bitvector_variable;
 pub(crate) use assumptions::{
     PureFactContextIdScope, arm_frame_composite_definitions, capture_implicit_reasoning_provenance,
     collect_reasoning_provenance, finite_forall_goal_instances,

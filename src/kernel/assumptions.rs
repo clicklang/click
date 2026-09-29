@@ -1294,7 +1294,10 @@ mod exact_materialization_tests {
     }
 }
 
-fn proposition_has_free_bitvector_variable(proposition: &Proposition, variable: Variable) -> bool {
+pub(crate) fn proposition_has_free_bitvector_variable(
+    proposition: &Proposition,
+    variable: Variable,
+) -> bool {
     match proposition {
         Proposition::And(left, right)
         | Proposition::Or(left, right)
@@ -5117,7 +5120,12 @@ impl PropositionDerivation {
                     return false;
                 };
                 proof.conclusion == **body
-                    && proof.check(&available.without_free_bitvector_variable(*var))
+                    && (!proposition_has_free_bitvector_variable(body, *var)
+                        || proof
+                            .context_premises()
+                            .iter()
+                            .all(|premise| !proposition_has_free_bitvector_variable(premise, *var)))
+                    && proof.check(available)
             }
             PropositionDerivationRule::ExistsFromFact { source, body } => {
                 let Proposition::Exists {

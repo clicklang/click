@@ -4479,7 +4479,7 @@ fn forall_derivation_check_shadows_ambient_uses_of_the_binder_id() {
 }
 
 #[test]
-fn forall_introduction_finds_independent_path_through_a_connected_component() {
+fn forall_introduction_keeps_outer_facts_when_the_body_ignores_the_binder() {
     let bound = Bitvector32Term::Variable(Variable(188));
     let left = Bitvector32Term::Variable(Variable(189));
     let middle = Bitvector32Term::Variable(Variable(190));
@@ -4488,16 +4488,17 @@ fn forall_introduction_finds_independent_path_through_a_connected_component() {
     let goal = forall_int32(Variable(188), equality(left.clone(), right.clone()));
     let first = equality(left.clone(), middle.clone());
     let second = equality(middle, right);
+    let outer = equality(bound, left);
     let assumptions = PureFactContext::new()
         .assume_proposition(first.clone())
         .assume_proposition(second.clone())
-        .assume_proposition(equality(bound, left));
+        .assume_proposition(outer.clone());
 
     let derivation = assumptions
         .derive_proposition(&goal)
-        .expect("the independent equality path proves the universal");
+        .expect("the binder-free body can use outer facts without weakening the context");
     assert!(derivation.check(&assumptions));
-    assert_eq!(derivation.context_premises(), vec![first, second]);
+    assert_eq!(derivation.context_premises(), vec![outer, first, second]);
 }
 
 #[test]

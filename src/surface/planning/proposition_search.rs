@@ -5,7 +5,7 @@
 //! backtracking search over a goal's logical structure: exact facts,
 //! algebraic constructor rules and the condition decision procedure at the
 //! leaves, then `And`, `Or` arm choice, `Not`, `Implies` under an assumed
-//! antecedent, `ForAll` by finite instantiation or binder dropping, case
+//! antecedent, `ForAll` by finite instantiation or checked premise selection, case
 //! splits over disjunction facts, universal instantiation over quantified
 //! facts, and singleton substitution.
 //!
@@ -280,7 +280,9 @@ impl PropositionSearch for PureFactContext {
                 ..
             } => {
                 self.proves_finite_forall(proposition)
-                    || self.without_free_bitvector_variable(*var).proves(body)
+                    || self
+                        .derive_forall_rule(proposition, *var, body, false)
+                        .is_some_and(|rule| proposition_derivation(proposition, rule).check(self))
             }
             Proposition::CMemoryReadDefined {
                 memory,
@@ -703,9 +705,15 @@ impl PropositionSearch for PureFactContext {
         body: &Proposition,
         for_simp: bool,
     ) -> Option<PropositionDerivationRule> {
+        let body_uses_binder = crate::kernel::proposition_has_free_bitvector_variable(body, var);
         let body_derivation = self
-            .without_free_bitvector_variable(var)
             .derive_proposition_using(body, for_simp)
+            .filter(|proof| {
+                !body_uses_binder
+                    || proof.context_premises().iter().all(|premise| {
+                        !crate::kernel::proposition_has_free_bitvector_variable(premise, var)
+                    })
+            })
             .map(PropositionDerivationRule::ForAllBody);
         body_derivation
             .or_else(|| self.derive_forall_loadable_range(proposition))
@@ -1089,5 +1097,56 @@ impl PropositionSearch for PureFactContext {
             Proposition::Not(body) => self.proves(body),
             _ => self.contains_proposition_fact(&Proposition::Not(Box::new(proposition.clone()))),
         }
+    }
+}
+
+#[cfg(test)]
+mod monotone_forall_tests {
+    use super::*;
+
+    #[test]
+    fn forall_shadowing_keeps_facts_about_the_outer_variable() {
+        let outer = Variable(100);
+        let other = Variable(101);
+        let equality = |left, right| {
+            Proposition::ConditionIs(
+                ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+                true,
+            )
+        };
+        let old_is_zero = equality(
+            Bitvector32Term::Variable(outer),
+            Bitvector32Term::Constant(0),
+        );
+        let old_equals_other = equality(
+            Bitvector32Term::Variable(outer),
+            Bitvector32Term::Variable(other),
+        );
+        let body = equality(
+            Bitvector32Term::Variable(other),
+            Bitvector32Term::Constant(0),
+        );
+        let goal = Proposition::ForAll {
+            var: outer,
+            sort: Sort::CInt32,
+            body: Box::new(body),
+        };
+        let facts = PureFactContext::new()
+            .assume_proposition(old_is_zero.clone())
+            .assume_proposition(old_equals_other);
+        let derivation = facts
+            .derive_proposition(&goal)
+            .expect("a binder-free body may use the outer variable's facts");
+        assert!(derivation.check(&facts));
+
+        let invalid = Proposition::ForAll {
+            var: outer,
+            sort: Sort::CInt32,
+            body: Box::new(old_is_zero),
+        };
+        assert!(
+            facts.derive_proposition(&invalid).is_none(),
+            "an outer fact cannot establish a body that uses the new binder"
+        );
     }
 }
