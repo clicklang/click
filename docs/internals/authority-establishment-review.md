@@ -18,11 +18,36 @@ creator right. An imported member can be opened to use its private owned-memory
 body, then closed before return. The helper does not need a concrete caller
 allocation in its standalone proof; the caller established the member against
 live storage before transferring it. A verified helper may create or consume
-one empty-bodied imported member while returning its authority. Its proof must
-perform the checked `fold` or `unfold`; the concrete call updates the caller's
-population under transferred authority. Creation also checks that the caller's
-anchor is still live. Nonempty-body helper transitions, other contract transitions, worker calls,
-recorded-state count, and field-bearing or nested member bodies remain refused.
+one imported member while returning its authority, including a private
+owned-memory body. Creation consumes exactly the body's ordinary owned memory
+clauses and produces the member; consumption consumes the member and produces
+those same memory clauses. The standalone proof checks `fold` or `unfold`, and
+the concrete call updates the caller's population under transferred authority.
+Creation also checks that the caller's anchor is still live. Other contract
+transitions, worker calls, recorded-state count, and field-bearing or nested
+member bodies remain refused.
+
+The supported contract shape uses only ordinary resource clauses:
+
+```text
+resource reference(p: int32*) { owns p[0..1]; }
+
+int32 acquire(int32* p) {
+    owns authority(reference(p));
+    consumes p[0..1];
+    produces reference(p);
+}
+
+int32 release(int32* p) {
+    owns authority(reference(p));
+    consumes reference(p);
+    produces p[0..1];
+}
+```
+
+The listed memory clauses must equal the complete private body, including
+each owned range when there is more than one. Neither helper establishes a
+second authority or gains unlisted memory.
 
 ## Establishment and uniqueness
 
@@ -125,14 +150,14 @@ this rule; ordinary function entry must not re-create global authority.
 The creator establishes empty authority before calling an initializer. The
 initializer receives that authority explicitly through its ordinary resource
 contract and uses it to create the first member. The current narrow helper
-rule covers an empty-bodied member; this example also needs wrapper and
-nonempty-body support. A helper that receives only
+rule covers a member with a private owned-memory body when the contract
+transfers that body explicitly; this example also needs wrapper transfer. A helper that receives only
 memory or `allocation(p, size)` cannot establish authority. The earlier
 allocation-custody proposal is superseded; authority need not retain the heap
 allocation resource, and this design does not restrict anchors to heap objects.
 
 For example, the intended initializer interface uses existing contract clauses
-(its wrapper transfer and nonempty member body remain to be implemented):
+(its wrapper transfer remains to be implemented):
 
 ```text
 void object_init(struct object* p) {
@@ -191,9 +216,11 @@ preserving membership, and its close restores the body. Current exact
 ordinary helper can borrow and return the same authority and member through
 the checked resource contract and creation ledger. Its standalone proof imports
 only that declared custody as an opaque population: it cannot observe a total
-or retire authority. An exact empty-bodied member may be born or spent under
-the imported authority, with the same update applied to the caller's concrete
-population at a verified call. Other contract transitions,
+or retire authority. An exact member with a private owned-memory body may be
+born or spent under the imported authority when the opposite contract side
+transfers the entire body using ordinary `consumes` or `produces` memory
+clauses. The same population update is applied to the caller's concrete
+authority at a verified call. Other contract transitions,
 worker calls, field-bearing or nested member bodies, and historical count
 observations still need integration before authority mode can verify a real
 counted-resource program.

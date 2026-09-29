@@ -192,12 +192,11 @@ checks. Verified ordinary C helpers can borrow and return the same exact
 authority and member; standalone helper proofs treat their declared input as
 an opaque population with no count or creator permission. Such a helper can
 open a transferred member's private memory body, use it, and close it before
-return. A helper can also consume one exact empty-bodied member while
-returning authority: its standalone proof checks the member death, and the
-call applies that decrement to the concrete ledger. A verified helper can
-likewise produce one exact empty-bodied member: its standalone proof checks
-the birth, and the call checks live concrete anchor storage before applying
-the increment. Nonempty-body helper transitions, other contract transitions, symbolic totals,
+return. A verified helper can also create or consume one exact member with a
+private owned-memory body while returning authority. Its contract transfers
+the entire body through ordinary memory `consumes` or `produces` clauses, its
+standalone proof checks the birth or death, and the call applies that change
+to the concrete ledger. Creation checks live anchor storage. Other contract transitions, symbolic totals,
 recorded-state count, field-bearing or nested member bodies, and worker calls
 remain unsupported in authority mode. This is not yet a usable general counted-resource
 implementation. `construct(...)` has not been extended. The remainder of

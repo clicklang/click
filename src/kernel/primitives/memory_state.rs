@@ -4557,9 +4557,8 @@ impl CState {
             return Err("Requires an exact pointer-anchored resource R(p)".into());
         };
         let anchor = pointer.pointer();
-        let imported_empty_member_exchange = definition.contains().is_empty()
-            && self
-                .population_effects
+        let imported_member_exchange =
+            self.population_effects
                 .creation
                 .as_ref()
                 .is_some_and(|events| {
@@ -4569,7 +4568,11 @@ impl CState {
                         events.owns_imported_population_member(&description)
                     }
                 });
-        if !imported_empty_member_exchange
+        // The opaque proof receives the body only through its checked
+        // contract: on birth the declared memory is consumed below, and on
+        // death the imported member is consumed below. The concrete caller
+        // still checks the live anchor and transfers those exact resources.
+        if !imported_member_exchange
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
@@ -4622,7 +4625,7 @@ impl CState {
             let base = range
                 .base()
                 .offset_by_elements(range.start().clone(), range.element_width());
-            if !self.memory.access_in_bounds(&base, bytes) {
+            if !imported_member_exchange && !self.memory.access_in_bounds(&base, bytes) {
                 return Err("member private memory exceeds live storage".into());
             }
             if let Some(ledger) = self.loan_ledger() {

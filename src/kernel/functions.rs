@@ -1948,22 +1948,76 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
         && inputs.len() == outputs.len()
 }
 
-/// The first checked asymmetric helper shape spends exactly one input member
-/// while returning its matching authority. Birth and arbitrary resource
-/// effects remain outside this rule.
+/// The checked asymmetric helper shapes transfer the member's entire private
+/// owned-memory body alongside the membership change. An empty body is the
+/// zero-clause case.
+fn authority_mode_matches_member_body(
+    interface: &CFunctionContractInterface,
+    member: &CResourceSpec,
+    body: &[CResourceSpec],
+    role: CResourceTransferRole,
+) -> bool {
+    let CResourceTerm::Composite { name, .. } = member.term() else {
+        return false;
+    };
+    let Some(definition) = interface
+        .composite_resource_definitions()
+        .iter()
+        .find(|definition| definition.name == *name)
+    else {
+        return false;
+    };
+    if !definition.children.is_empty()
+        || !definition.facts.is_empty()
+        || definition.condition.is_some()
+        || definition.guarded_by.is_some()
+        || definition.matched.is_some()
+        || !definition.witnesses.is_empty()
+        || !definition.resource_parameters.is_empty()
+        || definition
+            .instance_schema
+            .as_ref()
+            .is_some_and(|schema| !schema.fields().is_empty())
+    {
+        return false;
+    }
+    let exact_body = |spec: &CResourceSpec| {
+        matches!(spec.term(), CResourceTerm::Memory(_))
+            && spec.access() == CResourceAccessMode::Own
+            && spec.quantity() == &CResourceQuantity::One
+            && spec.guard().is_none()
+            && spec.resource_arguments().is_empty()
+    };
+    if definition.contains().len() != body.len()
+        || !definition.contains().iter().all(exact_body)
+        || !body
+            .iter()
+            .all(|spec| exact_body(spec) && spec.role() == role)
+    {
+        return false;
+    }
+    let mut defined = definition
+        .contains()
+        .iter()
+        .map(CResourceSpec::term)
+        .collect::<Vec<_>>();
+    let mut transferred = body.iter().map(CResourceSpec::term).collect::<Vec<_>>();
+    defined.sort();
+    transferred.sort();
+    defined == transferred
+}
+
 fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
         || interface.resource_requires().len() != 2
-        || interface.resource_ensures().len() != 1
+        || interface.resource_ensures().is_empty()
     {
         return false;
     }
     let [authority, member] = interface.resource_requires() else {
         return false;
     };
-    let [returned] = interface.resource_ensures() else {
-        return false;
-    };
+    let returned = &interface.resource_ensures()[0];
     let exact_owned = |spec: &CResourceSpec| {
         spec.access() == CResourceAccessMode::Own
             && spec.quantity() == &CResourceQuantity::One
@@ -1982,20 +2036,24 @@ fn authority_mode_consumes_one_member_contract(interface: &CFunctionContractInte
         && exact_owned(authority)
         && exact_owned(member)
         && exact_owned(returned)
+        && authority_mode_matches_member_body(
+            interface,
+            member,
+            &interface.resource_ensures()[1..],
+            CResourceTransferRole::Produce,
+        )
 }
 
-/// A helper may return its borrowed authority and one newly folded,
-/// empty-bodied member of that same population.
+/// A helper may return its borrowed authority and one newly folded member,
+/// after consuming the member's entire private body.
 fn authority_mode_produces_one_member_contract(interface: &CFunctionContractInterface) -> bool {
     if !interface.resource_constructors().is_empty()
-        || interface.resource_requires().len() != 1
+        || interface.resource_requires().is_empty()
         || interface.resource_ensures().len() != 2
     {
         return false;
     }
-    let [authority] = interface.resource_requires() else {
-        return false;
-    };
+    let authority = &interface.resource_requires()[0];
     let [returned, member] = interface.resource_ensures() else {
         return false;
     };
@@ -2017,22 +2075,12 @@ fn authority_mode_produces_one_member_contract(interface: &CFunctionContractInte
         && exact_owned(authority)
         && exact_owned(returned)
         && exact_owned(member)
-        && interface
-            .composite_resource_definitions()
-            .iter()
-            .find(|definition| matches!(member.term(), CResourceTerm::Composite { name, .. } if definition.name == *name))
-            .is_some_and(|definition| definition.contains().is_empty()
-                && definition.children.is_empty()
-                && definition.facts.is_empty()
-                && definition.condition.is_none()
-                && definition.guarded_by.is_none()
-                && definition.matched.is_none()
-                && definition.witnesses.is_empty()
-                && definition.resource_parameters.is_empty()
-                && definition
-                    .instance_schema
-                    .as_ref()
-                    .is_none_or(|schema| schema.fields().is_empty()))
+        && authority_mode_matches_member_body(
+            interface,
+            member,
+            &interface.resource_requires()[1..],
+            CResourceTransferRole::Consume,
+        )
 }
 
 fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
