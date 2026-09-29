@@ -4959,6 +4959,11 @@ impl PureFactContext {
         restricted
     }
 
+    /// Legacy compatibility for direct quantified contract certification.
+    /// This discards facts and rebuilds their indexes to work around a reused
+    /// binder identity. Do not use it for new proof rules: introduction should
+    /// choose a fresh identity, or check the premises actually used by a proof.
+    /// Remove this helper when direct certification has that evidence.
     pub(crate) fn without_free_bitvector_variable(&self, variable: Variable) -> Self {
         let mut assumptions = self.clone();
         assumptions.condition_facts = self

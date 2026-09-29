@@ -2786,17 +2786,26 @@ pub(crate) fn certification_proves_proposition(
                     conclusion,
                 )
         }
-        // A universal is certified by generalization: its body, under the
-        // facts that do not mention the bound variable.
+        // A binder-free body is independent of the quantified variable, so
+        // all ambient facts remain available, including facts about an outer
+        // variable with the same identity. The binder-dependent case still
+        // uses the legacy filtered context below; replace it with a fresh
+        // witness or checked premise evidence, not another fact-removal path.
         Proposition::ForAll {
             var,
             sort: Sort::CInt32 | Sort::Bitvector32,
             body,
             ..
-        } => certification_proves_proposition(
-            &assumptions.without_free_bitvector_variable(*var),
-            body,
-        ),
+        } => {
+            if crate::kernel::proposition_has_free_bitvector_variable(body, *var) {
+                certification_proves_proposition(
+                    &assumptions.without_free_bitvector_variable(*var),
+                    body,
+                )
+            } else {
+                certification_proves_proposition(assumptions, body)
+            }
+        }
         // Everything else is certified only as an exact assumed fact
         // (above): a containment fact, a resource composition, a negation,
         // a memory disjointness.

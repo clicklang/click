@@ -5511,6 +5511,51 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
 }
 
 #[test]
+fn certification_generalization_keeps_facts_about_an_outer_variable() {
+    let outer = Variable(100);
+    let other = Variable(101);
+    let equal = |left, right| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
+            true,
+        )
+    };
+    let old_is_zero = equal(
+        Bitvector32Term::Variable(outer),
+        Bitvector32Term::Constant(0),
+    );
+    let old_equals_other = equal(
+        Bitvector32Term::Variable(outer),
+        Bitvector32Term::Variable(other),
+    );
+    let facts = PureFactContext::new()
+        .assume_proposition(old_is_zero.clone())
+        .assume_proposition(old_equals_other);
+    let goal = Proposition::ForAll {
+        var: outer,
+        sort: Sort::CInt32,
+        body: Box::new(equal(
+            Bitvector32Term::Variable(other),
+            Bitvector32Term::Constant(0),
+        )),
+    };
+    assert!(
+        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal)
+    );
+
+    let invalid = Proposition::ForAll {
+        var: outer,
+        sort: Sort::CInt32,
+        body: Box::new(old_is_zero),
+    };
+    assert!(
+        !crate::kernel::api::contract_certification::certification_proves_proposition(
+            &facts, &invalid,
+        )
+    );
+}
+
+#[test]
 fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
     let mut samples = Vec::new();
     for size in [32, 64, 128, 256] {
