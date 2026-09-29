@@ -1,12 +1,15 @@
 # Explicit authority for the shared counter
 
-Status: design proposal for review, 2026-09-28. Nothing in this document is a
-verified Click example or an implemented new interface. It replaces the next
-implementation direction in [the counted-resource investigation](shared-count-authority.md),
-without changing the meaning of existing proofs. The frozen input remains
+Status: alternative design, not selected for implementation, 2026-09-28.
+The [counted-population investigation](shared-count-authority.md#investigation-one-mutex-protects-a-counted-population)
+now recommends checking whole-population publication under an ordinary mutex
+before adding this interface. The earlier recommendation below was premature:
+the existing Count invariant already supplies a conservation relationship.
+Nothing in this document is a verified Click example or an implemented new
+interface. The frozen input remains
 [`mutex_counter.c`](mutex_counter.c).
 
-## Recommendation
+## Alternative considered
 
 Use a fractional authoritative sum: one exclusive authority records the total,
 and workers hold shares recording their individual contributions. The mutex
@@ -131,7 +134,6 @@ evidence):
 ```text
 resource counter_state(p: struct mutex_counter*, group: GhostId) {
     field total: Integer;
-    guarded_by p->mutex;
     owns p->value;
     owns ledger: sum_authority();
     fact ledger.group == group;

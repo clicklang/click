@@ -140,12 +140,13 @@ conservation; it does not choose a Click surface interface.
 
 ## Ordered implementation plan
 
-Current design review: [explicit authority for the shared counter](../design/concurrency-probes/explicit-authority.md)
-proposes fractional contribution shares and authority inside the ordinary
-protected resource. It supersedes further shared-population-body custody work
-for the exact-two milestone. Its resource interfaces, fresh proof identity, and
-resource-transforming lemma application remain proposals; existing population
-features and the completed steps below retain their current semantics.
+Current investigation: [whole-population publication](../design/concurrency-probes/shared-count-authority.md#investigation-one-mutex-protects-a-counted-population)
+appears sufficient for the exact-two milestone: require all units when placing
+the shared body under a mutex, then guard all body access and count changes.
+Implement and test that restricted rule before adding the alternative
+[explicit algebra interface](../design/concurrency-probes/explicit-authority.md).
+Neither proposal is implemented; existing population features and the completed
+steps below retain their current semantics.
 
 ### 1. Remove abandoned machinery and consolidate status
 

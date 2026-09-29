@@ -1,17 +1,227 @@
 # Exact-two counter using ordinary counted resources
 
-Status: implemented sequential controls and historical concurrency
-investigation. The next-step recommendation is now
-[explicit fractional authority](explicit-authority.md), a design proposal for
-review. It replaces the shared-body-custody direction below; those shared
-rules were not implemented. Existing counted-resource semantics are unchanged.
+Status: implemented sequential controls plus a proposed shared-population
+publication rule. The investigation below recommends testing that rule before
+adding another algebra interface. [Explicit fractional authority](explicit-authority.md)
+remains an alternative, not the selected implementation plan. Neither shared
+custody nor the alternative algebra interface is implemented.
 
 A sequential control verifies exact
 value two with existing resource declarations, `count`, `owns`/`consumes`/
 `produces`, `fold`, `open`, and `unfold`. The unchanged pthread example is not
-yet verified for its exact result. The earlier attempt to avoid all additional
-resource interfaces did not resolve concurrent body authority. The new proposal
-explicitly reviews that choice. The bounded-completion-pool proposal stays shelved.
+yet verified for its exact result. The bounded-completion-pool proposal stays
+shelved. This investigation changes no existing resource semantics or C source.
+
+## Investigation: one mutex protects a counted population
+
+Conclusion, 2026-09-28: this looks sound for the counter under the restricted
+rules below. The existing population invariant supplies the conservation law;
+the missing mechanism is exclusive access to its body under sharing. No need
+for `sum_authority`, `sum_fragment`, `GhostId`, or a new algebra-definition
+language has been established. This is a source-level investigation and a
+semantic argument, not a checked concurrent proof or a formal soundness result.
+
+### The proposed interpretation
+
+A mutex associated with `remaining(p)` protects the body shared by all units
+of that particular population. It does not take all membership units from
+their owners or transfer those units to every acquirer. Different `p` values
+can have different populations and locks. Pointer aliases must resolve to the
+same checked population; pointer reuse must not revive an older association.
+
+The intended worker clauses can use the existing forms:
+
+```text
+consumes remaining((struct mutex_counter*)argument);
+owns access: mutex_use(
+    &((struct mutex_counter*)argument)->mutex,
+    remaining((struct mutex_counter*)argument)
+);
+```
+
+This direct counted payload is a proposal: current mutex interfaces require a
+folded exclusive instance, and named counted-payload transport is not supported.
+Extending existing argument and binder forms to counted payloads is real work,
+even if it needs no new grammar. An ordinary wrapper may also contain the
+selected population, but it must carry the same checked body custody; owning
+one nested unit must never create a second copy of that custody.
+
+Initialization establishes the association from actual ownership and the
+selected resource. The proposed rule does not depend on `guarded_by`.
+Declaration-level `guarded_by` checks still exist in the implementation;
+replacing them must preserve the authenticated initialization association in
+both concrete and independently checked typed-use paths.
+
+### Publication and its ownership precondition
+
+For the first slice, publish only an exact, positive, already initialized
+population whose entire membership is owned locally. Require no active body
+opening, body loan, pending worker, or existing custodian. The proof must
+identify the participating owned quantities and establish that their sum
+equals the current count. All-units ownership is checked, not assumed from the
+fact that the population was recently initialized.
+
+On successful mutex initialization, deposit one unit and the unique shared
+body into the mutex. Keep the other units locally, with their body access now
+subject to that mutex. Count does not change. Initialization failure preserves
+the prior local access regime, units, and body. The deposited unit keeps the
+existing positive-population invariant alive; it is not another resource type.
+
+This transition can strengthen the access discipline without revoking anyone
+else's permissions because there are no external units or body loans. It must
+also remove local projections that would still grant access while unlocked.
+A second mutex cannot publish the population: existing custody forbids it even
+if all membership units later happen to be locally available during an
+acquisition. Merely refolding or moving a unit never performs publication.
+
+The implementation should validate explicit population quantities and tracked
+wrapper contents, not discover ownership by scanning unrelated proof state.
+The first slice can require directly available units at publication; arbitrary
+nested-wrapper collection is not a prerequisite for the direct counter.
+
+### Access, updates, and cleanup
+
+Internally distinguish local body access, custody in an unlocked mutex, and
+body access lent through one checked acquisition. This is permission metadata,
+not a proposed surface resource or a second global population count.
+
+| Operation | Required behavior |
+| --- | --- |
+| Move or wrap a unit | Preserve membership, count, identity, and custody. Supply no new body access. |
+| Acquire | Return the deposited unit and exclusive body access with the guard; establish a current observation of the same population. |
+| Open the population | Require an owned unit and valid local or acquired body access. Expose body memory and facts at the current count. |
+| Create or consume units | Require body access and restore the invariant at the changed count. Initially support the existing fixed one-unit consumption only. |
+| Release | Require a closed, restored body, one returned unit, and the matching acquisition; revoke body access and return custody to the mutex. |
+| Join | Recover worker resources/use loans and reconcile its checked effect once. Do not physically consume units again. |
+| Destroy | Require the existing lifetime conditions plus recovery of all population units for conversion back to the local access regime. Return the deposited unit and body access. |
+| Final unfold | Use existing full-population cleanup after destruction. |
+
+At destruction, count the mutex's deposited unit together with the recovered
+caller units; the caller need not already own the escrowed unit directly.
+Requiring all units at destruction is conservative but avoids returning a
+sequential body-access regime while an external fragment still exists. Merely
+recovering all mutex-use loans does not, by itself, prove every unit returned.
+All count-producing paths must respect custody; blocking only consumption is
+insufficient. The first implementation should reject shared production and
+whole-population destruction inside an acquisition rather than guess rules.
+
+### The ordinary-helper boundary is essential
+
+Today, counted-resource entry setup and call preparation can materialize body
+memory from a unit. Consequently, checking only the `open` tactic would leave
+a bypass: an unlocked worker could pass its unit to an ordinary helper whose
+independent proof assumes that body memory.
+
+Recommended first-slice contract rule:
+
+- A typed `mutex_use(mu, remaining(p))` input identifies that population as
+  guarded in the independent contract. Its units provide no body memory or
+  current Count facts until acquisition. Authentication happens at calls and
+  create, not by trusting the written type alone.
+- Existing unit-only sequential contracts retain their implicit body-access
+  requirement. Calls must supply that access as well as the units. A caller
+  with the guard and opened body can lend it to a synchronous helper while
+  retaining the guard. An unlocked caller cannot.
+- A helper receiving ordinary exposed memory can continue using its ordinary
+  memory contract. It need not mention the mutex. Thread transfer remains
+  refused for unit-only stateful contracts without a checked guarded protocol.
+
+This is an explicit contract-elaboration rule, not a decision made from the
+callee's implementation or from whichever permissions happen to be available
+at a call. Its conservative limitation is that a unit-only forwarding helper
+cannot accept guarded units outside the lock; the helper must carry the typed
+use association too. General fragment-only contracts can be considered later
+if this proves burdensome. Supporting every existing unit-only helper outside
+the lock while retaining its old body assumptions would be unsound.
+
+Failures can name `Requires mutex_guard(mu)` for missing acquisition and the
+particular body fact for failed restoration. Publication/cleanup must show the
+required quantity and count equality. A missing body loan inside a helper must
+identify the guarded population and call requirement, not pretend its owned
+unit is absent. The guard remains necessary but is not sufficient if its
+payload/body has already been moved or lent elsewhere.
+
+### Count observations and worker effects
+
+Current Count is an observation, not a permanent fact about an independently
+running worker. At acquisition take a fresh observation `N` constrained by
+the body and actual units. In this counter, the deposited unit plus the worker
+unit give `N >= 2`; the body gives `N <= 3` and `value == 3 - N`.
+After the increment, consuming one unit establishes
+`value == 3 - (N - 1)` before release. No worker entry count is substituted for
+`N`. Earlier observations remain historical, with no new current-memory access.
+
+Track a worker's own checked consumption independently of other workers'
+changes. A function promising to consume one unit must discharge exactly that
+effect. It cannot require its current global count to equal its entry count
+minus one: other workers may run before its acquire or after its release.
+Calls must transfer fulfillment evidence without fulfilling the caller's
+obligation twice.
+
+The parent can retain a projected final count from verified worker contracts,
+as the existing abstract-population join protocol does. While workers remain,
+that projection is not the count observable at an acquisition. Final join
+establishes the completed cohort's exact net effect; it neither consumes again
+nor overwrites a conflicting observation. Initially exclude parent count
+mutations while a cohort is outstanding; parent guarded reads may observe a
+fresh count. A later extension must include parent mutations in the same
+conservation accounting.
+
+For the frozen counter: initialize three units, deposit one, transfer one to
+each successful worker. Each successful worker consumes one under the lock.
+After every successful worker joins, the total is `3 - number_started`. The
+parent recovers the retained unit at destruction, unfolds the remaining one,
+two, or three units, and obtains value two, one, or zero respectively. A failed
+create transfers and consumes nothing. The two join orders give the same
+result. Partial join establishes no exact current value while the other
+worker can still run.
+
+### Source evidence and implementation obligations
+
+The implementation was inspected at `205ba54e7`; the subsequent master change
+`2b582ba4d` does not alter these paths.
+
+| Existing path | What must change |
+| --- | --- |
+| `src/kernel/proof/execution.rs`, full-population cleanup | Reuse the ownership-equals-count premise for publication, while preserving units and transferring body custody instead of destroying the population representation. |
+| `src/kernel/mutexes.rs`, `publish_declared` / `publish_with_interface` | Currently escrow one exclusive instance. Admit checked counted payloads and bind custody to the non-reused initialization identity. |
+| `src/kernel/mutexes/assumed_protocol.rs`, `fresh_protected_payload` | Currently requires `guarded_by` and a leaf instance. Freshen a guarded population's observation without allocating a new population or new units. |
+| `src/surface/proof/resources.rs`, entry/body materialization | Do not derive body memory and current facts from a guarded unit at entry. |
+| `src/kernel/functions.rs`, body expansion and call transfer | Require body access at every authority-bearing projection and helper boundary. Static footprint calculation alone grants no ownership. |
+| `src/kernel/proof/population_consumption.rs` | Retain invariant checking and effect fulfillment; add guarded body-access admission. |
+| `src/kernel/functions.rs`, committed-consumption reconciliation | Replace the shared case's entry-total comparison with the function's own checked effect, retaining the sequential check where appropriate. |
+| `src/kernel/threads.rs` and `src/kernel/spec.rs` | Distinguish a future cohort total from an acquired current observation; current code blocks Count whenever workers are pending. |
+| `src/kernel/thread_confinement.rs` | Permit only authenticated guarded-population transfers; preserve the default stateful-population refusal. |
+
+Internal population lifetime/custody identity must survive alias resolution,
+wrappers, calls, workers, and new acquisition observations. Mutex initialization
+already has a fresh identity; extend its checked association rather than
+introducing a public ghost-name parameter for this milestone. Wildcard Count
+must not bypass permissions on any matched population.
+
+### First implementation and acceptance
+
+Start with one unconditional memory-backed population and a direct counted
+mutex payload. Check publication/failed initialization, guarded `open`, unit
+transfer, ordinary helper admission, release, destruction, and full cleanup
+without threads. Include both successful access and missing-lock helper
+counterexamples before permitting worker transfer.
+
+Then add arbitrary acquired counts, checked consumption effects across workers,
+and join reconciliation. Preserve the original C and verify exact two, both
+creation-failure cleanup paths, and reversed join order. Hostile cases must
+reject a second mutex for the same population, incomplete publication, active
+body loans, outside-lock helper access or production, stale Count assumptions,
+wrong initialization identity, unfulfilled/double consumption, and premature
+destruction. Every certificate path needs the same permission checks; expansion
+and audit must agree. Use indexed custody/effect records and scaling regressions.
+
+The rule removes the need to design another public algebra for this example,
+but it is not a parser-only change. The principal implementation work is
+closing all body-access paths and separating current observations from verified
+future effects. Existing `count` and mutex machinery provide a plausible basis
+for both. Implement this restricted rule before deciding whether a more general
+resource-algebra interface is warranted.
 
 ## Accounting invariant
 
@@ -388,12 +598,9 @@ The kernel rejects partial or zero ownership, an open body, and active loans.
 Unfolding is a representation change: the existing contract transition still
 owns logical consumption; cleanup does not silently reset the ledger.
 
-The original next step was to compose population-body access with mutexes,
-commit guarded count transitions, and connect worker accounting. That direction
-is paused in favor of the [explicit-authority proposal](explicit-authority.md):
-keep memory in the protected resource, put a separate authority beside it, and
-return contribution shares through ordinary join transfers. The original
-pthread C stays the end-to-end regression throughout.
+The next proposed step is the restricted population publication rule described
+at the top of this document, followed by guarded count transitions and worker
+accounting. The original pthread C stays the end-to-end regression throughout.
 
 Each step needs negative coverage for forged/duplicated units, unrelated
 population changes, stale observations, mismatched lifetimes, missing or double
@@ -403,6 +610,5 @@ reverse join order must work. Expansion must yield checkable certificates and
 indexed, delta-proportional verification requirements.
 
 The sequential evidence establishes the existing population rules, but does
-not establish concurrent custody. The replacement design exposes the missing
-authority and update operations explicitly; its proposed surface additions
-require review before implementation.
+not establish concurrent custody. The investigation above specifies the missing
+ownership transfer without assuming a need for another surface resource type.
