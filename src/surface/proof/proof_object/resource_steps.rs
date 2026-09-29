@@ -4,6 +4,95 @@ use super::*;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
 
 impl<'a> Proof<'a> {
+    fn apply_execution_population_member_exchange(
+        &self,
+        resource: &ResourceClause,
+        produce: bool,
+    ) -> Result<CheckedFocusedTransition, ClickError> {
+        let ResourceClause::Declared { name, .. } = resource else {
+            return Err(
+                self.step_error("authority-mode member changes require a direct declared resource")
+            );
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Err(self.step_error("population member change requires a C execution proof"));
+        };
+        let definition = context
+            .resource_environment
+            .get(name)
+            .ok_or_else(|| self.step_error(format!("unknown resource `{name}`")))?;
+        let Some(body) = definition.composite_body() else {
+            return Err(self.step_error(format!(
+                "`{name}` is abstract; its members require an ordinary producing contract"
+            )));
+        };
+        if !definition.resource_parameters().is_empty()
+            || !definition.fields().is_empty()
+            || !body.children.is_empty()
+            || body.guarded_by.is_some()
+            || body.matched.is_some()
+            || body.condition.is_some()
+            || !body.contains.is_empty()
+            || !body.facts.is_empty()
+            || !body.witnesses.is_empty()
+        {
+            return Err(self.step_error(format!(
+                "authority-mode fold/unfold of `{name}` currently requires an empty field-free body"
+            )));
+        }
+        self.require_execution_frontier("population member change")?;
+        let mut execution = self
+            .execution()
+            .cloned()
+            .ok_or_else(|| self.step_error("population member change lost its C state"))?;
+        if execution.core.frontier.is_at_function_exit() {
+            return Err(self.step_error("population member change must precede function exit"));
+        }
+        let before_facts = self.facts().clone();
+        let selected = lower_resource_clause_at_state(
+            resource,
+            context.parsed_function.parameters(),
+            context.arguments,
+            &execution.core.state,
+        )?;
+        let (after_state, witness) = execution
+            .core
+            .state
+            .checked_population_member_exchange(&selected, produce, before_facts.assumptions())
+            .map_err(|message| self.step_error(message))?;
+        execution
+            .core
+            .record_population_member_rewrite(
+                context.function,
+                &before_facts,
+                &selected,
+                produce,
+                &witness,
+                &after_state,
+                &before_facts,
+            )
+            .map_err(|message| {
+                self.step_error(format!(
+                    "kernel rejected checked population member change: {message}"
+                ))
+            })?;
+        execution.core.state = after_state.into();
+        let branch = self
+            .focused_branch()
+            .expect("population member change requires an open goal")
+            .with_state(BranchState {
+                facts: before_facts,
+                unfolded_predicates: self.focused_branch_unfolds().clone(),
+                execution: Some(Arc::new(execution)),
+            });
+        Ok(CheckedFocusedTransition {
+            locals: self.state().locals().clone(),
+            branch: Some(branch),
+            added_facts: Vec::new(),
+            checked_facts: Vec::new(),
+        })
+    }
+
     fn apply_execution_population_authority_exchange(
         &self,
         resource: &ResourceClause,
@@ -1700,9 +1789,7 @@ impl<'a> Proof<'a> {
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
         {
-            return Err(self.step_error(
-                "ordinary resource unfold may create untracked members in authority mode",
-            ));
+            return self.apply_execution_population_member_exchange(resource, false);
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, true);
@@ -1779,9 +1866,7 @@ impl<'a> Proof<'a> {
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
         {
-            return Err(self.step_error(
-                "ordinary resource fold may create untracked members in authority mode",
-            ));
+            return self.apply_execution_population_member_exchange(resource, true);
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, false);

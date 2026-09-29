@@ -5,10 +5,14 @@ See `issues/authority-migration.md` for rollout order and the
 [consumer inventory](authority-migration-inventory.md) for existing clients.
 The new abstract kernel model is additive; existing projects still use legacy
 counting. An authority-mode project can be selected with
-`{"resource_semantics":"authority"}` in `click.project.json`. Its initial
-source slice admits an empty population established and retired in the storage
-creator's execution proof. Member changes, `count(...)`, resource contracts,
-and C calls remain refused until their checked transfers exist.
+`{"resource_semantics":"authority"}` in `click.project.json`. Its restricted
+source slice admits an exact unary population established in the storage
+creator's execution proof. A field-free resource with an empty body can be
+folded to create one member and unfolded to consume it while matching authority
+is owned. Current `count(R(p))` reads the checked total only with that authority.
+Retirement requires zero members. Resource contracts, C calls, recorded-state
+count, and nonempty member bodies remain refused until their checked transfers
+exist.
 
 ## Establishment and uniqueness
 
@@ -38,11 +42,11 @@ not a source-level authority constructor.
 Establishment must also precede any member creation for that population. The
 creation environment alone does not prove emptiness at an arbitrary later
 point: it might already have produced and transferred ordinary `reference(p)`
-instances. The initial source slice refuses all member production and
-consumption. Its creation ledger retains per-family member history, so a
-later checked transition cannot justify establishment from local absence
-after members escape. The abstract model admits member creation under existing
-authority; source enrollment remains a separate integration obligation.
+instances. The source slice checks production and consumption of one empty-body member at
+a time, updating the owned member fact and exact total in the same certificate
+event. Its creation ledger retains per-family member history, so local absence
+after consumption or future transfer cannot justify re-establishment. Other
+member forms still require checked integration.
 
 ## Membership and cleanup
 
@@ -164,6 +168,10 @@ The source parser recognizes `authority(R(p))` for an exact unary, field-free,
 pointer-anchored declared family, and lowers it to a distinct exclusive kernel
 resource. Ordinary resource evaluation refuses to mint it. The explicit
 project mode and proof artifacts carry the semantics choice. Checked source
-`fold`/`unfold` cover the empty population. Member enrollment, authority
-transfer through contracts, and current-count conservation still need
-integration before authority mode can verify a counted program.
+`fold`/`unfold` establish and retire authority; direct `fold(R(p))` and
+`unfold(R(p))` create and consume one empty-body member. The latter exchange
+requires matching owned authority and is rechecked by the certificate checker.
+Current exact `count(R(p))` reads that ledger, never the legacy population
+state. Authority transfer through contracts, C calls, nonempty member bodies,
+and historical count observations still need integration before authority mode
+can verify a real counted-resource program.

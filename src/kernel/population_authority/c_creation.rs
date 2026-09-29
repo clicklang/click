@@ -5,7 +5,7 @@
 //! allocation claims never enter it.
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
-use crate::kernel::{PointerBlock, ResourceDescription};
+use crate::kernel::{AlgebraicValue, CValue, PointerBlock, PointerOffsetTerm, ResourceDescription};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -38,6 +38,9 @@ pub(in crate::kernel) enum CreationRefusal {
     MembersAlreadyExisted,
     AlreadyEstablished,
     MissingAuthority,
+    MissingMembers,
+    InvalidMember,
+    InvalidQuantity,
     OutstandingMembers,
     OutstandingAuthority,
 }
@@ -49,6 +52,8 @@ impl From<Refusal> for CreationRefusal {
             Refusal::OutstandingMembers => Self::OutstandingMembers,
             Refusal::OutstandingAuthority => Self::OutstandingAuthority,
             Refusal::MissingAuthority | Refusal::UnknownPopulation => Self::MissingAuthority,
+            Refusal::MissingMembers => Self::MissingMembers,
+            Refusal::InvalidQuantity => Self::InvalidQuantity,
             _ => Self::NotCreationEnvironment,
         }
     }
@@ -63,6 +68,31 @@ pub(crate) struct CheckedPopulationAuthorityExchange {
     after: u64,
     description: ResourceDescription,
     establish: bool,
+}
+
+/// Evidence for one member entering or leaving a registered population.
+/// The proof checker must also check the corresponding resource exchange.
+#[derive(Clone, Debug)]
+pub(crate) struct CheckedPopulationMemberExchange {
+    before: u64,
+    after: u64,
+    description: ResourceDescription,
+    produce: bool,
+}
+
+impl CheckedPopulationMemberExchange {
+    pub(in crate::kernel) fn matches(
+        &self,
+        before: &CreationEvents,
+        after: &CreationEvents,
+        description: &ResourceDescription,
+        produce: bool,
+    ) -> bool {
+        self.before == before.0.identity
+            && self.after == after.0.identity
+            && &self.description == description
+            && self.produce == produce
+    }
 }
 
 impl CheckedPopulationAuthorityExchange {
@@ -121,6 +151,99 @@ impl Hash for CreationEvents {
 }
 
 impl CreationEvents {
+    fn exact_member_block<'a>(
+        &self,
+        block: &'a PointerBlock,
+        description: &ResourceDescription,
+    ) -> Result<&'a PointerBlock, CreationRefusal> {
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err(CreationRefusal::InvalidMember);
+        };
+        if !description.schema().is_countable()
+            || !description.resource_arguments().is_empty()
+            || pointer.pointer().offset != PointerOffsetTerm::Constant(0)
+            || &pointer.pointer().block != block
+        {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        Ok(block)
+    }
+
+    /// Read the total only while this proof environment holds the authority.
+    pub(in crate::kernel) fn observe(
+        &self,
+        block: &PointerBlock,
+        family: &str,
+    ) -> Result<u32, CreationRefusal> {
+        let anchor = *self
+            .0
+            .anchors
+            .get(block)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        let population = self
+            .0
+            .authority
+            .population_at(anchor, family)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        self.0
+            .authority
+            .observe(self.0.invocation, population)
+            .map_err(CreationRefusal::from)
+    }
+
+    /// Change exactly one member. The caller supplies a checked resource type;
+    /// this method independently rejects fields, references and non-base anchors.
+    pub(in crate::kernel) fn checked_member_exchange(
+        &self,
+        block: &PointerBlock,
+        description: &ResourceDescription,
+        produce: bool,
+    ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
+        self.exact_member_block(block, description)?;
+        let anchor = *self
+            .0
+            .anchors
+            .get(block)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        let population = self
+            .0
+            .authority
+            .population_at(anchor, description.family())
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        let authority = if produce {
+            self.0.authority.produce(self.0.invocation, population, 1)
+        } else {
+            self.0.authority.consume(self.0.invocation, population, 1)
+        }
+        .map_err(CreationRefusal::from)?;
+        let mut tainted = self.0.tainted.clone();
+        if produce {
+            let families = tainted
+                .get(block)
+                .cloned()
+                .unwrap_or_default()
+                .with_value(description.family().to_owned());
+            tainted.insert(block.clone(), families);
+        }
+        let after = Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            invocation: self.0.invocation,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority,
+            tainted,
+        }));
+        let evidence = CheckedPopulationMemberExchange {
+            before: self.0.identity,
+            after: after.0.identity,
+            description: description.clone(),
+            produce,
+        };
+        Ok((after, evidence))
+    }
+
     pub(in crate::kernel) fn new() -> Self {
         Self(Arc::new(Root {
             identity: fresh_identity(),

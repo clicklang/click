@@ -181,14 +181,17 @@ retirement. A C event ledger checks heap and automatic-object
 creation provenance, call-environment transport, and per-family history that
 prevents late establishment after members were transferred away. Project-level
 mode selection and `authority(R(p))` parsing/lowering are additive. A restricted
-source bridge now checks `fold(authority(R(p)))` for empty establishment and
+source bridge checks `fold(authority(R(p)))` for empty establishment and
 `unfold(authority(R(p)))` for zero-count retirement against actual C creation
-events. Its certificate event is checked independently. Authority mode refuses
-member changes, current `count`, resource contracts, and C calls rather than
-falling back to legacy accounting. This remains partial checkpoint 1, not a
-usable counted-resource implementation: resource enrollment, authority
-contract transport, symbolic totals, and count conservation remain outstanding.
-`construct(...)` has not been extended. Checkpoints 2–12 remain pending.
+events. A partial checkpoint 2 now checks one empty-body member's
+`fold(R(p))`/`unfold(R(p))` as birth/consumption paired with the owned resource
+exchange. Current exact `count(R(p))` observes the authority ledger. Both
+transitions have independent certificate checks. Authority mode still refuses
+nonempty member bodies, resource contracts, recorded-state count, and C calls
+rather than falling back to legacy accounting. This is not yet a usable
+counted-resource implementation: transfer, symbolic totals, and full fact
+dependency handling remain outstanding. `construct(...)` has not been extended.
+The remainder of checkpoint 2 and checkpoints 3–12 remain pending.
 Update this status and the inventory as commits land.
 
 | Checkpoints | Deliverable | What happens to old clients |

@@ -4474,23 +4474,35 @@ impl AnnotationLowerer<'_> {
                 self.lower_c_fragment_to_spec(&CExpression::Variable(name.clone()), environment)
             }
             ContractExpression::ResourceCount(resource) => {
-                if self.entry_state.uses_population_authority_semantics()
-                    || environment
-                        .snapshot_state
-                        .as_ref()
-                        .is_some_and(CState::uses_population_authority_semantics)
-                {
-                    return Err(
-                        "`count(R(p))` is unavailable until authority-mode population observation is checked"
-                            .to_string(),
-                    );
-                }
                 let ResourceClause::Declared {
                     name, arguments, ..
                 } = resource.as_ref()
                 else {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
+                let authority_mode = self.entry_state.uses_population_authority_semantics()
+                    || environment
+                        .snapshot_state
+                        .as_ref()
+                        .is_some_and(CState::uses_population_authority_semantics);
+                if authority_mode {
+                    if environment.snapshot_state.is_some() {
+                        return Err(
+                            "`count(R(p))` at a recorded state is unavailable in authority mode"
+                                .to_string(),
+                        );
+                    }
+                    if arguments.len() != 1
+                        || arguments.iter().any(|argument| {
+                            matches!(argument, ContractExpression::ResourceWildcard)
+                        })
+                    {
+                        return Err(
+                            "authority-mode `count(R(p))` needs one exact pointer argument"
+                                .to_string(),
+                        );
+                    }
+                }
                 let arguments = arguments
                     .iter()
                     .map(|argument| match argument {

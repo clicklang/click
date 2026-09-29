@@ -25,6 +25,7 @@ mod population_access;
 #[allow(dead_code)]
 mod population_authority;
 pub(crate) use population_authority::c_creation::CheckedPopulationAuthorityExchange;
+pub(crate) use population_authority::c_creation::CheckedPopulationMemberExchange;
 mod quantified_frame;
 mod resource_description;
 mod thread_confinement;

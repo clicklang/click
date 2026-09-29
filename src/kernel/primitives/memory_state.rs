@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CheckedPopulationAuthorityExchange;
+use crate::kernel::CheckedPopulationMemberExchange;
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -4453,6 +4454,67 @@ impl CState {
             Arc::make_mut(&mut next.population_effects).creation = Some(history);
             evidence
         };
+        Ok((next, evidence))
+    }
+
+    /// Change one exact, field-free member only while the matching authority
+    /// is owned. The resource exchange and the population ledger advance as
+    /// one checked event; neither side can be updated independently.
+    pub(crate) fn checked_population_member_exchange(
+        &self,
+        selected: &CResourceFact,
+        produce: bool,
+        assumptions: &PureFactContext,
+    ) -> Result<(CState, CheckedPopulationMemberExchange), String> {
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
+        else {
+            return Err("Requires owns R(p)".into());
+        };
+        if quantity.as_const() != Some(1) {
+            return Err("Requires one owned R(p)".into());
+        }
+        let description = super::super::ResourceDescription::new(
+            name.clone(),
+            arguments.clone(),
+            super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
+        );
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return Err("Requires an exact pointer-anchored resource R(p)".into());
+        };
+        let anchor = pointer.pointer();
+        if anchor.offset != PointerOffsetTerm::Constant(0)
+            || !(matches!(&anchor.block, PointerBlock::Heap(_))
+                && self.memory.live_heap_block_size(anchor).is_some()
+                || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block))
+        {
+            return Err("Requires live base storage for R(p)".into());
+        }
+        let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+        if !self.resources.satisfies_fact(&authority, assumptions) {
+            return Err(format!("Requires owns authority({name}(p))"));
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("authority mode has no creation history")?;
+        let resources = if produce {
+            self.resources
+                .clone()
+                .try_compose_with_fact(selected.clone(), assumptions)
+                .map_err(|error| format!("member ownership refused: {error:?}"))?
+        } else {
+            self.resources
+                .clone()
+                .without_fact_incrementally(selected, assumptions)
+                .ok_or_else(|| format!("Requires owns {name}(p)"))?
+        };
+        let (history, evidence) = events
+            .checked_member_exchange(&anchor.block, &description, produce)
+            .map_err(|error| format!("member change refused: {error:?}"))?;
+        let mut next = self.clone();
+        next.resources = resources;
+        Arc::make_mut(&mut next.population_effects).creation = Some(history);
         Ok((next, evidence))
     }
 

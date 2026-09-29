@@ -384,3 +384,121 @@ fn repeated_entry_recheck_reuses_the_same_creation_environment() {
     let advanced = caller.created(PointerBlock::Heap(940_104));
     assert_ne!(first, advanced.enter_call());
 }
+
+fn member_description(block: PointerBlock) -> ResourceDescription {
+    ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::pointer(Pointer {
+                block,
+                offset: PointerOffsetTerm::Constant(0),
+            })
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    )
+}
+
+#[test]
+fn checked_member_exchange_conserves_exact_authority_total() {
+    let block = PointerBlock::Heap(940_105);
+    let description = member_description(block.clone());
+    let created = CreationEvents::new().created(block.clone());
+    assert_eq!(
+        created.observe(&block, "reference"),
+        Err(CreationRefusal::MissingAuthority)
+    );
+    assert_eq!(
+        created
+            .checked_member_exchange(&block, &description, true)
+            .err(),
+        Some(CreationRefusal::MissingAuthority)
+    );
+    let established = created.establish(&block, "reference").unwrap();
+    assert_eq!(established.observe(&block, "reference"), Ok(0));
+    assert_eq!(
+        established
+            .checked_member_exchange(&block, &description, false)
+            .err(),
+        Some(CreationRefusal::MissingMembers)
+    );
+    let (one, birth) = established
+        .checked_member_exchange(&block, &description, true)
+        .unwrap();
+    assert!(birth.matches(&established, &one, &description, true));
+    assert!(!birth.matches(&established, &one, &description, false));
+    assert!(!birth.matches(&created, &one, &description, true));
+    assert_eq!(one.observe(&block, "reference"), Ok(1));
+    assert_eq!(
+        one.retire_authority(&block, "reference"),
+        Err(CreationRefusal::OutstandingMembers)
+    );
+    let (zero, death) = one
+        .checked_member_exchange(&block, &description, false)
+        .unwrap();
+    assert!(death.matches(&one, &zero, &description, false));
+    assert_eq!(zero.observe(&block, "reference"), Ok(0));
+    assert_eq!(
+        zero.checked_member_exchange(&block, &description, false)
+            .err(),
+        Some(CreationRefusal::MissingMembers)
+    );
+    assert_eq!(
+        zero.retire_authority(&block, "reference")
+            .unwrap()
+            .observe(&block, "reference"),
+        Err(CreationRefusal::MissingAuthority)
+    );
+}
+
+#[test]
+fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
+    let block = PointerBlock::Heap(940_106);
+    let established = CreationEvents::new()
+        .created(block.clone())
+        .establish(&block, "reference")
+        .unwrap();
+    let base = member_description(block.clone());
+    let offset = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::pointer(Pointer {
+                block: block.clone(),
+                offset: PointerOffsetTerm::Constant(4),
+            })
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let wrong_block = PointerBlock::Heap(940_107);
+    let fielded = ResourceDescription::new(
+        "reference".into(),
+        base.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::Integer)]).unwrap(),
+    );
+    for invalid in [&offset, &fielded] {
+        assert_eq!(
+            established
+                .checked_member_exchange(&block, invalid, true)
+                .err(),
+            Some(CreationRefusal::InvalidMember)
+        );
+    }
+    assert_eq!(
+        established
+            .checked_member_exchange(&wrong_block, &base, true)
+            .err(),
+        Some(CreationRefusal::InvalidMember)
+    );
+    let callee = established.enter_call();
+    assert_eq!(
+        callee.observe(&block, "reference"),
+        Err(CreationRefusal::MissingAuthority)
+    );
+    assert_eq!(
+        callee.checked_member_exchange(&block, &base, true).err(),
+        Some(CreationRefusal::MissingAuthority)
+    );
+}

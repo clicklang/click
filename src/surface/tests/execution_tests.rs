@@ -49,6 +49,40 @@ fn authority_mode_establishes_and_retires_empty_stack_population() {
 }
 
 #[test]
+fn authority_mode_conserves_one_local_member() {
+    let c_source = r#"
+        int32 value(void) {
+            int32 x = 7;
+            return x;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            have count(reference(&x)) == 0 by { simp(); }
+            fold(reference(&x));
+            have count(reference(&x)) == 1 by { simp(); }
+            unfold(reference(&x));
+            have count(reference(&x)) == 0 by { simp(); }
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect("one checked member changes count from zero to one and back");
+}
+
+#[test]
 fn authority_mode_cannot_reestablish_after_retirement() {
     let c_source = r#"
         int32 value(void) {
@@ -148,9 +182,7 @@ fn authority_mode_cannot_create_untracked_member_before_establishment() {
         }
     "#;
     let click_source = r#"
-        resource reference(p: int32*) {
-            owns p[0..1];
-        }
+        resource reference(p: int32*) {}
         verifying "authority_stack.c";
 
         int32 value() {
@@ -167,8 +199,94 @@ fn authority_mode_cannot_create_untracked_member_before_establishment() {
         &authority_stack_project(click_source),
         &[("authority_stack.c", c_source)],
     )
-    .expect_err("legacy resource folding cannot silently make authority members");
-    assert!(error.message().contains("untracked members"), "{error:?}");
+    .expect_err("a member cannot be born before matching authority is held");
+    assert!(
+        error
+            .message()
+            .contains("Requires owns authority(reference(p))"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn authority_mode_rejects_double_member_consumption() {
+    let c_source = "int32 value(void) { int32 x = 7; return x; }";
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            fold(reference(&x));
+            unfold(reference(&x));
+            unfold(reference(&x));
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("one member cannot be consumed twice");
+    assert!(
+        error.message().contains("Requires owns reference(p)"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn authority_mode_cannot_retire_with_live_member() {
+    let c_source = "int32 value(void) { int32 x = 7; return x; }";
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 value() {
+            ensures result == 7;
+        } by {
+            step();
+            fold(authority(reference(&x)));
+            fold(reference(&x));
+            unfold(authority(reference(&x)));
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("retirement requires an empty population");
+    assert!(error.message().contains("OutstandingMembers"), "{error:?}");
+}
+
+#[test]
+fn authority_mode_count_requires_owned_authority() {
+    let c_source = "int32 value(int32* p) { return 7; }";
+    let click_source = r#"
+        resource reference(p: int32*) {}
+        verifying "authority_stack.c";
+
+        int32 value(int32* p) {
+            owns p[0..1];
+            ensures result == 7;
+        } by {
+            have count(reference(p)) == 0 by { simp(); }
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_project(
+        &authority_stack_project(click_source),
+        &[("authority_stack.c", c_source)],
+    )
+    .expect_err("zero is not observable without matching authority");
+    assert!(error.message().contains("authority"), "{error:?}");
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use super::prelude::*;
+use super::{ResourceDescription, ResourceFieldSchema};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -5989,11 +5990,11 @@ fn evaluate_resource_count_paths(
     algebraic_bindings: &BTreeMap<String, AlgebraicTerm>,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
-    if state.uses_population_authority_semantics() {
-        return Err(ExecutionLimit::ResourceCountUnavailableInAuthorityMode);
-    }
-    let observed_state = state.count_observation_state(assumptions);
-    let state = observed_state.as_ref();
+    let authority_mode = state.uses_population_authority_semantics();
+    let observed_state = (!authority_mode).then(|| state.count_observation_state(assumptions));
+    let state = observed_state
+        .as_ref()
+        .map_or(state, |observed| observed.as_ref());
     let mut argument_paths = vec![(Vec::<Option<AlgebraicValue>>::new(), Vec::new(), Vec::new())];
     for argument in arguments {
         let mut next = Vec::new();
@@ -6035,6 +6036,43 @@ fn evaluate_resource_count_paths(
         .into_iter()
         .map(|(arguments, facts, mut obligations)| {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
+            if authority_mode {
+                let [Some(AlgebraicValue::C(CValue::Pointer(pointer)))] = arguments.as_slice()
+                else {
+                    return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
+                };
+                let anchor = pointer.pointer();
+                if anchor.offset != PointerOffsetTerm::Constant(0) {
+                    return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
+                }
+                let description = ResourceDescription::new(
+                    name.to_owned(),
+                    arguments.iter().flatten().cloned().collect(),
+                    ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
+                );
+                let authority = CResourceFact::own(CResource::PopulationAuthority(description));
+                if !state
+                    .resources
+                    .satisfies_fact(&authority, &path_assumptions)
+                {
+                    return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
+                }
+                let count = state
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?
+                    .observe(&anchor.block, name)
+                    .map_err(|_| ExecutionLimit::AuthorityCountNeedsOwnership)?;
+                if count > i32::MAX as u32 {
+                    return Err(ExecutionLimit::AuthorityCountOverflows);
+                }
+                return Ok(SpecExpressionPath {
+                    value: CValue::Int32(Bitvector32Term::Constant(count)),
+                    facts,
+                    obligations,
+                });
+            }
             let mut total: Option<Bitvector32Term> = None;
             let indexed =
                 state.indexed_counted_population_matches(name, &arguments, &path_assumptions);

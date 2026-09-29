@@ -3722,8 +3722,12 @@ pub enum ExecutionLimit {
     /// A worker may still change this total. No current observation is
     /// available until the checked completion right is joined.
     ResourceCountPendingWorker,
-    /// The legacy count ledger is not the authority-mode population model.
-    ResourceCountUnavailableInAuthorityMode,
+    /// Authority-mode count names one concrete population anchor.
+    AuthorityCountNeedsExactPointer,
+    /// Both the visible authority fact and checked ledger custody are needed.
+    AuthorityCountNeedsOwnership,
+    /// The exact population total cannot be represented as C int32.
+    AuthorityCountOverflows,
 }
 
 impl ExecutionLimit {
@@ -3759,9 +3763,13 @@ impl ExecutionLimit {
             Self::ResourceCountPendingWorker => {
                 "count(...) requires joining its outstanding worker".to_string()
             }
-            Self::ResourceCountUnavailableInAuthorityMode => {
-                "legacy count(...) is unavailable in authority mode".to_string()
+            Self::AuthorityCountNeedsExactPointer => {
+                "authority-mode count(...) needs one exact base pointer".to_string()
             }
+            Self::AuthorityCountNeedsOwnership => {
+                "count(...) requires owning authority for that population".to_string()
+            }
+            Self::AuthorityCountOverflows => "the population count exceeds int32".to_string(),
             Self::ResourceFieldInstanceUnavailable => {
                 "a model field of a resource instance this state does not hold".to_string()
             }
