@@ -52,7 +52,7 @@ fn registration_survives_anchor_and_authority_transfers() {
     let state = state.transfer_anchor(owner, receiver, anchor).unwrap();
     assert_eq!(
         state.establish(receiver, anchor, "reference").unwrap_err(),
-        Refusal::AlreadyRegistered
+        Refusal::AlreadyEstablished
     );
     assert_eq!(
         state.free_anchor(receiver, anchor).unwrap_err(),
@@ -70,14 +70,22 @@ fn registration_survives_anchor_and_authority_transfers() {
         state.finish_holder(receiver),
         Err(Refusal::OutstandingOwnership)
     );
+    assert_eq!(state.population_at(anchor, "reference"), Some(population));
     let state = state.retire(receiver, population).unwrap();
-    let (state, replacement) = state.establish(receiver, anchor, "reference").unwrap();
-    assert_ne!(population, replacement);
+    assert_eq!(state.population_at(anchor, "reference"), None);
+    assert_eq!(
+        state.establish(receiver, anchor, "reference").unwrap_err(),
+        Refusal::AlreadyEstablished
+    );
     assert_eq!(
         state.observe(receiver, population),
         Err(Refusal::UnknownPopulation)
     );
-    assert_eq!(state.observe(receiver, replacement), Ok(0));
+    let state = state.transfer_anchor(receiver, owner, anchor).unwrap();
+    assert_eq!(
+        state.establish(owner, anchor, "reference").unwrap_err(),
+        Refusal::AlreadyEstablished
+    );
 }
 
 #[test]
@@ -198,5 +206,83 @@ fn mixed_transitions_conserve_totals_and_cleanup_obligations() {
                 members + anchors + authorities
             );
         }
+    }
+}
+
+#[test]
+fn receiving_virgin_storage_does_not_grant_creation_permission() {
+    let creator = Holder::fresh();
+    let callee = Holder::fresh();
+    let (state, anchor) = AuthorityState::default().allocate_anchor(creator);
+    let state = state.transfer_anchor(creator, callee, anchor).unwrap();
+    assert_eq!(
+        state.establish(callee, anchor, "reference").unwrap_err(),
+        Refusal::NotCreationEnvironment
+    );
+    let state = state.transfer_anchor(callee, creator, anchor).unwrap();
+    let (state, population) = state.establish(creator, anchor, "reference").unwrap();
+    let state = state
+        .transfer_authority(creator, callee, population)
+        .unwrap();
+    // The helper can initialize the population using explicitly passed
+    // authority, without being allowed to establish authority itself.
+    let state = state.produce(callee, population, 1).unwrap();
+    assert_eq!(state.observe(callee, population), Ok(1));
+}
+
+#[test]
+fn a_new_storage_lifetime_can_establish_but_the_old_one_cannot_restart() {
+    let creator = Holder::fresh();
+    let (state, old_anchor) = AuthorityState::default().allocate_anchor(creator);
+    let (state, old_population) = state.establish(creator, old_anchor, "reference").unwrap();
+    let state = state.retire(creator, old_population).unwrap();
+    assert_eq!(
+        state
+            .establish(creator, old_anchor, "reference")
+            .unwrap_err(),
+        Refusal::AlreadyEstablished
+    );
+    let state = state.free_anchor(creator, old_anchor).unwrap();
+    let (state, new_anchor) = state.allocate_anchor(creator);
+    assert_ne!(old_anchor, new_anchor);
+    let (state, new_population) = state.establish(creator, new_anchor, "reference").unwrap();
+    assert_ne!(old_population, new_population);
+    assert_eq!(state.observe(creator, new_population), Ok(0));
+    assert_eq!(
+        state.observe(creator, old_population),
+        Err(Refusal::UnknownPopulation)
+    );
+}
+
+#[test]
+fn establishment_and_retirement_are_indexed_by_scope() {
+    for size in [8_u32, 32, 128, 512] {
+        let creator = Holder::fresh();
+        let (mut state, anchor) = AuthorityState::default().allocate_anchor(creator);
+        for n in 0..size {
+            let (next, population) = state
+                .establish(creator, anchor, &format!("family{n}"))
+                .unwrap();
+            state = next.retire(creator, population).unwrap();
+        }
+        let ((state, population), work) = crate::persistent::measure_persistent_work(|| {
+            state.establish(creator, anchor, "target").unwrap()
+        });
+        assert!(
+            work < 100 * (size.ilog2() as usize + 1),
+            "establish size={size}, work={work}"
+        );
+        let (state, work) = crate::persistent::measure_persistent_work(|| {
+            state.retire(creator, population).unwrap()
+        });
+        assert!(
+            work < 100 * (size.ilog2() as usize + 1),
+            "retire size={size}, work={work}"
+        );
+        assert_eq!(
+            state.establish(creator, anchor, "family0").unwrap_err(),
+            Refusal::AlreadyEstablished
+        );
+        assert!(state.free_anchor(creator, anchor).is_ok());
     }
 }

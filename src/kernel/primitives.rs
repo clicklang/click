@@ -5128,6 +5128,9 @@ pub(super) struct PopulationEffects {
     /// Reserved final totals; current Count is unavailable until every worker
     /// for the population joins. Calls inherit restrictions, not join rights.
     pub(super) pending_counts: CountedPopulations,
+    /// Creation provenance is shared out-of-line to keep CState's recursive
+    /// checker stack footprint unchanged. Legacy states use None.
+    pub(super) creation: Option<super::population_authority::c_creation::CreationEvents>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]

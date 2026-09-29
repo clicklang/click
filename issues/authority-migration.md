@@ -103,14 +103,18 @@ count must never manufacture ownership or permission to update it.
 Specify these rules together, with a small kernel interpretation and source
 examples. Review additional surface syntax before implementing it.
 
-1. **Population establishment and retirement.** The selected rule anchors an
-   initially empty population to an exclusively owned C object argument.
-   Registration persists through ownership transfers; it prevents a second
-   authority even when the first is held elsewhere. Retirement requires zero
-   members; freeing the anchor requires all registrations to be retired.
-   Folding a wrapper cannot create authority. Implement lifetime transport and
-   loan checks before exposing establishment to C proofs. Source spelling is
-   still to be selected; the existing `construct` is not authorization.
+1. **Population establishment and retirement.** Establish an initially empty
+   population only in the environment that actually creates its anchor's C
+   storage. Receiving memory or an allocation contract claim grants no such
+   permission. Establish each scope at most once per storage lifetime; retain
+   that restriction after retirement. Pass authority explicitly to helpers.
+   Retirement requires zero members; freeing the anchor requires all live
+   authorities to be retired. Folding a wrapper cannot invent creation
+   evidence. Implement C creation-event and invocation transport before
+   exposing establishment to source proofs. Use `fold(authority(...))` for
+   establishment and `unfold(authority(...))` for empty retirement. The existing
+   `construct` is not authorization, and allocation custody is no longer the
+   proposed bridge.
 2. **Scope and patterns.** Support the exact populations used by refcount and
    the per-pool wildcard observation `count(pool_object(pool, _))`. Initially
    use disjoint governing scopes, not overlapping independent authorities.
@@ -172,9 +176,12 @@ before the next checkpoint starts. Keep the original C and properties fixed.
 Checkpoint 0 has a [consumer inventory](../docs/internals/authority-migration-inventory.md)
 and an approved [object-anchored lifetime protocol](../docs/internals/authority-establishment-review.md).
 The first additive kernel slice checks exact unary population ownership,
-registration, transfer, and empty retirement. This is partial checkpoint 1,
-not a usable C authority implementation: C lifetime transport, symbolic totals,
-and the source establishment operation remain outstanding. `construct(...)`
+creation-site restriction, once-per-lifetime establishment, transfer, and empty
+retirement. A kernel-test-only C event ledger additionally checks heap creation
+provenance and call-environment transport. This is partial checkpoint 1, not a
+usable C authority implementation: stack creation, resource enrollment,
+authority contract transport, symbolic totals, and source operations remain
+outstanding. `construct(...)`
 has not been extended. Checkpoints 2–12 remain pending. Update this status and
 the inventory as commits land.
 

@@ -4266,6 +4266,7 @@ impl CState {
             && self.opaque_mutex_acquisitions == other.opaque_mutex_acquisitions
             && self.named_mutex_authorities == other.named_mutex_authorities
             && self.population_access == other.population_access
+            && self.population_effects.creation == other.population_effects.creation
             && self.pending_thread_create == other.pending_thread_create
             && (self
                 .counted_populations
@@ -4363,6 +4364,82 @@ impl CState {
 
     pub(in crate::kernel) fn next_local_frame(&self) -> u64 {
         self.next_local_frame
+    }
+
+    /// Internal staged-mode entry. No source construct exposes this ledger.
+    #[cfg(test)]
+    pub(in crate::kernel) fn with_population_creation_tracking(mut self) -> Self {
+        if self.population_effects.creation.is_none() {
+            Arc::make_mut(&mut self.population_effects).creation =
+                Some(super::super::population_authority::c_creation::CreationEvents::new());
+        }
+        self
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
+        pointer.offset == PointerOffsetTerm::Constant(0)
+            && matches!(&pointer.block, PointerBlock::Heap(_))
+            && self.memory.live_heap_block_size(pointer).is_some()
+            && self
+                .population_effects
+                .creation
+                .as_ref()
+                .is_some_and(|events| events.created_here(&pointer.block))
+    }
+
+    #[cfg(test)]
+    pub(in crate::kernel) fn record_population_storage_creation(&mut self, block: PointerBlock) {
+        if let Some(events) = &self.population_effects.creation {
+            Arc::make_mut(&mut self.population_effects).creation = Some(events.created(block));
+        }
+    }
+
+    pub(in crate::kernel) fn record_pending_population_storage_creation(
+        &mut self,
+        block: PointerBlock,
+    ) {
+        if let Some(events) = &self.population_effects.creation {
+            Arc::make_mut(&mut self.population_effects).creation =
+                Some(events.pending_creation(block));
+        }
+    }
+
+    pub(in crate::kernel) fn resolve_pending_population_storage_creation(
+        &mut self,
+        pending_block: &PointerBlock,
+        live_block: Option<PointerBlock>,
+    ) {
+        if let Some(events) = &self.population_effects.creation {
+            let next = events.resolve_pending(pending_block, live_block);
+            if &next != events {
+                Arc::make_mut(&mut self.population_effects).creation = Some(next);
+            }
+        }
+    }
+
+    pub(in crate::kernel) fn retire_population_storage(&mut self, block: &PointerBlock) {
+        if let Some(events) = &self.population_effects.creation {
+            Arc::make_mut(&mut self.population_effects).creation = Some(events.retired(block));
+        }
+    }
+
+    /// Recover caller environment identity while retaining any creation
+    /// events produced by a body that actually executed.
+    pub(in crate::kernel) fn restore_population_creation_after_call(
+        &mut self,
+        caller: Option<&super::super::population_authority::c_creation::CreationEvents>,
+        callee: Option<&super::super::population_authority::c_creation::CreationEvents>,
+    ) {
+        let next = match (caller, callee) {
+            (Some(caller), Some(callee)) => Some(callee.return_to(caller)),
+            (None, None) => None,
+            // A missing ledger cannot justify an origin in either direction.
+            _ => None,
+        };
+        if self.population_effects.creation != next {
+            Arc::make_mut(&mut self.population_effects).creation = next;
+        }
     }
 
     pub(in crate::kernel) fn with_next_local_frame(mut self, next: u64) -> Self {

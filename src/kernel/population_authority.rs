@@ -5,8 +5,10 @@
 //! owners within that alternative, so passing an anchor cannot erase an
 //! authority held elsewhere. The C bridge must obtain an anchor from checked
 //! storage-lifetime evidence; `allocate_anchor` grants no C memory ownership.
-use crate::persistent::PersistentMap;
+use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::atomic::{AtomicU64, Ordering};
+
+pub(in crate::kernel) mod c_creation;
 
 fn fresh() -> u64 {
     static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -29,6 +31,12 @@ pub(super) struct Population(u64);
 #[derive(Clone, Debug)]
 struct AnchorRecord {
     owner: Holder,
+    // Creation permission stays with the creating proof environment. Moving
+    // memory ownership does not move this permission to another function.
+    creator: Holder,
+    // Keep retired scopes until this lifetime ends: retirement must not
+    // authorize a fresh zero-count assertion about the same population.
+    established: PersistentSet<String>,
     registrations: u32,
 }
 #[derive(Clone, Debug)]
@@ -42,9 +50,10 @@ struct PopulationRecord {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Refusal {
     MissingAnchor,
+    NotCreationEnvironment,
     MissingAuthority,
     MissingMembers,
-    AlreadyRegistered,
+    AlreadyEstablished,
     UnknownPopulation,
     OutstandingMembers,
     OutstandingAuthority,
@@ -125,6 +134,8 @@ impl AuthorityState {
             anchor,
             AnchorRecord {
                 owner: holder,
+                creator: holder,
+                established: PersistentSet::default(),
                 registrations: 0,
             },
         );
@@ -132,6 +143,9 @@ impl AuthorityState {
         (next, anchor)
     }
 
+    /// Establish once per scope in the creating environment, while it owns
+    /// the anchor. Contract entry must use a distinct holder and may only
+    /// receive already-established authority, never creation permission.
     pub(super) fn establish(
         &self,
         holder: Holder,
@@ -140,9 +154,13 @@ impl AuthorityState {
     ) -> Result<(Self, Population), Refusal> {
         let mut record = self.anchor_owned(holder, anchor)?.clone();
         let key = (anchor, family.to_owned());
-        if self.registrations.contains_key(&key) {
-            return Err(Refusal::AlreadyRegistered);
+        if record.established.contains(&key.1) {
+            return Err(Refusal::AlreadyEstablished);
         }
+        if record.creator != holder {
+            return Err(Refusal::NotCreationEnvironment);
+        }
+        record.established = record.established.with_value(key.1.clone());
         record.registrations = record
             .registrations
             .checked_add(1)
@@ -162,6 +180,14 @@ impl AuthorityState {
         );
         next.change_obligations(holder, 0, 1);
         Ok((next, population))
+    }
+
+    /// Resolve a resource type's live population identity. Naming it grants
+    /// neither authority nor members; observations still check ownership.
+    pub(super) fn population_at(&self, anchor: Anchor, family: &str) -> Option<Population> {
+        self.registrations
+            .get(&(anchor, family.to_owned()))
+            .copied()
     }
 
     pub(super) fn observe(&self, holder: Holder, population: Population) -> Result<u32, Refusal> {

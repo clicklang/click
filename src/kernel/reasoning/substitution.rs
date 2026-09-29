@@ -3965,6 +3965,7 @@ fn substitute_bitvector_variable_in_c_state(
             to,
         ),
         population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
+            creation: state.population_effects.creation.clone(),
             committed_consumptions: substitute_bitvector_variable_in_population_counts(
                 &state.population_effects.committed_consumptions,
                 from,
@@ -6705,6 +6706,7 @@ fn substitute_pointer_variable_in_c_state(state: &CState, from: Variable, to: &P
             to,
         ),
         population_effects: std::sync::Arc::new(crate::kernel::primitives::PopulationEffects {
+            creation: state.population_effects.creation.clone(),
             committed_consumptions: substitute_pointer_variable_in_population_counts(
                 &state.population_effects.committed_consumptions,
                 from,

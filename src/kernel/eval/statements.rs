@@ -1093,7 +1093,7 @@ pub(super) fn execute_c_heap_allocate_paths(
                 break Pointer::symbolic(identity);
             }
         };
-        let success_state =
+        let mut success_state =
             state
                 .clone()
                 .with_memory(state.memory.clone().with_pending_heap_allocation(
@@ -1101,6 +1101,7 @@ pub(super) fn execute_c_heap_allocate_paths(
                     bytes,
                     zeroed,
                 ));
+        success_state.record_pending_population_storage_creation(pointer.block.clone());
         let assigned = execute_c_lvalue_assignment_paths(
             &success_state,
             &c_variable(target.to_string()),
@@ -2075,14 +2076,14 @@ fn execute_c_heap_free_paths(
                 bytes: bytes.clone(),
             },
         ));
+        let mut next = state
+            .clone()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        next.retire_population_storage(&pointer.block);
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
-            outcome: CStatementOutcome::Normal(
-                state
-                    .clone()
-                    .with_memory(memory)
-                    .with_resource_context(resources),
-            ),
+            outcome: CStatementOutcome::Normal(next),
             facts,
             obligations,
 
@@ -2179,6 +2180,10 @@ pub(crate) fn resolve_pending_heap_allocations(
             .resolve_pending_heap_allocation(&base, !is_null)
             .expect("collected pending allocation should still exist");
         state = state.with_memory(memory);
+        state.resolve_pending_population_storage_creation(
+            &base.block,
+            (!is_null).then(|| resolved_base.block.clone()),
+        );
         for binding in std::sync::Arc::make_mut(&mut state.locals.bindings).values_mut() {
             if let CLocalBinding::Object {
                 value: CValue::Pointer(pointer),

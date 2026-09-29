@@ -3370,7 +3370,7 @@ fn execute_verified_function_applications_with_suspension(
             caller_state,
         );
         drop(allocation_delta_timing);
-        let (memory, allocation_effects) = match allocation_delta {
+        let (memory, allocation_effects, retired_creations) = match allocation_delta {
             Ok(result) => result,
             Err(VerifiedAllocationDeltaError::Runtime(error)) => {
                 paths.push(CFunctionPath {
@@ -3386,6 +3386,9 @@ fn execute_verified_function_applications_with_suspension(
         };
         facts.extend(allocation_effects);
         post_state.set_memory(memory);
+        for block in retired_creations {
+            post_state.retire_population_storage(&block);
+        }
         let post_contract_state = with_canonical_borrowed_pointer_memory(
             &with_contract_interface_argument_views(&post_state, interface, &argument_values),
             &transfer.canonical_borrowed_owners,
@@ -3654,6 +3657,10 @@ fn execute_verified_function_applications_with_suspension(
         }
         return_state.population_access = post_state.population_access.clone();
         return_state.counted_populations = post_state.counted_populations;
+        return_state.restore_population_creation_after_call(
+            caller_state.population_effects.creation.as_ref(),
+            post_state.population_effects.creation.as_ref(),
+        );
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = CFunctionOutcome::Return {
@@ -3740,6 +3747,10 @@ fn exceptional_direct_function_path(
     throw_state.set_memory(memory);
     throw_state.next_local_frame = post_state.next_local_frame;
     throw_state.next_local_lifetime = post_state.next_local_lifetime;
+    throw_state.restore_population_creation_after_call(
+        caller_state.population_effects.creation.as_ref(),
+        post_state.population_effects.creation.as_ref(),
+    );
     let outcome = CFunctionOutcome::Throw {
         value: payload,
         state: throw_state,
@@ -11391,6 +11402,77 @@ fn allocation_continuity(
 mod allocation_continuity_tests {
     use super::*;
 
+    #[test]
+    fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
+        let base = Pointer {
+            block: PointerBlock::Heap(930_100),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let bytes = Bitvector32Term::Constant(16);
+        let input = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), bytes.clone()));
+        let memory = CMemory::new()
+            .with_heap_allocation_claim(base.clone(), bytes.clone())
+            .expect("live input allocation");
+        let mut state = CState::new()
+            .with_population_creation_tracking()
+            .with_memory(memory.clone());
+        state.record_population_storage_creation(base.block.clone());
+        assert!(
+            state
+                .population_effects
+                .creation
+                .as_ref()
+                .unwrap()
+                .created_here(&base.block)
+        );
+        let replacement_bytes = Bitvector32Term::Variable(Variable(930_101));
+        assert!(matches!(
+            allocation_continuity(
+                &base,
+                &bytes,
+                &base,
+                &replacement_bytes,
+                &PureFactContext::new(),
+            ),
+            AllocationContinuity::Undecided(_)
+        ));
+        for output in [
+            ResourceContext::new(),
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_allocation(
+                base.clone(),
+                replacement_bytes.clone(),
+            )),
+        ] {
+            let (after_memory, _, retired) = apply_verified_heap_allocation_delta(
+                memory.clone(),
+                &memory,
+                &input,
+                &ResourceContext::new(),
+                &output,
+                &[],
+                &CFunctionContractInterface::new(CType::Void, vec![]),
+                &PureFactContext::new(),
+                None,
+                &state,
+            )
+            .expect("checked allocation retirement");
+            assert_eq!(retired, vec![base.block.clone()]);
+            let mut returned = state.clone().with_memory(after_memory);
+            for block in retired {
+                returned.retire_population_storage(&block);
+            }
+            assert!(
+                !returned
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .unwrap()
+                    .created_here(&base.block)
+            );
+        }
+    }
+
     fn external_pointer(variable: u64) -> Pointer {
         Pointer {
             block: PointerBlock::ExternalArgument,
@@ -11739,8 +11821,9 @@ fn apply_verified_heap_allocation_delta(
     assumptions: &PureFactContext,
     ledger: Option<&LoanLedger>,
     mutex_state: &CState,
-) -> Result<(CMemory, Vec<ExecutionPureFact>), VerifiedAllocationDeltaError> {
+) -> Result<(CMemory, Vec<ExecutionPureFact>, Vec<PointerBlock>), VerifiedAllocationDeltaError> {
     let mut effects = Vec::new();
+    let mut retired_creations = Vec::new();
     // What the callee consumed is read where it was consumed: at the call's
     // entry. The post-call memory may have rewritten a pointer field the lent
     // resources owned, so an allocation named through it at the post state
@@ -11891,6 +11974,7 @@ fn apply_verified_heap_allocation_delta(
                     &bytes,
                     &allocation_assumptions,
                 );
+                retired_creations.push(base.block.clone());
                 continue;
             }
         }
@@ -11921,6 +12005,7 @@ fn apply_verified_heap_allocation_delta(
             return Err(VerifiedAllocationDeltaError::Runtime(error));
         }
 
+        retired_creations.push(base.block.clone());
         let before_free = memory.clone();
         if memory.live_heap_block_size(&base).is_none() {
             memory = memory
@@ -11962,7 +12047,7 @@ fn apply_verified_heap_allocation_delta(
                 ))
             })?;
     }
-    Ok((memory, effects))
+    Ok((memory, effects, retired_creations))
 }
 
 fn with_contract_argument_views(state: &CState, function: &CFunction, values: &[CValue]) -> CState {
@@ -12749,7 +12834,7 @@ fn verified_call_uninitialized_read(
     Ok(None)
 }
 
-pub(super) fn bind_c_function_arguments(
+pub(in crate::kernel) fn bind_c_function_arguments(
     caller_state: &CState,
     function: &CFunction,
     values: &[CValue],
@@ -12819,6 +12904,11 @@ pub(super) fn bind_c_function_arguments(
         || preserves_mutex_protocols(function.contract_interface());
     callee_state.population_access = caller_state.population_access.clone();
     callee_state.counted_populations = caller_state.counted_populations.clone();
+    Arc::make_mut(&mut callee_state.population_effects).creation = caller_state
+        .population_effects
+        .creation
+        .as_ref()
+        .map(|events| events.enter_call());
     Arc::make_mut(&mut callee_state.population_effects).pending_counts =
         caller_state.population_effects.pending_counts.clone();
     // A function entry is a lexical/frame rebind, not an authority reset.
@@ -12942,6 +13032,11 @@ fn bind_c_contract_arguments(
         caller_state.preserves_mutex_protocols || preserves_mutex_protocols(interface);
     callee_state.population_access = caller_state.population_access.clone();
     callee_state.counted_populations = caller_state.counted_populations.clone();
+    Arc::make_mut(&mut callee_state.population_effects).creation = caller_state
+        .population_effects
+        .creation
+        .as_ref()
+        .map(|events| events.enter_call());
     Arc::make_mut(&mut callee_state.population_effects).pending_counts =
         caller_state.population_effects.pending_counts.clone();
     callee_state.loan_ledger = caller_state.loan_ledger.clone();
@@ -25658,6 +25753,10 @@ fn function_outcome_from_body_with_resource_transfer(
     return_state.named_mutex_authorities = state.named_mutex_authorities.clone();
     return_state.population_access = state.population_access.clone();
     return_state.counted_populations = state.counted_populations;
+    return_state.restore_population_creation_after_call(
+        caller_state.population_effects.creation.as_ref(),
+        state.population_effects.creation.as_ref(),
+    );
     return_state.next_local_frame = state.next_local_frame;
     return_state.next_local_lifetime = state.next_local_lifetime;
     Ok((
@@ -26057,6 +26156,7 @@ pub(super) fn function_outcome_from_body(
                 value
             };
 
+            let original_creation = caller_state.population_effects.creation.clone();
             let mut caller_state = caller_state.clone();
             let retired_memory = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
@@ -26100,6 +26200,10 @@ pub(super) fn function_outcome_from_body(
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             caller_state.population_access = state.population_access.clone();
             caller_state.counted_populations = state.counted_populations;
+            caller_state.restore_population_creation_after_call(
+                original_creation.as_ref(),
+                state.population_effects.creation.as_ref(),
+            );
             caller_state.next_local_frame = state.next_local_frame;
             caller_state.next_local_lifetime = state.next_local_lifetime;
             (
@@ -26120,6 +26224,7 @@ pub(super) fn function_outcome_from_body(
                     obligations,
                 );
             }
+            let original_creation = caller_state.population_effects.creation.clone();
             let mut caller_state = caller_state.clone();
             let retired_memory = if function.has_inline_body() {
                 end_inline_frame_automatic_lifetimes(&state)
@@ -26149,6 +26254,10 @@ pub(super) fn function_outcome_from_body(
                 .with_resource_context(return_resources.cloned().unwrap_or(state.resources));
             caller_state.population_access = state.population_access.clone();
             caller_state.counted_populations = state.counted_populations;
+            caller_state.restore_population_creation_after_call(
+                original_creation.as_ref(),
+                state.population_effects.creation.as_ref(),
+            );
             caller_state.next_local_frame = state.next_local_frame;
             caller_state.next_local_lifetime = state.next_local_lifetime;
             (
