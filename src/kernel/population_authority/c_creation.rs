@@ -58,9 +58,9 @@ struct Root {
     symbolic_holders: PersistentMap<Holder, u32>,
     /// Per-storage family history; never inferred from the current owner.
     tainted: PersistentMap<PointerBlock, PersistentSet<String>>,
-    /// A standalone helper may assume exactly one declared population input.
-    /// It carries no creator right, storage event, or asserted total.
-    opaque_import: Option<OpaqueImport>,
+    /// Exact declared population inputs. Each carries no creator right,
+    /// storage event, or asserted total.
+    opaque_imports: PersistentMap<ResourceDescription, OpaqueImport>,
 }
 
 #[derive(Clone)]
@@ -307,9 +307,8 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::InvalidMember);
         }
-        if let Some(existing) = &self.0.opaque_import {
-            if existing.description == *description
-                && existing.owned_members == owned_members
+        if let Some(existing) = self.0.opaque_imports.get(description) {
+            if existing.owned_members == owned_members
                 && existing.entry_count == entry_count
                 && existing.entry_symbolic_members == symbolic_members
             {
@@ -320,6 +319,18 @@ impl CreationEvents {
         if !self.0.creators.is_empty() || !self.0.anchors.is_empty() {
             return Err(CreationRefusal::NotCreationEnvironment);
         }
+        let opaque_imports = self.0.opaque_imports.with_inserted(
+            description.clone(),
+            OpaqueImport {
+                description: description.clone(),
+                entry_owned_members: owned_members,
+                owned_members,
+                entry_symbolic_members: symbolic_members,
+                symbolic_delta: None,
+                entry_count,
+                retired_authority: false,
+            },
+        );
         Ok(Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
@@ -335,15 +346,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: Some(OpaqueImport {
-                description: description.clone(),
-                entry_owned_members: owned_members,
-                owned_members,
-                entry_symbolic_members: symbolic_members,
-                symbolic_delta: None,
-                entry_count,
-                retired_authority: false,
-            }),
+            opaque_imports,
         })))
     }
 
@@ -353,9 +356,9 @@ impl CreationEvents {
     ) -> bool {
         if self
             .0
-            .opaque_import
-            .as_ref()
-            .is_some_and(|import| import.description == *description && !import.retired_authority)
+            .opaque_imports
+            .get(description)
+            .is_some_and(|import| !import.retired_authority)
         {
             return true;
         }
@@ -417,16 +420,19 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> bool {
-        self.0.opaque_import.as_ref().is_some_and(|import| {
-            import.description == *description
-                && (import.owned_members == 1
-                    || import
-                        .symbolic_delta
-                        .as_ref()
-                        .map_or(import.entry_symbolic_members.is_some(), |(produce, _)| {
-                            *produce
-                        }))
-        })
+        self.0
+            .opaque_imports
+            .get(description)
+            .is_some_and(|import| {
+                import.description == *description
+                    && (import.owned_members == 1
+                        || import
+                            .symbolic_delta
+                            .as_ref()
+                            .map_or(import.entry_symbolic_members.is_some(), |(produce, _)| {
+                                *produce
+                            }))
+            })
     }
 
     /// Exact signed batch delta from a checked control import. The quantity may
@@ -435,7 +441,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Option<(bool, Bitvector32Term)> {
-        let import = self.0.opaque_import.as_ref()?;
+        let import = self.0.opaque_imports.get(description)?;
         if import.description != *description || import.retired_authority {
             return None;
         }
@@ -448,8 +454,15 @@ impl CreationEvents {
         })
     }
 
-    pub(in crate::kernel) fn spent_imported_member_since(&self, before: &Self) -> bool {
-        match (&before.0.opaque_import, &self.0.opaque_import) {
+    pub(in crate::kernel) fn spent_imported_member_since(
+        &self,
+        before: &Self,
+        description: &ResourceDescription,
+    ) -> bool {
+        match (
+            before.0.opaque_imports.get(description),
+            self.0.opaque_imports.get(description),
+        ) {
             (Some(start), Some(end)) => {
                 start.description == end.description
                     && start.owned_members == 1
@@ -460,8 +473,15 @@ impl CreationEvents {
         }
     }
 
-    pub(in crate::kernel) fn born_imported_member_since(&self, before: &Self) -> bool {
-        match (&before.0.opaque_import, &self.0.opaque_import) {
+    pub(in crate::kernel) fn born_imported_member_since(
+        &self,
+        before: &Self,
+        description: &ResourceDescription,
+    ) -> bool {
+        match (
+            before.0.opaque_imports.get(description),
+            self.0.opaque_imports.get(description),
+        ) {
             (Some(start), Some(end)) => {
                 start.description == end.description
                     && start.owned_members == 0
@@ -472,8 +492,15 @@ impl CreationEvents {
         }
     }
 
-    pub(in crate::kernel) fn retired_imported_authority_since(&self, before: &Self) -> bool {
-        match (&before.0.opaque_import, &self.0.opaque_import) {
+    pub(in crate::kernel) fn retired_imported_authority_since(
+        &self,
+        before: &Self,
+        description: &ResourceDescription,
+    ) -> bool {
+        match (
+            before.0.opaque_imports.get(description),
+            self.0.opaque_imports.get(description),
+        ) {
             (Some(start), Some(end)) => {
                 start.description == end.description
                     && !start.retired_authority
@@ -489,25 +516,18 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> bool {
-        self.0
-            .opaque_import
-            .as_ref()
-            .is_some_and(|import| import.description == *description)
+        self.0.opaque_imports.contains_key(description)
     }
 
     pub(in crate::kernel) fn recognizes_population_authority(
         &self,
         description: &ResourceDescription,
     ) -> bool {
-        self.0
-            .opaque_import
-            .as_ref()
-            .is_some_and(|import| import.description == *description)
-            || self.tracks_population(description)
+        self.0.opaque_imports.contains_key(description) || self.tracks_population(description)
     }
 
     pub(in crate::kernel) fn has_opaque_import(&self) -> bool {
-        self.0.opaque_import.is_some()
+        !self.0.opaque_imports.is_empty()
     }
 
     /// The description includes the exact pointer; another family or offset
@@ -516,7 +536,7 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Option<SymbolicPopulationCount> {
-        let import = self.0.opaque_import.as_ref()?;
+        let import = self.0.opaque_imports.get(description)?;
         if import.description != *description || import.retired_authority {
             return None;
         }
@@ -553,13 +573,7 @@ impl CreationEvents {
         block: &PointerBlock,
         family: &str,
     ) -> Result<u32, CreationRefusal> {
-        if *block == PointerBlock::ExternalArgument
-            && self
-                .0
-                .opaque_import
-                .as_ref()
-                .is_some_and(|import| import.description.family() == family)
-        {
+        if *block == PointerBlock::ExternalArgument && !self.0.opaque_imports.is_empty() {
             return Err(CreationRefusal::UnknownTotal);
         }
         let anchor = *self
@@ -646,7 +660,7 @@ impl CreationEvents {
         ) {
             return Err(CreationRefusal::InvalidQuantity);
         }
-        if self.0.opaque_import.is_none() {
+        if self.0.opaque_imports.get(description).is_none() {
             self.exact_member_block(block, description)?;
             let anchor = *self
                 .0
@@ -737,7 +751,7 @@ impl CreationEvents {
                 symbolic_batches: batches,
                 symbolic_holders: holders,
                 tainted,
-                opaque_import: None,
+                opaque_imports: self.0.opaque_imports.clone(),
             }));
             let evidence = CheckedPopulationMemberExchange {
                 before: self.0.identity,
@@ -749,9 +763,9 @@ impl CreationEvents {
         }
         let import = self
             .0
-            .opaque_import
-            .as_ref()
-            .filter(|import| import.description == *description && import.entry_count.is_some())
+            .opaque_imports
+            .get(description)
+            .filter(|import| import.entry_count.is_some())
             .ok_or(CreationRefusal::MissingAuthority)?;
         if import.retired_authority || import.symbolic_delta.is_some() {
             return Err(CreationRefusal::InvalidQuantity);
@@ -784,10 +798,13 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: Some(OpaqueImport {
-                symbolic_delta: Some((produce, quantity.clone())),
-                ..import.clone()
-            }),
+            opaque_imports: self.0.opaque_imports.with_inserted(
+                description.clone(),
+                OpaqueImport {
+                    symbolic_delta: Some((produce, quantity.clone())),
+                    ..import.clone()
+                },
+            ),
         }));
         let evidence = CheckedPopulationMemberExchange {
             before: self.0.identity,
@@ -806,12 +823,7 @@ impl CreationEvents {
         description: &ResourceDescription,
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
-        if let Some(import) = self
-            .0
-            .opaque_import
-            .as_ref()
-            .filter(|import| import.description == *description)
-        {
+        if let Some(import) = self.0.opaque_imports.get(description) {
             // An opaque helper has one checked member exchange. Mixing a
             // unit transition with an imported symbolic batch would lose one
             // of the deltas from its population count.
@@ -847,15 +859,13 @@ impl CreationEvents {
                 symbolic_batches: self.0.symbolic_batches.clone(),
                 symbolic_holders: self.0.symbolic_holders.clone(),
                 tainted: self.0.tainted.clone(),
-                opaque_import: Some(OpaqueImport {
-                    description: description.clone(),
-                    entry_owned_members: import.entry_owned_members,
-                    owned_members: u32::from(produce),
-                    entry_symbolic_members: import.entry_symbolic_members.clone(),
-                    symbolic_delta: None,
-                    entry_count: import.entry_count.clone(),
-                    retired_authority: false,
-                }),
+                opaque_imports: self.0.opaque_imports.with_inserted(
+                    description.clone(),
+                    OpaqueImport {
+                        owned_members: u32::from(produce),
+                        ..import.clone()
+                    },
+                ),
             }));
             let evidence = CheckedPopulationMemberExchange {
                 before: self.0.identity,
@@ -909,7 +919,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted,
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         }));
         let evidence = CheckedPopulationMemberExchange {
             before: self.0.identity,
@@ -936,7 +946,7 @@ impl CreationEvents {
             symbolic_batches: PersistentMap::default(),
             symbolic_holders: PersistentMap::default(),
             tainted: PersistentMap::default(),
-            opaque_import: None,
+            opaque_imports: PersistentMap::default(),
         }))
     }
 
@@ -964,7 +974,7 @@ impl CreationEvents {
                     symbolic_batches: self.0.symbolic_batches.clone(),
                     symbolic_holders: self.0.symbolic_holders.clone(),
                     tainted: self.0.tainted.clone(),
-                    opaque_import: None,
+                    opaque_imports: PersistentMap::default(),
                 }))
             })
             .clone()
@@ -992,7 +1002,7 @@ impl CreationEvents {
                     symbolic_batches: self.0.symbolic_batches.clone(),
                     symbolic_holders: self.0.symbolic_holders.clone(),
                     tainted: self.0.tainted.clone(),
-                    opaque_import: self.0.opaque_import.clone(),
+                    opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
             .clone()
@@ -1116,7 +1126,7 @@ impl CreationEvents {
             symbolic_batches: batches,
             symbolic_holders: holders,
             tainted: self.0.tainted.clone(),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         }));
         Ok(self
             .0
@@ -1162,7 +1172,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
 
@@ -1222,7 +1232,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: caller.0.opaque_import.clone(),
+            opaque_imports: caller.0.opaque_imports.clone(),
         }));
         self.0
             .returns
@@ -1265,7 +1275,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
 
@@ -1326,7 +1336,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted,
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
 
@@ -1364,7 +1374,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
 
@@ -1423,7 +1433,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted,
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
 
@@ -1470,7 +1480,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
 
@@ -1513,9 +1523,8 @@ impl CreationEvents {
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
         let import = self
             .0
-            .opaque_import
-            .as_ref()
-            .filter(|import| import.description == *description)
+            .opaque_imports
+            .get(description)
             .ok_or(CreationRefusal::MissingAuthority)?;
         if import.retired_authority || import.entry_owned_members != 1 || import.owned_members != 0
         {
@@ -1536,10 +1545,13 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: Some(OpaqueImport {
-                retired_authority: true,
-                ..import.clone()
-            }),
+            opaque_imports: self.0.opaque_imports.with_inserted(
+                description.clone(),
+                OpaqueImport {
+                    retired_authority: true,
+                    ..import.clone()
+                },
+            ),
         }));
         let evidence = CheckedPopulationAuthorityExchange {
             before: self.0.identity,
@@ -1588,7 +1600,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
 
@@ -1640,7 +1652,7 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.without_key(block),
-            opaque_import: self.0.opaque_import.clone(),
+            opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
 }

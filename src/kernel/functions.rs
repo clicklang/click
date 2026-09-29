@@ -18328,6 +18328,7 @@ fn apply_counted_population_transitions_with_interface(
             // population-wide allocations that the unchanged count keeps
             // alive, just as it does for a nonzero changed count below.
             if let Some(definition) = population_body_definition
+                && !caller_state.uses_population_authority_semantics()
                 && post_state
                     .counted_population(&name, &arguments)
                     .is_some_and(|count| !population_quantity_is_zero(count, assumptions))
@@ -18490,7 +18491,9 @@ fn apply_counted_population_transitions_with_interface(
             *post_state = post_state
                 .clone()
                 .without_counted_population(&name, &arguments);
-            if population_body_definition.is_some() {
+            if population_body_definition.is_some()
+                && !caller_state.uses_population_authority_semantics()
+            {
                 let singleton = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
                     CResource::Composite {
                         name: name.clone(),
@@ -18518,7 +18521,9 @@ fn apply_counted_population_transitions_with_interface(
                 arguments.clone(),
                 new_count.clone(),
             );
-            if population_body_definition.is_some() {
+            if population_body_definition.is_some()
+                && !caller_state.uses_population_authority_semantics()
+            {
                 let singleton = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
                     CResource::Composite {
                         name: name.clone(),
@@ -27028,8 +27033,10 @@ pub(super) fn contract_exit_outcome(
             .zip(state.population_effects.creation.as_ref())
             .is_some_and(|(before, after)| {
                 if final_release {
-                    after.spent_imported_member_since(before)
-                        && after.retired_imported_authority_since(before)
+                    expected_description.as_ref().is_some_and(|description| {
+                        after.spent_imported_member_since(before, description)
+                            && after.retired_imported_authority_since(before, description)
+                    })
                 } else if let (Some(description), Some(expected_quantity)) =
                     (expected_description.as_ref(), expected_quantity.as_ref())
                 {

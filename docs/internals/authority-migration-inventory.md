@@ -1,6 +1,6 @@
-# Authority migration: checkpoint 0 consumer inventory
+# Authority migration: consumer inventory
 
-This is a baseline inventory for `issues/authority-migration.md`, not a specification of new syntax. The original consumer groups below use the legacy resource/population rules unless a parallel authority proof is called out explicitly. Design notes are proposals or historical investigations, not passing fixtures. A group changes path only when its complete positive and negative fixture set has a checked replacement; the index here records the starting path and the behavior to preserve. The C in source-backed fixtures is frozen by the migration issue.
+This is the consumer inventory for `issues/authority-migration.md`, not a specification of new syntax. The groups below use the legacy resource/population rules unless marked as authority-mode proofs. Design notes are proposals or historical investigations, not passing fixtures. The C in source-backed fixtures is frozen by the migration issue.
 
 ## Discovery boundary
 
@@ -15,21 +15,22 @@ rg -l 'field.*count|count.*field|is_countable|CountedPopulation' examples mdtest
 
 The third query finds explicit coefficient clauses, including unrelated resource quantities. Repeated `owns`/`consumes` clauses also encode quantities and require contextual review. The `count` search covers body facts, contracts, predicates, snapshots, and loop invariants; those are distinct authority-dependency sites, not one interchangeable test.
 
-## Parallel authority proof status
+## Sequential refcount status
 
-`examples/refcount-authority/refcount.click` selects authority semantics for
-unchanged C files from `examples/refcount/`. It verifies all seven functions:
-initialization, one and symbolic-batch retain/release, final release with
-allocation reclamation, and the complete pipeline including allocation failure.
-The old sidecar remains the baseline until the negative fixture group is
-migrated. This parallel proof does not mark the sequential refcount group
-migrated.
+`examples/refcount/refcount.click` now selects authority semantics for its
+unchanged C files. It verifies all seven functions: initialization, one and
+symbolic-batch retain/release, final release with allocation reclamation, and
+the complete pipeline including allocation failure. The associated positive
+count-contract fixtures still use legacy semantics: authority-mode
+`count(R(p))` cannot yet be lowered at a contract boundary for an external C
+pointer parameter, even when the contract directly owns `authority(R(p))`.
+The full sequential fixture group therefore remains unmigrated.
 
 ## Source-backed example and design groups
 
 | Group and current path | Checked-in files | Existing property to preserve |
 | --- | --- | --- |
-| Sequential refcount; legacy | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. |
+| Sequential refcount project; authority | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. Related count-contract fixtures remain legacy. |
 | Shared parent; legacy | `design/shared-heap-probes/shared_parent.click`, `design/shared-heap-probes/README.md` | Parent wrappers carry child references through attachment, detach, nested calls, both destruction orders, surviving-parent reads, and final reclamation. The design probe's C is a source pattern to retain. |
 | Bounded pool; legacy | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
 | Earlier authority design; non-executable | `design/concurrency-probes/shared-count-authority.md`, `design/concurrency-probes/explicit-authority.md`, `design/concurrency-probes/README.md` | Preserve the motivating hostile cases and protocol questions; these documents do not define the approved source interface. The migration issue supersedes the whole-population mutex-custody plan. |
@@ -38,7 +39,15 @@ migrated.
 
 ## Sequential mdtest dependency groups
 
-Unless marked otherwise, these are legacy-path fixtures. The paths in each row are relative to `mdtests/`. The pass/fail ledger below comes from each fixture's checked-in `expect` block; names alone do not determine the expected result.
+Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
+`counted_resource_rejects_minting.md`,
+`counted_resource_rejects_double_spend.md`, and
+`population_simple_exit_rejects_final_leak.md` select authority semantics;
+`counted_resource_authority_retained_control.md` and the two
+`authority_count_rejects_*.md` fixtures add checked authority regressions. The
+paths in each row are relative to `mdtests/`. The pass/fail ledger below comes
+from each fixture's checked-in `expect` block; names alone do not determine
+the expected result.
 
 | Group | Files and preserved behavior |
 | --- | --- |
@@ -88,4 +97,11 @@ Public explanations to revise as groups migrate are `docs/concepts/resources.md`
 
 ## Path ledger for later checkpoints
 
-At this baseline every executable row is **legacy**; no checked-in authority-path replacement is claimed. The intended order is refcount, parent, field-bearing/wildcard and pool, mutex custody, then abstract worker accounting. For each row, record the new fixture or unchanged migrated source proof, its positive claim, its corresponding rejection, the selected verification path, and verify/expand/audit evidence before removing it from legacy. The final switch must also inspect imported summaries, caches, and certificates; a successful new proof must never retry through these legacy consumers.
+The refcount project and the focused fixtures identified above select authority
+semantics; the remaining rows are legacy. The intended order is refcount
+fixtures, parent, field-bearing/wildcard and pool, mutex custody, then abstract
+worker accounting. For each row, record the new fixture or unchanged migrated
+source proof, its positive claim, its corresponding rejection, the selected
+verification path, and verify/expand/audit evidence before removing it from
+legacy. The final switch must also inspect imported summaries, caches, and
+certificates; a successful new proof must never retry through legacy consumers.

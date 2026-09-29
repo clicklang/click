@@ -9,19 +9,25 @@ struct object { int32 refs; };
 void release(struct object* obj) { obj->refs = 0; }
 ```
 
-```click
-resource reference(obj: struct object*) {
+```click resource_semantics=authority
+resource reference(obj: struct object*) {}
+
+resource control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
     owns object(obj);
+    owns authority(reference(obj));
     fact obj->refs == count(reference(obj));
 }
 verifying "leak.c";
 void release(struct object* obj) {
-    requires count(reference(obj)) == 1;
+    requires obj->refs == 1;
+    consumes control(obj);
     consumes reference(obj);
     ensures 0 == 0;
 } by {
+    unfold(control(obj));
     unfold(reference(obj));
+    unfold(authority(reference(obj)));
     execute();
     normalize();
 }

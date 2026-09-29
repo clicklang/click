@@ -48,10 +48,12 @@ lifetime support with a checked copy helper to verify ordinary
 malloc-copy-install-free growth, including unchanged failure and live-prefix
 preservation on success.
 
-`examples/refcount/` verifies a heap object's resource-population lifecycle. Its
-population body owns the allocation and object once, `count(object_ref(obj))`
-tracks the stored reference count, and the project covers initialization,
-retain, nonfinal release, final release, and free across opaque calls.
+`examples/refcount/` verifies a heap object's resource-population lifecycle
+under authority semantics. `control(obj)` owns the allocation, object memory,
+and `authority(reference(obj))`; its invariant equates the stored count with
+`count(reference(obj))`. The project covers initialization, one and
+symbolic-batch retain/release, final free, and allocation failure across
+opaque calls.
 
 ## Basic function contracts
 

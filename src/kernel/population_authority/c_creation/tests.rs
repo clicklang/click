@@ -470,7 +470,7 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
     let (born, _) = empty
         .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
         .expect("an opaque helper can birth its exact member once");
-    assert!(born.born_imported_member_since(&empty));
+    assert!(born.born_imported_member_since(&empty, &description));
     assert!(born.owns_population_member(&description));
     assert!(matches!(
         born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
@@ -479,7 +479,7 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
     let (spent, _) = entry
         .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
         .expect("an opaque helper can spend its exact imported member once");
-    assert!(spent.spent_imported_member_since(&entry));
+    assert!(spent.spent_imported_member_since(&entry, &description));
     assert!(!spent.owns_population_member(&description));
     assert!(matches!(
         spent.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
@@ -497,8 +497,22 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
         .into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
+    let both = entry.import_opaque_contract_population(&other, 1).unwrap();
+    assert!(both.owns_population_authority(&description));
+    assert!(both.owns_population_member(&other));
+    let (spent_first, _) = both
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    assert!(!spent_first.owns_population_member(&description));
+    assert!(spent_first.owns_population_member(&other));
+    assert!(!spent_first.spent_imported_member_since(&both, &other));
+    let (spent_second, _) = spent_first
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &other, false)
+        .unwrap();
+    assert!(spent_second.spent_imported_member_since(&spent_first, &other));
+    assert!(!spent_second.spent_imported_member_since(&spent_first, &description));
     assert_eq!(
-        entry.import_opaque_contract_population(&other, 1),
+        both.import_opaque_contract_population(&description, 0),
         Err(CreationRefusal::OpaqueImportConflict)
     );
 
@@ -590,6 +604,132 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
 }
 
 #[test]
+fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
+    let first = member_description(PointerBlock::ExternalArgument);
+    let second = ResourceDescription::new(
+        "other_reference".into(),
+        first.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    let first_quantity = Bitvector32Term::Constant(3);
+    let second_quantity = Bitvector32Term::Constant(5);
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &first,
+            0,
+            Some(Bitvector32Term::Constant(7)),
+            Some(first_quantity.clone()),
+        )
+        .unwrap()
+        .import_opaque_contract_population_inner(
+            &second,
+            0,
+            Some(Bitvector32Term::Constant(11)),
+            Some(second_quantity.clone()),
+        )
+        .unwrap();
+    let (spent, _) = entry
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &first,
+            false,
+            &first_quantity,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert!(!spent.owns_population_member(&first));
+    assert!(spent.owns_population_member(&second));
+    assert_eq!(
+        spent
+            .observe_symbolic(&first)
+            .unwrap()
+            .entry_count
+            .as_const(),
+        Some(7)
+    );
+    assert_eq!(
+        spent
+            .observe_symbolic(&second)
+            .unwrap()
+            .entry_count
+            .as_const(),
+        Some(11)
+    );
+    assert!(spent.imported_member_delta_since_entry(&second).is_none());
+    let (spent_both, _) = spent
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &second,
+            false,
+            &second_quantity,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(
+        spent_both.imported_member_delta_since_entry(&first),
+        Some((false, first_quantity))
+    );
+    assert_eq!(
+        spent_both.imported_member_delta_since_entry(&second),
+        Some((false, second_quantity))
+    );
+}
+
+#[test]
+fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
+    let mut work = Vec::new();
+    for size in [64_u64, 256, 1024] {
+        let description_at = |id| {
+            ResourceDescription::new(
+                "reference".into(),
+                vec![
+                    CValue::pointer(Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::Variable(Variable(950_000 + id)),
+                    })
+                    .into(),
+                ]
+                .into(),
+                ResourceFieldSchema::new(vec![]).unwrap(),
+            )
+        };
+        let mut events = CreationEvents::new();
+        for id in 0..size {
+            events = events
+                .import_opaque_contract_population_inner(
+                    &description_at(id),
+                    1,
+                    Some(Bitvector32Term::Constant(3)),
+                    None,
+                )
+                .unwrap();
+        }
+        let selected = description_at(size / 2);
+        let neighbor = description_at(size / 2 + 1);
+        let ((), measured) = crate::persistent::measure_persistent_work(|| {
+            assert!(events.owns_population_authority(&selected));
+            assert_eq!(events.observe_symbolic(&selected).unwrap().delta, 0);
+            let (spent, _) = events
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &selected, false)
+                .unwrap();
+            assert_eq!(spent.observe_symbolic(&selected).unwrap().delta, -1);
+            assert_eq!(spent.observe_symbolic(&neighbor).unwrap().delta, 0);
+            assert!(spent.spent_imported_member_since(&events, &selected));
+            assert!(!spent.spent_imported_member_since(&events, &neighbor));
+            assert!(
+                spent
+                    .enter_proof_entry()
+                    .owns_population_authority(&selected)
+            );
+            assert!(!spent.enter_call().owns_population_authority(&selected));
+        });
+        assert!(measured > 0);
+        work.push(measured);
+    }
+    assert!(work[2] < work[0].saturating_mul(2) + 20, "{work:?}");
+}
+
+#[test]
 fn checked_control_import_observes_only_its_exact_entry_population() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -664,6 +804,33 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
     let observed = imported.observe_symbolic(&description).unwrap();
+    let wrong_population = ResourceDescription::new(
+        "other_reference".into(),
+        description.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    assert!(imported.observe_symbolic(&wrong_population).is_none());
+    let member = CResourceFact::own(CResource::Composite {
+        name: "reference".into(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let retiring_state = state.clone().with_resource_context(
+        ResourceContext::new().unchecked_with_facts([selected.clone(), member]),
+    );
+    let retiring_entry = retiring_state.population_effects.creation.as_ref().unwrap();
+    let imported_with_member = retiring_entry
+        .import_checked_control_wrapper(
+            &retiring_state,
+            &selected,
+            &definition,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    let (spent, _) = imported_with_member
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    let (retired, _) = spent.checked_retire_imported(&description).unwrap();
+    assert!(!retired.owns_population_authority(&description));
     assert_eq!(observed.delta, 0);
     assert_eq!(observed.entry_owned_members, 0);
     assert!(
@@ -699,6 +866,32 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         paths[0].value,
         CValue::Int32(Bitvector32Term::MemoryLoad(_, _))
     ));
+    // A population entry in the ledger is insufficient without current
+    // ownership. Preserve the same ledger while changing only custody.
+    let absent = projected
+        .clone()
+        .with_resource_context(ResourceContext::new());
+    assert!(evaluate_count(&absent).is_err());
+    let unrelated =
+        projected
+            .clone()
+            .with_resource_context(
+                ResourceContext::new().unchecked_with_fact(CResourceFact::own(
+                    CResource::PopulationAuthority(wrong_population.clone()),
+                )),
+            );
+    assert!(evaluate_count(&unrelated).is_err());
+    // Proof-entry rechecking retains the explicit import; an ordinary nested
+    // invocation must receive authority through its checked call transfer.
+    let mut rechecked = projected.clone();
+    Arc::make_mut(&mut rechecked.population_effects).creation = Some(imported.enter_proof_entry());
+    assert_eq!(evaluate_count(&rechecked).unwrap()[0].value, paths[0].value);
+    let mut nested = projected.clone();
+    Arc::make_mut(&mut nested.population_effects).creation = Some(imported.enter_call());
+    assert!(evaluate_count(&nested).is_err());
+    let mut retired_state = projected.clone();
+    Arc::make_mut(&mut retired_state.population_effects).creation = Some(retired);
+    assert!(evaluate_count(&retired_state).is_err());
     assert!(
         evaluate_count(&state).is_err(),
         "a folded wrapper alone cannot read count"
@@ -764,12 +957,19 @@ fn helper_call_transfers_authority_and_member_without_changing_total() {
         .checked_member_exchange(&block, &description, true)
         .unwrap();
     let callee = caller.enter_call();
+    assert!(!callee.owns_population_authority(&description));
     let entry = callee
         .transfer_call_fact(&caller, &callee, &description, true)
         .unwrap()
         .transfer_call_fact(&caller, &callee, &description, false)
         .unwrap();
     assert_eq!(entry.observe(&block, "reference"), Ok(1));
+    assert!(entry.owns_population_authority(&description));
+    assert!(
+        !entry
+            .return_to(&caller)
+            .owns_population_authority(&description)
+    );
     assert_eq!(
         entry.finish_call(&caller),
         Err(CreationRefusal::OutstandingOwnership)
@@ -780,6 +980,8 @@ fn helper_call_transfers_authority_and_member_without_changing_total() {
         .transfer_call_fact(&callee, &caller, &description, true)
         .unwrap();
     let resumed = returned.finish_call(&caller).unwrap();
+    assert!(resumed.owns_population_authority(&description));
+    assert!(!returned.owns_population_authority(&description));
     assert_eq!(resumed.observe(&block, "reference"), Ok(1));
     assert_eq!(returned.finish_call(&caller).unwrap(), resumed);
     assert_ne!(resumed.enter_call(), callee);

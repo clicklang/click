@@ -1249,7 +1249,8 @@ pub fn load_target_inputs(
         .clone()
         .ok_or_else(|| format!("mdtest `{}` has no ```click block", path.display()))?;
     let inputs = prepare_mdtest_inputs(&mdtest)?;
-    let project = read_click_project(path, &click_source)?;
+    let project =
+        apply_mdtest_resource_semantics(path, &mdtest, read_click_project(path, &click_source)?)?;
     Ok(LoadedTarget {
         click_source,
         project,
@@ -1312,6 +1313,9 @@ pub struct MdTest {
     pub cpp_source: Option<CppMdTestSource>,
     /// The single ```click block, if the file has one.
     pub click_source: Option<String>,
+    /// Test-only semantics selection on the ```click fence. This does not
+    /// alter the Click source or switch neighboring mdtests.
+    pub resource_semantics: Option<ResourceSemanticsMode>,
     /// The one-based line in the `.md` file where the ```click block's first
     /// body line sits, so positions inside the sidecar can be reported as
     /// positions in the markdown file.
@@ -1400,6 +1404,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
         c_sources: Vec::new(),
         cpp_source: None,
         click_source: None,
+        resource_semantics: None,
         click_start_line: 1,
         expectation: None,
     };
@@ -1466,7 +1471,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
             }
-            Some(BlockKind::Click) => {
+            Some(BlockKind::Click { resource_semantics }) => {
                 if mdtest.click_source.replace(body).is_some() {
                     return Err(format!(
                         "`{}` has more than one ```click block",
@@ -1474,6 +1479,7 @@ pub fn parse_mdtest(path: &Path, source: &str) -> Result<MdTest, String> {
                     ));
                 }
                 mdtest.click_start_line = start_line;
+                mdtest.resource_semantics = resource_semantics;
             }
             Some(BlockKind::Expect) => {
                 let expectation = parse_expectation(path, start_line, &body)?;
@@ -1513,6 +1519,7 @@ pub fn read_mdtest_project_if_needed(
     click_source: &str,
     inputs: &CInput,
 ) -> Result<Option<ClickProject>, String> {
+    let mdtest = read_mdtest(path)?;
     let has_imports = !click_import_sites(click_source)
         .map_err(|error| error.report())?
         .is_empty();
@@ -1527,11 +1534,39 @@ pub fn read_mdtest_project_if_needed(
             ));
         }
     };
-    if has_imports || has_config || matches!(inputs, CInput::PreparedCpp(_)) {
-        read_click_project(path, click_source).map(Some)
+    if has_imports
+        || has_config
+        || mdtest.resource_semantics.is_some()
+        || matches!(inputs, CInput::PreparedCpp(_))
+    {
+        apply_mdtest_resource_semantics(path, &mdtest, read_click_project(path, click_source)?)
+            .map(Some)
     } else {
         Ok(None)
     }
+}
+
+fn apply_mdtest_resource_semantics(
+    path: &Path,
+    mdtest: &MdTest,
+    project: ClickProject,
+) -> Result<ClickProject, String> {
+    let Some(resource_semantics) = mdtest.resource_semantics else {
+        return Ok(project);
+    };
+    let config_path = containing_directory(path).join("click.project.json");
+    if fs::symlink_metadata(&config_path).is_ok() {
+        return Err(format!(
+            "`{}` selects resource semantics in both its Click fence and `{}`",
+            path.display(),
+            config_path.display()
+        ));
+    }
+    Ok(project.with_c_profile(CProjectProfile {
+        target: None,
+        runtime: None,
+        resource_semantics,
+    }))
 }
 
 /// Prepares the source representation consumed by every mdtest driver. C++
@@ -1639,7 +1674,9 @@ enum BlockKind {
         function: String,
         profile: String,
     },
-    Click,
+    Click {
+        resource_semantics: Option<ResourceSemanticsMode>,
+    },
     Expect,
 }
 
@@ -1673,18 +1710,34 @@ fn block_kind(path: &Path, line: usize, info: &str) -> Result<Option<BlockKind>,
                 filename: filename.to_string(),
             }))
         }
-        "click" | "expect" => {
+        "click" => {
+            let resource_semantics = match parts.next() {
+                None => None,
+                Some("resource_semantics=authority") => Some(ResourceSemanticsMode::Authority),
+                Some("resource_semantics=legacy") => Some(ResourceSemanticsMode::Legacy),
+                Some(extra) => {
+                    return Err(format!(
+                        "`{}` has unexpected `{extra}` metadata on the `click` fence at line {line}; expected `resource_semantics=authority|legacy`",
+                        path.display()
+                    ));
+                }
+            };
             if let Some(extra) = parts.next() {
                 return Err(format!(
-                    "`{}` has unexpected `{extra}` metadata on the `{kind}` fence at line {line}",
+                    "`{}` has unexpected `{extra}` metadata on the `click` fence at line {line}",
                     path.display()
                 ));
             }
-            Ok(Some(if kind == "click" {
-                BlockKind::Click
-            } else {
-                BlockKind::Expect
-            }))
+            Ok(Some(BlockKind::Click { resource_semantics }))
+        }
+        "expect" => {
+            if let Some(extra) = parts.next() {
+                return Err(format!(
+                    "`{}` has unexpected `{extra}` metadata on the `expect` fence at line {line}",
+                    path.display()
+                ));
+            }
+            Ok(Some(BlockKind::Expect))
         }
         "cpp" => {
             let attributes = parts.collect::<Vec<_>>();
@@ -2364,10 +2417,55 @@ mod tests {
             "```cpp filename=../demo.cpp function=demo profile=normal_only\nint demo() {}\n```\n",
             "```cpp filename=demo.cpp function=demo profile=unknown\nint demo() {}\n```\n",
             "```click extra\nverifying a.c;\n```\n",
+            "```click resource_semantics=unknown\nverifying a.c;\n```\n",
+            "```click resource_semantics=authority extra\nverifying a.c;\n```\n",
             "```expect extra\npass\n```\n",
         ] {
             assert!(parse_mdtest(path, source).is_err(), "{source}");
         }
+        let selected = parse_mdtest(
+            path,
+            "```click resource_semantics=authority\nverifying a.c;\n```\n",
+        )
+        .unwrap();
+        assert_eq!(
+            selected.resource_semantics,
+            Some(ResourceSemanticsMode::Authority)
+        );
+    }
+
+    #[test]
+    fn mdtest_fence_selects_authority_for_the_gate_and_cli_loader() {
+        let root = std::env::temp_dir().join(format!(
+            "click-mdtest-authority-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("fixture.md");
+        fs::write(
+            &path,
+            "```c filename=fixture.c\nint answer(void) { return 1; }\n```\n```click resource_semantics=authority\nverifying \"fixture.c\";\n```\n```expect\npass\n```\n",
+        )
+        .unwrap();
+        let mdtest = read_mdtest(&path).unwrap();
+        let source = mdtest.click_source.as_deref().unwrap();
+        let inputs = prepare_mdtest_inputs(&mdtest).unwrap();
+        let gate_project = read_mdtest_project_if_needed(&path, source, &inputs)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            gate_project.resource_semantics_mode(),
+            ResourceSemanticsMode::Authority
+        );
+        assert_eq!(
+            load_target_inputs(&path, None)
+                .unwrap()
+                .project
+                .resource_semantics_mode(),
+            ResourceSemanticsMode::Authority
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

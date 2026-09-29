@@ -9,7 +9,7 @@ int32 duplicate_ref(int32 object) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 abstract resource object_ref(object: int32);
 
 verifying "duplicate_ref.c";

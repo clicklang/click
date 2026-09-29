@@ -340,17 +340,36 @@ and final reclamation. The negative variants fail for the relevant missing
 permission or false equality. This group has no legacy dependency; unrelated
 examples have not changed semantics.
 
-**Current frontier:** A parallel authority-mode sidecar verifies all seven
-frozen refcount C functions, including symbolic `amount` retain/release and
-the complete allocation-failure and final-free pipeline. Its ordinary
-`control(obj)` owns the allocation, counter memory, authority, and count
-equation. Checked symbolic batches cross helper contracts and are consumed
-before final authority retirement. The helper contracts state when the
-counter remains defined after a call. The legacy sidecar remains the baseline
-until the related positive and negative fixture group is migrated. Existing
-focused negative proofs reject an omitted `free` and a claimed final release
-at count two; batch-specific refusals and the remaining legacy clients are
-still migration work.
+**Current frontier:** The canonical sidecar in `examples/refcount/` selects
+authority semantics and verifies all seven frozen C functions, including
+symbolic `amount` retain/release and the complete allocation-failure and
+final-free pipeline. Its ordinary `control(obj)` owns the allocation, counter
+memory, authority, and count equation. Checked symbolic batches cross helper
+contracts and are consumed before final authority retirement. Focused
+authority-mode negatives reject an omitted `free`, resource duplication,
+double spend, and count observations without the matching live authority.
+
+The related positive fixture group is still legacy. At standalone function
+boundaries, `count(R(p))` cannot yet observe an arbitrary external pointer
+parameter even with explicit `owns authority(R(p))`; with authority folded in
+`control(p)`, it reports `count(...) requires owning authority`. A checked
+count-observation rule for these contracts needs a sound treatment of folded
+control custody and external pointer identity. Preserve the original count
+claims and C while resolving that rule; field-only preconditions are not a
+replacement. A second fixture also needs retain to produce a member while
+the helper already holds one. Do not mark this checkpoint complete until the
+positive and negative fixture group passes under authority semantics.
+
+The pending contract-observation rule must require both current owned custody
+and checked ledger custody. A folded control can supply the first only through
+its checked resource definition, for the exact contained `authority(R(p))`;
+an entry-time registration or a historical fact alone is insufficient. Its
+arbitrary entry total must come from the authenticated control invariant and
+retain the checked member-update delta. Transfer, consumption, and retirement
+must immediately remove the former holder's observation permission. The same
+rule must run during source proof execution and certificate validation, with
+regressions for wrong populations, absent ownership, nested calls, retirement,
+and historical versus current observations before enabling it.
 
 ### 5. Migrate shared-parent ownership
 

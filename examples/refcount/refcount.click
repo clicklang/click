@@ -1,71 +1,80 @@
-resource object_ref(obj: struct object*) {
+resource reference(obj: struct object*) {}
+
+resource control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
     owns object(obj);
-    fact defined(obj->refs);
-    fact obj->refs == count(object_ref(obj));
+    owns authority(reference(obj));
+    fact obj->refs == count(reference(obj));
 }
 
 verifying "object_init.c";
 verifying "object_retain.c";
-verifying "object_retain_many.c";
 verifying "object_release_nonfinal.c";
-verifying "object_release_many_nonfinal.c";
 verifying "object_release_final.c";
-verifying "refcount_pipeline.c";
 
 void object_init(struct object* obj) {
-    consumes allocation(obj, sizeof(struct object));
     consumes object(obj);
-    produces object_ref(obj);
+    produces object(obj);
+    ensures obj->refs == 1;
+    ensures defined(obj->refs);
 } by {
     execute();
-    fold(object_ref(obj));
     simp();
 }
 
 void object_retain(struct object* obj) {
+    owns control(obj);
     requires obj->refs < 2147483647;
-    owns object_ref(obj);
-    produces object_ref(obj);
+    produces reference(obj);
 } by {
-    open(object_ref(obj)) {
-        execute();
+    open(control(obj)) {
+        step();
+        fold(reference(obj));
     }
-    simp();
-}
-
-void object_retain_many(struct object* obj, int32 amount) {
-    requires 0 <= amount;
-    requires defined(1 + amount);
-    owns object_ref(obj);
-    produces amount of object_ref(obj);
-} by {
-    open(object_ref(obj)) {
-        have 1 == obj->refs by simp;
-        execute();
-    }
-    have 1 <= 1 + amount by {
-        apply(int32_add_nonnegative_right_is_at_least_left(1, amount)) using {
-            0 <= amount;
-            defined(1 + amount);
-        }
-    }
-    have amount <= 1 + amount by {
-        apply(int32_add_nonnegative_left_is_at_least_right(1, amount)) using {
-            defined(1 + amount);
-        }
-    }
+    execute();
     simp();
 }
 
 void object_release_nonfinal(struct object* obj) {
-    requires 1 < obj->refs;
-    owns object_ref(obj);
-    consumes object_ref(obj);
+    owns control(obj);
+    consumes reference(obj);
+    requires obj->refs > 1;
 } by {
-    open(object_ref(obj)) {
-        execute();
+    open(control(obj)) {
+        unfold(reference(obj));
+        step();
     }
+    execute();
+    simp();
+}
+
+void object_release_final(struct object* obj) {
+    requires obj->refs == 1;
+    consumes control(obj);
+    consumes reference(obj);
+} by {
+    unfold(control(obj));
+    unfold(reference(obj));
+    unfold(authority(reference(obj)));
+    execute();
+    simp();
+}
+
+verifying "object_retain_many.c";
+verifying "object_release_many_nonfinal.c";
+
+void object_retain_many(struct object* obj, int32 amount) {
+    requires 0 <= amount;
+    requires defined(obj->refs + amount);
+    owns control(obj);
+    produces amount of reference(obj);
+    ensures defined(obj->refs);
+} by {
+    open(control(obj)) {
+        step();
+        fold(amount of reference(obj));
+    }
+    execute();
     simp();
 }
 
@@ -73,43 +82,19 @@ void object_release_many_nonfinal(struct object* obj, int32 amount) {
     requires 0 <= amount;
     requires amount < obj->refs;
     requires defined(1 + amount);
-    owns object_ref(obj);
-    consumes amount of object_ref(obj);
+    owns control(obj);
+    consumes amount of reference(obj);
+    ensures defined(obj->refs);
 } by {
-    open(object_ref(obj)) {
-        have amount <= obj->refs by {
-            apply(int32_lt_implies_le(amount, obj->refs)) using {
-                amount < obj->refs;
-            }
-        }
-        have defined(obj->refs - amount) by {
-            apply(int32_nonnegative_subtract_within_value_is_defined(obj->refs, amount)) using {
-                0 <= amount;
-                amount <= obj->refs;
-            }
-        }
-        have defined(1 + amount) and obj->refs == 1 + amount by {
-            split();
-        }
-        have obj->refs - amount == 1 by {
-            apply(int32_subtract_equal_sum_right_cancels(obj->refs, 1, amount)) using {
-                defined(1 + amount) and obj->refs == 1 + amount;
-                defined(obj->refs - amount);
-            }
-        }
-        execute();
+    open(control(obj)) {
+        unfold(amount of reference(obj));
+        step();
     }
-    simp();
-}
-
-void object_release_final(struct object* obj) {
-    requires obj->refs == 1;
-    consumes object_ref(obj);
-} by {
-    unfold(object_ref(obj));
     execute();
     simp();
 }
+
+verifying "refcount_pipeline.c";
 
 int32 refcount_pipeline(int32 amount) {
     requires 0 <= amount;
@@ -122,23 +107,6 @@ int32 refcount_pipeline(int32 amount) {
             amount < 2147483647;
         }
     }
-    have amount <= 1 + amount by {
-        apply(int32_add_nonnegative_left_is_at_least_right(1, amount)) using {
-            defined(1 + amount);
-        }
-    }
-    have amount < 1 + amount by {
-        apply(int32_one_plus_strictly_increases(amount)) using {
-            amount < 2147483647;
-        }
-    }
-    have defined((1 + amount) - amount) by {
-        apply(int32_nonnegative_subtract_within_value_is_defined(1 + amount, amount)) using {
-            0 <= amount;
-            amount <= 1 + amount;
-        }
-        split();
-    }
     step();
     step();
     branch {
@@ -149,13 +117,30 @@ int32 refcount_pipeline(int32 amount) {
         else {}
     }
     step();
+    have defined(obj->refs + amount) by {
+        rewrite(obj->refs == 1);
+        split();
+    }
+    fold(authority(reference(obj)));
+    fold(reference(obj));
+    fold(control(obj));
     step();
-    have obj->refs == 1 + amount by simp;
+    open(control(obj)) {
+        have obj->refs == 1 + amount by simp;
+    }
+    have amount < 1 + amount by {
+        apply(int32_one_plus_strictly_increases(amount)) using {
+            amount < 2147483647;
+        }
+    }
     have amount < obj->refs by {
         rewrite(obj->refs == 1 + amount);
         assumption();
     }
     step();
+    open(control(obj)) {
+        have obj->refs == 1 by simp;
+    }
     step();
     step();
     simp();
