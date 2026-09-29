@@ -356,6 +356,11 @@ enum OffsetPart {
 #[derive(Clone, Default)]
 struct EqualityGraphState {
     terms: terms::TermClasses,
+    /// The exact class-merge delta stream. A consumer with a persistent
+    /// class-keyed index can update only entries in the moved class. Clones
+    /// share the prefix; a rebuilt (restricted) graph has a new origin.
+    merge_origin: std::sync::Arc<()>,
+    merge_history: Option<std::sync::Arc<PointerMergeHistory>>,
     parent: crate::persistent::PersistentMap<PointerBlock, (PointerBlock, AffineOffset)>,
     members: crate::persistent::PersistentMap<
         PointerBlock,
@@ -374,7 +379,64 @@ struct EqualityGraphState {
     offset_parts: crate::persistent::PersistentMap<OffsetPart, u64>,
 }
 
+/// `base(moved) = base(kept) + moved_from_kept` at one trusted class merge.
+/// The graph has already checked and closed the equality before recording
+/// this delta; the record is an index update, not independent evidence.
+#[derive(Clone, Debug)]
+#[allow(
+    dead_code,
+    reason = "the paired resource index will consume these merge fields"
+)]
+pub(in crate::kernel) struct PointerClassMerge {
+    pub(in crate::kernel) moved: PointerBlock,
+    pub(in crate::kernel) kept: PointerBlock,
+    pub(in crate::kernel) moved_from_kept: AffineOffset,
+}
+
+#[derive(Clone)]
+struct PointerMergeHistory {
+    merge: PointerClassMerge,
+    parent: Option<std::sync::Arc<PointerMergeHistory>>,
+}
+
 impl EqualityGraph {
+    /// Merges added after `ancestor`, oldest first. `None` means the graphs
+    /// do not share a persistent merge prefix (for example, after restricting
+    /// premises); a class-keyed consumer must not reuse that ancestor index.
+    #[allow(
+        dead_code,
+        reason = "the paired resource index will consume merge deltas"
+    )]
+    pub(in crate::kernel) fn pointer_merges_since(
+        &self,
+        ancestor: &Self,
+    ) -> Option<Vec<PointerClassMerge>> {
+        let (origin, mut cursor) = {
+            let state = self.state.lock().expect("equality graph");
+            (state.merge_origin.clone(), state.merge_history.clone())
+        };
+        let (previous_origin, previous) = {
+            let state = ancestor.state.lock().expect("equality graph");
+            (state.merge_origin.clone(), state.merge_history.clone())
+        };
+        if !std::sync::Arc::ptr_eq(&origin, &previous_origin) {
+            return None;
+        }
+        let mut merges = Vec::new();
+        while !match (&cursor, &previous) {
+            (None, None) => true,
+            (Some(current), Some(previous)) => std::sync::Arc::ptr_eq(current, previous),
+            _ => false,
+        } {
+            let merge = cursor.as_ref()?;
+            crate::instrumentation::record_deterministic_work(1);
+            merges.push(merge.merge.clone());
+            cursor = merge.parent.clone();
+        }
+        merges.reverse();
+        Some(merges)
+    }
+
     /// Whether term classes have established any nontrivial equivalence.
     /// Callers can avoid interning unrelated query terms in an empty graph.
     pub(in crate::kernel) fn has_term_equivalences(&self) -> bool {
@@ -819,7 +881,15 @@ impl EqualityGraphState {
             kept_members.insert(member, delta);
         }
         self.members.remove(&moved);
-        self.members.insert(kept, kept_members);
+        self.members.insert(kept.clone(), kept_members);
+        self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
+            merge: PointerClassMerge {
+                moved,
+                kept,
+                moved_from_kept,
+            },
+            parent: self.merge_history.clone(),
+        }));
         for load in affected {
             self.reindex_load(&load, equalities);
         }
@@ -897,6 +967,74 @@ mod tests {
         assert!(classes.are_equal(&at(symbolic(1), 8), &at(symbolic(3), 24)));
         assert!(!classes.are_equal(&at(symbolic(1), 8), &at(symbolic(3), 8)));
         assert!(!classes.are_equal(&at(symbolic(1), 0), &at(symbolic(4), 0)));
+    }
+
+    #[test]
+    fn class_merge_deltas_follow_only_the_persistent_branch() {
+        let root = EqualityGraph::default();
+        assert!(root.pointer_merges_since(&root).unwrap().is_empty());
+        let mut left = root.clone();
+        let mut right = root.clone();
+        assert!(left.add_equality(&at(symbolic(31), 8), &at(symbolic(32), 0)));
+        let first = left.clone();
+        assert!(left.add_equality(&at(symbolic(32), 0), &at(symbolic(33), 4)));
+        let merges = left.pointer_merges_since(&root).unwrap();
+        assert_eq!(merges.len(), 2);
+        for merge in &merges {
+            let displaced = merge
+                .moved_from_kept
+                .to_offset_term()
+                .expect("constant displacement has a pointer spelling");
+            assert!(left.are_equal(
+                &at(merge.moved.clone(), 0),
+                &Pointer {
+                    block: merge.kept.clone(),
+                    offset: displaced,
+                },
+            ));
+        }
+        assert_eq!(left.pointer_merges_since(&first).unwrap().len(), 1);
+        assert!(first.pointer_merges_since(&left).is_none());
+
+        assert!(right.add_equality(&at(symbolic(40), 0), &at(symbolic(41), 0)));
+        assert_eq!(right.pointer_merges_since(&root).unwrap().len(), 1);
+        assert!(left.pointer_merges_since(&right).is_none());
+        assert!(
+            EqualityGraph::default()
+                .pointer_merges_since(&root)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reading_one_class_merge_does_not_walk_the_shared_history() {
+        let samples = [16_u64, 64, 256]
+            .into_iter()
+            .map(|size| {
+                let mut graph = EqualityGraph::default();
+                for block in 1..size {
+                    assert!(
+                        graph.add_equality(
+                            &at(symbolic(50_000), 0),
+                            &at(symbolic(50_000 + block), 0),
+                        )
+                    );
+                }
+                let parent = graph.clone();
+                assert!(
+                    graph.add_equality(&at(symbolic(50_000), 0), &at(symbolic(50_000 + size), 0),)
+                );
+                let (merges, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    graph.pointer_merges_since(&parent).unwrap()
+                });
+                assert_eq!(merges.len(), 1);
+                (size, work)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            samples.iter().all(|(_, work)| *work == samples[0].1),
+            "one merge delta grew with the shared prefix: {samples:?}"
+        );
     }
 
     fn at_offset(block: PointerBlock, offset: PointerOffsetTerm) -> Pointer {

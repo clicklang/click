@@ -470,6 +470,22 @@ entries still stored under an old representative. Possible implementations
 include persistent per-class payload indexes merged by size, or explicit
 reindexing of affected entries; choose and measure one in the foundation.
 
+The resource store and pure equality context are independent persistent
+snapshots. A resource can change without an equality, and an equality can be
+learned after a resource snapshot was created. Therefore the resource-class
+index must belong to a **paired checked proof-path state**, rather than to
+either snapshot alone or to a per-fold cache. Its update inputs are the
+resource store's changed-fact ancestry and the trusted graph's class-merge
+deltas (including displacement). A branch shares the prefix; applying a merge
+rekeys only the moved class's registered resource bases, while a resource
+change adds or removes only its own entries. A restricted or independently
+constructed context has no shared ancestry and must start a new paired index
+at its semantic boundary. The graph now exposes branch-local pointer-merge
+deltas as the first part of this connection. Same-block offset-term merges
+need their own index update path before the lookup can cover every graph
+equality. Fold still uses the spelling compatibility path until the paired
+index is installed and checked.
+
 Read and fold consumers are the first integration examples. A lookup must not
 enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
