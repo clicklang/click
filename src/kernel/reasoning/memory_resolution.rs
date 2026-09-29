@@ -957,9 +957,13 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
         || assumptions
             .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
             == Some(true)
-        // Ask cross-block graph classes once. A miss must not scan the fact
-        // context or revisit the same-block offset query.
-        || left.block != right.block && assumptions.pointer_equality_in_graph(left, right);
+        // A completed typed read may contribute a checked load application
+        // even when the two values use the same storage block. Otherwise the
+        // same-block offset path above has already answered that case.
+        || (left.block != right.block
+            || crate::kernel::eval::typed_pointer_read_variable(left).is_some()
+            || crate::kernel::eval::typed_pointer_read_variable(right).is_some())
+            && assumptions.pointer_equality_in_graph(left, right);
     candidate
         && !assumptions
             .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)

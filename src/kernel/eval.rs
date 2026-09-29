@@ -91,7 +91,9 @@ pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitu
 pub(crate) use memory_loads::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
 };
-pub(crate) use memory_loads::{pointer_load_identity, registered_pointer_load};
+pub(crate) use memory_loads::{
+    pointer_load_identity, registered_pointer_load, typed_pointer_read_variable,
+};
 pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;
 pub(super) use statements::execute_c_realloc_assign_paths;

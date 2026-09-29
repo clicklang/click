@@ -41,8 +41,8 @@ but that document is not a list of launch requirements.
    not itself create ownership, prove separation, or transport a value across
    a write; those remain distinct checked judgments.
 
-Work in small green commits: connect a real pointer read to the graph, use it
-in one live comparison, then migrate specification reads and fold consumption.
+Work in small green commits: a real pointer read now reaches the graph and one
+live comparison; next migrate specification reads and fold consumption.
 If the rbtree failure turns out to be a resource-lookup gap with the needed
 load equality already available, take the lookup slice first. Do not change
 the unchanged C to route around a verifier gap.
@@ -55,16 +55,24 @@ cover affine pointer classes, whole offsets, int32 addition and scaling, and
 registered same-snapshot pointer and four-byte scalar loads. Selected
 normalization and int32 consumers query it. The graph's pointer-load term is
 distinct from the storage-relative pointer value produced by ordinary C
-execution. Resource lookup still has compatibility spelling retries.
+execution. A completed nonvolatile typed read registers its exact defining
+equation with the path context, which files an equality between that existing
+C value and `load(snapshot, address)` in the graph. Pointer equality queries
+use the resulting closure, including address equality learned after the read.
+This adds no theorem premise or read permission. Resource lookup still has
+compatibility spelling retries.
 
 The previous attempt to publish `load(M, p) == value` as a certified
 `ExecutionPureFact` was reverted: it changed execution theorem shapes by
 adding an implication premise and broke recursive resource child-argument
 checking. The graph equality worked, but the fact channel was the wrong
-carrier. The next bridge must retain genuine load-site evidence in the
-trusted path context without changing logical premises. Direct comparisons
-of loads through addresses already known equal passed before this attempted
-change, so they are not evidence that the new bridge works.
+carrier. The current bridge retains genuine load-site evidence in the trusted
+path context without changing logical premises. The
+[late-address-equality fixture](../mdtests/pointer_loads_equal_after_late_address_equality.md)
+reads two pointer fields before a three-link address equality and closes their
+value equality with one `simp()`. Kernel regressions check insertion order,
+branch isolation, withdrawal, snapshot separation, and volatile exclusion.
+The rbtree read/fold and resource-lookup acceptance work remains open.
 
 The earlier `codex/egraph-foundation` pointer-representation experiment is
 historical reference material, not an integration target. Its failures mixed

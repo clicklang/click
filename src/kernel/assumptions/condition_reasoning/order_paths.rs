@@ -476,10 +476,19 @@ impl PureFactContext {
         right: &Pointer,
     ) -> bool {
         if left.block == right.block {
-            self.equality_graph.has_term_equivalences()
-                && self
-                    .equality_graph
-                    .are_offsets_equal(&left.offset, &right.offset)
+            let has_read_bridge = [left, right].into_iter().any(|pointer| {
+                crate::kernel::eval::typed_pointer_read_variable(pointer).is_some_and(|variable| {
+                    self.typed_pointer_read_definitions.contains_key(&variable)
+                })
+            });
+            if has_read_bridge {
+                self.equality_graph.are_equal(left, right)
+            } else {
+                self.equality_graph.has_term_equivalences()
+                    && self
+                        .equality_graph
+                        .are_offsets_equal(&left.offset, &right.offset)
+            }
         } else {
             self.equality_graph.are_equal(left, right)
         }

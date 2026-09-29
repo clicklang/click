@@ -25,6 +25,7 @@ fn load_byte(
         Vec::new(),
         &PureFactContext::new(),
         false,
+        false,
         None,
         byte_order,
     );

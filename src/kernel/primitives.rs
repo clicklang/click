@@ -8070,6 +8070,14 @@ pub struct PureFactContext {
     /// terms. Appended on insertion; withdrawal rebuilds from exact equality
     /// indexes, preserving the remaining support in every fragment.
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
+    /// Exact defining equations for pointer-typed reads issued on this path,
+    /// indexed by their load variable. Producer metadata certifies the C
+    /// value's type; the equation supplies its snapshot and address. Both
+    /// are required before a graph query may use the read as a bridge.
+    pub(super) typed_pointer_read_definitions: crate::persistent::PersistentMap<
+        Variable,
+        crate::persistent::PersistentMap<((u32, u32), Pointer), (Pointer, SharedCMemory)>,
+    >,
     /// Counts exact int32 premises supporting each canonical oriented edge.
     /// Several spellings can support one edge; withdrawal removes one support.
     pub(super) int32_graph_equalities: crate::persistent::PersistentMap<
@@ -8222,6 +8230,7 @@ impl PartialEq for PureFactContext {
     fn eq(&self, other: &Self) -> bool {
         self.content_fingerprint == other.content_fingerprint
             && self.condition_facts == other.condition_facts
+            && self.typed_pointer_read_definitions == other.typed_pointer_read_definitions
             && self.prop_facts == other.prop_facts
             && self.resource_compositions == other.resource_compositions
             && self.defer_non_exact_loadability_obligations
@@ -8370,6 +8379,9 @@ pub(crate) enum GeneratedLoadBinding {
         snapshot: CMemorySnapshotIdentity,
         pointer: Pointer,
         load: Bitvector32Term,
+        /// The C value produced by a completed, nonvolatile pointer read.
+        /// Scalar and volatile reads have no pointer bridge.
+        typed_pointer_value: Option<Pointer>,
     },
     Ambiguous {
         variable: Variable,

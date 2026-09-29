@@ -332,24 +332,25 @@ defining snapshot and address from a typed load site or checked evidence; the
 storage-relative `Pointer::as_loaded` shape also describes indexed pointer
 arithmetic and is not sufficient evidence by itself.
 
-The bridge from a completed C pointer read to the graph application is
-execution evidence scoped to that path. It must not be published as an
-ordinary proposition premise: doing so changes a statement theorem from
-`Executes` to `bridge => Executes` and makes resource child-argument checking
-reject previously readable expressions. The trusted path context needs a
-checked carrier that feeds this equality to the graph without changing the
-logical premises or granting read permission. Volatile reads do not acquire a
-same-snapshot equality merely from repeated access.
+The bridge from a completed nonvolatile C pointer read to the graph
+application is execution evidence scoped to that path. The typed producer
+registers its value with the exact defining snapshot and address; only a
+matching defining equation in the path's fact context files the equality in
+the graph. It is not published as an ordinary proposition premise: doing so
+changes a statement theorem from `Executes` to `bridge => Executes` and makes
+resource child-argument checking reject previously readable expressions. The
+graph relation changes neither logical premises nor read permission. Volatile
+reads do not register this bridge.
 
 The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
 and a constructor/decoder pair for `(defining snapshot, address, displacement)`.
 The equality graph indexes this explicit pointer application without consulting
 the scalar load registry's mutable access width. Ordinary C pointer-load
-producers still create the storage-relative form. The explicit name is graph
-syntax for typed queries; making it the execution value is a separate proposal
-that would require a coherent review of materialization, substitution,
-provenance, and rendering. Merely swapping the constructor breaks existing
-verification and expansion fixtures.
+producers still create the storage-relative form; their checked path-context
+bridges relate that form to the explicit graph term. Making the explicit name
+the execution value is a separate proposal that would require a coherent
+review of materialization, substitution, provenance, and rendering. Merely
+swapping the constructor breaks existing verification and expansion fixtures.
 
 The existing weighted pointer classes are useful groundwork:
 `base(member) = base(representative) + delta`. Exact affine normalization can
@@ -358,11 +359,10 @@ bit width, wrapping, and definedness obligations of the supported C semantics;
 do not distribute arithmetic through a wrapped index as if it were an
 unbounded integer.
 
-The graph must also handle same-block offset equalities and changes
-to the classes of offset atoms. The current block union-find ignores equations
-inside one class, so it is not the whole pointer theory. Specify how these
-relations notify application and resource indexes before adopting an API.
-Account for affine expression size when describing merge cost.
+The graph now records an exact offset equality when a congruence merge joins
+two pointers already in one block class. Further changes to offset-atom
+classes still need a reviewed notification path into application and resource
+indexes. Account for affine expression size when describing merge cost.
 
 ### Loads and memory snapshots
 

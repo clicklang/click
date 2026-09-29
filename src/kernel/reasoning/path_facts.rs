@@ -1605,7 +1605,7 @@ pub(in crate::kernel) fn assumptions_with_path_context(
     count_context_rebuild_entries(facts.len() + obligations.len());
     let mut assumptions = assumptions.clone();
     for fact in facts {
-        assumptions = assumptions.assume_proposition(fact.proposition().clone());
+        assumptions = assumptions.assume_execution_pure_fact(fact);
     }
     for obligation in obligations {
         if obligation.is_assumable() {

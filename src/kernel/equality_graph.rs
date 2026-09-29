@@ -412,6 +412,21 @@ impl EqualityGraph {
         if affine_equal {
             return true;
         }
+        // A congruence merge can equate two loads after each was already
+        // bridged to a storage-relative C value. Their blocks then share a
+        // representative but carry different symbolic displacements. The
+        // exact offset fragment retains that same-class equality.
+        if let (Some(left), Some(right)) = (
+            AffineOffset::of(&left.offset)
+                .and_then(|offset| left_delta.checked_add(&offset))
+                .and_then(|offset| offset.to_offset_term()),
+            AffineOffset::of(&right.offset)
+                .and_then(|offset| right_delta.checked_add(&offset))
+                .and_then(|offset| offset.to_offset_term()),
+        ) && state.terms.are_equal(&left, &right)
+        {
+            return true;
+        }
         // An exact offset equality can cross blocks only after accounting
         // for their known base displacement. The equal-base case uses the
         // whole offsets directly; a constant displacement can be added to
@@ -457,7 +472,7 @@ impl EqualityGraph {
     /// Callers must supply the addresses and snapshot of actual pointer reads;
     /// decoding a storage-relative pointer value as a load is ambiguous with
     /// ordinary indexed pointer arithmetic.
-    #[allow(dead_code, reason = "live typed load-site consumer is the next slice")]
+    #[allow(dead_code, reason = "live comparisons use filed graph bridges")]
     pub(in crate::kernel) fn are_pointer_loads_equal(
         &self,
         memory: &crate::kernel::SharedCMemory,
@@ -749,6 +764,11 @@ impl EqualityGraphState {
                 continue;
             };
             if left.representative == right.representative {
+                if let (Some(left), Some(right)) =
+                    (left.offset.to_offset_term(), right.offset.to_offset_term())
+                {
+                    changed |= self.terms.add_equality(&left, &right);
+                }
                 continue;
             }
             let Some(left_from_right) = right.offset.checked_sub(&left.offset) else {
@@ -1240,11 +1260,13 @@ mod tests {
     }
 
     #[test]
-    fn an_equality_inside_one_class_records_nothing() {
+    fn an_equality_inside_one_class_records_its_exact_offset() {
         let mut classes = EqualityGraph::default();
         classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 0));
-        assert!(!classes.add_equality(&at(symbolic(1), 0), &at(symbolic(2), 8)));
+        let indexed = at_offset(symbolic(2), PointerOffsetTerm::scale_int32(index(91), 4));
+        assert!(classes.add_equality(&at(symbolic(1), 0), &indexed));
         assert!(classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 0)));
+        assert!(classes.are_equal(&at(symbolic(1), 0), &indexed));
         assert!(!classes.are_equal(&at(symbolic(1), 0), &at(symbolic(2), 8)));
     }
 
@@ -1688,6 +1710,42 @@ mod tests {
                 work <= 128 * size as usize,
                 "size={size}, total work={work}"
             );
+        }
+    }
+
+    #[test]
+    fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        for size in [16u64, 64, 256] {
+            let mut graph = EqualityGraph::default();
+            let mut pairs = Vec::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..size {
+                    let p = at(symbolic(810_000 + i), 0);
+                    let q = at(symbolic(820_000 + i), 0);
+                    let old_value = |address: &Pointer| {
+                        Pointer::loaded(
+                            address.block.clone(),
+                            Bitvector32Term::Variable(
+                                crate::kernel::load_variable_for_cell_with_origin(
+                                    &memory, address, 8, &memory,
+                                ),
+                            ),
+                            8,
+                        )
+                    };
+                    let left = old_value(&p);
+                    let right = old_value(&q);
+                    graph.add_equality(&left, &Pointer::loaded_value(&memory, &p));
+                    graph.add_equality(&right, &Pointer::loaded_value(&memory, &q));
+                    graph.add_equality(&p, &q);
+                    pairs.push((left, right));
+                }
+                for (left, right) in &pairs {
+                    assert!(graph.are_equal(left, right));
+                }
+            });
+            assert!(work <= 96 * size as usize, "size={size}, work={work}");
         }
     }
 

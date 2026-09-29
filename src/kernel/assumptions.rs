@@ -2594,6 +2594,11 @@ impl PureFactContext {
         for fact in self.prop_facts.iter() {
             fingerprint ^= Self::fingerprint(2, fact);
         }
+        for (variable, definitions) in self.typed_pointer_read_definitions.iter() {
+            for (key, (value, _)) in definitions.iter() {
+                fingerprint ^= Self::typed_pointer_read_fingerprint(*variable, key, value);
+            }
+        }
         for resources in self.resource_compositions.iter() {
             fingerprint ^= Self::fingerprint(3, resources);
         }
@@ -2867,6 +2872,11 @@ impl PureFactContext {
         for ((left, right), _) in self.int32_graph_equalities.iter() {
             classes.add_int32_equality(left.value(), right.value());
         }
+        for (_, definitions) in self.typed_pointer_read_definitions.iter() {
+            for ((_, address), (value, memory)) in definitions.iter() {
+                classes.add_equality(value, &Pointer::loaded_value(memory, address));
+            }
+        }
         self.equality_graph = classes;
     }
 
@@ -2914,6 +2924,118 @@ impl PureFactContext {
             self.int32_graph_equalities.remove(&edge);
             self.rebuild_equality_graph();
         }
+    }
+
+    /// File the typed producer's checked value against an exact defining
+    /// equation already admitted on this path. Plain propositions cannot
+    /// create this bridge; the execution fact must carry producer metadata.
+    pub(in crate::kernel) fn assume_execution_pure_fact(
+        mut self,
+        fact: &ExecutionPureFact,
+    ) -> Self {
+        self = self.assume_proposition(fact.proposition().clone());
+        if !fact.is_certified() {
+            return self;
+        }
+        let Some(
+            binding @ GeneratedLoadBinding::Exact {
+                variable,
+                pointer: address,
+                load: Bitvector32Term::MemoryLoad(memory, _),
+                typed_pointer_value: Some(value),
+                ..
+            },
+        ) = fact.generated_load_binding()
+        else {
+            return self;
+        };
+        if !generated_load_binding_matches_proposition(binding, fact.proposition())
+            || crate::kernel::eval::typed_pointer_read_variable(value) != Some(*variable)
+        {
+            return self;
+        }
+        let condition = ConditionTerm::Bitvector32Equal(
+            Box::new(Bitvector32Term::Variable(*variable)),
+            Box::new(Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(address.clone()),
+            )),
+        );
+        if self.condition_facts.get(&condition) != Some(&true) {
+            return self;
+        }
+        self.file_typed_pointer_read(*variable, memory, address, value);
+        self
+    }
+
+    fn file_typed_pointer_read(
+        &mut self,
+        variable: Variable,
+        memory: &SharedCMemory,
+        address: &Pointer,
+        value: &Pointer,
+    ) {
+        let key = (memory.arena_id(), address.clone());
+        let definitions = self
+            .typed_pointer_read_definitions
+            .get(&variable)
+            .cloned()
+            .unwrap_or_default();
+        if definitions.contains_key(&key) {
+            return;
+        }
+        let definitions = definitions.with_inserted(key.clone(), (value.clone(), memory.clone()));
+        self.typed_pointer_read_definitions = self
+            .typed_pointer_read_definitions
+            .with_inserted(variable, definitions);
+        self.content_fingerprint ^= Self::typed_pointer_read_fingerprint(variable, &key, value);
+        self.equality_graph
+            .add_equality(value, &Pointer::loaded_value(memory, address));
+    }
+
+    fn typed_pointer_read_fingerprint(
+        variable: Variable,
+        key: &((u32, u32), Pointer),
+        value: &Pointer,
+    ) -> u64 {
+        Self::fingerprint(4, &(variable, key, value))
+    }
+
+    fn withdraw_typed_pointer_read_definition(&mut self, condition: &ConditionTerm, value: bool) {
+        if !value {
+            return;
+        }
+        let ConditionTerm::Bitvector32Equal(left, right) = condition else {
+            return;
+        };
+        let definition = match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, address))
+            | (Bitvector32Term::MemoryLoad(memory, address), Bitvector32Term::Variable(variable)) => {
+                (*variable, memory, address.as_ref())
+            }
+            _ => return,
+        };
+        let (variable, memory, address) = definition;
+        let key = (memory.arena_id(), address.clone());
+        let definitions = self
+            .typed_pointer_read_definitions
+            .get(&variable)
+            .cloned()
+            .unwrap_or_default();
+        if !definitions.contains_key(&key) {
+            return;
+        }
+        let pointer_value = &definitions.get(&key).expect("checked above").0;
+        self.content_fingerprint ^=
+            Self::typed_pointer_read_fingerprint(variable, &key, pointer_value);
+        let definitions = definitions.without_key(&key);
+        self.typed_pointer_read_definitions = if definitions.is_empty() {
+            self.typed_pointer_read_definitions.without_key(&variable)
+        } else {
+            self.typed_pointer_read_definitions
+                .with_inserted(variable, definitions)
+        };
+        self.rebuild_equality_graph();
     }
 
     fn adjust_pointer_offset_alias(
@@ -3212,6 +3334,7 @@ impl PureFactContext {
     /// are rebuilt with them: a restricted context must not answer an alias
     /// query from an equality it no longer holds.
     fn rebuild_condition_match_indexes(&mut self) {
+        let prior_typed_reads = self.typed_pointer_read_definitions.clone();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
@@ -3219,6 +3342,7 @@ impl PureFactContext {
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
         self.int32_graph_equalities = crate::persistent::PersistentMap::default();
+        self.typed_pointer_read_definitions = crate::persistent::PersistentMap::default();
         self.pointer_offset_aliases = crate::persistent::PersistentMap::default();
         self.pointer_offset_aliases_by_root = crate::persistent::PersistentMap::default();
         let conditions = self.condition_facts.clone();
@@ -3227,6 +3351,20 @@ impl PureFactContext {
             self.adjust_pointer_block_alias(condition, *value, true);
             self.adjust_pointer_offset_alias(condition, *value, true);
             self.adjust_int32_graph_equality(condition, *value, true);
+        }
+        for (variable, definitions) in prior_typed_reads.iter() {
+            for ((_, address), (pointer_value, memory)) in definitions.iter() {
+                let condition = ConditionTerm::Bitvector32Equal(
+                    Box::new(Bitvector32Term::Variable(*variable)),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(address.clone()),
+                    )),
+                );
+                if self.condition_facts.get(&condition) == Some(&true) {
+                    self.file_typed_pointer_read(*variable, memory, address, pointer_value);
+                }
+            }
         }
     }
 
@@ -4593,6 +4731,7 @@ impl PureFactContext {
             self.adjust_pointer_block_alias(&condition, old, false);
             self.adjust_pointer_offset_alias(&condition, old, false);
             self.adjust_int32_graph_equality(&condition, old, false);
+            self.withdraw_typed_pointer_read_definition(&condition, old);
             self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), old));
         }
         self.adjust_stated_proposition_index(
@@ -4813,6 +4952,7 @@ impl PureFactContext {
         self.adjust_pointer_block_alias(condition, assumed, false);
         self.adjust_pointer_offset_alias(condition, assumed, false);
         self.adjust_int32_graph_equality(condition, assumed, false);
+        self.withdraw_typed_pointer_read_definition(condition, assumed);
         self.rebuild_memory_load_condition_facts();
         self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), assumed));
     }
@@ -4859,6 +4999,18 @@ impl PureFactContext {
             .condition_facts
             .iter()
             .all(|(condition, value)| self.condition_facts.get(condition) == Some(value))
+            && required
+                .typed_pointer_read_definitions
+                .iter()
+                .all(|(variable, definitions)| {
+                    self.typed_pointer_read_definitions
+                        .get(variable)
+                        .is_some_and(|held| {
+                            definitions
+                                .iter()
+                                .all(|(key, value)| held.get(key) == Some(value))
+                        })
+                })
             && required
                 .prop_facts
                 .iter()
@@ -6768,6 +6920,7 @@ fn generated_load_binding_matches_proposition(
         snapshot,
         pointer,
         load,
+        ..
     } = binding
     else {
         return true;

@@ -11822,6 +11822,7 @@ fn generated_load_source_event_fixture(
             snapshot: crate::kernel::CMemorySnapshotIdentity::of(&CMemory::new()),
             pointer: pointer.clone(),
             load: Bitvector32Term::MemoryLoad(CMemory::new().into(), Box::new(pointer)),
+            typed_pointer_value: None,
         },
     )
     .expect("the fixture carries an exact generated-load binding")

@@ -58,6 +58,7 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
     has_external_read_resource: bool,
+    volatile: bool,
     source: Option<&LoadSourceId>,
     byte_order: Option<ByteOrder>,
 ) -> Vec<CExpressionPath> {
@@ -78,7 +79,11 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
         obligations,
         assumptions,
         has_external_read_resource,
-        LoadPurpose::Program,
+        if volatile {
+            LoadPurpose::VolatileProgram
+        } else {
+            LoadPurpose::Program
+        },
         &mut alias_cache,
         source,
         byte_order,
@@ -166,6 +171,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                     assumptions,
                     should_use_symbolic_pointer_identity(memory, &pointer, value_type),
                     None,
+                    false,
                 )
             {
                 path.outcome = CExpressionOutcome::Value(value);
@@ -216,6 +222,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
                 assumptions,
                 should_use_symbolic_pointer_identity(memory, &pointer, value_type),
                 None,
+                false,
             )
         });
     facts.retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
@@ -232,6 +239,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LoadPurpose {
     Program,
+    VolatileProgram,
     Logical,
     Validity,
 }
@@ -366,7 +374,8 @@ fn evaluate_c_memory_load_case(
     splits: bool,
     distinct_case: &mut Option<DistinctLoadCase>,
 ) -> Vec<CExpressionPath> {
-    let branches_on_unresolved_aliases = splits && purpose == LoadPurpose::Program;
+    let branches_on_unresolved_aliases =
+        splits && matches!(purpose, LoadPurpose::Program | LoadPurpose::VolatileProgram);
     let use_symbolic_pointer_identity =
         should_use_symbolic_pointer_identity(memory, &pointer, value_type);
     let mut facts = facts;
@@ -460,6 +469,7 @@ fn evaluate_c_memory_load_case(
             assumptions,
             use_symbolic_pointer_identity,
             source,
+            purpose == LoadPurpose::Program,
         ) else {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
@@ -662,6 +672,7 @@ fn evaluate_c_memory_load_case(
             assumptions,
             use_symbolic_pointer_identity,
             source,
+            purpose == LoadPurpose::Program,
         ) else {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
@@ -774,6 +785,7 @@ fn evaluate_c_memory_load_case(
             assumptions,
             use_symbolic_pointer_identity,
             source,
+            purpose == LoadPurpose::Program,
         ) else {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
@@ -807,6 +819,7 @@ fn evaluate_c_memory_load_case(
         assumptions,
         use_symbolic_pointer_identity,
         source,
+        purpose == LoadPurpose::Program,
     ) {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::Value(value),
@@ -981,6 +994,7 @@ fn evaluate_c_memory_load_case(
             assumptions,
             use_symbolic_pointer_identity,
             source,
+            purpose == LoadPurpose::Program,
         ) else {
             return vec![CExpressionPath {
                 outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
@@ -1052,6 +1066,7 @@ fn evaluate_c_memory_load_case(
         assumptions,
         use_symbolic_pointer_identity,
         source,
+        purpose == LoadPurpose::Program,
     ) else {
         return vec![CExpressionPath {
             outcome: CExpressionOutcome::RuntimeError(CRuntimeError::LoadTypeMismatch {
@@ -1179,6 +1194,7 @@ fn symbolic_index_run_load(
     assumptions: &PureFactContext,
     use_symbolic_identity: bool,
     source: Option<&LoadSourceId>,
+    record_read: bool,
 ) -> Option<CValue> {
     use crate::kernel::reasoning::memory_resolution::{RunAccess, run_access};
     let run = memory
@@ -1239,6 +1255,7 @@ fn symbolic_index_run_load(
         assumptions,
         use_symbolic_identity,
         source,
+        record_read,
     )
 }
 
@@ -1250,6 +1267,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     assumptions: &PureFactContext,
     use_symbolic_identity: bool,
     source: Option<&LoadSourceId>,
+    record_read: bool,
 ) -> Option<CValue> {
     let value = symbolic_load_value(memory, pointer, value_type)?;
     // Terms are canonical at creation: an int or byte load evaluates to its
@@ -1309,12 +1327,19 @@ fn canonicalized_symbolic_load_value_with_identity(
     if !matches!(bits, Bitvector32Term::MemoryLoad(_, _)) {
         return Some(value);
     }
-    let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+    let (fresh, load) = load_variable_for_term(bits)?;
     let pointer = if use_symbolic_identity {
         Pointer::symbolic(fresh)
     } else {
         Pointer::loaded(block.clone(), Bitvector32Term::Variable(fresh), byte_width)
     };
+    record_load_variable_defining_fact_with_source_and_pointer(
+        fresh,
+        load,
+        facts,
+        source,
+        record_read.then_some(&pointer),
+    );
     Some(CValue::typed_pointer(pointer, pointer_value.c_type()))
 }
 
@@ -1337,6 +1362,21 @@ const LOAD_VARIABLE_REGISTRY_CAPACITY: usize = 1_000_000;
 thread_local! {
     static LOAD_VARIABLE_REGISTRY_CAPACITY_OVERRIDE: std::cell::Cell<Option<usize>> =
         const { std::cell::Cell::new(None) };
+}
+
+/// A cheap candidate filter for a pointer that may be an exact typed read.
+/// Its shape is not itself evidence: indexed arithmetic can look identical.
+pub(crate) fn typed_pointer_read_variable(value: &Pointer) -> Option<Variable> {
+    Some(match (&value.block, &value.offset) {
+        (PointerBlock::Symbolic(variable), PointerOffsetTerm::Constant(0)) => *variable,
+        (_, PointerOffsetTerm::Int32Scaled { value, .. }) => {
+            let Bitvector32Term::Variable(variable) = value.as_ref() else {
+                return None;
+            };
+            *variable
+        }
+        _ => return None,
+    })
 }
 
 fn load_variable_registry_capacity() -> usize {
@@ -3472,6 +3512,16 @@ pub(crate) fn record_load_variable_defining_fact_with_source(
     facts: &mut Vec<ExecutionPureFact>,
     source: Option<&LoadSourceId>,
 ) {
+    record_load_variable_defining_fact_with_source_and_pointer(variable, load, facts, source, None);
+}
+
+fn record_load_variable_defining_fact_with_source_and_pointer(
+    variable: Variable,
+    load: Bitvector32Term,
+    facts: &mut Vec<ExecutionPureFact>,
+    source: Option<&LoadSourceId>,
+    typed_pointer_value: Option<&Pointer>,
+) {
     let Bitvector32Term::MemoryLoad(memory, pointer) = &load else {
         // `load_variable_for_term` currently returns a memory load's
         // canonical operand.  Keep this guard explicit so future changes
@@ -3491,6 +3541,7 @@ pub(crate) fn record_load_variable_defining_fact_with_source(
         snapshot: CMemorySnapshotIdentity::of(memory.memory()),
         pointer: pointer.as_ref().clone(),
         load: defining_load,
+        typed_pointer_value: typed_pointer_value.cloned(),
     };
     let event =
         source.and_then(|source| GeneratedLoadSourceEvent::new(source.clone(), binding.clone()));
@@ -3498,7 +3549,7 @@ pub(crate) fn record_load_variable_defining_fact_with_source(
         .iter_mut()
         .find(|fact| fact.proposition == defining_proposition)
     {
-        if existing.generated_load_binding.is_none() {
+        if existing.generated_load_binding.is_none() || typed_pointer_value.is_some() {
             existing.generated_load_binding = Some(binding);
         }
         if let Some(event) = event {
@@ -3846,6 +3897,7 @@ mod tests {
                 Vec::new(),
                 &assumptions,
                 false,
+                false,
                 None,
                 None,
             );
@@ -3989,6 +4041,7 @@ mod tests {
                 snapshot,
                 pointer: recorded_pointer,
                 load: recorded_load,
+                ..
             }) if *recorded == variable
                 && *snapshot == CMemorySnapshotIdentity::of(memory.memory())
                 && recorded_pointer == &pointer
@@ -4111,6 +4164,7 @@ mod tests {
                     Vec::new(),
                     &PureFactContext::new(),
                     false,
+                    false,
                     None,
                     None,
                 )
@@ -4130,5 +4184,126 @@ mod tests {
                 &CExpressionOutcome::Value(int32(u32::try_from(index).unwrap()))
             );
         }
+    }
+
+    #[test]
+    fn completed_pointer_reads_join_through_later_graph_address_equality() {
+        let memory = CMemory::new();
+        let snapshot = intern_c_memory(memory.clone());
+        let a = Pointer::symbolic(Variable(92_100));
+        let b = Pointer::symbolic(Variable(92_101));
+        let read = |address: &Pointer, volatile| {
+            let paths = evaluate_c_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int64Pointer,
+                Vec::new(),
+                Vec::new(),
+                &PureFactContext::new(),
+                true,
+                volatile,
+                None,
+                None,
+            );
+            assert_eq!(paths.len(), 1);
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+                panic!("expected a pointer read: {:?}", paths[0].outcome);
+            };
+            (value.pointer().clone(), paths[0].facts.clone())
+        };
+        let (x, x_facts) = read(&a, false);
+        let (y, y_facts) = read(&b, false);
+        let empty = PureFactContext::new();
+        assert!(!empty.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        let available = x_facts
+            .iter()
+            .chain(&y_facts)
+            .fold(empty.clone(), |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            });
+        assert!(available.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!empty.pointer_equality_in_graph(&x, &y));
+        let branch = available
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        assert!(branch.equality_graph.are_equal(&a, &b));
+        assert!(
+            branch
+                .equality_graph
+                .are_pointer_loads_equal(&snapshot, &a, &b)
+        );
+        assert!(branch.pointer_equality_in_graph(&x, &y));
+        let address_first = empty
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+        let address_first = x_facts
+            .iter()
+            .chain(&y_facts)
+            .fold(address_first, |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            });
+        assert!(address_first.pointer_equality_in_graph(&x, &y));
+        assert!(!empty.pointer_equality_in_graph(&x, &y));
+        let withdrawn = branch.without_exact_fact(x_facts[0].proposition());
+        assert!(!withdrawn.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        let restricted = address_first
+            .restricted_to_facts(&[(ConditionTerm::pointer_equal(a.clone(), b), true)], &[]);
+        assert!(!restricted.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        let later = intern_c_memory(
+            memory
+                .clone()
+                .with_block(PointerBlock::from("global:later"), 8),
+        );
+        assert!(!available.pointer_equality_in_graph(&x, &Pointer::loaded_value(&later, &a)));
+        let volatile_address = Pointer::symbolic(Variable(92_102));
+        let (volatile_value, volatile_facts) = read(&volatile_address, true);
+        let volatile_context = volatile_facts.iter().fold(empty, |context, fact| {
+            context.assume_execution_pure_fact(fact)
+        });
+        assert!(!volatile_context.pointer_equality_in_graph(
+            &volatile_value,
+            &Pointer::loaded_value(&snapshot, &volatile_address),
+        ));
+        let (volatile_same, volatile_same_facts) = read(&a, true);
+        let volatile_only = volatile_same_facts
+            .iter()
+            .fold(PureFactContext::new(), |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            });
+        let normal_only = x_facts
+            .iter()
+            .fold(PureFactContext::new(), |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            });
+        assert_eq!(normal_only.condition_facts, volatile_only.condition_facts);
+        assert_ne!(
+            normal_only.memo_fingerprint(),
+            volatile_only.memo_fingerprint()
+        );
+        assert_ne!(normal_only, volatile_only);
+        assert!(
+            !volatile_only
+                .pointer_equality_in_graph(&volatile_same, &Pointer::loaded_value(&snapshot, &a),)
+        );
+        let scalar_paths = evaluate_c_memory_load_paths(
+            &memory,
+            a.clone(),
+            CType::Int64,
+            Vec::new(),
+            Vec::new(),
+            &PureFactContext::new(),
+            true,
+            false,
+            None,
+            None,
+        );
+        assert_eq!(scalar_paths.len(), 1);
+        let scalar_only = scalar_paths[0]
+            .facts
+            .iter()
+            .fold(PureFactContext::new(), |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            });
+        assert!(!scalar_only.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
     }
 }

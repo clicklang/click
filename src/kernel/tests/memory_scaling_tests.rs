@@ -447,6 +447,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
                     Vec::new(),
                     &assumptions,
                     false,
+                    false,
                     None,
                     None,
                 )
