@@ -323,22 +323,22 @@ previous equality answer.
 
 ### Pointer values and address offsets
 
-A loaded pointer denotes the stored value independently of the storage address
-used to obtain it. Replace the current storage-relative encoding with an opaque
-value identity. Constructor and decoder must change coherently: expose the
-load identity/origin and any subsequent pointer displacement through a semantic
-API. Consumers must not reconstruct a storage block plus scaled integer load.
-Pointee width determines subsequent C pointer arithmetic, not the identity of
-the pointer value just read.
+A typed pointer-load application in the equality graph denotes the stored
+value independently of the storage address spelling and pointee width. The
+graph can answer equality of two such applications without replacing the
+`Pointer` values produced by C execution. A live caller must supply the actual
+defining snapshot and address from a typed load site or checked evidence; the
+storage-relative `Pointer::as_loaded` shape also describes indexed pointer
+arithmetic and is not sufficient evidence by itself.
 
 The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
 and a constructor/decoder pair for `(defining snapshot, address, displacement)`.
 The equality graph indexes this explicit pointer application without consulting
 the scalar load registry's mutable access width. Ordinary C pointer-load
-producers still create the legacy storage-relative form, so this is an identity
-foundation, not yet the representation switch. The next migration must move
-the producers and their materialization, substitution, provenance, and render
-consumers together; merely swapping the typed-load constructor breaks existing
+producers still create the storage-relative form. The explicit name is graph
+syntax for typed queries; making it the execution value is a separate proposal
+that would require a coherent review of materialization, substitution,
+provenance, and rendering. Merely swapping the constructor breaks existing
 verification and expansion fixtures.
 
 The existing weighted pointer classes are useful groundwork:
@@ -348,7 +348,7 @@ bit width, wrapping, and definedness obligations of the supported C semantics;
 do not distribute arithmetic through a wrapped index as if it were an
 unbounded integer.
 
-The representation must also handle same-block offset equalities and changes
+The graph must also handle same-block offset equalities and changes
 to the classes of offset atoms. The current block union-find ignores equations
 inside one class, so it is not the whole pointer theory. Specify how these
 relations notify application and resource indexes before adopting an API.
@@ -361,7 +361,7 @@ interpretation (sort/width and any other distinctions required by memory
 semantics). Existing external registries may supply this information during
 migration; the semantic key must be explicit in the design.
 
-The pointer migration will use a distinct pointer-load name and an explicit
+The typed graph query uses a distinct pointer-load name and an explicit
 loaded-pointer block variant, rather than hiding another sort in the scalar
 load-variable range. Its key is the assumption-free canonical snapshot,
 address, and pointer interpretation (object-pointer value, eight-byte access).
@@ -371,12 +371,13 @@ registry can remain during this pointer phase; its mutable maximum-width field
 must not decide membership in the new pointer-load application index.
 
 Do not emit a scalar equality between a pointer-load name and a widthless
-`MemoryLoad`. The pointer registry defines the pointer-valued application;
+`MemoryLoad`. The pointer registry defines the graph application;
 scalar bit views need their own checked conversion. A materialized pointer cell
 already contains its value: reuse that value, including a retained value across
-havoc only through the existing checked retention rule. Constructor, decoder,
-substitution, variable collection, provenance, and rendering must all handle
-the explicit loaded-pointer variant before the representation switch lands.
+havoc only through the existing checked retention rule. If a future change
+uses the graph's explicit loaded-pointer node as the C execution value, its
+constructor, decoder, substitution, provenance, and rendering consumers must
+be reviewed together. The current equality query requires none of that.
 
 Equal addresses at one snapshot imply equal compatible loads. This must hold
 whether the loads were registered before or after the address equality, and
@@ -448,9 +449,9 @@ review for growing symbolic deltas. Same-block equations and equality between
 offset atoms are not yet incorporated into this closure.
 
 Only registered pointer-width loads in opaque symbolic-block form enter this
-application index. Ordinary C load construction still uses the old encoding in
-some producers. This is a preparatory fragment, not completion of the coherent
-representation change or the read/fold integration milestone.
+application index. Ordinary C load construction retains its existing encoding.
+This is a preparatory graph fragment; live typed comparison and read/fold
+integration remain separate milestones.
 
 Resource lookup needs indexed equality-aware addresses, including displacement.
 Specify how resources registered before a merge remain discoverable after the

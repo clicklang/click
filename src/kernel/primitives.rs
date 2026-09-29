@@ -354,7 +354,7 @@ pub struct PointerLoadId(pub(crate) u64);
 #[derive(Clone, Debug)]
 #[allow(
     dead_code,
-    reason = "the typed load producer migrates after this identity foundation"
+    reason = "the graph query names loads without decoding them in live consumers yet"
 )]
 pub(crate) struct LoadedPointerView {
     pub(crate) identity: PointerLoadId,

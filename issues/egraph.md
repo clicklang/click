@@ -5,7 +5,7 @@ loaded-pointer flip plan. The implementation is partial; the progress ledger
 below records landed slices, while the milestones describe the remaining
 integration and deletion work.
 
-Current state on local `master`: the trusted, persistent `EqualityGraph`
+Current state at this revision: the trusted, persistent `EqualityGraph`
 supports affine pointer classes, whole offset equalities, int32 addition and
 scaling congruence, and registered same-snapshot pointer and four-byte scalar
 loads. `normalize() using` and selected int32 value consumers query it. This
@@ -140,11 +140,11 @@ saturation. Equalities enter from hypotheses, checked proof steps, and
 execution. The service propagates their consequences through registered
 applications; it does not search for arithmetic identities or rewrite rules.
 
-The next architectural milestone is a coherent pointer-value representation
-and indexed read/fold lookup, not a smaller failure count on the old trial.
-Keep the landed affine classes, incremental congruence, and constructor
-centralization. Retire spelling retries as each consumer gets a complete
-replacement.
+The next milestone is one live, typed pointer-load equality query using the
+existing graph, followed by indexed read/fold lookup in separate green slices.
+Keep the landed affine classes and incremental congruence. Do not make a
+pointer-value representation change a prerequisite for using load congruence.
+Retire spelling retries as each consumer gets a complete replacement.
 
 The detailed invariants and API boundaries are in
 [Equality closure design](../docs/internals/equality-closure.md). In particular:
@@ -152,9 +152,11 @@ The detailed invariants and API boundaries are in
 - Term identities and global load naming are assumption-free. Equalities,
   congruence indexes, resource indexes affected by equality, and provenance
   evidence belong to the path's persistent context.
-- A loaded pointer denotes the stored pointer value, independently of the
-  address spelling and pointee width used to read it. Construction, decoding,
-  displacement, rewriting, and diagnostics must agree on that representation.
+- A pointer-load application in the graph is a typed query term keyed by its
+  snapshot and source address. It need not replace the `Pointer` representation
+  used by C execution. A caller must retain genuine load-site evidence;
+  decoding the existing storage-relative pointer shape alone cannot distinguish
+  a loaded pointer from indexed pointer arithmetic.
 - Loads include their snapshot and access interpretation. Same-snapshot
   congruence is automatic; different snapshots require checked frame evidence.
 - Equality comparison performs no frame search. Execution may retain a name
@@ -438,14 +440,12 @@ exploit. Goal lowering/unfolding and the generic publisher remain their existing
 trust boundaries; this change gives equality substitution its own checked rule,
 not a migration of every proof transition.
 
-Next: settle same-block offset/atom updates and make the constructor/decoder
-representation change coherent through mandatory consumers. Before that switch,
-resolve the current load registry's sharing of names across access widths;
-pointer-load interpretation must be part of its identity. The design selects a
-distinct pointer-load name and explicit loaded-pointer block variant so scalar
-walkers cannot silently treat it as a bitvector variable. Then integrate
-indexed read/fold lookup and complete the full milestone-B regressions before
-a broad consumer handoff.
+Next: connect a live typed pointer-load comparison to the graph query using
+its real snapshot and addresses. The distinct pointer-load name and block are
+already available as graph syntax, without relying on the scalar registry's
+shared names across access widths. Keep C pointer values in their current
+representation for this slice. Then integrate indexed read/fold lookup in a
+separate green milestone.
 
 ## Why the migration changes
 
@@ -479,17 +479,17 @@ work:
 The congruence, scaling, and rewrite-evidence regressions listed below have
 landed. An explicit typed pointer-load name, block, and decoder have also
 landed, with graph congruence, type-view, snapshot, and branch regressions.
-Ordinary typed C loads still use the legacy storage-relative form. The
-producer/consumer switch remains open. Work in an isolated branch/worktree.
+Ordinary typed C loads still use the storage-relative form. That is no longer
+a blocker for a typed graph equality query. Work in an isolated branch/worktree.
 
 - Reproduce the explicit-class congruence failure above. Add nested-load,
   late-merge, insertion-order, and branch-isolation cases at the kernel API.
   Intermediate commits must remain green; do not commit knowingly failing
   tests as a checkpoint.
-- Define the semantic constructor/decoder API for a loaded pointer. The
-  decoder should expose the load identity/origin and pointer displacement,
-  rather than require a storage-relative block and scaled integer payload.
-  Specify how typed access and pointer casts preserve value identity.
+- Define the graph application/query API for a pointer read using its defining
+  snapshot and source address. Keep this distinct from the C pointer value.
+  Only a load site or checked provenance may supply these inputs; do not infer
+  them from `Pointer::as_loaded`, which also matches loaded array indices.
 - Specify stable term IDs, the weighted pointer relation, application
   signatures and parent-use indexes, merge propagation, resource reindexing,
   and equality evidence. Resolve same-block offset equations and equal offset
@@ -500,20 +500,18 @@ producer/consumer switch remains open. Work in an isolated branch/worktree.
   original inventory. The foundation must have a demonstrated evidence path
   before other consumers depend on it.
 
-Exit: a concrete API/design and regressions establishing what the foundation
-must guarantee, with no unresolved representation or trust-boundary choice
-hidden in a consumer migration.
+Exit: a concrete typed query API and regressions for congruence, isolation,
+and snapshot separation, with the trusted-kernel boundary explicit.
 
 ### B. Build and integrate the pointer/load foundation (partial)
 
-This remains the main hard part. Persistent indexed congruence for the
-supported pointer/offset/int32 fragments has landed, along with selected
-value-consumer integrations. The explicit pointer-load block is understood by
-the graph but is not yet emitted by ordinary C loads. A direct producer flip
-exposed failures in provenance, materialized loads, contracts, and expansion;
-these need a shared migration rather than individual spelling retries. The
-representation change and indexed read/fold lookup must be coherent when
-integrated.
+Persistent indexed congruence for the supported pointer/offset/int32 fragments
+has landed, along with selected value-consumer integrations. The explicit
+pointer-load block is understood by the graph. A direct producer flip exposed
+failures in provenance, materialized loads, contracts, and expansion; it is not
+the route to the next green checkpoint. First connect one live equality
+consumer that has actual typed load-site evidence and keeps its existing
+pointer value. Then address resource indexing as another bounded slice.
 
 - Maintain incremental congruence using indexed application signatures and
   affected-parent worklists. Updating an address class must merge existing
@@ -523,19 +521,19 @@ integrated.
   branch forks, merge maintenance, and explanation size, not just the number
   of union operations. Reconsider the representation if these costs violate
   the complexity contract.
-- Change constructor and decoder together and migrate their mandatory
-  consumers. Preserve assumption-free names; do not adopt the trial's scan
-  of every earlier load to choose a name.
+- At a live comparison or checked proof judgment, query typed pointer-load
+  congruence with the actual defining snapshot and addresses. Preserve
+  validity, volatility, and path conditions. Do not project every
+  storage-relative pointer through `as_loaded` or scan earlier loads.
 - Keep checked frame derivation outside comparison. Add derived equalities
   only to the context justified by that derivation and its premises.
 - Integrate indexed resource lookup through at least specification reads and
   fold consumption. Handle resources registered both before and after class
   merges, displaced aliases, and representatives that change later. Remove
   those consumers' spelling retries.
-- Review lost separation by cause: missing lookup, missing frame evidence,
-  incomplete decoding, or missing provenance. Derive provenance from supported
-  C semantics and checked lifetime/reachability facts; never infer it from a
-  borrowed storage block. Snapshot identities form a DAG, so do not implement
+- Review lost separation by cause: missing lookup, missing frame evidence, or
+  missing provenance. Derive provenance from supported C semantics and checked
+  lifetime/reachability facts. Snapshot identities form a DAG, so do not implement
   the old plan's "earliest birth snapshot" as a numerical minimum or assume
   unrelated branch snapshots are ordered. Allocation claims are not proof of
   an allocation's birth in a snapshot.
@@ -549,10 +547,10 @@ merges; branches extending a large shared prefix; and restricted contexts.
 Measure total work as well as individual query work. A fixed corpus timing
 and a test varying only other snapshots are insufficient.
 
-Exit: constructor/decoder agreement, complete pointer/load congruence for the
-specified fragment, checked evidence, indexed read/fold consumers, deterministic
-scaling regressions, and the full `scripts/check.sh` passing. The old trial's
-failure count is not an acceptance criterion.
+Exit: a live pointer-load equality use with positive and negative regressions,
+then indexed read/fold consumers with deterministic scaling regressions, each
+landed only after the full `scripts/check.sh` passes. The old trial's failure
+count is not an acceptance criterion.
 
 ### C. Migrate remaining pointer consumers and delete the old mechanisms
 
@@ -643,7 +641,7 @@ implementation. The prior handoff at `3f4386f9f` retains the full failure list
 and investigation notes; the reported 16 mdtest/20 unit failures are historical,
 not a fresh measurement of master or the revised design.
 
-Useful fixture groups to revisit after a coherent representation change:
+Useful fixture groups if a representation change is proposed later:
 loop frame fields and two-hop descriptor reads; rewrite through loaded fields;
 augment-rotate stable views; region/descriptor call framing; shared-heap parent
 and detach proofs; field-derived effects; alias-store reads; artifact identity;

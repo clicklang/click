@@ -451,6 +451,25 @@ impl EqualityGraph {
             || state.terms.are_equal(&left.offset, &shifted_right)
     }
 
+    /// Ask whether two pointer-typed reads in the same defining snapshot
+    /// must have the same value. The application nodes are query terms: this
+    /// does not change the representation of either loaded `CValue`.
+    /// Callers must supply the addresses and snapshot of actual pointer reads;
+    /// decoding a storage-relative pointer value as a load is ambiguous with
+    /// ordinary indexed pointer arithmetic.
+    #[allow(dead_code, reason = "live typed load-site consumer is the next slice")]
+    pub(in crate::kernel) fn are_pointer_loads_equal(
+        &self,
+        memory: &crate::kernel::SharedCMemory,
+        left_address: &Pointer,
+        right_address: &Pointer,
+    ) -> bool {
+        self.are_equal(
+            &Pointer::loaded_value(memory, left_address),
+            &Pointer::loaded_value(memory, right_address),
+        )
+    }
+
     /// Query explicit offset equality, addition and int32 scaling congruence.
     /// This fragment does not solve arithmetic or perform cancellation.
     pub(in crate::kernel) fn are_offsets_equal(
@@ -1311,14 +1330,24 @@ mod tests {
         );
         assert!(scalar_indexed_address.as_loaded_value().is_none());
         assert_ne!(scalar_indexed_address, from_p);
+        let CValue::Pointer(execution_value) =
+            memory
+                .memory()
+                .symbolic_pointer_load(&p, 8, CType::Int64Pointer)
+        else {
+            panic!("pointer-typed load must produce a pointer value");
+        };
+        assert_eq!(execution_value.pointer(), &scalar_indexed_address);
 
         // A scalar read of the same cell may have a four-byte interpretation;
         // it cannot determine whether the distinct pointer-load name enters
         // the graph's eight-byte application index.
         crate::kernel::load_variable_for_cell_with_origin(&memory, &p, 4, &memory);
         let mut graph = EqualityGraph::default();
+        assert!(!graph.are_pointer_loads_equal(&memory, &p, &q));
         assert!(!graph.are_equal(&from_p, &from_q));
         graph.add_equality(&p, &q);
+        assert!(graph.are_pointer_loads_equal(&memory, &p, &q));
         assert!(graph.are_equal(&from_p, &from_q));
         assert!(graph.are_equal(&displaced, &from_q.offset_by_bytes(8)));
         assert!(!graph.are_equal(&from_p, &from_later));
@@ -1342,12 +1371,15 @@ mod tests {
             if address_first {
                 branch.add_equality(&p, &q);
             }
+            assert!(!sibling.are_pointer_loads_equal(&memory, &p, &q));
             assert!(!sibling.are_equal(&x, &y));
             assert!(!trunk.are_equal(&x, &y));
             if !address_first {
+                assert!(!branch.are_pointer_loads_equal(&memory, &p, &q));
                 assert!(!branch.are_equal(&x, &y));
                 branch.add_equality(&p, &q);
             }
+            assert!(branch.are_pointer_loads_equal(&memory, &p, &q));
             assert!(branch.are_equal(&x, &y));
             assert!(branch.are_equal(&left.offset_by_bytes(8), &right.offset_by_bytes(8)));
             assert!(!trunk.are_equal(&left, &right));

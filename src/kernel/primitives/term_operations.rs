@@ -3035,13 +3035,9 @@ impl Pointer {
         }
     }
 
-    /// Name the pointer value read by an eight-byte load. Its identity is
-    /// independent of the containing storage block and of the pointee type.
-    /// The caller supplies the assumption-free defining snapshot and address.
-    #[allow(
-        dead_code,
-        reason = "the typed load producer migrates after this identity foundation"
-    )]
+    /// Name an eight-byte pointer read as a typed graph application. The
+    /// caller supplies the assumption-free defining snapshot and address;
+    /// ordinary C pointer values keep their existing representation.
     pub(crate) fn loaded_value(memory: &SharedCMemory, address: &Pointer) -> Self {
         Self {
             block: PointerBlock::LoadedPointer(crate::kernel::eval::pointer_load_identity(
@@ -3056,7 +3052,7 @@ impl Pointer {
     /// from its pointee width.
     #[allow(
         dead_code,
-        reason = "the typed load producer migrates after this identity foundation"
+        reason = "graph queries need the name but not a decoder in live consumers yet"
     )]
     pub(crate) fn as_loaded_value(&self) -> Option<LoadedPointerView> {
         let PointerBlock::LoadedPointer(identity) = self.block else {
