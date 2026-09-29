@@ -466,10 +466,47 @@ fn checks_population_authority_exchange(
         return Err("population authority rewrite requires one pointer anchor".into());
     };
     let anchor = pointer.pointer();
-    if anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
-        || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-            && before.memory.live_heap_block_size(anchor).is_some()
-            || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block))
+    let imported_retirement = !establish
+        && anchor.block == crate::kernel::PointerBlock::ExternalArgument
+        && before
+            .population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|events| {
+                events
+                    .observe_symbolic(description)
+                    .is_some_and(|symbolic| {
+                        symbolic.entry_owned_members == 1
+                            && symbolic.delta == -1
+                            && crate::kernel::quantity_condition_holds(
+                                assumptions,
+                                crate::kernel::ConditionTerm::Bitvector32Equal(
+                                    Box::new(symbolic.entry_count),
+                                    Box::new(crate::kernel::Bitvector32Term::Constant(1)),
+                                ),
+                            )
+                    })
+            });
+    if !establish
+        && anchor.block == crate::kernel::PointerBlock::ExternalArgument
+        && before
+            .population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|events| events.observe_symbolic(description).is_some())
+        && !imported_retirement
+    {
+        return Err(format!(
+            "Requires count({}(...)) == 1 and consumes {}(...) before authority retirement",
+            description.family(),
+            description.family(),
+        ));
+    }
+    if !imported_retirement
+        && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
+            || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
+                && before.memory.live_heap_block_size(anchor).is_some()
+                || anchor.block.starts_with("local:") && before.memory.has_block(&anchor.block)))
     {
         return Err("population authority rewrite requires live base storage".into());
     }
@@ -7704,7 +7741,9 @@ impl ExecutionProofCore {
         after_state: &CState,
         after_facts: &ProofFacts,
     ) -> Result<(), String> {
-        if self.evidence_completed || self.frontier.is_at_function_entry() {
+        if self.evidence_completed
+            || (self.frontier.is_at_function_entry() && !self.frontier.entry_member_prefix)
+        {
             return Err("population authority rewrite requires an active function body".into());
         }
         let rewrite = CheckedPopulationAuthorityRewrite::check(

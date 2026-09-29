@@ -472,15 +472,35 @@ fn transfer_population_call_facts<'a>(
                         "population call control transfer refused: {reason}"
                     ))
                 })?;
-            let [
-                CResourceFact::Own(CResource::Memory(_), _),
-                CResourceFact::Own(CResource::PopulationAuthority(description), _),
-            ] = children.as_slice()
-            else {
+            let memory_count = children
+                .iter()
+                .filter(|child| child.memory_own_range().is_some())
+                .count();
+            let authorities = children
+                .iter()
+                .filter_map(|child| match child {
+                    CResourceFact::Own(CResource::PopulationAuthority(description), quantity)
+                        if quantity.as_const() == Some(1) =>
+                    {
+                        Some(description)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let allocations = children
+                .iter()
+                .filter_map(CResourceFact::allocation)
+                .collect::<Vec<_>>();
+            if memory_count != 1
+                || authorities.len() != 1
+                || allocations.len() > 1
+                || children.len() != 2 + allocations.len()
+            {
                 return Err(CRuntimeError::FunctionContract(
-                    "population call control requires one cell and one authority".into(),
+                    "population call control requires one cell, one authority, and at most one allocation".into(),
                 ));
-            };
+            }
+            let description = authorities[0];
             events = events
                 .transfer_call_fact(from_events, to_events, description, true)
                 .map_err(|refusal| {
@@ -488,6 +508,25 @@ fn transfer_population_call_facts<'a>(
                         "population call control transfer refused: {refusal:?}"
                     ))
                 })?;
+            if let Some((base, _)) = allocations.first() {
+                let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                    return Err(CRuntimeError::FunctionContract(
+                        "population call control needs one pointer anchor".into(),
+                    ));
+                };
+                if *base != pointer.pointer() {
+                    return Err(CRuntimeError::FunctionContract(
+                        "population call allocation does not match its authority anchor".into(),
+                    ));
+                }
+                events = events
+                    .transfer_call_anchor(from_events, to_events, &base.block)
+                    .map_err(|refusal| {
+                        CRuntimeError::FunctionContract(format!(
+                            "population call allocation transfer refused: {refusal:?}"
+                        ))
+                    })?;
+            }
             continue;
         }
         let (description, authority_fact) = match fact {
@@ -2149,10 +2188,50 @@ fn authority_mode_produces_one_member_contract(interface: &CFunctionContractInte
         )
 }
 
+/// A final release consumes both the control and the last member. Its
+/// verified body must spend the member, retire the empty authority, and
+/// release the allocation before the contract can be applied at a call.
+fn authority_mode_final_release_contract(interface: &CFunctionContractInterface) -> bool {
+    if !interface.resource_constructors().is_empty() || !interface.resource_ensures().is_empty() {
+        return false;
+    }
+    let [control, member] = interface.resource_requires() else {
+        return false;
+    };
+    let CResourceTerm::Composite { name, .. } = control.term() else {
+        return false;
+    };
+    let Some(definition) = interface.composite_resource_definition(name) else {
+        return false;
+    };
+    let exact_owned = |spec: &CResourceSpec| {
+        spec.access() == CResourceAccessMode::Own
+            && spec.quantity() == &CResourceQuantity::One
+            && spec.guard().is_none()
+            && spec.resource_arguments().is_empty()
+    };
+    control.role() == CResourceTransferRole::Consume
+        && member.role() == CResourceTransferRole::Consume
+        && exact_owned(control)
+        && exact_owned(member)
+        && matches!(member.term(), CResourceTerm::Composite { .. })
+        && authority_mode_input_protects_member(interface, control, member)
+        && definition
+            .contains()
+            .iter()
+            .filter(|child| {
+                matches!(child.term(), CResourceTerm::Token { name, .. }
+                if name == CResourceFact::ALLOCATION_RESOURCE_NAME)
+            })
+            .count()
+            == 1
+}
+
 fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
     authority_mode_preserves_resource_contract(interface)
         || authority_mode_consumes_one_member_contract(interface)
         || authority_mode_produces_one_member_contract(interface)
+        || authority_mode_final_release_contract(interface)
 }
 
 #[cfg(test)]
@@ -3699,6 +3778,79 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
+        if caller_state.uses_population_authority_semantics()
+            && authority_mode_final_release_contract(interface)
+        {
+            let member = match evaluate_function_resource_spec_with_entry(
+                &entry_contract_state,
+                &post_state,
+                &interface.resource_requires()[1],
+                &effective_assumptions,
+                budget,
+            )? {
+                Ok(member) => member,
+                Err(error) => {
+                    paths.push(CFunctionPath {
+                        outcome: CFunctionOutcome::RuntimeError(error),
+                        facts,
+                        obligations,
+                        loan_evidence: empty_checked_loan_evidence_sequence(),
+                    });
+                    continue;
+                }
+            };
+            let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = member
+            else {
+                paths.push(resource_call_failure(
+                    "final release requires one exact member",
+                ));
+                continue;
+            };
+            if quantity.as_const() != Some(1) {
+                paths.push(resource_call_failure(
+                    "final release requires one exact member",
+                ));
+                continue;
+            }
+            let description = ResourceDescription::new(
+                name,
+                arguments,
+                ResourceFieldSchema::new(vec![]).expect("empty schema"),
+            );
+            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                paths.push(resource_call_failure(
+                    "final release needs one pointer anchor",
+                ));
+                continue;
+            };
+            let Some(events) = post_state.population_effects.creation.as_ref() else {
+                paths.push(resource_call_failure(
+                    "final release lost its creation history",
+                ));
+                continue;
+            };
+            let (spent, _) =
+                match events.checked_member_exchange(&pointer.pointer().block, &description, false)
+                {
+                    Ok(exchange) => exchange,
+                    Err(refusal) => {
+                        paths.push(resource_call_failure(&format!(
+                            "final release member transition refused: {refusal:?}"
+                        )));
+                        continue;
+                    }
+                };
+            let (retired, _) = match spent.checked_retire(&pointer.pointer().block, &description) {
+                Ok(exchange) => exchange,
+                Err(refusal) => {
+                    paths.push(resource_call_failure(&format!(
+                        "final release authority retirement refused: {refusal:?}"
+                    )));
+                    continue;
+                }
+            };
+            Arc::make_mut(&mut post_state.population_effects).creation = Some(retired);
+        }
         let canonical_entry_contract_state = with_canonical_borrowed_pointer_memory(
             &entry_contract_state,
             &transfer.canonical_borrowed_owners,
@@ -25887,9 +26039,19 @@ fn unreturned_allocation_obligation(
             "could not inspect allocation obligations at function return".to_string(),
         ));
     };
+    let Some(returned_resources) = expand_all_composite_resource_facts_at_state(
+        returned_resources,
+        function.composite_resource_definitions(),
+        actual_state,
+        assumptions,
+    ) else {
+        return Err(CRuntimeError::FunctionContract(
+            "could not inspect returned allocation obligations".to_string(),
+        ));
+    };
     let mut budget = ExecutionBudget::beside_live_state();
     let population_bodies = match evaluate_resource_population_body_resources(
-        returned_resources,
+        &returned_resources,
         actual_state,
         function.composite_resource_definitions(),
         assumptions,
@@ -26196,10 +26358,10 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     {
         return Ok(None);
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts(
+    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
         output_state.resources(),
         function.composite_resource_definitions(),
-        output_state.memory(),
+        &output_state,
         assumptions,
     ) else {
         return Err(CRuntimeError::FunctionContract(
@@ -26213,8 +26375,37 @@ pub(crate) fn unreturned_allocation_with_checked_returned_resources(
     {
         return Ok(None);
     }
+    // The checked resource result lists `produces` clauses. Owned borrowed
+    // inputs are returned separately by the contract, and may contain the
+    // allocation (for example inside an authority-backed control).
+    let borrowed = function
+        .resource_requires()
+        .iter()
+        .filter(|spec| spec.role() == CResourceTransferRole::Borrow)
+        .cloned()
+        .collect::<Vec<_>>();
+    let returned = if borrowed.is_empty() {
+        returned_resources.clone()
+    } else {
+        let mut budget = ExecutionBudget::beside_live_state();
+        let borrowed = evaluate_function_resource_context(
+            &output_state,
+            &borrowed,
+            function.composite_resource_definitions(),
+            assumptions,
+            &mut budget,
+        )
+        .map_err(|limit| CRuntimeError::FunctionContract(limit.describe()))??;
+        returned_resources.clone().unchecked_with_facts(
+            borrowed
+                .facts()
+                .iter()
+                .filter(|fact| !returned_resources.satisfies_fact(fact, assumptions))
+                .cloned(),
+        )
+    };
     let Some((allocation, holder)) =
-        unreturned_allocation_obligation(&output_state, returned_resources, function, assumptions)?
+        unreturned_allocation_obligation(&output_state, &returned, function, assumptions)?
     else {
         return Ok(None);
     };
@@ -26251,10 +26442,10 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     {
         return Ok(Ok(None));
     }
-    let Some(actual_resources) = expand_all_composite_resource_facts(
+    let Some(actual_resources) = expand_all_composite_resource_facts_at_state(
         state.resources(),
         function.composite_resource_definitions(),
-        state.memory(),
+        state,
         assumptions,
     ) else {
         return Ok(Err(CRuntimeError::FunctionContract(
@@ -26284,9 +26475,24 @@ pub(crate) fn unreturned_allocation_at_function_exit(
     if function.return_type() != CType::Void {
         set_function_result(&mut output_state, function, value.clone());
     }
+    // `owns` inputs return to their caller even though they are not repeated
+    // among `produces` clauses. Include them when checking what ownership
+    // accounts for a live allocation at the certified function exit.
+    let returned_clauses = function
+        .resource_requires()
+        .iter()
+        .filter(|spec| {
+            spec.role() == CResourceTransferRole::Borrow
+                && !function.resource_ensures().iter().any(|returned| {
+                    returned.term() == spec.term() && returned.access() == spec.access()
+                })
+        })
+        .chain(function.resource_ensures())
+        .cloned()
+        .collect::<Vec<_>>();
     let returned_resources = match evaluate_function_resource_context(
         &output_state,
-        function.resource_ensures(),
+        &returned_clauses,
         function.composite_resource_definitions(),
         assumptions,
         budget,
@@ -26500,7 +26706,8 @@ fn function_outcome_from_body_with_resource_transfer(
     }
     let population_transition = if caller_state.uses_population_authority_semantics()
         && (authority_mode_consumes_one_member_contract(function.contract_interface())
-            || authority_mode_produces_one_member_contract(function.contract_interface()))
+            || authority_mode_produces_one_member_contract(function.contract_interface())
+            || authority_mode_final_release_contract(function.contract_interface()))
     {
         CCountedPopulationTransition::default()
     } else {
@@ -26587,6 +26794,20 @@ fn function_outcome_from_body_with_resource_transfer(
     };
     transfer.candidate_output_views = returned_views;
     transfer.produced_borrowing_pieces = produced_borrowing_pieces;
+    let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =
+        match recover_candidate_stable_view_resources(
+            caller_state,
+            &state,
+            &transfer,
+            return_resources,
+            assumptions,
+            assumptions,
+            &obligations,
+        ) {
+            Ok(recovered) => recovered,
+            Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
+        };
+
     match crate::instrumentation::measure_operation(
         function.name(),
         "contract resource transition",
@@ -26615,20 +26836,6 @@ fn function_outcome_from_body_with_resource_transfer(
         Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
         Ok(None) => {}
     }
-
-    let (return_resources, return_ledger, return_participant, return_view_bindings, loan_evidence) =
-        match recover_candidate_stable_view_resources(
-            caller_state,
-            &state,
-            &transfer,
-            return_resources,
-            assumptions,
-            assumptions,
-            &obligations,
-        ) {
-            Ok(recovered) => recovered,
-            Err(error) => return Ok((CFunctionOutcome::RuntimeError(error), obligations, None)),
-        };
 
     let mut return_state = caller_state.clone();
     return_state.set_memory(state.memory.clone());
@@ -26755,7 +26962,8 @@ pub(super) fn contract_exit_outcome(
     };
     if caller_state.uses_population_authority_semantics()
         && (authority_mode_consumes_one_member_contract(function.contract_interface())
-            || authority_mode_produces_one_member_contract(function.contract_interface()))
+            || authority_mode_produces_one_member_contract(function.contract_interface())
+            || authority_mode_final_release_contract(function.contract_interface()))
     {
         let CStatementOutcome::Return { state, .. } = &outcome else {
             return Ok(Err(CRuntimeError::FunctionContract(
@@ -26763,13 +26971,17 @@ pub(super) fn contract_exit_outcome(
             )));
         };
         let produce = authority_mode_produces_one_member_contract(function.contract_interface());
+        let final_release = authority_mode_final_release_contract(function.contract_interface());
         let exchanged = callee_state
             .population_effects
             .creation
             .as_ref()
             .zip(state.population_effects.creation.as_ref())
             .is_some_and(|(before, after)| {
-                if produce {
+                if final_release {
+                    after.spent_imported_member_since(before)
+                        && after.retired_imported_authority_since(before)
+                } else if produce {
                     after.born_imported_member_since(before)
                 } else {
                     after.spent_imported_member_since(before)
@@ -26811,7 +27023,8 @@ pub(super) fn contract_exit_outcome(
     if function_needs_outcome_resource_transfer(function)
         || caller_state.uses_population_authority_semantics()
             && (authority_mode_consumes_one_member_contract(function.contract_interface())
-                || authority_mode_produces_one_member_contract(function.contract_interface()))
+                || authority_mode_produces_one_member_contract(function.contract_interface())
+                || authority_mode_final_release_contract(function.contract_interface()))
     {
         function_outcome_from_body_with_resource_transfer(
             caller_state,

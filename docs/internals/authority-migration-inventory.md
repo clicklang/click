@@ -1,6 +1,6 @@
 # Authority migration: checkpoint 0 consumer inventory
 
-This is a baseline inventory for `issues/authority-migration.md`, not a specification of new syntax. All executable consumers below currently use the legacy resource/population rules. Design notes are proposals or historical investigations, not passing fixtures. A group changes path only when its complete positive and negative fixture set has a checked replacement; the index here records the starting path and the behavior to preserve. The C in source-backed fixtures is frozen by the migration issue.
+This is a baseline inventory for `issues/authority-migration.md`, not a specification of new syntax. The original consumer groups below use the legacy resource/population rules unless a parallel authority proof is called out explicitly. Design notes are proposals or historical investigations, not passing fixtures. A group changes path only when its complete positive and negative fixture set has a checked replacement; the index here records the starting path and the behavior to preserve. The C in source-backed fixtures is frozen by the migration issue.
 
 ## Discovery boundary
 
@@ -14,6 +14,16 @@ rg -l 'field.*count|count.*field|is_countable|CountedPopulation' examples mdtest
 ```
 
 The third query finds explicit coefficient clauses, including unrelated resource quantities. Repeated `owns`/`consumes` clauses also encode quantities and require contextual review. The `count` search covers body facts, contracts, predicates, snapshots, and loop invariants; those are distinct authority-dependency sites, not one interchangeable test.
+
+## Parallel authority proof status
+
+`examples/refcount-authority/refcount.click` selects authority semantics for
+unchanged C files from `examples/refcount/`. It verifies initialization,
+retaining one reference, nonfinal release of one reference, and final release
+with allocation reclamation. The symbolic `amount` helpers and complete
+pipeline remain in the legacy baseline until checked symbolic member quantities
+can cross authority-mode helper contracts. This parallel proof does not mark
+the sequential refcount group migrated.
 
 ## Source-backed example and design groups
 

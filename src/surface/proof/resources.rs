@@ -3323,6 +3323,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 | CResource::Iterated(_) => None,
             };
             if let Some((name, resource_arguments)) = named
+                // Built-in tokens such as `allocation` are not counted
+                // resource declarations. Exposing one must not create a
+                // legacy population as a side effect of opening a control.
+                && name != CResourceFact::ALLOCATION_RESOURCE_NAME
+                && resource_environment.get(name).is_some()
                 && state.counted_population(name, resource_arguments).is_none()
             {
                 state = state.clone().with_counted_population(

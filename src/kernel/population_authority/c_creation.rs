@@ -51,6 +51,7 @@ struct OpaqueImport {
     owned_members: u32,
     /// Only a checked control wrapper can supply this immutable entry load.
     entry_count: Option<Bitvector32Term>,
+    retired_authority: bool,
 }
 
 pub(in crate::kernel) struct SymbolicPopulationCount {
@@ -299,6 +300,7 @@ impl CreationEvents {
                 entry_owned_members: owned_members,
                 owned_members,
                 entry_count,
+                retired_authority: false,
             }),
         })))
     }
@@ -311,7 +313,7 @@ impl CreationEvents {
             .0
             .opaque_import
             .as_ref()
-            .is_some_and(|import| import.description == *description)
+            .is_some_and(|import| import.description == *description && !import.retired_authority)
         {
             return true;
         }
@@ -398,6 +400,19 @@ impl CreationEvents {
         }
     }
 
+    pub(in crate::kernel) fn retired_imported_authority_since(&self, before: &Self) -> bool {
+        match (&before.0.opaque_import, &self.0.opaque_import) {
+            (Some(start), Some(end)) => {
+                start.description == end.description
+                    && !start.retired_authority
+                    && end.retired_authority
+                    && end.owned_members == 0
+                    && before.0.invocation == self.0.invocation
+            }
+            _ => false,
+        }
+    }
+
     pub(in crate::kernel) fn recognizes_imported_population(
         &self,
         description: &ResourceDescription,
@@ -430,7 +445,7 @@ impl CreationEvents {
         description: &ResourceDescription,
     ) -> Option<SymbolicPopulationCount> {
         let import = self.0.opaque_import.as_ref()?;
-        if import.description != *description {
+        if import.description != *description || import.retired_authority {
             return None;
         }
         Some(SymbolicPopulationCount {
@@ -514,6 +529,9 @@ impl CreationEvents {
             if import.owned_members != u32::from(!produce) {
                 return Err(CreationRefusal::MissingMembers);
             }
+            if import.retired_authority {
+                return Err(CreationRefusal::MissingAuthority);
+            }
             let after = Self(Arc::new(Root {
                 identity: fresh_identity(),
                 entry_call: OnceLock::new(),
@@ -532,6 +550,7 @@ impl CreationEvents {
                     entry_owned_members: import.entry_owned_members,
                     owned_members: u32::from(produce),
                     entry_count: import.entry_count.clone(),
+                    retired_authority: false,
                 }),
             }));
             let evidence = CheckedPopulationMemberExchange {
@@ -730,6 +749,42 @@ impl CreationEvents {
             .entry(key)
             .or_insert(successor)
             .clone())
+    }
+
+    /// Move the C storage cleanup obligation with a consumed or borrowed
+    /// control whose checked body contains the allocation. The ordinary
+    /// resource transfer separately moves that exact allocation fact.
+    pub(in crate::kernel) fn transfer_call_anchor(
+        &self,
+        from: &Self,
+        to: &Self,
+        block: &PointerBlock,
+    ) -> Result<Self, CreationRefusal> {
+        let anchor = *self
+            .0
+            .anchors
+            .get(block)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        let authority = self
+            .0
+            .authority
+            .transfer_anchor(from.0.invocation, to.0.invocation, anchor)
+            .map_err(CreationRefusal::from)?;
+        Ok(Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
+            invocation: self.0.invocation,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority,
+            tainted: self.0.tainted.clone(),
+            opaque_import: self.0.opaque_import.clone(),
+        })))
     }
 
     pub(in crate::kernel) fn tracks_population(&self, description: &ResourceDescription) -> bool {
@@ -1046,6 +1101,50 @@ impl CreationEvents {
         description: &ResourceDescription,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
         let after = self.retire_authority(block, description.family())?;
+        let evidence = CheckedPopulationAuthorityExchange {
+            before: self.0.identity,
+            after: after.0.identity,
+            description: description.clone(),
+            establish: false,
+        };
+        Ok((after, evidence))
+    }
+
+    /// A standalone proof can retire the imported authority only after its
+    /// last imported member is spent. The caller has separately proved the
+    /// entry count was one through the checked control-cell invariant.
+    pub(in crate::kernel) fn checked_retire_imported(
+        &self,
+        description: &ResourceDescription,
+    ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
+        let import = self
+            .0
+            .opaque_import
+            .as_ref()
+            .filter(|import| import.description == *description)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        if import.retired_authority || import.entry_owned_members != 1 || import.owned_members != 0
+        {
+            return Err(CreationRefusal::OutstandingMembers);
+        }
+        let after = Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
+            invocation: self.0.invocation,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority: self.0.authority.clone(),
+            tainted: self.0.tainted.clone(),
+            opaque_import: Some(OpaqueImport {
+                retired_authority: true,
+                ..import.clone()
+            }),
+        }));
         let evidence = CheckedPopulationAuthorityExchange {
             before: self.0.identity,
             after: after.0.identity,

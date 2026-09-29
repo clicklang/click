@@ -577,3 +577,76 @@ fn authority_control_survives_balanced_helper_calls() {
     verify_c0_project(&project(&expanded), &[("private_body.c", c_source)])
         .expect("the expanded caller proof checks beside both helpers");
 }
+
+#[test]
+fn authority_final_release_helper_retires_population_and_allocation() {
+    let c_source = r#"
+        struct object { int32 refs; };
+        void release_final(struct object* obj) {
+            obj->refs = 0;
+            free(obj);
+        }
+        int32 value(void) {
+            struct object* obj = malloc(sizeof(struct object));
+            if (obj == 0) return -1;
+            obj->refs = 1;
+            release_final(obj);
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        resource reference(obj: struct object*) {}
+        resource control(obj: struct object*) {
+            contains allocation(obj, sizeof(struct object));
+            owns object(obj);
+            owns authority(reference(obj));
+            fact obj->refs == count(reference(obj));
+        }
+        verifying "private_body.c";
+
+        void release_final(struct object* obj) {
+            requires obj->refs == 1;
+            consumes control(obj);
+            consumes reference(obj);
+        } by {
+            unfold(control(obj));
+            unfold(reference(obj));
+            unfold(authority(reference(obj)));
+            step();
+            execute(); simp();
+        }
+
+        int32 value() { ensures result == -1 or result == 0; } by {
+            step(); step();
+            branch { then { execute(); simp(); } else {} }
+            step();
+            fold(authority(reference(obj)));
+            fold(reference(obj));
+            fold(control(obj));
+            step();
+            execute(); simp();
+        }
+    "#;
+    verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect("final release retires the last member, authority, and allocation through a call");
+
+    let bad_c_source = c_source.replace("            free(obj);", "");
+    let error = verify_c0_project(&project(click_source), &[("private_body.c", &bad_c_source)])
+        .expect_err("a helper that omits free cannot consume the allocation");
+    assert!(
+        error
+            .message()
+            .contains("live allocation obligation was neither returned nor freed"),
+        "{error:?}"
+    );
+
+    let bad_contract = click_source.replace("requires obj->refs == 1;", "requires obj->refs == 2;");
+    let error = verify_c0_project(&project(&bad_contract), &[("private_body.c", c_source)])
+        .expect_err("one consumed member cannot retire an authority with count two");
+    assert!(
+        error
+            .message()
+            .contains("Requires count(reference(...)) == 1"),
+        "{error:?}"
+    );
+}

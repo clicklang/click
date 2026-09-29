@@ -4568,7 +4568,13 @@ impl CState {
             .iter()
             .filter_map(CResourceFact::memory_own_range)
             .collect::<Vec<_>>();
-        if children.len() != 2
+        let allocations = children
+            .iter()
+            .filter_map(CResourceFact::allocation)
+            .collect::<Vec<_>>();
+        if children.len() != 2 + allocations.len()
+            || allocations.len() > 1
+            || allocations.iter().any(|(base, _)| *base != &anchor)
             || memory_cells.len() != 1
             || memory_cells[0].base() != &anchor
             || memory_cells[0].start().as_const() != Some(0)
@@ -4587,16 +4593,20 @@ impl CState {
             else {
                 return false;
             };
-            let SpecExpression::PointerOffset {
-                pointer,
-                elements,
-                byte_width: 4,
-            } = pointer.as_ref()
-            else {
-                return false;
-            };
-            is_parameter(pointer)
-                && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+            match pointer.as_ref() {
+                // The first int32 field of a struct (for example `obj->refs`)
+                // lowers to a load at the struct base, not an array offset.
+                direct if is_parameter(direct) => true,
+                SpecExpression::PointerOffset {
+                    pointer,
+                    elements,
+                    byte_width: 4,
+                } => {
+                    is_parameter(pointer)
+                        && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+                }
+                _ => false,
+            }
         };
         let is_population_count = |expression: &SpecExpression| {
             matches!(expression, SpecExpression::CountedResourceCount { name, arguments }
@@ -4611,7 +4621,7 @@ impl CState {
             || (is_population_count(left) && is_counter_load(right)));
         if !exact_count_fact {
             return Err(format!(
-                "Requires {parameter}[0] == count({}({parameter}))",
+                "Requires the counter cell to equal count({}({parameter}))",
                 description.family()
             ));
         }
@@ -4703,7 +4713,23 @@ impl CState {
                     .map_err(|error| format!("control memory evaluation failed: {error:?}"))?
                     .map_err(|error| format!("control memory evaluation failed: {error:?}"))?
                 }
-                _ => return Err("control body supports owned memory and one authority".into()),
+                super::super::CResourceTerm::Token { name, .. }
+                    if name == CResourceFact::ALLOCATION_RESOURCE_NAME =>
+                {
+                    super::super::functions::evaluate_function_resource_spec(
+                        &evaluation,
+                        spec,
+                        assumptions,
+                        &mut budget,
+                    )
+                    .map_err(|error| format!("control allocation evaluation failed: {error:?}"))?
+                    .map_err(|error| format!("control allocation evaluation failed: {error:?}"))?
+                }
+                _ => {
+                    return Err(
+                        "control body supports owned memory, allocation, and one authority".into(),
+                    );
+                }
             };
             if let CResource::PopulationAuthority(description) = child.resource() {
                 authority = Some(description.clone());
@@ -4757,18 +4783,45 @@ impl CState {
             return Err("authority requires one pointer anchor".into());
         };
         let anchor = pointer.pointer();
-        if anchor.offset != PointerOffsetTerm::Constant(0)
-            || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                && self.memory.live_heap_block_size(anchor).is_some()
-                || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block))
-        {
-            return Err("Requires live base storage for authority(R(p))".into());
-        }
         let events = self
             .population_effects
             .creation
             .as_ref()
             .ok_or("authority mode has no creation history")?;
+        let imported_retirement = !establish
+            && anchor.block == PointerBlock::ExternalArgument
+            && events
+                .observe_symbolic(description)
+                .is_some_and(|symbolic| {
+                    symbolic.entry_owned_members == 1
+                        && symbolic.delta == -1
+                        && super::super::quantity_condition_holds(
+                            assumptions,
+                            ConditionTerm::Bitvector32Equal(
+                                Box::new(symbolic.entry_count),
+                                Box::new(Bitvector32Term::Constant(1)),
+                            ),
+                        )
+                });
+        if !establish
+            && anchor.block == PointerBlock::ExternalArgument
+            && events.observe_symbolic(description).is_some()
+            && !imported_retirement
+        {
+            return Err(format!(
+                "Requires count({}(...)) == 1 and consumes {}(...) before authority retirement",
+                description.family(),
+                description.family(),
+            ));
+        }
+        if !imported_retirement
+            && (anchor.offset != PointerOffsetTerm::Constant(0)
+                || !(matches!(&anchor.block, PointerBlock::Heap(_))
+                    && self.memory.live_heap_block_size(anchor).is_some()
+                    || anchor.block.starts_with("local:") && self.memory.has_block(&anchor.block)))
+        {
+            return Err("Requires live base storage for authority(R(p))".into());
+        }
         let mut next = self.clone();
         let evidence = if establish {
             let (history, evidence) = events
@@ -4788,9 +4841,12 @@ impl CState {
                 .clone()
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or("Requires owns authority(R(p))")?;
-            let (history, evidence) = events
-                .checked_retire(&anchor.block, description)
-                .map_err(|refusal| format!("authority retirement refused: {refusal:?}"))?;
+            let (history, evidence) = if imported_retirement {
+                events.checked_retire_imported(description)
+            } else {
+                events.checked_retire(&anchor.block, description)
+            }
+            .map_err(|refusal| format!("authority retirement refused: {refusal:?}"))?;
             next.resources = resources;
             Arc::make_mut(&mut next.population_effects).creation = Some(history);
             evidence
