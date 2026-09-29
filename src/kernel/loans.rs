@@ -562,6 +562,23 @@ pub(crate) fn protected_range_proven_overlapping(
     protected: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    protected_range_proven_overlapping_with_separation(query, protected, assumptions, true)
+}
+
+pub(crate) fn protected_range_proven_overlapping_ignoring_separation(
+    query: &CMemoryRange,
+    protected: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    protected_range_proven_overlapping_with_separation(query, protected, assumptions, false)
+}
+
+fn protected_range_proven_overlapping_with_separation(
+    query: &CMemoryRange,
+    protected: &CMemoryRange,
+    assumptions: &PureFactContext,
+    use_separation: bool,
+) -> bool {
     let queries = memory_range_aliases(query, assumptions);
     let protected_ranges = memory_range_aliases(protected, assumptions);
     // Exact aliases can settle the whole comparison without initializing any
@@ -591,8 +608,13 @@ pub(crate) fn protected_range_proven_overlapping(
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
             let (query, protected) = (byte_range(query), byte_range(protected));
-            memory_ranges_proven_overlapping(&query, &protected, assumptions)
-                || memory_ranges_proven_overlapping(&protected, &query, assumptions)
+            let overlapping = if use_separation {
+                memory_ranges_proven_overlapping
+            } else {
+                super::primitives::memory_ranges_proven_overlapping_ignoring_separation
+            };
+            overlapping(&query, &protected, assumptions)
+                || overlapping(&protected, &query, assumptions)
         })
     })
 }

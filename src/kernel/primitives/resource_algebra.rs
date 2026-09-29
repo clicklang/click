@@ -2581,6 +2581,35 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        self.directly_supporting_owned_entry_with_separation(required, assumptions, true)
+    }
+
+    pub(crate) fn directly_supporting_owned_entry_ignoring_separation(
+        &self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        self.directly_supporting_owned_entry_with_separation(required, assumptions, false)
+    }
+
+    fn directly_supporting_owned_entry_with_separation(
+        &self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+        use_separation: bool,
+    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        let entails = |candidate: &CResourceFact| {
+            if !use_separation
+                && let (Some(available), Some(required)) = (
+                    resource_fact_read_core_range(candidate),
+                    required.memory_view_range(),
+                )
+            {
+                memory_range_covers_with_separation(&available, required, assumptions, false)
+            } else {
+                resource_fact_entails(candidate, required, assumptions)
+            }
+        };
         // Concrete memory requirements have a monotone start position.  Use
         // the exact bucket or its immediate predecessor before falling back
         // to the block bucket; repeated disjoint consumption otherwise
@@ -2590,7 +2619,7 @@ impl ResourceContext {
         {
             for entry in indexed {
                 let candidate = self.fact(entry);
-                if resource_fact_entails(candidate, required, assumptions) && candidate.is_own() {
+                if entails(candidate) && candidate.is_own() {
                     return Some((self.occurrence(entry), candidate));
                 }
             }
@@ -2600,7 +2629,7 @@ impl ResourceContext {
             .flat_map(ResourceEntryIds::iter)
             .filter_map(|entry| {
                 let candidate = self.fact(*entry);
-                if !resource_fact_entails(candidate, required, assumptions) {
+                if !entails(candidate) {
                     return None;
                 }
                 if candidate.is_own() {
@@ -4532,6 +4561,21 @@ impl ResourceContext {
         &self,
         assumptions: &PureFactContext,
     ) -> Option<ResourceContextValidityError> {
+        self.validity_error_with_separation(assumptions, true)
+    }
+
+    pub(crate) fn validity_error_ignoring_separation(
+        &self,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceContextValidityError> {
+        self.validity_error_with_separation(assumptions, false)
+    }
+
+    fn validity_error_with_separation(
+        &self,
+        assumptions: &PureFactContext,
+        use_separation: bool,
+    ) -> Option<ResourceContextValidityError> {
         if let Some((identity, ())) = self.storage.index.suspect_mutex_authorities.iter().next() {
             let entries = self
                 .storage
@@ -4606,9 +4650,12 @@ impl ResourceContext {
                 for (_, end, fact, _) in ordered {
                     crate::instrumentation::record_deterministic_work(1);
                     if let Some((furthest_end, left)) = furthest {
-                        if let Some(error) = resource_family_algebra(left.family())
-                            .pair_validity_error(left, fact, assumptions)
-                        {
+                        if let Some(error) = pair_validity_error_with_separation(
+                            left,
+                            fact,
+                            assumptions,
+                            use_separation,
+                        ) {
                             return Some(error);
                         }
                         if end > furthest_end {
@@ -4637,11 +4684,9 @@ impl ResourceContext {
                 crate::instrumentation::record_deterministic_work(1);
                 let left = self.fact(left_entry);
                 let right = self.fact(right_entry);
-                if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
-                    left,
-                    right,
-                    assumptions,
-                ) {
+                if let Some(error) =
+                    pair_validity_error_with_separation(left, right, assumptions, use_separation)
+                {
                     return Some(error);
                 }
             }
@@ -4658,7 +4703,8 @@ impl ResourceContext {
             for base in aliased {
                 crate::instrumentation::record_deterministic_work(1);
                 if let Some(entries) = memory_by_base.get(base)
-                    && let Some(error) = self.cross_block_alias_error(base, entries, assumptions)
+                    && let Some(error) =
+                        self.cross_block_alias_error(base, entries, assumptions, use_separation)
                 {
                     return Some(error);
                 }
@@ -4666,7 +4712,9 @@ impl ResourceContext {
         } else {
             for (base, entries) in memory_by_base.iter() {
                 crate::instrumentation::record_deterministic_work(1);
-                if let Some(error) = self.cross_block_alias_error(base, entries, assumptions) {
+                if let Some(error) =
+                    self.cross_block_alias_error(base, entries, assumptions, use_separation)
+                {
                     return Some(error);
                 }
             }
@@ -4681,6 +4729,7 @@ impl ResourceContext {
         base: &Pointer,
         entries: &ResourceEntryIds,
         assumptions: &PureFactContext,
+        use_separation: bool,
     ) -> Option<ResourceContextValidityError> {
         for entry in entries.iter().copied() {
             if self.fact(entry).memory_own_range().is_none() {
@@ -4705,10 +4754,11 @@ impl ResourceContext {
                         continue;
                     }
                     crate::instrumentation::record_deterministic_work(1);
-                    if let Some(error) = resource_family_algebra(left.family()).pair_validity_error(
+                    if let Some(error) = pair_validity_error_with_separation(
                         left,
                         right,
                         assumptions,
+                        use_separation,
                     ) {
                         return Some(error);
                     }
@@ -6545,6 +6595,34 @@ fn string_literal_blocks_may_alias(left: &PointerBlock, right: &PointerBlock) ->
     )
 }
 
+fn pair_validity_error_with_separation(
+    left: &CResourceFact,
+    right: &CResourceFact,
+    assumptions: &PureFactContext,
+    use_separation: bool,
+) -> Option<ResourceContextValidityError> {
+    if !use_separation
+        && let (Some(left_range), Some(right_range)) =
+            (left.memory_own_range(), right.memory_own_range())
+    {
+        if string_literal_blocks_may_alias(&left_range.base().block, &right_range.base().block) {
+            return None;
+        }
+        return memory_ranges_proven_overlapping_ignoring_separation(
+            left_range,
+            right_range,
+            assumptions,
+        )
+        .then(
+            || ResourceContextValidityError::OverlappingOwnedMemoryResources {
+                left: left_range.clone(),
+                right: right_range.clone(),
+            },
+        );
+    }
+    resource_family_algebra(left.family()).pair_validity_error(left, right, assumptions)
+}
+
 impl ResourceFamilyAlgebra for MemoryResourceAlgebra {
     fn family(&self) -> ResourceFamily {
         ResourceFamily::Memory
@@ -7346,21 +7424,38 @@ pub(in crate::kernel) fn memory_range_covers(
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    memory_range_covers_with_separation(available, required, assumptions, true)
+}
+
+fn memory_range_covers_with_separation(
+    available: &CMemoryRange,
+    required: &CMemoryRange,
+    assumptions: &PureFactContext,
+    use_separation: bool,
+) -> bool {
     if available.element_width() != required.element_width() {
         // A footprint is bytes and the element width is only how the bytes
         // are spelled (D6), so a mismatch is rewritten into one coordinate
         // system instead of refusing. Neither rewrite adds or drops a byte,
         // so both are sound; the re-spelling is tried first because it keeps
         // the bases and endpoints the equal-width paths reason about.
-        if memory_range_in_element_width(required, available.element_width())
-            .is_some_and(|required| memory_range_covers(available, &required, assumptions))
-        {
+        if memory_range_in_element_width(required, available.element_width()).is_some_and(
+            |required| {
+                memory_range_covers_with_separation(
+                    available,
+                    &required,
+                    assumptions,
+                    use_separation,
+                )
+            },
+        ) {
             return true;
         }
-        return memory_range_covers(
+        return memory_range_covers_with_separation(
             &byte_normalized_memory_range(available),
             &byte_normalized_memory_range(required),
             assumptions,
+            use_separation,
         );
     }
     if available == required {
@@ -7376,17 +7471,18 @@ pub(in crate::kernel) fn memory_range_covers(
     // one owner paid `N` lookups x `N` candidates x `N` facts at entry. The
     // answer is the same conjunction either way.
     memory_range_covered_by_some_route(available, required, assumptions)
-        && !crate::instrumentation::measure_operation(
-            "kernel",
-            "memory range coverage",
-            "memory range coverage: explicit separation",
-            || {
-                assumptions
-                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
-                        available, required,
-                    )
-            },
-        )
+        && (!use_separation
+            || !crate::instrumentation::measure_operation(
+                "kernel",
+                "memory range coverage",
+                "memory range coverage: explicit separation",
+                || {
+                    assumptions
+                        .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                            available, required,
+                        )
+                },
+            ))
 }
 
 /// The positive coverage routes of [`memory_range_covers`], for two
@@ -7795,6 +7891,23 @@ pub(crate) fn memory_ranges_proven_overlapping(
     right: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    memory_ranges_proven_overlapping_with_separation(left, right, assumptions, true)
+}
+
+pub(crate) fn memory_ranges_proven_overlapping_ignoring_separation(
+    left: &CMemoryRange,
+    right: &CMemoryRange,
+    assumptions: &PureFactContext,
+) -> bool {
+    memory_ranges_proven_overlapping_with_separation(left, right, assumptions, false)
+}
+
+fn memory_ranges_proven_overlapping_with_separation(
+    left: &CMemoryRange,
+    right: &CMemoryRange,
+    assumptions: &PureFactContext,
+    use_separation: bool,
+) -> bool {
     // Rebase through the indexed, directly stated equalities before asking
     // the same-block range relation. This catches equal addresses whose
     // pointer spellings live in different blocks.
@@ -7818,6 +7931,7 @@ pub(crate) fn memory_ranges_proven_overlapping(
                 &left_alias,
                 &right_alias,
                 assumptions,
+                use_separation,
             ) {
                 return true;
             }
@@ -7830,6 +7944,7 @@ fn memory_ranges_proven_overlapping_without_aliases(
     left: &CMemoryRange,
     right: &CMemoryRange,
     assumptions: &PureFactContext,
+    use_separation: bool,
 ) -> bool {
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
@@ -7842,7 +7957,12 @@ fn memory_ranges_proven_overlapping_without_aliases(
     if left.element_width() != right.element_width() {
         let left = byte_normalized_memory_range(left);
         let right = byte_normalized_memory_range(right);
-        return memory_ranges_proven_overlapping_without_aliases(&left, &right, assumptions);
+        return memory_ranges_proven_overlapping_without_aliases(
+            &left,
+            &right,
+            assumptions,
+            use_separation,
+        );
     }
     let Some(base_delta) = right
         .base()
@@ -7864,8 +7984,11 @@ fn memory_ranges_proven_overlapping_without_aliases(
             right_start,
             left.end().clone(),
         )) == Some(true)
-        && !assumptions
-            .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(left, right)
+        && (!use_separation
+            || !assumptions
+                .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                    left, right,
+                ))
 }
 
 /// The same containment as [`memory_range_structurally_covers`], for a base

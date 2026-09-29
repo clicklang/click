@@ -3312,12 +3312,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     // pair. This is one validity pass over the complete projection, not one
     // normalization per child.
     if !already_unfolded && !body_was_already_exposed {
-        let ownership_assumptions = assumptions.clone().without_explicit_separation_facts();
         let projected = state
             .resources()
             .clone()
             .unchecked_with_facts(unfolded_facts.clone());
-        if let Some(error) = projected.validity_error(&ownership_assumptions) {
+        if let Some(error) = projected.validity_error_ignoring_separation(&assumptions) {
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `unfold({})` produced {}",
                 describe_resource_clause(resource),

@@ -4514,10 +4514,6 @@ impl PureFactContext {
         self.content_fingerprint
     }
 
-    /// Removes separation propositions while preserving arithmetic, equality,
-    /// and other contextual facts. Resource-definition projection uses this
-    /// to detect ownership conflicts that a contradictory fact from the same
-    /// definition must not conceal.
     /// A context holding only this context's resource compositions: what
     /// ownership alone proves, independent of any condition or other fact.
     pub(crate) fn compositions_only(&self) -> Self {
@@ -4527,15 +4523,6 @@ impl PureFactContext {
                 context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
         }
         context
-    }
-
-    pub(crate) fn without_explicit_separation_facts(mut self) -> Self {
-        self.resource_compositions = std::sync::Arc::new(BTreeSet::new());
-        self.separated_anchor_offsets = crate::persistent::PersistentMap::default();
-        self.retain_proposition_facts(|proposition| {
-            !matches!(proposition, Proposition::CResourceSeparate { .. })
-        });
-        self
     }
 
     /// Keep contextual loadability consequences as explicit proof obligations
