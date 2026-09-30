@@ -70,8 +70,8 @@ jobs:
       - name: Set up full test environment
         run: scripts/setup-environment.sh
       - uses: Swatinem/rust-cache@v2
-      # This runs the quality checks and unit tests, then builds fixture test
-      # binaries once for the parallel runners below.
+      # Run shared checks and compiler-import tests here; build the larger
+      # mdtest and example suites once for the parallel runners below.
       - name: Prepare fixture test archive
         run: scripts/check.sh --ci-prepare target/nextest-archive.tar.zst
       - uses: actions/upload-artifact@v4
@@ -100,13 +100,15 @@ jobs:
         with:
           path: ~/.cargo/bin/cargo-nextest
           key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
-      - name: Set up full test environment
-        run: scripts/setup-environment.sh
+      # These suites do not invoke the C++ importer, so avoid reinstalling the
+      # LLVM development packages on each shard runner.
+      - name: Set up fixture test environment
+        run: scripts/setup-environment.sh --docs-only
       - uses: actions/download-artifact@v4
         with:
           name: nextest-archive
           path: target
-      - name: Run fixture partition ${{ matrix.shard }} of 4
+      - name: Run mdtest and example partition ${{ matrix.shard }} of 4
         run: scripts/check.sh --ci-shard target/nextest-archive.tar.zst "slice:${{ matrix.shard }}/4"
 
   docs:

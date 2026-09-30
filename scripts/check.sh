@@ -17,13 +17,13 @@ if [[ "${1:-}" == "--docs-only" ]]; then
     exec scripts/check-docs.sh "$@"
 fi
 
-fixture_targets=(
-    --test mdtests
-    --test examples
+parallel_fixture_targets=(--test mdtests --test examples)
+single_runner_fixture_targets=(
     --test compiler_import
     --test cpp_import
     --test bitcoin_core_money_range
 )
+fixture_targets=("${parallel_fixture_targets[@]}" "${single_runner_fixture_targets[@]}")
 
 if [[ "${1:-}" == "--ci-shard" ]]; then
     archive="${2:?usage: scripts/check.sh --ci-shard ARCHIVE PARTITION}"
@@ -33,11 +33,8 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     # default per-test thread stack on otherwise healthy runners.
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
-    # C++ import tests refresh one artifact through the repository-owned
-    # exporter, so make the same backend available in every archive runner.
-    export CLICK_CPP_EXPORTER
-    CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
-
+    # Only mdtests and examples are archived; compiler-import fixtures ran in
+    # the full-environment preparation job.
     cargo nextest run --archive-file "$archive" --partition "$partition" --test-threads 1 --no-capture
     exit 0
 fi
@@ -101,9 +98,11 @@ cargo nextest run --lib --bin click --test documentation --test condition_transp
 # it starts and when it finishes, so a stall is visible as it happens and
 # named.
 if [[ -n "$ci_archive" ]]; then
-    # CI builds each fixture target once, then runs deterministic partitions
-    # of the archived binaries on independent standard runners.
-    cargo nextest archive "${fixture_targets[@]}" --archive-file "$ci_archive"
+    # Compiler-import tests need LLVM and stay on this full-environment runner.
+    # The larger mdtest and example suites are archived and partitioned across
+    # independent standard runners below.
+    cargo nextest run "${single_runner_fixture_targets[@]}" --test-threads 1 --no-capture
+    cargo nextest archive "${parallel_fixture_targets[@]}" --archive-file "$ci_archive"
 else
     cargo nextest run "${fixture_targets[@]}" --test-threads 1 --no-capture "${nextest_args[@]}"
 fi
