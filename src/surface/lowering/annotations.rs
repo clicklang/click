@@ -4798,7 +4798,10 @@ impl AnnotationLowerer<'_> {
                     && !c_value_matches_click_type(fixed, *c_type)
                 {
                     return Err(format!(
-                        "let binding `{name}` evaluated to {fixed:?}, which does not match {c_type:?}"
+                        "let binding `{name}` evaluated to `{}` of type `{}`, which does not match the declared type `{}`",
+                        crate::surface::diagnostics::describe_c_value(fixed, &[], &[]),
+                        crate::kernel::c_type_spelling(fixed.c_type()),
+                        crate::surface::validation::describe_c0_type(*c_type)
                     ));
                 }
                 let mut body_environment = environment.clone();
