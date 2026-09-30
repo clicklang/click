@@ -5483,6 +5483,16 @@ impl Parser {
             return Err(self.error(replacement));
         }
         if name == "have" {
+            // A `have` fact has no name: a later step cites it by restating
+            // its proposition. `name:` is never the start of a proposition,
+            // so refuse a label with the spelling to write instead.
+            if let (Some(Token::Ident(label)), Some(Token::Colon)) = (self.peek(), self.peek_next())
+            {
+                return Err(self.error(format!(
+                    "`have` takes no label: write `have P by {{ ... }};` without `{label}:`; \
+                     cite the fact later by restating `P`, for example `simp() using {{ P; }}`"
+                )));
+            }
             let proposition = self.parse_proposition()?;
             let proof = self.parse_by_clause()?;
             if self.peek() == Some(&Token::Semicolon) {
