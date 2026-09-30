@@ -6768,6 +6768,36 @@ impl ProofObligation {
 }
 
 impl ExecutionPureFact {
+    /// Retain the exact typed producer's unconditional value definition.
+    /// Used when a checked expression's value outlives its temporary fact
+    /// stream (for example, an owned recursive child index). The graph is
+    /// part of the trusted kernel; this records a term definition only, not
+    /// an ambient hypothesis or permission to read the defining cell.
+    pub(in crate::kernel) fn retain_pointer_read_definition(&self, context: &PureFactContext) {
+        if !self.is_certified() {
+            return;
+        }
+        let Some(
+            binding @ GeneratedLoadBinding::Exact {
+                variable,
+                pointer: address,
+                load: Bitvector32Term::MemoryLoad(memory, _),
+                typed_pointer_value: Some(value),
+                ..
+            },
+        ) = self.generated_load_binding()
+        else {
+            return;
+        };
+        if generated_load_binding_matches_proposition(binding, self.proposition())
+            && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
+        {
+            context
+                .equality_graph
+                .register_pointer_read_definition(value, memory, address);
+        }
+    }
+
     pub fn new(proposition: Proposition) -> Self {
         Self {
             proposition,

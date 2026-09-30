@@ -42,8 +42,9 @@ but that document is not a list of launch requirements.
    a write; those remain distinct checked judgments.
 
 Work in small green commits. Actual pointer reads, indexed specification reads,
-and fold candidate selection have landed; next isolate the child-argument
-equality boundary described below.
+and fold candidate selection have landed. The no-write recursive child
+matching reduction now passes; next recheck the differing-snapshot rbtree
+boundary described below.
 If the rbtree failure turns out to be a resource-lookup gap with the needed
 load equality already available, take the lookup slice first. Do not change
 the unchanged C to route around a verifier gap.
@@ -191,10 +192,10 @@ regressions cover branch-local address evidence, changed snapshots, missing
 read authority, pointer arithmetic, reconstruction, stale equality misses,
 and deterministic lookup scaling beside 16, 64, 256, and 1024 unrelated
 logical load definitions. This slice does not establish that the rbtree
-frontier advances or solve its different-snapshot child matching. Rechecking
-both the immediate tree refold above and a version with explicit field-load
-equality claims still fails child matching; the specification claims now pass.
-Keep that resource-child boundary separate from this completed read slice.
+frontier advances or solve its different-snapshot child matching. At that
+checkpoint, both the immediate tree refold above and a version with explicit
+field-load equality claims still failed child matching. The subsequent
+recursive child-definition slice below closes that no-write reduction.
 
 ## Acceptance
 
@@ -240,3 +241,24 @@ history retain the detailed implementation ledger and investigated options.
 They are reference material, not additional P1 acceptance criteria. A newly
 discovered soundness bug is still urgent under the general
 [P1 policy](README.md), irrespective of this issue's narrower scope.
+
+## Recursive child-definition slice
+
+`mdtests/egraph_recursive_child_alias.md` now unfolds at `p` and refolds at
+an equal model identity, with no C writes or intermediate load-equality
+claims. The red test previously proved explicit field-load equalities but
+failed at the child argument comparison. Checked child-expression evaluation
+was discarding its typed read definition; its cached scalar-cell conversion
+also omitted the pointer producer metadata carried by the symbolic route.
+
+After all existing readability and argument prerequisites pass, the kernel
+retains certified typed read definitions in the graph's shared term metadata.
+This adds no proposition premise, address hypothesis, read authority, or
+snapshot transport. Both unfold and fold retain their child-index definitions,
+and equality comparison uses the existing graph query. Expansion independently
+rechecks the same resource consumer. Kernel controls reject fabricated and
+volatile producer evidence and keep different snapshots distinct.
+
+This completes the no-write generic child matching reduction above. The
+rbtree probe's differing recorded snapshots remain a separate question; this
+slice does not claim to advance its frontier.

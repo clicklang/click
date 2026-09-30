@@ -1115,21 +1115,11 @@ fn canonicalized_pointer_value_from_int_cell(
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
             return Some(CValue::Int16(Bitvector32Term::Variable(fresh)));
         }
-        CValue::Int32(bits @ Bitvector32Term::MemoryLoad(_, _)) => {
-            mint_load_variable(bits, facts, assumptions, source)?
-        }
+        CValue::Int32(bits @ Bitvector32Term::MemoryLoad(_, _)) => load_variable_for_term(bits)?.0,
         // A cell materialized with its load variable (canonicalizing at
         // creation) already carries the variable; record its defining fact
         // in this path's stream, as minting would have.
         CValue::Int32(Bitvector32Term::Variable(variable)) if is_load_variable(variable) => {
-            if let Some((memory, pointer)) = registered_load_for_variable(variable) {
-                record_load_variable_defining_fact_with_source(
-                    *variable,
-                    Bitvector32Term::MemoryLoad(memory, Box::new(pointer)),
-                    facts,
-                    source,
-                );
-            }
             *variable
         }
         _ => return None,
@@ -1149,12 +1139,22 @@ fn canonicalized_pointer_value_from_int_cell(
             i64::from(pointee_byte_width),
         )
     };
-    if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
-        && let Some((memory, address)) = registered_load_for_variable(&fresh)
-    {
-        assumptions
-            .equality_graph
-            .register_logical_pointer_read(&loaded, &memory, &address);
+    if let Some((memory, address)) = registered_load_for_variable(&fresh) {
+        if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity) {
+            assumptions
+                .equality_graph
+                .register_pointer_read_definition(&loaded, &memory, &address);
+        }
+        // The cached scalar spelling still comes from this exact typed read.
+        // Preserve the same producer evidence as the symbolic load route,
+        // recording each source observation once.
+        record_load_variable_defining_fact_with_source_and_pointer(
+            fresh,
+            Bitvector32Term::MemoryLoad(memory, Box::new(address)),
+            facts,
+            source,
+            (purpose == LoadPurpose::Program).then_some(&loaded),
+        );
     }
     Some(CValue::typed_pointer(loaded, value_type))
 }
@@ -1352,7 +1352,7 @@ fn canonicalized_symbolic_load_value_with_identity(
         if let Bitvector32Term::MemoryLoad(memory, address) = &load {
             assumptions
                 .equality_graph
-                .register_logical_pointer_read(&pointer, memory, address);
+                .register_pointer_read_definition(&pointer, memory, address);
         }
     }
     record_load_variable_defining_fact_with_source_and_pointer(
@@ -4267,7 +4267,7 @@ mod tests {
         assert!(
             !branch
                 .equality_graph
-                .has_logical_pointer_read(&x.offset_by_bytes(8))
+                .has_pointer_read_definition(&x.offset_by_bytes(8))
         );
         assert!(!branch.pointer_equality_in_graph(&x, &x.offset_by_bytes(8)));
         // Definitions survive reconstruction, but the required address fact
@@ -4344,6 +4344,97 @@ mod tests {
             assert!(equal);
             assert!(work < 40, "size={size}, work={work}");
         }
+    }
+
+    #[test]
+    fn cached_typed_read_retains_exact_definition_without_admitting_facts() {
+        let context = PureFactContext::new();
+        let address = Pointer::symbolic(Variable(92_310));
+        let snapshot = intern_c_memory(CMemory::new());
+        let load = Bitvector32Term::MemoryLoad(snapshot.clone(), Box::new(address.clone()));
+        let (variable, _) = load_variable_for_term(&load).expect("load identity");
+        let mut facts = Vec::new();
+        let source = test_load_source(0);
+        let CValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
+            &address,
+            &CValue::Int32(Bitvector32Term::Variable(variable)),
+            CType::Int64Pointer,
+            &mut facts,
+            &context,
+            Some(&source),
+            LoadPurpose::Program,
+        )
+        .expect("cached typed pointer") else {
+            panic!("expected pointer");
+        };
+        let application = Pointer::loaded_value(&snapshot, &address);
+        assert!(!context.pointer_equality_in_graph(value.pointer(), &application));
+        let [fact] = facts.as_slice() else {
+            panic!("one defining fact");
+        };
+        assert!(
+            matches!(fact.generated_load_binding(), Some(GeneratedLoadBinding::Exact {
+            typed_pointer_value: Some(recorded), ..
+        }) if recorded == value.pointer())
+        );
+        assert_eq!(fact.generated_load_source_events().len(), 1);
+        assert_eq!(fact.generated_load_source_events()[0].source(), &source);
+        assert!(matches!(fact.generated_load_source_events()[0].binding(),
+            GeneratedLoadBinding::Exact { typed_pointer_value: Some(recorded), .. }
+                if recorded == value.pointer()));
+        // An ordinary proposition, even with copied metadata, is not a producer.
+        let forged = ExecutionPureFact::new(fact.proposition().clone())
+            .with_generated_load_binding(fact.generated_load_binding().unwrap().clone());
+        forged.retain_pointer_read_definition(&context);
+        assert!(!context.pointer_equality_in_graph(value.pointer(), &application));
+        fact.retain_pointer_read_definition(&context);
+        assert!(context.pointer_equality_in_graph(value.pointer(), &application));
+        assert!(context.pure_facts().is_empty());
+        assert!(
+            ResourceContext::new()
+                .memory_write_range(value.pointer(), 8, &context)
+                .is_none()
+        );
+        let sibling = PureFactContext::new();
+        assert!(sibling.pointer_equality_in_graph(value.pointer(), &application));
+        assert!(sibling.pure_facts().is_empty());
+        let later =
+            intern_c_memory(CMemory::new().with_block(PointerBlock::from("global:other"), 8));
+        assert!(
+            !context.pointer_equality_in_graph(
+                value.pointer(),
+                &Pointer::loaded_value(&later, &address)
+            )
+        );
+    }
+
+    #[test]
+    fn cached_volatile_pointer_read_has_no_retainable_definition() {
+        let context = PureFactContext::new();
+        let address = Pointer::symbolic(Variable(92_311));
+        let snapshot = intern_c_memory(CMemory::new());
+        let load = Bitvector32Term::MemoryLoad(snapshot.clone(), Box::new(address.clone()));
+        let (variable, _) = load_variable_for_term(&load).expect("load identity");
+        let mut facts = Vec::new();
+        let CValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
+            &address,
+            &CValue::Int32(Bitvector32Term::Variable(variable)),
+            CType::Int64Pointer,
+            &mut facts,
+            &context,
+            None,
+            LoadPurpose::VolatileProgram,
+        )
+        .expect("cached volatile pointer") else {
+            panic!("expected pointer");
+        };
+        for fact in &facts {
+            fact.retain_pointer_read_definition(&context);
+        }
+        assert!(!context.pointer_equality_in_graph(
+            value.pointer(),
+            &Pointer::loaded_value(&snapshot, &address)
+        ));
     }
 
     #[test]

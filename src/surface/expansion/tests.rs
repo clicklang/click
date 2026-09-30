@@ -2587,3 +2587,20 @@ fn specification_pointer_load_equality_expands_to_a_checked_graph_query() {
     );
     verify_c0_sources(&expanded, &sources).expect("expanded graph query independently verifies");
 }
+
+#[test]
+fn recursive_child_alias_fold_expands_and_rechecks_without_load_claims() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/egraph_recursive_child_alias.md");
+    let fixture = crate::cli::read_mdtest(&path).expect("recursive child fixture");
+    let source = fixture.click_source.as_deref().expect("Click source");
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c0_sources(source, &sources).expect("unfold/refold through an equal address");
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "roundtrip.contract")
+        .expect("recursive child fold should expand");
+    assert!(
+        !expanded.contains("MemoryLoad") && !expanded.contains("__click_"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("expanded fold independently verifies");
+}

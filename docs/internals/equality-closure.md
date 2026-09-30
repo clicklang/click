@@ -356,6 +356,16 @@ misses, without scanning or rebuilding the proof environment. `simp` can emit
 The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
 checks this after an unfold publishes address equality.
 
+Recursive resource child indices use the same term-definition interface.
+After a child expression passes the existing readable-expression and argument
+checks, its certified typed producer metadata is retained before the temporary
+fact stream is discarded. The cached scalar-cell conversion preserves this
+metadata just as the symbolic pointer-read route does. Ordinary propositions
+and volatile reads cannot supply it. `mdtests/egraph_recursive_child_alias.md`
+checks unfold at one parent spelling and fold at an equal model identity,
+without intermediate field-load claims or C writes. This does not transport
+loads across different snapshots.
+
 
 The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
 and a constructor/decoder pair for `(defining snapshot, address, displacement)`.

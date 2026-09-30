@@ -19953,9 +19953,17 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                 }
                 match &paths[0].outcome {
                     CExpressionOutcome::Value(value) => {
-                        coerce_c_function_argument_without_obligations(value, parameter)
-                            .map(AlgebraicValue::C)
-                            .ok_or("recursive child argument type mismatch")
+                        let value =
+                            coerce_c_function_argument_without_obligations(value, parameter)
+                                .ok_or("recursive child argument type mismatch")?;
+                        // The readable expression has passed every prerequisite.
+                        // Retain its producer-known term definitions before
+                        // comparing or publishing child indices. This adds no
+                        // hypothesis, read authority, or snapshot transport.
+                        for fact in &paths[0].facts {
+                            fact.retain_pointer_read_definition(&child_assumptions);
+                        }
+                        Ok(AlgebraicValue::C(value))
                     }
                     _ => Err("could not evaluate recursive child argument"),
                 }

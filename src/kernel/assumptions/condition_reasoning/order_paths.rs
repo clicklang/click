@@ -482,8 +482,8 @@ impl PureFactContext {
                 })
             });
             if has_read_bridge
-                || self.equality_graph.has_logical_pointer_read(left)
-                || self.equality_graph.has_logical_pointer_read(right)
+                || self.equality_graph.has_pointer_read_definition(left)
+                || self.equality_graph.has_pointer_read_definition(right)
             {
                 self.equality_graph.are_equal(left, right)
             } else {

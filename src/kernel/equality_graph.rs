@@ -330,9 +330,9 @@ pub(in crate::kernel) struct EqualityGraph {
     // graph's node IDs; it carries no equality or proof authority.
     registration_identity: std::sync::Arc<()>,
     state: std::sync::Mutex<EqualityGraphState>,
-    // Definitional term annotations, supplied only by the typed logical-load
-    // producer. They contain no hypotheses, read authority, or snapshot
-    // transport. Like term interning, discovery is shared by evaluation
+    // Definitional term annotations, supplied by typed logical-load producers
+    // or retained from certified reads after checked expression evaluation.
+    // They contain no hypotheses, read authority, or snapshot transport. Like term interning, discovery is shared by evaluation
     // forks; each fork still closes these definitions against its own facts.
     logical_reads: std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>,
 }
@@ -459,10 +459,10 @@ struct PointerMergeHistory {
 
 impl EqualityGraph {
     /// Register the exact symbolic pointer value just constructed by a typed
-    /// logical load. This is trusted-kernel term metadata, not an assumed
+    /// load. This is trusted-kernel term metadata, not an assumed
     /// equality: the producer supplies the canonical defining snapshot and
     /// address. Never recover this equation by decoding pointer arithmetic.
-    pub(in crate::kernel) fn register_logical_pointer_read(
+    pub(in crate::kernel) fn register_pointer_read_definition(
         &self,
         value: &Pointer,
         memory: &crate::kernel::SharedCMemory,
@@ -491,7 +491,7 @@ impl EqualityGraph {
             .generation
     }
 
-    pub(in crate::kernel) fn has_logical_pointer_read(&self, value: &Pointer) -> bool {
+    pub(in crate::kernel) fn has_pointer_read_definition(&self, value: &Pointer) -> bool {
         self.logical_reads
             .lock()
             .expect("logical pointer reads")
