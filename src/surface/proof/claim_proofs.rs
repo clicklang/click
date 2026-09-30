@@ -1841,10 +1841,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     })
             },
         )?;
-        completed_execution
-            .paths()
-            .iter()
-            .try_for_each(|path| match implication_body(path.theorem().proposition()) {
+        completed_execution.paths().iter().try_for_each(|path| {
+            match implication_body(path.theorem().proposition()) {
                 Proposition::CFunctionVerifies {
                     state,
                     function: proved_function,
@@ -1857,9 +1855,11 @@ pub(super) fn finish_ordered_proof<'a>(
                     Ok(())
                 }
                 proposition => Err(ClickError::new(format!(
-                    "completion for `{proof_label}` produced an inexact theorem body {proposition:?}"
+                    "completion for `{proof_label}` produced an inexact theorem body `{}`",
+                    crate::surface::proof_diagnostics::render::render_proposition(proposition),
                 ))),
-            })?;
+            }
+        })?;
         // The completed paths are the proof's candidates in order, so each
         // candidate's certified path is its own index. A candidate the
         // Proof-owned outcome derivation rejected under an exact
