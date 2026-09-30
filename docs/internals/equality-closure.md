@@ -583,6 +583,36 @@ enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
 still require their own checked judgments and complete candidate indexes.
 
+## Exact materialized pointer-read sources
+
+Typed pointer-read producers now share `PureFactContext::register_pointer_read`.
+It records the existing value's load definition and, when the exact defining
+snapshot (or its recorded canonical projection source) is a `CellsSeeded`
+edge supplying the entire read footprint, admits equality with that run's
+source read into the branch's graph. Only load-valued, contiguous, live slots
+of the required width qualify. The check inspects the selected slots rather
+than the run's extent, address aliases, or snapshot history. Canonical
+projection bridges use exact producer registry entries. These are trusted
+kernel rules; they introduce neither proposition premises nor access rights.
+
+Ordinary pointer equality queries and resource consumers use the resulting
+closure. A later address equality propagates through the registered source
+applications without repeating this check. There is no special comparison
+rule in `fold`. Producer publication occurs only after a typed read's existing
+prerequisites have been checked. The graph's generation invalidates equality
+misses recorded before publication; persistent sibling contexts retain their
+own admitted unions.
+
+This narrow rule does not cross later store edges. A retained cell-map entry
+alone is insufficient preservation evidence: low-level snapshot construction
+can leave it present after a write through a possibly aliasing address.
+General equality across writes still requires checked preservation evidence
+published at a common kernel boundary. It must not be implemented as hidden
+history search in `fold` or in the graph query. Deterministic tests cover late
+aliases and transitivity, complete and incomplete footprints, changed and
+unknown writes, branch isolation, increasing runs and alias classes, and
+prompt refusal beside increasing store histories.
+
 ## Persistence and cost
 
 Follow the [verification-efficiency contract](verification-efficiency.md):
