@@ -1759,17 +1759,40 @@ fn return_population_proofs_expand_without_effect_clauses() {
             .join(fixture_name);
         let fixture = crate::cli::read_mdtest(&path).unwrap();
         let source = fixture.click_source.as_deref().unwrap();
+        let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+        let project = crate::cli::read_mdtest_project_if_needed(&path, source, &inputs).unwrap();
         let sources = fixture
             .c_sources
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        verify_c0_sources(source, &sources)
+        project
+            .as_ref()
+            .map_or_else(
+                || verify_c0_sources(source, &sources),
+                |project| verify_c0_project(project, &sources),
+            )
             .unwrap_or_else(|error| panic!("{fixture_name}: {}", error.message()));
         for function in functions {
-            let expanded =
-                expand_c0_claim_source(source, &sources, function, CProofClaim::Grouped).unwrap();
-            verify_c0_sources(&expanded, &sources)
+            let expanded = project
+                .as_ref()
+                .map_or_else(
+                    || expand_c0_claim_source(source, &sources, function, CProofClaim::Grouped),
+                    |project| {
+                        expand_c0_project_claim_source_by_label(
+                            project,
+                            &sources,
+                            &format!("{function}.contract"),
+                        )
+                    },
+                )
+                .unwrap();
+            project
+                .as_ref()
+                .map_or_else(
+                    || verify_c0_sources(&expanded, &sources),
+                    |project| verify_c0_project(&project.with_entry_source(&expanded), &sources),
+                )
                 .unwrap_or_else(|error| panic!("{fixture_name}: {}\n{expanded}", error.message()));
         }
     }

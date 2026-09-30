@@ -1,7 +1,7 @@
 # resource population initialization and finalization
 
-The first produced unit packages the population body. Consuming the last unit
-ends the population, allowing its body resources to be returned or destroyed.
+The initializer sets the stored count while transferring ordinary memory.
+The finalizer consumes the control and last reference, then frees the object.
 
 ```c filename=counted_resource_init.c
 struct object {
@@ -25,10 +25,13 @@ void object_finish(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+
+resource object_control(obj: struct object*) {
     contains allocation(obj, sizeof(struct object));
     owns object(obj);
+    owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }
 
@@ -38,20 +41,24 @@ verifying "counted_resource_finish.c";
 struct object* object_init(struct object* obj) {
     consumes allocation(obj, sizeof(struct object));
     consumes object(obj);
-    produces object_ref(obj);
+    produces allocation(obj, sizeof(struct object));
+    produces object(obj);
 
     ensures result == obj;
+    ensures obj->refs == 1;
 } by {
     execute();
-    fold(object_ref(obj));
     simp();
 }
 
 void object_finish(struct object* obj) {
     requires count(object_ref(obj)) == 1;
+    consumes object_control(obj);
     consumes object_ref(obj);
 } by {
+    unfold(object_control(obj));
     unfold(object_ref(obj));
+    unfold(authority(object_ref(obj)));
     execute();
     simp();
 }

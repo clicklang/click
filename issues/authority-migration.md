@@ -349,27 +349,31 @@ contracts and are consumed before final authority retirement. Focused
 authority-mode negatives reject an omitted `free`, resource duplication,
 double spend, and count observations without the matching live authority.
 
-The related positive fixture group is still legacy. At standalone function
-boundaries, `count(R(p))` cannot yet observe an arbitrary external pointer
-parameter even with explicit `owns authority(R(p))`; with authority folded in
-`control(p)`, it reports `count(...) requires owning authority`. A checked
-count-observation rule for these contracts needs a sound treatment of folded
-control custody and external pointer identity. Preserve the original count
-claims and C while resolving that rule; field-only preconditions are not a
-replacement. A second fixture also needs retain to produce a member while
-the helper already holds one. Do not mark this checkpoint complete until the
-positive and negative fixture group passes under authority semantics.
+Four related positive fixtures now use authority: population/body equality,
+initialization/finalization, independent populations, and retain/nonfinal
+release. They preserve their original count claims and frozen C. Retain can
+produce one member while holding an existing member; release can consume one
+from a numeric quantity greater than one. Numeric imports remain bounded to
+one net unit change; symbolic batches use their separate checked exchange.
 
-The pending contract-observation rule must require both current owned custody
-and checked ledger custody. A folded control can supply the first only through
-its checked resource definition, for the exact contained `authority(R(p))`;
-an entry-time registration or a historical fact alone is insufficient. Its
-arbitrary entry total must come from the authenticated control invariant and
-retain the checked member-update delta. Transfer, consumption, and retirement
-must immediately remove the former holder's observation permission. The same
-rule must run during source proof execution and certificate validation, with
-regressions for wrong populations, absent ownership, nested calls, retirement,
-and historical versus current observations before enabling it.
+Contract count observations require both current owned custody and checked
+ledger custody. A folded control supplies the first only through its checked
+resource definition, for the exact contained `authority(R(p))`; an entry-time
+registration or a historical fact alone is insufficient. Its arbitrary entry
+total comes from the authenticated control invariant and retains the checked
+member-update delta. Transfer, consumption, and retirement immediately remove
+the former holder's observation permission. Source proof execution and
+certificate validation run the same rule. Regressions cover wrong populations,
+absent ownership, views, nested calls, retirement, and historical versus current
+observations. A false-zero regression ensures that authenticating an external
+control does not assume its entry count is zero.
+
+The remaining sequential fixtures are
+`counted_release_preserves_nonfinal_allocation.md`,
+`population_initialized_cleanup.md`, `population_unit_needs_its_body.md`, and
+`counted_resource_transfer.md`. Finish guarded final/nonfinal helper effects
+and ordinary abstract-resource wrappers while preserving their original claims
+and failures. Do not mark the group complete until these also use authority.
 
 ### 5. Migrate shared-parent ownership
 

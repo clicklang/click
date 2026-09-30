@@ -2079,13 +2079,8 @@ pub(super) fn initial_claim_context_with_mode(
         collect_resource_count_families(definition.body(), &mut observed_population_families);
         collect_called_predicates(definition.body(), &mut pending_predicates);
     }
-    if resource_semantics_mode == ResourceSemanticsMode::Authority
-        && !observed_population_families.is_empty()
-    {
-        return Err(ClickError::new(format!(
-            "`{claim_label}` uses count(R(p)); authority-mode count observation is not yet checked"
-        )));
-    }
+    // Authority-mode count observations are lowered by the same checked
+    // ownership rule at contract boundaries and in proof expressions.
     for family in &observed_population_families {
         state = state.with_observed_population_family(family.clone());
     }

@@ -72,6 +72,9 @@ struct SymbolicBatch {
 #[derive(Clone)]
 struct OpaqueImport {
     description: ResourceDescription,
+    /// The checked definition used to open this exact entry control for a
+    /// read-only count observation. Current ownership is checked on each read.
+    control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
     entry_owned_members: u32,
     owned_members: u32,
     /// Symbolic cardinality is admitted only through a checked control wrapper.
@@ -246,7 +249,7 @@ impl CreationEvents {
         description: &ResourceDescription,
         owned_members: u32,
     ) -> Result<Self, CreationRefusal> {
-        self.import_opaque_contract_population_inner(description, owned_members, None, None)
+        self.import_opaque_contract_population_inner(description, owned_members, None, None, None)
     }
 
     /// Import a folded control only after independently checking its exact
@@ -275,10 +278,15 @@ impl CreationEvents {
             .into_iter()
             .filter_map(|fact| fact.owned_quantity_term().cloned())
             .collect::<Vec<_>>();
-        let (owned_members, symbolic_members) = match owned.as_slice() {
-            [] => (0, None),
-            [quantity] if quantity.as_const() == Some(1) => (1, None),
-            [quantity] => (0, Some(quantity.clone())),
+        let numeric_members = owned
+            .iter()
+            .try_fold(0_u32, |total, quantity| {
+                total.checked_add(quantity.as_const()?)
+            })
+            .filter(|n| *n <= i32::MAX as u32);
+        let (owned_members, symbolic_members) = match (numeric_members, owned.as_slice()) {
+            (Some(quantity), _) => (quantity, None),
+            (None, [quantity]) => (0, Some(quantity.clone())),
             _ => return Err("control import needs one owned member quantity".into()),
         };
         self.import_opaque_contract_population_inner(
@@ -286,6 +294,7 @@ impl CreationEvents {
             owned_members,
             Some(entry_count),
             symbolic_members,
+            Some((selected.clone(), Arc::new(definition.clone()))),
         )
         .map_err(|refusal| format!("control import refused: {refusal:?}"))
     }
@@ -296,6 +305,7 @@ impl CreationEvents {
         owned_members: u32,
         entry_count: Option<Bitvector32Term>,
         symbolic_members: Option<Bitvector32Term>,
+        control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
     ) -> Result<Self, CreationRefusal> {
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return Err(CreationRefusal::InvalidMember);
@@ -303,7 +313,7 @@ impl CreationEvents {
         if pointer.pointer().block != PointerBlock::ExternalArgument
             || !description.schema().is_countable()
             || !description.resource_arguments().is_empty()
-            || owned_members > 1
+            || owned_members > i32::MAX as u32
         {
             return Err(CreationRefusal::InvalidMember);
         }
@@ -311,6 +321,7 @@ impl CreationEvents {
             if existing.owned_members == owned_members
                 && existing.entry_count == entry_count
                 && existing.entry_symbolic_members == symbolic_members
+                && existing.control == control
             {
                 return Ok(self.clone());
             }
@@ -323,6 +334,7 @@ impl CreationEvents {
             description.clone(),
             OpaqueImport {
                 description: description.clone(),
+                control,
                 entry_owned_members: owned_members,
                 owned_members,
                 entry_symbolic_members: symbolic_members,
@@ -383,6 +395,29 @@ impl CreationEvents {
             })
     }
 
+    /// Count shorthand uses the same checked body opening as explicit
+    /// `unfold(control)`. No projected memory or authority is published.
+    pub(in crate::kernel) fn checked_control_count_permission(
+        &self,
+        state: &CState,
+        description: &ResourceDescription,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if state.population_effects.creation.as_ref() != Some(self) {
+            return false;
+        }
+        let Some(import) = self.0.opaque_imports.get(description) else {
+            return false;
+        };
+        let Some((selected, definition)) = &import.control else {
+            return false;
+        };
+        !import.retired_authority
+            && state
+                .checked_authority_wrapper_body(selected, definition, assumptions)
+                .is_ok()
+    }
+
     pub(in crate::kernel) fn owns_population_member(
         &self,
         description: &ResourceDescription,
@@ -425,7 +460,7 @@ impl CreationEvents {
             .get(description)
             .is_some_and(|import| {
                 import.description == *description
-                    && (import.owned_members == 1
+                    && (import.owned_members > 0
                         || import
                             .symbolic_delta
                             .as_ref()
@@ -446,10 +481,12 @@ impl CreationEvents {
             return None;
         }
         import.symbolic_delta.clone().or_else(|| {
-            match (import.entry_owned_members, import.owned_members) {
-                (0, 1) => Some((true, Bitvector32Term::Constant(1))),
-                (1, 0) => Some((false, Bitvector32Term::Constant(1))),
-                _ => None,
+            if import.entry_owned_members.checked_add(1) == Some(import.owned_members) {
+                Some((true, Bitvector32Term::Constant(1)))
+            } else if import.owned_members.checked_add(1) == Some(import.entry_owned_members) {
+                Some((false, Bitvector32Term::Constant(1)))
+            } else {
+                None
             }
         })
     }
@@ -465,8 +502,7 @@ impl CreationEvents {
         ) {
             (Some(start), Some(end)) => {
                 start.description == end.description
-                    && start.owned_members == 1
-                    && end.owned_members == 0
+                    && end.owned_members.checked_add(1) == Some(start.owned_members)
                     && before.0.invocation == self.0.invocation
             }
             _ => false,
@@ -484,8 +520,7 @@ impl CreationEvents {
         ) {
             (Some(start), Some(end)) => {
                 start.description == end.description
-                    && start.owned_members == 0
-                    && end.owned_members == 1
+                    && start.owned_members.checked_add(1) == Some(end.owned_members)
                     && before.0.invocation == self.0.invocation
             }
             _ => false,
@@ -542,7 +577,11 @@ impl CreationEvents {
         }
         Some(SymbolicPopulationCount {
             entry_count: import.entry_count.clone()?,
-            delta: import.owned_members as i8 - import.entry_owned_members as i8,
+            delta: match import.owned_members.cmp(&import.entry_owned_members) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            },
             entry_owned_members: import.entry_owned_members,
             entry_symbolic_members: import.entry_symbolic_members.clone(),
             symbolic_delta: import.symbolic_delta.clone(),
@@ -838,11 +877,22 @@ impl CreationEvents {
             if &pointer.pointer().block != block {
                 return Err(CreationRefusal::InvalidMember);
             }
-            if import.owned_members != u32::from(!produce) {
-                return Err(CreationRefusal::MissingMembers);
-            }
             if import.retired_authority {
                 return Err(CreationRefusal::MissingAuthority);
+            }
+            let owned_members = if produce {
+                import
+                    .owned_members
+                    .checked_add(1)
+                    .filter(|n| *n <= i32::MAX as u32)
+            } else {
+                import.owned_members.checked_sub(1)
+            }
+            .ok_or(CreationRefusal::MissingMembers)?;
+            // This slice supports one net unit change around an arbitrary
+            // numeric input quantity. Further changes need an explicit batch.
+            if owned_members.abs_diff(import.entry_owned_members) > 1 {
+                return Err(CreationRefusal::MissingMembers);
             }
             let after = Self(Arc::new(Root {
                 identity: fresh_identity(),
@@ -862,7 +912,7 @@ impl CreationEvents {
                 opaque_imports: self.0.opaque_imports.with_inserted(
                     description.clone(),
                     OpaqueImport {
-                        owned_members: u32::from(produce),
+                        owned_members,
                         ..import.clone()
                     },
                 ),

@@ -6049,17 +6049,22 @@ fn evaluate_resource_count_paths(
                 );
                 let authority =
                     CResourceFact::own(CResource::PopulationAuthority(description.clone()));
-                if !state
-                    .resources
-                    .satisfies_fact(&authority, &path_assumptions)
-                {
-                    return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
-                }
                 let creation = state
                     .population_effects
                     .creation
                     .as_ref()
                     .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?;
+                if !state
+                    .resources
+                    .satisfies_fact(&authority, &path_assumptions)
+                    && !creation.checked_control_count_permission(
+                        state,
+                        &description,
+                        &path_assumptions,
+                    )
+                {
+                    return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
+                }
                 if let Some(symbolic) = creation.observe_symbolic(&description) {
                     let entry = symbolic.entry_count;
                     // An imported control's checked equality to a population

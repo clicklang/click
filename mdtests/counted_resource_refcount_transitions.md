@@ -25,9 +25,12 @@ void object_release_nonfinal(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+
+resource object_control(obj: struct object*) {
     owns obj->refs;
+    owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }
 
@@ -36,31 +39,37 @@ verifying "counted_resource_release.c";
 
 struct object* object_retain(struct object* obj) {
     requires count(object_ref(obj)) < 2147483647;
+    owns object_control(obj);
     owns object_ref(obj);
     produces object_ref(obj);
 
     ensures result == obj;
 } by {
-    open(object_ref(obj)) {
-        execute();
+    open(object_control(obj)) {
+        step();
+        fold(object_ref(obj));
     }
+    execute();
     simp();
 }
 
 void object_release_nonfinal(struct object* obj) {
     requires 1 < count(object_ref(obj));
+    owns object_control(obj);
     owns object_ref(obj);
     consumes object_ref(obj);
 } by {
-    open(object_ref(obj)) {
+    open(object_control(obj)) {
+        unfold(object_ref(obj));
         have 1 < obj->refs by simp;
         have obj->refs - 1 >= 1 by {
             apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
                 1 < obj->refs;
             }
         }
-        execute();
+        step();
     }
+    execute();
     simp();
 }
 ```

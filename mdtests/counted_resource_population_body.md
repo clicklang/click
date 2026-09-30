@@ -1,8 +1,8 @@
 # resource bodies describe the whole population
 
-The body of a resource is shared by all units with the same arguments.
-`count(...)` names the population size, so a function holding one unit can use
-the relationship between the stored reference count and the logical count.
+The control resource owns the shared reference-count field and authority for
+the population. `count(...)` names the population size, so a function holding
+the control and one reference can relate the stored and logical counts.
 
 ```c filename=counted_resource_population_body.c
 struct object {
@@ -14,20 +14,24 @@ int32 object_refcount(struct object* obj) {
 }
 ```
 
-```click
-resource object_ref(obj: struct object*) {
+```click resource_semantics=authority
+resource object_ref(obj: struct object*) {}
+
+resource object_control(obj: struct object*) {
     owns obj->refs;
+    owns authority(object_ref(obj));
     fact obj->refs == count(object_ref(obj));
 }
 
 verifying "counted_resource_population_body.c";
 
 int32 object_refcount(struct object* obj) {
+    owns object_control(obj);
     owns object_ref(obj);
 
     ensures result == count(object_ref(obj));
 } by {
-    open(object_ref(obj)) {
+    open(object_control(obj)) {
         execute();
     }
     simp();

@@ -333,6 +333,42 @@ satisfy that requirement with one unit.
 
 ## Resource quantities
 
+### Authority migration
+
+The migrated [refcount example](https://github.com/lacker/click/blob/master/examples/refcount/README.md) uses explicit
+population authority. Its references and shared control are separate resources:
+
+<!-- verified-example: mdtests/counted_resource_population_body.md -->
+```click
+resource object_ref(obj: struct object*) {}
+resource object_control(obj: struct object*) {
+    owns obj->refs;
+    owns authority(object_ref(obj));
+    fact obj->refs == count(object_ref(obj));
+}
+```
+
+On this path, `count(object_ref(obj))` requires the matching live authority.
+An owned folded `object_control(obj)` also permits the observation: Click checks its
+definition and current custody as if opening it for the count read and closing
+it again. The observation grants no field access or permission to change the
+population. A view, a control for another population, or a transferred or
+retired authority cannot justify it. At function entry the count is arbitrary,
+constrained by the control invariant and supplied preconditions; it is not zero.
+Contracts and proof expressions use the same checked rule.
+
+Creating or consuming a reference requires exposed authority, and opening the
+control exposes its owned counter field. Updating both the field and the
+population by the same amount lets the proof restore the control invariant.
+Authority must be retired at count zero before its storage is freed.
+
+The rest of this section describes the legacy population path, retained while
+its consumers are migrated. The
+[migration inventory](../internals/authority-migration-inventory.md) records
+which examples and fixtures have moved to explicit authority.
+
+### Legacy population quantities
+
 Every declared resource can have several independently consumable units with
 the same arguments:
 

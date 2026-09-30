@@ -460,8 +460,33 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
         entry.observe(&PointerBlock::ExternalArgument, "reference"),
         Err(CreationRefusal::UnknownTotal)
     );
+    let (retained, _) = entry
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .expect("retain may add one member while already holding a member");
+    assert!(retained.born_imported_member_since(&entry, &description));
+    assert!(retained.observe_symbolic(&description).is_none());
     assert!(matches!(
-        entry.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
+        retained.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
+        Err(CreationRefusal::MissingMembers)
+    ));
+    let (restored, _) = retained
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    assert!(restored.owns_population_member(&description));
+    assert_eq!(
+        restored.imported_member_delta_since_entry(&description),
+        None
+    );
+    let two = CreationEvents::new()
+        .import_opaque_contract_population(&description, 2)
+        .unwrap();
+    let (one, _) = two
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    assert!(one.spent_imported_member_since(&two, &description));
+    assert!(one.owns_population_member(&description));
+    assert!(matches!(
+        one.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingMembers)
     ));
     let empty = CreationEvents::new()
@@ -551,6 +576,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
             0,
             Some(quantity.clone()),
             Some(quantity.clone()),
+            None,
         )
         .unwrap();
     assert!(held.owns_population_member(&description));
@@ -584,6 +610,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
             &description,
             0,
             Some(Bitvector32Term::Constant(0)),
+            None,
             None,
         )
         .unwrap();
@@ -619,6 +646,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
             0,
             Some(Bitvector32Term::Constant(7)),
             Some(first_quantity.clone()),
+            None,
         )
         .unwrap()
         .import_opaque_contract_population_inner(
@@ -626,6 +654,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
             0,
             Some(Bitvector32Term::Constant(11)),
             Some(second_quantity.clone()),
+            None,
         )
         .unwrap();
     let (spent, _) = entry
@@ -700,6 +729,7 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
                     &description_at(id),
                     1,
                     Some(Bitvector32Term::Constant(3)),
+                    None,
                     None,
                 )
                 .unwrap();
@@ -851,6 +881,45 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             &mut ExecutionBudget::default(),
         )
     };
+    let mut folded = state.clone();
+    Arc::make_mut(&mut folded.population_effects).creation = Some(imported.clone());
+    let folded_paths = evaluate_count(&folded).expect("owned control opens for a count read");
+    assert!(folded.resources().contains_exact_representation(&selected));
+    assert_eq!(folded.resources().facts().len(), 1);
+    let absent_control = folded.clone().with_resource_context(ResourceContext::new());
+    assert!(evaluate_count(&absent_control).is_err());
+    let viewed_control = folded.clone().with_resource_context(
+        ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::View(selected.resource().clone())),
+    );
+    assert!(evaluate_count(&viewed_control).is_err());
+    let unrelated_control = CResourceFact::own(CResource::Composite {
+        name: "other_control".into(),
+        arguments: wrong_population.arguments().to_vec().into(),
+    });
+    // A different definition cannot substitute for the authenticated head,
+    // even when its C argument is identical.
+    assert!(
+        evaluate_count(
+            &folded.clone().with_resource_context(
+                ResourceContext::new().unchecked_with_fact(unrelated_control)
+            )
+        )
+        .is_err()
+    );
+    let mut retired_control = folded.clone();
+    Arc::make_mut(&mut retired_control.population_effects).creation = Some(retired.clone());
+    assert!(evaluate_count(&retired_control).is_err());
+    let mut nested_control = folded.clone();
+    Arc::make_mut(&mut nested_control.population_effects).creation = Some(imported.enter_call());
+    assert!(evaluate_count(&nested_control).is_err());
+    let mut rechecked_control = folded.clone();
+    Arc::make_mut(&mut rechecked_control.population_effects).creation =
+        Some(imported.enter_proof_entry());
+    assert_eq!(
+        evaluate_count(&rechecked_control).unwrap()[0].value,
+        folded_paths[0].value
+    );
     let mut projected =
         state
             .clone()
@@ -861,6 +930,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
             );
     Arc::make_mut(&mut projected.population_effects).creation = Some(imported.clone());
     let paths = evaluate_count(&projected).expect("checked import permits exact count");
+    assert_eq!(paths[0].value, folded_paths[0].value);
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].value,

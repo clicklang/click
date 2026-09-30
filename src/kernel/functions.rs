@@ -18692,13 +18692,20 @@ fn apply_counted_population_transitions_with_interface(
         }));
     }
     let active_populations = ResourceContext::new().unchecked_with_facts(active_populations);
-    let Some(population_facts) = evaluate_resource_population_fact_propositions(
-        &active_populations,
-        interface.composite_resource_definitions(),
-        &post_contract_state,
-        &PureFactContext::new(),
-        true,
-    ) else {
+    let Some(population_facts) = (if caller_state.uses_population_authority_semantics() {
+        // Authority-mode invariants belong to owned controls and are checked
+        // by their resource exchanges. Legacy population membership cannot
+        // expose those bodies or publish their facts at a return boundary.
+        Some(Vec::new())
+    } else {
+        evaluate_resource_population_fact_propositions(
+            &active_populations,
+            interface.composite_resource_definitions(),
+            &post_contract_state,
+            &PureFactContext::new(),
+            true,
+        )
+    }) else {
         return Ok(Err(CRuntimeError::FunctionContract(
             "could not evaluate resource population postcondition".to_string(),
         )));
@@ -21086,7 +21093,7 @@ pub(super) fn expand_composite_resource_fact_with_children(
     let missing = children
         .iter()
         .filter(|child| {
-            !expanded.facts().contains(child)
+            !expanded.contains_exact_representation(child)
                 && !resource_context_contains_exact_owned_fact(&expanded, child, assumptions)
         })
         .cloned()
@@ -21400,6 +21407,15 @@ fn expand_checked_authority_controls(
             .checked_authority_wrapper_body(fact, definition, assumptions)
             .ok()?;
         expanded = expanded.without_fact_incrementally(fact, assumptions)?;
+        // A checked supporting expansion may already expose an exact child.
+        // Reuse that ownership rather than composing a second occurrence.
+        let children = children
+            .into_iter()
+            .filter(|child| {
+                !expanded.facts().contains(child)
+                    && !resource_context_contains_exact_owned_fact(&expanded, child, assumptions)
+            })
+            .collect::<Vec<_>>();
         expanded = expanded
             .try_compose_with_facts_delaying_normalization(children, assumptions)
             .ok()?;
