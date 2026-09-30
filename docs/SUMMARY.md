@@ -20,6 +20,7 @@
 - [Standard library](reference/library/index.md)
 - [Glossary](reference/glossary.md)
 - [Examples](reference/examples.md)
+- [Experimental Rust imports](reference/rust.md)
 
 # Concepts
 

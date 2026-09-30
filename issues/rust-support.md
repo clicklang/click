@@ -68,6 +68,20 @@ selected target/layout, semantic flags, and dependencies into prepared inputs.
 Document the compiler and translator trust boundary. Do not introduce a
 parallel Rust verifier or rename every C-prefixed type as a prerequisite.
 
+## Current checkpoint
+
+The first experimental frontend imports a pinned rustc typed HIR artifact for
+single-file safe scalar/reference functions. The basic Rust example exercises
+branching, a local reborrow followed by parent reuse, and a direct field helper
+call with preservation of the other field, plus a shared-field borrow across
+a disjoint write. Verification, profiling, auditing,
+and expansion share the existing engine. See `docs/reference/rust.md` for the
+exact subset and trust boundary.
+
+This is a first increment toward milestone 1, not its completion: production
+move/drop semantics, explicit authority suspension/recovery, disjoint mutable
+borrow regressions, and wider source coverage remain outstanding.
+
 ## Initial assessment
 
 Produce a small, reviewable extraction experiment over scalar branching,

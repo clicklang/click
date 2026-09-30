@@ -731,7 +731,7 @@ fn quarantined_mdtests_are_profileable() {
 fn cpp_mdtests_profile_the_compiler_imported_source() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
     let source = load_profiled_source(&path, None).expect("prepare C++ mdtest");
-    assert!(matches!(source.inputs, CInput::PreparedCpp(_)));
+    assert!(matches!(source.inputs, CInput::PreparedProgram(_)));
     assert!(source.project.is_some());
     assert!(source.line_offset > 0);
     verify_mdtest(&path).expect("profile verification uses the C++ semantics");
