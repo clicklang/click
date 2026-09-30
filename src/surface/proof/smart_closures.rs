@@ -1964,6 +1964,21 @@ impl<'a> Proof<'a> {
     /// Select only guards actually occurring in the goal, through indexed
     /// fact/source lookups. The emitted simple step checks every selection.
     fn try_goal_conditional_normalization(&self) -> Option<Self> {
+        // The trusted ambient graph may close an equality without any
+        // explicit condition premise. Emit the existing simple checker with
+        // an empty input list; no fact search or extra theorem premise is
+        // needed, and expansion preserves this exact check.
+        if matches!(
+            self.goal(),
+            Some(Proposition::ConditionIs(
+                ConditionTerm::PointerEqual(..),
+                true
+            ))
+        ) && let Ok(proof) = self.apply_step(ProofStep::NormalizeUsing(Vec::new()))
+            && proof.is_complete()
+        {
+            return Some(proof);
+        }
         let guards =
             crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(self.goal()?);
         let frontier_anchor = match self.context.as_ref() {

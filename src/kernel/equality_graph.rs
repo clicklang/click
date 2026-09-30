@@ -321,21 +321,59 @@ pub(in crate::kernel) struct CanonicalPointer {
 /// Closed, persistent pointer, offset, and int32 equality state. Query registration
 /// adds only terms and definitional load applications; hypotheses enter through
 /// `add_equality`, `add_offset_equality`, and `add_int32_equality`.
-/// Cloning copies the persistent roots into a new lock, never a shared mutable
-/// graph. The lock preserves `PureFactContext`'s Send/Sync contract.
-#[derive(Default)]
+/// Cloning copies equality roots into a new lock; hypotheses and unions are
+/// never shared mutably. Only unconditional term definitions share the session
+/// interner. The locks preserve `PureFactContext`'s Send/Sync contract.
 pub(in crate::kernel) struct EqualityGraph {
     // Query registrations are branch-local memo state. Consumers use this
     // instance token to avoid replacing a published checkpoint with a scratch
     // graph's node IDs; it carries no equality or proof authority.
     registration_identity: std::sync::Arc<()>,
     state: std::sync::Mutex<EqualityGraphState>,
+    // Definitional term annotations, supplied only by the typed logical-load
+    // producer. They contain no hypotheses, read authority, or snapshot
+    // transport. Like term interning, discovery is shared by evaluation
+    // forks; each fork still closes these definitions against its own facts.
+    logical_reads: std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>,
+}
+
+#[derive(Default)]
+struct LogicalPointerReads {
+    definitions: crate::persistent::PersistentMap<Pointer, (Pointer, Pointer)>,
+    generation: u64,
+}
+
+static NEXT_LOGICAL_READ_GENERATION: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
+thread_local! {
+    // Session-local term definitions, like the kernel's load-variable
+    // interner. Context reconstruction may not forget how a logical term was
+    // constructed. Hypotheses and class unions remain entirely path-local.
+    static LOGICAL_POINTER_READS: std::cell::RefCell<
+        std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>
+    > = std::cell::RefCell::new(std::sync::Arc::new(std::sync::Mutex::new(LogicalPointerReads::default())));
+}
+
+pub(in crate::kernel) fn clear_logical_pointer_reads() {
+    LOGICAL_POINTER_READS.with(|reads| *reads.borrow_mut() = Default::default());
+}
+
+impl Default for EqualityGraph {
+    fn default() -> Self {
+        Self {
+            registration_identity: Default::default(),
+            state: Default::default(),
+            logical_reads: LOGICAL_POINTER_READS.with(|reads| reads.borrow().clone()),
+        }
+    }
 }
 
 impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
             registration_identity: std::sync::Arc::new(()),
+            logical_reads: self.logical_reads.clone(),
             state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
     }
@@ -378,6 +416,7 @@ enum OffsetPart {
 #[derive(Clone, Default)]
 struct EqualityGraphState {
     terms: terms::TermClasses,
+    logical_values: crate::persistent::PersistentSet<Pointer>,
     /// The exact class-merge delta stream. A consumer with a persistent
     /// class-keyed index can update only entries in the moved class. Clones
     /// share the prefix; a rebuilt (restricted) graph has a new origin.
@@ -419,6 +458,72 @@ struct PointerMergeHistory {
 }
 
 impl EqualityGraph {
+    /// Register the exact symbolic pointer value just constructed by a typed
+    /// logical load. This is trusted-kernel term metadata, not an assumed
+    /// equality: the producer supplies the canonical defining snapshot and
+    /// address. Never recover this equation by decoding pointer arithmetic.
+    pub(in crate::kernel) fn register_logical_pointer_read(
+        &self,
+        value: &Pointer,
+        memory: &crate::kernel::SharedCMemory,
+        address: &Pointer,
+    ) {
+        let application = Pointer::loaded_value(memory, address);
+        let mut reads = self.logical_reads.lock().expect("logical pointer reads");
+        if let Some(existing) = reads.definitions.get(value) {
+            assert_eq!(
+                &existing.0, &application,
+                "conflicting logical pointer definition"
+            );
+            return;
+        }
+        reads.definitions = reads
+            .definitions
+            .with_inserted(value.clone(), (application, address.clone()));
+        reads.generation =
+            NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub(in crate::kernel) fn logical_read_generation(&self) -> u64 {
+        self.logical_reads
+            .lock()
+            .expect("logical pointer reads")
+            .generation
+    }
+
+    pub(in crate::kernel) fn has_logical_pointer_read(&self, value: &Pointer) -> bool {
+        self.logical_reads
+            .lock()
+            .expect("logical pointer reads")
+            .definitions
+            .contains_key(value)
+    }
+
+    fn register_logical_read_values(&self, state: &mut EqualityGraphState, values: [&Pointer; 2]) {
+        let reads = self.logical_reads.lock().expect("logical pointer reads");
+        let mut pending: Vec<_> = values.into_iter().cloned().collect();
+        let mut definitions = Vec::new();
+        while let Some(value) = pending.pop() {
+            if state.logical_values.contains(&value) {
+                continue;
+            }
+            let Some((application, address)) = reads.definitions.get(&value) else {
+                continue;
+            };
+            state.logical_values = state.logical_values.with_value(value.clone());
+            // A nested load may use a previously constructed logical pointer
+            // as its source address. Register only that explicit dependency.
+            pending.push(address.clone());
+            definitions.push((value, application.clone()));
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        drop(reads);
+        for (value, application) in &definitions {
+            state.register_blocks([value.block.clone(), application.block.clone()]);
+        }
+        state.close(definitions);
+    }
+
     /// Merges added after `ancestor`, oldest first. `None` means the graphs
     /// do not share a persistent merge prefix (for example, after restricting
     /// premises); a class-keyed consumer must not reuse that ancestor index.
@@ -579,6 +684,7 @@ impl EqualityGraph {
             return true;
         }
         let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, [left, right]);
         state.register_blocks([left.block.clone(), right.block.clone()]);
         // Different classes cannot meet by offset normalization. In
         // particular, do not traverse an unrelated allocation's offset just

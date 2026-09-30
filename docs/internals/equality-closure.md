@@ -342,6 +342,21 @@ resource child-argument checking reject previously readable expressions. The
 graph relation changes neither logical premises nor read permission. Volatile
 reads do not register this bridge.
 
+Specification pointer loads now retain an exact definition supplied by their
+typed producer as graph term metadata. These definitions are shared across
+contexts within one verification session, like load-variable interning;
+address hypotheses, unions, and their consequences remain in persistent
+path-local graph roots. Reconstructing a context must not forget what a logical
+term denotes. Registration never decodes arbitrary pointer arithmetic and adds
+no proposition premise, ownership, read validity, or cross-snapshot equality.
+Each query registers only its named values and their recorded dependencies.
+A registration generation distinguishes reasoning memo entries from earlier
+misses, without scanning or rebuilding the proof environment. `simp` can emit
+`normalize() using {}` to check an equality against this ambient graph.
+The nonrecursive `mdtests/egraph_resource_pointer_load_alias.md` regression
+checks this after an unfold publishes address equality.
+
+
 The kernel now has a distinct `PointerLoadId`, `PointerBlock::LoadedPointer`,
 and a constructor/decoder pair for `(defining snapshot, address, displacement)`.
 The equality graph indexes this explicit pointer application without consulting

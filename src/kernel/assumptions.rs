@@ -828,6 +828,8 @@ thread_local! {
     static ASSUMPTIONS_MEMO_IDS: RefCell<std::collections::HashMap<PureFactContext, u64>> =
         RefCell::new(std::collections::HashMap::new());
     static NEXT_ASSUMPTIONS_MEMO_ID: Cell<u64> = const { Cell::new(0) };
+    static LOGICAL_READ_MEMO_IDS: RefCell<std::collections::HashMap<(u64, u64), u64>> =
+        RefCell::new(std::collections::HashMap::new());
     static EQUAL_FROM_FACTS_MEMO: RefCell<
         std::collections::HashMap<(u64, Bitvector32Term, Bitvector32Term), bool>,
     > = RefCell::new(std::collections::HashMap::new());
@@ -853,6 +855,7 @@ thread_local! {
 pub(crate) fn clear_assumption_memos() {
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
     ASSUMPTIONS_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
+    LOGICAL_READ_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
     EQUAL_FROM_FACTS_MEMO.with(|memo| memo.borrow_mut().clear());
     TRANSPORT_EQUAL_MEMO.with(|memo| memo.borrow_mut().clear());
     CONSTANT_NORMALIZATION_MEMO.with(|memo| memo.borrow_mut().clear());
@@ -893,14 +896,40 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
 /// attempt: the identity [`crate::kernel::reasoning::with_closure_failure_memo`]
 /// keys its negative answers by, so one closure's candidates share them.
 pub(super) fn unsalted_assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
-    assumptions_memo_id(assumptions)
+    memo_id_with_logical_reads(assumptions_memo_id(assumptions), assumptions)
+}
+
+/// Logical-load term registration can turn an earlier equality miss into a
+/// hit without adding a proposition. Namespace reasoning memos by that
+/// registration generation; never scan or flush the ambient fact set.
+fn memo_id_with_logical_reads(base: u64, assumptions: &PureFactContext) -> u64 {
+    let generation = assumptions.equality_graph.logical_read_generation();
+    if generation == 0 {
+        return base;
+    }
+    LOGICAL_READ_MEMO_IDS.with(|ids| {
+        let mut ids = ids.borrow_mut();
+        if let Some(id) = ids.get(&(base, generation)) {
+            return *id;
+        }
+        if ids.len() >= ASSUMPTIONS_MEMO_ID_LIMIT {
+            ids.clear();
+        }
+        let id = NEXT_ASSUMPTIONS_MEMO_ID.with(|next| {
+            let id = next.get();
+            next.set(id + 1);
+            id
+        });
+        ids.insert((base, generation), id);
+        id
+    })
 }
 
 /// Memo identity for the DAG-walk memo tables in api.rs: the ambient scope's
 /// id when one is live (no hashing), the content-derived id otherwise.
 pub(super) fn dag_memo_assumptions_id(assumptions: &PureFactContext) -> u64 {
     ambient_assumptions_memo_id(assumptions)
-        .unwrap_or_else(|| apply_attempt_salt(assumptions_memo_id(assumptions)))
+        .unwrap_or_else(|| apply_attempt_salt(unsalted_assumptions_memo_id(assumptions)))
 }
 
 thread_local! {
@@ -929,7 +958,7 @@ impl PureFactContextIdScope {
         let id = assumptions_memo_id(assumptions);
         ASSUMPTIONS_ID_SCOPES.with(|scopes| scopes.borrow_mut().push((address, id)));
         Self {
-            id: apply_attempt_salt(id),
+            id: apply_attempt_salt(memo_id_with_logical_reads(id, assumptions)),
             pushed: true,
         }
     }
@@ -948,7 +977,7 @@ pub(super) fn ambient_assumptions_memo_id(assumptions: &PureFactContext) -> Opti
             .iter()
             .rev()
             .find(|(scope_address, _)| *scope_address == address)
-            .map(|(_, id)| apply_attempt_salt(*id))
+            .map(|(_, id)| apply_attempt_salt(memo_id_with_logical_reads(*id, assumptions)))
     })
 }
 

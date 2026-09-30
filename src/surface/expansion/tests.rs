@@ -2564,3 +2564,26 @@ int32 client(int32 x) {
         );
     }
 }
+
+#[test]
+fn specification_pointer_load_equality_expands_to_a_checked_graph_query() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/egraph_resource_pointer_load_alias.md");
+    let fixture = crate::cli::read_mdtest(&path).expect("pointer-load fixture");
+    let source = fixture.click_source.as_deref().expect("Click source");
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c0_sources(source, &sources).expect("original specification equality verifies");
+    let equality = source
+        .find("have p->next == id->next")
+        .expect("load equality claim");
+    let tactic = equality + source[equality..].find("simp();").expect("equality tactic");
+    let position = position_at_offset(source, tactic);
+    let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
+        .expect("logical load equality should expand");
+    assert!(expanded.contains("normalize() using {"), "{expanded}");
+    assert!(
+        !expanded.contains("MemoryLoad") && !expanded.contains("__click_"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &sources).expect("expanded graph query independently verifies");
+}

@@ -109,7 +109,7 @@ Temporary bounded diagnostics identify the left child's sole C pointer
 argument as unequal; its model field, resource name, and schema match.
 Owned-cell consumption has already succeeded before this check.
 
-The following independent reduction fails at the same child check. Changing
+At the recheck checkpoint, the following independent reduction failed at the same child check. Changing
 only `fold(tree(id), ...)` to `fold(tree(p), ...)` verifies. An explicit
 `have p == id by { simp(); }` verifies, but an additional
 `have p->left == id->left by { simp(); }` fails. There are no C writes.
@@ -174,6 +174,27 @@ void roundtrip(struct node* p) {
 The reduction is diagnostic evidence, not evidence that rbtree verifies.
 The original C remains unchanged. Expand and recheck the successful control;
 do not expand the failing frontier or failing reduction.
+
+## Specification-read slice after the recheck
+
+The [small nonrecursive regression](../mdtests/egraph_resource_pointer_load_alias.md)
+now verifies `p->next == id->next` after unfolding one pointer-cell resource.
+Both `p == id` and field-address equality already verified before this fix.
+The typed specification-load producer now retains its exact value-to-load
+mapping as trusted graph term metadata, independent of proposition premises.
+Context reconstruction retains those definitions; each proof context still
+needs its own address evidence. `simp` emits the existing graph-aware
+`normalize() using {}` checker without searching for premises.
+
+Controls cover ordinary contract equality and same-spelling reads. Kernel
+regressions cover branch-local address evidence, changed snapshots, missing
+read authority, pointer arithmetic, reconstruction, stale equality misses,
+and deterministic lookup scaling beside 16, 64, 256, and 1024 unrelated
+logical load definitions. This slice does not establish that the rbtree
+frontier advances or solve its different-snapshot child matching. Rechecking
+both the immediate tree refold above and a version with explicit field-load
+equality claims still fails child matching; the specification claims now pass.
+Keep that resource-child boundary separate from this completed read slice.
 
 ## Acceptance
 
