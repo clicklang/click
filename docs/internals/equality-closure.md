@@ -1,11 +1,12 @@
 # Equality closure design
 
-Status: partial implementation, 2026-09-29. The trusted persistent graph
+Status: partial implementation, 2026-09-30. The trusted persistent graph
 maintains affine pointer classes, offset and int32 congruence, and registered
 same-snapshot pointer and four-byte scalar loads. Selected normalization,
 transport, memory, resource-value, and range consumers query it. Ordinary C
 pointer loads still have a storage-relative representation; equality-aware
-resource indexing and the other theories described here remain planned work.
+resource indexing is implemented for selected consumers. Other theories
+described here remain possible future work.
 The repository's `issues/egraph.md` tracks only the P1 pointer-read and
 read/fold behavior needed by the rbtree proof. The wider design in this note
 is reference material, not additional P1 acceptance criteria.
@@ -25,6 +26,14 @@ applications and offset terms register on demand during insertion and queries.
 equalities, addition congruence, and registered same-snapshot int32 load congruence. Further sorts and consumers will be
 added in separate changes. `pointer_is_classed` and `pointer_spellings` are explicitly
 pointer-specific compatibility helpers for legacy consumers.
+
+Kernel consumers use `PureFactContext::pointers_known_equal(left, right)`
+for equality already established by this trusted graph. It neither searches
+arithmetic facts nor walks an alias component. `false` means unknown.
+`pointers_proven_equal_by_reasoning` names the broader arithmetic/condition
+judgment; `pointers_proven_equal_for_memory_resolution` retains structural
+object-distinctness and explicit resource-separation guards. A graph answer
+alone supplies no memory access authority.
 
 Kernel rules may trust the graph's answers in their own proof context. There
 is no `explain` API or separate derivation checker. Expanded proofs can use
@@ -65,23 +74,26 @@ literal value, its existing parents also receive constant evaluation. It preserv
 signedness, and machine-term snapshot identity, and adds no arithmetic solver
 or cancellation rule. Queries and additions use indexed access. Existing
 context restriction and equality-withdrawal rebuilds retain all graph
-fragments from their remaining exact equality indexes. Ownership and framing
-lookups have not migrated to the offset fragment. The pointer equality query
-now uses its exact offset classes after affine comparison misses **only when
-both pointers have the same block**. This admits explicit offset equalities
-and scaled int32 congruence at that one base without treating wrapping scalar
-residues as exact byte differences or extending the cross-block affine rule.
-A true pointer premise whose two pointers name the same block now joins their
-whole offsets as well. This lets offset addition use that established equality
-without enumerating pointer aliases; withdrawal and restriction rebuild the
-offset edge from the remaining exact premises.
-An exact offset edge can also cross two blocks whose graph bases have the same
-known displacement from their class representative. This handles zero-offset
-cross-block aliases and their transitive chains by a keyed query. For a
-constant displacement, the graph can now compare either translated offset
-spelling, such as `x + 8 == y` under `base(A) == base(B) + 8`. Both signs must
-fit the offset term's `i64` constant; otherwise the query stays unknown.
-Symbolic displacements still need a checked proof of the translated equality.
+fragments from their remaining exact equality indexes. The pointer query
+compares affine coordinates and whole offset classes inside the graph. Same-block pointer premises also join whole offsets.
+Equal-base and representable constant-displacement queries use direct offset
+class lookups, including either translated spelling. At an unclassed ordinary
+base with no offset merges, the known-equality query stops after reflexivity;
+explicit offset normalization remains available through `are_offsets_equal`.
+This avoids normalization work during unrelated field-separation checks.
+These checks require no alias enumeration or cancellation rule.
+
+When a checked cross-block pointer premise has a symbolic displacement that
+cannot be spelled as an offset term, the graph additionally joins its raw
+`address(block, offset)` applications. Offset-class merges then propagate by
+ordinary congruence, so `x == y`, `address(A, y) == z`, and `z == null` establish
+`address(A, x) == null` in any insertion order. Affine block merges translate
+registered applications when that translation is spellable. Query registration
+can use a stated `i64::MIN` translation directly without constructing its
+opposite sign. Unsupported translations otherwise remain unknown.
+Raw applications supplement the affine fragment only where its offset
+spelling loses this connection; derived load merges retain their existing
+indexed closure rather than eagerly duplicating every application.
 
 Explicit int32 equalities use typed nodes in the same term-class engine
 as offsets. Int32 addition has its own application signature and shallow child
@@ -146,12 +158,12 @@ bound. A displaced cross-block query now uses an exact translated offset edge
 only for a representable constant base displacement. Symbolic displacements
 can remain unknown until a checked proof supplies the translated equality.
 
-The memory-separation reader now takes a positive graph answer for same-block
-offset equality before considering exact alias spellings. A long chain of
-offset facts therefore has bounded query work there. Its indexed component
-walk remains for mixed offset and cross-block alias chains that the graph
-cannot yet compose; this path still needs a separate design review before it
-can be removed.
+The memory-separation reader uses the same known-equality query. The
+superseded Boolean alias-component walk has been deleted. Exact alias indexes
+remain for evidence-producing enumeration and other consumers; their presence
+does not imply a second Boolean pointer-equality system. Deterministic tests
+cover mixed offset/block chains, all premise insertion orders, late offset
+merges, branch isolation, and bounded query work beside growing offset classes.
 
 The full `Bitvector32Equal` condition decision now uses the same graph query
 before memory resolution and its other arithmetic rules when the graph has

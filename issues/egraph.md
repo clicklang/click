@@ -14,6 +14,13 @@ proofs. The e-graph is part of the **trusted kernel**. The broader design
 space is recorded in [Equality closure design](../docs/internals/equality-closure.md),
 but that document is not a list of launch requirements.
 
+The pointer interface now exposes one `pointers_known_equal` query backed by
+the trusted graph. Mixed whole-offset and cross-block premises compose through
+address applications; the old Boolean alias walk is removed. Broader arithmetic
+reasoning and guarded memory resolution remain distinct judgments. Insertion
+order, late merges, branch isolation, and increasing alias classes have focused
+regressions. This cleanup changes no C pointer-value representation.
+
 ## Required behavior
 
 1. **Reliable address equality.** Given checked equalities such as `a == b`
