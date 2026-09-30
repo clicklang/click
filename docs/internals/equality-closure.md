@@ -583,7 +583,7 @@ enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
 still require their own checked judgments and complete candidate indexes.
 
-## Exact materialized pointer-read sources
+## Checked pointer-read sources
 
 Typed pointer-read producers now share `PureFactContext::register_pointer_read`.
 It records the existing value's load definition and, when the exact defining
@@ -603,15 +603,27 @@ prerequisites have been checked. The graph's generation invalidates equality
 misses recorded before publication; persistent sibling contexts retain their
 own admitted unions.
 
-This narrow rule does not cross later store edges. A retained cell-map entry
-alone is insufficient preservation evidence: low-level snapshot construction
-can leave it present after a write through a possibly aliasing address.
-General equality across writes still requires checked preservation evidence
-published at a common kernel boundary. It must not be implemented as hidden
-history search in `fold` or in the graph query. Deterministic tests cover late
-aliases and transitivity, complete and incomplete footprints, changed and
-unknown writes, branch isolation, increasing runs and alias classes, and
-prompt refusal beside increasing store histories.
+The same producer boundary now handles one immediate `Store` edge. It uses
+structural object separation or an exact constant byte gap, after re-expressing
+the selected read in the store's block through established graph equality.
+It checks the store's full value width against the read footprint and admits
+`load(after, address) == load(before, address)` only when their bytes are
+separate. The exact byte geometry is shared with the memory checker. It does
+not use address inequality alone, scan ownership frames, or walk older memory.
+Already admitted single-store edges compose through ordinary graph closure;
+unknown store-address aliases require a later producer check once the needed
+separation is available. Unregistered intermediate edges remain unknown.
+
+A retained cell-map entry alone is insufficient preservation evidence:
+low-level snapshot construction can leave it present after a write through a
+possibly aliasing address. Other memory transitions and separation forms
+remain future work at this common kernel boundary. Deterministic tests cover
+late read-address aliases and transitivity, complete and incomplete footprints,
+changed and unknown writes, branch isolation, increasing runs and alias
+classes, constant work beside increasing unregistered store histories, and
+approximately linear composition of published store edges. The ordinary
+single-store Click claim expands and independently rechecks; changing its C
+write to overwrite the pointer field rejects the expanded proof.
 
 ## Persistence and cost
 
