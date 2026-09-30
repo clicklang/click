@@ -23,14 +23,15 @@ use click::surface::{
     c0_prepared_project_selected_proof_count, c0_prepared_project_selected_proof_names,
     c0_prepared_project_tactic_source_position, c0_project_external_dependencies,
     c0_project_selected_proof_count, c0_project_selected_proof_names,
-    c0_project_tactic_source_position, cpp_prepared_project_external_dependencies,
-    cpp_prepared_project_selected_proof_count, cpp_prepared_project_tactic_source_position,
-    nested_tactic_source_position, selected_c_target, tactic_arm_containing_position,
-    tactic_have_body_contains_position, tactic_line_has_multiple_starts, tactic_source_at_position,
-    tactic_starts_on_line, verify_c0_prepared_project, verify_c0_prepared_project_at,
+    c0_project_tactic_source_position, nested_tactic_source_position,
+    program_prepared_project_external_dependencies, program_prepared_project_selected_proof_count,
+    program_prepared_project_tactic_source_position, selected_c_target,
+    tactic_arm_containing_position, tactic_have_body_contains_position,
+    tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
+    verify_c0_prepared_project, verify_c0_prepared_project_at,
     verify_c0_prepared_project_functions, verify_c0_project, verify_c0_project_at,
-    verify_c0_project_functions, verify_cpp_prepared_project, verify_cpp_prepared_project_at,
-    verifying_source_paths, with_proof_trace,
+    verify_c0_project_functions, verify_program_prepared_project,
+    verify_program_prepared_project_at, verifying_source_paths, with_proof_trace,
 };
 
 const USAGE: &str = "\
@@ -374,7 +375,7 @@ fn verify_changed(
         }
         let sources = match &inputs {
             CInput::Bundle(sources) => sources.clone(),
-            CInput::Prepared(_) | CInput::PreparedCpp(_) => unreachable!(),
+            CInput::Prepared(_) | CInput::PreparedProgram(_) => unreachable!(),
         };
         let refs = source_refs(&sources);
         let baseline_attested = has_full_verification_marker(
@@ -687,8 +688,8 @@ fn proof_source_position_for_path(
         CInput::Prepared(imports) => {
             c0_prepared_project_tactic_source_position(project, imports, claim, source_index)
         }
-        CInput::PreparedCpp(import) => {
-            cpp_prepared_project_tactic_source_position(project, import, claim, source_index)
+        CInput::PreparedProgram(import) => {
+            program_prepared_project_tactic_source_position(project, import, claim, source_index)
         }
     }
     .ok()?;
@@ -1137,9 +1138,10 @@ fn verify_file(
                 c0_prepared_project_selected_proof_names(&project, imports)
                     .map_err(click_message)?
             }
-            CInput::PreparedCpp(_) => {
+            CInput::PreparedProgram(_) => {
                 return Err(
-                    "`--trace-proof` currently supports C sidecars, not prepared C++ inputs".into(),
+                    "`--trace-proof` currently supports C sidecars, not typed compiler inputs"
+                        .into(),
                 );
             }
         };
@@ -1164,8 +1166,9 @@ fn verify_file(
         CInput::Prepared(imports) => {
             c0_prepared_project_external_dependencies(&project, imports).map_err(click_message)?
         }
-        CInput::PreparedCpp(import) => {
-            cpp_prepared_project_external_dependencies(&project, import).map_err(click_message)?
+        CInput::PreparedProgram(import) => {
+            program_prepared_project_external_dependencies(&project, import)
+                .map_err(click_message)?
         }
     };
     let (verified, successful_trace) = with_run_limits("click verify", limits, || {
@@ -1176,10 +1179,12 @@ fn verify_file(
             (CInput::Prepared(imports), Some(function)) => {
                 verify_c0_prepared_project_functions(&project, imports, [function.to_owned()])
             }
-            (CInput::PreparedCpp(_), Some(_)) => unreachable!(),
+            (CInput::PreparedProgram(_), Some(_)) => unreachable!(),
             (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
             (CInput::Prepared(imports), None) => verify_c0_prepared_project(&project, imports),
-            (CInput::PreparedCpp(import), None) => verify_cpp_prepared_project(&project, import),
+            (CInput::PreparedProgram(import), None) => {
+                verify_program_prepared_project(&project, import)
+            }
         };
         let report = |error: ClickError| {
             proof_error_report(
@@ -1273,8 +1278,8 @@ fn verify_file(
                 c0_prepared_project_selected_proof_count(&project, imports)
                     .map_err(click_message)?
             }
-            CInput::PreparedCpp(import) => {
-                cpp_prepared_project_selected_proof_count(&project, import)
+            CInput::PreparedProgram(import) => {
+                program_prepared_project_selected_proof_count(&project, import)
                     .map_err(click_message)?
             }
         }
@@ -1337,8 +1342,9 @@ fn verify_location(
         CInput::Prepared(imports) => {
             c0_prepared_project_external_dependencies(&project, imports).map_err(click_message)?
         }
-        CInput::PreparedCpp(import) => {
-            cpp_prepared_project_external_dependencies(&project, import).map_err(click_message)?
+        CInput::PreparedProgram(import) => {
+            program_prepared_project_external_dependencies(&project, import)
+                .map_err(click_message)?
         }
     };
     let verified = with_run_limits("click verify", limits, || {
@@ -1349,8 +1355,8 @@ fn verify_location(
             CInput::Prepared(imports) => {
                 verify_c0_prepared_project_at(&project, imports, line, column)
             }
-            CInput::PreparedCpp(import) => {
-                verify_cpp_prepared_project_at(&project, import, line, column)
+            CInput::PreparedProgram(import) => {
+                verify_program_prepared_project_at(&project, import, line, column)
             }
         };
         result.map_err(|error| {

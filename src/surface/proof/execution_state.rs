@@ -302,31 +302,31 @@ pub(in crate::surface) fn capture_c0_prepared_project_tactic_expansion(
     verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
 }
 
-pub(in crate::surface) fn capture_cpp_prepared_project_tactic_expansion(
+pub(in crate::surface) fn capture_program_prepared_project_tactic_expansion(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     site: ProofSite,
     source_index: usize,
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
     let verification =
-        verify_cpp_prepared_project_with_expansion_capture(project, import, &mut capture);
+        verify_program_prepared_project_with_expansion_capture(project, import, &mut capture);
     if let Some(result) = decided_tactic_expansion(&capture) {
         return result;
     }
     verification.and_then(|_| undecided_tactic_expansion(&capture, &site, source_index))
 }
 
-pub(in crate::surface) fn capture_cpp_prepared_tactic_expansion(
+pub(in crate::surface) fn capture_program_prepared_tactic_expansion(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     site: ProofSite,
     source_index: usize,
     nested_path: &[usize],
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_nested_tactic(site.clone(), source_index, nested_path);
-    let sources = CSourceContext::cpp(import)?;
+    let sources = CSourceContext::program(import)?;
     let verification =
         verify_c0_sources_with_expansion_capture_context(click_source, &sources, &mut capture);
     if let Some(result) = decided_tactic_expansion(&capture) {
@@ -422,14 +422,14 @@ pub(in crate::surface) fn capture_c0_prepared_project_proof_site_expansion(
     }
 }
 
-pub(in crate::surface) fn capture_cpp_prepared_project_proof_site_expansion(
+pub(in crate::surface) fn capture_program_prepared_project_proof_site_expansion(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
     let verification =
-        verify_cpp_prepared_project_with_expansion_capture(project, import, &mut capture);
+        verify_program_prepared_project_with_expansion_capture(project, import, &mut capture);
     if let Some(result) = capture.result {
         return result.map_err(ClickError::new);
     }
@@ -442,13 +442,13 @@ pub(in crate::surface) fn capture_cpp_prepared_project_proof_site_expansion(
     }
 }
 
-pub(in crate::surface) fn capture_cpp_prepared_proof_site_expansion(
+pub(in crate::surface) fn capture_program_prepared_proof_site_expansion(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     site: ProofSite,
 ) -> Result<Vec<ProofTactic>, ClickError> {
     let mut capture = ExpansionCapture::for_site(site.clone());
-    let sources = CSourceContext::cpp(import)?;
+    let sources = CSourceContext::program(import)?;
     let verification =
         verify_c0_sources_with_expansion_capture_context(click_source, &sources, &mut capture);
     if let Some(result) = capture.result {

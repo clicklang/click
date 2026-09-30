@@ -8,8 +8,8 @@ use click::cli::{
 use click::instrumentation::{self, ArtifactReuseRejection};
 use click::surface::{
     c0_project_tactic_source_position, c0_tactic_source_position,
-    cpp_prepared_project_tactic_source_position, verify_c0_project, verify_c0_sources,
-    verify_cpp_prepared_project,
+    program_prepared_project_tactic_source_position, verify_c0_project, verify_c0_sources,
+    verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -223,10 +223,10 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
             (CInput::Bundle(sources), None) => {
                 verify_c0_sources(click_source, &source_refs(sources)).map(|_| ())
             }
-            (CInput::PreparedCpp(import), Some(project)) => {
-                verify_cpp_prepared_project(project, import).map(|_| ())
+            (CInput::PreparedProgram(import), Some(project)) => {
+                verify_program_prepared_project(project, import).map(|_| ())
             }
-            (CInput::PreparedCpp(_), None) | (CInput::Prepared(_), _) => {
+            (CInput::PreparedProgram(_), None) | (CInput::Prepared(_), _) => {
                 unreachable!("every prepared mdtest input reads a Click project")
             }
         }
@@ -258,8 +258,8 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
                         claim,
                         source_index,
                     ),
-                    (CInput::PreparedCpp(import), Some(project)) => {
-                        cpp_prepared_project_tactic_source_position(
+                    (CInput::PreparedProgram(import), Some(project)) => {
+                        program_prepared_project_tactic_source_position(
                             project,
                             import,
                             claim,

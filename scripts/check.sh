@@ -22,6 +22,7 @@ fixture_targets=(
     --test examples
     --test compiler_import
     --test cpp_import
+    --test rust_import
     --test bitcoin_core_money_range
 )
 unit_targets=(--lib --bin click --test documentation --test condition_transport_api)
@@ -82,6 +83,7 @@ export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 # Formatting is part of the gate: the same command judges locally and in CI,
 # so drift cannot accumulate. Run `cargo fmt` to fix a failure.
 cargo fmt --check
+cargo fmt --manifest-path tools/rust-exporter/Cargo.toml --check
 scripts/test-setup-environment.sh
 
 # The first C++ frontend is a small repository-owned LibTooling executable.
@@ -90,6 +92,9 @@ scripts/test-setup-environment.sh
 # execute this binary; only explicit import refresh and its focused tests do.
 export CLICK_CPP_EXPORTER
 CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
+
+export CLICK_RUST_EXPORTER
+CLICK_RUST_EXPORTER="$(scripts/build-rust-exporter.sh)"
 
 # Lints are part of the gate for the same reason formatting is: the tree is
 # clippy-clean today, so any new diagnostic is a new one and belongs to the

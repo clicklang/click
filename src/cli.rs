@@ -95,9 +95,9 @@ pub const PUBLIC_CLI_BEHAVIORS: &[&str] = &[
 ];
 
 use crate::instrumentation::{TacticEvent, VerificationEvent};
+use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::source as c_source;
-use crate::languages::cpp::PreparedCppImport;
 use crate::surface::verifying_source_paths;
 use crate::surface::{
     CProjectProfile, ClickModuleSource, ClickProject, ResourceSemanticsMode, click_import_sites,
@@ -585,12 +585,12 @@ pub fn read_verifying_sources_for_target(
 pub enum CInput {
     Bundle(Vec<(String, String)>),
     Prepared(Vec<PreparedCImport>),
-    PreparedCpp(PreparedCppImport),
+    PreparedProgram(PreparedProgram),
 }
 
 impl CInput {
     pub fn is_prepared(&self) -> bool {
-        matches!(self, Self::Prepared(_) | Self::PreparedCpp(_))
+        matches!(self, Self::Prepared(_) | Self::PreparedProgram(_))
     }
 }
 
@@ -641,7 +641,10 @@ fn read_c_inputs_for_target(
             return crate::languages::load_compiler_import(&config).map(|imports| match imports {
                 crate::languages::PreparedCompilerImport::C(imports) => CInput::Prepared(imports),
                 crate::languages::PreparedCompilerImport::Cpp(import) => {
-                    CInput::PreparedCpp(import)
+                    CInput::PreparedProgram(PreparedProgram::Cpp(import))
+                }
+                crate::languages::PreparedCompilerImport::Rust(import) => {
+                    CInput::PreparedProgram(PreparedProgram::Rust(import))
                 }
             });
         }
@@ -1537,7 +1540,7 @@ pub fn read_mdtest_project_if_needed(
     if has_imports
         || has_config
         || mdtest.resource_semantics.is_some()
-        || matches!(inputs, CInput::PreparedCpp(_))
+        || matches!(inputs, CInput::PreparedProgram(_))
     {
         apply_mdtest_resource_semantics(path, &mdtest, read_click_project(path, click_source)?)
             .map(Some)
@@ -1662,7 +1665,7 @@ pub fn prepare_mdtest_inputs(mdtest: &MdTest) -> Result<CInput, String> {
     .map_err(|error| format!("failed to materialize C++ import config: {error}"))?;
     crate::languages::cpp::refresh_import(&config_path)?;
     let import = crate::languages::cpp::load_import(&config_path)?;
-    Ok(CInput::PreparedCpp(import))
+    Ok(CInput::PreparedProgram(PreparedProgram::Cpp(import)))
 }
 
 enum BlockKind {

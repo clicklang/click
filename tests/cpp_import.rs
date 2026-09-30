@@ -16,9 +16,10 @@ use click::languages::cpp::{
     refresh_import,
 };
 use click::surface::{
-    C0VerificationSession, VerifiedClaim, cpp_prepared_project_smart_tactic_source_sites,
-    cpp_prepared_project_tactic_source_position, expand_cpp_prepared_project_claim_source_by_label,
-    expand_cpp_prepared_project_tactic_source_at, verify_cpp_prepared_project,
+    C0VerificationSession, VerifiedClaim, expand_program_prepared_project_claim_source_by_label,
+    expand_program_prepared_project_tactic_source_at,
+    program_prepared_project_smart_tactic_source_sites,
+    program_prepared_project_tactic_source_position, verify_program_prepared_project,
 };
 
 const SOURCE: &str = include_str!("../examples/basic-cpp/increment.cpp");
@@ -819,11 +820,11 @@ fn included_header_definition_is_selected_locked_and_validated() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source).expect("load the header import offline");
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the selected header function through the ordinary workflow");
 
     let stale = Project::header_function();
@@ -885,11 +886,11 @@ fn exception_enabled_profile_verifies_a_checked_normal_only_header_graph() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let inputs = read_c_inputs(&sidecar, &sidecar_source)
         .expect("load the exception-enabled header import offline");
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the normal-only function through the ordinary workflow");
 
     let graph = Project::direct_call();
@@ -938,13 +939,13 @@ fn scalar_int32_profile_verifies_a_typed_throw_and_keeps_its_lock_identity() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("a source throw must establish the declared exceptional outcome");
 
     let missing_signature = "verifying \"increment.cpp\";\n\
         int32 increment(int32* value) { ensures result == 0; }\n";
     let missing_signature_project = read_click_project(&sidecar, missing_signature).unwrap();
-    verify_cpp_prepared_project(&missing_signature_project, &prepared)
+    verify_program_prepared_project(&missing_signature_project, &prepared)
         .expect_err("a source throw cannot cross an undeclared exceptional boundary");
 }
 
@@ -980,20 +981,20 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, sidecar_source).unwrap();
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("the caller must preserve the helper's exceptional exit");
-    let expanded = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
         &prepared,
         "caller.exceptional_ensures_0",
     )
     .expect("expand the caller's exceptional proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &prepared)
+    verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded exceptional proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&rewritten, &prepared)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded scalar exception environment");
-    let site = cpp_prepared_project_tactic_source_position(
+    let site = program_prepared_project_tactic_source_position(
         &rewritten,
         &prepared,
         "caller.exceptional_ensures_0",
@@ -1014,7 +1015,7 @@ fn scalar_int32_profile_propagates_a_modular_throw_past_a_normal_call_continuati
         "exceptional ensures exception == 8;",
     );
     let false_project = read_click_project(&sidecar, &false_caller_claim).unwrap();
-    verify_cpp_prepared_project(&false_project, &prepared)
+    verify_program_prepared_project(&false_project, &prepared)
         .expect_err("the caller cannot claim a different exception payload");
 }
 
@@ -1074,9 +1075,9 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("a caught modular throw should satisfy a nonthrowing caller signature");
-    let expanded = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
         &prepared,
         "caller.ensures_0",
@@ -1100,13 +1101,17 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
         "distinct exact path closers should retain returned/threw certificates: {expanded}"
     );
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &prepared)
+    verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded handler proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&rewritten, &prepared)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&rewritten, &prepared)
         .expect("retain the expanded handler environment");
-    let site =
-        cpp_prepared_project_tactic_source_position(&rewritten, &prepared, "caller.ensures_0", 0)
-            .expect("locate the expanded handler proof");
+    let site = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &prepared,
+        "caller.ensures_0",
+        0,
+    )
+    .expect("locate the expanded handler proof");
     session
         .verify_at_project(&expanded, site.line, site.column)
         .expect("retained audit must accept the handler proof");
@@ -1121,7 +1126,7 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     );
     assert_ne!(false_claim, sidecar_source);
     let false_project = read_click_project(&sidecar, &false_claim).unwrap();
-    verify_cpp_prepared_project(&false_project, &prepared)
+    verify_program_prepared_project(&false_project, &prepared)
         .expect_err("the handler cannot prove a false result claim");
 }
 
@@ -1210,22 +1215,27 @@ fn scalar_int32_profile_joins_a_caught_throw_inside_conditional_cleanup() {
     fs::write(&sidecar, sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("the mixed conditional cleanup join should verify");
-    let expanded = expand_cpp_prepared_project_claim_source_by_label(
+    let expanded = expand_program_prepared_project_claim_source_by_label(
         &click_project,
         &prepared,
         "caller.contract",
     )
     .expect("expand the mixed outcome proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &prepared)
+    verify_program_prepared_project(&rewritten, &prepared)
         .expect("the expanded mixed outcome proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &prepared)
-        .expect("retain the mixed outcome verification environment");
-    let site =
-        cpp_prepared_project_tactic_source_position(&rewritten, &prepared, "caller.contract", 0)
-            .expect("locate the rewritten branch proof");
+    let (session, _) =
+        C0VerificationSession::new_program_prepared_project(&click_project, &prepared)
+            .expect("retain the mixed outcome verification environment");
+    let site = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &prepared,
+        "caller.contract",
+        0,
+    )
+    .expect("locate the rewritten branch proof");
     session
         .verify_at_project(&expanded, site.line, site.column)
         .expect("retained audit must accept the expanded mixed outcome proof");
@@ -1317,7 +1327,7 @@ fn scalar_int32_profile_unwinds_one_guard_on_both_paths() {
     fs::write(&sidecar, &sidecar_source).unwrap();
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("normal and caught exceptional paths must restore the original value");
 }
 
@@ -1431,7 +1441,7 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
     fs::remove_file(&project.exporter).expect("verification must use the locked artifact");
 
     let click_project = read_click_project(&sidecar, &sidecar_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &prepared)
+    verify_program_prepared_project(&click_project, &prepared)
         .expect("the unmodified conditional cleanup proof must pass");
 
     let cases = [
@@ -1496,7 +1506,7 @@ fn scalar_int32_profile_rejects_hostile_cleanup_proofs() {
         );
         let hostile_project = read_click_project(&sidecar, &hostile_source).unwrap();
         assert!(
-            verify_cpp_prepared_project(&hostile_project, &prepared).is_err(),
+            verify_program_prepared_project(&hostile_project, &prepared).is_err(),
             "{expectation}: {name} unexpectedly verified"
         );
     }
@@ -1696,12 +1706,12 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     assert!(lowered.kernel_function().parameters()[0].pointee_is_constant());
 
     let click_project = read_click_project(&sidecar, INT64_PREDICATE_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the signed-64 comparison through the offline artifact");
 
     let false_source = INT64_PREDICATE_SIDECAR.replace(">= 0i64", "> 0i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1809,12 +1819,12 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     let lowered = lower_import(&import).expect("lower the constexpr predicate directly");
     assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_COIN_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the constexpr comparison through the offline artifact");
 
     let false_source = CONSTEXPR_COIN_SIDECAR.replace(">= 100000000i64", "> 100000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1906,13 +1916,13 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     let lowered = lower_import(&import).expect("lower the dependent constexpr predicate");
     assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the dependent constexpr comparison offline");
 
     let false_source =
         CONSTEXPR_MAX_MONEY_SIDECAR.replace(">= 2100000000000000i64", "> 2100000000000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -1952,13 +1962,13 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     let lowered = lower_import(&import).expect("lower signed-64 less-equal directly");
     assert_eq!(lowered.kernel_function().return_type(), CType::Bool);
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_LE_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive MAX_MONEY upper bound offline");
 
     let false_source =
         CONSTEXPR_MAX_MONEY_LE_SIDECAR.replace("<= 2100000000000000i64", "< 2100000000000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -2025,13 +2035,13 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
             ..
         }) if matches!(expression.as_ref(), CExpression::And(_, _))));
     let click_project = read_click_project(&sidecar, CONSTEXPR_MAX_MONEY_RANGE_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the inclusive range contract offline");
 
     let false_source = CONSTEXPR_MAX_MONEY_RANGE_SIDECAR
         .replace("<= 2100000000000000i64", "< 2100000000000000i64");
     let false_project = read_click_project(&sidecar, &false_source).unwrap();
-    let error = verify_cpp_prepared_project(&false_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&false_project, &import).unwrap_err();
     assert!(
         error.message().contains("unclosed goal"),
         "{}",
@@ -2162,11 +2172,11 @@ fn locked_cpp_function_verifies_through_the_shared_sidecar_path_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).expect("load the locked sidecar input");
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify the directly lowered C++ function");
     assert_eq!(
         verified
@@ -2228,11 +2238,11 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify both C++ return paths against one contract");
     assert_eq!(
         verified
@@ -2246,7 +2256,8 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
         "both return paths certify returned ownership and both postconditions"
     );
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -2254,10 +2265,14 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute =
-        cpp_prepared_project_tactic_source_position(&click_project, &import, "choose.contract", 0)
-            .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let execute = program_prepared_project_tactic_source_position(
+        &click_project,
+        &import,
+        "choose.contract",
+        0,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2265,12 +2280,12 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     )
     .expect("expand the branch execution into a checkable source proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded branch proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the original branch verification environment");
     let next =
-        cpp_prepared_project_tactic_source_position(&rewritten, &import, "choose.contract", 0)
+        program_prepared_project_tactic_source_position(&rewritten, &import, "choose.contract", 0)
             .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
@@ -2320,11 +2335,11 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let inputs = read_c_inputs(&sidecar, &click_source).unwrap();
-    let CInput::PreparedCpp(import) = inputs else {
+    let CInput::PreparedProgram(import) = inputs else {
         panic!("language=c++ must select the C++ prepared-input path")
     };
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("one owned cell should authorize an aliased mutable write and const read");
     assert_eq!(
         verified
@@ -2338,7 +2353,8 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         "the proof returns ownership and checks both postconditions without an inferred view"
     );
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -2346,14 +2362,14 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "write_then_read.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2361,11 +2377,11 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
     )
     .expect("expand the aliased reference execution into a checkable proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded const-reference proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the const-reference verification environment");
-    let next = cpp_prepared_project_tactic_source_position(
+    let next = program_prepared_project_tactic_source_position(
         &rewritten,
         &import,
         "write_then_read.contract",
@@ -2380,7 +2396,7 @@ fn const_reference_preserves_qualification_and_may_alias_a_mutable_reference() {
         CONST_REFERENCE_SIDECAR.replace("const int32* readable", "int32* readable");
     fs::write(&sidecar, &mutable_signature).unwrap();
     let mismatched_project = read_click_project(&sidecar, &mutable_signature).unwrap();
-    let error = verify_cpp_prepared_project(&mismatched_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&mismatched_project, &import).unwrap_err();
     assert!(
         error
             .message()
@@ -2626,11 +2642,12 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify the helper and caller through shared modular call rules");
     assert_eq!(verified.len(), 6);
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -2638,14 +2655,14 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
             .collect::<Vec<_>>(),
         vec!["execute", "simp", "execute", "simp"]
     );
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "call_set_seven.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2653,11 +2670,11 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     )
     .expect("expand the caller's modular execution proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded modular C++ proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the modular C++ verification environment");
-    let next = cpp_prepared_project_tactic_source_position(
+    let next = program_prepared_project_tactic_source_position(
         &rewritten,
         &import,
         "call_set_seven.contract",
@@ -2743,18 +2760,18 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify local initialization through the shared call-result rule");
     assert_eq!(verified.len(), 5);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "relay_value.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -2762,13 +2779,17 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     )
     .expect("expand the scalar-local caller proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded scalar-local proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the scalar-local verification environment");
-    let next =
-        cpp_prepared_project_tactic_source_position(&rewritten, &import, "relay_value.contract", 0)
-            .unwrap();
+    let next = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        "relay_value.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
         .expect("retained audit session must accept the expanded local proof");
@@ -2779,7 +2800,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     );
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false claim about the captured call result must be rejected");
 }
 
@@ -2884,31 +2905,31 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify pointer load/store and reference address through shared rules");
     assert_eq!(verified.len(), 6);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "bump_reference.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the pointer caller proof");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded pointer proof must reverify");
 
     let missing_ownership = POINTER_SIDECAR.replacen("    owns pointer[0..1];\n", "", 1);
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_ownership_project = read_click_project(&sidecar, &missing_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_ownership_project, &import)
+    verify_program_prepared_project(&missing_ownership_project, &import)
         .expect_err("dereferencing without memory authority must not verify");
 
     let false_contract = POINTER_SIDECAR.replace(
@@ -2917,7 +2938,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     );
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false pointer-mediated memory effect must be rejected");
 }
 
@@ -2988,38 +3009,38 @@ fn record_reference_member_loads_and_stores_verify_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify field access and the loaded pointer through shared memory rules");
     assert_eq!(verified.len(), 7);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "stage_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the record execution proof");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded record proof must reverify");
 
     let missing_ownership = STRUCT_MEMBER_SIDECAR.replace("    owns &state->pointer;\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("writing a field without its memory authority must not verify");
 
     let false_contract =
         STRUCT_MEMBER_SIDECAR.replace("ensures value[0] == 7;", "ensures value[0] == 8;");
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false pointer-mediated member effect must be rejected");
 }
 
@@ -3088,38 +3109,38 @@ fn brace_initialized_local_aggregate_verifies_offline() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify local aggregate initialization and later field reads");
     assert_eq!(verified.len(), 3);
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "stage_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the local aggregate execution proof");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded local aggregate proof must reverify");
 
     let missing_ownership = LOCAL_AGGREGATE_SIDECAR.replace("    owns value[0..1];\n", "");
     fs::write(&sidecar, &missing_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("the initializer and later pointer write require input memory authority");
 
     let false_contract =
         LOCAL_AGGREGATE_SIDECAR.replace("ensures result == old(value[0]);", "ensures result == 7;");
     fs::write(&sidecar, &false_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false claim about the saved initialized field must be rejected");
 }
 
@@ -3226,26 +3247,30 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify the constructor body and its implicit local invocation modularly");
 
-    let execute =
-        cpp_prepared_project_tactic_source_position(&click_project, &import, "capture.contract", 0)
-            .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let execute = program_prepared_project_tactic_source_position(
+        &click_project,
+        &import,
+        "capture.contract",
+        0,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the caller proof across construction");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded constructor caller proof must reverify");
 
     let missing_field_ownership = CONSTRUCTOR_LOCAL_SIDECAR.replace("    owns self->saved;\n", "");
     fs::write(&sidecar, &missing_field_ownership).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_field_ownership).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("constructor member initialization requires field authority");
 
     let false_constructor_contract = CONSTRUCTOR_LOCAL_SIDECAR.replace(
@@ -3254,7 +3279,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     );
     fs::write(&sidecar, &false_constructor_contract).unwrap();
     let false_project = read_click_project(&sidecar, &false_constructor_contract).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false constructor field effect must be rejected");
 }
 
@@ -3362,20 +3387,24 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify captured result and restored caller memory");
 
-    let execute =
-        cpp_prepared_project_tactic_source_position(&click_project, &import, "capture.contract", 0)
-            .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let execute = program_prepared_project_tactic_source_position(
+        &click_project,
+        &import,
+        "capture.contract",
+        0,
+    )
+    .unwrap();
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across terminal cleanup");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("expanded terminal-cleanup proof must reverify");
 
     let missing_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
@@ -3384,7 +3413,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     fs::write(&sidecar, &missing_destructor).unwrap();
     let missing_project = read_click_project(&sidecar, &missing_destructor).unwrap();
-    verify_cpp_prepared_project(&missing_project, &import)
+    verify_program_prepared_project(&missing_project, &import)
         .expect_err("implicit cleanup requires a checked destructor contract");
 
     let false_destructor = TERMINAL_DESTRUCTOR_SIDECAR.replace(
@@ -3393,14 +3422,14 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     );
     fs::write(&sidecar, &false_destructor).unwrap();
     let false_project = read_click_project(&sidecar, &false_destructor).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("a false destructor restore effect must be rejected");
 
     let wrong_capture = TERMINAL_DESTRUCTOR_SIDECAR
         .replace("ensures result == 7;", "ensures result == old(value[0]);");
     fs::write(&sidecar, &wrong_capture).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_capture).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the return value must be captured before destruction");
 }
 
@@ -3465,7 +3494,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    let verified = verify_cpp_prepared_project(&click_project, &import)
+    let verified = verify_program_prepared_project(&click_project, &import)
         .expect("verify both captured results and both restored-memory paths");
     let ensure_indices = verified
         .iter()
@@ -3479,21 +3508,21 @@ fn every_return_after_construction_runs_the_checked_destructor() {
         "both caller return paths must certify ownership, the captured result, and restoration: {ensure_indices:?}"
     );
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "with_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both cleanup edges");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded early-return cleanup proof must reverify");
 
     let wrong_early_result = EARLY_RETURN_DESTRUCTOR_SIDECAR.replace(
@@ -3502,7 +3531,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     );
     fs::write(&sidecar, &wrong_early_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_early_result).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("cleanup must not overwrite the value captured by the early return");
 }
 
@@ -3550,16 +3579,16 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     );
 
     let click_project = read_click_project(&sidecar, RESTORE_CALLER_SIDECAR).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("the caller must receive 7 or 9 and still own an unchanged 41");
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "call_with_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -3567,11 +3596,11 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
     )
     .expect("expand the caller's checked modular execution");
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import)
+    verify_program_prepared_project(&rewritten, &import)
         .expect("the expanded RAII caller proof must reverify");
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("retain the caller's original verification environment");
-    let next = cpp_prepared_project_tactic_source_position(
+    let next = program_prepared_project_tactic_source_position(
         &rewritten,
         &import,
         "call_with_restore.contract",
@@ -3586,7 +3615,7 @@ fn modular_caller_observes_captured_result_and_restored_entry_value() {
         RESTORE_CALLER_SIDECAR.replace("ensures value[0] == 41;", "ensures value[0] == 42;");
     fs::write(&sidecar, &false_restoration).unwrap();
     let false_project = read_click_project(&sidecar, &false_restoration).unwrap();
-    verify_cpp_prepared_project(&false_project, &import)
+    verify_program_prepared_project(&false_project, &import)
         .expect_err("the caller cannot claim a different post-call value");
 }
 
@@ -3650,24 +3679,24 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify both return values and reverse-order restoration");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "restore_twice.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both ordered cleanup lists");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded reverse-cleanup proof must reverify");
 
     let rejected = Project::reverse_destructor_order();
@@ -3755,24 +3784,24 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify early exit and normal exit from the nested scope");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "scoped_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both nested-scope cleanup edges");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded nested-scope proof must reverify");
 
     let wrong_fallthrough = NESTED_SCOPE_DESTRUCTOR_SIDECAR.replace(
@@ -3781,7 +3810,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     );
     fs::write(&sidecar, &wrong_fallthrough).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_fallthrough).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("fallthrough destruction must occur before the outer return");
 }
 
@@ -3882,24 +3911,24 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify independent cleanup and restoration in both sibling scopes");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "sibling_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across both sibling lifetime boundaries");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded sibling-scope proof must reverify");
 
     let wrong_final = SIBLING_SCOPE_DESTRUCTORS_SIDECAR.replace(
@@ -3908,7 +3937,7 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
     );
     fs::write(&sidecar, &wrong_final).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_final).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the second scope must clean up before the final outer return");
 
     let rejected = Project::sibling_scope_destructors();
@@ -4011,31 +4040,31 @@ fn overlapping_scope_destroys_inner_before_outer_on_every_exit() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import)
+    verify_program_prepared_project(&click_project, &import)
         .expect("verify inner-then-outer cleanup and memory restoration");
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "overlap_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across overlapping cleanup lifetimes");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded overlapping-cleanup proof must reverify");
 
     let wrong_result = OVERLAPPING_SCOPE_DESTRUCTORS_SIDECAR
         .replace("ensures result == 7;", "ensures result == 11;");
     fs::write(&sidecar, &wrong_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_result).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("inner fallthrough cleanup must restore 7 before the final return");
 }
 
@@ -4139,25 +4168,25 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
 
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
-    verify_cpp_prepared_project(&click_project, &import).expect(
+    verify_program_prepared_project(&click_project, &import).expect(
         "verify cleanup on constructed paths without calling the destructor on the skipped path",
     );
 
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "conditional_restore.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
         execute.column,
     )
     .expect("expand the proof across the conditional lifetime");
-    verify_cpp_prepared_project(&click_project.with_entry_source(expanded), &import)
+    verify_program_prepared_project(&click_project.with_entry_source(expanded), &import)
         .expect("the expanded conditional-construction proof must reverify");
 
     let wrong_skipped_result = CONDITIONAL_CONSTRUCTION_SIDECAR.replace(
@@ -4166,7 +4195,7 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
     );
     fs::write(&sidecar, &wrong_skipped_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_skipped_result).unwrap();
-    verify_cpp_prepared_project(&wrong_project, &import)
+    verify_program_prepared_project(&wrong_project, &import)
         .expect_err("the skipped-construction path must return the untouched input");
 }
 
@@ -4446,7 +4475,8 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     let click_source = fs::read_to_string(&sidecar).unwrap();
     let click_project = read_click_project(&sidecar, &click_source).unwrap();
 
-    let sites = cpp_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
+    let sites =
+        program_prepared_project_smart_tactic_source_sites(&click_project, &import).unwrap();
     assert_eq!(
         sites
             .iter()
@@ -4454,14 +4484,14 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
             .collect::<Vec<_>>(),
         vec!["execute", "simp"]
     );
-    let execute = cpp_prepared_project_tactic_source_position(
+    let execute = program_prepared_project_tactic_source_position(
         &click_project,
         &import,
         "increment.contract",
         0,
     )
     .unwrap();
-    let expanded = expand_cpp_prepared_project_tactic_source_at(
+    let expanded = expand_program_prepared_project_tactic_source_at(
         &click_project,
         &import,
         execute.line,
@@ -4470,13 +4500,17 @@ fn cpp_profile_expansion_and_audit_session_share_the_locked_input() {
     .unwrap();
     assert_ne!(expanded, click_source);
     let rewritten = click_project.with_entry_source(expanded.clone());
-    verify_cpp_prepared_project(&rewritten, &import).expect("expanded proof must reverify");
+    verify_program_prepared_project(&rewritten, &import).expect("expanded proof must reverify");
 
-    let (session, _) = C0VerificationSession::new_cpp_prepared_project(&click_project, &import)
+    let (session, _) = C0VerificationSession::new_program_prepared_project(&click_project, &import)
         .expect("start the retained audit session");
-    let next =
-        cpp_prepared_project_tactic_source_position(&rewritten, &import, "increment.contract", 0)
-            .unwrap();
+    let next = program_prepared_project_tactic_source_position(
+        &rewritten,
+        &import,
+        "increment.contract",
+        0,
+    )
+    .unwrap();
     session
         .verify_at_project(&expanded, next.line, next.column)
         .expect("retained session must verify the rewritten C++ proof");
@@ -4493,7 +4527,7 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, &wrong_source).unwrap();
     let click_project = read_click_project(&sidecar, &wrong_source).unwrap();
-    let error = verify_cpp_prepared_project(&click_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&click_project, &import).unwrap_err();
     assert!(
         error
             .message()
@@ -4505,7 +4539,7 @@ fn cpp_sidecar_reports_source_and_signature_mismatches_without_c_fallback() {
     let wrong_signature = SIDECAR.replace("int32* value", "uint32* value");
     fs::write(&sidecar, &wrong_signature).unwrap();
     let click_project = read_click_project(&sidecar, &wrong_signature).unwrap();
-    let error = verify_cpp_prepared_project(&click_project, &import).unwrap_err();
+    let error = verify_program_prepared_project(&click_project, &import).unwrap_err();
     assert!(
         error
             .message()

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Prepare the machine for scripts/check.sh. This is the only entry point that
-# installs the Rust, test, documentation, and C++ frontend prerequisites.
+# installs the Rust, test, documentation, and compiler frontend prerequisites.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -65,8 +65,11 @@ if ! command -v cargo-nextest >/dev/null 2>&1 || \
     fi
 fi
 
-# The docs-only gate does not build or run the C++ importer.
+# The docs-only gate does not build or run compiler exporters.
 if [[ "$docs_only" != true ]]; then
+    # The typed Rust exporter uses private compiler APIs on a separately
+    # pinned toolchain. Click itself continues to use rust-toolchain.toml.
+    rustup toolchain install nightly-2026-06-16 --profile minimal --component rustc-dev --target x86_64-unknown-linux-gnu
     needs_llvm=false
     if ! command -v llvm-config-19 >/dev/null 2>&1 || \
         [[ "$(llvm-config-19 --version)" != 19.1.7 ]]; then
