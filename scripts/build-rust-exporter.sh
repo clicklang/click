@@ -2,8 +2,9 @@
 # The exporter uses rustc APIs, pinned separately from Click's stable toolchain.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-toolchain=nightly-2026-06-16
-expected_commit=01dfd79246f1b2d5f146616deff08223a840a9ae
+source scripts/rust-exporter-toolchain.sh
+toolchain="$RUST_EXPORTER_TOOLCHAIN"
+expected_commit="$RUST_EXPORTER_COMPILER_COMMIT"
 actual_commit="$(rustc +"$toolchain" -vV | sed -n 's/^commit-hash: //p')"
 if [[ "$actual_commit" != "$expected_commit" ]]; then
     echo "error: Rust exporter requires compiler commit $expected_commit" >&2
