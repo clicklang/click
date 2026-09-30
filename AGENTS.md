@@ -8,6 +8,12 @@ upstream `master` when the change is ready. Do not push development branches
 or changes directly to the upstream repository, even with write or admin
 access. Maintainers integrate reviewed changes through pull requests.
 
+Upstream `master` requires a pull request, a passing GitHub Actions `test`
+check, and the merge queue. Once a pull request is ready and its checks pass,
+maintainers add it to the queue. The queue runs `scripts/check.sh` on the
+prospective upstream tree and merges one pull request at a time. Do not merge
+directly or bypass the queue.
+
 Use `origin` for the contributor's fork and `upstream` for
 `git@github.com:clicklang/click.git`. Set `remote.pushDefault` to `origin`
 and `push.default` to `current` so ordinary pushes go to the fork even when
