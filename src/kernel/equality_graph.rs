@@ -417,6 +417,7 @@ enum OffsetPart {
 struct EqualityGraphState {
     terms: terms::TermClasses,
     logical_values: crate::persistent::PersistentSet<Pointer>,
+    checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
     /// class-keyed index can update only entries in the moved class. Clones
     /// share the prefix; a rebuilt (restricted) graph has a new origin.
@@ -485,10 +486,30 @@ impl EqualityGraph {
     }
 
     pub(in crate::kernel) fn logical_read_generation(&self) -> u64 {
-        self.logical_reads
+        let definitions = self
+            .logical_reads
             .lock()
             .expect("logical pointer reads")
-            .generation
+            .generation;
+        let checked = self
+            .state
+            .lock()
+            .expect("equality graph")
+            .checked_read_generation;
+        definitions.max(checked)
+    }
+
+    /// Admit an equality checked by a read producer into this branch's graph.
+    /// Register definitions before closing it, so all consumers see the same
+    /// congruence consequences. Memos made before a new union are invalidated.
+    pub(in crate::kernel) fn add_checked_read_equality(&self, left: &Pointer, right: &Pointer) {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, [left, right]);
+        state.register_blocks([left.block.clone(), right.block.clone()]);
+        if state.close(vec![(left.clone(), right.clone())]) {
+            state.checked_read_generation =
+                NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     pub(in crate::kernel) fn has_pointer_read_definition(&self, value: &Pointer) -> bool {
@@ -515,6 +536,17 @@ impl EqualityGraph {
             // as its source address. Register only that explicit dependency.
             pending.push(address.clone());
             definitions.push((value, application.clone()));
+            // Canonical projection is unconditional producer metadata. An
+            // exact registry lookup connects the application to its original
+            // snapshot without searching history or inspecting other reads.
+            if let Some(load) = application.as_loaded_value()
+                && let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
+                    &load.defining_memory,
+                    address,
+                )
+            {
+                definitions.push((application.clone(), Pointer::loaded_value(&source, address)));
+            }
             crate::instrumentation::record_deterministic_work(1);
         }
         drop(reads);

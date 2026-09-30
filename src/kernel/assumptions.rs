@@ -899,9 +899,9 @@ pub(super) fn unsalted_assumptions_memo_id(assumptions: &PureFactContext) -> u64
     memo_id_with_logical_reads(assumptions_memo_id(assumptions), assumptions)
 }
 
-/// Logical-load term registration can turn an earlier equality miss into a
-/// hit without adding a proposition. Namespace reasoning memos by that
-/// registration generation; never scan or flush the ambient fact set.
+/// Term registration or a checked read equality can turn an earlier miss into
+/// a hit without adding a proposition. Namespace reasoning memos by their
+/// generation; never scan or flush the ambient fact set.
 fn memo_id_with_logical_reads(base: u64, assumptions: &PureFactContext) -> u64 {
     let generation = assumptions.equality_graph.logical_read_generation();
     if generation == 0 {
@@ -3006,6 +3006,44 @@ impl PureFactContext {
         self
     }
 
+    /// Publish a typed read's definition and locally checked source equality.
+    /// The graph is part of the trusted kernel. Exact materialization-edge
+    /// evidence is checked here, so equality queries never search history.
+    /// No proposition or read authority is introduced. Checked unions belong
+    /// only to this persistent proof context; definitions are unconditional.
+    pub(in crate::kernel) fn register_pointer_read(
+        &self,
+        value: &Pointer,
+        memory: &SharedCMemory,
+        address: &Pointer,
+    ) {
+        self.equality_graph
+            .register_pointer_read_definition(value, memory, address);
+        self.register_pointer_read_source(memory, address);
+    }
+
+    /// This rule relates load applications only. An execution value's bridge
+    /// remains scoped to its certified binding, including restricted contexts.
+    fn register_pointer_read_source(&self, memory: &SharedCMemory, address: &Pointer) {
+        let bytes = crate::kernel::load_access_width_or_widest(memory, address);
+        let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
+            .unwrap_or_else(|| memory.clone());
+        let Some(derivation) = start.derivation() else {
+            return;
+        };
+        let CMemoryDerivation::CellsSeeded { run, .. } = derivation.as_ref() else {
+            return;
+        };
+        if let Some(source) = run.read_source(address, bytes)
+            && bytes == crate::kernel::load_access_width_or_widest(&source, address)
+        {
+            self.equality_graph.add_checked_read_equality(
+                &Pointer::loaded_value(memory, address),
+                &Pointer::loaded_value(&source, address),
+            );
+        }
+    }
+
     fn file_typed_pointer_read(
         &mut self,
         variable: Variable,
@@ -3029,6 +3067,7 @@ impl PureFactContext {
         self.content_fingerprint ^= Self::typed_pointer_read_fingerprint(variable, &key, value);
         self.equality_graph
             .add_equality(value, &Pointer::loaded_value(memory, address));
+        self.register_pointer_read_source(memory, address);
     }
 
     fn typed_pointer_read_fingerprint(
@@ -6792,9 +6831,7 @@ impl ExecutionPureFact {
         if generated_load_binding_matches_proposition(binding, self.proposition())
             && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
         {
-            context
-                .equality_graph
-                .register_pointer_read_definition(value, memory, address);
+            context.register_pointer_read(value, memory, address);
         }
     }
 
