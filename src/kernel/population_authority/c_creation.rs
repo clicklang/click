@@ -99,7 +99,7 @@ struct OpaqueImport {
 
 pub(in crate::kernel) struct SymbolicPopulationCount {
     pub entry_count: Bitvector32Term,
-    pub delta: i8,
+    pub delta: i32,
     pub entry_owned_members: u32,
     pub entry_symbolic_members: Option<Bitvector32Term>,
     pub symbolic_delta: Option<(bool, Bitvector32Term)>,
@@ -114,6 +114,7 @@ enum CEvent {
     Created(PointerBlock),
     MemberCreated(PointerBlock, String),
     Retired(PointerBlock),
+    TransferredAnchor(Holder, Holder, PointerBlock),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -645,11 +646,9 @@ impl CreationEvents {
         }
         Some(SymbolicPopulationCount {
             entry_count: import.entry_count.clone()?,
-            delta: match import.owned_members.cmp(&import.entry_owned_members) {
-                std::cmp::Ordering::Less => -1,
-                std::cmp::Ordering::Equal => 0,
-                std::cmp::Ordering::Greater => 1,
-            },
+            delta: i32::try_from(import.owned_members)
+                .ok()?
+                .checked_sub(i32::try_from(import.entry_owned_members).ok()?)?,
             entry_owned_members: import.entry_owned_members,
             entry_symbolic_members: import.entry_symbolic_members.clone(),
             symbolic_delta: import.symbolic_delta.clone(),
@@ -1104,7 +1103,7 @@ impl CreationEvents {
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
         if let Some(import) = self.0.opaque_imports.get(description) {
-            // An opaque helper has one checked member exchange. Mixing a
+            // Numeric transitions retain their exact net cardinality. Mixing a
             // unit transition with an imported symbolic batch would lose one
             // of the deltas from its population count.
             if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
@@ -1141,11 +1140,6 @@ impl CreationEvents {
                 import.owned_members.checked_sub(1)
             }
             .ok_or(CreationRefusal::MissingMembers)?;
-            // This slice supports one net unit change around an arbitrary
-            // numeric input quantity. Further changes need an explicit batch.
-            if owned_members.abs_diff(import.entry_owned_members) > 1 {
-                return Err(CreationRefusal::MissingMembers);
-            }
             let after = Self(Arc::new(Root {
                 identity: fresh_identity(),
                 entry_call: OnceLock::new(),
@@ -1487,6 +1481,10 @@ impl CreationEvents {
     /// Move the C storage cleanup obligation with a consumed or borrowed
     /// control whose checked body contains the allocation. The ordinary
     /// resource transfer separately moves that exact allocation fact.
+    pub(in crate::kernel) fn tracks_storage_anchor(&self, block: &PointerBlock) -> bool {
+        self.0.anchors.contains_key(block)
+    }
+
     pub(in crate::kernel) fn transfer_call_anchor(
         &self,
         from: &Self,
@@ -1503,28 +1501,33 @@ impl CreationEvents {
             .authority
             .transfer_anchor(from.0.invocation, to.0.invocation, anchor)
             .map_err(CreationRefusal::from)?;
-        Ok(Self(Arc::new(Root {
-            identity: fresh_identity(),
-            entry_call: OnceLock::new(),
-            proof_entry: OnceLock::new(),
-            transfers: Mutex::new(BTreeMap::new()),
-            returns: Mutex::new(BTreeMap::new()),
-            c_events: Mutex::new(BTreeMap::new()),
-            invocation: self.0.invocation,
-            opaque_actor: self.0.opaque_actor,
-            pending: self.0.pending.clone(),
-            creators: self.0.creators.clone(),
-            anchors: self.0.anchors.clone(),
-            authority,
-            symbolic_batches: self.0.symbolic_batches.clone(),
-            symbolic_holders: self.0.symbolic_holders.clone(),
-            tainted: self.0.tainted.clone(),
-            opaque_holders: self.0.opaque_holders.clone(),
-            opaque_transfers: Mutex::new(BTreeMap::new()),
-            opaque_entry_counts: Mutex::new(BTreeMap::new()),
-            empty_populations: self.0.empty_populations.clone(),
-            opaque_imports: self.0.opaque_imports.clone(),
-        })))
+        Ok(self.memoized_c_event(
+            CEvent::TransferredAnchor(from.0.invocation, to.0.invocation, block.clone()),
+            || {
+                Self(Arc::new(Root {
+                    identity: fresh_identity(),
+                    entry_call: OnceLock::new(),
+                    proof_entry: OnceLock::new(),
+                    transfers: Mutex::new(BTreeMap::new()),
+                    returns: Mutex::new(BTreeMap::new()),
+                    c_events: Mutex::new(BTreeMap::new()),
+                    invocation: self.0.invocation,
+                    opaque_actor: self.0.opaque_actor,
+                    pending: self.0.pending.clone(),
+                    creators: self.0.creators.clone(),
+                    anchors: self.0.anchors.clone(),
+                    authority,
+                    symbolic_batches: self.0.symbolic_batches.clone(),
+                    symbolic_holders: self.0.symbolic_holders.clone(),
+                    tainted: self.0.tainted.clone(),
+                    opaque_holders: self.0.opaque_holders.clone(),
+                    opaque_transfers: Mutex::new(BTreeMap::new()),
+                    opaque_entry_counts: Mutex::new(BTreeMap::new()),
+                    empty_populations: self.0.empty_populations.clone(),
+                    opaque_imports: self.0.opaque_imports.clone(),
+                }))
+            },
+        ))
     }
 
     pub(in crate::kernel) fn tracks_population(&self, description: &ResourceDescription) -> bool {

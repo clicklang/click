@@ -1090,6 +1090,10 @@ impl PureFactContext {
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32SignedLessThan(lower, value),
                 true,
+            )
+            | Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedGreaterThan(value, lower),
+                true,
             ) => match lower.as_ref() {
                 Bitvector32Term::Constant(lower_bits) => (*lower_bits as i32)
                     .checked_add(1)
@@ -1793,12 +1797,16 @@ impl PureFactContext {
                 && self.checks_exact_order_step(step);
         }
         if let AtomicPropositionDerivationEvidence::Int32SuccessorLeImpliesLt(step) = evidence {
-            let Proposition::ConditionIs(
-                ConditionTerm::Bitvector32SignedLessThan(lower, value),
-                true,
-            ) = proposition
-            else {
-                return false;
+            let (lower, value) = match proposition {
+                Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32SignedLessThan(lower, value),
+                    true,
+                )
+                | Proposition::ConditionIs(
+                    ConditionTerm::Bitvector32SignedGreaterThan(value, lower),
+                    true,
+                ) => (lower, value),
+                _ => return false,
             };
             let Bitvector32Term::Constant(lower_bits) = lower.as_ref() else {
                 return false;

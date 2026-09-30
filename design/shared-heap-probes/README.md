@@ -1,190 +1,101 @@
-# Shared-heap-graph source probe
+# Shared-parent ownership proof
 
-This is the source-selection checkpoint for the P1
-[shared-heap-graph demo](../../issues/shared-heap-graph-demo.md), not a Click
-verification example yet. The synthetic
-[`shared_parent.c`](shared_parent.c) is ordinary sequential C fixed before its
-contracts and resource rules are written. It stays here until Click can verify
-it; adding an unproved directory under `examples/` would make the normal
-example gate fail. Later example work must use these bytes, not reshape the C
-to expose a friendlier proof state.
+This source-backed probe for the P1
+[shared-heap-graph demo](../../issues/shared-heap-graph-demo.md) uses authority
+resource semantics, selected in `click.project.json`. Its
+[`shared_parent.c`](shared_parent.c) remains the frozen sequential C source.
+The sidecar [`shared_parent.click`](shared_parent.click) describes initialization,
+retain, branch-on-count release, parent attachment, payload reads, detachment,
+and both complete destruction orders.
 
-## Selected profile
+## Program and verification boundary
 
-| Boundary | Selection |
-| --- | --- |
-| Language and target | C11, x86-64 Linux, LP64, eight-bit bytes and `-funsigned-char`. Default Click target (no sidecar `target` directive); the kernel/user-space distinction is irrelevant to this sequential `malloc`/`free` program. |
-| Compiler and C library | Pinned only to the extent Click's C0 models `malloc`/`free`, `int32`, and struct assignment. No system headers are included; like `examples/refcount`, the probe relies on Click's predeclared `int32`, `malloc`, and `free`. |
-| Shape | One `struct child { int32 refs; int32 payload; }` with a single branch-on-count `child_release` (final `free` vs nonfinal decrement in one body — the issue forbids splitting these into proof-selected entry points), plus `struct parent { struct child* kid; }` with attach/read/detach helpers and two pipelines covering both destruction orders. Allocation-failure paths release only acquired resources and return `-1`. |
+Each pipeline allocates one child and two parents, attaches both parents to the
+child, drops the creator reference, destroys one parent, reads through the
+survivor, and destroys the remaining parent. Success returns the original
+payload. Every allocation-failure path releases only what it acquired and
+returns `-1`. The final reference frees the child exactly once; both parent
+allocations are also reclaimed.
 
-Native syntax-only smoke (Click supplies `int32`, `malloc`, `free`; flags only,
-source unchanged):
+The source uses Click's C0 declarations of `int32`, `malloc`, and `free`.
+The target is the default x86-64 Linux LP64 profile with eight-bit bytes and
+unsigned plain `char`. No source refactoring, alternate release entry point,
+or proof-only C operation is used.
+
+Native syntax-only smoke, supplying those declarations without editing C:
 
 ```sh
 clang -std=c11 -Dint32=int -include stdlib.h \
   -Wall -Wextra -Werror -fsyntax-only design/shared-heap-probes/shared_parent.c
 ```
 
-## Frozen program
+This compiler check establishes syntax only. Check the ownership proof with:
 
-`child_init` establishes the creator reference (`refs == 1`). Each pipeline
-attaches the child to two parents (`parent_attach` stores the pointer and
-retains), drops the creator reference, destroys one parent, reads the payload
-through the survivor (`parent_read_payload`), destroys the remaining parent,
-and frees both parent structs. Success returns the payload; any allocation
-failure returns `-1` after releasing what was acquired.
-
-The future Click proof must show the payload read is valid with the specified
-value, the child is freed exactly once, both destruction orders discharge all
-allocation obligations, and the negative regressions in the issue fail for
-their intended local reasons. A native compiler run checks C syntax only; it
-does not establish any ownership property.
-
-## Frozen-source helper checkpoint, 2026-09-23
-
-[`shared_parent.click`](shared_parent.click) now verifies all six helper bodies
-against these unchanged C bytes: `child_init`, `child_retain`, `child_release`,
-`parent_attach`, `parent_read_payload`, and `parent_detach`. Run
-`click verify design/shared-heap-probes/shared_parent.click` to check them.
-This is a helper checkpoint; neither `run_first_destroyed` nor
-`run_second_destroyed` is selected by that sidecar yet.
-
-A scratch proof of `run_first_destroyed` advances through both detaches and
-both parent frees, discharging all resources. The read helper now promises its
-`link.link` model is unchanged. At the caller, an explicit `rewrite` combines
-that promise with the pre-read `Linked(kid)` fact, so the second detach selects
-the held `child_ref(kid)`. Detach returns ownership of `&p->kid` after setting
-it to zero, allowing the parent allocation to be freed. These are helper
-contract improvements; the full caller proof is not in the sidecar yet.
-
-The remaining success-path goal is `out == payload`. The verified helper
-contracts now promise payload preservation through `child_retain`, the
-nonfinal branch of `child_release`, and `parent_attach`. Attach requires
-`separate(memory(&p->kid), memory(kid->payload))`, since it stores the link.
-`parent_detach` still has no payload-preservation promise, so the full caller
-cannot carry the initialized value through its first detach.
-
-The new pointer-base `rewrite` closes the precise snapshot gap inside detach.
-After stepping across `kid = p->kid` and the `child_release(kid)` call, an
-explicit rewrite with `kid == at(statement(2).entry, p->kid)` proves
-`at(statement(2).entry, kid->payload) == old(kid->payload)`. With a stated
-separation condition between the parent link cell and child payload, the
-proof also carries the guarded payload equality across `p->kid = 0`.
-
-The next task is the resource-invariant design recorded in the
-[shared-heap issue](../../issues/shared-heap-graph-demo.md). Adding even the
-tautological `ensures old(p->kid) == old(p->kid)` to `parent_detach` exposes a
-contract-certification failure on `child_ref`'s population-wide refcount fact.
-The helper verifies without that pure ensure. The design must decide when
-such an invariant holds, including the distinction between this sequential
-counter and a genuinely synchronized concurrent refcount, before changing
-certification or completing the frozen caller proof.
-
-An indexed `child_ref(obj, payload)` resource was also tested; its contract
-cannot choose `payload` by reading `obj->payload` before ownership is granted,
-and contract witness lets are not supported in `owns` clauses. Neither probe
-changes the frozen C.
-
-## Reduction findings, 2026-09-17
-
-Reduced against the frozen machinery with scratch sidecars (kept in
-`reduction/`). The goal was to decide whether the milestone needs a new
-resource-language primitive, as the issue asks, or whether existing counted
-populations and composites suffice.
-
-### What works (verified)
-
-A **companion encoding** avoids nesting the child capability inside the
-parent:
-
-```click
-resource child_ref(obj: struct child*) {
-    contains allocation(obj, sizeof(struct child));
-    owns object(obj);
-    fact obj->refs == count(child_ref(obj));
-}
-
-resource parent(p: struct parent*) {
-    field link: ParentLink;
-    match link {
-        ParentLink::Linked(kid) => {
-            owns p->kid;
-            fact p->kid == kid;
-            fact kid != 0;
-        },
-    }
-}
+```sh
+click verify design/shared-heap-probes/shared_parent.click
+click audit design/shared-heap-probes/shared_parent.click
 ```
 
-`parent(p)` owns only the link cell; each parent carries one **top-level**
-`child_ref(kid)` unit, tied to its parent by the `p->kid == kid` fact. With
-this shape, all of the following verify under the normal engine:
+The embedded-source regression is
+[`shared_heap_population_lifecycles.md`](../../mdtests/shared_heap_population_lifecycles.md).
+Its two caller proofs preserve payload reads, both destruction orders,
+allocation failures, and complete cleanup.
 
-- `child_init` (fold the unit), `child_retain` (`open`, execute),
-  `child_release_nonfinal` (`open`, memory bound `1 < obj->refs`),
-  `child_release_final` (`unfold`, free);
-- `parent_attach`: `p->kid = kid`, retain the unit, then
-  `fold(parent(p), { link: ParentLink::Linked(kid) })` **before** the retain
-  call (`execute_until(statement(1))`). Folding the link *after* a call was
-  not closable (see gap 3);
-- `parent_read_payload`: `unfold(link)`, `open(child_ref(kid))` to expose the
-  child object, read `kid->payload`, then refold the link;
-- a complete single-parent `pipeline` (init, attach, read, detach, final
-  release, return payload) in `reduction/full.click`.
-- a link-only parent fold (`consumes p->kid; produces parent(p)`) with no
-  population in play.
+## Contracts and resources
 
-### What does not work, and the boundary
+`child_ref(obj)` is one reference in a population. Its empty body grants no
+child-memory access. `child_control(obj)` owns the allocation, child object,
+and `authority(child_ref(obj))`; its invariant ties `obj->refs` to the exact
+population count. `child_storage(obj)` carries the same ownership before C
+initialization, without asserting anything about uninitialized fields.
+The creator establishes empty authority immediately after successful allocation.
+Initialization borrows storage and produces the first reference.
 
-1. **Nesting a memory-bearing counted family in a child slot is unsupported.**
-   A composite declared `contains child_ref(p->kid)` cannot be `unfold`ed
-   (`resource rewrite changed more than a definitional representation`) or
-   `open`ed (`resource rewrite produced an unchecked pure-fact delta`). Named
-   carriers are also refused: `owns held: child_ref(kid)` in a match arm hits
-   `named child resources currently require a constructor match arm` /
-   `resource \`child_ref\` has no fields; use ordinary unnamed ownership` /
-   `resource match children require named exclusive ownership`. The reference
-   documents the rule: "Memory and token families in a child slot ... remain
-   unsupported" (`docs/reference/language/index.md`). The companion encoding
-   above is therefore not optional; nesting is not the path.
+A named `parent(p)` instance owns the link cell and records an `Empty` or
+`Linked(kid)` model. Its reference remains a separately transferred companion
+resource. The parent does not own another copy of child control: both parents
+refer to the same population and helpers explicitly transfer the single
+control resource as needed. Named parent fold/unfold uses the ordinary checked
+memory exchange and does not change the population ledger.
 
-2. **The milestone's single branch-on-count `child_release` does not yet
-   verify.** `reduction/rel.click` gives one contract to
-   `if (obj->refs == 1) free(obj); else obj->refs = obj->refs - 1;`:
-   - `consumes child_ref(obj)` alone leaks the allocation on the nonfinal path
-     (`LiveAllocationLeak`), because the model reads a lone `consumes` as
-     "population is one and is gone";
-   - `owns child_ref(obj); consumes child_ref(obj);` instead fails the final
-     path with `missing resource fact owns child_ref(obj)`.
-   There is no single linear contract that covers "consume the last unit and
-   free" versus "consume one of many". The existing refcount example sidesteps
-   this by using two C entry points (`object_release_nonfinal` /
-   `object_release_final`), which the issue explicitly forbids. This is the
-   real reducer: Click needs a checked conditional-release shape (an effect
-   keyed by whether the population was one, or a way to state "consume the
-   final unit and release its allocation" in one contract).
+Retain borrows control and a reference and produces another reference. Attach
+uses that retain operation and produces a parent link. Payload reads borrow
+control and a reference. Release consumes one reference and control, returning
+control only when the old count exceeded one. Final release consumes empty
+authority and frees the child. Detach uses the same conditional transfer,
+naming the returned child by `old(p->kid)` because C clears the link.
 
-3. **A load fact does not survive a call for the next frontier.** In
-   `parent_attach`, folding the link after `p->kid = kid; child_retain(kid);`
-   fails to re-establish `p->kid == kid`; folding first, before the call,
-   works. The call touches a different object, so this is a frame/load-identity
-   gap, not a soundness result.
+All of these use existing `owns`, `consumes`, `produces`, `fold`, `unfold`,
+and conditional clauses. Pointer aliases must resolve to the same checked
+population; a parent-field spelling cannot create a second authority.
 
-4. **Field-bearing composites can only be reopened by unfold/refold, not
-   scoped `open`.** `open(parent(p))` is refused ("has fields; bind it with
-   `owns name: ...`") and `open(link)` does not parse, so the read shape is
-   `unfold` ... `fold`.
+## Migration corrections
 
-5. **Population arithmetic bookkeeping.** `owns X; produces X` (net +1) on a
-   function that also folds a composite left an unproved `resource population
-   invariant` VC (`count == 2`); the equivalent `consumes X; produces X` (net
-   0) verified. A `requires 1 < count(child_ref(obj))` release left a
-   `returned resource quantity fits post-population` VC, while the memory form
-   `requires 1 < obj->refs` verified.
+Three older detach fixtures borrowed one reference, consumed another, and
+also promised an extra produced reference despite only decrementing the C
+counter. `owns` already returns the borrowed survivor. The migrated contracts
+remove that duplicate output, preserving the real surviving reference and
+all payload claims. The entry-pointer handoff fixture instead conditionally
+returns child control, retaining its intended conditional-output regression.
 
-### Next chunk
+Some older caller fixtures also inferred an initial population of one merely
+from holding one reference. Their creator-population assumption is now stated
+explicitly as `requires count(child_ref(kid)) == 1`. Owning a fragment does
+not establish the global total. External callers that retain an arbitrary
+population instead state the counter's real overflow bound: one retain requires
+`count(child_ref(kid)) < 2147483647`, and two successive retains require
+`count(child_ref(kid)) < 2147483646`. These are C arithmetic preconditions,
+not a restriction that every caller starts with one reference.
 
-Adopt the companion encoding (it verifies for the read/retain/detach
-direction) and fix gap 2 first: give a branch-on-count release one checked
-contract. Gaps 3 and 5 are the next reducers; gap 1 is documented and avoided.
-No issue is filed; this note is the record.
+The final detach proof explicitly discharges the conditional payload claim:
+when the old count is at most one, its `old(count(...)) > 1` premise is false.
+This keeps the proof small under the same work limits when a preceding smart
+tactic is expanded into simple steps.
+
+The related negative fixtures still test missing references, a missing retain,
+a wrong child, an incorrect count after the first detach, missing initialization
+facts, and a leaked reference or allocation. Their C remains unchanged.
+
+Field-bearing population members, wildcard authority scopes, and concurrent
+control custody are later authority-migration checkpoints. This probe uses
+exact unary populations and sequential control ownership.

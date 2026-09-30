@@ -37,7 +37,7 @@ int32 caller(struct child* kid) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 spec enum ParentLink {
     Empty,
     Linked(struct child*),
@@ -58,9 +58,12 @@ resource parent(p: struct parent*) {
     }
 }
 
-resource child_ref(obj: struct child*) {
+resource child_ref(obj: struct child*) {}
+
+resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
     fact obj->refs == count(child_ref(obj));
 }
 
@@ -68,49 +71,42 @@ verifying "shared_heap_one_heap_parent.c";
 
 void child_retain(struct child* obj) {
     requires count(child_ref(obj)) < 2147483647;
-    owns child_ref(obj);
+    owns child_control(obj);
     produces child_ref(obj);
 } by {
-    open(child_ref(obj)) {
-        execute();
-    }
+    unfold(child_control(obj));
+    step();
+    fold(child_ref(obj));
+    fold(child_control(obj));
+    execute();
     simp();
 }
 
 void child_release(struct child* obj) {
     requires 1 <= obj->refs;
+    consumes child_control(obj);
     consumes child_ref(obj);
+    if old(obj->refs) > 1 { produces child_control(obj); }
     ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
 } by {
+    unfold(child_control(obj));
     if obj->refs == 1 {
         unfold(child_ref(obj));
+        unfold(authority(child_ref(obj)));
         execute();
         simp();
     } else {
-        open(child_ref(obj)) {
-            execute();
+        unfold(child_ref(obj));
+        have 1 < obj->refs by {
+            arithmetic() using { 1 <= obj->refs; obj->refs != 1; }
         }
-        have 1 < old(obj->refs) by {
-            arithmetic() using {
-                1 <= old(obj->refs);
-                old(obj->refs) != 1;
-            }
+        have obj->refs - 1 >= 1 by {
+            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; }
         }
-        have old(obj->refs) - 1 >= 1 by {
-            apply(int32_above_one_predecessor_is_at_least_one(old(obj->refs))) using {
-                1 < old(obj->refs);
-            }
-        }
-        have old(obj->refs) == old(count(child_ref(obj))) by { simp(); }
-        have old(count(child_ref(obj))) > 1 by {
-            simp() using {
-                old(obj->refs) > 1;
-                old(obj->refs) == old(count(child_ref(obj)));
-            }
-        }
-        have count(child_ref(obj)) != 0 by {
-            arithmetic() using { old(count(child_ref(obj))) > 1; }
-        }
+        step();
+        step();
+        fold(child_control(obj));
+        execute();
         simp();
     }
 }
@@ -119,19 +115,24 @@ void parent_attach(struct parent* p, struct child* kid) {
     requires count(child_ref(kid)) < 2147483647;
     requires kid != 0;
     consumes &p->kid;
+    owns child_control(kid);
     owns child_ref(kid);
     produces child_ref(kid);
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
 } by {
-    execute();
+    step();
+    step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+    execute();
     simp();
 }
 
 void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
+    consumes child_control(p->kid);
+    if old(count(child_ref(p->kid))) > 1 { produces child_control(old(p->kid)); }
     consumes child_ref(p->kid);
     consumes allocation(p, sizeof(struct parent));
 } by {
@@ -142,8 +143,13 @@ void parent_detach(struct parent* p) {
         ParentLink::Linked(kid) => {
             unfold(link);
             have old(p->kid) == kid by simp;
-            execute();
-            simp();
+            if p->kid->refs > 1 {
+                execute();
+                simp();
+            } else {
+                execute();
+                simp();
+            }
         },
     }
 }
@@ -151,6 +157,7 @@ void parent_detach(struct parent* p) {
 int32 caller(struct child* kid) {
     requires kid != 0;
     requires count(child_ref(kid)) == 1;
+    consumes child_control(kid);
     consumes child_ref(kid);
     ensures result == -1 or result == 0;
 } by {
@@ -165,6 +172,7 @@ int32 caller(struct child* kid) {
         else {}
     }
     let { link: link } = step(parent_attach(p, kid), {});
+    have count(child_ref(kid)) == 2 by { simp(); }
     step(child_release(kid), {});
     step(parent_detach(p), { link: link });
     step();

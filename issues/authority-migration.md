@@ -196,12 +196,13 @@ return. A verified helper can also create or consume one exact member with a
 private owned-memory body while returning authority. Its contract transfers
 the entire body through ordinary memory `consumes` or `produces` clauses, its
 standalone proof checks the birth or death, and the call applies that change
-to the concrete ledger. Creation checks live anchor storage. Checkpoints 1–4 now support the sequential
+to the concrete ledger. Creation checks live anchor storage. Checkpoints 1–5 now support the sequential
 refcount group, current and historical exact count, checked authority-bearing
 wrappers, private member bodies, numeric nested helper transfers, conditional
-release, and standalone symbolic batches. Symbolic nested transfers,
-field-bearing/wildcard populations, shared-parent migration, and worker/mutex
-migration remain pending in checkpoints 5–12. `construct(...)` has not been
+release, standalone symbolic batches, and shared-parent ownership through
+named wrappers and nested helpers. Symbolic nested transfers,
+field-bearing/wildcard populations, and worker/mutex migration remain pending
+in checkpoints 6–12. `construct(...)` has not been
 extended; authority establishment and empty cleanup use `fold`/`unfold`.
 Update this status and the inventory as commits land.
 
@@ -411,6 +412,24 @@ Preserve reads through the surviving parent and exact final reclamation.
 **Exit gate:** Wrapped members retain their population identity, opaque calls
 cannot change them without authority, and both frozen caller paths verify and
 audit. Refcount and all unmigrated consumers remain green.
+
+**Complete:** Both frozen destruction orders, surviving-parent reads,
+allocation failures, and final reclamation verify under authority semantics.
+The main sidecar audits all 48 smart sites; the related migrated fixture group
+and all remaining consumers pass the full repository gate. The C is unchanged.
+The migration also preserves checked early-consumption evidence at legacy
+proof endpoints, so a nested extra consumption cannot be hidden at return.
+
+The straight two-parent decrement-only helper uses borrowed control and a
+borrowed surviving member plus one consumed member. Its existing inputs still
+supply two units, and its output preserves the surviving unit's identity and
+returns control unconditionally. This is a stronger natural contract for C
+that cannot take a final-release branch. The earlier explicit
+`consumes 2`/`produces 1` member shape and weaker conditional control return
+using `old(count(child_ref(p->kid)))` remain unsupported at their modular and
+deferred-certification boundaries. Checkpoint 5 does not claim those interface
+gaps resolved; genuine conditional/free behavior remains covered by the main
+shared-parent and branch fixtures.
 
 ### 6. Build wildcard and field-bearing member support before pool migration
 

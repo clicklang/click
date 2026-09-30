@@ -1109,7 +1109,9 @@ fn prepare_function_claim_path(
     deferred_contract_exit_error: Option<CRuntimeError>,
     checked_returned_resources: crate::kernel::ResourceContext,
     capture_failure: bool,
+    checked_transfer: Option<&crate::kernel::functions::CheckedBoundaryResourceTransfer>,
 ) -> Result<CertifiedFunctionClaimPath, ContractPathPreparationFailure> {
+    let function = checked_transfer.map_or(function, |transfer| transfer.checked_function());
     let Some((caller_state, arguments, outcome, assumptions)) =
         certified_function_path_parts(function, path)
     else {
@@ -1187,9 +1189,22 @@ fn prepare_function_claim_path(
     let deferred_body_outcome = if deferred_contract_exit {
         match outcome {
             CFunctionOutcome::Return { value, state } => {
-                let resources = state
-                    .resources()
-                    .clone()
+                // An authority deferred exit can retain an output occurrence that was
+                // already folded in the body. The checked return context
+                // describes that occurrence, rather than a second owner.
+                // Preserve every checked output and replace only identical
+                // representations left in the body outcome.
+                let mut body_resources = state.resources().clone();
+                if state.uses_population_authority_semantics() {
+                    for fact in checked_returned_resources.facts() {
+                        if let Some(without) =
+                            body_resources.clone().without_exact_representation(fact)
+                        {
+                            body_resources = without;
+                        }
+                    }
+                }
+                let resources = body_resources
                     .try_compose_with_facts(
                         checked_returned_resources.facts().iter().cloned(),
                         &assumptions,
@@ -1228,6 +1243,7 @@ fn prepare_function_claim_path(
             function,
             arguments,
             deferred_body_outcome.as_ref().unwrap_or(outcome),
+            checked_transfer,
             &assumptions,
             &mut budget,
         ) {
@@ -1378,9 +1394,7 @@ fn prepare_function_claim_path(
     // Authority counts live in the creation ledger, while legacy counted
     // resources use counted_populations. Both observations must describe
     // the checked exit, not the reconstructed entry used to bind locals.
-    if post_state.uses_population_authority_semantics() {
-        post_state.population_effects = raw_exit_state.population_effects.clone();
-    }
+    post_state.population_effects = raw_exit_state.population_effects.clone();
     if exceptional {
         post_state.locals.set_typed(
             C_EXCEPTIONAL_RESULT_NAME.to_string(),
@@ -2199,25 +2213,28 @@ pub fn c_function_ensure_goals(
         return None;
     };
     let mut entry_state = c_function_entry_state(caller_state, function, arguments)?;
-    let expanded_entry_resources = expand_all_composite_resource_facts(
-        entry_state.resources(),
-        function.composite_resource_definitions(),
-        entry_state.memory(),
-        assumptions,
-    )?;
+    let expanded_entry_resources =
+        crate::kernel::functions::expand_all_composite_resource_facts_at_state(
+            entry_state.resources(),
+            function.composite_resource_definitions(),
+            &entry_state,
+            assumptions,
+        )?;
     entry_state = entry_state.with_resource_context(expanded_entry_resources);
     let exit_memory =
         crate::kernel::functions::function_exit_memory(caller_state, return_state, value, function);
     let claim_return_state = return_state.clone().with_memory(exit_memory.clone());
-    let post_resources = expand_all_composite_resource_facts(
+    let post_resources = crate::kernel::functions::expand_all_composite_resource_facts_at_state(
         claim_return_state.resources(),
         function.composite_resource_definitions(),
-        claim_return_state.memory(),
+        &claim_return_state,
         assumptions,
     )?;
     let mut post_state = entry_state.clone().with_memory(exit_memory);
     post_state = post_state.with_resource_context(post_resources);
     post_state.counted_populations = return_state.counted_populations.clone();
+    // Preserve checked body consumption evidence when reconstructing the exit.
+    post_state.population_effects = return_state.population_effects.clone();
     if function.return_type() != CType::Void {
         post_state
             .locals
@@ -2664,6 +2681,10 @@ impl ContractPathSetView<'_> {
                                     .cloned()
                                     .unwrap_or_else(crate::kernel::ResourceContext::new),
                                 self.capture_failure,
+                                self.set
+                                    .boundary_transfers
+                                    .get(index)
+                                    .and_then(Option::as_deref),
                             )
                             .map_err(|mut failure| {
                                 failure.reason = format!(

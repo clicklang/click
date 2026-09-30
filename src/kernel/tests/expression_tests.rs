@@ -3171,3 +3171,238 @@ fn signed_byte_arithmetic_promotes_with_range_facts() {
         "{paths:?}"
     );
 }
+
+#[test]
+fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
+    let pointer = Pointer {
+        block: "bounded".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block("bounded", 8);
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory.clone()),
+        Box::new(pointer.clone()),
+    );
+    let assumptions = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_greater_equal(load.clone(), Bitvector32Term::Constant(2)),
+        true,
+    );
+    assert_eq!(
+        assumptions.decide_condition_for_simp(&ConditionTerm::signed_greater_than(
+            load.clone(),
+            Bitvector32Term::Constant(1)
+        )),
+        Some(true)
+    );
+    assert_eq!(
+        assumptions.decide(&ConditionTerm::signed_greater_than(
+            load,
+            Bitvector32Term::Constant(1)
+        )),
+        Some(true)
+    );
+    let changed = memory
+        .clone()
+        .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+    let changed_load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(changed),
+        Box::new(pointer.clone()),
+    );
+    let other_load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory),
+        Box::new(Pointer {
+            block: pointer.block,
+            offset: PointerOffsetTerm::Constant(4),
+        }),
+    );
+    for unrelated in [changed_load, other_load] {
+        assert_ne!(
+            assumptions.decide_condition_for_simp(&ConditionTerm::signed_greater_than(
+                unrelated,
+                Bitvector32Term::Constant(1)
+            )),
+            Some(true)
+        );
+    }
+}
+
+#[test]
+fn exact_signed_constant_bounds_check_signed_endpoints() {
+    let value = Bitvector32Term::Variable(Variable(87_900));
+    let empty = PureFactContext::new();
+    for (bound, greater, expected) in [(i32::MAX, true, false), (i32::MIN, false, false)] {
+        let condition = if greater {
+            ConditionTerm::signed_greater_than(
+                value.clone(),
+                Bitvector32Term::Constant(bound as u32),
+            )
+        } else {
+            ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(bound as u32))
+        };
+        assert_eq!(empty.decide_condition_for_simp(&condition), Some(expected));
+    }
+    let at_max = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_greater_equal(
+            value.clone(),
+            Bitvector32Term::Constant(i32::MAX as u32),
+        ),
+        true,
+    );
+    assert_eq!(
+        at_max.decide_condition_for_simp(&ConditionTerm::signed_greater_than(
+            value.clone(),
+            Bitvector32Term::Constant((i32::MAX - 1) as u32)
+        )),
+        Some(true)
+    );
+    let at_min = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(i32::MIN as u32)),
+        true,
+    );
+    assert_eq!(
+        at_min.decide_condition_for_simp(&ConditionTerm::signed_less_than(
+            value,
+            Bitvector32Term::Constant((i32::MIN + 1) as u32)
+        )),
+        Some(true)
+    );
+}
+
+#[test]
+fn exact_signed_constant_bound_lookup_ignores_unrelated_facts() {
+    let value = Bitvector32Term::Variable(Variable(87_901));
+    let query = ConditionTerm::signed_greater_than(value.clone(), Bitvector32Term::Constant(1));
+    let mut samples = Vec::new();
+    for size in [64, 256, 1024] {
+        let mut assumptions = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(2)),
+            true,
+        );
+        for index in 0..size {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::signed_greater_equal(
+                    Bitvector32Term::Variable(Variable(90_000 + index)),
+                    Bitvector32Term::Constant(2),
+                ),
+                true,
+            );
+        }
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assumptions.decide_condition_for_simp(&query)
+        });
+        assert_eq!(result, Some(true));
+        samples.push(work);
+    }
+    assert!(
+        samples[2] <= samples[0].saturating_mul(2) + 10,
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premise() {
+    let pointer = Pointer {
+        block: "mirror".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block("mirror", 8);
+    let load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(memory.clone()),
+        Box::new(pointer.clone()),
+    );
+    let premise = Proposition::ConditionIs(
+        ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), load.clone()),
+        true,
+    );
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::signed_greater_than(load, Bitvector32Term::Constant(1)),
+        true,
+    );
+    let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &goal,
+            std::slice::from_ref(&premise),
+            &facts
+        )
+        .is_ok()
+    );
+    let changed = memory
+        .clone()
+        .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+    for (snapshot, address) in [
+        (changed, pointer.clone()),
+        (
+            memory,
+            Pointer {
+                block: pointer.block,
+                offset: PointerOffsetTerm::Constant(4),
+            },
+        ),
+    ] {
+        let unrelated = Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(snapshot),
+            Box::new(address),
+        );
+        let bad = Proposition::ConditionIs(
+            ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::Constant(1)),
+            true,
+        );
+        assert!(
+            crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                &bad,
+                std::slice::from_ref(&premise),
+                &facts
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &goal,
+            &[premise],
+            &crate::kernel::proof::ProofFacts::from_ordered(&[])
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
+    let value = Bitvector32Term::Variable(Variable(87_910));
+    let premise = Proposition::ConditionIs(
+        ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), value.clone()),
+        true,
+    );
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::signed_greater_than(value, Bitvector32Term::Constant(1)),
+        true,
+    );
+    let mut samples = Vec::new();
+    for size in [64, 256, 1024] {
+        let mut premises = vec![premise.clone()];
+        for index in 0..size {
+            premises.push(Proposition::ConditionIs(
+                ConditionTerm::signed_greater_equal(
+                    Bitvector32Term::Variable(Variable(91_000 + index)),
+                    Bitvector32Term::Constant(2),
+                ),
+                true,
+            ));
+        }
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+                &goal,
+                std::slice::from_ref(&premise),
+                &facts,
+            )
+        });
+        assert!(result.is_ok());
+        samples.push(work);
+    }
+    assert!(
+        samples[2] <= samples[0].saturating_mul(2) + 10,
+        "{samples:?}"
+    );
+}

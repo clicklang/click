@@ -432,7 +432,7 @@ fn member_description(block: PointerBlock) -> ResourceDescription {
 }
 
 #[test]
-fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
+fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
@@ -465,10 +465,15 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
         .expect("retain may add one member while already holding a member");
     assert!(retained.born_imported_member_since(&entry, &description));
     assert!(retained.observe_symbolic(&description).is_none());
-    assert!(matches!(
-        retained.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
-        Err(CreationRefusal::MissingMembers)
-    ));
+    let (retained_twice, _) = retained
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .expect("each checked birth adds another held member");
+    assert!(retained_twice.born_imported_member_since(&retained, &description));
+    assert!(retained_twice.observe_symbolic(&description).is_none());
+    assert_eq!(
+        retained_twice.observe(&PointerBlock::ExternalArgument, "reference"),
+        Err(CreationRefusal::UnknownTotal)
+    );
     let (restored, _) = retained
         .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
         .unwrap();
@@ -485,8 +490,12 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
         .unwrap();
     assert!(one.spent_imported_member_since(&two, &description));
     assert!(one.owns_population_member(&description));
+    let (none, _) = one
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .expect("the second explicitly held fragment can also be spent");
+    assert!(!none.owns_population_member(&description));
     assert!(matches!(
-        one.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        none.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
         Err(CreationRefusal::MissingMembers)
     ));
     let empty = CreationEvents::new()
@@ -497,10 +506,11 @@ fn opaque_helper_import_has_no_count_and_exchanges_one_member() {
         .expect("an opaque helper can birth its exact member once");
     assert!(born.born_imported_member_since(&empty, &description));
     assert!(born.owns_population_member(&description));
-    assert!(matches!(
-        born.checked_member_exchange(&PointerBlock::ExternalArgument, &description, true),
-        Err(CreationRefusal::MissingMembers)
-    ));
+    let (born_twice, _) = born
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, true)
+        .expect("repeated checked births preserve numeric fragment custody");
+    assert!(born_twice.born_imported_member_since(&born, &description));
+    assert!(born_twice.observe_symbolic(&description).is_none());
     let (spent, _) = entry
         .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
         .expect("an opaque helper can spend its exact imported member once");
@@ -1523,4 +1533,370 @@ fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
         work.push(measured);
     }
     assert!(work[2] < work[0].saturating_mul(2) + 10, "{work:?}");
+}
+
+#[test]
+fn opaque_numeric_count_keeps_multiple_births_and_deaths() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            2,
+            Some(Bitvector32Term::Constant(7)),
+            None,
+            None,
+        )
+        .unwrap();
+    let mut born = entry.clone();
+    for expected in 1..=2 {
+        born = born
+            .checked_member_exchange(&block, &description, true)
+            .unwrap()
+            .0;
+        assert_eq!(born.observe_symbolic(&description).unwrap().delta, expected);
+    }
+    let mut restored = born;
+    for expected in [1, 0] {
+        restored = restored
+            .checked_member_exchange(&block, &description, false)
+            .unwrap()
+            .0;
+        assert_eq!(
+            restored.observe_symbolic(&description).unwrap().delta,
+            expected
+        );
+    }
+    for expected in [-1, -2] {
+        restored = restored
+            .checked_member_exchange(&block, &description, false)
+            .unwrap()
+            .0;
+        assert_eq!(
+            restored.observe_symbolic(&description).unwrap().delta,
+            expected
+        );
+    }
+    assert!(matches!(
+        restored.checked_member_exchange(&block, &description, false),
+        Err(CreationRefusal::MissingMembers)
+    ));
+}
+
+#[test]
+fn opaque_numeric_count_delta_survives_exact_call_custody() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let mut caller = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            1,
+            Some(Bitvector32Term::Constant(7)),
+            None,
+            None,
+        )
+        .unwrap();
+    for _ in 0..2 {
+        caller = caller
+            .checked_member_exchange(&block, &description, true)
+            .unwrap()
+            .0;
+    }
+    assert_eq!(caller.observe_symbolic(&description).unwrap().delta, 2);
+    let child = caller.enter_call();
+    let sent = child
+        .transfer_call_fact(&caller, &child, &description, true)
+        .unwrap()
+        .transfer_call_fact(&caller, &child, &description, false)
+        .unwrap();
+    assert_eq!(sent.observe_symbolic(&description).unwrap().delta, 2);
+    let returned = sent
+        .transfer_call_fact(&child, &caller, &description, false)
+        .unwrap()
+        .transfer_call_fact(&child, &caller, &description, true)
+        .unwrap()
+        .finish_call(&caller)
+        .unwrap();
+    assert_eq!(returned.observe_symbolic(&description).unwrap().delta, 2);
+}
+
+#[test]
+fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
+    let block = PointerBlock::ExternalArgument;
+    let description = member_description(block.clone());
+    let [AlgebraicValue::C(pointer)] = description.arguments() else {
+        panic!("pointer anchor")
+    };
+    let count = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::Value(pointer.clone()))],
+    };
+    let evaluate = |events: CreationEvents| {
+        let mut state =
+            CState::new()
+                .with_population_creation_tracking()
+                .with_resource_context(ResourceContext::new().unchecked_with_fact(
+                    CResourceFact::own(CResource::PopulationAuthority(description.clone())),
+                ));
+        Arc::make_mut(&mut state.population_effects).creation = Some(events);
+        crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+            &state,
+            &count,
+            &PureFactContext::new(),
+            &BTreeMap::new(),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap()
+    };
+    let import = |entry_count| {
+        CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &description,
+                2,
+                Some(Bitvector32Term::Constant(entry_count)),
+                None,
+                None,
+            )
+            .unwrap()
+    };
+    let mut born = import(7);
+    let mut spent = import(7);
+    for _ in 0..2 {
+        born = born
+            .checked_member_exchange(&block, &description, true)
+            .unwrap()
+            .0;
+        spent = spent
+            .checked_member_exchange(&block, &description, false)
+            .unwrap()
+            .0;
+    }
+    assert_eq!(
+        evaluate(born)[0].value,
+        CValue::Int32(Bitvector32Term::Constant(9))
+    );
+    assert_eq!(
+        evaluate(spent)[0].value,
+        CValue::Int32(Bitvector32Term::Constant(5))
+    );
+    let mut overflow = import((i32::MAX - 1) as u32);
+    for _ in 0..2 {
+        overflow = overflow
+            .checked_member_exchange(&block, &description, true)
+            .unwrap()
+            .0;
+    }
+    assert!(
+        evaluate(overflow)[0]
+            .obligations
+            .iter()
+            .any(|obligation| obligation.context() == Some("count(reference) fits in int32"))
+    );
+}
+
+#[test]
+fn count_alias_uses_only_a_checked_owned_authority_anchor() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let [AlgebraicValue::C(CValue::Pointer(anchor))] = description.arguments() else {
+        panic!("pointer anchor")
+    };
+    let alias = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(9_850_100))),
+            byte_width: 4,
+        },
+    };
+    let count = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::Value(CValue::pointer(alias.clone())))],
+    };
+    let events = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            2,
+            Some(Bitvector32Term::Constant(7)),
+            None,
+            None,
+        )
+        .unwrap();
+    let mut state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own(
+                CResource::PopulationAuthority(description.clone()),
+            )),
+        );
+    Arc::make_mut(&mut state.population_effects).creation = Some(events);
+    let equal = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
+        true,
+    );
+    let evaluate = |state: &CState, assumptions: &PureFactContext| {
+        crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+            state,
+            &count,
+            assumptions,
+            &BTreeMap::new(),
+            &mut ExecutionBudget::default(),
+        )
+    };
+    assert_eq!(
+        evaluate(&state, &equal).unwrap()[0].value,
+        CValue::Int32(Bitvector32Term::Constant(7))
+    );
+    assert!(
+        evaluate(&state, &PureFactContext::new()).is_err(),
+        "an unproved pointer alias cannot borrow the authority"
+    );
+    assert!(
+        evaluate(
+            &state.clone().with_resource_context(ResourceContext::new()),
+            &equal
+        )
+        .is_err(),
+        "pointer equality cannot supply missing ownership"
+    );
+    let mut foreign = state;
+    Arc::make_mut(&mut foreign.population_effects).creation = Some(CreationEvents::new());
+    assert!(
+        evaluate(&foreign, &equal).is_err(),
+        "an ownership head without authenticated ledger authority cannot supply a count"
+    );
+}
+
+#[test]
+fn count_alias_lookup_does_not_scan_unrelated_authority_heads() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let [AlgebraicValue::C(CValue::Pointer(anchor))] = description.arguments() else {
+        panic!("pointer anchor")
+    };
+    let alias = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(Bitvector32Term::Variable(Variable(9_850_101))),
+            byte_width: 4,
+        },
+    };
+    let count = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::Value(CValue::pointer(alias.clone())))],
+    };
+    let equal = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(alias, anchor.pointer().clone()),
+        true,
+    );
+    let samples = [64usize, 256, 1024].map(|size| {
+        let events = CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &description,
+                2,
+                Some(Bitvector32Term::Constant(7)),
+                None,
+                None,
+            )
+            .unwrap();
+        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
+            CResource::PopulationAuthority(description.clone()),
+        ));
+        for index in 0..size {
+            let other =
+                member_description(PointerBlock::Symbolic(Variable(9_860_000 + index as u64)));
+            resources = resources
+                .unchecked_with_fact(CResourceFact::own(CResource::PopulationAuthority(other)));
+        }
+        let mut state = CState::new()
+            .with_population_creation_tracking()
+            .with_resource_context(resources);
+        Arc::make_mut(&mut state.population_effects).creation = Some(events);
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                &state,
+                &count,
+                &equal,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths[0].value, CValue::Int32(Bitvector32Term::Constant(7)));
+        work
+    });
+    assert!(samples[0] > 0, "lookup must charge its work: {samples:?}");
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 128),
+        "authority alias lookup must grow at most logarithmically: {samples:?}"
+    );
+}
+
+#[test]
+fn allocation_companion_transfers_cleanup_without_creation_privilege() {
+    let block = PointerBlock::Heap(990_811);
+    let caller = CreationEvents::new().created(block.clone());
+    let helper = caller.enter_call();
+    let held = helper
+        .transfer_call_anchor(&caller, &helper, &block)
+        .unwrap();
+    assert_eq!(
+        held,
+        helper
+            .transfer_call_anchor(&caller, &helper, &block)
+            .unwrap()
+    );
+    assert!(!held.created_here(&block));
+    assert_eq!(
+        held.establish(&block, "reference"),
+        Err(CreationRefusal::NotCreationEnvironment)
+    );
+    assert!(
+        !held
+            .retired(&block)
+            .unwrap()
+            .finish_call(&caller)
+            .unwrap()
+            .tracks_storage_anchor(&block)
+    );
+}
+
+#[test]
+fn borrowed_allocation_companion_returns_its_cleanup_obligation() {
+    let block = PointerBlock::Heap(990_812);
+    let caller = CreationEvents::new().created(block.clone());
+    let helper = caller.enter_call();
+    let held = helper
+        .transfer_call_anchor(&caller, &helper, &block)
+        .unwrap();
+    assert_eq!(
+        held.finish_call(&caller),
+        Err(CreationRefusal::OutstandingOwnership)
+    );
+    let returned = held
+        .transfer_call_anchor(&held, &caller, &block)
+        .unwrap()
+        .finish_call(&caller)
+        .unwrap();
+    assert!(returned.created_here(&block));
+    assert!(returned.retired(&block).is_ok());
+}
+
+#[test]
+fn allocation_companion_cannot_free_storage_with_live_population() {
+    let block = PointerBlock::Heap(990_813);
+    let caller = CreationEvents::new()
+        .created(block.clone())
+        .establish(&block, "reference")
+        .unwrap();
+    let helper = caller.enter_call();
+    let held = helper
+        .transfer_call_anchor(&caller, &helper, &block)
+        .unwrap();
+    assert_eq!(
+        held.retired(&block),
+        Err(CreationRefusal::OutstandingAuthority)
+    );
+    let unrelated = CreationEvents::new();
+    assert!(
+        held.transfer_call_anchor(&unrelated, &caller, &block)
+            .is_err()
+    );
 }

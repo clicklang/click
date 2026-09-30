@@ -5205,7 +5205,10 @@ impl ResourceContext {
         }
         let residual = candidates.iter().cloned().collect::<Vec<_>>();
         for entry in entries {
-            selected.remove_entry(entry);
+            // An owner can retire supported observations in this bucket too.
+            if selected.storage.facts.contains_key(&entry) {
+                selected.remove_entry(entry);
+            }
         }
         for fact in residual {
             selected.insert_fact(fact);
@@ -5295,7 +5298,9 @@ impl ResourceContext {
             }
             let residual = candidates.iter().cloned().collect::<Vec<_>>();
             for entry in entries.iter() {
-                self.remove_entry(*entry);
+                if self.storage.facts.contains_key(entry) {
+                    self.remove_entry(*entry);
+                }
             }
             for residual in residual {
                 self.insert_fact(residual);
@@ -5316,7 +5321,9 @@ impl ResourceContext {
             }
             let residual = candidates.iter().cloned().collect::<Vec<_>>();
             for entry in entries.iter() {
-                self.remove_entry(*entry);
+                if self.storage.facts.contains_key(entry) {
+                    self.remove_entry(*entry);
+                }
             }
             for residual in residual {
                 self.insert_fact(residual);

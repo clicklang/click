@@ -145,9 +145,10 @@ pub(crate) fn normalize_using_conditions(
     facts: &super::ProofFacts,
 ) -> Result<(), ConditionalNormalizationError> {
     let mut conditions = std::collections::HashMap::new();
-    // Integer and int32 equality are symmetric. Keep the reverse spelling in
-    // this selected-condition map so `normalize using` can close a goal
-    // whose operands were lowered in the opposite order.  This is deliberately
+    // Equality is symmetric; signed comparisons also have an exact mirrored
+    // spelling with swapped operands. Retain those spellings so
+    // `normalize using` can close the same condition in either orientation.
+    // This is deliberately
     // built from the cited premises only; it never searches ambient facts.
     let mut integer_alpha_conditions: std::collections::HashMap<
         u64,
@@ -179,6 +180,18 @@ pub(crate) fn normalize_using_conditions(
             ConditionTerm::Bitvector32Equal(left, right) => {
                 Some(ConditionTerm::Bitvector32Equal(right.clone(), left.clone()))
             }
+            ConditionTerm::Bitvector32SignedLessThan(left, right) => Some(
+                ConditionTerm::Bitvector32SignedGreaterThan(right.clone(), left.clone()),
+            ),
+            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => Some(
+                ConditionTerm::Bitvector32SignedLessThan(right.clone(), left.clone()),
+            ),
+            ConditionTerm::Bitvector32SignedLessEqual(left, right) => Some(
+                ConditionTerm::Bitvector32SignedGreaterEqual(right.clone(), left.clone()),
+            ),
+            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => Some(
+                ConditionTerm::Bitvector32SignedLessEqual(right.clone(), left.clone()),
+            ),
             _ => None,
         };
         if let Some(reverse) = reverse

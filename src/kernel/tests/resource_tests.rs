@@ -4303,6 +4303,54 @@ fn batch_resource_consumption_splits_without_repeated_normalization() {
 }
 
 #[test]
+fn incremental_memory_merge_retires_dependent_entries_once() {
+    let assumptions = PureFactContext::new();
+    let base = Pointer {
+        block: "supported-merge".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let first = CResourceFact::own_memory(memory_range(base.clone(), 0, 1));
+    let second = CResourceFact::own_memory(memory_range(base.clone(), 1, 2));
+    let unrelated = CResourceFact::own_token("unrelated".into(), Vec::new());
+    let resources =
+        ResourceContext::new().unchecked_with_facts([first.clone(), second, unrelated.clone()]);
+    let occurrence = *resources
+        .storage
+        .index
+        .exact
+        .get(&first)
+        .unwrap()
+        .iter()
+        .next()
+        .and_then(|entry| resources.storage.occurrence_by_entry.get(entry))
+        .unwrap();
+    let memory = CMemory::new().with_block("supported-merge", 8);
+    let resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
+        occurrence,
+        &first,
+        [CResourceFact::view_memory(memory_range(base.clone(), 0, 1))],
+        &memory,
+    );
+    let required = CResourceFact::own_memory(memory_range(base, 0, 2));
+    let remaining = resources
+        .without_fact_incrementally(&required, &assumptions)
+        .expect("merging the selected owner bucket retires each supported entry once");
+    assert!(!remaining.satisfies_fact(&required, &assumptions));
+    assert!(remaining.satisfies_fact(&unrelated, &assumptions));
+    assert!(
+        remaining
+            .clone()
+            .without_fact_incrementally(&required, &assumptions)
+            .is_none()
+    );
+    assert!(
+        remaining
+            .without_fact_incrementally(&unrelated, &assumptions)
+            .is_some()
+    );
+}
+
+#[test]
 fn batch_resource_consumption_normalizes_when_a_requirement_needs_a_merge() {
     let base = Pointer {
         block: "p".into(),

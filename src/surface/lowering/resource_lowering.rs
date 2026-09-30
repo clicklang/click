@@ -975,7 +975,7 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                 )
                 .map(Some),
                 Requirement::Proposition(proposition) => {
-                    requirement_proposition_prop_with_assumptions(
+                    requirement_proposition_and_facts_with_assumptions(
                         parameters,
                         arguments,
                         state,
@@ -984,7 +984,9 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                         click_function_environment,
                         &assumptions,
                     )
-                    .map(|proposition| Some(vec![proposition]))
+                    .map(|(proposition, facts)| {
+                        Some(std::iter::once(proposition).chain(facts).collect())
+                    })
                 }
                 Requirement::Resource(resource) => resource_clause_loadable_props_at_state(
                     resource,
@@ -2908,6 +2910,27 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
     click_function_environment: &ClickFunctionEnvironment,
     assumptions: &PureFactContext,
 ) -> Result<Proposition, ClickError> {
+    requirement_proposition_and_facts_with_assumptions(
+        parameters,
+        arguments,
+        state,
+        proposition,
+        predicate_environment,
+        click_function_environment,
+        assumptions,
+    )
+    .map(|(proposition, _)| proposition)
+}
+
+fn requirement_proposition_and_facts_with_assumptions(
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+    proposition: &ClickProposition,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+    assumptions: &PureFactContext,
+) -> Result<(Proposition, Vec<Proposition>), ClickError> {
     // The requirement is elaborated as the contract elaborates it and
     // lowered by the kernel at the entry state, with the parameters bound
     // to their argument values where the state does not bind them.
@@ -2925,7 +2948,7 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
             lowering_state = lowering_state.with_local(name, value);
         }
     }
-    let (lowered, _, obligations) =
+    let (lowered, facts, obligations) =
         crate::kernel::c_lower_spec_proposition_at_state(&lowering_state, &spec, None, assumptions)
             .map_err(|message| {
                 ClickError::new(format!(
@@ -2956,7 +2979,16 @@ pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
             folded_matched_instance_note(&lowering_state, parameters, arguments, assumptions)
         )));
     }
-    Ok(lowered)
+    // The kernel selected this lowering path, and every outstanding read
+    // obligation was checked above. Its auxiliary facts include the checked
+    // population lower bound; retaining them avoids losing ownership-derived
+    // facts when the written requirement observes a count.
+    let facts = if state.uses_population_authority_semantics() {
+        facts
+    } else {
+        Vec::new()
+    };
+    Ok((lowered, facts))
 }
 
 pub(in crate::surface) fn parameter_values(

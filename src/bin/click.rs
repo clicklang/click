@@ -468,6 +468,11 @@ mod tests {
             include_str!("../../design/shared-heap-probes/shared_parent.c"),
         )
         .unwrap();
+        fs::write(
+            directory.join("click.project.json"),
+            include_str!("../../design/shared-heap-probes/click.project.json"),
+        )
+        .unwrap();
         let sidecar = directory.join("shared_parent.click");
         let source = include_str!("../../design/shared-heap-probes/shared_parent.click");
         let source = source.replacen(
@@ -500,6 +505,11 @@ mod tests {
         fs::write(
             directory.join("shared_parent.c"),
             include_str!("../../design/shared-heap-probes/shared_parent.c"),
+        )
+        .unwrap();
+        fs::write(
+            directory.join("click.project.json"),
+            include_str!("../../design/shared-heap-probes/click.project.json"),
         )
         .unwrap();
         let sidecar = directory.join("shared_parent.click");

@@ -3196,6 +3196,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
             deferred_contract_exits: vec![false],
             deferred_contract_exit_errors: vec![None],
             checked_returned_resources: vec![ResourceContext::new()],
+            boundary_transfers: vec![None],
             completion_origin_state: None,
         }]],
         reuse_diagnostic: None,
@@ -3289,6 +3290,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         deferred_contract_exits: vec![false],
         deferred_contract_exit_errors: vec![None],
         checked_returned_resources: vec![ResourceContext::new()],
+        boundary_transfers: vec![None],
         completion_origin_state: None,
     };
     let certified = |cases: Vec<Vec<CContractPathSet>>| {
@@ -3380,6 +3382,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
             deferred_contract_exits: vec![false],
             deferred_contract_exit_errors: vec![None],
             checked_returned_resources: vec![ResourceContext::new()],
+            boundary_transfers: vec![None],
             completion_origin_state: None,
         }]],
         reuse_diagnostic: None,

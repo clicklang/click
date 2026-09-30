@@ -32,12 +32,60 @@ family, including after free. Initialization uses an ordinary storage resource
 containing authority, independent of the not-yet-initialized C counter. The
 sequential refcount group is complete.
 
+## Shared-parent migration status
+
+The frozen `design/shared-heap-probes/shared_parent.c` now has an authority
+sidecar, selected by `design/shared-heap-probes/click.project.json`. Its eight
+function proofs verify, and all 48 smart sites pass expansion audit. The main
+proof covers initialization, both destruction orders, allocation failure,
+surviving-parent payload reads, and complete reclamation.
+
+All 18 shared-parent mdtests listed in the lifecycle row below now select
+`resource_semantics=authority` in their Click fence. This includes
+`shared_heap_produced_ensure_transport.md`, which exercises ordinary named
+resource field transport under the authority profile without introducing a
+population. The other fixtures use empty reference members and separately
+owned control containing memory, allocation, and exact population authority;
+uninitialized storage omits the counter invariant until initialization.
+Named parent resources use ordinary checked memory exchange, preserving the
+population ledger. No proof retries through the legacy population path.
+
+The migrated detach contracts return an already borrowed surviving reference
+through `owns`; they no longer promise an additional duplicate output. The
+entry-pointer handoff returns control conditionally using the original
+pointer. External callers state genuine signed-counter overflow bounds for
+one or two increments, rather than inferring the total from locally held
+members. Fixtures that require a creator total of one state that assumption
+explicitly. C source and payload/lifetime guarantees remain unchanged.
+
+The straight two-parent fixture has a nonterminal decrement-only release: its
+existing `Count > 1` precondition preserves control, and detach borrows one
+surviving member while consuming one other member. This admits the same two
+input units and returns one with preserved identity; unconditional control
+return is stronger than its earlier guarded return. The weaker candidate that
+consumed two units and produced one, with control guarded by
+`old(count(child_ref(p->kid))) > 1`, remains unsupported: deferred guard
+certification refused Count ownership, and modular application refused the
+explicit two-to-one quantity shape. These limitations are not claimed fixed.
+The main and branch fixtures retain conditional control return and final-free
+coverage. All C and payload claims remain unchanged.
+
+Focused verification and expansion audits pass for the main proof and the
+related positive boundary fixtures. The main proof audits 48 smart sites;
+one-parent, two-parent branch, attach-frame, branch-release, and straight
+two-parent fixtures audit another 69. Composed attach/detach, creator release,
+population certification, final detach, and entry-pointer handoff also verify
+and audit. Missing-member, missing-retain, wrong-child, false final-count,
+initialized-body-gap, and detach-leak negatives retain their intended refusals.
+Checkpoint 5 is complete: the full `scripts/check.sh --no-fail-fast` gate passes,
+including all 2,569 mdtests and the frozen shared-heap example checks.
+
 ## Source-backed example and design groups
 
 | Group and current path | Checked-in files | Existing property to preserve |
 | --- | --- | --- |
 | Sequential refcount project; authority | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. All six related positive count-contract fixtures also use authority. |
-| Shared parent; legacy | `design/shared-heap-probes/shared_parent.click`, `design/shared-heap-probes/README.md` | Parent wrappers carry child references through attachment, detach, nested calls, both destruction orders, surviving-parent reads, and final reclamation. The design probe's C is a source pattern to retain. |
+| Shared parent; authority | `design/shared-heap-probes/shared_parent.click`, `design/shared-heap-probes/README.md`, `design/shared-heap-probes/click.project.json` | Parent wrappers carry child references through attachment, detach, nested calls, both destruction orders, surviving-parent reads, and final reclamation. The frozen main C verifies eight functions and audits 48 smart sites; the related boundary fixtures pass the full repository gate. |
 | Bounded pool; legacy | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
 | Earlier authority design; non-executable | `design/concurrency-probes/shared-count-authority.md`, `design/concurrency-probes/explicit-authority.md`, `design/concurrency-probes/README.md` | Preserve the motivating hostile cases and protocol questions; these documents do not define the approved source interface. The migration issue supersedes the whole-population mutex-custody plan. |
 
@@ -61,13 +109,17 @@ paths in each row are relative to `mdtests/`. The pass/fail ledger below comes
 from each fixture's checked-in `expect` block; names alone do not determine
 the expected result.
 
+All 18 fixtures in the shared-parent lifecycle row select authority semantics.
+Their contracts and intended refusals pass the full repository gate; see the
+verification and audit evidence above.
+
 | Group | Files and preserved behavior |
 | --- | --- |
 | Refcount and exact population basics | `counted_resource_refcount_transitions.md`, `counted_resource_population_body.md`, `counted_resource_population_lifetime.md`, `counted_resource_independent_populations.md`, `counted_release_preserves_nonfinal_allocation.md`, `population_initialized_cleanup.md`, `population_unit_needs_its_body.md`, `population_simple_exit_rejects_final_leak.md`: exact count/body relation, independent populations, nonfinal allocation preservation, initialization/finalization, and refusal to leak or produce a unit without its body. `counted_resource_rejects_minting.md`, `counted_resource_rejects_double_spend.md`, `counted_resource_transfer.md` pin ordinary ownership transfer and spend, even where they do not spell `count`. |
 | Quantity, arithmetic, patterns, snapshots | `counted_distinct_populations_symbolic_entry.md`, `counted_distinct_populations_symbolic_sum.md`, `population_symbolic_increment_bounded.md`, `population_symbolic_increment_overflow.md`, `population_cleanup_rejects_partial_quantity.md`, `fold_rejects_a_negative_quantity.md`, `let_bound_constant_quantity.md`, `resource_count_patterns.md`, `resource_pattern_counts_cross_contracts.md`, `resource_count_observe_witness.md`, `resource_count_predicate_snapshot.md`, `population_count_states_its_transition.md`, `population_count_across_a_produces_transition.md`, `c_contract_executes_resource_count.md`, `c_step_contract_resource_count_is_model_local.md`, `produced_population_count_in_ensured_predicate.md`, `consumed_population_count_in_ensured_predicate.md`, `predicate_without_count_ignores_resource_population.md`, `a_population_count_is_not_a_wrapped_total.md`: exact versus wildcard totals, bounded `int32` sums, nonnegative coefficients, contracts and predicates, historical snapshots, witnesses, and an unrelated predicate that must remain usable. |
 | Open body, call, and return boundaries | `resource_population_open.md`, `population_open_calls_explicit_piece.md`, `call_inside_open_population_does_not_assume_its_body.md`, `population_call_with_restored_body.md`, `population_call_requires_closed_body.md`, `population_call_drops_the_cached_body_cell.md`, `population_call_keeps_what_it_may_and_drops_the_body_cell.md`, `population_call_rejects_open_alias.md`, `population_call_rejects_reentrant_restored_body.md`, `population_rejects_nested_open.md`, `population_rejects_nested_alias_open.md`, `load_origin_first_seen_per_function.md`, `return_population_rejects_missing_increment.md`, `return_population_rejects_missing_ownership.md`, `return_population_rejects_unupdated_sibling.md`, `return_population_rejects_wrong_release.md`: scoped restoration, no duplicated body access, call invalidation, and return checking. Some old positive body-open permissions must be replaced by ordinary ownership plus authority, while their memory and count claims remain. |
 | Consumption at close and contribution | `counted_resource_contribution_counter.md`, `population_consumption_at_close.md`, `population_consumption_missing_contract.md`, `population_consumption_nested_overconsume.md`, `population_consumption_repeated.md`, `population_consumption_wrong_increment.md`: exact two, one spend across scope close/return, and refusal of missing, repeated, or incorrect consumption. |
-| Shared parent lifecycle | `shared_heap_one_heap_parent.md`, `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_two_parent_branch_release_positive.md`, `shared_heap_two_parent_caller.md`, `shared_heap_population_lifecycles.md`, `shared_heap_population_certification.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_composed_attach_detach.md`, `shared_heap_creator_release_repro.md`, `shared_heap_final_detach_repro.md`, `shared_heap_detach_old_resource_handoff.md`, `shared_heap_detach_leak_diagnostic.md`, `child_release_branch_on_count.md`, `parent_attach_call_frame.md`: parent-owned child membership, aliases, failed allocation, both destruction orders, preserved payload, and final free. Missing child/retain/wrong child and leak variants must still fail. |
+| Shared parent lifecycle | `shared_heap_one_heap_parent.md`, `shared_heap_one_heap_parent_missing_child_ref.md`, `shared_heap_one_heap_parent_missing_retain.md`, `shared_heap_one_heap_parent_wrong_child.md`, `shared_heap_two_parent_branch_release.md`, `shared_heap_two_parent_branch_release_positive.md`, `shared_heap_two_parent_caller.md`, `shared_heap_population_lifecycles.md`, `shared_heap_population_certification.md`, `shared_heap_population_initialized_body_gap.md`, `shared_heap_composed_attach_detach.md`, `shared_heap_creator_release_repro.md`, `shared_heap_final_detach_repro.md`, `shared_heap_detach_old_resource_handoff.md`, `shared_heap_detach_leak_diagnostic.md`, `shared_heap_produced_ensure_transport.md`, `child_release_branch_on_count.md`, `parent_attach_call_frame.md`: parent-owned child membership, aliases, failed allocation, both destruction orders, preserved payload, and final free. Missing child/retain/wrong child and leak variants must still fail. |
 | Loop and pure expression sites | `loop_old_count_invariant.md`, `loop_invariant_body.md`, `pure_click_functions.md`, `recursive_call_precondition_bounds_a_decremented_argument.md`, `recursive_call_precondition_refuses_a_decremented_lower_bound.md`, `recursion_measure_refusal_spells_its_measure_and_goal.md`: old versus current count in invariants and proof facts, predicate/pure-function evaluation, and diagnostics at recursive calls. |
 
 The field-based legacy refusals are separate migration targets: `resource_fields_reject_count.md` and `resource_fields_reject_hidden_count.md` currently reject with `resource ... has fields and is not countable`. Under explicit authority, field-bearing members must become countable positive cases with retained identity. `resource_fields_reject_quantity.md` rejects even `1 of cell(p)` under that same classification; the migration must distinguish any remaining symbolic-quantity limitation from countability. `resource_field_child_equations.md`, `resource_field_child_equation_rejects_other_start.md`, and `resource_unfold_binds_children_and_fields.md` protect distinct field identity and child binding independent of count.
@@ -109,8 +161,8 @@ Public explanations to revise as groups migrate are `docs/concepts/resources.md`
 
 ## Path ledger for later checkpoints
 
-The refcount project and the focused fixtures identified above select authority
-semantics; the remaining rows are legacy. The intended order is refcount
+The refcount project, shared-parent project, and their migrated fixtures
+identified above select authority semantics; the remaining rows are legacy. The intended order is refcount
 fixtures, parent, field-bearing/wildcard and pool, mutex custody, then abstract
 worker accounting. For each row, record the new fixture or unchanged migrated
 source proof, its positive claim, its corresponding rejection, the selected

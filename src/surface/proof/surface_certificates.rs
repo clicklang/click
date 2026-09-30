@@ -3693,6 +3693,22 @@ pub(super) fn plan_recorded_int32_successor_le_implies_lt_for_context(
     let mut tactics = plan_explicit_successor_le_implies_lt(goal, premise_pairs)?;
     if fixed_state_application_closes_goal {
         remove_trailing_theorem_assumption(&mut tactics)?;
+    } else if matches!(
+        goal,
+        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedGreaterThan(_, _), true)
+    ) {
+        let ProofTactic::ApplyTheoremUsing { application, .. } = tactics.first()? else {
+            return None;
+        };
+        // Execution retains the theorem's `lower < value` conclusion.
+        // Close the mirrored goal through checked condition normalization,
+        // rather than claiming its different spelling is an exact premise.
+        let mirror = ClickProposition::Comparison {
+            left: application.arguments[0].clone(),
+            operator: ComparisonOperator::LessThan,
+            right: application.arguments[1].clone(),
+        };
+        *tactics.last_mut()? = ProofTactic::NormalizeUsing(vec![mirror]);
     }
     Some(tactics)
 }
@@ -5876,13 +5892,24 @@ fn plan_explicit_successor_le_implies_lt(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let (lower, value) = goal_exact_less_than_parts(goal)?;
+    let (lower, value) = match goal {
+        Proposition::ConditionIs(ConditionTerm::Bitvector32SignedLessThan(lower, value), true)
+        | Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedGreaterThan(value, lower),
+            true,
+        ) => (lower.as_ref(), value.as_ref()),
+        _ => return None,
+    };
     for (bound_kernel, bound_surface) in premise_pairs {
         let Some((successor, bound_value)) = signed_nonstrict_parts(bound_kernel) else {
             continue;
         };
         if bound_value != value
-            || successor != &Bitvector32Term::add(lower.clone(), Bitvector32Term::Constant(1))
+            || successor
+                != &crate::kernel::canonical_term(&Bitvector32Term::add(
+                    lower.clone(),
+                    Bitvector32Term::Constant(1),
+                ))
         {
             continue;
         }

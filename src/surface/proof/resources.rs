@@ -2656,7 +2656,7 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
                 definition.name()
             )
         })?;
-        let lowered = lower_outcome_proposition_with_assumptions(
+        let (lowered, facts) = lower_outcome_proposition_with_auxiliary_facts(
             parameters,
             arguments,
             pre_state,
@@ -2676,6 +2676,9 @@ fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
                 describe_resource_facts(contained_resources.facts(), parameters, arguments)
             )
         })?;
+        for fact in facts {
+            propositions.insert(fact);
+        }
         propositions.insert(lowered);
     }
     Ok(())
@@ -3396,11 +3399,14 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 ))
             })?;
         let fact_state = if let Some((projected, _)) = &authority_projection {
+            // The checked private-body projection has retired only the
+            // selected head and its observations; unrelated ambient views
+            // remain subject to the usual dependency checks.
             state.clone().with_resource_context(projected.clone())
         } else {
             state.clone()
         };
-        let lowered_fact = lower_outcome_proposition_with_assumptions(
+        let (lowered_fact, lowering_facts) = lower_outcome_proposition_with_auxiliary_facts(
             parameters,
             arguments,
             &fact_state,
@@ -3461,7 +3467,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             DynamicViewDependencyIndex::new(&temporary_views, &temporary_unbound_views);
         if let Some(binding) = dynamic_body_fact_dependency(
             &lowered_fact,
-            &state,
+            &fact_state,
             available_pure_facts.assumptions(),
             &temporary_view_index,
         )
@@ -3481,6 +3487,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             )));
         }
         surface_propositions.record_lowering(&fact, &lowered_fact)?;
+        for fact in lowering_facts {
+            available_pure_facts.insert(fact);
+        }
         available_pure_facts.insert(lowered_fact);
     }
 
@@ -3768,6 +3777,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             ))
         })?;
         let mut closing_view = false;
+        let mut authority_closing_fact_state = None;
         let mut folded_representation_already_present = false;
         let mut folded_authority_occurrence = None;
         let authority_control_body = guard_state.uses_population_authority_semantics()
@@ -3926,14 +3936,19 @@ fn fold_composite_resources_on_outcome_with_facts(
                     .ok_or_else(|| {
                         ClickError::new("control resource has no compiled definition")
                     })?;
-                state
-                    .checked_authority_wrapper_body(&population, definition, assumptions)
+                let (projected, _) = state
+                    .checked_authority_wrapper_closing_projection(
+                        &population,
+                        definition,
+                        assumptions,
+                    )
                     .map_err(|message| {
                         ClickError::new(format!(
                             "`{claim_label}` path {path_index}: closing `open({})` {message}",
                             describe_resource_clause(resource)
                         ))
                     })?;
+                authority_closing_fact_state = Some(state.clone().with_resource_context(projected));
             } else if state
                 .counted_population(name, population_arguments)
                 .is_none()
@@ -4003,6 +4018,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                 let CFunctionOutcome::Return { value, state } = &outcome else {
                     unreachable!("the return outcome was checked above")
                 };
+                let state = authority_closing_fact_state.as_ref().unwrap_or(state);
                 let lowered = lower_outcome_proposition_with_assumptions(
                     parameters,
                     arguments,
@@ -4036,10 +4052,10 @@ fn fold_composite_resources_on_outcome_with_facts(
             };
             if let Some(binding) = dynamic_body_fact_dependency(
                 &required,
-                match &outcome {
+                authority_closing_fact_state.as_ref().unwrap_or(match &outcome {
                     CFunctionOutcome::Return { state, .. } => state,
                     _ => pre_state,
-                },
+                }),
                 &body_assumptions,
                 &temporary_view_index,
             )
@@ -5145,6 +5161,132 @@ fn materialize_composite_resource_cells_from_snapshot(
 #[cfg(test)]
 mod v11_resource_dependency_tests {
     use super::*;
+
+    #[test]
+    fn authority_body_read_projection_retires_only_its_owned_observations() {
+        let source = r#"
+resource child_ref(obj: struct child*) {}
+resource child_control(obj: struct child*) {
+    contains allocation(obj, sizeof(struct child));
+    owns object(obj);
+    owns authority(child_ref(obj));
+    fact defined(obj->refs);
+    fact defined(obj->payload);
+    fact obj->refs == count(child_ref(obj));
+}
+verifying "control.c";
+void child_release(struct child* obj) {
+    requires 1 < obj->refs;
+    owns child_control(obj);
+    owns child_ref(obj);
+    consumes child_ref(obj);
+    ensures obj->payload == old(obj->payload);
+} by {
+    unfold(child_control(obj));
+    unfold(child_ref(obj));
+    have obj->refs - 1 >= 1 by {
+        apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
+            1 < obj->refs;
+        }
+    }
+    step();
+    fold(child_control(obj));
+    execute();
+    simp();
+}
+"#;
+        let project = ClickProject::new(
+            "control.click",
+            [ClickModuleSource::new("control.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        });
+        let verified = crate::surface::verify_c0_project(
+            &project,
+            &[("control.c", "struct child { int32 refs; int32 payload; }; void child_release(struct child* obj) { obj->refs = obj->refs - 1; }")],
+        )
+        .expect("the fixed helper's authority contract verifies");
+        let execution = &verified[0].checked_execution;
+        let path = &execution.paths()[0];
+        let Proposition::CFunctionVerifies { outcome, .. } =
+            implication_body(path.theorem().proposition())
+        else {
+            panic!("the helper has a checked C outcome")
+        };
+        let CFunctionOutcome::Return { state, .. } = outcome else {
+            panic!("the helper returns")
+        };
+        let assumptions = path.assumptions();
+        let head = state.resources().facts().iter().find(|fact| {
+            matches!(fact.resource(), CResource::Composite { name, .. } if name == "child_control")
+        }).unwrap();
+        let definition = execution
+            .function()
+            .composite_resource_definitions()
+            .iter()
+            .find(|definition| definition.name() == "child_control")
+            .unwrap();
+        let (children, _) = state
+            .checked_authority_wrapper_body(head, definition, assumptions)
+            .expect("the returned control owns its authenticated body");
+        let range = children
+            .iter()
+            .find_map(CResourceFact::memory_own_range)
+            .unwrap();
+        let view = CResourceFact::view_memory(range.clone());
+        let occurrence = state.resources().owned_occurrences_for_fact(head)[0];
+        // This is the exact owner observation published by a modular return,
+        // with its support occurrence, not an independently returned view.
+        let observed = state.clone().with_resource_context(
+            state
+                .resources()
+                .clone()
+                .unchecked_with_supported_facts_from_occurrence_with_memory(
+                    occurrence,
+                    head,
+                    [view.clone()],
+                    state.memory(),
+                ),
+        );
+        assert!(
+            observed
+                .resources()
+                .exact_projection_support(&view)
+                .is_some()
+        );
+        let fact = Proposition::CMemoryReadDefined {
+            memory: observed.memory().clone(),
+            pointer: range.base().offset_by_bytes(4),
+            value_type: CType::Int32,
+        };
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[]);
+        assert!(
+            dynamic_body_fact_dependency(&fact, &observed, assumptions, &no_temporary_views,)
+                .is_err(),
+            "an observation alone does not grant a stable-view loan"
+        );
+        let (projected, _) = observed
+            .checked_authority_wrapper_projection(head, definition, assumptions)
+            .unwrap();
+        let projected_state = observed.clone().with_resource_context(projected);
+        assert!(dynamic_body_fact_dependency(
+            &fact, &projected_state, assumptions, &no_temporary_views,
+        ).unwrap().is_none(), "the checked private body grants owned memory access");
+        let unbound = projected_state.clone().with_resource_context(
+            projected_state
+                .resources()
+                .clone()
+                .unchecked_with_fact(view),
+        );
+        assert!(
+            dynamic_body_fact_dependency(&fact, &unbound, assumptions, &no_temporary_views,)
+                .is_err(),
+            "an unrelated unbound view must still be refused beside ownership"
+        );
+    }
 
     fn binding_for(
         support: crate::kernel::ResourceOccurrenceId,

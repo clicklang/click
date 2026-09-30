@@ -4444,12 +4444,45 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
     ) -> Result<(ResourceContext, Bitvector32Term), String> {
+        self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
+    }
+
+    /// Closing an open control checks actual owned children, not its suspended
+    /// invariant. This projection grants custody reads and publishes no facts.
+    pub(crate) fn checked_authority_wrapper_closing_projection(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+        self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
+    }
+
+    fn authority_wrapper_fact_projection(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+        require_folded: bool,
+    ) -> Result<(ResourceContext, Bitvector32Term), String> {
         let (children, count) =
-            self.checked_authority_wrapper_body(selected, definition, assumptions)?;
-        let projected = self
-            .resources
-            .clone()
-            .try_compose_with_facts_delaying_normalization(children, assumptions)
+            self.authority_wrapper_body(selected, definition, assumptions, require_folded)?;
+        // Retire the head before composing its body. Its ownership observations
+        // can otherwise coalesce with a child and retire that child's access.
+        let mut projected = self.resources.clone();
+        if projected.satisfies_fact(selected, assumptions) {
+            projected = projected
+                .without_fact_incrementally(selected, assumptions)
+                .ok_or("control fact projection lost its checked head")?;
+        }
+        // An open body may already hold these children. Reuse that custody;
+        // composing it twice would duplicate exclusive allocation/authority.
+        let missing = children
+            .into_iter()
+            .filter(|child| !projected.satisfies_fact(child, assumptions))
+            .collect::<Vec<_>>();
+        let projected = projected
+            .try_compose_with_facts_delaying_normalization(missing, assumptions)
             .map_err(|error| format!("control body ownership refused: {error:?}"))?;
         Ok((projected, count))
     }
@@ -4514,14 +4547,16 @@ impl CState {
                     Bitvector32Term::subtract(imported.entry_count, quantity)
                 }
             } else {
-                match imported.delta {
-                    0 => imported.entry_count,
-                    1 => Bitvector32Term::add(imported.entry_count, Bitvector32Term::Constant(1)),
-                    -1 => Bitvector32Term::subtract(
+                match imported.delta.cmp(&0) {
+                    std::cmp::Ordering::Equal => imported.entry_count,
+                    std::cmp::Ordering::Greater => Bitvector32Term::add(
                         imported.entry_count,
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::Constant(imported.delta.unsigned_abs()),
                     ),
-                    _ => return Err("control authority has an unsupported count change".into()),
+                    std::cmp::Ordering::Less => Bitvector32Term::subtract(
+                        imported.entry_count,
+                        Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                    ),
                 }
             }
         };
@@ -4751,11 +4786,29 @@ impl CState {
             children.push(child);
         }
         if !require_folded
-            && children
+            && let Some(missing) = children
                 .iter()
-                .any(|child| !self.resources.satisfies_fact(child, assumptions))
+                .find(|child| !self.resources.satisfies_fact(child, assumptions))
         {
-            return Err("Requires the owned authority control body".into());
+            let kind = if missing.allocation().is_some() {
+                "allocation"
+            } else {
+                match missing.resource() {
+                    CResource::Memory(_) => "memory",
+                    CResource::PopulationAuthority(_) => "population authority",
+                    _ => "resource",
+                }
+            };
+            let detail = missing.allocation().map(|(pointer, bytes)| {
+                let detail = format!("anchor={pointer:?}, bytes={bytes:?}");
+                detail.chars().take(256).collect::<String>()
+            });
+            return Err(match detail {
+                Some(detail) => {
+                    format!("Requires the owned authority control body: missing {kind} ({detail})")
+                }
+                None => format!("Requires the owned authority control body: missing {kind}"),
+            });
         }
         Ok((
             children,

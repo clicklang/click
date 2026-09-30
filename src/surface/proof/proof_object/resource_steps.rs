@@ -1894,6 +1894,7 @@ impl<'a> Proof<'a> {
         if self
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !matches!(resource, ResourceClause::Named { .. })
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
             && !self.is_authority_transfer_wrapper(resource)
@@ -1973,6 +1974,7 @@ impl<'a> Proof<'a> {
         if self
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !matches!(resource, ResourceClause::Named { .. })
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
             && !self.is_authority_transfer_wrapper(resource)
@@ -2065,6 +2067,7 @@ impl<'a> Proof<'a> {
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !self.is_authority_transfer_wrapper(resource)
+            && !matches!(resource, ResourceClause::Named { .. })
         {
             return Err(self.step_error(
                 "resource unfold after function outcome is unavailable in authority mode",
@@ -2074,6 +2077,9 @@ impl<'a> Proof<'a> {
             return Err(self.step_error(
                 "population authority `unfold` must run before the function reaches its outcome",
             ));
+        }
+        if let ResourceClause::Named { binding, .. } = resource {
+            return self.apply_instance_rewrite(binding, resource, true);
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("outcome resource `unfold` requires an execution proof"));
@@ -2153,6 +2159,7 @@ impl<'a> Proof<'a> {
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !self.is_authority_transfer_wrapper(resource)
+            && !matches!(resource, ResourceClause::Named { .. })
         {
             return Err(self.step_error(
                 "resource fold after function outcome is unavailable in authority mode",

@@ -8775,6 +8775,9 @@ pub struct CContractPathSet {
     /// completed at that state certifies the rebased path: the rebase
     /// checked the two entry representations definitionally equal.
     pub(super) completion_origin_state: Option<CState>,
+    /// Authenticated entry custody for each path, including partitioned proofs.
+    pub(super) boundary_transfers:
+        Vec<Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>>,
 }
 
 /// A complete function frontier produced from only the exact function's
@@ -8858,6 +8861,8 @@ pub struct CCheckedFunctionExecution {
     /// Original contract caller state when a kernel-checked proof entered C
     /// execution through a definitionally equal resource representation.
     pub(super) entry_representation_origin: Option<CState>,
+    /// Original checked input selection; later certification must not rebuild it.
+    pub(super) boundary_transfer: Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
 }
 
@@ -8961,7 +8966,15 @@ impl CCheckedFunctionExecution {
     }
 
     pub(crate) fn function(&self) -> &CFunction {
-        &self.function
+        self.boundary_transfer
+            .as_deref()
+            .map_or(&self.function, |transfer| transfer.checked_function())
+    }
+
+    pub(crate) fn boundary_transfer(
+        &self,
+    ) -> Option<&Arc<super::functions::CheckedBoundaryResourceTransfer>> {
+        self.boundary_transfer.as_ref()
     }
 
     pub(crate) fn function_arguments(&self) -> &[CExpression] {
@@ -8974,6 +8987,14 @@ impl CCheckedFunctionExecution {
     /// resource occurrence/loan root.
     pub(crate) fn caller_state(&self) -> Option<&CState> {
         self.entry_representation_origin.as_ref()
+    }
+
+    /// Allocation return accounting reads borrowed inputs in the immutable
+    /// checked entry snapshot, before C may mutate a pointer naming them.
+    pub(crate) fn allocation_entry_state(&self) -> &CState {
+        self.entry_representation_origin
+            .as_ref()
+            .unwrap_or(&self.state)
     }
 
     /// Whether two checked executions are the same, naming the first
@@ -9038,6 +9059,8 @@ impl CCheckedFunctionExecution {
                 other.entry_representation_origin.is_some()
             ));
         }
+        // Entry capabilities carry custody authorization, rather than an
+        // observable outcome. Independent checks may capture distinct receipts.
         if self.execution.paths.len() != other.execution.paths.len() {
             return Err(format!(
                 "path counts differ: {} versus {}",

@@ -180,3 +180,216 @@ fn authority_conditional_release_expansion_roundtrips_every_smart_site() {
         });
     }
 }
+
+#[test]
+fn authority_borrowed_member_handoff_expands_every_smart_site() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("shared_heap_detach_old_resource_handoff.md"),
+        include_str!("../../../mdtests/shared_heap_detach_old_resource_handoff.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let c = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let project = ClickProject::new(
+        "handoff.click",
+        [ClickModuleSource::new("handoff.click", source, [])],
+    )
+    .with_c_profile(CProjectProfile {
+        target: None,
+        runtime: None,
+        resource_semantics: ResourceSemanticsMode::Authority,
+    });
+    verify_c0_project(&project, &c).expect("the original handoff proof verifies");
+    let sites = c0_project_smart_tactic_source_sites(&project, &c).unwrap();
+    assert!(!sites.is_empty());
+    for site in sites {
+        let position =
+            c0_project_tactic_source_position(&project, &c, &site.claim_label, site.source_index)
+                .unwrap();
+        let expanded =
+            expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
+                .unwrap();
+        let expanded_project = ClickProject::new(
+            "handoff.click",
+            [ClickModuleSource::new("handoff.click", expanded, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        });
+        verify_c0_project(&expanded_project, &c).unwrap_or_else(|error| {
+            panic!(
+                "{} site {} ({}) lost the checked entry borrow: {}",
+                site.claim_label,
+                site.source_index,
+                site.tactic_name,
+                error.message()
+            )
+        });
+    }
+}
+
+#[test]
+fn authority_owned_member_supplies_nested_release_count_bound() {
+    let child_release = SOURCE
+        .split("void release_one(struct child* obj)")
+        .next()
+        .unwrap();
+    let source = format!(
+        r#"{child_release}
+void release_one(struct child* obj) {{
+    consumes child_control(obj);
+    consumes child_ref(obj);
+    if old(count(child_ref(obj))) > 1 {{ produces child_control(obj); }}
+    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
+}} by {{
+    if obj->refs > 1 {{ execute(); simp(); }}
+    else {{ execute(); simp(); }}
+}}
+"#
+    );
+    verify(&source).expect("the checked owned member supplies the nested helper's count bound");
+}
+
+#[test]
+fn authority_nonterminal_detach_keeps_folded_named_output_once() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("shared_heap_two_parent_caller.md"),
+        include_str!("../../../mdtests/shared_heap_two_parent_caller.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let c = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let project_for = |source: &str| {
+        ClickProject::new(
+            "nonterminal.click",
+            [ClickModuleSource::new("nonterminal.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        })
+    };
+    crate::instrumentation::with_default_tactic_limits(|| {
+        let project = project_for(source);
+        verify_c0_project(&project, &c).expect("the original named-output proof verifies");
+        let sites = c0_project_smart_tactic_source_sites(&project, &c)
+            .unwrap()
+            .into_iter()
+            .filter(|site| site.claim_label == "parent_detach.contract")
+            .collect::<Vec<_>>();
+        assert!(!sites.is_empty());
+        for site in sites {
+            let position = c0_project_tactic_source_position(
+                &project,
+                &c,
+                &site.claim_label,
+                site.source_index,
+            )
+            .unwrap();
+            let expanded =
+                expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
+                    .unwrap();
+            verify_c0_project(&project_for(&expanded), &c).expect(
+                "the named-output expansion preserves one survivor and one output instance",
+            );
+        }
+        let duplicated_survivor = source.replace(
+            "    owns child_ref(p->kid);\n    consumes child_ref(p->kid);",
+            "    owns child_ref(p->kid);\n    consumes child_ref(p->kid);\n    produces child_ref(old(p->kid));",
+        );
+        assert_ne!(duplicated_survivor, source);
+        assert!(
+            verify_c0_project(&project_for(&duplicated_survivor), &c).is_err(),
+            "a checked output cannot create an extra surviving unit"
+        );
+    });
+}
+
+#[test]
+fn mirrored_execution_bound_expands_to_checked_normalization() {
+    let source = r#"verifying "bound.c";
+void bound(int32 value) {
+    requires 2 <= value;
+    ensures old(value) > 1;
+} by {
+    execute();
+    have old(value) > 1 by {
+        simp() using { 2 <= old(value); }
+    }
+    simp();
+}
+"#;
+    let c = [("bound.c", "void bound(int32 value) {}")];
+    crate::instrumentation::with_default_tactic_limits(|| {
+        verify_c0_sources(source, &c).expect("execution compares the same signed value");
+        let expansion = expand_c0_tactic_source_at(source, &c, 8, 9)
+            .expect("the mirrored execution closure expands");
+        verify_c0_sources(&expansion, &c)
+            .expect("the mirrored execution closure has a checked normalization");
+    });
+}
+
+#[test]
+fn mirrored_strict_signed_bound_expands_to_checked_successor_rule() {
+    let source = "theorem bound(value: int32) {\nrequires 2 <= value;\nensures value > 1 by {\nsimp();\n}\n}\n";
+    crate::instrumentation::with_default_tactic_limits(|| {
+        verify_c0_sources(source, &[])
+            .expect("a mirrored strict bound follows from its successor bound");
+        let expanded = expand_c0_tactic_source_at(source, &[], 4, 1).unwrap();
+        verify_c0_sources(&expanded, &[]).expect("the mirrored successor certificate verifies");
+    });
+}
+
+#[test]
+fn strict_successor_bound_does_not_wrap_signed_maximum() {
+    let source = "theorem bound(value: int32) {\nrequires 2147483647 <= value;\nensures value > 2147483647 by { simp(); }\n}\n";
+    crate::instrumentation::with_default_tactic_limits(|| {
+        assert!(
+            verify_c0_sources(source, &[]).is_err(),
+            "signed maximum has no successor"
+        );
+    });
+}
+
+#[test]
+fn authority_parent_entry_alias_expansion_preserves_later_resource_proof() {
+    crate::instrumentation::with_default_tactic_limits(|| {
+        let source = include_str!("../../../design/shared-heap-probes/shared_parent.click");
+        let c = [(
+            "shared_parent.c",
+            include_str!("../../../design/shared-heap-probes/shared_parent.c"),
+        )];
+        let project_for = |source: &str| {
+            ClickProject::new(
+                "parent.click",
+                [ClickModuleSource::new("parent.click", source, [])],
+            )
+            .with_c_profile(CProjectProfile {
+                target: None,
+                runtime: None,
+                resource_semantics: ResourceSemanticsMode::Authority,
+            })
+        };
+        let project = project_for(source);
+        verify_c0_project(&project, &c).expect("the original parent lifecycle verifies");
+        let line = source
+            .lines()
+            .position(|line| line.contains("have old(p->kid) == kid by simp;"))
+            .unwrap()
+            + 1;
+        let expanded = expand_c0_project_tactic_source_at(&project, &c, line, 13).unwrap();
+        verify_c0_project(&project_for(&expanded), &c)
+            .expect("expanding the entry alias keeps later resource proofs equivalent");
+    });
+}

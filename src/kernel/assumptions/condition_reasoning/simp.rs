@@ -5,6 +5,9 @@ impl PureFactContext {
         if let Some(value) = self.exact_condition_value(condition) {
             return Some(value);
         }
+        if let Some(value) = self.decide_exact_signed_constant_order(condition) {
+            return Some(value);
+        }
 
         match condition {
             ConditionTerm::AlgebraicEqual(left, right) => {
@@ -218,6 +221,9 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         if let Some(value) = self.exact_condition_value(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_exact_signed_constant_order(condition) {
             return Some(value);
         }
         if let ConditionTerm::Constant(value) = condition {

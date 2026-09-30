@@ -1569,7 +1569,9 @@ impl CheckedResourceRewrite {
         call_events: &CheckedCallEvents,
         selected_children: Option<Arc<[(String, Variable)]>>,
     ) -> Result<Self, String> {
-        if before_state.uses_population_authority_semantics() {
+        if before_state.uses_population_authority_semantics()
+            && !matches!(selected.resource(), CResource::Instance(_))
+        {
             if let CResource::Composite { name, .. } = selected.resource()
                 && let Some(definition) = function.composite_resource_definition(name)
                 && definition.contains().iter().any(|spec| {
@@ -1894,6 +1896,31 @@ impl CheckedResourceRewrite {
                 .ok_or_else(|| {
                     "instance definition is not registered on the function".to_string()
                 })?;
+            // Ordinary named memory resources retain their existing checked
+            // definitional exchange. Population members and authority cannot
+            // be introduced through this path: those require ledger evidence.
+            if before_state.uses_population_authority_semantics() {
+                let memory_only = |spec: &crate::kernel::CResourceSpec| {
+                    matches!(
+                        spec.term(),
+                        crate::kernel::CResourceTerm::Memory(_)
+                            | crate::kernel::CResourceTerm::Token { .. }
+                    )
+                };
+                if !definition.children.is_empty()
+                    || !definition.contains().iter().all(memory_only)
+                    || definition.matched.as_ref().is_some_and(|body| {
+                        body.arms.iter().any(|arm| {
+                            !arm.children.is_empty() || !arm.contains.iter().all(memory_only)
+                        })
+                    })
+                {
+                    return Err(
+                        "authority-mode named resource rewrite requires an ordinary memory body"
+                            .into(),
+                    );
+                }
+            }
             let unfold = before_state
                 .resources()
                 .owned_instance(instance.identity())
@@ -1909,7 +1936,12 @@ impl CheckedResourceRewrite {
             )
             .map_err(|refusal| refusal.describe())?;
             let expected = rewrite.state;
-            let allowed = rewrite.semantic_facts;
+            let allowed = rewrite.semantic_facts.into_iter().chain(
+                rewrite
+                    .body_clauses
+                    .iter()
+                    .map(|clause| clause.proposition.clone()),
+            );
             let mut unchanged = after_state.clone();
             unchanged = unchanged.with_resource_context(before_state.resources.clone());
             if unchanged != *before_state {
@@ -1961,7 +1993,14 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             let allowed = allowed
                 .into_iter()
                 .collect::<std::collections::BTreeSet<_>>();
-            if introduced.iter().any(|fact| !allowed.contains(fact)) {
+            // A visible return projection may repeat a fact already checked
+            // at its frozen snapshot. Accept it only when the input context
+            // independently proves that exact memory/resource proposition.
+            if introduced.iter().any(|fact| {
+                !allowed.contains(fact)
+                    && !(matches!(fact, Proposition::CMemoryReadDefined { .. })
+                        && assumptions.proves_atomic_memory_or_resource(fact))
+            }) {
                 return Err("instance rewrite introduced an unchecked fact".to_string());
             }
             return Ok(Self {
@@ -3014,9 +3053,10 @@ fn resource_contexts_match_modulo_redundant_views(
 #[derive(Clone)]
 pub(crate) struct CheckedFunctionEntry {
     caller_state: CState,
-    function: CFunction,
+    function: Arc<CFunction>,
     arguments: Vec<CExpression>,
     entry_state: CState,
+    boundary_transfer: Option<Arc<crate::kernel::functions::CheckedBoundaryResourceTransfer>>,
     /// The facts the proof assumes at entry: the contract's requirements
     /// and the caller's facts, before any step. Recorded evidence is
     /// checked under these, not under each step's full context, so the
@@ -3038,11 +3078,28 @@ impl CheckedFunctionEntry {
         if &entry_state != expected_entry_state {
             return None;
         }
+        let function = Arc::new(function.clone());
+        let boundary_transfer = if caller_state.uses_population_authority_semantics() {
+            Some(
+                crate::kernel::functions::capture_checked_boundary_resource_transfer(
+                    caller_state,
+                    function.clone(),
+                    arguments,
+                    &assumptions,
+                    &mut ExecutionBudget::beside_live_state(),
+                )
+                .ok()?
+                .ok()?,
+            )
+        } else {
+            None
+        };
         let mut entry = Self {
             caller_state: caller_state.clone(),
-            function: function.clone(),
+            function,
             arguments: arguments.to_vec(),
             entry_state,
+            boundary_transfer,
             assumptions,
             relation_facts: None,
         };
@@ -3068,7 +3125,7 @@ impl CheckedFunctionEntry {
         arguments: &[CExpression],
         assumptions: &PureFactContext,
     ) -> Option<CState> {
-        if &self.function != function || self.arguments != arguments {
+        if self.function.as_ref() != function || self.arguments != arguments {
             return None;
         }
         if &self.caller_state == caller_state {
@@ -3090,20 +3147,29 @@ impl CheckedFunctionEntry {
         function: &CFunction,
         arguments: &[CExpression],
     ) -> Option<&CState> {
-        (&self.function == function && self.arguments == arguments).then_some(&self.entry_state)
+        (self.function.as_ref() == function && self.arguments == arguments)
+            .then_some(&self.entry_state)
     }
 
     pub(crate) fn resource_relation_assumptions(
         &self,
         assumptions: &PureFactContext,
     ) -> Option<PureFactContext> {
-        let (_, propositions) =
+        let (_, propositions) = if self.entry_state.uses_population_authority_semantics() {
+            crate::kernel::functions::expand_all_composite_resource_facts_and_propositions_at_state(
+                self.entry_state.resources(),
+                self.function.composite_resource_definitions(),
+                &self.entry_state,
+                assumptions,
+            )?
+        } else {
             crate::kernel::functions::expand_all_composite_resource_facts_and_propositions(
                 self.entry_state.resources(),
                 self.function.composite_resource_definitions(),
                 self.entry_state.memory(),
                 assumptions,
-            )?;
+            )?
+        };
         Some(
             propositions
                 .into_iter()
@@ -6103,7 +6169,7 @@ fn events_use_the_function_definitions(
                 definitions.contains(rewrite.definition())
                     && rewrite.consumption_contract.as_ref().is_none_or(|entry| {
                         !checked_entries.insert(Arc::as_ptr(entry) as usize)
-                            || &entry.function == function
+                            || entry.function.as_ref() == function
                     })
             }
             CheckedExecutionEvent::Branch(branch) => {
@@ -7481,7 +7547,7 @@ impl ExecutionProofCore {
                 reserved.extend(crate::kernel::proposition_variables(
                     &Proposition::CFunctionExecutes {
                         state: entry.caller_state.clone(),
-                        function: entry.function.clone(),
+                        function: entry.function.as_ref().clone(),
                         arguments: entry.arguments.clone(),
                         outcome: CFunctionOutcome::Return {
                             value: CValue::Void,
@@ -8473,6 +8539,10 @@ impl ExecutionProofCore {
                 .then_some(self.function_entry.as_ref())
                 .flatten()
                 .map(|entry| entry.caller_state().clone()),
+            boundary_transfer: has_checked_entry
+                .then_some(self.function_entry.as_ref())
+                .flatten()
+                .and_then(|entry| entry.boundary_transfer.clone()),
             checked_call_events: self.retained_call_events(),
         })
     }
@@ -8665,7 +8735,7 @@ impl ExecutionProofCore {
                 loan_evidence,
                 deferred_contract_exit,
                 deferred_contract_exit_error,
-            ) = match crate::kernel::functions::checked_contract_exit_outcome(
+            ) = match crate::kernel::functions::checked_contract_exit_outcome_with_boundary_transfer(
                 if has_checked_entry {
                     self.function_entry
                         .as_ref()
@@ -8674,7 +8744,15 @@ impl ExecutionProofCore {
                 } else {
                     candidates.state()
                 },
-                function,
+                if has_checked_entry && candidates.state().uses_population_authority_semantics() {
+                    self.function_entry
+                        .as_ref()
+                        .expect("checked entry exists")
+                        .function
+                        .as_ref()
+                } else {
+                    function
+                },
                 candidates.arguments(),
                 completed,
                 body_outcome.clone(),
@@ -8685,6 +8763,13 @@ impl ExecutionProofCore {
                 // call evidence belongs to calls inside its body; it does
                 // not mean the function lent its own inputs at entry.
                 crate::kernel::functions::ResourceTransitionPurpose::FunctionBoundary,
+                if has_checked_entry {
+                    self.function_entry
+                        .as_ref()
+                        .and_then(|entry| entry.boundary_transfer.as_deref())
+                } else {
+                    None
+                },
             ) {
                 Ok(Ok(exit)) => exit,
                 Ok(Err(error)) => (
@@ -12689,6 +12774,115 @@ mod authority_transfer_wrapper_scaling_tests {
         assert!(
             samples.windows(2).all(|pair| pair[1] <= pair[0] + 128),
             "wrapper work must grow at most logarithmically with its unrelated frame: {samples:?}"
+        );
+    }
+    #[test]
+    fn authority_named_memory_rewrite_preserves_population_ledger() {
+        use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
+        let schema =
+            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let instance = ResourceInstance::new(
+            Variable(9_850_001),
+            "cell".into(),
+            vec![].into(),
+            schema.clone(),
+            vec![int32(7).into()].into(),
+        )
+        .unwrap();
+        let definition = CCompositeResourceDefinition::new(
+            "cell",
+            vec![],
+            None,
+            false,
+            vec![crate::kernel::CResourceSpec::owned_memory(
+                crate::kernel::CMemorySegment {
+                    base: CExpression::Value(CValue::pointer(crate::kernel::Pointer::symbolic(
+                        Variable(9_850_002),
+                    ))),
+                    start: CExpression::Value(int32(0)),
+                    end: CExpression::Value(int32(1)),
+                    element_width: 4,
+                    guard: None,
+                },
+            )],
+            vec![],
+        )
+        .with_instance_schema(Some(schema));
+        let function = c_function(
+            CType::Int32,
+            "test",
+            vec![],
+            CStatement::Return(CExpression::Value(int32(7))),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let selected = CResourceFact::own(CResource::Instance(instance.clone()));
+        let folded = CState::new()
+            .with_population_creation_tracking()
+            .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+        let facts = ProofFacts::default();
+        let (open, introduced) = crate::kernel::rewrite_resource_instance(
+            &folded,
+            &instance,
+            &definition,
+            facts.assumptions(),
+            true,
+        )
+        .unwrap();
+        let open_facts = introduced
+            .into_iter()
+            .fold(facts.clone(), |facts, fact| facts.with_fact(fact));
+        CheckedResourceRewrite::check(
+            &function,
+            &folded,
+            &facts,
+            &selected,
+            &open,
+            &open_facts,
+            &CheckedCallEvents::default(),
+        )
+        .expect("ordinary named memory is a checked representation exchange in authority mode");
+        let forged_facts = open_facts
+            .clone()
+            .with_fact(Proposition::CMemoryReadDefined {
+                memory: open.memory().clone(),
+                pointer: crate::kernel::Pointer::symbolic(Variable(9_850_004)),
+                value_type: CType::Int32,
+            });
+        assert!(
+            CheckedResourceRewrite::check(
+                &function,
+                &folded,
+                &facts,
+                &selected,
+                &open,
+                &forged_facts,
+                &CheckedCallEvents::default(),
+            )
+            .is_err(),
+            "a named exchange cannot invent definedness of an unrelated cell"
+        );
+        let mut forged = open.clone();
+        Arc::make_mut(&mut forged.population_effects).creation = Some(
+            folded
+                .population_effects
+                .creation
+                .as_ref()
+                .unwrap()
+                .created(crate::kernel::PointerBlock::Heap(9_850_003)),
+        );
+        assert!(
+            CheckedResourceRewrite::check(
+                &function,
+                &folded,
+                &facts,
+                &selected,
+                &forged,
+                &open_facts,
+                &CheckedCallEvents::default()
+            )
+            .is_err(),
+            "a named memory exchange cannot alter creation or population evidence"
         );
     }
 }

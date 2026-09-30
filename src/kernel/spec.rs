@@ -6037,23 +6037,65 @@ fn evaluate_resource_count_paths(
         .map(|(arguments, mut facts, mut obligations)| {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             if authority_mode {
-                let [Some(AlgebraicValue::C(CValue::Pointer(pointer)))] = arguments.as_slice()
-                else {
+                let [Some(AlgebraicValue::C(CValue::Pointer(_)))] = arguments.as_slice() else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
-                let anchor = pointer.pointer();
                 let description = ResourceDescription::new(
                     name.to_owned(),
                     arguments.iter().flatten().cloned().collect(),
                     ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
                 );
-                let authority =
-                    CResourceFact::own(CResource::PopulationAuthority(description.clone()));
                 let creation = state
                     .population_effects
                     .creation
                     .as_ref()
                     .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?;
+                // Count observes an already owned authority; pointer equality
+                // never creates or transfers one. Try only indexed exact
+                // aliases of this explicit anchor, authenticating the held
+                // description in the live ledger before using its count.
+                let owned_description = |candidate: &ResourceDescription| {
+                    let required =
+                        CResourceFact::own(CResource::PopulationAuthority(candidate.clone()));
+                    state
+                        .resources()
+                        .directly_supporting_fact(&required, &path_assumptions)
+                        .and_then(|fact| fact.owned_resource())
+                        .and_then(|resource| match resource {
+                            CResource::PopulationAuthority(owned)
+                                if creation.owns_population_authority(owned) =>
+                            {
+                                Some(owned.clone())
+                            }
+                            _ => None,
+                        })
+                };
+                let canonical = owned_description(&description).or_else(|| {
+                    let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+                    else {
+                        return None;
+                    };
+                    path_assumptions
+                        .exact_pointer_aliases(pointer.pointer())
+                        .cloned()
+                        .chain(path_assumptions.exact_pointer_offset_aliases(pointer.pointer()))
+                        .find_map(|alias| {
+                            crate::instrumentation::record_deterministic_work(1);
+                            let mut value = pointer.clone();
+                            value.replace_pointer(alias);
+                            let candidate = ResourceDescription::new(
+                                description.family().to_owned(),
+                                vec![AlgebraicValue::C(CValue::Pointer(value))].into(),
+                                description.schema().clone(),
+                            );
+                            owned_description(&candidate)
+                        })
+                });
+                let description = canonical.unwrap_or(description);
+                let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                    return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
+                };
+                let anchor = pointer.pointer();
                 // Consuming an authority after its population is proved empty
                 // preserves that exact zero as an immutable observation. It
                 // does not restore ownership or permission to change members.
@@ -6064,6 +6106,8 @@ fn evaluate_resource_count_paths(
                         obligations,
                     });
                 }
+                let authority =
+                    CResourceFact::own(CResource::PopulationAuthority(description.clone()));
                 if !state
                     .resources
                     .satisfies_fact(&authority, &path_assumptions)
@@ -6089,14 +6133,21 @@ fn evaluate_resource_count_paths(
                         true,
                     );
                     facts.push(ExecutionPureFact::certified(minimum.clone()));
-                    let delta = symbolic
-                        .symbolic_delta
-                        .clone()
-                        .or_else(|| match symbolic.delta {
-                            -1 => Some((false, Bitvector32Term::Constant(1))),
-                            1 => Some((true, Bitvector32Term::Constant(1))),
-                            _ => None,
-                        });
+                    let delta =
+                        symbolic
+                            .symbolic_delta
+                            .clone()
+                            .or_else(|| match symbolic.delta.cmp(&0) {
+                                std::cmp::Ordering::Less => Some((
+                                    false,
+                                    Bitvector32Term::Constant(symbolic.delta.unsigned_abs()),
+                                )),
+                                std::cmp::Ordering::Greater => Some((
+                                    true,
+                                    Bitvector32Term::Constant(symbolic.delta.unsigned_abs()),
+                                )),
+                                std::cmp::Ordering::Equal => None,
+                            });
                     let count = match delta {
                         None => entry,
                         Some((true, quantity)) => {

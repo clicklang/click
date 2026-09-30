@@ -1,5 +1,16 @@
 # Two parent links share one child resource
 
+The caller starts with the creator's one reference. Its explicit population
+precondition records that total; borrowing control alone permits an arbitrary
+entry population.
+
+Here `child_release` only decrements and requires a total above one, so it
+borrows and preserves control. `parent_detach` borrows one surviving reference and consumes one other
+reference; the total therefore remains positive, and it returns control
+unconditionally through the original child pointer after clearing the parent
+field. These contracts preserve the original inputs and strengthen the
+resource return guarantee without changing C or the payload claim.
+
 ```c filename=shared_heap_two_parent_caller.c
 struct child { int32 refs; int32 payload; };
 struct parent { struct child* kid; };
@@ -29,7 +40,7 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 spec enum ParentLink {
     Empty,
     Linked(struct child*),
@@ -47,9 +58,12 @@ resource parent(p: struct parent*) {
     }
 }
 
-resource child_ref(obj: struct child*) {
+resource child_ref(obj: struct child*) {}
+
+resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
     fact obj->refs == count(child_ref(obj));
 }
 
@@ -57,28 +71,32 @@ verifying "shared_heap_two_parent_caller.c";
 
 void child_retain(struct child* obj) {
     requires count(child_ref(obj)) < 2147483647;
-    owns child_ref(obj);
+    owns child_control(obj);
     produces child_ref(obj);
 } by {
-    open(child_ref(obj)) { execute(); }
+    unfold(child_control(obj));
+    step();
+    fold(child_ref(obj));
+    fold(child_control(obj));
+    execute();
     simp();
 }
 
 void child_release(struct child* obj) {
     requires 1 < count(child_ref(obj));
-    owns child_ref(obj);
+    owns child_control(obj);
     consumes child_ref(obj);
     ensures obj->payload == old(obj->payload);
 } by {
-    open(child_ref(obj)) {
-        have 1 < obj->refs by simp;
-        have obj->refs - 1 >= 1 by {
-            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
-                1 < obj->refs;
-            }
-        }
-        execute();
+    unfold(child_control(obj));
+    unfold(child_ref(obj));
+    have 1 < obj->refs by simp;
+    have obj->refs - 1 >= 1 by {
+        apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using { 1 < obj->refs; }
     }
+    step();
+    fold(child_control(obj));
+    execute();
     simp();
 }
 
@@ -86,19 +104,23 @@ void parent_attach(struct parent* p, struct child* kid) {
     requires count(child_ref(kid)) < 2147483647;
     requires kid != 0;
     consumes &p->kid;
+    owns child_control(kid);
     owns child_ref(kid);
     produces child_ref(kid);
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
 } by {
-    execute();
+    step();
+    step();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+    execute();
     simp();
 }
 
 int32 parent_read_payload(struct parent* p) {
     owns link: parent(p);
     requires link.link != ParentLink::Empty;
+    owns child_control(p->kid);
     owns child_ref(p->kid);
     ensures result == p->kid->payload;
     ensures p->kid == old(p->kid);
@@ -110,7 +132,7 @@ int32 parent_read_payload(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            open(child_ref(p->kid)) { execute(); }
+            open(child_control(p->kid)) { execute(); }
             let link = fold(parent(p), { link: ParentLink::Linked(p->kid) });
             simp();
         },
@@ -120,8 +142,10 @@ int32 parent_read_payload(struct parent* p) {
 void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
-    consumes 2 of child_ref(p->kid);
-    produces child_ref(old(p->kid));
+    consumes child_control(p->kid);
+    produces child_control(old(p->kid));
+    owns child_ref(p->kid);
+    consumes child_ref(p->kid);
     produces out: parent(old(p));
     ensures old(p->kid)->payload == old(p->kid->payload);
 } by {
@@ -131,8 +155,15 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            execute();
+            have 2 <= old(count(child_ref(p->kid))) by simp;
+            have old(count(child_ref(p->kid))) > 1 by {
+                simp() using { 2 <= old(count(child_ref(p->kid))); }
+            }
+            step();
+            step();
+            step();
             let out = fold(parent(p), { link: ParentLink::Empty });
+            execute();
             simp();
         },
     }
@@ -142,6 +173,8 @@ int32 caller(struct parent* first, struct parent* second, struct child* kid) {
     consumes &first->kid;
     consumes &second->kid;
     requires kid != 0;
+    requires count(child_ref(kid)) == 1;
+    owns child_control(kid);
     owns child_ref(kid);
     ensures result == kid->payload;
 } by {

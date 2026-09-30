@@ -25,15 +25,20 @@ void parent_detach(struct parent* p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 spec enum ParentLink {
     Empty,
     Linked(struct child*),
 }
 
-resource child_ref(obj: struct child*) {
+resource child_ref(obj: struct child*) {}
+
+resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
+    fact defined(obj->refs);
+    fact defined(obj->payload);
     fact obj->refs == count(child_ref(obj));
 }
 
@@ -43,6 +48,7 @@ resource parent(p: struct parent*) {
         ParentLink::Empty => {},
         ParentLink::Linked(kid) => {
             owns &p->kid;
+            fact defined(p->kid);
             fact p->kid == kid;
             fact kid != 0;
         },
@@ -53,18 +59,28 @@ verifying "shared_heap_detach_leak_diagnostic.c";
 
 void child_release_nonfinal(struct child* obj) {
     requires 1 < obj->refs;
+    owns child_control(obj);
     owns child_ref(obj);
     consumes child_ref(obj);
 } by {
-    open(child_ref(obj)) {
-        execute();
+    unfold(child_control(obj));
+    unfold(child_ref(obj));
+    have 1 < obj->refs by { simp(); }
+    have obj->refs - 1 >= 1 by {
+        apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
+            1 < obj->refs;
+        }
     }
+    step();
+    fold(child_control(obj));
+    execute();
     simp();
 }
 
 void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
+    consumes child_control(p->kid);
     owns child_ref(p->kid);
     consumes child_ref(p->kid);
     produces out: parent(p);
@@ -84,5 +100,5 @@ void parent_detach(struct parent* p) {
 ```
 
 ```expect
-fail: live allocation obligation was neither returned nor freed: `owns allocation(p->kid, 8)`; held by owns child_ref(p->kid)
+fail: live allocation obligation was neither returned nor freed: `owns allocation(p->kid, 8)`
 ```

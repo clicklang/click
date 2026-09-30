@@ -16500,3 +16500,195 @@ fn normalize_using_transported_int32_loads_expands_and_rechecks() {
         "the equality graph must not perform frame search"
     );
 }
+
+#[test]
+fn authority_population_certification_expands_every_smart_site() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("shared_heap_population_certification.md"),
+        include_str!("../../../mdtests/shared_heap_population_certification.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let c_sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let project_for = |source: &str| {
+        ClickProject::new(
+            "population.click",
+            [ClickModuleSource::new("population.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        })
+    };
+    let project = project_for(source);
+    verify_c0_project(&project, &c_sources).expect("the population certification proof verifies");
+    let sites = c0_project_smart_tactic_source_sites(&project, &c_sources).unwrap();
+    assert!(!sites.is_empty());
+    for site in sites {
+        let position = c0_project_tactic_source_position(
+            &project,
+            &c_sources,
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap();
+        let expanded = expand_c0_project_tactic_source_at(
+            &project,
+            &c_sources,
+            position.line,
+            position.column,
+        )
+        .unwrap();
+        verify_c0_project(&project_for(&expanded), &c_sources).unwrap_or_else(|error| {
+            panic!(
+                "{} site {} ({}) lost its checked resource transition: {}",
+                site.claim_label,
+                site.source_index,
+                site.tactic_name,
+                error.message()
+            )
+        });
+    }
+}
+
+#[test]
+fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
+    let valid_source = "resource cell(p: int32*) { owns p[0..1]; }
+        verifying \"keep.c\";
+        void keep(int32* p) { owns cell(p); } by { execute(); simp(); }";
+    let valid_project = ClickProject::new(
+        "duplicate.click",
+        [ClickModuleSource::new("duplicate.click", valid_source, [])],
+    )
+    .with_c_profile(CProjectProfile {
+        target: None,
+        runtime: None,
+        resource_semantics: ResourceSemanticsMode::Authority,
+    });
+    verify_c0_project(&valid_project, &[("keep.c", "void keep(int32* p) {}")])
+        .expect("the same C body returns one borrowed exclusive unit");
+    let mut accepted_closers = Vec::new();
+    for (produced, closer) in [
+        ("cell", "simp();"),
+        ("cell", "assumption(); assumption();"),
+        ("other_cell", "simp();"),
+        ("other_cell", "assumption(); assumption();"),
+    ] {
+        let source = format!(
+            "resource cell(p: int32*) {{ owns p[0..1]; }}\n\
+             resource other_cell(p: int32*) {{ owns p[0..1]; }}\n\
+             verifying \"keep.c\";\n\
+             void keep(int32* p) {{ owns cell(p); produces {produced}(p); }}\n\
+             by {{ execute(); {closer} }}"
+        );
+        let project = ClickProject::new(
+            "duplicate.click",
+            [ClickModuleSource::new("duplicate.click", &source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        });
+        if verify_c0_project(&project, &[("keep.c", "void keep(int32* p) {}")]).is_ok() {
+            accepted_closers.push((produced, closer));
+        }
+    }
+    assert!(
+        accepted_closers.is_empty(),
+        "these closers returned one exclusive unit twice: {accepted_closers:?}"
+    );
+}
+
+#[test]
+fn authority_named_parent_keeps_actual_fields_across_unrelated_owned_call() {
+    let source = r#"
+spec enum ParentLink { Empty, Linked(struct child*) }
+resource parent(p: struct parent*) {
+    field link: ParentLink;
+    match link {
+        ParentLink::Empty => {},
+        ParentLink::Linked(kid) => {
+            owns &p->kid;
+            fact defined(p->kid);
+            fact p->kid == kid;
+            fact kid != 0;
+        },
+    }
+}
+verifying "named.c";
+void attach(struct parent* p, struct child* kid) {
+    requires kid != 0;
+    consumes &p->kid;
+    produces link: parent(p);
+    ensures link.link == ParentLink::Linked(kid);
+    ensures p->kid == kid;
+} by {
+    execute();
+    let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+    simp();
+}
+void clear_payload(struct child* kid) {
+    owns &kid->payload;
+    ensures kid->payload == 0;
+} by {
+    execute();
+    simp();
+}
+void caller(struct parent* p, struct child* kid) {
+    requires kid != 0;
+    consumes &p->kid;
+    owns &kid->payload;
+    produces link: parent(p);
+    ensures link.link == ParentLink::Linked(kid);
+    ensures p->kid == kid;
+} by {
+    let { link: link } = step(attach(p, kid), {});
+    have p->kid == kid by simp;
+    step();
+    have p->kid == kid by simp;
+    execute();
+    simp();
+}
+"#;
+    let c_source = r#"
+struct child { int32 payload; };
+struct parent { struct child* kid; };
+void attach(struct parent* p, struct child* kid) { p->kid = kid; }
+void clear_payload(struct child* kid) { kid->payload = 0; }
+void caller(struct parent* p, struct child* kid) {
+    attach(p, kid);
+    clear_payload(kid);
+}
+"#;
+    let project_for = |source: &str| {
+        ClickProject::new(
+            "named.click",
+            [ClickModuleSource::new("named.click", source, [])],
+        )
+        .with_c_profile(CProjectProfile {
+            target: None,
+            runtime: None,
+            resource_semantics: ResourceSemanticsMode::Authority,
+        })
+    };
+    let c = [("named.c", c_source)];
+    let project = project_for(source);
+    verify_c0_project(&project, &c)
+        .expect("a named parent's actual field identity survives the unrelated call");
+    for site in c0_project_smart_tactic_source_sites(&project, &c).unwrap() {
+        let position =
+            c0_project_tactic_source_position(&project, &c, &site.claim_label, site.source_index)
+                .unwrap();
+        let expanded =
+            expand_c0_project_tactic_source_at(&project, &c, position.line, position.column)
+                .unwrap();
+        verify_c0_project(&project_for(&expanded), &c)
+            .expect("the explicit proof preserves actual instance fields and the caller frame");
+    }
+}

@@ -434,6 +434,53 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
     opaque_click_functions: &std::collections::BTreeSet<String>,
     pointer_element_widths: BTreeMap<String, u32>,
 ) -> Result<(Proposition, crate::kernel::LoweringIntroductions), String> {
+    lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories_and_facts(
+        proposition,
+        assumptions,
+        obligation_assumptions,
+        values,
+        array_refs,
+        algebraic_values,
+        integer_values,
+        bound_array_memories,
+        pre_state,
+        state,
+        result,
+        recorded_snapshots,
+        predicate_environment,
+        click_function_environment,
+        opaque_click_functions,
+        pointer_element_widths,
+    )
+    .map(|(proposition, introductions, _)| (proposition, introductions))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories_and_facts(
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    obligation_assumptions: &PureFactContext,
+    values: &BTreeMap<String, CValue>,
+    array_refs: &ClickArrayRefs,
+    algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    bound_array_memories: &BTreeMap<String, SpecMemory>,
+    pre_state: &CState,
+    state: &CState,
+    result: Option<&CValue>,
+    recorded_snapshots: &RecordedSnapshots,
+    predicate_environment: &PredicateEnvironment,
+    click_function_environment: &ClickFunctionEnvironment,
+    opaque_click_functions: &std::collections::BTreeSet<String>,
+    pointer_element_widths: BTreeMap<String, u32>,
+) -> Result<
+    (
+        Proposition,
+        crate::kernel::LoweringIntroductions,
+        Vec<Proposition>,
+    ),
+    String,
+> {
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls_in_proposition(
         proposition,
@@ -461,7 +508,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         pointer_element_widths,
     )?;
     let spec = IterativeSpecPropositionDrop::new(spec);
-    let (lowered, _, obligations, introductions) =
+    let (lowered, facts, obligations, introductions) =
         crate::kernel::c_lower_spec_proposition_with_checked_obligations(
             &states.lowering_state,
             spec.as_ref(),
@@ -491,7 +538,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_recording
         obligation_assumptions,
         &StatedSite::new(StatedForm::Proposition(proposition), state, values),
     )?;
-    Ok((lowered, introductions))
+    Ok((lowered, introductions, facts))
 }
 
 /// The kernel lowering of a proof-side proposition whose calls named in

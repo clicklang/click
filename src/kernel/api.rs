@@ -4363,6 +4363,7 @@ pub fn prove_checked_c_function_execution_with_environment(
         deferred_contract_exit_errors: vec![None; path_count],
         checked_returned_resources: vec![ResourceContext::new(); path_count],
         entry_representation_origin: None,
+        boundary_transfer: None,
         checked_call_events: Default::default(),
     }
 }
@@ -5965,6 +5966,10 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                     .iter()
                     .filter(|checked| checked.state == state && authorized(checked))
                     .map(|checked| CContractPathSet {
+                        boundary_transfers: vec![
+                            checked.boundary_transfer().cloned();
+                            checked.execution.paths.len()
+                        ],
                         paths: checked.execution.paths.clone(),
                         checked_resource_claims: checked.checked_resource_claims.clone(),
                         checked_resource_transitions: checked.checked_resource_transitions.clone(),
@@ -6001,6 +6006,10 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             },
                         )
                         .map(|execution| CContractPathSet {
+                            boundary_transfers: vec![
+                                checked.boundary_transfer().cloned();
+                                execution.paths.len()
+                            ],
                             paths: execution.paths,
                             checked_resource_claims: checked.checked_resource_claims.clone(),
                             checked_resource_transitions: checked
@@ -6051,6 +6060,12 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         continue;
                     };
                     let origin = (left.state == right.state).then(|| left.state.clone());
+                    let mut boundary_transfers =
+                        vec![left.boundary_transfer().cloned(); left.execution.paths.len()];
+                    boundary_transfers.extend(vec![
+                        right.boundary_transfer().cloned();
+                        right.execution.paths.len()
+                    ]);
                     let left_claims = left.checked_resource_claims.clone();
                     let right_claims = right.checked_resource_claims.clone();
                     let left_transitions = left.checked_resource_transitions.clone();
@@ -6094,6 +6109,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         deferred_contract_exits,
                         deferred_contract_exit_errors,
                         checked_returned_resources,
+                        boundary_transfers,
                         completion_origin_state: origin,
                     });
                 }

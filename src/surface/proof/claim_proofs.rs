@@ -2,6 +2,20 @@ use super::proof_object::ProofCheckpoint;
 use super::*;
 use std::sync::Arc;
 
+fn resource_receipts_jointly_available(
+    available: &crate::kernel::ResourceContext,
+    receipts: &crate::kernel::ResourceContext,
+    assumptions: &PureFactContext,
+) -> bool {
+    receipts
+        .facts()
+        .iter()
+        .try_fold(available.clone(), |remaining, receipt| {
+            remaining.without_fact_incrementally(receipt, assumptions)
+        })
+        .is_some()
+}
+
 #[cfg(test)]
 thread_local! {
     static FLAT_PROOF_UNITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -947,9 +961,6 @@ mod exit_claim {
             }
         }
         pub(super) fn checked_resource_claim_has_grouped_transition(&self) -> bool {
-            // A checked false guard returns no resource units, so it has no
-            // grouped transfer left to validate. Explicit assumption completion
-            // carries the same exact guard evidence as the smart closer.
             if matches!(&self.evidence, ClaimEvidence::Resource(checked) if checked.has_inactive_guard())
             {
                 return true;
@@ -3814,16 +3825,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                         let CFunctionOutcome::Return { .. } = &outcome else {
                                             unreachable!("gated on a return outcome above");
                                         };
-                                        for (claim_index, _resource, _borrowed) in
+                                        for (claim_index, resource, borrowed) in
                                             &direct_resource_claims
                                         {
                                             let claim_label = function_claim_label(
                                                 function_block.signature().name(),
                                                 &claims[*claim_index],
                                             );
-                                            let checked = required_outcome(&outcome_proof)?.check_outcome_resource_claim(&completed_execution, claims[*claim_index]).map_err(|error| ClickError::new(format!(
-                                                "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}", error.message()
-                                            )))?;
+                                            let checked = required_outcome(&outcome_proof)?.check_outcome_resource_claim(&completed_execution, claims[*claim_index]).map_err(|error| {
+                                                let requirement = if *borrowed {
+                                                    String::new()
+                                                } else {
+                                                    format!("\nRequires produces {}", crate::surface::validation::describe_resource_clause(resource))
+                                                };
+                                                ClickError::new(format!(
+                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}{requirement}", error.message()
+                                                ))
+                                            })?;
                                             direct_resource_evidence.insert(*claim_index, checked);
                                         }
                                     }
@@ -4553,16 +4571,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .and_then(ClosedClaim::checked_resource_claim_resources)
                                     .is_some()
                             });
-                    let returned_claims_have_grouped_transition = has_returned_resource_claims
-                        && claims.iter().enumerate().all(|(claim_index, claim)| {
-                            !matches!(claim.clause().ensure(), Ensure::Resource(_))
-                                || !closures[claim_index].closed().is_some_and(
-                                    ClosedClaim::contributes_checked_resource_claim_resources,
-                                )
-                                || closures[claim_index].closed().is_some_and(
-                                    ClosedClaim::checked_resource_claim_has_grouped_transition,
-                                )
-                        });
                     let mut checked_returned_resources = crate::kernel::ResourceContext::new();
                     if all_resource_claims_checked {
                         for closure in &closures {
@@ -4580,18 +4588,47 @@ pub(super) fn finish_ordered_proof<'a>(
                             }
                         }
                     }
-                    let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if state
-                            .resources()
-                            .clone()
-                            .without_facts(
-                                checked_returned_resources.facts(),
-                                &assumptions_from_propositions(&path_requirements),
-                            )
-                            .is_some());
+                    let authority_mode = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if state.uses_population_authority_semantics());
+                    let legacy_grouped_transition = has_returned_resource_claims
+                        && claims.iter().enumerate().all(|(claim_index, claim)| {
+                            !matches!(claim.clause().ensure(), Ensure::Resource(_))
+                                || !closures[claim_index].closed().is_some_and(
+                                    ClosedClaim::contributes_checked_resource_claim_resources,
+                                )
+                                || closures[claim_index].closed().is_some_and(
+                                    ClosedClaim::checked_resource_claim_has_grouped_transition,
+                                )
+                        });
+                    // Authority resource closers carry the same checked claim
+                    // evidence, whether written as assumption or selected by
+                    // simp. Validate their jointly returned units rather than
+                    // relying on the presentation certificate's spelling.
+                    // Borrowed outputs participate too: one surviving unit
+                    // cannot discharge both a borrow and a produced unit.
+                    let mut checked_resource_receipts = crate::kernel::ResourceContext::new();
+                    if all_resource_claims_checked {
+                        for closure in &closures {
+                            if let Some(resources) = closure
+                                .closed()
+                                .and_then(ClosedClaim::checked_resource_claim_resources)
+                            {
+                                checked_resource_receipts = checked_resource_receipts
+                                    .unchecked_with_facts(resources.facts().iter().cloned());
+                            }
+                        }
+                    }
+                    let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
+                        let assumptions = assumptions_from_propositions(&path_requirements);
+                        if authority_mode {
+                            resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, &assumptions)
+                        } else {
+                            state.resources().clone().without_facts(checked_returned_resources.facts(), &assumptions).is_some()
+                        }
+                    });
                     checked_resource_transitions_by_path[path_index] = !deferred_resource_transition
                         && (resource_transition_applied
                             || (all_resource_claims_checked
-                                && returned_claims_have_grouped_transition
+                                && (authority_mode || legacy_grouped_transition)
                                 && returned_resources_are_jointly_available));
                     if all_resource_claims_checked {
                         checked_returned_resources_by_path[path_index] =
@@ -5035,6 +5072,40 @@ pub(super) fn finish_ordered_proof<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn joint_resource_receipts_ignore_unrelated_holdings() {
+        use crate::kernel::{Bitvector32Term, CResource, CResourceFact, ResourceContext};
+        fn unit(name: String) -> CResourceFact {
+            CResourceFact::Own(
+                CResource::Token {
+                    name,
+                    arguments: vec![].into(),
+                },
+                Box::new(Bitvector32Term::Constant(1)),
+            )
+        }
+        for size in [64, 256, 1024] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = PureFactContext::new();
+            let selected = unit("returned".into());
+            let available = ResourceContext::new()
+                .unchecked_with_facts((0..size).map(|index| unit(format!("unrelated_{index}"))))
+                .unchecked_with_fact(selected.clone());
+            let receipts = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                resource_receipts_jointly_available(&available, &receipts, &assumptions)
+            });
+            assert!(accepted);
+            assert!(work <= 16, "size={size}, work={work}");
+            let duplicate = receipts.unchecked_with_fact(selected);
+            assert!(!resource_receipts_jointly_available(
+                &available,
+                &duplicate,
+                &assumptions
+            ));
+        }
+    }
 
     #[test]
     fn deferred_cases_retain_prefixes_closers_and_duplicate_execution_paths() {

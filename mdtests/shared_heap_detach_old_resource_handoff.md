@@ -1,5 +1,9 @@
 # Conditional entry-state resource arguments remain valid at function exit
 
+The `owns child_ref(p->kid)` clause already returns the borrowed survivor.
+The detach contract consumes its additional member and does not also promise
+a duplicate produced member after clearing the field.
+
 ```c filename=shared_heap_detach_old_resource_handoff.c
 struct child {
     int32 refs;
@@ -21,15 +25,20 @@ void parent_detach(struct parent* p) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 spec enum ParentLink {
     Empty,
     Linked(struct child*),
 }
 
-resource child_ref(obj: struct child*) {
+resource child_ref(obj: struct child*) {}
+
+resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
+    fact defined(obj->refs);
+    fact defined(obj->payload);
     fact obj->refs == count(child_ref(obj));
 }
 
@@ -39,6 +48,7 @@ resource parent(p: struct parent*) {
         ParentLink::Empty => {},
         ParentLink::Linked(kid) => {
             owns &p->kid;
+            fact defined(p->kid);
             fact p->kid == kid;
             fact kid != 0;
         },
@@ -49,12 +59,21 @@ verifying "shared_heap_detach_old_resource_handoff.c";
 
 void child_release_nonfinal(struct child* obj) {
     requires 1 < obj->refs;
+    owns child_control(obj);
     owns child_ref(obj);
     consumes child_ref(obj);
 } by {
-    open(child_ref(obj)) {
-        execute();
+    unfold(child_control(obj));
+    unfold(child_ref(obj));
+    have 1 < obj->refs by { simp(); }
+    have obj->refs - 1 >= 1 by {
+        apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
+            1 < obj->refs;
+        }
     }
+    step();
+    fold(child_control(obj));
+    execute();
     simp();
 }
 
@@ -62,11 +81,12 @@ void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
     requires 1 < count(child_ref(p->kid));
+    consumes child_control(p->kid);
+    if old(count(child_ref(p->kid))) > 1 {
+        produces child_control(old(p->kid));
+    }
     owns child_ref(p->kid);
     consumes child_ref(p->kid);
-    if old(count(child_ref(p->kid))) > 1 {
-        produces child_ref(old(p->kid));
-    }
     produces out: parent(old(p));
 } by {
     match link.link {

@@ -27,7 +27,7 @@ void caller(struct parent* p, struct child* kid) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 spec enum ParentLink {
     Empty,
     Linked(struct child*),
@@ -52,6 +52,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     requires kid != 0;
     produces link: parent(p);
     ensures link.link == ParentLink::Linked(kid);
+    ensures p->kid == kid;
 } by {
     execute();
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });

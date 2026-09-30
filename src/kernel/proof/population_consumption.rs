@@ -392,9 +392,10 @@ mod tests {
         let (function, entry, before, _) = fixture(false);
         let authority = Arc::new(CheckedFunctionEntry {
             caller_state: entry.clone(),
-            function: function.clone(),
+            function: Arc::new(function.clone()),
             arguments: vec![],
             entry_state: entry,
+            boundary_transfer: None,
             assumptions: PureFactContext::new(),
             relation_facts: None,
         });

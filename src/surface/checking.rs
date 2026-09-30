@@ -121,6 +121,7 @@ pub(super) fn check_allocation_lifetime(
     let result = match returned_resources {
         Some(returned_resources) => {
             crate::kernel::unreturned_allocation_with_checked_returned_resources(
+                checked_execution.allocation_entry_state(),
                 state,
                 value,
                 checked_execution.function(),
@@ -131,6 +132,7 @@ pub(super) fn check_allocation_lifetime(
             )
         }
         None => crate::kernel::unreturned_allocation_at_function_exit(
+            checked_execution.allocation_entry_state(),
             state,
             value,
             checked_execution.function(),

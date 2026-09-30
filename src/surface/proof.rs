@@ -13,6 +13,7 @@ pub(in crate::surface) use fixed_state_proofs::{
     evaluate_c_fragment_through_kernel, evaluate_fixed_state_array_ref_through_kernel,
     evaluate_fixed_state_expression_through_kernel, evaluate_resource_fragment_through_kernel,
     lower_fixed_state_proposition_through_kernel,
+    lower_fixed_state_proposition_through_kernel_recording_introductions_with_bound_array_memories_and_facts,
     lower_fixed_state_proposition_through_kernel_with_opaque_calls,
 };
 mod cursor_execution;

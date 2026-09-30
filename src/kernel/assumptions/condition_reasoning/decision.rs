@@ -329,6 +329,9 @@ impl PureFactContext {
                 if let Some(value) = self.exact_condition_value(condition) {
                     return Some(value);
                 }
+                if let Some(value) = self.decide_exact_signed_constant_order(condition) {
+                    return Some(value);
+                }
                 if let Some(value) = self.decide_reflexive_float_comparison(condition) {
                     return Some(value);
                 }
@@ -724,6 +727,68 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn decide_intrinsically(condition: &ConditionTerm) -> Option<bool> {
         Self::new().decide(condition)
+    }
+
+    /// Integer strict and inclusive bounds differ by one. Keep the frozen
+    /// bounded term intact and look up only the equivalent recorded bound.
+    /// The signed endpoints are handled before incrementing or decrementing.
+    pub(super) fn decide_exact_signed_constant_order(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        let (left, right, greater, strict) = match condition {
+            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => (left, right, true, true),
+            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, right, true, false),
+            ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, right, false, true),
+            ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, right, false, false),
+            _ => return None,
+        };
+        let (term, bound, greater) = if let Some(bound) = right.as_const() {
+            (left.as_ref().clone(), bound as i32, greater)
+        } else {
+            let bound = left.as_const()?;
+            (right.as_ref().clone(), bound as i32, !greater)
+        };
+        let shifted = if greater == strict {
+            match bound.checked_add(1) {
+                Some(bound) => bound,
+                None => return Some(!strict),
+            }
+        } else {
+            match bound.checked_sub(1) {
+                Some(bound) => bound,
+                None => return Some(!strict),
+            }
+        };
+        let bound = Bitvector32Term::Constant(shifted as u32);
+        let equivalent = match (greater, strict) {
+            (true, true) => ConditionTerm::signed_greater_equal(term, bound),
+            (true, false) => ConditionTerm::signed_greater_than(term, bound),
+            (false, true) => ConditionTerm::signed_less_equal(term, bound),
+            (false, false) => ConditionTerm::signed_less_than(term, bound),
+        };
+        if let Some(value) = self.exact_condition_value(&equivalent) {
+            return Some(value);
+        }
+        // An explicitly recorded equality can name the same frozen term
+        // through a load variable. Visit its indexed spellings only; an
+        // unrelated open order fact is never a candidate for this rule.
+        for key in self.condition_match_candidate_keys(&equivalent) {
+            let Some(facts) = self.condition_facts_by_sides.get(&key) else {
+                continue;
+            };
+            for (fact, value) in facts {
+                crate::instrumentation::record_deterministic_work(1);
+                if self.condition_matches(fact, &equivalent) {
+                    record_implicit_reasoning_provenance(
+                        self,
+                        &Proposition::ConditionIs(fact.clone(), *value),
+                    );
+                    return Some(*value);
+                }
+            }
+        }
+        None
     }
 
     pub(in crate::kernel) fn has_condition_fact(

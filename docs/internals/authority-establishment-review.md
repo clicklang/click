@@ -32,8 +32,31 @@ reference. The helper entry imports an opaque symbolic count only from that
 exact wrapper and its counter equation; the caller's concrete ledger tracks
 the member exchange across the call. Selective verification may use the scoped
 contract of a concrete helper whose proof is outside the selection. Arbitrary
-external contracts, worker calls, recorded-state count, and field-bearing or
-nested member bodies remain refused.
+external contracts, worker calls, and field-bearing or nested member bodies
+remain refused by this slice.
+
+Shared-parent helpers combine these transfers with ordinary named memory
+resources. A parent instance owns its link field; a reference is a separate
+companion capability, and child control remains a single explicitly transferred
+resource. The checked helper transfer selects its member creation or consumption
+independently of the order of companion clauses. Borrowing one reference and
+producing another preserves the borrowed reference and increases the total by
+one. A returned control exposes its invariant at the updated population state.
+
+A function boundary retains the resource bindings checked at entry. If C clears
+`p->kid`, a borrowed `reference(p->kid)` still returns the reference actually
+received; it is not evaluated again against the cleared field. Entry observations
+remain historical, and current observations use the checked exit population.
+Folding an ordinary named memory resource retains the pure body facts checked
+at that snapshot, including facts transported across a disjoint helper call.
+It does not retain the body's exclusive memory ownership as a separate resource.
+
+Legacy body-only proof endpoints also retain checked early-consumption evidence.
+Otherwise a later contract application could replace an actual two-unit
+consumption with the declared one-unit consumption. Modular calls retain the
+caller's consumption evidence; they do not import a callee's local marker.
+The unchanged nested-overconsumption fixture checks that the final missing
+ownership is still rejected.
 
 The supported contract shape uses only ordinary resource clauses:
 
@@ -57,6 +80,18 @@ The listed memory clauses must equal the complete private body, including
 each owned range when there is more than one. Neither helper establishes a
 second authority or gains unlisted memory.
 
+## Allocation companions across helpers
+
+An ordinary checked allocation input also transfers its storage cleanup custody.
+This applies to heap parents that own their link cell and pass
+`allocation(p, sizeof(struct parent))` separately; the allocation need not be
+inside an authority-bearing control. Borrowed storage returns its custody with
+the resource, while a consuming helper may reclaim it after the usual ownership
+and population-cleanup checks. The transfer keeps the original creation event:
+receiving allocation ownership does not let a helper establish new authority.
+The kernel uses the authenticated allocation input and its indexed lifetime
+anchor, rather than inferring this permission from arbitrary owned memory.
+
 ## Establishment and uniqueness
 
 A population is anchored to the lifetime of a C object appearing as an argument
@@ -75,9 +110,9 @@ members nor recovery of raw memory ownership permits duplicate establishment.
 Aliases must resolve to the same anchor lifetime and registration. Reuse of a
 C address after deallocation must resolve to a new lifetime.
 
-The C bridge preserves this registration through ordinary verified helpers
-that return the same borrowed authority and member. Wrappers, frames, and
-thread transfers still need checked integration.
+The C bridge preserves this registration through ordinary verified helpers,
+checked authority-bearing wrappers, and disjoint parent frames. Thread
+transfers still need checked integration.
 Minting a fresh internal identifier whenever a pointer is encountered would
 violate this rule. The abstract kernel allocator
 creates fresh abstract lifetimes only; it grants no C memory permission and is
@@ -101,6 +136,29 @@ consumed. Transferring members needs their ownership but does not need authority
 and does not change the total. Authority can be transferred independently of
 members and anchor ownership.
 
+Checking the current facts of a folded control uses a temporary owned-body
+projection. The kernel authenticates its exact owned head and contained
+authority, removes that head and the observations supported by its occurrence
+from the projection, then composes the checked private body. Lowering and
+memory-dependency checks use this same projection. The live folded resource
+remains unchanged until its separately checked resource exchange. An unrelated
+unbound view still fails the dependency check, even beside owned memory; an
+ownership observation grants no stable-view loan.
+
+Closing an open control authenticates the children currently owned, rather
+than trusting the suspended head's invariant. Its local projection retires
+only that head's supported observations and reuses the checked children for
+custody reads. It publishes no body facts: the current invariant, including
+the counter equation, must still follow from the explicit facts and ledger.
+
+Function exits account for all returned exclusive units jointly, including
+borrowed survivors. One exclusive unit cannot satisfy both a borrowed return
+and a produced return. The kernel checks actual body ownership and allocation
+lifetime before accepting the effect. An inactive guard contributes no units;
+an unresolved guard does not certify a resource transition. Smart closers and
+explicit assumptions retain the same checked resource evidence, so their
+presentation spelling grants no additional transfer permission.
+
 Retirement requires authority and a zero total. It removes the live authority
 but retains the fact that this scope has already been established until the
 anchor lifetime ends. Re-establishment during the same lifetime is forbidden,
@@ -109,6 +167,13 @@ retirement. A new actual allocation, even at the same address, has a new
 lifetime and may establish its own authority. The anchor cannot be freed while
 any authority remains registered. Scope exit cannot silently discard authority, members, or anchor
 ownership. Moving these obligations to another owner is allowed.
+
+Exact count reads may use a proved pointer alias to select an already-owned
+population authority. The lookup examines only indexed aliases of the queried
+anchor and authenticates the selected authority against the live creation
+ledger. Pointer equality supplies neither authority ownership nor membership
+permission. The regression includes missing alias evidence, missing ownership,
+an unauthenticated authority head, and increasing unrelated authority contexts.
 
 A closed control resource packages authority along with its counter ownership
 and invariant. Opening that ordinary resource exposes the permissions needed
@@ -213,8 +278,8 @@ away cannot make later establishment appear empty. Pending heap outcomes carry
 that history to the resolved allocation. The first query accepts an exact heap
 or automatic-object base; subobject/interior anchors still need checked
 canonicalization. Its opt-in is enabled only by an authority-mode source proof
-or kernel test. Resource transitions must be connected to this history before
-source member operations can use it.
+or kernel test. Checked member operations and verified sequential helper
+transfers update this history together with resource custody.
 
 The source parser recognizes `authority(R(p))` for an exact unary, field-free,
 pointer-anchored declared family, and lowers it to a distinct exclusive kernel
@@ -227,13 +292,20 @@ rechecked by the certificate checker. `open(R(p))` exposes that body while
 preserving membership, and its close restores the body. Current exact
 `count(R(p))` reads the ledger, never the legacy population state. A verified
 ordinary helper can borrow and return the same authority and member through
-the checked resource contract and creation ledger. Its standalone proof imports
-only that declared custody as an opaque population: it cannot observe a total
-or retire authority. An exact member with a private owned-memory body may be
-born or spent under the imported authority when the opposite contract side
-transfers the entire body using ordinary `consumes` or `produces` memory
-clauses. The same population update is applied to the caller's concrete
-authority at a verified call. Other contract transitions,
-worker calls, field-bearing or nested member bodies, and historical count
-observations still need integration before authority mode can verify a real
-counted-resource program.
+the checked resource contract and creation ledger. Raw authority imports only
+the declared custody; it supplies no arbitrary exact entry total. A checked
+control invariant tying a C field to the count supplies an opaque entry total,
+with a certified lower bound from the members owned on entry. Initialization,
+retain, and conditional release apply their checked changes to that total.
+Contract snapshots retain the entry total, and checked empty retirement retains
+an immutable final zero without restoring update permission.
+
+An exact member with a private owned-memory body may be born or spent under
+imported authority when the opposite contract side transfers its entire body
+using ordinary `consumes` or `produces` clauses. The same population update is
+applied to the caller's concrete authority at a verified call. The sequential
+refcount project exercises initialization, individual and symbolic-batch
+updates, allocation failures, and final reclamation under authority semantics.
+Shared-parent, field-bearing/wildcard, pool, mutex, and worker support have
+separate migration gates; their status is recorded in the migration issue and
+consumer inventory.

@@ -29,15 +29,20 @@ void caller(struct parent* p, struct child* kid) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 spec enum ParentLink {
     Empty,
     Linked(struct child*),
 }
 
-resource child_ref(obj: struct child*) {
+resource child_ref(obj: struct child*) {}
+
+resource child_control(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
+    fact defined(obj->refs);
+    fact defined(obj->payload);
     fact obj->refs == count(child_ref(obj));
 }
 
@@ -46,10 +51,12 @@ resource parent(p: struct parent*) {
     match link {
         ParentLink::Empty => {
             owns &p->kid;
+            fact defined(p->kid);
             fact p->kid == 0;
         },
         ParentLink::Linked(kid) => {
             owns &p->kid;
+            fact defined(p->kid);
             fact p->kid == kid;
             fact kid != 0;
         },
@@ -60,37 +67,32 @@ verifying "shared_heap_final_detach.c";
 
 void child_release(struct child* obj) {
     requires 1 <= obj->refs;
+    consumes child_control(obj);
     consumes child_ref(obj);
+    if old(obj->refs) > 1 {
+        produces child_control(obj);
+    }
 } by {
+    unfold(child_control(obj));
     if obj->refs == 1 {
         unfold(child_ref(obj));
+        unfold(authority(child_ref(obj)));
         execute();
         simp();
     } else {
-        open(child_ref(obj)) {
-            execute();
+        unfold(child_ref(obj));
+        have 1 < obj->refs by {
+            arithmetic() using { 1 <= obj->refs; obj->refs != 1; }
         }
-        have 1 < old(obj->refs) by {
-            arithmetic() using {
-                1 <= old(obj->refs);
-                old(obj->refs) != 1;
+        have obj->refs - 1 >= 1 by {
+            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
+                1 < obj->refs;
             }
         }
-        have old(obj->refs) - 1 >= 1 by {
-            apply(int32_above_one_predecessor_is_at_least_one(old(obj->refs))) using {
-                1 < old(obj->refs);
-            }
-        }
-        have old(obj->refs) == old(count(child_ref(obj))) by { simp(); }
-        have old(count(child_ref(obj))) > 1 by {
-            simp() using {
-                old(obj->refs) > 1;
-                old(obj->refs) == old(count(child_ref(obj)));
-            }
-        }
-        have count(child_ref(obj)) != 0 by {
-            arithmetic() using { old(count(child_ref(obj))) > 1; }
-        }
+        step();
+        step();
+        fold(child_control(obj));
+        execute();
         simp();
     }
 }
@@ -98,7 +100,12 @@ void child_release(struct child* obj) {
 void parent_detach(struct parent* p) {
     consumes link: parent(p);
     requires link.link != ParentLink::Empty;
+    requires 1 <= p->kid->refs;
+    consumes child_control(p->kid);
     consumes child_ref(p->kid);
+    if old(count(child_ref(p->kid))) > 1 {
+        produces child_control(old(p->kid));
+    }
     produces out: parent(old(p));
 } by {
     match link.link {
@@ -107,9 +114,16 @@ void parent_detach(struct parent* p) {
         },
         ParentLink::Linked(kid) => {
             unfold(link);
-            execute();
-            let out = fold(parent(p), { link: ParentLink::Empty });
-            simp();
+            step();
+            if kid->refs > 1 {
+                execute();
+                let out = fold(parent(p), { link: ParentLink::Empty });
+                simp();
+            } else {
+                execute();
+                let out = fold(parent(p), { link: ParentLink::Empty });
+                simp();
+            }
         },
     }
 }
@@ -119,6 +133,7 @@ void caller(struct parent* p, struct child* kid) {
     requires kid != 0;
     requires p->kid == kid;
     requires kid->refs == 1;
+    consumes child_control(kid);
     consumes child_ref(kid);
 } by {
     let link = fold(parent(p), { link: ParentLink::Linked(kid) });
