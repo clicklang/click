@@ -3071,3 +3071,156 @@ fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
         assert!(work < 100, "size={size}, work={work}");
     }
 }
+
+#[test]
+fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
+    let address = Pointer::symbolic(Variable(98_350));
+    let old = intern_c_memory(CMemory::new());
+    let current = intern_c_memory(
+        old.memory()
+            .clone()
+            .store(address.offset_by_bytes(16), int32(1)),
+    );
+    let context = PureFactContext::new();
+    let left = Pointer::loaded_value(&old, &address);
+    let right = Pointer::loaded_value(&current, &address);
+    context.register_pointer_read(&left, &old, &address);
+    context.register_pointer_read(&right, &current, &address);
+    assert!(
+        context.pointer_equality_in_graph(&left, &right),
+        "a checked immediate store must feed the ordinary graph equality query"
+    );
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &left, &right, &context
+    ));
+    let argument = |value| AlgebraicValue::C(CValue::typed_pointer(value, CType::Int32Pointer));
+    assert!(
+        resource_arguments_proven_equal(&argument(left), &argument(right), &context),
+        "fold's existing argument checker must see the same graph equality"
+    );
+}
+
+#[test]
+fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
+    let address = Pointer::symbolic(Variable(98_360));
+    let unknown = Pointer::symbolic(Variable(98_361));
+    let old = intern_c_memory(CMemory::new());
+    for write in [
+        address.clone(),
+        address.offset_by_bytes(4),
+        address.offset_by_bytes(7),
+        unknown,
+    ] {
+        let current = intern_c_memory(old.memory().clone().store(write, uint8(1)));
+        let context = PureFactContext::new();
+        let left = Pointer::loaded_value(&old, &address);
+        let right = Pointer::loaded_value(&current, &address);
+        context.register_pointer_read(&left, &old, &address);
+        context.register_pointer_read(&right, &current, &address);
+        assert!(!context.pointer_equality_in_graph(&left, &right));
+    }
+    // A four-byte store inside an eight-byte read overlaps it even though
+    // their starting addresses differ. Address inequality is insufficient.
+    let current = intern_c_memory(
+        old.memory()
+            .clone()
+            .store(address.offset_by_bytes(4), int32(7)),
+    );
+    let context = PureFactContext::new();
+    let left = Pointer::loaded_value(&old, &address);
+    let right = Pointer::loaded_value(&current, &address);
+    context.register_pointer_read(&left, &old, &address);
+    context.register_pointer_read(&right, &current, &address);
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    let adjacent = intern_c_memory(
+        old.memory()
+            .clone()
+            .store(address.offset_by_bytes(8), int32(7)),
+    );
+    let value = Pointer::loaded_value(&adjacent, &address);
+    context.register_pointer_read(&value, &adjacent, &address);
+    assert!(context.pointer_equality_in_graph(&left, &value));
+}
+
+#[test]
+fn pointer_read_single_store_uses_only_its_branch_address_equality() {
+    let read = Pointer::symbolic(Variable(98_370));
+    let write = Pointer::symbolic(Variable(98_371));
+    let old = intern_c_memory(CMemory::new());
+    let current = intern_c_memory(old.memory().clone().store(write.clone(), int32(7)));
+    let context = PureFactContext::new();
+    let left = Pointer::loaded_value(&old, &read);
+    let right = Pointer::loaded_value(&current, &read);
+    context.register_pointer_read(&left, &old, &read);
+    context.register_pointer_read(&right, &current, &read);
+    let sibling = context.clone();
+    let branch = context.clone().assume_condition(
+        ConditionTerm::pointer_equal(write, read.offset_by_bytes(16)),
+        true,
+    );
+    let _scope = branch.enter_id_scope();
+    assert!(!pointers_proven_equal_for_memory_resolution(
+        &left, &right, &branch
+    ));
+    branch.register_pointer_read(&right, &current, &read);
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &left, &right, &branch
+    ));
+    assert!(!sibling.pointer_equality_in_graph(&left, &right));
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert_eq!(branch.pure_facts().len(), context.pure_facts().len() + 1);
+    assert!(!ResourceContext::new().permits_memory_read(&read, 8, &branch));
+}
+
+#[test]
+fn pointer_read_single_store_preservation_propagates_late_read_aliases() {
+    let address = Pointer::symbolic(Variable(98_380));
+    let alias = Pointer::symbolic(Variable(98_381));
+    let old = intern_c_memory(CMemory::new());
+    let current = intern_c_memory(
+        old.memory()
+            .clone()
+            .store(address.offset_by_bytes(16), int32(1)),
+    );
+    let context = PureFactContext::new();
+    let left = Pointer::loaded_value(&old, &alias);
+    let right = Pointer::loaded_value(&current, &address);
+    context.register_pointer_read(&left, &old, &alias);
+    context.register_pointer_read(&right, &current, &address);
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    let context = context.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
+    assert!(context.pointer_equality_in_graph(&left, &right));
+}
+
+#[test]
+fn pointer_read_single_store_edges_compose_with_near_linear_work() {
+    let mut previous_work = None;
+    for size in [8u32, 32, 128, 512] {
+        let address = Pointer::symbolic(Variable(98_390));
+        let mut memory = intern_c_memory(CMemory::new());
+        let context = PureFactContext::new();
+        let original = Pointer::loaded_value(&memory, &address);
+        context.register_pointer_read(&original, &memory, &address);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for i in 0..size {
+                memory = intern_c_memory(
+                    memory
+                        .memory()
+                        .clone()
+                        .store(address.offset_by_bytes(16), int32(i)),
+                );
+                let value = Pointer::loaded_value(&memory, &address);
+                context.register_pointer_read(&value, &memory, &address);
+                assert!(context.pointer_equality_in_graph(&original, &value));
+            }
+        });
+        assert!(work < 200 * size as usize, "size={size}, work={work}");
+        if let Some(previous) = previous_work {
+            assert!(
+                work <= 5 * previous,
+                "size={size}, work={work}, previous={previous}"
+            );
+        }
+        previous_work = Some(work);
+    }
+}
