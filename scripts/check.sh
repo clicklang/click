@@ -52,8 +52,8 @@ scripts/docs-lint.sh
 # silently running unbounded.
 if ! command -v cargo-nextest >/dev/null 2>&1; then
     echo "error: cargo-nextest not found; the gate needs its per-test time budgets" >&2
-    echo "Install it once with:" >&2
-    echo "    cargo install cargo-nextest --locked" >&2
+    echo "Prepare this machine with:" >&2
+    echo "    scripts/setup-environment.sh" >&2
     exit 1
 fi
 
