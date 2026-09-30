@@ -1024,7 +1024,7 @@ impl EqualityGraphState {
             self.loads.insert(
                 block.clone(),
                 LoadApplication {
-                    memory: memory.arena_id(),
+                    memory: memory.read_identity(),
                     address_block: address.block.clone(),
                     address_offset,
                 },

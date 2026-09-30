@@ -2624,3 +2624,19 @@ fn pointer_read_single_store_normalization_expands_and_rechecks() {
         "a write to the pointer field cannot reuse sibling-write equality"
     );
 }
+
+#[test]
+fn recursive_child_sibling_write_fold_expands_and_rechecks() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/egraph_recursive_child_sibling_write.md");
+    let fixture = crate::cli::read_mdtest(&path).expect("sibling-write fixture");
+    let source = fixture.click_source.as_deref().expect("Click source");
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    verify_c0_sources(source, &sources).expect("unfold/write/refold verifies");
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "roundtrip.contract")
+        .expect("sibling-write fold expands");
+    verify_c0_sources(&expanded, &sources).expect("expanded sibling-write fold rechecks");
+    let mut changed_sources = fixture.c_sources.clone();
+    changed_sources[0].1 = changed_sources[0].1.replace("p->tag = 1", "p->left = 0");
+    assert!(verify_c0_sources(&expanded, &crate::cli::source_refs(&changed_sources)).is_err());
+}

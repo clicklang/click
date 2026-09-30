@@ -2906,10 +2906,11 @@ fn seeded_pointer_read_evidence_is_local_full_width_and_retargeting_safe() {
     let a = Pointer::symbolic(Variable(98_300));
     let b = Pointer::symbolic(Variable(98_301));
     let old = intern_c_memory(CMemory::new());
-    let seeded =
-        old.memory()
-            .clone()
-            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+    let seeded = old
+        .memory()
+        .clone()
+        .store(a.offset_by_bytes(32), int32(1))
+        .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
     let current = intern_c_memory(seeded);
     let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
     let sibling = context.clone();
@@ -2941,17 +2942,20 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
     let b = Pointer::symbolic(Variable(98_311));
     let unknown = Pointer::symbolic(Variable(98_312));
     let old = intern_c_memory(CMemory::new());
-    let full =
-        old.memory()
-            .clone()
-            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+    let full = old
+        .memory()
+        .clone()
+        .store(a.offset_by_bytes(32), int32(1))
+        .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
     let changed_source = intern_c_memory(old.memory().clone().store(a.clone(), int32(7)));
     for (case, current) in [
         old.memory()
             .clone()
+            .store(a.offset_by_bytes(32), int32(1))
             .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 1, old.clone()),
         old.memory()
             .clone()
+            .store(a.offset_by_bytes(32), int32(1))
             .with_seeded_cells(a.clone(), 4, CType::Int32, 1, 2, old.clone()),
         old.memory()
             .clone()
@@ -2961,6 +2965,7 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
         full.store(unknown, int32(7)),
         old.memory()
             .clone()
+            .store(a.offset_by_bytes(32), int32(1))
             .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, changed_source),
     ]
     .into_iter()
@@ -2984,14 +2989,12 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
         let address = base.offset_by_bytes((size - 2) * 4);
         let alias = Pointer::symbolic(Variable(98_321));
         let old = intern_c_memory(CMemory::new());
-        let current = intern_c_memory(old.memory().clone().with_seeded_cells(
-            base,
-            4,
-            CType::Int32,
-            0,
-            size,
-            old.clone(),
-        ));
+        let current = intern_c_memory(
+            old.memory()
+                .clone()
+                .store(base.offset_by_bytes(size * 4 + 16), int32(1))
+                .with_seeded_cells(base, 4, CType::Int32, 0, size, old.clone()),
+        );
         let (mut context, left, right) =
             seeded_pointer_read_context(&old, &current, &address, &alias);
         for i in 0..size {
@@ -3247,7 +3250,7 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
     context.register_pointer_read(&left, &seeded, &address);
     let branch = context.clone();
     let sibling = context.clone();
-    assert!(!branch.pointer_equality_in_graph(&left, &right));
+    assert!(branch.pointer_equality_in_graph(&left, &right));
     branch.register_pointer_read(&right, &forgotten, &address);
     assert!(
         branch.pointer_equality_in_graph(&left, &right),
@@ -3256,8 +3259,8 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &branch
     ));
-    assert!(!context.pointer_equality_in_graph(&left, &right));
-    assert!(!sibling.pointer_equality_in_graph(&left, &right));
+    assert!(context.pointer_equality_in_graph(&left, &right));
+    assert!(sibling.pointer_equality_in_graph(&left, &right));
     assert_eq!(branch.pure_facts().len(), context.pure_facts().len());
     assert!(!ResourceContext::new().permits_memory_read(&address, 8, &branch));
     let alias = Pointer::symbolic(Variable(98_400));
@@ -3342,4 +3345,153 @@ fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
         assert!(!context.pointer_equality_in_graph(&old_read, &after_read));
         assert!(work < 100, "size={size}, work={work}");
     }
+}
+
+#[test]
+fn pointer_read_congruence_composes_materialization_and_forgetting_at_production() {
+    let address = Pointer::symbolic(Variable(98_420));
+    let unknown_write = Pointer::symbolic(Variable(98_421));
+    let original = intern_c_memory(CMemory::new());
+    let memory = original
+        .memory()
+        .clone()
+        .with_seeded_cells(address.clone(), 4, CType::Int32, 0, 2, original.clone())
+        .with_seeded_cells(
+            address.offset_by_bytes(8),
+            4,
+            CType::Int32,
+            0,
+            2,
+            original.clone(),
+        )
+        .with_seeded_cells(
+            address.offset_by_bytes(16),
+            4,
+            CType::Int32,
+            0,
+            1,
+            original.clone(),
+        );
+    let context = PureFactContext::new();
+    let forgotten =
+        intern_c_memory(memory.without_possible_aliasing_cells(&unknown_write, 4, &context));
+    assert!(matches!(
+        forgotten.derivation().unwrap().as_ref(),
+        CMemoryDerivation::CellsForgotten { .. }
+    ));
+    let left = Pointer::loaded_value(&original, &address);
+    let right = Pointer::loaded_value(&forgotten, &address);
+    assert!(
+        context.pointer_equality_in_graph(&left, &right),
+        "producer-recorded byte-preserving transitions must compose without intermediate reads"
+    );
+}
+
+#[test]
+fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() {
+    let address = Pointer::symbolic(Variable(98_430));
+    let original = intern_c_memory(CMemory::new());
+    let changed = intern_c_memory(original.memory().clone().store(address.clone(), int32(7)));
+    let from_changed = intern_c_memory(original.memory().clone().with_seeded_cells(
+        address.clone(),
+        4,
+        CType::Int32,
+        0,
+        2,
+        changed.clone(),
+    ));
+    let after_changed = intern_c_memory(changed.memory().clone().with_seeded_cells(
+        address.offset_by_bytes(8),
+        4,
+        CType::Int32,
+        0,
+        2,
+        original.clone(),
+    ));
+    let constant = intern_c_memory(
+        original
+            .memory()
+            .clone()
+            .with_constant_run(address.clone(), CType::Int32, 2, int32(0))
+            .unwrap(),
+    );
+    let context = PureFactContext::new();
+    let old_read = Pointer::loaded_value(&original, &address);
+    for memory in [from_changed, after_changed, constant] {
+        assert_ne!(memory.read_identity(), original.read_identity());
+        assert!(
+            !context
+                .pointer_equality_in_graph(&old_read, &Pointer::loaded_value(&memory, &address))
+        );
+    }
+    let forgotten = intern_c_memory(changed.memory().without_cell(&address));
+    assert_ne!(forgotten.read_identity(), changed.read_identity());
+}
+
+#[test]
+fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history() {
+    let mut previous_work = None;
+    for size in [8u32, 32, 128, 512] {
+        let address = Pointer::symbolic(Variable(98_440));
+        let unknown = Pointer::symbolic(Variable(98_441));
+        let original = intern_c_memory(CMemory::new());
+        let mut memory = original.memory().clone();
+        let context = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                memory = memory
+                    .clone()
+                    .with_seeded_cells(address.clone(), 4, CType::Int32, 0, 2, original.clone())
+                    .without_possible_aliasing_cells(&unknown, 4, &context);
+            }
+        });
+        let current = intern_c_memory(memory);
+        assert_eq!(current.read_identity(), original.read_identity());
+        let (_, query_work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(context.pointer_equality_in_graph(
+                &Pointer::loaded_value(&original, &address),
+                &Pointer::loaded_value(&current, &address),
+            ));
+        });
+        assert!(query_work < 100, "size={size}, query_work={query_work}");
+        assert!(work < 500 * size as usize, "size={size}, work={work}");
+        if let Some(previous) = previous_work {
+            assert!(
+                work <= 5 * previous,
+                "size={size}, work={work}, previous={previous}"
+            );
+        }
+        previous_work = Some(work);
+    }
+}
+
+#[test]
+fn read_identity_is_immutable_when_a_snapshot_was_interned_before_its_edge() {
+    let address = Pointer::symbolic(Variable(98_450));
+    let original = intern_c_memory(CMemory::new());
+    let run = CellRun::new(
+        address,
+        4,
+        CType::Int32,
+        2,
+        original.clone(),
+        crate::kernel::primitives::IndexIntervals::default(),
+    );
+    let mut memory = original.memory().clone();
+    std::sync::Arc::make_mut(&mut memory.cells).add_run(run.clone());
+    let current = intern_c_memory(memory.clone());
+    let before = current.read_identity();
+    record_c_memory_derivation(
+        &mut memory,
+        CMemoryDerivation::CellsSeeded {
+            base: original.clone(),
+            run: std::sync::Arc::new(run),
+        },
+    );
+    assert_ne!(current.read_identity(), original.read_identity());
+    assert_eq!(
+        current.read_identity(),
+        before,
+        "late annotation cannot change existing graph keys"
+    );
 }
