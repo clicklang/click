@@ -135,24 +135,24 @@ cargo test --test mdtests
 On macOS or Linux, install the latest release with:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/lacker/click/main/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklang/click/master/install.sh | sh
 ```
 
 Set `CLICK_VERSION` to install a specific release instead:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/lacker/click/main/install.sh | CLICK_VERSION=0.8.2 sh
+curl --proto '=https' --tlsv1.2 -LsSf https://raw.githubusercontent.com/clicklang/click/master/install.sh | CLICK_VERSION=0.8.2 sh
 ```
 
 On Windows, run the matching PowerShell installer. It installs the latest
 release by default and also accepts `CLICK_VERSION`:
 
 ```powershell
-irm https://raw.githubusercontent.com/lacker/click/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/clicklang/click/master/install.ps1 | iex
 ```
 
 ```powershell
-$env:CLICK_VERSION = '0.8.2'; irm https://raw.githubusercontent.com/lacker/click/main/install.ps1 | iex
+$env:CLICK_VERSION = '0.8.2'; irm https://raw.githubusercontent.com/clicklang/click/master/install.ps1 | iex
 ```
 
 Once `clicklang` is published to crates.io, install just the main command with:

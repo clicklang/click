@@ -650,4 +650,4 @@ questions:
 
 See [Testing Click](testing.md) for commands, budgets, and profiling.
 The open implementation work is ordered in
-[`issues/README.md`](https://github.com/lacker/click/blob/master/issues/README.md).
+[`issues/README.md`](https://github.com/clicklang/click/blob/master/issues/README.md).

@@ -8,7 +8,7 @@ fail() {
     exit 1
 }
 
-repository=${CLICK_RELEASE_REPOSITORY:-lacker/click}
+repository=${CLICK_RELEASE_REPOSITORY:-clicklang/click}
 case "$repository" in
     */*)
         owner=${repository%%/*}

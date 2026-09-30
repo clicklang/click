@@ -335,7 +335,7 @@ satisfy that requirement with one unit.
 
 ### Authority migration
 
-The migrated [refcount example](https://github.com/lacker/click/blob/master/examples/refcount/README.md) uses explicit
+The migrated [refcount example](https://github.com/clicklang/click/blob/master/examples/refcount/README.md) uses explicit
 population authority. Its references and shared control are separate resources:
 
 <!-- verified-example: mdtests/counted_resource_population_body.md -->
@@ -367,14 +367,14 @@ checked operation preserves the fact that the exact family is empty:
 `unfold(authority(object_ref(obj)))` and after `free(obj)`. It grants no
 ownership, field access, or permission to create or consume members. Merely
 knowing that a pointer was freed does not establish an unrelated family’s
-count. The [cleanup fixture](https://github.com/lacker/click/blob/master/mdtests/authority_count_after_cleanup.md)
+count. The [cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_count_after_cleanup.md)
 checks this observation before and after free.
 
 Ordinary wrappers can package existing members with `contains R(p)` and later
 expose them with `unfold`; these transfers require no authority and do not
 change the population. A wrapper cannot create a missing child or bypass the
 authority requirement for membership changes. The source-backed
-[transfer fixture](https://github.com/lacker/click/blob/master/mdtests/counted_resource_transfer.md)
+[transfer fixture](https://github.com/clicklang/click/blob/master/mdtests/counted_resource_transfer.md)
 checks packaging after a C return as well as ordinary helper transfer.
 
 A release helper can consume control and a reference, then conditionally
@@ -382,7 +382,7 @@ produce the control on its nonfinal branch using the existing guarded
 `produces` clause. The final branch consumes its last reference, retires
 authority, and frees storage. Numeric nested calls transfer these capabilities
 explicitly; a helper cannot strand a reference while returning control.
-The [conditional release fixture](https://github.com/lacker/click/blob/master/mdtests/authority_conditional_release_transfer.md)
+The [conditional release fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_conditional_release_transfer.md)
 checks both lifetime branches and the caller’s exact count and payload claims.
 
 An authority-bearing resource need not tie its count to a C field. Before an
@@ -390,7 +390,7 @@ initializer writes the C counter, its storage resource can carry authority
 with an arbitrary logical entry count; `requires count(R(p)) == 0` establishes
 the initializer’s empty-population precondition. Click does not assume zero
 or read an uninitialized field to obtain that count. The
-[initialization fixture](https://github.com/lacker/click/blob/master/mdtests/population_initialized_cleanup.md)
+[initialization fixture](https://github.com/clicklang/click/blob/master/mdtests/population_initialized_cleanup.md)
 checks that the initializer still produces its first reference.
 Standalone symbolic batch exchange is supported, but symbolic nested transfers
 are not yet supported on this migration path.
@@ -440,9 +440,9 @@ This currently supports one unconditional single-unit consumption clause for
 the resource family, with no produced units of that family. It uses the entry
 arguments even if C reassigns parameters. Consumption within a loop and partial
 fulfillment of symbolic or multiple effects remain unsupported. No new syntax
-is needed. The [checked example](https://github.com/lacker/click/blob/master/mdtests/population_consumption_at_close.md)
+is needed. The [checked example](https://github.com/clicklang/click/blob/master/mdtests/population_consumption_at_close.md)
 covers early closure, reopening for a read, branches, nested calls, and exact
-two contributions. The [scope-close design](https://github.com/lacker/click/blob/master/design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
+two contributions. The [scope-close design](https://github.com/clicklang/click/blob/master/design/concurrency-probes/shared-count-authority.md#scope-close-consumption)
 records the obligations and remaining concurrency work.
 
 For an ordinary abstract population transferred to a pthread worker, a successful
@@ -1047,7 +1047,7 @@ directions, `mdtests/loop_head_refuted_arm_closes_the_match.md` for the loop
 head and `mdtests/loop_ascending_walk_to_root.md` for the exit,
 `mdtests/arm_publication_sites.md` for the same refutation stated at each of
 the eight frontiers, and
-[`examples/modeled-binary-tree`](https://github.com/lacker/click/tree/master/examples/modeled-binary-tree)
+[`examples/modeled-binary-tree`](https://github.com/clicklang/click/tree/master/examples/modeled-binary-tree)
 is the verified walk that needs both.
 
 An arm's cells need not hang off the resource's own parameters. A constructor

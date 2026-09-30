@@ -32,7 +32,7 @@ wrappers, but cannot change mutex protocols. Direct clauses return the entry
 acquisition. Named primitive binders and consumed/produced guards remain
 unsupported.
 
-**Verified use:** [`mdtests/mutex_guard_resource_body.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_guard_resource_body.md).
+**Verified use:** [`mdtests/mutex_guard_resource_body.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_guard_resource_body.md).
 
 ## Mutex lifecycle authority
 
@@ -64,8 +64,8 @@ those mutexes are destroyed, even when their authority is folded away. This
 covers normal and abrupt scope exits. Ambiguous symbolic mutex pointers are
 refused conservatively rather than assumed separate from local storage.
 
-**Verified use:** [`mdtests/mutex_live_wrapper.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_live_wrapper.md)
-and [`mdtests/mutex_live_contract.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_live_contract.md).
+**Verified use:** [`mdtests/mutex_live_wrapper.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_live_wrapper.md)
+and [`mdtests/mutex_live_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_live_contract.md).
 
 ## Borrowed mutex lifetime
 
@@ -89,8 +89,8 @@ primitive binders, consumed/produced use permissions, and worker transfer are
 also unsupported. Missing call-site authority is reported as
 `Requires owns mutex_use(mu)`.
 
-**Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_use_contract.md)
-and [`mdtests/mutex_use_mixed.md`](https://github.com/lacker/click/blob/master/mdtests/mutex_use_mixed.md).
+**Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_contract.md)
+and [`mdtests/mutex_use_mixed.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_mixed.md).
 
 ## Population authority
 
@@ -113,7 +113,7 @@ exposes both permissions, and closing it checks the fact at the updated count.
 Packaged control transfer through a helper contract and broader member shapes
 remain pending.
 
-**Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/lacker/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
+**Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
 
 ## Allocation authority
 
@@ -127,7 +127,7 @@ abstract resource allocation(base: int32*, bytes: int32);
 
 **Kind:** abstract resource. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ## Natural numbers
 
@@ -148,7 +148,7 @@ spec enum Nat {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 `to_integer(n)` observes a `Nat` as an exact Integer. `to_nat(z)` requires
 `z >= 0` and remains symbolic even for large values. These conversions have
@@ -217,7 +217,7 @@ function nat_to_integer(value: Nat) -> Integer
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_to_integer_zero`
 
@@ -254,7 +254,7 @@ function nat_add(left: Nat, right: Nat) -> Nat
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_add_left_identity`
 
@@ -267,7 +267,7 @@ theorem nat_add_left_identity(n: Nat) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_add_succ_left`
 
@@ -280,7 +280,7 @@ theorem nat_add_succ_left(n: Nat, m: Nat) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_integer_add`
 
@@ -341,7 +341,7 @@ theorem nat_add_right_identity(n: Nat) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_add_succ_right`
 
@@ -366,7 +366,7 @@ theorem nat_add_succ_right(n: Nat, m: Nat) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_add_associative`
 
@@ -397,7 +397,7 @@ theorem nat_add_associative(a: Nat, b: Nat, c: Nat) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 ### `nat_add_commutative`
 
@@ -424,7 +424,7 @@ theorem nat_add_commutative(a: Nat, b: Nat) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_nat.md).
+**Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
 
 ## Lists
@@ -442,7 +442,7 @@ spec enum List<T> {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_append`
 
@@ -457,7 +457,7 @@ function list_append<T>(xs: List<T>, ys: List<T>) -> List<T>
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_contains`
 
@@ -477,7 +477,7 @@ Returns `1` for membership and `0` otherwise, using element equality.
 Its checked laws support C scalar, pointer, and algebraic-valued elements,
 including nested lists. Comparisons of unknown algebraic values stay symbolic.
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_append_left_identity`
 
@@ -490,7 +490,7 @@ theorem list_append_left_identity<T>(xs: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_append_right_identity`
 
@@ -513,7 +513,7 @@ theorem list_append_right_identity<T>(xs: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_append_cons`
 
@@ -527,7 +527,7 @@ theorem list_append_cons<T>(head: T, tail: List<T>, ys: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_append_associative`
 
@@ -561,7 +561,7 @@ theorem list_append_associative<T>(xs: List<T>, ys: List<T>, zs: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_contains_nil`
 
@@ -574,7 +574,7 @@ theorem list_contains_nil<T>(value: T) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_contains_cons`
 
@@ -588,7 +588,7 @@ theorem list_contains_cons<T>(head: T, tail: List<T>, value: T) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list.md).
+**Verified use:** [`mdtests/stdlib_list.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list.md).
 
 ### `list_contains_append`
 
@@ -635,7 +635,7 @@ theorem list_contains_append<T>(xs: List<T>, ys: List<T>, value: T) {
 Membership through append, proved by structural induction with explicit
 conditional reduction in each constructor case.
 
-**Verified use:** [`mdtests/stdlib_list_compositionality.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list_compositionality.md).
+**Verified use:** [`mdtests/stdlib_list_compositionality.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_compositionality.md).
 
 ### Natural-valued lengths
 
@@ -655,7 +655,7 @@ function list_length<T>(xs: List<T>) -> Nat
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list_length.md).
+**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
 ### `list_length_nil`
 
@@ -670,7 +670,7 @@ theorem list_length_nil<T>(xs: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list_length.md).
+**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
 ### `list_length_cons`
 
@@ -683,7 +683,7 @@ theorem list_length_cons<T>(head: T, tail: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list_length.md).
+**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
 ### `list_length_append`
 
@@ -718,7 +718,7 @@ theorem list_length_append<T>(xs: List<T>, ys: List<T>) {
 }
 ```
 
-**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_list_length.md).
+**Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
 
 ## Signed `int32` theorems
@@ -737,7 +737,7 @@ theorem int32_increment_upper_bound(value: int32, upper: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_increment_strictly_increases`
 
@@ -753,7 +753,7 @@ theorem int32_increment_strictly_increases(value: int32, upper: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_increment_lower_bound`
 
@@ -770,7 +770,7 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_increment_greater_equal_lower_bound`
 
@@ -787,7 +787,7 @@ theorem int32_increment_greater_equal_lower_bound(value: int32, lower: int32, up
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_increment_strict_greater_lower_bound`
 
@@ -804,7 +804,7 @@ theorem int32_increment_strict_greater_lower_bound(value: int32, lower: int32, u
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_increment_preserves_order`
 
@@ -821,7 +821,7 @@ theorem int32_increment_preserves_order(value: int32, lower: int32, upper: int32
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_successor_le_implies_lt`
 
@@ -838,7 +838,7 @@ theorem int32_successor_le_implies_lt(lower: int32, value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_lt_successor_implies_le`
 
@@ -854,7 +854,7 @@ theorem int32_lt_successor_implies_le(value: int32, upper: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_positive_is_nonnegative`
 
@@ -870,7 +870,7 @@ theorem int32_positive_is_nonnegative(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_lt_implies_le`
 
@@ -886,7 +886,7 @@ theorem int32_lt_implies_le(left: int32, right: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_lt_implies_neq`
 
@@ -902,7 +902,7 @@ theorem int32_lt_implies_neq(left: int32, right: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_not_lt_implies_ge`
 
@@ -918,7 +918,7 @@ theorem int32_not_lt_implies_ge(left: int32, right: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_strictly_positive_is_nonnegative`
 
@@ -934,7 +934,7 @@ theorem int32_strictly_positive_is_nonnegative(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_increment_below_max_is_defined`
 
@@ -950,7 +950,7 @@ theorem int32_increment_below_max_is_defined(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_one_plus_below_max_is_defined`
 
@@ -966,7 +966,7 @@ theorem int32_one_plus_below_max_is_defined(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_one_plus_strictly_increases`
 
@@ -982,7 +982,7 @@ theorem int32_one_plus_strictly_increases(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_nonnegative_add_within_max_is_defined`
 
@@ -999,7 +999,7 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_nonnegative_subtract_within_value_is_defined`
 
@@ -1016,7 +1016,7 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_move_one_from_right_to_left_preserves_sum`
 
@@ -1038,7 +1038,7 @@ theorem int32_move_one_from_right_to_left_preserves_sum(
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_subtract_equal_sum_right_cancels`
 
@@ -1058,7 +1058,7 @@ theorem int32_subtract_equal_sum_right_cancels(value: int32, left: int32, amount
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_add_defined_by_integer_bounds`
 
@@ -1073,7 +1073,7 @@ theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
 Bounds on the mathematical sum establish that signed C addition does not overflow.
 Both bounds are required, including when the final program result is in range.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md).
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_subtract_defined_by_integer_bounds`
 
@@ -1092,7 +1092,7 @@ When constant bounds on the operands themselves suffice, the checked
 `int32_defined` certificate step needs no `to_integer` conversion
 ([tactics reference](../tactics/index.md)).
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md).
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_add_to_integer`
 
@@ -1106,7 +1106,7 @@ theorem int32_add_to_integer(left: int32, right: int32) {
 A defined signed C addition has the same value as mathematical Integer addition.
 The definedness premise excludes overflow; the equality is not unconditional.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md).
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_subtract_to_integer`
 
@@ -1120,7 +1120,7 @@ theorem int32_subtract_to_integer(left: int32, right: int32) {
 A defined signed C subtraction has the same value as mathematical Integer subtraction.
 The definedness premise excludes overflow; the equality is not unconditional.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md).
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_less_equal_to_integer`
 
@@ -1135,7 +1135,7 @@ A signed C order fact transfers to the exact mathematical observations of the
 two operands. The C order premise is required; the bridge does not assume an
 order between unrelated machine values.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md).
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
 ### `int32_add_nonnegative_right_is_at_least_left`
 
@@ -1152,7 +1152,7 @@ theorem int32_add_nonnegative_right_is_at_least_left(left: int32, right: int32) 
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_add_nonnegative_left_is_at_least_right`
 
@@ -1169,7 +1169,7 @@ theorem int32_add_nonnegative_left_is_at_least_right(left: int32, right: int32) 
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_positive_predecessor_is_nonnegative`
 
@@ -1185,7 +1185,7 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_above_one_predecessor_is_at_least_one`
 
@@ -1201,7 +1201,7 @@ theorem int32_above_one_predecessor_is_at_least_one(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_positive_predecessor_strictly_decreases`
 
@@ -1217,7 +1217,7 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_nonnegative_predecessor_upper_bound`
 
@@ -1234,7 +1234,7 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_le_lt_transitive`
 
@@ -1251,7 +1251,7 @@ theorem int32_le_lt_transitive(first: int32, middle: int32, last: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_le_transitive`
 
@@ -1268,7 +1268,7 @@ theorem int32_le_transitive(first: int32, middle: int32, last: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_lt_transitive`
 
@@ -1285,7 +1285,7 @@ theorem int32_lt_transitive(first: int32, middle: int32, last: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_lt_le_transitive`
 
@@ -1302,7 +1302,7 @@ theorem int32_lt_le_transitive(first: int32, middle: int32, last: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_ge_transitive`
 
@@ -1319,7 +1319,7 @@ theorem int32_ge_transitive(last: int32, middle: int32, first: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_ge_implies_reversed_le`
 
@@ -1335,7 +1335,7 @@ theorem int32_ge_implies_reversed_le(greater: int32, lower: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_le_implies_reversed_ge`
 
@@ -1351,7 +1351,7 @@ theorem int32_le_implies_reversed_ge(lower: int32, greater: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_le_and_not_lt_implies_eq`
 
@@ -1368,7 +1368,7 @@ theorem int32_le_and_not_lt_implies_eq(left: int32, right: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_le_and_neq_implies_lt`
 
@@ -1385,7 +1385,7 @@ theorem int32_le_and_neq_implies_lt(left: int32, right: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `int32_ge_and_not_gt_implies_eq`
 
@@ -1402,7 +1402,7 @@ theorem int32_ge_and_not_gt_implies_eq(left: int32, right: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ## Array specifications
 
@@ -1420,7 +1420,7 @@ function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `permutation`
 
@@ -1436,7 +1436,7 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation)` when a proof needs the predicate body.
 
 ## Byte-range specifications
 
@@ -1454,7 +1454,7 @@ function byte_count(bytes: uint8[], lo: int32, hi: int32, value: uint8) -> int32
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `bytes_equal`
 
@@ -1470,7 +1470,7 @@ predicate bytes_equal(left: uint8[], left_lo: int32, right: uint8[], right_lo: i
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal)` when a proof needs the predicate body.
 
 ### `bytes_equal_range`
 
@@ -1486,7 +1486,7 @@ predicate bytes_equal_range(left: uint8[], right: uint8[], lo: int32, hi: int32)
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal_range)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_equal_range)` when a proof needs the predicate body.
 
 ### `bytes_all_eq`
 
@@ -1502,7 +1502,7 @@ predicate bytes_all_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_eq)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_eq)` when a proof needs the predicate body.
 
 ### `bytes_contains`
 
@@ -1518,7 +1518,7 @@ predicate bytes_contains(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_contains)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_contains)` when a proof needs the predicate body.
 
 ### `bytes_all_not_eq`
 
@@ -1534,7 +1534,7 @@ predicate bytes_all_not_eq(bytes: uint8[], lo: int32, hi: int32, value: uint8) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_not_eq)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes_all_not_eq)` when a proof needs the predicate body.
 
 ## C-string specifications
 
@@ -1550,7 +1550,7 @@ predicate cstr_prefix(bytes: uint8[], len: int32) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_prefix)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_prefix)` when a proof needs the predicate body.
 
 ### `cstr_len`
 
@@ -1569,7 +1569,7 @@ byte `len` is a null terminator.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_len)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_len)` when a proof needs the predicate body.
 
 ### `cstr`
 
@@ -1585,7 +1585,7 @@ predicate cstr(bytes: uint8[]) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr)` when a proof needs the predicate body.
 
 ### `cstr_readable_len`
 
@@ -1607,7 +1607,7 @@ embedded terminator, and the terminator byte is null.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_readable_len)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_readable_len)` when a proof needs the predicate body.
 
 ### `cstr_readable_len_unique`
 
@@ -1674,7 +1674,7 @@ content theorem; it does not grant viewability or read/write permission.
 **Kind:** theorem. The proof is checked as part of the standard-library
 definition and its requirements and guarantee are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `cstr_readable`
 
@@ -1698,7 +1698,7 @@ predicate when a proof needs to expose that witness.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_readable)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_readable)` when a proof needs the predicate body.
 
 ### `cstr_bounded`
 
@@ -1712,7 +1712,7 @@ predicate cstr_bounded(bytes: uint8[], max: int32) {
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_bounded)` when a proof needs the predicate body.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(cstr_bounded)` when a proof needs the predicate body.
 
 ### `cstr_len_is_viewable`
 
@@ -1732,7 +1732,7 @@ prefix and its terminator as a separate fact for a subsequent proof step.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/cstr_viewable_witness.md`](https://github.com/lacker/click/blob/master/mdtests/cstr_viewable_witness.md) checks this witness projection.
+**Verified use:** [`mdtests/cstr_viewable_witness.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_viewable_witness.md) checks this witness projection.
 
 ### `cstr_len_nonnegative`
 
@@ -1751,7 +1751,7 @@ theorem cstr_len_nonnegative(bytes: uint8[], len: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `cstr_len_has_prefix`
 
@@ -1770,7 +1770,7 @@ theorem cstr_len_has_prefix(bytes: uint8[], len: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ### `cstr_len_has_terminator`
 
@@ -1789,7 +1789,7 @@ theorem cstr_len_has_terminator(bytes: uint8[], len: int32) {
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
 ## External C contracts
 
@@ -1821,7 +1821,7 @@ effect is bound to this declaration, not to the name `memcpy`.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_external_contracts.md) checks its postcondition.
+**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its postcondition.
 
 ### `memcmp`
 
@@ -1841,7 +1841,7 @@ from unequal prefixes by whether the result is zero.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_external_contracts.md) checks its equality consequence.
+**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its equality consequence.
 
 ### `memset`
 
@@ -1863,7 +1863,7 @@ value and returns the destination pointer.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_external_contracts.md) checks its byte-fill consequence.
+**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its byte-fill consequence.
 
 ### `strlen`
 
@@ -1889,7 +1889,7 @@ the concrete empty-string guarantee.
 
 **Kind:** external C contract. The declaration is an explicit verification assumption.
 
-**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/lacker/click/blob/master/mdtests/stdlib_external_contracts.md) checks its length consequence.
+**Verified use:** [`mdtests/stdlib_external_contracts.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_external_contracts.md) checks its length consequence.
 
 ## Namespace and extension rules
 

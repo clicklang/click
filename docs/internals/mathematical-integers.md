@@ -55,7 +55,7 @@ Euclidean division: for nonzero `d`,
 
 Thus `-7 / 3 == -3` and `-7 % 3 == 2`; this is distinct from C's truncation
 toward zero. A zero divisor is a definedness obligation. See the deferred
-[division and remainder issue](https://github.com/lacker/click/blob/master/issues/integer-division-and-remainder.md).
+[division and remainder issue](https://github.com/clicklang/click/blob/master/issues/integer-division-and-remainder.md).
 
 Every checked conversion and every future checked division must establish its
 definedness in the current proof context before a theorem or execution
@@ -112,7 +112,7 @@ capture-avoiding substitution, preserve carrier identity, and retain any
 definedness obligations in the witness or proposition. Deep repeated universal
 introduction has a known quadratic cost and is deferred for targeted scaling
 work; correctness checks and existing budgets remain in force. See the
-[deep quantifier scaling issue](https://github.com/lacker/click/blob/master/issues/deep-quantifier-scaling.md).
+[deep quantifier scaling issue](https://github.com/clicklang/click/blob/master/issues/deep-quantifier-scaling.md).
 
 For an existential witness, definedness remains attached to that same witness.
 It cannot be weakened into an implication whose guard is false, since that
@@ -226,8 +226,8 @@ to make an Integer proof succeed.
 - [Verification efficiency](verification-efficiency.md)
 - [Memory derivation DAG](memory-dag.md)
 - [Language reference: mathematical integers](../reference/language/index.md#mathematical-integers)
-- [Canonical unchanged-C summation regression](https://github.com/lacker/click/blob/master/mdtests/integer_sum_range_fold.md)
-- [Missing element-bound regression](https://github.com/lacker/click/blob/master/mdtests/integer_sum_range_fold_missing_bounds.md)
-- [Intermediate-overflow regression](https://github.com/lacker/click/blob/master/mdtests/integer_sum_range_fold_intermediate_overflow.md)
-- [Endpoint congruence regression](https://github.com/lacker/click/blob/master/mdtests/fold_endpoints_rewrite_under_equality.md)
-- [Endpoint congruence refusal](https://github.com/lacker/click/blob/master/mdtests/fold_endpoints_reject_a_different_body.md)
+- [Canonical unchanged-C summation regression](https://github.com/clicklang/click/blob/master/mdtests/integer_sum_range_fold.md)
+- [Missing element-bound regression](https://github.com/clicklang/click/blob/master/mdtests/integer_sum_range_fold_missing_bounds.md)
+- [Intermediate-overflow regression](https://github.com/clicklang/click/blob/master/mdtests/integer_sum_range_fold_intermediate_overflow.md)
+- [Endpoint congruence regression](https://github.com/clicklang/click/blob/master/mdtests/fold_endpoints_rewrite_under_equality.md)
+- [Endpoint congruence refusal](https://github.com/clicklang/click/blob/master/mdtests/fold_endpoints_reject_a_different_body.md)

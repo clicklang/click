@@ -5,7 +5,7 @@ its typed cells: what a representation copy establishes, what a one-byte
 access reads and writes, and which reinterpretations stay refused. The public
 summary is in [Memory model](../concepts/memory-model.md#byte-view-of-integer-cells);
 the verified demonstration is
-[`examples/byte-representation/`](https://github.com/lacker/click/blob/master/examples/byte-representation/README.md).
+[`examples/byte-representation/`](https://github.com/clicklang/click/blob/master/examples/byte-representation/README.md).
 
 ## Selected profile
 

@@ -7,7 +7,7 @@ function Stop-ClickInstall([string] $Message) {
     exit 1
 }
 
-$repository = if ($env:CLICK_RELEASE_REPOSITORY) { $env:CLICK_RELEASE_REPOSITORY } else { 'lacker/click' }
+$repository = if ($env:CLICK_RELEASE_REPOSITORY) { $env:CLICK_RELEASE_REPOSITORY } else { 'clicklang/click' }
 if ($repository -notmatch '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$') {
     Stop-ClickInstall 'CLICK_RELEASE_REPOSITORY must be owner/name'
 }
