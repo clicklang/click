@@ -110,14 +110,23 @@ and transitivity without resources or `fold`. All consumers query the same
 closure. This introduces no extra proof premises, pointer representation
 change, or history scan.
 
-The rule is intentionally limited to the selected materialization edge.
-The sibling-write reduction and actual rbtree refold still need checked
-preservation across intervening memory transitions. Looking only at retained
-cell-map entries is unsound for this purpose: an unknown-alias low-level store
-can leave those entries present. The next slice should publish reusable
-preservation evidence at a shared kernel boundary, then exercise ordinary
-pointer claims and fold through the same checker. Do not restore the special
-fold comparison or add automatic history search.
+The common producer also checks one immediate store transition: structural
+object separation or a constant byte gap in an established graph address
+class can justify equality between that read and the before-store read. The
+full store and read footprints are checked. A focused kernel regression was
+red before this rule; ordinary pointer and resource-argument checks now share
+its admitted equality. The Click claim in
+`mdtests/egraph_pointer_read_single_store.md` already verified through existing
+mechanisms and provides expansion/rechecking coverage, not evidence of a new
+surface capability. Published single-store edges compose through the graph.
+
+There is no automatic history walk or fold-specific comparison. Unknown
+write aliases, unregistered intermediate transitions, and other transition
+kinds remain outside this narrow rule. Retained cell-map entries alone are
+insufficient: an unknown-alias low-level store can leave them present. Recheck
+the actual rbtree leaf before selecting its next missing transition; do not
+infer that the complete sibling-write refold now works from this one-edge
+regression alone.
 
 ## Reduced rbtree recheck, 2026-09-29
 
