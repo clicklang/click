@@ -3007,8 +3007,9 @@ impl PureFactContext {
     }
 
     /// Publish a typed read's definition and locally checked source equality.
-    /// The graph is part of the trusted kernel. Exact materialization-edge
-    /// evidence is checked here, so equality queries never search history.
+    /// The graph is part of the trusted kernel. One exact materialization or
+    /// separate store edge is checked here;
+    /// equality queries never search history.
     /// No proposition or read authority is introduced. Checked unions belong
     /// only to this persistent proof context; definitions are unconditional.
     pub(in crate::kernel) fn register_pointer_read(
@@ -3031,10 +3032,35 @@ impl PureFactContext {
         let Some(derivation) = start.derivation() else {
             return;
         };
-        let CMemoryDerivation::CellsSeeded { run, .. } = derivation.as_ref() else {
-            return;
+        let source = match derivation.as_ref() {
+            CMemoryDerivation::CellsSeeded { run, .. } => run.read_source(address, bytes),
+            CMemoryDerivation::Store {
+                base,
+                pointer: write,
+                value,
+            } => {
+                // Select over exactly one store. Align to its explicitly
+                // named block using established graph equality, then check
+                // complete byte separation. No search of older snapshots,
+                // ownership frames, or spellings is allowed here.
+                let read = if write.blocks_proven_distinct(address) {
+                    Some(address.clone())
+                } else {
+                    self.equality_graph.pointer_in_block(address, &write.block)
+                };
+                read.filter(|read| {
+                    crate::kernel::reasoning::exact_access_byte_overlap(
+                        write,
+                        value.byte_width(),
+                        read,
+                        bytes,
+                    ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
+                })
+                .map(|_| base.clone())
+            }
+            _ => None,
         };
-        if let Some(source) = run.read_source(address, bytes)
+        if let Some(source) = source
             && bytes == crate::kernel::load_access_width_or_widest(&source, address)
         {
             self.equality_graph.add_checked_read_equality(

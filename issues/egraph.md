@@ -1,12 +1,13 @@
 # P1: Use kernel equality for rbtree pointer reads and folds
 
 The [rbtree insertion proof](rbtree-example.md) has two unfinished case-3
-leaves under a `Right` great-grandparent frame. The 2026-09-29 recheck on
-`f01a85a1a` confirms the frontier is unchanged. An attempted immediate
-`fold(rb_at(yid), ...)` after unfolding the sibling now passes owned-cell
-consumption, then fails the recursive child-argument equality check. This is
-no longer established as an owned-cell lookup failure. The related
-`p->word` / `id->word` store/read regression already passes.
+leaves under a `Right` great-grandparent frame. Its untouched frontier remains
+at statement 42. The 2026-09-30 read-identity recheck accepts an inserted
+immediate `fold(rb_at(yid), ...)` after unfolding the sibling, including the
+recursive child-argument equality that previously failed. The following
+`step()` stops on two successors in the inlined rotation. The related
+`p->word` / `id->word` store/read regression also passes. No remaining egraph
+failure has been established at that next proof boundary.
 
 This P1 issue is limited to the equality behavior needed to finish those
 proofs. The e-graph is part of the **trusted kernel**. The broader design
@@ -42,9 +43,9 @@ but that document is not a list of launch requirements.
    a write; those remain distinct checked judgments.
 
 Work in small green commits. Actual pointer reads, indexed specification reads,
-and fold candidate selection have landed. The no-write recursive child
-matching reduction now passes; next recheck the differing-snapshot rbtree
-boundary described below.
+and fold candidate selection have landed. Both the no-write and sibling-write
+recursive child matching reductions now pass. The latest rbtree probe is
+described under producer-recorded read identities below.
 If the rbtree failure turns out to be a resource-lookup gap with the needed
 load equality already available, take the lookup slice first. Do not change
 the unchanged C to route around a verifier gap.
@@ -110,14 +111,79 @@ and transitivity without resources or `fold`. All consumers query the same
 closure. This introduces no extra proof premises, pointer representation
 change, or history scan.
 
-The rule is intentionally limited to the selected materialization edge.
-The sibling-write reduction and actual rbtree refold still need checked
-preservation across intervening memory transitions. Looking only at retained
-cell-map entries is unsound for this purpose: an unknown-alias low-level store
-can leave those entries present. The next slice should publish reusable
-preservation evidence at a shared kernel boundary, then exercise ordinary
-pointer claims and fold through the same checker. Do not restore the special
-fold comparison or add automatic history search.
+The common producer also checks one immediate store transition: structural
+object separation or a constant byte gap in an established graph address
+class can justify equality between that read and the before-store read. The
+full store and read footprints are checked. A focused kernel regression was
+red before this rule; ordinary pointer and resource-argument checks now share
+its admitted equality. The Click claim in
+`mdtests/egraph_pointer_read_single_store.md` already verified through existing
+mechanisms and provides expansion/rechecking coverage, not evidence of a new
+surface capability. Published single-store edges compose through the graph.
+
+There is no automatic history walk or fold-specific comparison. Unknown
+write aliases, unregistered intermediate transitions, and other transition
+kinds remain outside this narrow rule. Retained cell-map entries alone are
+insufficient: an unknown-alias low-level store can leave them present. Recheck
+the actual rbtree leaf before selecting its next missing transition; do not
+infer that the complete sibling-write refold now works from this one-edge
+regression alone.
+
+## Producer-recorded read identities, 2026-09-30
+
+The sibling-write reduction is now retained as
+`mdtests/egraph_recursive_child_sibling_write.md`. It verifies, expands, and
+independently rechecks with its C unchanged. Replacing the sibling write with
+an overwrite of the pointer field rejects the expanded proof. A resource-free
+snapshot-chain regression was red before this change.
+
+Snapshot production now assigns an immutable read-congruence identity.
+Recorded cache forgetting inherits the base's identity. A load-valued seeded
+run inherits it only if the source and base already share the identity and
+slot stride equals value width. This composes sibling materializations copied
+from the same unchanged bytes. Graph pointer/int32 load signatures use the key;
+existing C values and load terms keep their representation. The metadata is
+trusted kernel state and supplies no read permission, lifetime, or framing
+judgment. Separate-store evidence remains branch-local. The redundant per-read
+cache-forgetting rule is removed.
+
+First interning fixes the key, so late annotation can conservatively miss an
+equality but cannot invalidate existing graph signatures. Unknown writes,
+havoc, changed sources, constant runs, and unrecorded pruning are negative
+regressions. Increasing histories check linear producer work and constant
+endpoint-query work without intermediate reads or history traversal.
+
+Rechecking the original rbtree leaf with the immediate refold inserted after
+`unfold(xs)` now passes that selected-child comparison. The next existing
+`step()` fails because `__rb_rotate_set_parents` has two statement successors.
+The untouched frontier remains deliberately incomplete; this is not a claim
+that its remaining rotation proof is finished. Original rbtree C and sidecars
+are unchanged.
+
+## Sibling-write integration recheck, 2026-09-30
+
+The no-write fixture `mdtests/egraph_recursive_child_alias.md` remains green.
+Its sibling-write reduction adds `int tag` to the struct, adds `owns &p->tag`
+to the nonempty resource arm, changes the C body to `p->tag = 1;`, and inserts
+`step();` between unfold and refold. It still fails with `selected child does
+not satisfy the proposed parent model`; the ordinary refold has not been
+established by the one-store graph regression.
+
+Bounded investigation identifies the final read's snapshot chain as `Store`
+then `CellsForgotten`, then three `CellsSeeded` edges, then the original child
+snapshot. The store admission already connects the final read to its immediate
+base. A resource-free red regression identified missing equality across a
+recorded `CellsForgotten` edge. The shared producer now admits that immediate
+no-write edge, with branch isolation, late read aliases, overwrite/havoc
+negatives, and constant registration work beside growing older histories.
+
+That one-edge addition does not complete this integration case: constructing
+a source load term does not publish a read at each intermediate snapshot.
+The next boundary is incremental publication/composition across materialized
+and forgotten snapshots. Do not silently add a history walk to equality
+queries or `fold`, or claim the rbtree leaf is fixed. Keep this reduction's C
+write unchanged and require expansion/rechecking after ordinary verification
+succeeds.
 
 ## Reduced rbtree recheck, 2026-09-29
 

@@ -317,7 +317,10 @@ impl TermClasses {
                 }
             };
             let offset = self.intern(&pointer.offset);
-            self.register_application(id, Application::Int32Load(memory.arena_id(), block, offset));
+            self.register_application(
+                id,
+                Application::Int32Load(memory.read_identity(), block, offset),
+            );
         }
     }
 

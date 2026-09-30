@@ -4491,6 +4491,19 @@ impl SharedCMemory {
         (self.arena, self.id)
     }
 
+    /// Producer-recorded identity of unchanged program bytes, for graph load
+    /// congruence only. This is trusted-kernel metadata, not snapshot equality
+    /// or access authority. It is fixed at first interning and looked up in O(1).
+    pub(in crate::kernel) fn read_identity(&self) -> (u32, u32) {
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return self.arena_id();
+            }
+            (self.arena, arena.1.read_identities[self.id as usize])
+        })
+    }
+
     pub(crate) fn memory(&self) -> &CMemory {
         &self.memory
     }
@@ -4898,6 +4911,9 @@ struct CMemoryArena {
     /// Indexed by arena id; `None` for entry states and for any snapshot
     /// whose first interning did not come from a recorded edge.
     derivations: Vec<Option<std::sync::Arc<CMemoryDerivation>>>,
+    /// Immutable load-congruence keys. Producers reuse the base's key only
+    /// for an unconditional byte-preserving transition. No history is queried.
+    read_identities: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -4992,7 +5008,20 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
         return;
     }
     // Interning borrows the arena, so it has to finish before the write.
-    let derived = intern_c_memory_ref(result);
+    let read_identity = match &derivation {
+        CMemoryDerivation::CellsForgotten { base } => Some(base.read_identity()),
+        CMemoryDerivation::CellsSeeded { base, run }
+            if matches!(run.value_mode(), cell_store::RunValueMode::Load)
+                && run.element_width() == run.value_width()
+                && base.read_identity() == run.source().read_identity() =>
+        {
+            // Copying the same bytes already in the base is materialization,
+            // including sibling runs copied from an equivalent earlier source.
+            Some(base.read_identity())
+        }
+        _ => None,
+    };
+    let derived = intern_c_memory_ref_with_read_identity(result, read_identity);
     if !result.same_storage_roots(derived.memory()) {
         *result = derived.memory().clone();
     }
@@ -5123,6 +5152,7 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.read_identities.push(id);
         SharedCMemory {
             arena: *token,
             id,
@@ -5158,6 +5188,16 @@ pub(crate) fn interned_storage_of(memory: &CMemory) -> Option<SharedCMemory> {
 /// cloning it, so hot memoization lookups keyed by interned identity pay a
 /// hash and comparison but no allocation.
 pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
+    intern_c_memory_ref_with_read_identity(memory, None)
+}
+
+/// First interning wins, including its read identity. Existing snapshots never
+/// change keys underneath registered applications; an earlier unannotated hit
+/// conservatively loses this equality rather than requiring graph rescans.
+fn intern_c_memory_ref_with_read_identity(
+    memory: &CMemory,
+    read_identity: Option<(u32, u32)>,
+) -> SharedCMemory {
     C_MEMORY_ARENA.with(|arena| {
         let mut arena = arena.borrow_mut();
         let (token, arena) = &mut *arena;
@@ -5197,6 +5237,11 @@ pub fn intern_c_memory_ref(memory: &CMemory) -> SharedCMemory {
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.read_identities.push(
+            read_identity
+                .filter(|(source_arena, source)| *source_arena == *token && *source < id)
+                .map_or(id, |(_, source)| source),
+        );
         SharedCMemory {
             arena: *token,
             id,

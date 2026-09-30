@@ -3929,17 +3929,15 @@ impl CMemory {
             // recorded history.
             if forgot_live_knowledge {
                 memory.mark_forgotten_from(&base);
-                // The mark is what makes this edge recordable, so check it
-                // where it is set rather than where it is used: a result
-                // that is not younger than its base would be dropped by
-                // `record_c_memory_derivation` and take the forgotten
-                // store off every recorded history with it.
-                debug_assert!(
-                    intern_c_memory_ref(&memory).arena_id() > base.arena_id(),
-                    "a forget that lost knowledge landed on an older snapshot"
-                );
             }
+            let base_id = base.arena_id();
             record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
+            // Check after producer recording: first interning also fixes the
+            // read-congruence identity, so debug checks must not preempt it.
+            debug_assert!(
+                !forgot_live_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
+                "a forget that lost knowledge landed on an older snapshot"
+            );
         }
         memory
     }
