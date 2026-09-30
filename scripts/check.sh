@@ -57,8 +57,11 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
     exit 1
 fi
 
-# Unit tests may use every core.
-cargo nextest run --lib --bins --test documentation --test condition_transport_api "$@"
+# The combined `click` binary includes each command source file as a module.
+# Cargo also discovers those source files as standalone binaries under
+# `src/bin/`, so `--bins` runs their identical test bodies a second time.
+# Test the shipped entry point once; clippy above still checks every target.
+cargo nextest run --lib --bin click --test documentation --test condition_transport_api "$@"
 # The fixture harnesses run one at a time, and each verifies its fixtures on
 # every core. Their proof verdicts come from deterministic tactic-work
 # budgets; nextest's outer timeout is process-level hang containment, not a

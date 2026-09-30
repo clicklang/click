@@ -17,15 +17,39 @@ upstream `master` on a new branch and pull request. Keep independent efforts in
 separate pull requests.
 
 Upstream `master` requires a pull request, a passing GitHub Actions `test`
-check, and the merge queue. For a non-draft pull request the repository owner
-asks an agent to open, add it to the merge queue as soon as its required checks
-pass; do not wait for another prompt. If auto-merge is enabled, turn it on at
-submission so GitHub queues the PR when checks pass. If auto-merge is disabled,
-wait for checks to pass and use `gh pr merge <number>` without a merge-method
-option to add the ready PR to the required queue. For other pull requests,
-maintainers add ready changes after their checks pass. The queue runs
-`scripts/check.sh` on the prospective upstream tree and merges one pull request
-at a time. Do not merge directly or bypass the queue.
+check, and the merge queue. The queue runs `scripts/check.sh` on the prospective
+upstream tree and merges one pull request at a time. Do not merge directly or
+bypass the queue.
+
+### Lacker and agent merge-queue loop
+
+Use this preferred path when Lacker is working with an agent authenticated to
+GitHub as `lacker` and has authorized the agent to deliver the change. Other
+contributors follow the normal PR and review process.
+
+1. Before follow-up work, inspect the branch's PR. If it is still open, keep
+   working on that PR. If it merged, create a new PR for the new work.
+2. Make a coherent change and use judgment to choose useful local checks. A
+   full `scripts/check.sh` run is not required before every PR; report the
+   checks that did run.
+3. Push the branch to the fork and create or update the PR against upstream
+   `master`.
+4. Immediately request **Merge when ready**, even while checks are running:
+   run `gh pr merge <PR> --auto`. GitHub records the request and puts the PR
+   into the merge queue once its requirements pass. Do not wait for CI to
+   finish before requesting this. The **Allow auto-merge** repository setting
+   must be enabled; it is enabled on `clicklang/click`.
+5. Once GitHub confirms the request, continue with the next work without
+   waiting for the check or merge to finish.
+6. On the next update, inspect the PR again. Update the same open PR and run
+   `gh pr merge <PR> --auto` again if needed. If it merged, open a new PR.
+7. If checks fail, a conflict appears, or GitHub removes the PR from the
+   queue, resolve the problem, update the PR, and register the merge request
+   again. Then continue with the next work.
+
+If GitHub reports that auto-merge is not allowed, report the repository
+setting as a blocker to the maintainer; do not wait for CI as a workaround.
+Never use `--admin`, merge directly, or bypass required checks or review rules.
 
 Use `origin` for the contributor's fork and `upstream` for
 `git@github.com:clicklang/click.git`. Set `remote.pushDefault` to `origin`
@@ -43,11 +67,11 @@ formatting, tests, and commits there. Treat the shared primary checkout as an
 integration checkout, not a development workspace; do not expose other agents
 to partially implemented or failing changes.
 
-Submit only coherent green commits. Before opening or updating a pull request,
-run the relevant focused and full gates in the task worktree (use the
-documentation-only gate for prose-only changes), then push the tested branch to
-the fork. Include the change's purpose and validation in the pull request. If
-upstream has moved, update the task branch and rerun any affected gates before
+Submit coherent changes and use judgment to select useful local checks. A full
+local `scripts/check.sh` run is not required before every pull request; PR CI
+and the merge queue run the full gate. For prose-only changes, the focused
+documentation gate is available. Report which checks ran in the pull request.
+If upstream has moved, update the task branch and rerun affected checks before
 merging.
 
 If updating the local primary checkout after a pull request merges, verify
