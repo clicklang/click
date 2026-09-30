@@ -5108,6 +5108,7 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
         if let Some(mut entries) = self.concrete_write_entries(pointer, byte_width, assumptions) {
+            let exact = entries.exact();
             return entries.find_map(|entry| {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
@@ -5115,9 +5116,17 @@ impl ResourceContext {
                 // Translate the access into the owner's coordinates using
                 // checked graph equality. Candidate selection supplies no
                 // authority; the existing write and bounds judgment decides.
-                let address = assumptions
-                    .equality_graph
-                    .pointer_in_block(pointer, &range.base().block)?;
+                let address = if exact {
+                    // The paired address class proves equality to this live
+                    // occurrence's start, including loaded/non-affine terms.
+                    range
+                        .base()
+                        .offset_by_elements(range.start().clone(), range.element_width())
+                } else {
+                    assumptions
+                        .equality_graph
+                        .pointer_in_block(pointer, &range.base().block)?
+                };
                 memory_resource_fact_permits_write(resource, &address, byte_width, assumptions)
                     .then_some(range)
             });

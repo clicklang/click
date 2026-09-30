@@ -89,6 +89,12 @@ Each candidate still requires ownership and the existing write bounds check;
 views grant no write authority. Covered hits and misses do not retry spellings
 or scan unrelated ranges. Other write shapes retain the general lookup, and
 whole-cell read payloads are not treated as complete write candidates.
+Exact whole-cell writes now have an ownership-only footprint payload on the
+same typed address classes, including late offset and loaded-pointer merges.
+The selected live owner supplies its own start for the existing permission
+check; views are excluded. Unbound footprints remain unknown and select the
+general lookup before candidate checks. Registration remains at proof input
+boundaries, and queries do not scan cold frames or unrelated footprint sizes.
 Other read shapes still select the general checker
 before lookup. Whole-cell reads now attach their exact-start entries to typed graph address
 applications. The graph's term-merge stream propagates offset and loaded-pointer

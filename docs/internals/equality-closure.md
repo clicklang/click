@@ -601,12 +601,19 @@ each owner's block through checked graph equality, then applies the existing
 write-permission and bounds judgment. Views cannot supply write authority.
 An indexed miss or failed candidate check is decisive for this covered
 fragment; it does not retry spellings or scan the remaining resources.
-Whole-cell read payloads are not used for writes: an exact-size view can
-coexist with a larger covering owner. Symbolic, non-affine, loaded-pointer,
-and incomplete interval shapes still select the general write lookup before
-checking candidates. Retiring that remaining path requires a separate
-complete write-candidate index for those shapes. The existing logical
-pointer-cell width rule is preserved for both access judgments.
+Whole-cell writes additionally use a separate footprint payload containing
+only positive concrete owners at registered typed address classes. Late
+offset and loaded-pointer equalities update this payload through the graph's
+existing merge stream. A selected occurrence supplies its own start address
+for the authoritative range check. Views never enter the write payload; an
+exact-size view cannot hide a larger owner. The read and write payloads share
+the existing footprint/width eligibility rule and move only the smaller
+occurrence payload on a class merge. Exact candidates do not depend on an
+affine coordinate bucket. Unbound footprints and unsupported containment or
+snapshot shapes still select the general lookup before candidate checks;
+unknown equality is not disequality. The existing logical pointer-cell width
+rule is preserved for both access judgments. Input registration remains a
+proof-boundary operation, not a scan performed by a cold lookup.
 
 Read, write, and fold consumers are integration examples. A lookup must not
 enumerate every spelling in a class. Equality indexing narrows candidates;
