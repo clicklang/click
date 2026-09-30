@@ -99,6 +99,37 @@ fn missing_condition_prerequisite_error(
     )
 }
 
+fn proof_condition_runtime_error(
+    context_label: &str,
+    error: &crate::kernel::CRuntimeError,
+    state: &CState,
+) -> ClickError {
+    let (detail, guidance) = match error {
+        crate::kernel::CRuntimeError::MissingResource { resource }
+            if resource.memory_view_range().is_some() =>
+        {
+            let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
+            let required = crate::surface::diagnostics::describe_resource_fact(
+                resource,
+                &parameters,
+                &arguments,
+            );
+            (
+                format!("the read requires `{required}`, which is not available"),
+                " The condition's Boolean value does not need to be known in advance: `branch` can split on either value once the field can be read. Unfold the resource that exposes this field before `execute()`. If a read is valid only under a separate condition, establish that guard before executing the read.",
+            )
+        }
+        _ => (
+            crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
+            "",
+        ),
+    };
+    ClickError::new(format!(
+        "{context_label} could not evaluate the C condition: {detail}.{guidance}"
+    ))
+    .with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))
+}
+
 #[derive(Clone)]
 pub(in crate::surface::proof) struct CertifiedProofConditionTransition {
     pub(in crate::surface::proof) is_true: bool,
@@ -192,9 +223,15 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                     path_facts,
                     theorem: path.theorem().clone(),
                 }),
-                other => Err(ClickError::new(format!(
-                    "{context_label} produced an invalid condition outcome: {other:?}"
+                CConditionOutcome::UndefinedBehavior(kind) => Err(ClickError::new(format!(
+                    "{context_label} could not evaluate the C condition because it has undefined behavior: {}",
+                    kind.description()
                 ))),
+                CConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
+                    context_label,
+                    error,
+                    state,
+                )),
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
