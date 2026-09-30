@@ -595,7 +595,20 @@ interval updates against an independent model, and incremental merges
 with a large resource payload. Resource-section publication uses the expansion
 delta rather than recreating views for unrelated ambient memory ranges.
 
-Read and fold consumers are the first integration examples. A lookup must not
+Write-resource candidate selection now shares the complete affine interval
+summary. It selects covering occurrences lazily, translates the access into
+each owner's block through checked graph equality, then applies the existing
+write-permission and bounds judgment. Views cannot supply write authority.
+An indexed miss or failed candidate check is decisive for this covered
+fragment; it does not retry spellings or scan the remaining resources.
+Whole-cell read payloads are not used for writes: an exact-size view can
+coexist with a larger covering owner. Symbolic, non-affine, loaded-pointer,
+and incomplete interval shapes still select the general write lookup before
+checking candidates. Retiring that remaining path requires a separate
+complete write-candidate index for those shapes. The existing logical
+pointer-cell width rule is preserved for both access judgments.
+
+Read, write, and fold consumers are integration examples. A lookup must not
 enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
 still require their own checked judgments and complete candidate indexes.
