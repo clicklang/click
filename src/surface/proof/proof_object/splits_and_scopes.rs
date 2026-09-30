@@ -530,12 +530,14 @@ impl<'a> Proof<'a> {
                 PropositionSplitError::NotProposition => {
                     self.step_error("`cases` requires a proposition goal")
                 }
-                PropositionSplitError::MissingDisjunction(kernel) => self.step_error(format!(
-                    "`cases` requires its exact disjunction as an available fact: {kernel:?}"
+                PropositionSplitError::MissingDisjunction => self.step_error(format!(
+                    "`cases` requires its exact disjunction as an available fact: `{}`",
+                    crate::surface::diagnostics::describe_click_proposition(&disjunction)
                 )),
-                PropositionSplitError::ExpectedDisjunction(kernel) => {
-                    self.step_error(format!("`cases` requires a disjunction, got {kernel:?}"))
-                }
+                PropositionSplitError::ExpectedDisjunction => self.step_error(format!(
+                    "`cases` requires a disjunction, got `{}`",
+                    crate::surface::diagnostics::describe_click_proposition(&disjunction)
+                )),
                 PropositionSplitError::NonComplementaryCases => {
                     unreachable!("cases does not supply complementary branch facts")
                 }
@@ -585,8 +587,8 @@ impl<'a> Proof<'a> {
                 PropositionSplitError::NonComplementaryCases => self.step_error(
                     "proof `if` condition and negation did not lower to complementary facts",
                 ),
-                PropositionSplitError::MissingDisjunction(_)
-                | PropositionSplitError::ExpectedDisjunction(_) => {
+                PropositionSplitError::MissingDisjunction
+                | PropositionSplitError::ExpectedDisjunction => {
                     unreachable!("proof if does not require a disjunction")
                 }
             })?
@@ -722,8 +724,8 @@ impl<'a> Proof<'a> {
                     "proof `if` condition and negation did not lower to complementary facts",
                 ),
                 #[cfg(test)]
-                FrontierSplitError::MissingDisjunction(_)
-                | FrontierSplitError::ExpectedDisjunction(_) => {
+                FrontierSplitError::MissingDisjunction
+                | FrontierSplitError::ExpectedDisjunction => {
                     unreachable!("proof if does not require a disjunction")
                 }
             })?
@@ -804,12 +806,14 @@ impl<'a> Proof<'a> {
                 FrontierSplitError::MissingExecution => {
                     self.step_error("execution-frontier proof lost its semantic state")
                 }
-                FrontierSplitError::MissingDisjunction(lowered) => self.step_error(format!(
-                    "`cases` requires its exact disjunction as an available fact: {lowered:?}"
+                FrontierSplitError::MissingDisjunction => self.step_error(format!(
+                    "`cases` requires its exact disjunction as an available fact: `{}`",
+                    crate::surface::diagnostics::describe_click_proposition(&disjunction)
                 )),
-                FrontierSplitError::ExpectedDisjunction(lowered) => {
-                    self.step_error(format!("`cases` requires a disjunction, got {lowered:?}"))
-                }
+                FrontierSplitError::ExpectedDisjunction => self.step_error(format!(
+                    "`cases` requires a disjunction, got `{}`",
+                    crate::surface::diagnostics::describe_click_proposition(&disjunction)
+                )),
                 FrontierSplitError::NonComplementaryCases => {
                     unreachable!("execution cases does not supply complementary branch facts")
                 }

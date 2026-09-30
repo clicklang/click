@@ -101,8 +101,8 @@ pub(crate) struct ProofSplit<L, O, E> {
 pub(crate) enum PropositionSplitError {
     Completed,
     NotProposition,
-    MissingDisjunction(Proposition),
-    ExpectedDisjunction(Proposition),
+    MissingDisjunction,
+    ExpectedDisjunction,
     NonComplementaryCases,
 }
 
@@ -120,9 +120,9 @@ pub(crate) enum FrontierSplitError {
     NotFrontier,
     MissingExecution,
     #[cfg(test)]
-    MissingDisjunction(Proposition),
+    MissingDisjunction,
     #[cfg(test)]
-    ExpectedDisjunction(Proposition),
+    ExpectedDisjunction,
     NonComplementaryCases,
 }
 
@@ -1308,10 +1308,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             return Err(PropositionSplitError::NotProposition);
         };
         if !branch.state.facts.contains(&disjunction) {
-            return Err(PropositionSplitError::MissingDisjunction(disjunction));
+            return Err(PropositionSplitError::MissingDisjunction);
         }
         let Proposition::Or(left, right) = disjunction else {
-            return Err(PropositionSplitError::ExpectedDisjunction(disjunction));
+            return Err(PropositionSplitError::ExpectedDisjunction);
         };
         let arm = |disjunct: Proposition| {
             ProofBranch::new(
@@ -2005,10 +2005,10 @@ impl<L: Clone, P: Clone, O: Clone, S: Clone>
             .clone()
             .ok_or(FrontierSplitError::MissingExecution)?;
         if !branch.state.facts.contains(&disjunction) {
-            return Err(FrontierSplitError::MissingDisjunction(disjunction));
+            return Err(FrontierSplitError::MissingDisjunction);
         }
         let Proposition::Or(left, right) = disjunction else {
-            return Err(FrontierSplitError::ExpectedDisjunction(disjunction));
+            return Err(FrontierSplitError::ExpectedDisjunction);
         };
         let introduced_facts = [vec![left.as_ref().clone()], vec![right.as_ref().clone()]];
         let arm = |disjunct: Proposition| {
