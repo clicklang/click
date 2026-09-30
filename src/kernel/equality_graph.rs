@@ -325,12 +325,17 @@ pub(in crate::kernel) struct CanonicalPointer {
 /// graph. The lock preserves `PureFactContext`'s Send/Sync contract.
 #[derive(Default)]
 pub(in crate::kernel) struct EqualityGraph {
+    // Query registrations are branch-local memo state. Consumers use this
+    // instance token to avoid replacing a published checkpoint with a scratch
+    // graph's node IDs; it carries no equality or proof authority.
+    registration_identity: std::sync::Arc<()>,
     state: std::sync::Mutex<EqualityGraphState>,
 }
 
 impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
+            registration_identity: std::sync::Arc::new(()),
             state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
     }
@@ -453,6 +458,53 @@ impl EqualityGraph {
         Some(merges)
     }
 
+    pub(in crate::kernel) fn registration_identity(&self) -> std::sync::Arc<()> {
+        self.registration_identity.clone()
+    }
+
+    /// Typed address applications share the graph's offset closure. This is
+    /// trusted index registration, not an additional premise or a new pointer
+    /// representation. Only registered addresses are propagated by merges.
+    pub(in crate::kernel) fn address_class(&self, pointer: &Pointer) -> Option<u64> {
+        let mut state = self.state.lock().expect("equality graph");
+        state.register_blocks([pointer.block.clone()]);
+        let (block, delta) = state.find(&pointer.block);
+        let offset = if delta == AffineOffset::default() {
+            pointer.offset.clone()
+        } else {
+            PointerOffsetTerm::Add(
+                Box::new(pointer.offset.clone()),
+                Box::new(delta.to_offset_term()?),
+            )
+        };
+        let (id, new) = state.terms.address(block.clone(), offset);
+        if new {
+            let weight = state.weight(&block) + 1;
+            state.weights.insert(block, weight);
+        }
+        Some(state.terms.class_root(id))
+    }
+
+    pub(in crate::kernel) fn address_class_root(&self, id: u64) -> u64 {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .class_root(id)
+    }
+
+    pub(in crate::kernel) fn address_merges_since(
+        &self,
+        ancestor: &Self,
+    ) -> Option<Vec<terms::TermClassMerge>> {
+        let previous = ancestor.state.lock().expect("equality graph").terms.clone();
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .merges_since(&previous)
+    }
+
     /// Read the class coordinate without registering new applications.
     pub(in crate::kernel) fn canonical_pointer(
         &self,
@@ -506,6 +558,17 @@ impl EqualityGraph {
             .expect("equality graph")
             .terms
             .has_equivalences()
+    }
+
+    /// Whether closure includes offset/scalar aliases beyond affine spelling.
+    /// The interval resource index understands affine definitions itself;
+    /// typed address unions alone do not invalidate its coverage summary.
+    pub(in crate::kernel) fn has_non_affine_term_equivalences(&self) -> bool {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .terms
+            .has_non_affine_equivalences()
     }
 
     /// Query the maintained closure, registering supported load applications
@@ -943,6 +1006,7 @@ impl EqualityGraphState {
         }
         self.members.remove(&moved);
         self.members.insert(kept.clone(), kept_members);
+        self.terms.shift_addresses(&moved, &kept, &moved_from_kept);
         self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
             depth: self.merge_history.as_ref().map_or(1, |node| node.depth + 1),
             merge: PointerClassMerge {

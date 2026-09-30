@@ -5,11 +5,13 @@
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
-use super::{MachineAtom, PointerBlock, PointerOffsetTerm, Variable};
+use super::{AffineOffset, MachineAtom, PointerBlock, PointerOffsetTerm, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
+    Address(u64, u64),
     Int32(MachineAtom),
     Int32Add(u64, u64),
     Constant(i64),
@@ -23,6 +25,7 @@ enum Node {
 // current class roots. Constructor and width remain part of every signature.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
+    Address(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
     Int32Scaled(u64, i64),
@@ -35,7 +38,9 @@ impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
             Self::Add(left, right) | Self::Int32Add(left, right) => [Some(left), Some(right)],
-            Self::Int32Scaled(value, _) | Self::Int32Load(_, _, value) => [Some(value), None],
+            Self::Address(_, value)
+            | Self::Int32Scaled(value, _)
+            | Self::Int32Load(_, _, value) => [Some(value), None],
         }
         .into_iter()
         .flatten()
@@ -43,6 +48,7 @@ impl Application {
 
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
+            Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
@@ -53,8 +59,28 @@ impl Application {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(in crate::kernel) struct TermClassMerge {
+    pub(in crate::kernel) moved: u64,
+    pub(in crate::kernel) kept: u64,
+}
+#[derive(Clone)]
+struct MergeHistory {
+    depth: usize,
+    merge: TermClassMerge,
+    parent: Option<Arc<MergeHistory>>,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    origin: Arc<()>,
+    non_affine_equivalences: bool,
+    history: Option<Arc<MergeHistory>>,
+    // Node IDs are local to a persistent registration prefix. The last marker
+    // detects divergent query registrations without scanning that prefix.
+    markers: PersistentMap<u64, Arc<()>>,
+    address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
+    address_nodes: PersistentSet<u64>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
     registered_int32_loads: PersistentSet<u64>,
@@ -74,8 +100,106 @@ pub(super) struct TermClasses {
 }
 
 impl TermClasses {
+    pub(super) fn merges_since(&self, ancestor: &Self) -> Option<Vec<TermClassMerge>> {
+        if !Arc::ptr_eq(&self.origin, &ancestor.origin) {
+            return None;
+        }
+        if let Some(last) = ancestor.nodes.len().checked_sub(1) {
+            let marker = self.markers.get(&(last as u64))?;
+            if !Arc::ptr_eq(marker, ancestor.markers.get(&(last as u64))?) {
+                return None;
+            }
+        }
+        let mut cursor = self.history.clone();
+        let previous = &ancestor.history;
+        let previous_depth = previous.as_ref().map_or(0, |node| node.depth);
+        let mut merges = Vec::new();
+        while !match (&cursor, previous) {
+            (None, None) => true,
+            (Some(current), Some(previous)) => Arc::ptr_eq(current, previous),
+            _ => false,
+        } {
+            let node = cursor.as_ref()?;
+            if node.depth <= previous_depth {
+                return None;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            merges.push(node.merge);
+            cursor = node.parent.clone();
+        }
+        merges.reverse();
+        Some(merges)
+    }
+
+    pub(super) fn address(
+        &mut self,
+        block: PointerBlock,
+        offset: PointerOffsetTerm,
+    ) -> (u64, bool) {
+        // Affine normalization is already trusted by pointer equality. Keep
+        // the original syntax connected to its definitional normal form so
+        // whole-offset premises and affine addresses share these applications.
+        let raw = self.intern(&offset);
+        let normalized = AffineOffset::of(&offset).and_then(|value| value.to_offset_term());
+        let operand = normalized.as_ref().map_or(raw, |term| self.intern(term));
+        self.register_pending_loads();
+        self.close_with_affine_definition(vec![(raw, operand)], true);
+        let next_block = self.load_blocks.len() as u64;
+        let block_id = match self.load_blocks.get(&block) {
+            Some(id) => *id,
+            None => {
+                self.load_blocks.insert(block.clone(), next_block);
+                next_block
+            }
+        };
+        let node = Node::Address(block_id, operand);
+        let new = !self.nodes.contains_key(&node);
+        let id = self.intern_node(node);
+        let mut uses = self.address_uses.get(&block).cloned().unwrap_or_default();
+        if !uses.contains_key(&id) {
+            uses.insert(id, Arc::new(offset));
+            self.address_uses.insert(block, uses);
+        }
+        (id, new)
+    }
+
+    pub(super) fn shift_addresses(
+        &mut self,
+        moved: &PointerBlock,
+        kept: &PointerBlock,
+        delta: &AffineOffset,
+    ) {
+        let Some(uses) = self.address_uses.get(moved).cloned() else {
+            return;
+        };
+        let Some(delta) = delta.to_offset_term() else {
+            // The affine block relation remains valid, but its displacement
+            // has no bounded spelling in this term fragment. Do not let a
+            // consumer turn incomplete address registrations into a denial.
+            return;
+        };
+        self.address_uses.remove(moved);
+        for (id, offset) in uses.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            let translated =
+                PointerOffsetTerm::Add(Box::new((**offset).clone()), Box::new(delta.clone()));
+            let (new, _) = self.address(kept.clone(), translated);
+            self.close(vec![(*id, new)]);
+        }
+    }
+
+    pub(super) fn class_root(&self, id: u64) -> u64 {
+        self.root(id)
+    }
+
     pub(super) fn has_equivalences(&self) -> bool {
         !self.parents.is_empty()
+    }
+
+    // Address-class unions and affine spelling registration do not enlarge
+    // the offset theory beyond the concrete interval index's own arithmetic.
+    pub(super) fn has_non_affine_equivalences(&self) -> bool {
+        self.non_affine_equivalences
     }
 
     fn intern(&mut self, term: &PointerOffsetTerm) -> u64 {
@@ -136,6 +260,10 @@ impl TermClasses {
         }
         let id = self.nodes.len() as u64;
         let application = match &node {
+            Node::Address(block, offset) => {
+                self.address_nodes = self.address_nodes.with_value(id);
+                Some(Application::Address(*block, *offset))
+            }
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
             Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),
@@ -149,6 +277,7 @@ impl TermClasses {
         };
         self.enqueue_int32_load(id, &node);
         self.nodes.insert(node, id);
+        self.markers.insert(id, Arc::new(()));
         if let Some(application) = application {
             self.register_application(id, application);
         }
@@ -366,9 +495,18 @@ impl TermClasses {
         self.application_signatures.insert(id, signature);
     }
 
-    fn close(&mut self, mut pending: Vec<(u64, u64)>) -> bool {
+    fn close(&mut self, pending: Vec<(u64, u64)>) -> bool {
+        self.close_with_affine_definition(pending, false)
+    }
+
+    fn close_with_affine_definition(
+        &mut self,
+        mut pending: Vec<(u64, u64)>,
+        mut affine_definition: bool,
+    ) -> bool {
         let mut changed = false;
         while let Some((left, right)) = pending.pop() {
+            let definitional = std::mem::take(&mut affine_definition);
             crate::instrumentation::record_deterministic_work(1);
             let mut kept = self.root(left);
             let mut moved = self.root(right);
@@ -378,8 +516,16 @@ impl TermClasses {
             if self.weight(kept) < self.weight(moved) {
                 std::mem::swap(&mut kept, &mut moved);
             }
+            if !definitional && !self.address_nodes.contains(&kept) {
+                self.non_affine_equivalences = true;
+            }
             let weight = self.weight(kept) + self.weight(moved);
             self.parents.insert(moved, kept);
+            self.history = Some(Arc::new(MergeHistory {
+                depth: self.history.as_ref().map_or(1, |node| node.depth + 1),
+                merge: TermClassMerge { moved, kept },
+                parent: self.history.clone(),
+            }));
             self.weights.remove(&moved);
             self.weights.insert(kept, weight);
             let moved_uses = self.uses.get(&moved).cloned().unwrap_or_default();

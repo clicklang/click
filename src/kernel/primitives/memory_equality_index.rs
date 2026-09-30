@@ -3,6 +3,8 @@
 //! Equality only selects candidates. Consumption checks the live occurrence's
 //! ownership, quantity and coverage in the ordinary resource algebra. Derived
 //! roots are excluded from semantic resource equality and fork with the context.
+#[cfg(test)]
+mod cell_tests;
 mod read_intervals;
 use read_intervals::ReadIntervals;
 
@@ -66,6 +68,22 @@ fn read_extent(fact: &CResourceFact) -> Option<u64> {
     (extent > 0).then_some(extent)
 }
 
+// An exact-start read is complete only when its footprint covers the entire
+// range. The existing int32-slot interpretation of pointer reads is special:
+// eight bytes may read one logical four-byte element, including an interior
+// element of a longer range. Such longer ranges cannot use exact-start misses.
+fn exact_read_sizes(fact: &CResourceFact) -> Vec<u32> {
+    let Some(extent) = read_extent(fact).and_then(|extent| u32::try_from(extent).ok()) else {
+        return Vec::new();
+    };
+    let width = fact.memory_range().expect("memory extent").element_width();
+    match (extent, width) {
+        (8, 4) => Vec::new(),
+        (4, 4) => vec![4, 8],
+        _ => vec![extent],
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct AddressBucket {
     /// Bucket coordinates can differ from the graph representative. Choosing
@@ -76,6 +94,7 @@ struct AddressBucket {
     weight: usize,
     read_intervals: ReadIntervals,
     memory_count: usize,
+    exact_read_sizes: PersistentMap<u32, usize>,
     general_coordinates: usize,
 }
 
@@ -100,7 +119,7 @@ impl MemoryAddresses {
             };
             self.update_coordinate(pointer.block, kind, offset, entry, insert, extent);
         }
-        self.update_memory_count(range.base().block.clone(), insert);
+        self.update_memory_count(range.base().block.clone(), insert, fact);
     }
 
     fn update_in_graph(
@@ -134,15 +153,24 @@ impl MemoryAddresses {
                 extent,
             );
         }
-        self.update_memory_count(base.representative, insert);
+        self.update_memory_count(base.representative, insert, fact);
     }
 
-    fn update_memory_count(&mut self, block: PointerBlock, insert: bool) {
+    fn update_memory_count(&mut self, block: PointerBlock, insert: bool, fact: &CResourceFact) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
         if insert {
             bucket.memory_count += 1;
         } else {
             bucket.memory_count -= 1;
+        }
+        for size in exact_read_sizes(fact) {
+            let count = bucket.exact_read_sizes.get(&size).copied().unwrap_or(0);
+            let count = if insert { count + 1 } else { count - 1 };
+            if count == 0 {
+                bucket.exact_read_sizes.remove(&size);
+            } else {
+                bucket.exact_read_sizes.insert(size, count);
+            }
         }
         self.classes = if bucket.weight == 0 && bucket.memory_count == 0 {
             self.classes.without_key(&block)
@@ -236,6 +264,10 @@ impl MemoryAddresses {
             (moved, kept, shift)
         };
         larger.memory_count += smaller.memory_count;
+        for (size, count) in smaller.exact_read_sizes.iter() {
+            let count = larger.exact_read_sizes.get(size).copied().unwrap_or(0) + count;
+            larger.exact_read_sizes.insert(*size, count);
+        }
         for (start, end, entry) in smaller.read_intervals.iter() {
             let Some(start) = start.0.checked_add(&shift) else {
                 continue;
@@ -273,7 +305,96 @@ impl MemoryAddresses {
 pub(super) struct PairedMemoryIndex {
     resources: std::sync::Arc<ResourceContextStorage>,
     graph: EqualityGraph,
+    source_identity: std::sync::Arc<()>,
     addresses: MemoryAddresses,
+    points: AddressPoints,
+    pending_points: PersistentMap<ResourceEntryId, CResourceFact>,
+    points_complete: bool,
+}
+
+/// A payload attached to typed address classes in the trusted graph. It has
+/// no equality solver of its own: graph merges move only affected entries.
+#[derive(Clone, Default)]
+struct AddressPoints {
+    classes: PersistentMap<u64, ResourceEntryIds>,
+    entries: PersistentMap<ResourceEntryId, u64>,
+    unsupported: usize,
+}
+impl AddressPoints {
+    fn merge(&mut self, moved: u64, kept: u64) {
+        let Some(mut smaller) = self.classes.get(&moved).cloned() else {
+            return;
+        };
+        let mut larger = self.classes.get(&kept).cloned().unwrap_or_default();
+        self.classes.remove(&moved);
+        if larger.len() < smaller.len() {
+            std::mem::swap(&mut larger, &mut smaller);
+        }
+        for entry in smaller.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            larger = larger.with_value(*entry);
+        }
+        self.classes.insert(kept, larger);
+    }
+    fn update(
+        &mut self,
+        entry: ResourceEntryId,
+        insert: bool,
+        fact: &CResourceFact,
+        graph: &EqualityGraph,
+    ) {
+        let Some(range) = fact.memory_range() else {
+            return;
+        };
+        let class = if insert {
+            let start = range
+                .base()
+                .offset_by_elements(range.start().clone(), range.element_width());
+            let Some(class) = graph.address_class(&start) else {
+                self.unsupported += 1;
+                return;
+            };
+            self.entries.insert(entry, class);
+            class
+        } else {
+            let Some(class) = self.entries.get(&entry).copied() else {
+                self.unsupported -= 1;
+                return;
+            };
+            self.entries.remove(&entry);
+            graph.address_class_root(class)
+        };
+        let entries = self.classes.get(&class).cloned().unwrap_or_default();
+        let entries = if insert {
+            entries.with_value(entry)
+        } else {
+            entries.without_value(&entry)
+        };
+        if entries.is_empty() {
+            self.classes.remove(&class);
+        } else {
+            self.classes.insert(class, entries);
+        }
+    }
+}
+
+pub(super) enum MemoryReadEntries {
+    Intervals(read_intervals::CoveringIntervals),
+    Exact(crate::persistent::OwnedSetValues<ResourceEntryId>),
+}
+impl Iterator for MemoryReadEntries {
+    type Item = ResourceEntryId;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Intervals(entries) => entries.next(),
+            Self::Exact(entries) => entries.next(),
+        }
+    }
+}
+impl MemoryReadEntries {
+    pub(super) fn exact(&self) -> bool {
+        matches!(self, Self::Exact(_))
+    }
 }
 
 impl ResourceContext {
@@ -281,13 +402,23 @@ impl ResourceContext {
     /// A restricted or sibling context starts from raw persistent roots;
     /// derived equalities never escape the graph that established them.
     pub(crate) fn synchronize_memory_equalities(&self, assumptions: &PureFactContext) {
+        self.pair_memory_equalities(assumptions, true);
+    }
+
+    // A lookup cannot turn a previously unpaired frame into a full-input
+    // registration pass. Input registration belongs to the execution proof
+    // boundary above; cold kernel queries retain the affine index/general
+    // checker until that boundary has published complete address coverage.
+    fn pair_memory_equalities(&self, assumptions: &PureFactContext, register_input: bool) {
         let mut cache = self
             .memory_equalities
             .lock()
             .expect("memory equality index");
         let graph = &assumptions.equality_graph;
         if let Some(index) = cache.as_mut()
-            && let Some(merges) = graph.pointer_merges_since(&index.graph)
+            && (!register_input || index.points_complete)
+            && graph.pointer_merges_since(&index.graph).is_some()
+            && graph.address_merges_since(&index.graph).is_some()
             && std::sync::Arc::ptr_eq(&self.storage.origin, &index.resources.origin)
         {
             let index = std::sync::Arc::make_mut(index);
@@ -307,7 +438,46 @@ impl ResourceContext {
                 cursor = change.parent.as_ref();
             }
             if descendant {
+                for (_, fact) in index.pending_points.iter() {
+                    if let Some(range) = fact.memory_range() {
+                        graph.address_class(
+                            &range
+                                .base()
+                                .offset_by_elements(range.start().clone(), range.element_width()),
+                        );
+                    }
+                }
+                // Registration may itself close congruent loaded addresses.
+                // Finish it before reading either stream of graph deltas.
+                for (_, insert, fact) in changed.iter().rev() {
+                    if index.points_complete
+                        && *insert
+                        && let Some(range) = fact.memory_range()
+                    {
+                        graph.address_class(
+                            &range
+                                .base()
+                                .offset_by_elements(range.start().clone(), range.element_width()),
+                        );
+                    }
+                }
+                let merges = graph
+                    .pointer_merges_since(&index.graph)
+                    .expect("pointer prefix");
+                for merge in graph
+                    .address_merges_since(&index.graph)
+                    .expect("address prefix")
+                {
+                    index.points.merge(merge.moved, merge.kept);
+                }
+                for (entry, fact) in index.pending_points.iter() {
+                    index.points.update(*entry, true, fact, graph);
+                }
+                index.pending_points = PersistentMap::default();
                 for (entry, insert, fact) in changed.into_iter().rev() {
+                    if index.points_complete {
+                        index.points.update(entry, insert, &fact, graph);
+                    }
                     let Some(range) = fact.memory_range() else {
                         continue;
                     };
@@ -325,7 +495,26 @@ impl ResourceContext {
                 }
                 index.resources = self.storage.clone();
                 index.graph = graph.clone();
+                index.source_identity = graph.registration_identity();
                 return;
+            }
+        }
+        let mut points = AddressPoints::default();
+        // Establish the pairing once at the input boundary. Ordinary proof
+        // steps inherit these persistent roots and apply only entry deltas.
+        // Register the entire input before assigning any class-keyed payload.
+        if register_input {
+            for (_, fact) in self.storage.facts.iter() {
+                if let Some(range) = fact.memory_range() {
+                    graph.address_class(
+                        &range
+                            .base()
+                            .offset_by_elements(range.start().clone(), range.element_width()),
+                    );
+                }
+            }
+            for (entry, fact) in self.storage.facts.iter() {
+                points.update(*entry, true, fact, graph);
             }
         }
         let mut addresses = self.storage.index.memory_addresses.clone();
@@ -335,7 +524,11 @@ impl ResourceContext {
         *cache = Some(std::sync::Arc::new(PairedMemoryIndex {
             resources: self.storage.clone(),
             graph: graph.clone(),
+            source_identity: graph.registration_identity(),
             addresses,
+            points,
+            pending_points: PersistentMap::default(),
+            points_complete: register_input,
         }));
     }
 
@@ -356,38 +549,88 @@ impl ResourceContext {
             };
             addresses.update_in_graph(range, fact.is_own(), *entry, true, &index.graph, fact);
         }
+        // Normalization may renumber occurrences. Retain its published root
+        // as an explicit pairing delta, and register it on the source graph at
+        // the next boundary rather than mutating the private checkpoint clone.
+        index.points = AddressPoints::default();
+        index.pending_points = if index.points_complete {
+            self.storage.facts.clone()
+        } else {
+            PersistentMap::default()
+        };
         index.addresses = addresses;
         index.resources = self.storage.clone();
     }
 
-    /// `Some`, including an empty set, is decisive for the supported read
-    /// fragment. `None` selects the existing general checker before lookup;
-    /// it is not a retry after an indexed permission or bounds failure.
+    fn pair_for_query(&self, assumptions: &PureFactContext) -> Option<Self> {
+        let source = assumptions.equality_graph.registration_identity();
+        let scratch = self
+            .memory_equalities
+            .lock()
+            .expect("memory equality index")
+            .as_ref()
+            .is_some_and(|index| !std::sync::Arc::ptr_eq(&index.source_identity, &source));
+        if scratch {
+            // Fork only persistent roots. A transient query cannot replace the
+            // published input checkpoint; queries on its owning graph still
+            // advance that checkpoint, avoiding repeated accumulated deltas.
+            let local = self.clone();
+            local.pair_memory_equalities(assumptions, false);
+            Some(local)
+        } else {
+            self.pair_memory_equalities(assumptions, false);
+            None
+        }
+    }
+
+    /// Concrete interval coverage supports decisive hits and misses. Exact
+    /// whole-cell classes supply known equality candidates, but an unbound
+    /// class is unknown when arithmetic or snapshot reasoning could apply.
+    /// `None` selects the existing checker before any permission check; a
+    /// failed permission or bounds check is never retried.
     pub(super) fn concrete_read_entries(
         &self,
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<impl Iterator<Item = ResourceEntryId>> {
+    ) -> Option<MemoryReadEntries> {
         let graph = &assumptions.equality_graph;
-        if graph.has_term_equivalences() || matches!(pointer.block, PointerBlock::LoadedPointer(_))
-        {
-            return None;
-        }
+        let class = graph.address_class(pointer)?;
+        let local = self.pair_for_query(assumptions);
+        let paired = local.as_ref().unwrap_or(self);
         let point = graph.canonical_pointer(pointer)?;
-        if !point.offset.is_constant() {
-            return None;
-        }
-        self.synchronize_memory_equalities(assumptions);
-        let cache = self
+        let cache = paired
             .memory_equalities
             .lock()
             .expect("memory equality index");
-        let bucket = cache
-            .as_ref()?
-            .addresses
-            .classes
-            .get(&point.representative)?;
+        let index = cache.as_ref()?;
+        let bucket = index.addresses.classes.get(&point.representative)?;
+        if index.points_complete
+            && index.points.unsupported == 0
+            && bucket.exact_read_sizes.get(&bytes).copied() == Some(bucket.memory_count)
+        {
+            let class = graph.address_class_root(class);
+            let entries = index
+                .points
+                .classes
+                .get(&class)
+                .cloned()
+                .unwrap_or_default();
+            // A graph answer is equality or unknown, not disequality. Scalar
+            // arithmetic and snapshot transport can justify a read outside
+            // this address closure, so an unbound class selects the existing
+            // checker before any permission check. A bound whole-cell class
+            // supplies checked address evidence and needs no spelling search.
+            if !entries.is_empty() {
+                return Some(MemoryReadEntries::Exact(entries.owned_values()));
+            }
+        }
+        if graph.has_non_affine_term_equivalences()
+            || matches!(pointer.block, PointerBlock::LoadedPointer(_))
+            || !point.offset.is_constant()
+        {
+            return None;
+        }
         if bucket.general_coordinates != 0
             || !bucket.origin.is_constant()
             || bucket.read_intervals.len() != bucket.memory_count
@@ -397,11 +640,11 @@ impl ResourceContext {
         let start = point.offset.checked_add(&bucket.origin)?;
         let candidate_bytes = crate::kernel::assumptions::read_candidate_byte_width(bytes);
         let end = start.checked_add(&AffineOffset::constant(i128::from(candidate_bytes)))?;
-        Some(
+        Some(MemoryReadEntries::Intervals(
             bucket
                 .read_intervals
                 .covering(&AddressCoordinate(start), &AddressCoordinate(end)),
-        )
+        ))
     }
 
     pub(super) fn equal_address_entries(
@@ -410,13 +653,24 @@ impl ResourceContext {
         owned: bool,
         assumptions: &PureFactContext,
     ) -> Vec<ResourceEntryId> {
-        self.synchronize_memory_equalities(assumptions);
-        let cache = self
+        let start = range
+            .base()
+            .offset_by_elements(range.start().clone(), range.element_width());
+        let point_class = assumptions.equality_graph.address_class(&start);
+        let local = self.pair_for_query(assumptions);
+        let paired = local.as_ref().unwrap_or(self);
+        let cache = paired
             .memory_equalities
             .lock()
             .expect("memory equality index");
         let index = cache.as_ref().expect("paired memory index");
         let mut result = BTreeSet::new();
+        if let Some(class) = point_class {
+            let class = assumptions.equality_graph.address_class_root(class);
+            if let Some(entries) = index.points.classes.get(&class) {
+                result.extend(entries.iter().copied());
+            }
+        }
         let start = range
             .base()
             .offset_by_elements(range.start().clone(), range.element_width());

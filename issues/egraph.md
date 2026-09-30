@@ -69,8 +69,15 @@ candidate selection uses a persistent interval summary for concrete affine
 addresses in classes with positive concrete read cores, including mixed extents
 and overlapping views. It delivers only covering candidates lazily, and an
 indexed miss is decisive. Other read shapes still select the general checker
-before lookup. Whole-offset class updates, symbolic containment, and snapshot
-matching remain indexed-coverage work; the rbtree acceptance remains open.
+before lookup. Whole-cell reads now attach their exact-start entries to typed graph address
+applications. The graph's term-merge stream propagates offset and loaded-pointer
+equalities to these entries, including late equalities after resource
+publication. Fold selection consults the same payload. Whole-cell hits use this payload
+with complete input registration and authorized-footprint coverage. Unbound
+classes remain unknown rather than denying arithmetic or snapshot-based reads; broader symbolic containment, mixed-range reads with offset aliases,
+and snapshot matching still use the general checker. Initial registration
+belongs to the execution proof input boundary; lookups cannot scan a cold
+frame to attach it. The rbtree acceptance remains open.
 
 The previous attempt to publish `load(M, p) == value` as a certified
 `ExecutionPureFact` was reverted: it changed execution theorem shapes by

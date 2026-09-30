@@ -1,6 +1,6 @@
 # Equality closure design
 
-Status: partial implementation, 2026-09-28. The trusted persistent graph
+Status: partial implementation, 2026-09-29. The trusted persistent graph
 maintains affine pointer classes, offset and int32 congruence, and registered
 same-snapshot pointer and four-byte scalar loads. Selected normalization,
 transport, memory, resource-value, and range consumers query it. Ordinary C
@@ -466,8 +466,10 @@ has its own ownership and range-coverage boundaries below.
 
 Resource lookup now pairs persistent resource roots with the trusted graph's
 pointer-class merge stream. Memory facts have a raw block/affine-base index
-maintained at insertion and removal, so initial pairing does not scan the
-resource store. A paired snapshot retains both resource and graph checkpoints;
+maintained at insertion and removal, so a cold lookup can pair that index
+without scanning the resource store. The initial execution proof boundary
+registers the selected resource input's starts as typed graph address
+applications. Successors register only newly published occurrences. A paired snapshot retains both resource and graph checkpoints;
 execution proof-step boundaries advance it using exact occurrence deltas and
 class merges. Forks share those roots and have independent cache locks.
 A restricted or sibling context starts from raw roots and its own graph's
@@ -502,9 +504,37 @@ The occurrence count detects incomplete index coverage and selects the general
 checker before lookup; an indexed miss is final. This avoids scanning unrelated
 ranges for both hits and misses, including resources published before a later
 address equality. Reads outside that fragment retain the general checker.
-Whole-offset term-class merges, symbolic containment, and snapshot-based
-matching need complete indexed coverage before the general read lookup can be
-retired. The interval summary is part of the trusted kernel's derived index;
+Whole-cell read hits also use an exact-start payload attached to typed graph
+address classes. Offset congruence and late same-snapshot loaded-pointer
+merges update this payload through the graph's persistent term-merge stream.
+Block merges translate only affected registered address applications. Payload
+unions retain the larger entry set, even when the graph chooses the other root.
+Raw offsets and their affine normal forms are definitionally connected inside
+the trusted graph; this registers no proposition or ownership premise.
+
+An exact-start class supplies read evidence only when it contains a resource,
+every memory occurrence in the queried block class has precisely the required
+authorized footprint, and input registration is complete. An unbound class
+is unknown: scalar arithmetic or snapshot transport may justify an equality
+outside this closure, so that case retains the existing general checker. Candidate delivery is lazy; equality selects the
+occurrence's own start and the ordinary checker still validates its quantity,
+access mode, and bounds. The logical four-byte pointer-slot convention remains
+unchanged, including interior reads of longer int32 ranges, which cannot use
+the whole-cell path. Unrelated scalar equality no longer disables this cell
+fragment. The same address payload supplies fold candidates, whose coverage
+and consumption checks remain authoritative. Cold lookups cannot trigger full
+input registration; they retain the existing affine/general paths until a
+proof boundary establishes complete coverage. Branches inherit registered
+persistent roots. Divergent registration prefixes cannot reuse branch-local
+node IDs. Queries on temporary contexts fork the index roots so they cannot
+replace the source graph's published input checkpoint. Queries on that source
+advance the memo checkpoint, avoiding repeated accumulated deltas. Full
+normalization defers its published registration delta to the source graph
+rather than altering a private graph checkpoint.
+
+Symbolic containment, mixed-range reads with non-affine offset aliases, and
+snapshot-based matching still need complete indexed coverage before the
+general read lookup can be retired. The interval summary is part of the trusted kernel's derived index;
 it creates no proposition or access capability.
 Candidate footprint calculation shares the kernel's existing logical
 pointer-cell rule: a pointer read may use one 4-byte logical element, while

@@ -4945,17 +4945,27 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> bool {
         if let Some(mut entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
+            let exact = entries.exact();
             return entries.any(|entry| {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
                 let Some(range) = resource_fact_read_core_range(resource) else {
                     return false;
                 };
-                let Some(address) = assumptions
-                    .equality_graph
-                    .pointer_in_block(pointer, &range.base().block)
-                else {
-                    return false;
+                let address = if exact {
+                    // The typed address class justifies using this occurrence's
+                    // own start. Coverage and authority remain checked below.
+                    range
+                        .base()
+                        .offset_by_elements(range.start().clone(), range.element_width())
+                } else {
+                    let Some(address) = assumptions
+                        .equality_graph
+                        .pointer_in_block(pointer, &range.base().block)
+                    else {
+                        return false;
+                    };
+                    address
                 };
                 memory_resource_fact_permits_read(resource, &address, byte_width, assumptions)
             });

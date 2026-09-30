@@ -321,6 +321,14 @@ impl<T: Ord> PersistentSet<T> {
         self.map.keys()
     }
 
+    /// Own the shared root; visiting the first value does not collect the set.
+    pub(crate) fn owned_values(&self) -> OwnedSetValues<T> {
+        OwnedSetValues {
+            next: self.map.root.clone(),
+            stack: Vec::new(),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn lookup_comparisons(&self, value: &T) -> usize {
         self.map.lookup_comparisons(value)
@@ -328,6 +336,24 @@ impl<T: Ord> PersistentSet<T> {
 
     pub(crate) fn shares_root_with(&self, other: &Self) -> bool {
         self.map.shares_root_with(&other.map)
+    }
+}
+
+pub(crate) struct OwnedSetValues<T> {
+    next: Option<Arc<Node<T, ()>>>,
+    stack: Vec<Arc<Node<T, ()>>>,
+}
+impl<T: Clone> Iterator for OwnedSetValues<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        while let Some(node) = self.next.take() {
+            record_persistent_work(1);
+            self.next = node.left.clone();
+            self.stack.push(node);
+        }
+        let node = self.stack.pop()?;
+        self.next = node.right.clone();
+        Some((*node.key).clone())
     }
 }
 
