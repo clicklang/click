@@ -53,17 +53,16 @@ grandparent's own frame (`Top`, `Left`, `Right`, for `__rb_change_child`, which
 on a warm release build for six new leaves, each about 150 lines of proof;
 that is a measurement, not yet a scaling check.
 
-Gaps 74 and 75 below were fixed on the way. What stops the last two leaves is
-open: under a `Right` great-grandparent frame, `parent->rb_left == old` is
-decided only after unfolding that frame's other child, and the child cannot be
-refolded. A fold's resource arguments now accept proof-arm bindings, as its
-fields already did, but `fold(rb_at(yid), ...)` still cannot consume cells the
-unfold published under the loaded pointer's spelling ("fold requires
-ownership of the complete instance body", from `without_fact_incrementally`). The same class
-shows in `have id->word == 5` failing after `p->word = 5` with `p == id`
-  proved. Both are tracked in [egraph.md](egraph.md), which scopes the P1
-  equality work to pointer reads and fold consumption; those two leaves wait
-  on that integration.
+Gaps 74 and 75 below were fixed on the way. The 2026-09-29 recheck on
+`f01a85a1a` leaves the frontier unchanged. An immediate sibling refold under
+its model identity now passes owned-cell consumption and fails instead at
+`selected child does not satisfy the proposed parent model`: the left child's
+pointer argument does not match, while its model field does. A small no-write
+unfold/refold reduction reproduces this; refolding at the original pointer
+passes. The related `p->word` / `id->word` regression already passes.
+See [the reduced egraph recheck](egraph.md#reduced-rbtree-recheck-2026-09-29).
+The exact registration or snapshot-equality gap remains to be isolated;
+the earlier attribution to missing owned-cell lookup is superseded.
 
 The remaining C3b work after that gap: the empty-uncle leaves of the same
 combination (the text is the same after refolding the uncle as `Empty`), the

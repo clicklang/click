@@ -1,12 +1,12 @@
 # P1: Use kernel equality for rbtree pointer reads and folds
 
-The [rbtree insertion proof](rbtree-example.md) has two remaining case-3
-leaves under a `Right` great-grandparent frame. An unfold publishes owned
-cells using a loaded pointer's spelling, but a later `fold(rb_at(yid), ...)`
-cannot consume them through a proved-equal binding. The related regression
-stores through `p->word` and then asks for `id->word` after proving `p == id`.
-Today, local spelling retries handle parts of these cases, but load equality
-still blocks the rbtree leaves.
+The [rbtree insertion proof](rbtree-example.md) has two unfinished case-3
+leaves under a `Right` great-grandparent frame. The 2026-09-29 recheck on
+`f01a85a1a` confirms the frontier is unchanged. An attempted immediate
+`fold(rb_at(yid), ...)` after unfolding the sibling now passes owned-cell
+consumption, then fails the recursive child-argument equality check. This is
+no longer established as an owned-cell lookup failure. The related
+`p->word` / `id->word` store/read regression already passes.
 
 This P1 issue is limited to the equality behavior needed to finish those
 proofs. The e-graph is part of the **trusted kernel**. The broader design
@@ -41,8 +41,9 @@ but that document is not a list of launch requirements.
    not itself create ownership, prove separation, or transport a value across
    a write; those remain distinct checked judgments.
 
-Work in small green commits: a real pointer read now reaches the graph and one
-live comparison; next migrate specification reads and fold consumption.
+Work in small green commits. Actual pointer reads, indexed specification reads,
+and fold candidate selection have landed; next isolate the child-argument
+equality boundary described below.
 If the rbtree failure turns out to be a resource-lookup gap with the needed
 load equality already available, take the lookup slice first. Do not change
 the unchanged C to route around a verifier gap.
@@ -97,6 +98,82 @@ The earlier `codex/egraph-foundation` pointer-representation experiment is
 historical reference material, not an integration target. Its failures mixed
 an incomplete representation change with semantic gaps. The P1 work does not
 require a representation flip.
+
+## Reduced rbtree recheck, 2026-09-29
+
+The untouched frontier still reports statement 42, `augment_rotate(gparent,
+parent)`, with nine completed breaks and four continues. Inserting an immediate
+refold after the first `unfold(xs)` in a `RbTree::Node(yid, yp, ycol, yl, yr)`
+arm fails with `selected child does not satisfy the proposed parent model`.
+Temporary bounded diagnostics identify the left child's sole C pointer
+argument as unequal; its model field, resource name, and schema match.
+Owned-cell consumption has already succeeded before this check.
+
+The following independent reduction fails at the same child check. Changing
+only `fold(tree(id), ...)` to `fold(tree(p), ...)` verifies. An explicit
+`have p == id by { simp(); }` verifies, but an additional
+`have p->left == id->left by { simp(); }` fails. There are no C writes.
+This points to resource child-load equality, rather than parent-cell candidate
+selection. Temporary diagnostics show the reduction's two child values carry the same
+registered load variable and defining snapshot; querying its explicit load
+application succeeds, while comparing the existing pointer values in the
+graph fails. This suggests a missing checked value-to-load connection in
+resource evaluation, rather than a congruence failure. It is not permission
+to infer a read site from a storage-relative pointer value.
+
+The actual rbtree probe differs: the recorded child load origins have equal
+source addresses but different snapshots. A same-snapshot bridge fix alone
+is therefore not established as sufficient. After fixing and checking the
+small resource-evaluation case, recheck the real leaf and justify any needed
+snapshot transport separately. Do not equate different snapshots merely
+because their load addresses are equal.
+
+```c
+struct node { struct node *left; struct node *right; };
+void roundtrip(struct node *p) {}
+```
+
+Save that C as `egraph_reduce.c` beside this sidecar:
+
+```click
+verifying "egraph_reduce.c";
+spec enum Tree { Empty, Node(struct node*, Tree, Tree) }
+resource tree(p: struct node*) {
+ field model: Tree;
+ match model {
+  Tree::Empty => { fact p == 0; },
+  Tree::Node(id, lm, rm) => {
+   owns &p->left;
+   owns &p->right;
+   owns left: tree(p->left);
+   owns right: tree(p->right);
+   fact p != 0;
+   fact p == id;
+   fact left.model == lm;
+   fact right.model == rm;
+  },
+ }
+}
+void roundtrip(struct node* p) {
+ owns t: tree(p);
+ requires t.model != Tree::Empty;
+ ensures t.model == old(t.model);
+} by {
+ match t.model {
+  Tree::Empty => { contradiction(t.model == Tree::Empty); },
+  Tree::Node(id, lm, rm) => {
+   let { left: l, right: r } = unfold(t);
+   let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
+   execute();
+   simp();
+  },
+ }
+}
+```
+
+The reduction is diagnostic evidence, not evidence that rbtree verifies.
+The original C remains unchanged. Expand and recheck the successful control;
+do not expand the failing frontier or failing reduction.
 
 ## Acceptance
 
