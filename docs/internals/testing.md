@@ -212,11 +212,11 @@ docs lint, then the unit tests, followed by the mdtest, example, C
 compiler-import, and C++ semantic-import fixture harnesses one after the
 other. CI uses the same script in two internal modes for code-affecting
 changes: `--ci-prepare` runs the shared checks, unit tests, and compiler-import
-fixtures, then archives the mdtest and example test binaries. Four ordinary
-runners use `--ci-shard` with deterministic nextest slices of that archive.
-Each runner keeps fixture tests serial locally, while the independent slices
-run concurrently. A final `test` check requires preparation and every slice
-to pass. For docs-only changes, CI and the explicit
+fixtures, then archives the mdtest and example test binaries. Two ordinary
+Linux runners use `--ci-shard` to run the mdtest and example suites separately
+in parallel. Each suite remains serial within its runner, and each runner has
+the full environment needed by C++ fixtures. A final `test` check requires
+preparation and both suites to pass. For docs-only changes, CI and the explicit
 `scripts/check.sh --docs-only` path run only the focused documentation gate
 described above. The proof fixtures verify their inputs on every core. Judge
 the verdict from the script's exit status.

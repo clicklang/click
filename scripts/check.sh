@@ -26,16 +26,23 @@ single_runner_fixture_targets=(
 fixture_targets=("${parallel_fixture_targets[@]}" "${single_runner_fixture_targets[@]}")
 
 if [[ "${1:-}" == "--ci-shard" ]]; then
-    archive="${2:?usage: scripts/check.sh --ci-shard ARCHIVE PARTITION}"
-    partition="${3:?usage: scripts/check.sh --ci-shard ARCHIVE PARTITION}"
+    archive="${2:?usage: scripts/check.sh --ci-shard ARCHIVE SUITE}"
+    suite="${3:?usage: scripts/check.sh --ci-shard ARCHIVE SUITE}"
+    case "$suite" in
+        mdtests|examples) ;;
+        *) echo "error: CI fixture suite must be mdtests or examples" >&2; exit 2 ;;
+    esac
 
     # A few expansion regressions recurse deeply enough to overflow the
     # default per-test thread stack on otherwise healthy runners.
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
-    # Only mdtests and examples are archived; compiler-import fixtures ran in
-    # the full-environment preparation job.
-    cargo nextest run --archive-file "$archive" --partition "$partition" --test-threads 1 --no-capture
+    # The mdtest and example suites include C++ fixtures that execute the
+    # repository-owned exporter, so each full-environment runner builds it.
+    export CLICK_CPP_EXPORTER
+    CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
+
+    cargo nextest run --archive-file "$archive" --filterset "binary($suite)" --no-capture
     exit 0
 fi
 
