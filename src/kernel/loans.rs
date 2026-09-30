@@ -3683,6 +3683,19 @@ impl StableViewTransferPlan {
         consumed_holds: &[LoanViewBinding],
         mut keep_terminal: bool,
     ) -> Result<StableViewRecovery, StableViewPlanError> {
+        // Recovery changes only this call's escrow. Normalizing the ambient
+        // frame would rebuild unrelated resource indexes at every child join.
+        let restore_resource = |resources: ResourceContext, fact: &CResourceFact| {
+            resources
+                .try_compose_with_facts_delaying_normalization(
+                    std::iter::once(fact.clone()),
+                    assumptions,
+                )
+                .map(|resources| {
+                    resources.normalized_around_facts(std::slice::from_ref(fact), assumptions)
+                })
+                .map_err(|_| StableViewPlanError::InvalidResidual)
+        };
         let parent_ledger = self.parent_ledger;
         let stable_views = self.stable_views.clone();
         let loan_roots = self.loan_roots.clone();
@@ -3796,9 +3809,7 @@ impl StableViewTransferPlan {
                         .without_bound_view_occurrence(*occurrence, &binding)
                         .ok_or(StableViewPlanError::InvalidResidual)?;
                     view_bindings = view_bindings.without(*occurrence);
-                    resources = resources
-                        .try_compose_with_fact(escrow.clone(), assumptions)
-                        .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                    resources = restore_resource(resources, &escrow)?;
                     recovered_escrows.push((escrow, None));
                 } else if ledger
                     .validate_view_binding(binding.clone(), self.caller)
@@ -3826,16 +3837,12 @@ impl StableViewTransferPlan {
                 // caller's own packaging exactly as it found it.
                 if let Some(restored) = self.adapter_restorations.get(&loan) {
                     for fact in restored {
-                        resources = resources
-                            .try_compose_with_fact(fact.clone(), assumptions)
-                            .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                        resources = restore_resource(resources, fact)?;
                         recovered_escrows.push((fact.clone(), None));
                     }
                     continue;
                 }
-                resources = resources
-                    .try_compose_with_fact(escrow.clone(), assumptions)
-                    .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                resources = restore_resource(resources, &escrow)?;
                 let hold_binding = self
                     .escrowed_holds
                     .iter()
@@ -3865,9 +3872,7 @@ impl StableViewTransferPlan {
                 let (recover, escrow, _) = ledger.recover(binding.loan, self.caller)?;
                 ledger = ledger.apply(&recover)?;
                 transitions.push(recover);
-                resources = resources
-                    .try_compose_with_fact(escrow.clone(), assumptions)
-                    .map_err(|_| StableViewPlanError::InvalidResidual)?;
+                resources = restore_resource(resources, &escrow)?;
                 recovered_escrows.push((escrow, None));
             }
         }

@@ -500,6 +500,9 @@ impl ResourceContextIndex {
                 insert_resource_index_entry(&result.memory_by_block, block.clone(), entry);
             result.memory_by_base =
                 insert_resource_index_entry(&result.memory_by_base, range.base().clone(), entry);
+            result
+                .memory_addresses
+                .update(range, fact.is_own(), entry, true);
             if mode {
                 if fact
                     .owned_quantity_term()
@@ -690,6 +693,9 @@ impl ResourceContextIndex {
                 remove_resource_index_entry(&result.memory_by_block, &block, entry);
             result.memory_by_base =
                 remove_resource_index_entry(&result.memory_by_base, range.base(), entry);
+            result
+                .memory_addresses
+                .update(range, fact.is_own(), entry, false);
             if mode {
                 if fact
                     .owned_quantity_term()
@@ -1279,7 +1285,7 @@ impl ResourceContext {
         self.storage.index.exact.contains_key(fact)
     }
 
-    fn history_tail_is(
+    pub(super) fn history_tail_is(
         current: Option<&std::sync::Arc<ResourceContextChange>>,
         expected: Option<&std::sync::Arc<ResourceContextChange>>,
     ) -> bool {
@@ -1917,6 +1923,7 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: Some(std::sync::Arc::new(ResourceContextChange {
+                entry_delta: Some((entry, true)),
                 fact,
                 parent: self.storage.history.clone(),
             })),
@@ -2116,6 +2123,7 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: Some(std::sync::Arc::new(ResourceContextChange {
+                entry_delta: Some((entry, false)),
                 fact: fact.clone(),
                 parent: self.storage.history.clone(),
             })),
@@ -2224,6 +2232,7 @@ impl ResourceContext {
         let mut history = self.storage.history.clone();
         for fact in changed_facts {
             history = Some(std::sync::Arc::new(ResourceContextChange {
+                entry_delta: None,
                 fact,
                 parent: history,
             }));
@@ -2250,6 +2259,7 @@ impl ResourceContext {
             history,
             materialized: std::sync::OnceLock::new(),
         });
+        self.rebuild_paired_memory_entries();
     }
 
     /// The owned instances of this context with a C pointer argument equal
@@ -4092,6 +4102,7 @@ impl ResourceContext {
             expansions_by_support_entry: self.storage.expansions_by_support_entry.clone(),
             origin: self.storage.origin.clone(),
             history: Some(std::sync::Arc::new(ResourceContextChange {
+                entry_delta: None,
                 fact: support.clone(),
                 parent: self.storage.history.clone(),
             })),
@@ -5127,45 +5138,89 @@ impl ResourceContext {
         fact: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        // A memory fact is first consumed at its own spelling. When that
-        // misses and the pointer classes put its base's block with others,
-        // the same range is required at each other spelling of that address:
-        // an unfold may have published the cells under a loaded pointer that
-        // the proof now names by a binding proved equal to it.
-        // The class is enumerated only after that miss, so the common path
-        // pays one lookup however large the class is.
-        let (CResourceFact::Own(CResource::Memory(range), _)
-        | CResourceFact::View(CResource::Memory(range))) = fact
-        else {
-            return self.without_fact_at_its_spelling(fact, assumptions);
-        };
-        if !assumptions
-            .equality_graph
-            .pointer_is_classed(&range.base.block)
-        {
-            return self.without_fact_at_its_spelling(fact, assumptions);
+        if !fact.has_valid_exclusive_access() {
+            return None;
         }
-        let original = self.clone();
-        if let Some(consumed) = self.without_fact_at_its_spelling(fact, assumptions) {
+        let CResource::Memory(range) = fact.resource() else {
+            return self.without_fact_from_local_indexes(fact, assumptions);
+        };
+        if fact
+            .owned_quantity_term()
+            .is_some_and(|quantity| resource_quantity_is_zero(quantity, assumptions))
+            || memory_range_is_proven_empty(range, assumptions)
+        {
+            return Some(self);
+        }
+        let entries = self.equal_address_entries(range, fact.is_own(), assumptions);
+        // Equality selects existing occurrences; the resource algebra still
+        // checks access mode, quantity and range coverage before consuming.
+        let mut selected = self;
+        if selected.consume_memory_from_indexed_candidates(fact, assumptions, &entries) {
+            return Some(selected);
+        }
+        if let Some(consumed) = selected
+            .clone()
+            .without_fact_from_local_indexes(fact, assumptions)
+        {
             return Some(consumed);
         }
-        let spellings = assumptions.equality_graph.pointer_spellings(&range.base);
-        spellings.into_iter().find_map(|base| {
-            let mut restated_range = range.clone();
-            restated_range.base = base;
-            let restated = match fact {
-                CResourceFact::Own(_, quantity) => {
-                    CResourceFact::Own(CResource::Memory(restated_range), quantity.clone())
-                }
-                CResourceFact::View(_) => CResourceFact::View(CResource::Memory(restated_range)),
-            };
-            original
-                .clone()
-                .without_fact_at_its_spelling(&restated, assumptions)
-        })
+        if entries.is_empty() {
+            return None;
+        }
+        // Several fractions at the selected address may together supply the
+        // requirement. Normalize only that output bucket, never its aliases.
+        let mut candidates = ResourceContext::new();
+        for entry in &entries {
+            candidates.insert_fact(selected.fact(*entry).clone());
+        }
+        candidates = candidates.normalized(assumptions);
+        if !candidates.consume_fact_without_normalizing(fact, assumptions) {
+            return None;
+        }
+        let residual = candidates.iter().cloned().collect::<Vec<_>>();
+        for entry in entries {
+            selected.remove_entry(entry);
+        }
+        for fact in residual {
+            selected.insert_fact(fact);
+        }
+        Some(selected)
     }
 
-    fn without_fact_at_its_spelling(
+    fn consume_memory_from_indexed_candidates(
+        &mut self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+        entries: &[ResourceEntryId],
+    ) -> bool {
+        for entry in entries {
+            let Some(available) = self.fact(*entry).memory_range() else {
+                continue;
+            };
+            let CResource::Memory(range) = fact.resource() else {
+                return false;
+            };
+            let Some(base) = assumptions
+                .equality_graph
+                .pointer_in_block(range.base(), &available.base().block)
+            else {
+                continue;
+            };
+            let mut range = range.clone();
+            range.base = base;
+            let required = if let CResourceFact::Own(_, quantity) = fact {
+                CResourceFact::Own(CResource::Memory(range), quantity.clone())
+            } else {
+                CResourceFact::View(CResource::Memory(range))
+            };
+            if self.consume_fact_from_candidates(&required, assumptions, std::iter::once(*entry)) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn without_fact_from_local_indexes(
         mut self,
         fact: &CResourceFact,
         assumptions: &PureFactContext,

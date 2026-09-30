@@ -573,6 +573,13 @@ impl<'a> Proof<'a> {
         step: ProofStep,
         origin: Option<ProofStepOrigin>,
     ) -> Result<Self, ClickError> {
+        if let Some(execution) = self.execution() {
+            execution
+                .core
+                .state
+                .resources()
+                .synchronize_memory_equalities(self.facts().assumptions());
+        }
         let tactic = proof_step_source_name(&step);
         let call_source = crate::surface::proof_trace::enabled_for(self.claim_label())
             .then(|| self.trace_call_source(&step))
@@ -583,6 +590,15 @@ impl<'a> Proof<'a> {
                 self.attach_step_diagnostic(error)
                     .with_failed_tactic(tactic)
             });
+        if let Ok(next) = &result
+            && let Some(execution) = next.execution()
+        {
+            execution
+                .core
+                .state
+                .resources()
+                .synchronize_memory_equalities(next.facts().assumptions());
+        }
         if let Ok(next) = &result
             && crate::surface::proof_trace::enabled_for(self.claim_label())
             && !Arc::ptr_eq(&self.node, &next.node)

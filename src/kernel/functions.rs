@@ -23971,8 +23971,10 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     };
     views.extend(
         expanded
-            .facts()
-            .iter()
+            .changed_facts_since(&base)
+            .expect("composite expansion retains persistent resource ancestry")
+            .into_iter()
+            .filter(|fact| expanded.contains_exact_representation(fact))
             .filter_map(|fact| match fact.resource() {
                 CResource::Memory(range) => Some(CResourceFact::view_memory(range.clone())),
                 _ => None,

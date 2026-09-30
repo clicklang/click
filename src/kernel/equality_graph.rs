@@ -152,6 +152,19 @@ impl AffineOffset {
         }
     }
 
+    /// Keep addresses with the same symbolic origin adjacent in span indexes.
+    pub(in crate::kernel) fn address_order(&self, other: &Self) -> std::cmp::Ordering {
+        self.terms
+            .cmp(&other.terms)
+            .then_with(|| self.constant.cmp(&other.constant))
+    }
+
+    pub(in crate::kernel) fn constant_difference(&self, other: &Self) -> Option<i128> {
+        (self.terms == other.terms)
+            .then(|| self.constant.checked_sub(other.constant))
+            .flatten()
+    }
+
     fn add_atom(&mut self, atom: OffsetAtom, coefficient: i128) -> Option<()> {
         if coefficient != 0 {
             let entry = self.terms.entry(atom.clone()).or_insert(0);
@@ -383,10 +396,6 @@ struct EqualityGraphState {
 /// The graph has already checked and closed the equality before recording
 /// this delta; the record is an index update, not independent evidence.
 #[derive(Clone, Debug)]
-#[allow(
-    dead_code,
-    reason = "the paired resource index will consume these merge fields"
-)]
 pub(in crate::kernel) struct PointerClassMerge {
     pub(in crate::kernel) moved: PointerBlock,
     pub(in crate::kernel) kept: PointerBlock,
@@ -395,6 +404,7 @@ pub(in crate::kernel) struct PointerClassMerge {
 
 #[derive(Clone)]
 struct PointerMergeHistory {
+    depth: usize,
     merge: PointerClassMerge,
     parent: Option<std::sync::Arc<PointerMergeHistory>>,
 }
@@ -403,10 +413,6 @@ impl EqualityGraph {
     /// Merges added after `ancestor`, oldest first. `None` means the graphs
     /// do not share a persistent merge prefix (for example, after restricting
     /// premises); a class-keyed consumer must not reuse that ancestor index.
-    #[allow(
-        dead_code,
-        reason = "the paired resource index will consume merge deltas"
-    )]
     pub(in crate::kernel) fn pointer_merges_since(
         &self,
         ancestor: &Self,
@@ -422,6 +428,7 @@ impl EqualityGraph {
         if !std::sync::Arc::ptr_eq(&origin, &previous_origin) {
             return None;
         }
+        let previous_depth = previous.as_ref().map_or(0, |node| node.depth);
         let mut merges = Vec::new();
         while !match (&cursor, &previous) {
             (None, None) => true,
@@ -429,12 +436,62 @@ impl EqualityGraph {
             _ => false,
         } {
             let merge = cursor.as_ref()?;
+            // A sibling or newer checkpoint cannot be this prefix. Stop at
+            // its depth instead of walking the shared history to the root.
+            if merge.depth <= previous_depth {
+                return None;
+            }
             crate::instrumentation::record_deterministic_work(1);
             merges.push(merge.merge.clone());
             cursor = merge.parent.clone();
         }
         merges.reverse();
         Some(merges)
+    }
+
+    /// Read the class coordinate without registering new applications.
+    pub(in crate::kernel) fn canonical_pointer(
+        &self,
+        pointer: &Pointer,
+    ) -> Option<CanonicalPointer> {
+        self.state
+            .lock()
+            .expect("equality graph")
+            .canonical(pointer)
+    }
+
+    /// Re-express one known address in a selected block's coordinates. This
+    /// uses the trusted affine class relation, never enumerates class members.
+    pub(in crate::kernel) fn pointer_in_block(
+        &self,
+        pointer: &Pointer,
+        block: &PointerBlock,
+    ) -> Option<Pointer> {
+        let state = self.state.lock().expect("equality graph");
+        let pointer = state.canonical(pointer)?;
+        let (representative, delta) = state.find(block);
+        if pointer.representative != representative {
+            return None;
+        }
+        Some(Pointer {
+            block: block.clone(),
+            offset: pointer.offset.checked_sub(&delta)?.to_offset_term()?,
+        })
+    }
+
+    /// The initial pairing boundary applies this graph's merge deltas once.
+    /// Successors use `pointer_merges_since`, sharing the persistent prefix.
+    pub(in crate::kernel) fn pointer_merges(&self) -> Vec<PointerClassMerge> {
+        let state = self.state.lock().expect("equality graph");
+        let mut cursor = state.merge_history.as_ref();
+        let mut merges = Vec::new();
+        while let Some(node) = cursor {
+            crate::instrumentation::record_deterministic_work(1);
+            merges.push(node.merge.clone());
+            cursor = node.parent.as_ref();
+        }
+        merges.reverse();
+        merges
     }
 
     /// Whether term classes have established any nontrivial equivalence.
@@ -883,6 +940,7 @@ impl EqualityGraphState {
         self.members.remove(&moved);
         self.members.insert(kept.clone(), kept_members);
         self.merge_history = Some(std::sync::Arc::new(PointerMergeHistory {
+            depth: self.merge_history.as_ref().map_or(1, |node| node.depth + 1),
             merge: PointerClassMerge {
                 moved,
                 kept,
@@ -1024,6 +1082,14 @@ mod tests {
                 assert!(
                     graph.add_equality(&at(symbolic(50_000), 0), &at(symbolic(50_000 + size), 0),)
                 );
+                let mut sibling = parent.clone();
+                sibling.add_equality(&at(symbolic(60_000), 0), &at(symbolic(60_001), 0));
+                let (mismatch, mismatch_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        graph.pointer_merges_since(&sibling)
+                    });
+                assert!(mismatch.is_none());
+                assert_eq!(mismatch_work, 0, "sibling check walked the shared prefix");
                 let (merges, work) = crate::instrumentation::measure_deterministic_work(|| {
                     graph.pointer_merges_since(&parent).unwrap()
                 });

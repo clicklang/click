@@ -438,6 +438,257 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
     );
 }
 
+#[test]
+fn aliased_memory_consumption_does_not_walk_the_pointer_class() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let pointer = |i| Pointer::symbolic(Variable(800_000 + i));
+        let cell = |base| {
+            CMemoryRange::new(
+                base,
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+            )
+        };
+        let mut assumptions = PureFactContext::new();
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(cell(pointer(size))));
+        for i in 1..=size {
+            assumptions = assumptions
+                .assume_condition(ConditionTerm::pointer_equal(pointer(0), pointer(i)), true);
+        }
+        // Establish the paired snapshot once. Subsequent queries and forks
+        // must share its persistent index, rather than enumerate aliases.
+        resources = resources
+            .without_fact_incrementally(&CResourceFact::view_memory(cell(pointer(0))), &assumptions)
+            .unwrap();
+        let (remaining, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.without_fact_incrementally(
+                &CResourceFact::own_memory(cell(pointer(0))),
+                &assumptions,
+            )
+        });
+        assert!(remaining.unwrap().facts().is_empty());
+        samples.push((size, work));
+    }
+    assert!(
+        samples[2].1 <= samples[0].1 * 3 + 64,
+        "fixed consumption walked the growing alias class: {samples:?}"
+    );
+}
+
+#[test]
+fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
+    let cell = |base| {
+        CResourceFact::own_memory(CMemoryRange::new(
+            base,
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ))
+    };
+    let owner = Pointer::symbolic(Variable(810_000));
+    let alias = Pointer::symbolic(Variable(810_001));
+    let shifted = Pointer {
+        block: owner.block.clone(),
+        offset: PointerOffsetTerm::Constant(8),
+    };
+    let resources = ResourceContext::new().unchecked_with_fact(cell(shifted.clone()));
+    let empty = PureFactContext::new();
+    resources.synchronize_memory_equalities(&empty);
+    // Force the graph to retain the alias representative, while the heavier
+    // resource payload retains its own independent address coordinates.
+    let mut assumptions = empty.clone();
+    for i in 2..20 {
+        assumptions = assumptions.assume_condition(
+            ConditionTerm::pointer_equal(alias.clone(), Pointer::symbolic(Variable(810_000 + i))),
+            true,
+        );
+        resources.synchronize_memory_equalities(&assumptions);
+    }
+    assumptions =
+        assumptions.assume_condition(ConditionTerm::pointer_equal(alias.clone(), shifted), true);
+    resources.synchronize_memory_equalities(&assumptions);
+    let required = cell(alias.clone());
+    let consumed = resources
+        .clone()
+        .without_fact_incrementally(&required, &assumptions)
+        .unwrap();
+    assert!(
+        consumed
+            .clone()
+            .without_fact_incrementally(&required, &assumptions)
+            .is_none()
+    );
+    // Reinsert after the merge, then normalize (which can renumber entries).
+    let restored = consumed
+        .unchecked_with_fact(cell(owner.clone()))
+        .unchecked_with_fact(required.clone())
+        .normalized(&assumptions);
+    let remaining = restored
+        .without_fact_incrementally(&required, &assumptions)
+        .unwrap();
+    assert!(
+        remaining
+            .clone()
+            .without_fact_incrementally(&required, &assumptions)
+            .is_none()
+    );
+    assert!(
+        remaining
+            .without_fact_incrementally(&cell(owner), &assumptions)
+            .is_some()
+    );
+    // A sibling equality context must not inherit the warmed alias lookup.
+    assert!(
+        resources
+            .clone()
+            .without_fact_incrementally(&required, &empty)
+            .is_none()
+    );
+    assert!(
+        resources
+            .without_fact_incrementally(&required, &assumptions)
+            .is_some()
+    );
+}
+
+#[test]
+fn paired_memory_index_updates_move_the_smaller_resource_payload() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let root = Pointer::symbolic(Variable(820_000));
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources =
+                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    Pointer {
+                        block: root.block.clone(),
+                        offset: PointerOffsetTerm::Constant(i as i64 * 4),
+                    },
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                )));
+        }
+        let mut assumptions = PureFactContext::new();
+        resources.synchronize_memory_equalities(&assumptions);
+        let (assumptions, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for i in 1..=size {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        root.clone(),
+                        Pointer::symbolic(Variable(820_000 + i)),
+                    ),
+                    true,
+                );
+                resources.synchronize_memory_equalities(&assumptions);
+            }
+            assumptions
+        });
+        let required = CResourceFact::own_memory(CMemoryRange::new(
+            Pointer::symbolic(Variable(820_000 + size)),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+        ));
+        let (remaining, query_work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.without_fact_incrementally(&required, &assumptions)
+        });
+        assert_eq!(remaining.unwrap().facts().len(), size as usize - 1);
+        samples.push((size, work, query_work));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 6 + 128,
+            "class updates repeatedly moved a large payload: {samples:?}"
+        );
+        assert!(
+            pair[1].2 <= pair[0].2 * 2 + 64,
+            "lookup scanned unrelated addresses: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
+    let owner = Pointer::symbolic(Variable(830_000));
+    let alias = Pointer::symbolic(Variable(830_001));
+    let resources =
+        ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            owner.clone(),
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(4),
+        )));
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(owner, alias.clone()), true);
+    let required = CResourceFact::own_memory(CMemoryRange::new(
+        Pointer {
+            block: alias.block.clone(),
+            offset: PointerOffsetTerm::Constant(4),
+        },
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(1),
+    ));
+    let residual = resources
+        .without_fact_incrementally(&required, &assumptions)
+        .expect("consume an interior cell through the equal block");
+    assert!(
+        residual
+            .clone()
+            .without_fact_incrementally(&required, &assumptions)
+            .is_none()
+    );
+    let remaining_cell = CResourceFact::own_memory(CMemoryRange::new(
+        alias,
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(1),
+    ));
+    assert!(
+        residual
+            .without_fact_incrementally(&remaining_cell, &assumptions)
+            .is_some()
+    );
+}
+
+#[test]
+fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let owner = Pointer::symbolic(Variable(840_000));
+        let alias = Pointer::symbolic(Variable(840_001));
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources =
+                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    owner.clone(),
+                    Bitvector32Term::Constant(i as u32 * 2),
+                    Bitvector32Term::Constant(i as u32 * 2 + 1),
+                )));
+        }
+        let assumptions = PureFactContext::new()
+            .assume_condition(ConditionTerm::pointer_equal(owner, alias.clone()), true);
+        resources.synchronize_memory_equalities(&assumptions);
+        let required = CResourceFact::own_memory(CMemoryRange::new(
+            alias,
+            Bitvector32Term::Constant(size as u32),
+            Bitvector32Term::Constant(size as u32 + 1),
+        ));
+        let ((remaining, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                resources.without_fact_incrementally(&required, &assumptions)
+            })
+        });
+        assert_eq!(remaining.unwrap().facts().len(), size as usize - 1);
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[2].1 <= samples[0].1 * 2 + 64,
+        "consumption scanned unrelated ranges: {samples:?}"
+    );
+    assert!(
+        samples[2].2 <= samples[0].2 * 3 + 128,
+        "index work scanned unrelated ranges: {samples:?}"
+    );
+}
+
 fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition, CState) {
     let schema =
         ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
@@ -3491,10 +3742,11 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
         });
         assert!(installed.is_ok());
         // Inserting each span and recording its normalization touches its
-        // constant base once each. Permit those two linear indexing passes,
-        // but no internal pair comparisons (which would grow quadratically).
+        // constant base once each, now also filing its affine start in the
+        // paired index. Permit four units per explicit input span, but no
+        // internal pair comparisons (which would grow quadratically).
         assert!(
-            work <= 2 * size,
+            work <= 4 * size,
             "installing a certified size-{size} group rechecked its internal pairs: {work}"
         );
     }

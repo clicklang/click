@@ -59,6 +59,7 @@ pub(crate) use memory_state::{
 pub(crate) use persistent_map::{SnapshotMap, SnapshotMapChange, SnapshotSet};
 mod iterated;
 pub use iterated::{CIteratedGuard, CIteratedMemory};
+mod memory_equality_index;
 mod resource_algebra;
 mod term_operations;
 pub(super) use derivations::*;
@@ -5339,8 +5340,11 @@ impl ResourceOccurrenceId {
 /// One pointer-sized storage root keeps recursive execution frames shallow.
 /// Forks share that root; a local insertion or removal replaces only the
 /// logarithmic paths in the fact store and affected indexes.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct ResourceContext {
+    /// Derived trusted-kernel index. It never supplies ownership evidence.
+    memory_equalities:
+        std::sync::Mutex<Option<std::sync::Arc<memory_equality_index::PairedMemoryIndex>>>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
@@ -5348,6 +5352,21 @@ pub struct ResourceContext {
     /// different loan origins, and a rewrite must preserve the opaque
     /// occurrence identity rather than rediscovering it from the term.
     pub(super) loan_dependencies: std::sync::Arc<crate::kernel::loans::LoanViewBindingsState>,
+}
+
+impl Clone for ResourceContext {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+            loan_dependencies: self.loan_dependencies.clone(),
+            memory_equalities: std::sync::Mutex::new(
+                self.memory_equalities
+                    .lock()
+                    .expect("memory equality index")
+                    .clone(),
+            ),
+        }
+    }
 }
 
 impl ResourceContext {
@@ -5519,6 +5538,8 @@ pub(super) struct ResourceContextStorage {
 
 #[derive(Clone)]
 pub(super) struct ResourceContextChange {
+    /// Exact occurrence delta for derived indexes; metadata changes use None.
+    pub(super) entry_delta: Option<(ResourceEntryId, bool)>,
     pub(super) fact: CResourceFact,
     pub(super) parent: Option<std::sync::Arc<ResourceContextChange>>,
 }
@@ -5563,6 +5584,9 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Raw persistent roots for pairing with an equality graph, maintained
+    /// alongside the spelling index so pairing never scans the resource store.
+    memory_addresses: memory_equality_index::MemoryAddresses,
     /// Constant byte spans of owned memory, normalized by additive base.
     /// A predecessor query selects an access's containing span without
     /// scanning other fields, ranges, or parameters in the same block.

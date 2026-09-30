@@ -458,33 +458,46 @@ The existing weighted affine payload operations still need broader scaling
 review for growing symbolic deltas. Same-block equations and equality between
 offset atoms are not yet incorporated into this closure.
 
-Only registered pointer-width loads in opaque symbolic-block form enter this
-application index. Ordinary C load construction retains its existing encoding.
-This is a preparatory graph fragment; live typed comparison and read/fold
-integration remain separate milestones.
+Registered pointer-width loads in opaque symbolic-block form enter this
+application index. Ordinary C load construction retains its existing encoding;
+checked read-site equations connect its values to the graph's applications.
+Pointer comparison uses that closure directly. Read/fold resource indexing
+has its own ownership and range-coverage boundaries below.
 
-Resource lookup needs indexed equality-aware addresses, including displacement.
-Specify how resources registered before a merge remain discoverable after the
-representative changes. Resolving a query's ID with `find` alone does not move
-entries still stored under an old representative. Possible implementations
-include persistent per-class payload indexes merged by size, or explicit
-reindexing of affected entries; choose and measure one in the foundation.
+Resource lookup now pairs persistent resource roots with the trusted graph's
+pointer-class merge stream. Memory facts have a raw block/affine-base index
+maintained at insertion and removal, so initial pairing does not scan the
+resource store. A paired snapshot retains both resource and graph checkpoints;
+execution proof-step boundaries advance it using exact occurrence deltas and
+class merges. Forks share those roots and have independent cache locks.
+A restricted or sibling context starts from raw roots and its own graph's
+merge stream, rather than retaining unsupported address associations.
 
-The resource store and pure equality context are independent persistent
-snapshots. A resource can change without an equality, and an equality can be
-learned after a resource snapshot was created. Therefore the resource-class
-index must belong to a **paired checked proof-path state**, rather than to
-either snapshot alone or to a per-fold cache. Its update inputs are the
-resource store's changed-fact ancestry and the trusted graph's class-merge
-deltas (including displacement). A branch shares the prefix; applying a merge
-rekeys only the moved class's registered resource bases, while a resource
-change adds or removes only its own entries. A restricted or independently
-constructed context has no shared ancestry and must start a new paired index
-at its semantic boundary. The graph now exposes branch-local pointer-merge
-deltas as the first part of this connection. Same-block offset-term merges
-need their own index update path before the lookup can cover every graph
-equality. Fold still uses the spelling compatibility path until the paired
-index is installed and checked.
+Each class has a persistent affine-address bucket. Its coordinate origin may
+differ from the graph's representative: a merge keeps the larger **resource
+payload** and shifts only the smaller payload, even if the graph's block/use
+weight chooses the other representative. This avoids repeatedly rekeying a
+large resource bucket when it acquires resource-free aliases. Queries select
+symbolic ranges at the requested affine base, or concrete spans selected by
+their canonical starts (including the predecessor and starts inside the
+requested span). The resource algebra then checks access mode, quantity and bounds; an indexed equality grants no
+ownership. Full resource normalization refreshes the derived payload during
+its existing complete-input operation because normalization can renumber entry
+IDs; ordinary deltas do not rebuild it or scan exact-fact buckets.
+
+Fold consumption uses this paired address/span index instead of enumerating
+pointer spellings. A selected candidate can express the requirement in its
+own block coordinates using the graph's affine relation; this visits no other
+class members. Existing local range matching remains responsible for
+same-block containment and endpoint reasoning. Specification-read candidate
+selection still has spelling compatibility paths. Whole-offset term-class
+merges and general symbolic cross-base containment need separate indexed
+coverage before this lookup can cover every graph-supported resource match.
+Deterministic regressions cover late aliases,
+nonzero displacement, branch isolation, insertion/removal and normalization,
+growing alias classes, disjoint spans sharing one base, and incremental merges
+with a large resource payload. Resource-section publication uses the expansion
+delta rather than recreating views for unrelated ambient memory ranges.
 
 Read and fold consumers are the first integration examples. A lookup must not
 enumerate every spelling in a class. Equality indexing narrows candidates;

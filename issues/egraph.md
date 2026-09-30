@@ -62,8 +62,12 @@ use the resulting closure, including address equality learned after the read.
 This adds no theorem premise or read permission. An owned range's
 read/write membership check now uses graph equality when comparing an access
 to that range's selected base; the held range still supplies authority and its
-bounds still decide coverage. Resource candidate selection and fold consumption
-still have compatibility spelling retries.
+bounds still decide coverage. Fold consumption now uses a persistent paired
+resource/class address and concrete-span index, including late merges and
+displaced aliases, without enumerating pointer spellings. Specification-read
+candidate selection still has compatibility retries. Whole-offset class updates
+and general symbolic cross-base containment remain separate indexed-coverage
+work; the rbtree acceptance remains open.
 
 The previous attempt to publish `load(M, p) == value` as a certified
 `ExecutionPureFact` was reverted: it changed execution theorem shapes by
