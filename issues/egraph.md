@@ -83,7 +83,13 @@ displaced aliases, without enumerating pointer spellings. Specification-read
 candidate selection uses a persistent interval summary for concrete affine
 addresses in classes with positive concrete read cores, including mixed extents
 and overlapping views. It delivers only covering candidates lazily, and an
-indexed miss is decisive. Other read shapes still select the general checker
+indexed miss is decisive. Write-resource selection now uses this same complete
+affine interval summary, including interior accesses through late equalities.
+Each candidate still requires ownership and the existing write bounds check;
+views grant no write authority. Covered hits and misses do not retry spellings
+or scan unrelated ranges. Other write shapes retain the general lookup, and
+whole-cell read payloads are not treated as complete write candidates.
+Other read shapes still select the general checker
 before lookup. Whole-cell reads now attach their exact-start entries to typed graph address
 applications. The graph's term-merge stream propagates offset and loaded-pointer
 equalities to these entries, including late equalities after resource
