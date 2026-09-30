@@ -120,23 +120,39 @@ This premise translation shares support counting with explicit scalar edges;
 withdrawing one premise retains any other support for that edge. It does not
 infer exact offset equality from equal wrapping residues.
 
-The legacy Boolean scalar query is not interchangeable with the graph yet.
-Some callers use it while reasoning about exact pointer offsets, where a
-wrapping int32 equality is insufficient. Migrating those callers requires an
-explicit distinction between residue equality and exact-offset equality.
-Memory resolution now checks that both rebuilt indices are exact before a
-positive residue equality can prove an offset equality; unequal residues can
-still refute one. The regression
-`wrapped_index_sum_does_not_decide_pointer_offsets_equal` and direct
-memory-resolution tests protect that boundary for explicit scalar facts and
-multiple element widths. Audit each remaining consumer before replacing the
-legacy query throughout the kernel.
+`PureFactContext::int32_values_known_equal(left, right)` is the shared query
+for wrapping int32 value equality in the trusted graph. It replaces the old
+Boolean fact-component walk and its separate memo. Condition decisions,
+transport, resource matching, and memory consumers use the same maintained
+closure, including addition, literal evaluation, and registered load
+congruence. Queries do not build the legacy condition-fact index; deterministic
+regressions check bounded cold query work beside increasing equality classes
+and unrelated facts, as well as late merges and persistent branch isolation.
+Opaque operands use existing-node lookups. An absent nonliteral opaque
+endpoint cannot be produced by constructor registration, so such a miss stops
+without interning unrelated applications. Supported additions and registered
+loads still register when congruence or literal evaluation can establish equality.
+Representative lookups use a disposable node-ID cache guarded by the merge
+history's epoch. Unions invalidate entries lazily; forks start an empty local
+cache in constant work, while semantic graph storage remains persistent.
+There is at most one cached representative per node, with no term-pair cache
+or deep structural key.
 
-The shallow int32 equality decision now queries the trusted graph directly.
-It can use int32 addition and registered same-snapshot load congruence without
-building the legacy fact-path index. Its offset callers still use the exactness
-check above before affirming byte-offset equality. Other callers of the legacy
-scalar fact-path helper remain separate migration candidates.
+Residue equality remains distinct from exact byte-offset equality. Memory
+resolution checks that both rebuilt indices are exact before a positive
+residue equality can prove an offset equality; unequal residues can still
+refute one. `wrapped_index_sum_does_not_decide_pointer_offsets_equal` and
+direct memory-resolution regressions protect this boundary across element
+widths. Resolved-load value comparisons require a recorded four-byte read;
+a byte, short, or wide read cannot acquire int32 semantics by resolving its
+stored term. The general memory and expression reasoning APIs still perform
+their explicit checked judgments; the known-value query does no arithmetic
+search or snapshot transport.
+
+The lazy exact-equality index remains for consumers that enumerate aliases or
+produce premise-path evidence. Those are distinct operations, not a second
+Boolean equality checker. This chunk does not migrate the 64-bit adjacency
+index, mathematical-integer equality, or constant discovery.
 
 The central memory resolver now asks pointer classes for cross-block equality
 and offset classes for exact same-block byte-offset equality. Its pointer
@@ -165,28 +181,19 @@ does not imply a second Boolean pointer-equality system. Deterministic tests
 cover mixed offset/block chains, all premise insertion orders, late offset
 merges, branch isolation, and bounded query work beside growing offset classes.
 
-The full `Bitvector32Equal` condition decision now uses the same graph query
-before memory resolution and its other arithmetic rules when the graph has
-established term equivalences. An empty graph skips interning unrelated scalar
-queries; structural and memory rules still run. Explicit premises, other
-checked scalar rules, and negative decisions keep their existing paths. The
-legacy fact-path helper still serves transport, memory, and resource consumers.
-
-Int32 fact transport now asks that graph first when it has joined term classes.
-This covers congruent sums and registered same-snapshot loads in order-fact
-matching without building the legacy fact-path index. Its existing structural
-rules and fact-path lookup still handle unsupported term forms. Transport is a
-value-equality consumer; exact pointer-offset decisions retain their separate
-guard against wrapping int32 equalities.
+The full and shallow `Bitvector32Equal` decisions use the shared known-value
+query. Explicit negative premises, arithmetic rules, and checked memory
+resolution remain separate. Int32 fact transport uses the same query before
+its structural and broader expression rules; it has no separate Boolean
+fact-path fallback. Exact pointer-offset decisions retain their no-wrap guard.
 
 The commutative int32-addition matcher also queries the graph when comparing
 individual addends. A reordered sum can therefore use registered load
 congruence or a joined scalar class even though the graph does not itself
-reorder addition. Other addend rules and the legacy fact-path lookup still
-cover forms outside this graph fragment.
+reorder addition. Other checked addend rules still cover forms outside this graph fragment.
 
 Direct memory-resource matching now queries graph equality for its int32 range
-start and end values before the legacy fact-path lookup. These fields are
+start and end values through the shared known-value query. These fields are
 scalar values, not byte-offset equivalences; the resource base still follows
 its separate pointer check. Congruent sums and registered same-snapshot loads
 can therefore identify equal range endpoints, while changed snapshots and
@@ -258,16 +265,14 @@ selection remains its own index boundary: normalization does not yet discover
 every pair whose endpoints become equal only through graph congruence.
 
 After the existing memory resolver establishes a four-byte scalar load's
-value, load equality can compare that value through the int32 graph before
-using the legacy fact-path lookup. Resolution still supplies the value in the
+value, load equality compares it through the shared int32 query. Resolution still supplies the value in the
 load's snapshot; graph equality neither resolves stores nor grants read or
 frame permission. Other load widths keep their existing comparison path.
 Regressions cover both comparison directions, a changed snapshot, withdrawn
 premises, a one-byte load, and multi-size query work.
 
 When both operands are resolved four-byte loads, the same path compares their
-checked stored values through the graph before searching the legacy fact
-index. Neither load's opaque name needs to equal the other load's stored term.
+checked stored values through the same graph query. Neither load's opaque name needs to equal the other load's stored term.
 Each value still comes from its own recorded snapshot. Changed or withdrawn
 evidence and a resolved one-byte read do not use this two-load rule.
 
@@ -752,9 +757,9 @@ Delete old mechanisms as their responsibilities migrate:
 | Algebraic/function congruence | Gap-74 alias retry and duplicated operand-wise equality recursion |
 | Tactic matching | Surface bridges made redundant by checked closure queries |
 
-Many current int32 consumers query the graph first and retain a legacy
-fact-path fallback for forms outside its supported fragment. Those are partial
-migrations, not completed replacements. For each complete consumer migration,
+Int32 Boolean consumers now share one graph query. Exact alias enumeration,
+premise evidence, constant discovery, and wider scalar theories still retain
+their own indexes. For each further consumer migration,
 identify the remaining fallback cases, cover them with the intended checked
 judgment, and delete the superseded path. Full deletion is an acceptance
 criterion, not optional cleanup.
