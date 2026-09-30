@@ -11,6 +11,6 @@ if [[ "$actual_commit" != "$expected_commit" ]]; then
 fi
 sysroot="$(rustc +"$toolchain" --print sysroot)"
 export CLICK_RUST_SYSROOT="$sysroot"
-export RUSTFLAGS="-C link-arg=-Wl,-rpath,$sysroot/lib"
+export RUSTFLAGS="-L native=$sysroot/lib -C link-arg=-Wl,-rpath,$sysroot/lib"
 cargo +"$toolchain" build --locked --manifest-path tools/rust-exporter/Cargo.toml --target-dir target/rust-exporter >&2
 printf '%s\n' "$PWD/target/rust-exporter/debug/click-rust-exporter"
