@@ -71,6 +71,17 @@ struct MergeHistory {
     parent: Option<Arc<MergeHistory>>,
 }
 
+// This is disposable derived state, not proof-context storage. Forking starts
+// an empty local cache in constant work instead of copying a growing table.
+#[derive(Default)]
+struct RootLookupCache(std::cell::RefCell<std::collections::HashMap<u64, (usize, u64)>>);
+
+impl Clone for RootLookupCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
     origin: Arc<()>,
@@ -91,6 +102,10 @@ pub(super) struct TermClasses {
     // lighter side bounds both root depth and reindexing, including a class
     // with many application parents repeatedly joined to fresh singleton terms.
     parents: PersistentMap<u64, u64>,
+    // Cache representative lookups under the current merge epoch. A new union
+    // invalidates entries lazily, without a scan. Keys are shallow node IDs,
+    // with at most one entry per node; semantic graph roots remain persistent.
+    root_cache: RootLookupCache,
     weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
     applications: PersistentMap<u64, Application>,
@@ -369,6 +384,48 @@ impl TermClasses {
         left: &crate::kernel::Bitvector32Term,
         right: &crate::kernel::Bitvector32Term,
     ) -> bool {
+        use crate::kernel::Bitvector32Term;
+        if left == right {
+            return true;
+        }
+        // Opaque atoms cannot acquire equality by query registration. Consult
+        // their existing nodes directly, avoiding registration of unrelated
+        // order endpoints and unsupported expressions. Loads and addition
+        // still need registration because their definitions can join classes.
+        let opaque = |term: &Bitvector32Term| {
+            let supported = |term: &Bitvector32Term| match term {
+                Bitvector32Term::Add(..) | Bitvector32Term::MemoryLoad(..) => true,
+                Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
+                _ => false,
+            };
+            if supported(term) {
+                return None;
+            }
+            let term = crate::kernel::canonical_term(term);
+            (!supported(&term)).then(|| Node::Int32(MachineAtom::int32(term)))
+        };
+        let left_atom = opaque(left);
+        let right_atom = opaque(right);
+        if left_atom.is_some() && left_atom == right_atom {
+            return true;
+        }
+        // Registration can create a literal through evaluation, but cannot
+        // create a new opaque nonliteral atom as another term's consequence.
+        // Such an absent endpoint therefore cannot match an application.
+        for atom in [&left_atom, &right_atom].into_iter().flatten() {
+            if let Node::Int32(value) = atom
+                && !matches!(value.value(), Bitvector32Term::Constant(_))
+                && !self.nodes.contains_key(atom)
+            {
+                return false;
+            }
+        }
+        if let (Some(left), Some(right)) = (left_atom, right_atom) {
+            return match (self.nodes.get(&left), self.nodes.get(&right)) {
+                (Some(left), Some(right)) => left == right || self.root(*left) == self.root(*right),
+                _ => false,
+            };
+        }
         let left = self.intern_int32(left);
         let right = self.intern_int32(right);
         self.register_pending_loads();
@@ -410,13 +467,22 @@ impl TermClasses {
     }
 
     fn root(&self, mut id: u64) -> u64 {
+        let original = id;
+        let epoch = self.history.as_ref().map_or(0, |history| history.depth);
+        if let Some((cached_epoch, root)) = self.root_cache.0.borrow().get(&id).copied()
+            && cached_epoch == epoch
+        {
+            return root;
+        }
         loop {
             crate::instrumentation::record_deterministic_work(1);
             match self.parents.get(&id) {
                 Some(parent) => id = *parent,
-                None => return id,
+                None => break,
             }
         }
+        self.root_cache.0.borrow_mut().insert(original, (epoch, id));
+        id
     }
 
     pub(super) fn are_equal(

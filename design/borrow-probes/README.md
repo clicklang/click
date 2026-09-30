@@ -3,6 +3,9 @@
 Synthetic, standalone probes for the
 [supporting more languages design](../supporting-more-languages.md).
 These are synthetic examples, not a supported Rust/C++ verification path.
+The [Rust resource correspondence](../rust-resource-correspondence.md) pairs
+`resource_correspondence.rs` and `resource_correspondence_rejected.rs` with
+independent resource-model tests and gives their reproduction commands.
 The language probes inform frontend planning; the two C
 contract-migration probes also support the stable-views investigation. The
 Rust rejection probes are intentionally invalid programs; successful

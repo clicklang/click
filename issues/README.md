@@ -96,11 +96,10 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (25)
+## P2: after launch (17)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
-- [Lower a dependent composite argument in every tactic position](dependent-composite-argument-in-tactics.md)
 
 Worth doing, not worth blocking the rbtree claim on. Promote one to P1 when
 it turns out to block that claim: if P1 work exposes one of the tooling
@@ -118,14 +117,11 @@ C language coverage:
 - [Give private static storage sound ownership across helper calls](private-static-helper-ownership.md)
 - [Extend bounded control flow](control-flow.md)
 - [Resolve linked initializers in their defining file](linked-initializer-private-names.md)
-- [Model variadic functions](variadic-functions.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
 - [Model signed eight-bit integers](signed-byte-integers.md)
 
 Semantics and reasoning:
 
-- [Add Euclidean division and remainder for `Integer`](integer-division-and-remainder.md)
-- [Extend the resource algebra: fractions, persistent tokens, mutual recursion, symbolic coefficients](resource-algebra-extensions.md)
 - [Recursion](recursion.md)
 
 Proof language and tooling:
@@ -133,4 +129,3 @@ Proof language and tooling:
 - [Extend modules and imports beyond the delivered rbtree slice](specification-imports.md)
 - [Reduce repeated work in deeply nested `Integer` quantifiers](deep-quantifier-scaling.md)
 - [Complete general-purpose algebraic data type support](algebraic-data-types.md)
-- [Add a smart tactic for dynamic range framing](dynamic-range-frame.md)
