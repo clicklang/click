@@ -340,3 +340,143 @@ fn offset_equalities_update_already_indexed_cells() {
     assert!(resources.permits_memory_read(&alias, 4, &facts));
     assert!(!resources.permits_memory_read(&alias, 4, &empty));
 }
+
+#[test]
+fn whole_cell_hits_remain_indexed_beside_other_read_shapes() {
+    let at = |id: u64| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(857_000 + id)),
+    };
+    let owner = at(0);
+    let alias = at(1);
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(view(&owner, 0, 4))
+        .unchecked_with_fact(view(&at(2), 0, 8))
+        .unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_with_element_width(
+                at(3),
+                0u32.into(),
+                Bitvector32Term::Variable(Variable(857_100)),
+                1,
+            ),
+        ));
+    let empty = PureFactContext::new();
+    resources.synchronize_memory_equalities(&empty);
+    let facts = empty.assume_condition(
+        ConditionTerm::pointer_offset_equal(owner.offset, alias.offset.clone()),
+        true,
+    );
+    let candidates = resources
+        .concrete_read_entries(&alias, 4, &facts)
+        .expect("unrelated read shapes must not disable a known cell match");
+    assert!(candidates.exact());
+    assert_eq!(candidates.count(), 1);
+    assert!(resources.permits_memory_read(&alias, 4, &facts));
+    assert!(!resources.permits_memory_read(&alias, 8, &facts));
+}
+
+#[test]
+fn cell_footprints_follow_merges_removals_and_normalization() {
+    let at = |id: u64| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(858_000 + id)),
+    };
+    let (owner, alias) = (at(0), at(1));
+    let (short, long) = (view(&owner, 0, 4), view(&alias, 0, 8));
+    let zero = CResourceFact::Own(
+        CResource::Memory(CMemoryRange::new_with_element_width(
+            owner.clone(),
+            0u32.into(),
+            12u32.into(),
+            1,
+        )),
+        Box::new(Bitvector32Term::Constant(0)),
+    );
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(short.clone())
+        .unchecked_with_fact(long.clone())
+        .unchecked_with_fact(zero);
+    let empty = PureFactContext::new();
+    resources.synchronize_memory_equalities(&empty);
+    let sibling = resources.clone();
+    let facts = empty.clone().assume_condition(
+        ConditionTerm::pointer_offset_equal(owner.offset.clone(), alias.offset.clone()),
+        true,
+    );
+    resources.synchronize_memory_equalities(&facts);
+    for bytes in [4, 8] {
+        let candidates = resources
+            .concrete_read_entries(&alias, bytes, &facts)
+            .unwrap();
+        assert!(candidates.exact());
+        assert_eq!(candidates.count(), 1);
+        assert!(resources.permits_memory_read(&owner, bytes, &facts));
+    }
+    assert!(!sibling.permits_memory_read(&owner, 8, &empty));
+    assert!(!resources.permits_memory_read(&owner, 12, &facts));
+    let removed = resources
+        .clone()
+        .without_exact_representation(&short)
+        .unwrap();
+    // A partial read of the longer range is still allowed by the existing
+    // range checker; removing its whole-cell counterpart must prune size 4.
+    assert!(removed.concrete_read_entries(&alias, 4, &facts).is_none());
+    assert!(removed.permits_memory_read(&alias, 4, &facts));
+    assert!(
+        removed
+            .concrete_read_entries(&alias, 8, &facts)
+            .unwrap()
+            .exact()
+    );
+    let empty_cells = removed.without_exact_representation(&long).unwrap();
+    assert!(!empty_cells.permits_memory_read(&alias, 4, &facts));
+    let restored = empty_cells.unchecked_with_fact(short).normalized(&facts);
+    assert!(
+        restored
+            .concrete_read_entries(&alias, 4, &facts)
+            .unwrap()
+            .exact()
+    );
+    assert!(restored.permits_memory_read(&alias, 4, &facts));
+    assert!(!restored.permits_memory_read(&alias, 8, &facts));
+}
+
+#[test]
+fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let at = |id: u64| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(859_000 + id)),
+        };
+        let (owner, alias) = (at(0), at(1));
+        let mut resources = ResourceContext::new().unchecked_with_fact(view(&owner, 0, 4));
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(view(&alias, 0, 8 + i * 4));
+        }
+        let empty = PureFactContext::new();
+        resources.synchronize_memory_equalities(&empty);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let facts = empty.assume_condition(
+                    ConditionTerm::pointer_offset_equal(owner.offset, alias.offset.clone()),
+                    true,
+                );
+                resources.synchronize_memory_equalities(&facts);
+                let candidates = resources.concrete_read_entries(&alias, 4, &facts).unwrap();
+                assert!(candidates.exact());
+                assert_eq!(candidates.count(), 1);
+                assert!(resources.permits_memory_read(&alias, 4, &facts));
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 32,
+        "merge/query scanned other footprints: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 3 + 128,
+        "merge/query rebuilt the larger footprint payload: {samples:?}"
+    );
+}

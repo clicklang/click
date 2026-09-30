@@ -512,9 +512,14 @@ unions retain the larger entry set, even when the graph chooses the other root.
 Raw offsets and their affine normal forms are definitionally connected inside
 the trusted graph; this registers no proposition or ownership premise.
 
-An exact-start class supplies read evidence only when it contains a resource,
-every memory occurrence in the queried block class has precisely the required
-authorized footprint, and input registration is complete. An unbound class
+Each exact-start class indexes eligible occurrences by authorized read
+footprint. A known equality selects only entries of the requested footprint;
+different or unsupported read shapes at that address or elsewhere in the block
+class do not disable the match. Registration, removal and class merging update
+both the complete fold-candidate set and these read sets. Each occurrence
+contributes at most two footprints (including the logical pointer-slot rule),
+and merges move both indexes from the smaller occurrence payload. Input
+registration still belongs to the execution proof boundary. An unbound class
 is unknown: scalar arithmetic or snapshot transport may justify an equality
 outside this closure, so that case retains the existing general checker. Candidate delivery is lazy; equality selects the
 occurrence's own start and the ordinary checker still validates its quantity,
@@ -532,7 +537,7 @@ advance the memo checkpoint, avoiding repeated accumulated deltas. Full
 normalization defers its published registration delta to the source graph
 rather than altering a private graph checkpoint.
 
-Symbolic containment, mixed-range reads with non-affine offset aliases, and
+Symbolic containment, partial-range reads with non-affine offset aliases, and
 snapshot-based matching still need complete indexed coverage before the
 general read lookup can be retired. The interval summary is part of the trusted kernel's derived index;
 it creates no proposition or access capability.

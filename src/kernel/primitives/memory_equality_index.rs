@@ -68,10 +68,9 @@ fn read_extent(fact: &CResourceFact) -> Option<u64> {
     (extent > 0).then_some(extent)
 }
 
-// An exact-start read is complete only when its footprint covers the entire
-// range. The existing int32-slot interpretation of pointer reads is special:
+// Whole-cell candidates carry their own authorized read footprints. The existing int32-slot interpretation of pointer reads is special:
 // eight bytes may read one logical four-byte element, including an interior
-// element of a longer range. Such longer ranges cannot use exact-start misses.
+// element of a longer range. Those partial reads retain the range checker.
 fn exact_read_sizes(fact: &CResourceFact) -> Vec<u32> {
     let Some(extent) = read_extent(fact).and_then(|extent| u32::try_from(extent).ok()) else {
         return Vec::new();
@@ -94,7 +93,6 @@ struct AddressBucket {
     weight: usize,
     read_intervals: ReadIntervals,
     memory_count: usize,
-    exact_read_sizes: PersistentMap<u32, usize>,
     general_coordinates: usize,
 }
 
@@ -119,7 +117,7 @@ impl MemoryAddresses {
             };
             self.update_coordinate(pointer.block, kind, offset, entry, insert, extent);
         }
-        self.update_memory_count(range.base().block.clone(), insert, fact);
+        self.update_memory_count(range.base().block.clone(), insert);
     }
 
     fn update_in_graph(
@@ -153,24 +151,15 @@ impl MemoryAddresses {
                 extent,
             );
         }
-        self.update_memory_count(base.representative, insert, fact);
+        self.update_memory_count(base.representative, insert);
     }
 
-    fn update_memory_count(&mut self, block: PointerBlock, insert: bool, fact: &CResourceFact) {
+    fn update_memory_count(&mut self, block: PointerBlock, insert: bool) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
         if insert {
             bucket.memory_count += 1;
         } else {
             bucket.memory_count -= 1;
-        }
-        for size in exact_read_sizes(fact) {
-            let count = bucket.exact_read_sizes.get(&size).copied().unwrap_or(0);
-            let count = if insert { count + 1 } else { count - 1 };
-            if count == 0 {
-                bucket.exact_read_sizes.remove(&size);
-            } else {
-                bucket.exact_read_sizes.insert(size, count);
-            }
         }
         self.classes = if bucket.weight == 0 && bucket.memory_count == 0 {
             self.classes.without_key(&block)
@@ -264,10 +253,6 @@ impl MemoryAddresses {
             (moved, kept, shift)
         };
         larger.memory_count += smaller.memory_count;
-        for (size, count) in smaller.exact_read_sizes.iter() {
-            let count = larger.exact_read_sizes.get(size).copied().unwrap_or(0) + count;
-            larger.exact_read_sizes.insert(*size, count);
-        }
         for (start, end, entry) in smaller.read_intervals.iter() {
             let Some(start) = start.0.checked_add(&shift) else {
                 continue;
@@ -309,16 +294,24 @@ pub(super) struct PairedMemoryIndex {
     addresses: MemoryAddresses,
     points: AddressPoints,
     pending_points: PersistentMap<ResourceEntryId, CResourceFact>,
-    points_complete: bool,
+    points_initialized: bool,
 }
 
 /// A payload attached to typed address classes in the trusted graph. It has
 /// no equality solver of its own: graph merges move only affected entries.
 #[derive(Clone, Default)]
+struct AddressPointBucket {
+    // Fold selection considers every occurrence. Reads select only entries
+    // with the requested checked footprint, independent of other shapes at
+    // this address or elsewhere in the pointer-block class.
+    entries: ResourceEntryIds,
+    reads: PersistentMap<u32, ResourceEntryIds>,
+}
+
+#[derive(Clone, Default)]
 struct AddressPoints {
-    classes: PersistentMap<u64, ResourceEntryIds>,
+    classes: PersistentMap<u64, AddressPointBucket>,
     entries: PersistentMap<ResourceEntryId, u64>,
-    unsupported: usize,
 }
 impl AddressPoints {
     fn merge(&mut self, moved: u64, kept: u64) {
@@ -327,12 +320,23 @@ impl AddressPoints {
         };
         let mut larger = self.classes.get(&kept).cloned().unwrap_or_default();
         self.classes.remove(&moved);
-        if larger.len() < smaller.len() {
+        if larger.entries.len() < smaller.entries.len() {
             std::mem::swap(&mut larger, &mut smaller);
         }
-        for entry in smaller.iter() {
+        for entry in smaller.entries.iter() {
             crate::instrumentation::record_deterministic_work(1);
-            larger = larger.with_value(*entry);
+            larger.entries = larger.entries.with_value(*entry);
+        }
+        // Each occurrence contributes at most two footprints. Using the
+        // same smaller occurrence payload for both indexes bounds all moves,
+        // even when the graph chooses the other class representative.
+        for (bytes, entries) in smaller.reads.iter() {
+            let mut combined = larger.reads.get(bytes).cloned().unwrap_or_default();
+            for entry in entries.iter() {
+                crate::instrumentation::record_deterministic_work(1);
+                combined = combined.with_value(*entry);
+            }
+            larger.reads.insert(*bytes, combined);
         }
         self.classes.insert(kept, larger);
     }
@@ -351,29 +355,40 @@ impl AddressPoints {
                 .base()
                 .offset_by_elements(range.start().clone(), range.element_width());
             let Some(class) = graph.address_class(&start) else {
-                self.unsupported += 1;
                 return;
             };
             self.entries.insert(entry, class);
             class
         } else {
             let Some(class) = self.entries.get(&entry).copied() else {
-                self.unsupported -= 1;
                 return;
             };
             self.entries.remove(&entry);
             graph.address_class_root(class)
         };
-        let entries = self.classes.get(&class).cloned().unwrap_or_default();
-        let entries = if insert {
-            entries.with_value(entry)
+        let mut bucket = self.classes.get(&class).cloned().unwrap_or_default();
+        bucket.entries = if insert {
+            bucket.entries.with_value(entry)
         } else {
-            entries.without_value(&entry)
+            bucket.entries.without_value(&entry)
         };
-        if entries.is_empty() {
+        for bytes in exact_read_sizes(fact) {
+            let entries = bucket.reads.get(&bytes).cloned().unwrap_or_default();
+            let entries = if insert {
+                entries.with_value(entry)
+            } else {
+                entries.without_value(&entry)
+            };
+            if entries.is_empty() {
+                bucket.reads.remove(&bytes);
+            } else {
+                bucket.reads.insert(bytes, entries);
+            }
+        }
+        if bucket.entries.is_empty() {
             self.classes.remove(&class);
         } else {
-            self.classes.insert(class, entries);
+            self.classes.insert(class, bucket);
         }
     }
 }
@@ -416,7 +431,7 @@ impl ResourceContext {
             .expect("memory equality index");
         let graph = &assumptions.equality_graph;
         if let Some(index) = cache.as_mut()
-            && (!register_input || index.points_complete)
+            && (!register_input || index.points_initialized)
             && graph.pointer_merges_since(&index.graph).is_some()
             && graph.address_merges_since(&index.graph).is_some()
             && std::sync::Arc::ptr_eq(&self.storage.origin, &index.resources.origin)
@@ -450,7 +465,7 @@ impl ResourceContext {
                 // Registration may itself close congruent loaded addresses.
                 // Finish it before reading either stream of graph deltas.
                 for (_, insert, fact) in changed.iter().rev() {
-                    if index.points_complete
+                    if index.points_initialized
                         && *insert
                         && let Some(range) = fact.memory_range()
                     {
@@ -475,7 +490,7 @@ impl ResourceContext {
                 }
                 index.pending_points = PersistentMap::default();
                 for (entry, insert, fact) in changed.into_iter().rev() {
-                    if index.points_complete {
+                    if index.points_initialized {
                         index.points.update(entry, insert, &fact, graph);
                     }
                     let Some(range) = fact.memory_range() else {
@@ -528,7 +543,7 @@ impl ResourceContext {
             addresses,
             points,
             pending_points: PersistentMap::default(),
-            points_complete: register_input,
+            points_initialized: register_input,
         }));
     }
 
@@ -553,7 +568,7 @@ impl ResourceContext {
         // as an explicit pairing delta, and register it on the source graph at
         // the next boundary rather than mutating the private checkpoint clone.
         index.points = AddressPoints::default();
-        index.pending_points = if index.points_complete {
+        index.pending_points = if index.points_initialized {
             self.storage.facts.clone()
         } else {
             PersistentMap::default()
@@ -584,8 +599,9 @@ impl ResourceContext {
     }
 
     /// Concrete interval coverage supports decisive hits and misses. Exact
-    /// whole-cell classes supply known equality candidates, but an unbound
-    /// class is unknown when arithmetic or snapshot reasoning could apply.
+    /// whole-cell payloads supply eligible known-equal occurrences; a missing
+    /// footprint is unknown when containment, arithmetic or snapshot reasoning
+    /// could apply.
     /// `None` selects the existing checker before any permission check; a
     /// failed permission or bounds check is never retried.
     pub(super) fn concrete_read_entries(
@@ -605,15 +621,13 @@ impl ResourceContext {
             .expect("memory equality index");
         let index = cache.as_ref()?;
         let bucket = index.addresses.classes.get(&point.representative)?;
-        if index.points_complete
-            && index.points.unsupported == 0
-            && bucket.exact_read_sizes.get(&bytes).copied() == Some(bucket.memory_count)
-        {
+        if index.points_initialized {
             let class = graph.address_class_root(class);
             let entries = index
                 .points
                 .classes
                 .get(&class)
+                .and_then(|bucket| bucket.reads.get(&bytes))
                 .cloned()
                 .unwrap_or_default();
             // A graph answer is equality or unknown, not disequality. Scalar
@@ -667,8 +681,8 @@ impl ResourceContext {
         let mut result = BTreeSet::new();
         if let Some(class) = point_class {
             let class = assumptions.equality_graph.address_class_root(class);
-            if let Some(entries) = index.points.classes.get(&class) {
-                result.extend(entries.iter().copied());
+            if let Some(bucket) = index.points.classes.get(&class) {
+                result.extend(bucket.entries.iter().copied());
             }
         }
         let start = range

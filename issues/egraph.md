@@ -73,8 +73,10 @@ before lookup. Whole-cell reads now attach their exact-start entries to typed gr
 applications. The graph's term-merge stream propagates offset and loaded-pointer
 equalities to these entries, including late equalities after resource
 publication. Fold selection consults the same payload. Whole-cell hits use this payload
-with complete input registration and authorized-footprint coverage. Unbound
-classes remain unknown rather than denying arithmetic or snapshot-based reads; broader symbolic containment, mixed-range reads with offset aliases,
+with input registration and per-occurrence authorized-footprint eligibility.
+Different-sized or symbolic ranges elsewhere in the class do not disable a
+known cell match. Unbound classes remain unknown rather than denying arithmetic
+or snapshot-based reads; broader symbolic containment, partial-range reads with offset aliases,
 and snapshot matching still use the general checker. Initial registration
 belongs to the execution proof input boundary; lookups cannot scan a cold
 frame to attach it. The rbtree acceptance remains open.
