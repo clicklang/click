@@ -42,6 +42,7 @@ chmod +x "$directory/bin/"* "$directory/cached-nextest" "$directory/release/carg
 tar -czf "$directory/nextest.tar.gz" -C "$directory/release" cargo-nextest
 
 export CARGO_HOME="$directory"
+export RUSTUP_HOME="$directory/rustup"
 export MDBOOK_BIN="$directory/bin/rustup"
 export PATH="$directory/bin:/usr/bin:/bin"
 export NEXTEST_VERSION=0.9.143
@@ -73,6 +74,9 @@ if "$repository/scripts/setup-environment.sh" --docs-only > "$directory/output" 
 fi
 
 # Archive consumers need no Rust compiler or documentation-tool installation.
+source "$repository/scripts/rust-exporter-toolchain.sh"
+mkdir -p "$RUST_EXPORTER_SYSROOT/lib/rustlib/$RUST_EXPORTER_TARGET/lib"
+touch "$RUST_EXPORTER_SYSROOT/lib/librustc_driver-mock.so"
 export MOCK_NEXTEST_OUTPUT='cargo-nextest 0.9.143'
 cp "$directory/cached-nextest" "$directory/bin/cargo-nextest"
 cat > "$directory/bin/rustup" <<'EOF'

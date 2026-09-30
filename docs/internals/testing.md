@@ -206,32 +206,47 @@ the gate, and unsupported C++ does not fall back to the C parser.
 ## What the gate runs
 
 `scripts/check.sh` with no options is the single source of truth for "is this
-tree green". In order it runs `cargo fmt --check`, then
-`cargo clippy --all-targets -- -D warnings`, then the mdBook render and the
-docs lint, then the unit tests, followed by the mdtest, example, C
-compiler-import, and C++ semantic-import fixture harnesses one after the
-other. CI uses the same script in two internal modes for code-affecting
-changes: `--ci-prepare ARTIFACTS` runs formatting, Clippy, documentation, and
-the environment-setup regressions, then builds one archive containing all
-selected test binaries and copies the compiled C++ exporter beside it. It
-does not execute Rust tests. Six ordinary Linux runners consume that same
-artifact: four deterministic nextest hash partitions cover the unit and
-compiler-import tests, and mdtests and examples each have a dedicated runner.
-`--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
-without recompiling Click or the exporter. The mdtest and example suites
-remain serial within their respective runners. A final `test` check requires
-preparation and every test partition to pass.
+tree green". It checks formatting (including the Rust exporter), environment
+setup regressions, Clippy, the mdBook render, and docs lint; builds the C++ and
+Rust exporters; then runs the unit/API/documentation tests followed by the
+mdtest, example, C compiler-import, C++ import, and Rust import fixtures.
+
+CI uses three internal modes for code-affecting changes:
+
+- `--ci-quality` runs formatting, setup regressions, Clippy, and documentation
+  on its own runner, alongside preparation. It does not delay test runners.
+- `--ci-prepare ARTIFACTS` builds both exporters and one archive containing
+  all selected test binaries. It does not execute tests or quality checks.
+- `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
+  without compiling Click or either exporter. Four deterministic nextest
+  hash partitions cover the unit and compiler-import tests; mdtests and
+  examples each have their own runner and remain serial within that runner.
+
+The final required `test` check requires quality, preparation, and every
+partition to pass. A failed or cancelled quality job fails this gate even
+when every test succeeds.
 
 `scripts/setup-environment.sh` installs pinned nextest release binaries and
-reuses a matching installed version, including source-built versions without
-commit metadata. On Ubuntu 24.04 it caches the pinned LLVM package files;
-fresh runners restore those files instead of reinstalling Clang. CI caches
-these tools across runs, independently of the source revision, and caches
-Rust dependencies for the shared build job. Consumers use `--test-runner`,
-which needs nextest and LLVM but skips the Rust toolchain and mdBook.
+reuses matching installed versions, including source builds without commit
+metadata. On Ubuntu 24.04 it caches the pinned LLVM package files; fresh
+runners restore those files instead of reinstalling Clang. The Rust exporter
+has a separately pinned compiler/runtime identity in
+`scripts/rust-exporter-toolchain.sh`. CI restores that toolchain before setup;
+archive consumers require its runtime files but do not install a Rust
+compiler or mdBook.
+
+The build job caches dependencies, Click's own build artifacts, and
+incremental compilation state under the compiler and dependency identity.
+Each revision saves a new snapshot and later runs restore the latest
+compatible snapshot. Cargo still checks source freshness and rebuilds changed
+code. The quality job uses its own dependency cache. Build snapshots can be
+large, so cache transfer and fresh-checkout rebuild costs must be included
+when comparing CI timings; a cold cache still builds everything normally.
+
 GitHub checks out the same source revision at the same absolute path on every
-runner, preserving fixture paths embedded at compile time; test archives are
-extracted at the checkout root for embedded CLI paths.
+runner, preserving fixture and exporter sysroot paths embedded at compile
+time. Test archives are extracted at the checkout root for embedded CLI
+paths. Temporary upload archives stay outside the build cache.
 
 For docs-only changes, CI and the explicit
 `scripts/check.sh --docs-only` path run only the focused documentation gate

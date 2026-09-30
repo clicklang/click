@@ -69,7 +69,15 @@ fi
 if [[ "$docs_only" != true ]]; then
     # The typed Rust exporter uses private compiler APIs on a separately
     # pinned toolchain. Click itself continues to use rust-toolchain.toml.
-    rustup toolchain install nightly-2026-06-16 --profile minimal --component rustc-dev --target x86_64-unknown-linux-gnu
+    source scripts/rust-exporter-toolchain.sh
+    if [[ "$test_runner" != true ]]; then
+        rustup toolchain install "$RUST_EXPORTER_TOOLCHAIN" --profile minimal \
+            --component rustc-dev --target "$RUST_EXPORTER_TARGET"
+    elif [[ ! -d "$RUST_EXPORTER_SYSROOT/lib/rustlib/$RUST_EXPORTER_TARGET/lib" ]] || \
+        ! compgen -G "$RUST_EXPORTER_SYSROOT/lib/librustc_driver*" >/dev/null; then
+        echo "error: restore the pinned Rust exporter runtime at $RUST_EXPORTER_SYSROOT before setting up a test runner" >&2
+        exit 1
+    fi
     needs_llvm=false
     if ! command -v llvm-config-19 >/dev/null 2>&1 || \
         [[ "$(llvm-config-19 --version)" != 19.1.7 ]]; then

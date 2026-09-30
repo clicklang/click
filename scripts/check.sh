@@ -17,6 +17,22 @@ if [[ "${1:-}" == "--docs-only" ]]; then
     exec scripts/check-docs.sh "$@"
 fi
 
+run_quality_checks() {
+    cargo fmt --check
+    cargo fmt --manifest-path tools/rust-exporter/Cargo.toml --check
+    scripts/test-setup-environment.sh
+    cargo clippy --all-targets -- -D warnings
+    scripts/mdbook-build.sh
+    scripts/docs-lint.sh
+}
+
+# CI runs these checks alongside compilation, while the final required check
+# still requires both this stage and every test shard to pass.
+if [[ "${1:-}" == "--ci-quality" ]]; then
+    run_quality_checks
+    exit 0
+fi
+
 fixture_targets=(
     --test mdtests
     --test examples
@@ -59,6 +75,13 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
         echo "error: shared C++ exporter is missing at $CLICK_CPP_EXPORTER" >&2
         exit 1
     fi
+    mkdir -p target/rust-exporter/debug
+    tar -xf "$artifacts/rust-exporter.tar" -C target/rust-exporter/debug
+    export CLICK_RUST_EXPORTER="$PWD/target/rust-exporter/debug/click-rust-exporter"
+    if [[ ! -x "$CLICK_RUST_EXPORTER" ]]; then
+        echo "error: shared Rust exporter is missing at $CLICK_RUST_EXPORTER" >&2
+        exit 1
+    fi
 
     # Extract at the checkout root so compile-time CARGO_BIN_EXE paths still
     # work on GitHub's identical build/test checkout paths. No Cargo build or
@@ -80,11 +103,9 @@ fi
 # per-test thread stack on otherwise healthy runners.
 export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
-# Formatting is part of the gate: the same command judges locally and in CI,
-# so drift cannot accumulate. Run `cargo fmt` to fix a failure.
-cargo fmt --check
-cargo fmt --manifest-path tools/rust-exporter/Cargo.toml --check
-scripts/test-setup-environment.sh
+if [[ -z "$ci_artifacts" ]]; then
+    run_quality_checks
+fi
 
 # The first C++ frontend is a small repository-owned LibTooling executable.
 # Build it before Rust tests so the gate fails clearly when the exact pinned
@@ -95,19 +116,6 @@ CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
 
 export CLICK_RUST_EXPORTER
 CLICK_RUST_EXPORTER="$(scripts/build-rust-exporter.sh)"
-
-# Lints are part of the gate for the same reason formatting is: the tree is
-# clippy-clean today, so any new diagnostic is a new one and belongs to the
-# change that introduced it. Deliberate exceptions are `#[allow]`s carrying a
-# reason, not warnings the gate has learned to ignore.
-cargo clippy --all-targets -- -D warnings
-
-# Keep the rendered technical documentation and its source-backed public
-# inventories in the same deterministic gate as the verifier. The
-# `documentation` test that checks those inventories runs with the unit tests
-# below, so it shares their build instead of paying for a separate one.
-scripts/mdbook-build.sh
-scripts/docs-lint.sh
 
 # The gate needs nextest: `.config/nextest.toml` holds the per-test time
 # budgets, and prover regressions usually manifest as hangs, which must be
@@ -131,6 +139,8 @@ if [[ -n "$ci_artifacts" ]]; then
         --archive-file "$ci_artifacts/tests.tar.zst"
     tar -cf "$ci_artifacts/exporter.tar" \
         -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
+    tar -cf "$ci_artifacts/rust-exporter.tar" \
+        -C "$(dirname "$CLICK_RUST_EXPORTER")" "$(basename "$CLICK_RUST_EXPORTER")"
     exit 0
 fi
 
