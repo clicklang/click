@@ -92,5 +92,4 @@ relation to concrete memory and owned children.
 Integer specification coverage is landed and documented in
 [the mathematical-integer internals](../docs/internals/mathematical-integers.md);
 the remaining ADT generalizations do not depend on the retired Integer P1
-issue. Related: [rbtree-example.md](rbtree-example.md)
-and [resource-algebra-extensions.md](resource-algebra-extensions.md).
+issue. Related: [rbtree-example.md](rbtree-example.md).
