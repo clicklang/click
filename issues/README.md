@@ -24,7 +24,7 @@ the complexity contract and scaling-regression policy. Proposals without a
 failing deterministic curve are not open roadmap items; when the user requests
 an issue, scope it narrowly to the evidence.
 
-## P1: before launch (6)
+## P1: before launch (7)
 
 The launch strategy is to complete P1, deliver the minimum viable rbtree
 (MVR), and launch publicly with rbtree as the key demo. MVR is the smallest
@@ -56,8 +56,9 @@ them. A gap that only a different program would hit is normally P2. The
 remaining concurrency and shared-heap milestones are also P1: they check the
 architecture before launch while rbtree remains the key demo. The selected
 control-flow, byte-representation, arena, and basic C++ milestones have
-landed with bounded support claims; broader language, synchronization, and
-graph coverage remain P2.
+landed with bounded support claims. The selected safe-Rust and shared C/Rust
+checksum milestones are P1 by user direction; broader language,
+synchronization, and graph coverage remain P2.
 
 Soundness and kernel shape:
 
@@ -68,6 +69,7 @@ Soundness and kernel shape:
 Program import and execution:
 
 - [Verify a concurrency demo with threads, mutexes, and publication](concurrency-demo.md)
+- [Support safe Rust and verify a shared C/Rust checksum specification](rust-support.md)
 
 The completed [basic C++ example](../examples/basic-cpp/README.md) verifies
 references, checked scoped cleanup, and a modular caller. The unchanged
