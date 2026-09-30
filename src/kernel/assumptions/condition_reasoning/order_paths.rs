@@ -67,7 +67,7 @@ impl PureFactContext {
         match condition {
             ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
             ConditionTerm::PointerEqual(left, right) => {
-                if self.pointer_equality_in_graph(left, right) {
+                if self.pointers_known_equal(left, right) {
                     Some(true)
                 } else {
                     left.blocks_proven_distinct(right).then_some(false)
@@ -470,31 +470,12 @@ impl PureFactContext {
         }
     }
 
-    pub(in crate::kernel) fn pointer_equality_in_graph(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
-        if left.block == right.block {
-            let has_read_bridge = [left, right].into_iter().any(|pointer| {
-                crate::kernel::eval::typed_pointer_read_variable(pointer).is_some_and(|variable| {
-                    self.typed_pointer_read_definitions.contains_key(&variable)
-                })
-            });
-            if has_read_bridge
-                || self.equality_graph.has_pointer_read_definition(left)
-                || self.equality_graph.has_pointer_read_definition(right)
-            {
-                self.equality_graph.are_equal(left, right)
-            } else {
-                self.equality_graph.has_term_equivalences()
-                    && self
-                        .equality_graph
-                        .are_offsets_equal(&left.offset, &right.offset)
-            }
-        } else {
-            self.equality_graph.are_equal(left, right)
-        }
+    /// Query equality already known to the trusted graph. This performs no
+    /// arithmetic proof search, alias-component walk, or resource check.
+    /// `false` means unknown, not unequal. Memory consumers must retain their
+    /// structural-distinctness and separation checks around this query.
+    pub(in crate::kernel) fn pointers_known_equal(&self, left: &Pointer, right: &Pointer) -> bool {
+        self.equality_graph.are_equal(left, right)
     }
 
     /// True when some exact order fact strictly bounds `term` above

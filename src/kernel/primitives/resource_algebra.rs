@@ -7334,7 +7334,7 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
     let connected = facts
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(b, c), true);
-    assert!(connected.pointer_equality_in_graph(&a, &d));
+    assert!(connected.pointers_known_equal(&a, &d));
     assert!(owner.permits_memory_read(&d, 4, &connected));
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
     assert!(!owner.permits_memory_read(&d, 12, &connected));

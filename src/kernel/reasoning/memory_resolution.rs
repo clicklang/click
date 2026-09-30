@@ -946,24 +946,15 @@ fn pointers_proven_equal_for_memory_resolution_unmemoized(
     else {
         return false;
     };
-    // Same-block addresses use exact offset classes. Cross-block classes
-    // are queried by the indexed equality path below, only once per miss.
-    let candidate = left.block == right.block
-        && pointer_offsets_proven_equal_for_memory_resolution(
-            &left.offset,
-            &right.offset,
-            assumptions,
-        )
-        || assumptions
-            .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
-            == Some(true)
-        // A completed typed read may contribute a checked load application
-        // even when the two values use the same storage block. Otherwise the
-        // same-block offset path above has already answered that case.
-        || (left.block != right.block
-            || crate::kernel::eval::typed_pointer_read_variable(left).is_some()
-            || crate::kernel::eval::typed_pointer_read_variable(right).is_some())
-            && assumptions.pointer_equality_in_graph(left, right);
+    // The shared graph answers known equality first. Offset reasoning below
+    // is a stronger, separately guarded judgment, not another alias walk.
+    let candidate = assumptions.pointers_known_equal(left, right)
+        || left.block == right.block
+            && pointer_offsets_proven_equal_for_memory_resolution(
+                &left.offset,
+                &right.offset,
+                assumptions,
+            );
     candidate
         && !assumptions
             .pointers_proven_disjoint_by_explicit_range_for_memory_resolution(left, right)
@@ -2343,7 +2334,10 @@ fn common_base_index_offsets(
     Some((left_index.clone(), right_index.clone()))
 }
 
-pub(in crate::kernel) fn pointers_proven_equal(
+/// Broader pointer proof search, including arithmetic and conditional facts.
+/// Use `PureFactContext::pointers_known_equal` when only maintained equality
+/// is wanted; memory resolution separately enforces its resource guards.
+pub(in crate::kernel) fn pointers_proven_equal_by_reasoning(
     left: &Pointer,
     right: &Pointer,
     assumptions: &PureFactContext,

@@ -188,6 +188,14 @@ impl TermClasses {
         }
     }
 
+    /// Checked pointer premises join address applications in the same closure
+    /// that propagates whole-offset equality. No adjacency search is retained.
+    pub(super) fn add_address_equality(&mut self, left: u64, right: u64) -> bool {
+        debug_assert!(self.address_nodes.contains(&left));
+        debug_assert!(self.address_nodes.contains(&right));
+        self.close(vec![(left, right)])
+    }
+
     pub(super) fn class_root(&self, id: u64) -> u64 {
         self.root(id)
     }

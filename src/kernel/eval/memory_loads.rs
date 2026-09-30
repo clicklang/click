@@ -45,7 +45,9 @@ impl MemoryLoadAliasCache {
         *self
             .equal
             .entry((assumptions.memo_fingerprint(), stored_pointer.clone()))
-            .or_insert_with(|| pointers_proven_equal(pointer, stored_pointer, assumptions))
+            .or_insert_with(|| {
+                pointers_proven_equal_by_reasoning(pointer, stored_pointer, assumptions)
+            })
     }
 }
 
@@ -4246,31 +4248,26 @@ mod tests {
         let x = logical_pointer_read(&memory, &a, &before);
         let y = logical_pointer_read(&memory, &b, &before);
         assert!(before.pure_facts().is_empty());
-        assert!(!before.pointer_equality_in_graph(&x, &y));
+        assert!(!before.pointers_known_equal(&x, &y));
         let branch = before
             .clone()
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
-        assert!(branch.pointer_equality_in_graph(&x, &y));
-        assert!(!sibling.pointer_equality_in_graph(&x, &y));
-        assert!(!before.pointer_equality_in_graph(&x, &y));
+        assert!(branch.pointers_known_equal(&x, &y));
+        assert!(!sibling.pointers_known_equal(&x, &y));
+        assert!(!before.pointers_known_equal(&x, &y));
         assert!(!ResourceContext::new().permits_memory_read(&b, 8, &branch));
         let changed = memory.store(
             a.clone(),
             CValue::typed_pointer(Pointer::symbolic(Variable(92_202)), CType::Int64Pointer),
         );
         let z = logical_pointer_read(&changed, &a, &branch);
-        assert!(!branch.pointer_equality_in_graph(&x, &z));
-        assert!(
-            !branch
-                .equality_graph
-                .has_pointer_read_definition(&x.offset_by_bytes(8))
-        );
-        assert!(!branch.pointer_equality_in_graph(&x, &x.offset_by_bytes(8)));
+        assert!(!branch.pointers_known_equal(&x, &z));
+        assert!(!branch.pointers_known_equal(&x, &x.offset_by_bytes(8)));
         // Definitions survive reconstruction, but the required address fact
         // must still be supplied by the new context itself.
         let reconstructed = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
-        assert!(reconstructed.pointer_equality_in_graph(&x, &y));
+        assert!(reconstructed.pointers_known_equal(&x, &y));
         assert_eq!(reconstructed.pure_facts().len(), 1);
     }
 
@@ -4321,21 +4318,20 @@ mod tests {
         let x = logical_pointer_read(&memory, &a, &context);
         let y = logical_pointer_read(&memory, &b, &context);
         let branch = context.assume_condition(ConditionTerm::pointer_equal(a, b), true);
-        assert!(branch.pointer_equality_in_graph(&x, &y));
+        assert!(branch.pointers_known_equal(&x, &y));
         for size in [16u64, 64, 256, 1024] {
             for i in 0..size {
                 logical_pointer_read(&memory, &Pointer::symbolic(Variable(93_000 + i)), &branch);
             }
-            let (equal, work) = crate::persistent::measure_persistent_work(|| {
-                branch.pointer_equality_in_graph(&x, &y)
-            });
+            let (equal, work) =
+                crate::persistent::measure_persistent_work(|| branch.pointers_known_equal(&x, &y));
             assert!(equal);
             assert!(
                 work < 80 * (size.ilog2() as usize + 1),
                 "size={size}, map work={work}"
             );
             let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-                branch.pointer_equality_in_graph(&x, &y)
+                branch.pointers_known_equal(&x, &y)
             });
             assert!(equal);
             assert!(work < 40, "size={size}, work={work}");
@@ -4364,7 +4360,7 @@ mod tests {
             panic!("expected pointer");
         };
         let application = Pointer::loaded_value(&snapshot, &address);
-        assert!(!context.pointer_equality_in_graph(value.pointer(), &application));
+        assert!(!context.pointers_known_equal(value.pointer(), &application));
         let [fact] = facts.as_slice() else {
             panic!("one defining fact");
         };
@@ -4382,9 +4378,9 @@ mod tests {
         let forged = ExecutionPureFact::new(fact.proposition().clone())
             .with_generated_load_binding(fact.generated_load_binding().unwrap().clone());
         forged.retain_pointer_read_definition(&context);
-        assert!(!context.pointer_equality_in_graph(value.pointer(), &application));
+        assert!(!context.pointers_known_equal(value.pointer(), &application));
         fact.retain_pointer_read_definition(&context);
-        assert!(context.pointer_equality_in_graph(value.pointer(), &application));
+        assert!(context.pointers_known_equal(value.pointer(), &application));
         assert!(context.pure_facts().is_empty());
         assert!(
             ResourceContext::new()
@@ -4392,15 +4388,13 @@ mod tests {
                 .is_none()
         );
         let sibling = PureFactContext::new();
-        assert!(sibling.pointer_equality_in_graph(value.pointer(), &application));
+        assert!(sibling.pointers_known_equal(value.pointer(), &application));
         assert!(sibling.pure_facts().is_empty());
         let later =
             intern_c_memory(CMemory::new().with_block(PointerBlock::from("global:other"), 8));
         assert!(
-            !context.pointer_equality_in_graph(
-                value.pointer(),
-                &Pointer::loaded_value(&later, &address)
-            )
+            !context
+                .pointers_known_equal(value.pointer(), &Pointer::loaded_value(&later, &address))
         );
     }
 
@@ -4427,10 +4421,10 @@ mod tests {
         for fact in &facts {
             fact.retain_pointer_read_definition(&context);
         }
-        assert!(!context.pointer_equality_in_graph(
-            value.pointer(),
-            &Pointer::loaded_value(&snapshot, &address)
-        ));
+        assert!(
+            !context
+                .pointers_known_equal(value.pointer(), &Pointer::loaded_value(&snapshot, &address))
+        );
     }
 
     #[test]
@@ -4461,15 +4455,15 @@ mod tests {
         let (x, x_facts) = read(&a, false);
         let (y, y_facts) = read(&b, false);
         let empty = PureFactContext::new();
-        assert!(!empty.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!empty.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
         let available = x_facts
             .iter()
             .chain(&y_facts)
             .fold(empty.clone(), |context, fact| {
                 context.assume_execution_pure_fact(fact)
             });
-        assert!(available.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
-        assert!(!empty.pointer_equality_in_graph(&x, &y));
+        assert!(available.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!empty.pointers_known_equal(&x, &y));
         let branch = available
             .clone()
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
@@ -4479,7 +4473,7 @@ mod tests {
                 .equality_graph
                 .are_pointer_loads_equal(&snapshot, &a, &b)
         );
-        assert!(branch.pointer_equality_in_graph(&x, &y));
+        assert!(branch.pointers_known_equal(&x, &y));
         let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new_with_element_width(x.clone(), 0u32.into(), 1u32.into(), 4),
         ));
@@ -4496,8 +4490,8 @@ mod tests {
             .fold(address_first, |context, fact| {
                 context.assume_execution_pure_fact(fact)
             });
-        assert!(address_first.pointer_equality_in_graph(&x, &y));
-        assert!(!empty.pointer_equality_in_graph(&x, &y));
+        assert!(address_first.pointers_known_equal(&x, &y));
+        assert!(!empty.pointers_known_equal(&x, &y));
         // Fork before filing the x read's defining fact. This sibling has
         // the y read and the late address equality, but never received the
         // bridge that would identify x with the loaded pointer.
@@ -4509,24 +4503,24 @@ mod tests {
                 context.assume_execution_pure_fact(fact)
             })
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
-        assert!(!without_x.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!without_x.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
         assert!(!owner.permits_memory_read(&y, 4, &without_x));
         let address_only = empty
             .clone()
             .assume_condition(ConditionTerm::pointer_equal(a.clone(), b), true);
-        assert!(!address_only.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!address_only.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
         let later = intern_c_memory(
             memory
                 .clone()
                 .with_block(PointerBlock::from("global:later"), 8),
         );
-        assert!(!available.pointer_equality_in_graph(&x, &Pointer::loaded_value(&later, &a)));
+        assert!(!available.pointers_known_equal(&x, &Pointer::loaded_value(&later, &a)));
         let volatile_address = Pointer::symbolic(Variable(92_102));
         let (volatile_value, volatile_facts) = read(&volatile_address, true);
         let volatile_context = volatile_facts.iter().fold(empty, |context, fact| {
             context.assume_execution_pure_fact(fact)
         });
-        assert!(!volatile_context.pointer_equality_in_graph(
+        assert!(!volatile_context.pointers_known_equal(
             &volatile_value,
             &Pointer::loaded_value(&snapshot, &volatile_address),
         ));
@@ -4549,7 +4543,7 @@ mod tests {
         assert_ne!(normal_only, volatile_only);
         assert!(
             !volatile_only
-                .pointer_equality_in_graph(&volatile_same, &Pointer::loaded_value(&snapshot, &a),)
+                .pointers_known_equal(&volatile_same, &Pointer::loaded_value(&snapshot, &a),)
         );
         let scalar_paths = evaluate_c_memory_load_paths(
             &memory,
@@ -4570,6 +4564,6 @@ mod tests {
             .fold(PureFactContext::new(), |context, fact| {
                 context.assume_execution_pure_fact(fact)
             });
-        assert!(!scalar_only.pointer_equality_in_graph(&x, &Pointer::loaded_value(&snapshot, &a)));
+        assert!(!scalar_only.pointers_known_equal(&x, &Pointer::loaded_value(&snapshot, &a)));
     }
 }

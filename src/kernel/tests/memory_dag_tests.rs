@@ -2897,7 +2897,7 @@ fn seeded_pointer_read_context(
     context
         .equality_graph
         .register_pointer_read_definition(&right, current, address);
-    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!context.pointers_known_equal(&left, &right));
     (context, left, right)
 }
 
@@ -2920,12 +2920,12 @@ fn seeded_pointer_read_evidence_is_local_full_width_and_retargeting_safe() {
         &left, &right, &branch
     ));
     branch.register_pointer_read(&right, &current, &a);
-    assert!(branch.pointer_equality_in_graph(&left, &right));
+    assert!(branch.pointers_known_equal(&left, &right));
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &branch
     ));
-    assert!(!sibling.pointer_equality_in_graph(&left, &right));
-    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!sibling.pointers_known_equal(&left, &right));
+    assert!(!context.pointers_known_equal(&left, &right));
     assert_eq!(branch.pure_facts().len(), context.pure_facts().len());
     assert!(!ResourceContext::new().permits_memory_read(&right, 8, &branch));
     // Footprint lookup cannot be retargeted to the second half of the slot.
@@ -2975,10 +2975,7 @@ fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints()
         let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
         context.register_pointer_read(&right, &current, &a);
 
-        assert!(
-            !context.pointer_equality_in_graph(&left, &right),
-            "case={case}"
-        );
+        assert!(!context.pointers_known_equal(&left, &right), "case={case}");
     }
 }
 
@@ -3009,7 +3006,7 @@ fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes()
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.register_pointer_read(&right, &current, &address);
         });
-        assert!(context.pointer_equality_in_graph(&left, &right));
+        assert!(context.pointers_known_equal(&left, &right));
         assert!(work < 500, "size={size}, work={work}");
     }
 }
@@ -3029,21 +3026,21 @@ fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
     let right = Pointer::loaded_value(&current, &a);
     context.register_pointer_read(&left, &old, &b);
     context.register_pointer_read(&right, &current, &a);
-    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!context.pointers_known_equal(&left, &right));
     // Source normalization precedes the address alias. Ordinary congruence
     // must propagate this later fact, with no producer retry or fold hook.
     let context =
         context.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
     assert!(
-        context.pointer_equality_in_graph(&left, &right),
+        context.pointers_known_equal(&left, &right),
         "producer evidence should power the ordinary graph query without a fold-specific rule"
     );
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &context
     ));
     let third = Pointer::loaded_value(&current, &b);
-    assert!(context.pointer_equality_in_graph(&right, &third));
-    assert!(context.pointer_equality_in_graph(&left, &third));
+    assert!(context.pointers_known_equal(&right, &third));
+    assert!(context.pointers_known_equal(&left, &third));
 }
 
 #[test]
@@ -3070,7 +3067,7 @@ fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.register_pointer_read(&right, &current, &address);
         });
-        assert!(!context.pointer_equality_in_graph(&left, &right));
+        assert!(!context.pointers_known_equal(&left, &right));
         assert!(work < 100, "size={size}, work={work}");
     }
 }
@@ -3090,7 +3087,7 @@ fn pointer_read_producer_admits_one_separate_store_into_the_shared_graph() {
     context.register_pointer_read(&left, &old, &address);
     context.register_pointer_read(&right, &current, &address);
     assert!(
-        context.pointer_equality_in_graph(&left, &right),
+        context.pointers_known_equal(&left, &right),
         "a checked immediate store must feed the ordinary graph equality query"
     );
     assert!(pointers_proven_equal_for_memory_resolution(
@@ -3120,7 +3117,7 @@ fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
         let right = Pointer::loaded_value(&current, &address);
         context.register_pointer_read(&left, &old, &address);
         context.register_pointer_read(&right, &current, &address);
-        assert!(!context.pointer_equality_in_graph(&left, &right));
+        assert!(!context.pointers_known_equal(&left, &right));
     }
     // A four-byte store inside an eight-byte read overlaps it even though
     // their starting addresses differ. Address inequality is insufficient.
@@ -3134,7 +3131,7 @@ fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
     let right = Pointer::loaded_value(&current, &address);
     context.register_pointer_read(&left, &old, &address);
     context.register_pointer_read(&right, &current, &address);
-    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!context.pointers_known_equal(&left, &right));
     let adjacent = intern_c_memory(
         old.memory()
             .clone()
@@ -3142,7 +3139,7 @@ fn pointer_read_single_store_refuses_changed_partial_and_unknown_accesses() {
     );
     let value = Pointer::loaded_value(&adjacent, &address);
     context.register_pointer_read(&value, &adjacent, &address);
-    assert!(context.pointer_equality_in_graph(&left, &value));
+    assert!(context.pointers_known_equal(&left, &value));
 }
 
 #[test]
@@ -3169,8 +3166,8 @@ fn pointer_read_single_store_uses_only_its_branch_address_equality() {
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &branch
     ));
-    assert!(!sibling.pointer_equality_in_graph(&left, &right));
-    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!sibling.pointers_known_equal(&left, &right));
+    assert!(!context.pointers_known_equal(&left, &right));
     assert_eq!(branch.pure_facts().len(), context.pure_facts().len() + 1);
     assert!(!ResourceContext::new().permits_memory_read(&read, 8, &branch));
 }
@@ -3190,9 +3187,9 @@ fn pointer_read_single_store_preservation_propagates_late_read_aliases() {
     let right = Pointer::loaded_value(&current, &address);
     context.register_pointer_read(&left, &old, &alias);
     context.register_pointer_read(&right, &current, &address);
-    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!context.pointers_known_equal(&left, &right));
     let context = context.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
-    assert!(context.pointer_equality_in_graph(&left, &right));
+    assert!(context.pointers_known_equal(&left, &right));
 }
 
 #[test]
@@ -3214,7 +3211,7 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
                 );
                 let value = Pointer::loaded_value(&memory, &address);
                 context.register_pointer_read(&value, &memory, &address);
-                assert!(context.pointer_equality_in_graph(&original, &value));
+                assert!(context.pointers_known_equal(&original, &value));
             }
         });
         assert!(work < 200 * size as usize, "size={size}, work={work}");
@@ -3250,24 +3247,24 @@ fn pointer_read_producer_admits_recorded_cache_forgetting() {
     context.register_pointer_read(&left, &seeded, &address);
     let branch = context.clone();
     let sibling = context.clone();
-    assert!(branch.pointer_equality_in_graph(&left, &right));
+    assert!(branch.pointers_known_equal(&left, &right));
     branch.register_pointer_read(&right, &forgotten, &address);
     assert!(
-        branch.pointer_equality_in_graph(&left, &right),
+        branch.pointers_known_equal(&left, &right),
         "forgetting cached cells changes no bytes"
     );
     assert!(pointers_proven_equal_for_memory_resolution(
         &left, &right, &branch
     ));
-    assert!(context.pointer_equality_in_graph(&left, &right));
-    assert!(sibling.pointer_equality_in_graph(&left, &right));
+    assert!(context.pointers_known_equal(&left, &right));
+    assert!(sibling.pointers_known_equal(&left, &right));
     assert_eq!(branch.pure_facts().len(), context.pure_facts().len());
     assert!(!ResourceContext::new().permits_memory_read(&address, 8, &branch));
     let alias = Pointer::symbolic(Variable(98_400));
     let alias_read = Pointer::loaded_value(&forgotten, &alias);
     branch.register_pointer_read(&alias_read, &forgotten, &alias);
     let branch = branch.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
-    assert!(branch.pointer_equality_in_graph(&left, &alias_read));
+    assert!(branch.pointers_known_equal(&left, &alias_read));
 }
 
 #[test]
@@ -3287,7 +3284,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
     context.register_pointer_read(&left, &seeded, &address);
     let forgotten_read = Pointer::loaded_value(&forgotten, &address);
     context.register_pointer_read(&forgotten_read, &forgotten, &address);
-    assert!(context.pointer_equality_in_graph(&left, &forgotten_read));
+    assert!(context.pointers_known_equal(&left, &forgotten_read));
     for changed in [
         forgotten
             .memory()
@@ -3311,7 +3308,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
         let changed = intern_c_memory(changed);
         let right = Pointer::loaded_value(&changed, &address);
         context.register_pointer_read(&right, &changed, &address);
-        assert!(!context.pointer_equality_in_graph(&left, &right));
+        assert!(!context.pointers_known_equal(&left, &right));
     }
 }
 
@@ -3341,8 +3338,8 @@ fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.register_pointer_read(&after_read, &forgotten, &address);
         });
-        assert!(context.pointer_equality_in_graph(&before_read, &after_read));
-        assert!(!context.pointer_equality_in_graph(&old_read, &after_read));
+        assert!(context.pointers_known_equal(&before_read, &after_read));
+        assert!(!context.pointers_known_equal(&old_read, &after_read));
         assert!(work < 100, "size={size}, work={work}");
     }
 }
@@ -3382,7 +3379,7 @@ fn pointer_read_congruence_composes_materialization_and_forgetting_at_production
     let left = Pointer::loaded_value(&original, &address);
     let right = Pointer::loaded_value(&forgotten, &address);
     assert!(
-        context.pointer_equality_in_graph(&left, &right),
+        context.pointers_known_equal(&left, &right),
         "producer-recorded byte-preserving transitions must compose without intermediate reads"
     );
 }
@@ -3420,8 +3417,7 @@ fn read_identity_refuses_changed_sources_constant_runs_and_unrecorded_pruning() 
     for memory in [from_changed, after_changed, constant] {
         assert_ne!(memory.read_identity(), original.read_identity());
         assert!(
-            !context
-                .pointer_equality_in_graph(&old_read, &Pointer::loaded_value(&memory, &address))
+            !context.pointers_known_equal(&old_read, &Pointer::loaded_value(&memory, &address))
         );
     }
     let forgotten = intern_c_memory(changed.memory().without_cell(&address));
@@ -3448,7 +3444,7 @@ fn read_identity_production_is_linear_and_endpoint_queries_do_not_walk_history()
         let current = intern_c_memory(memory);
         assert_eq!(current.read_identity(), original.read_identity());
         let (_, query_work) = crate::instrumentation::measure_deterministic_work(|| {
-            assert!(context.pointer_equality_in_graph(
+            assert!(context.pointers_known_equal(
                 &Pointer::loaded_value(&original, &address),
                 &Pointer::loaded_value(&current, &address),
             ));

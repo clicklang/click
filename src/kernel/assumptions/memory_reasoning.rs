@@ -2283,9 +2283,7 @@ impl PureFactContext {
         if left.blocks_proven_distinct(right) {
             return false;
         }
-        self.exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
-            == Some(true)
-            || self.has_indexed_pointer_equality_path(left, right)
+        self.pointers_known_equal(left, right)
     }
 
     /// Whether a recorded separation between these ranges contradicts pointer
@@ -2641,7 +2639,7 @@ impl PureFactContext {
     }
 
     fn pointers_proven_equal_for_fact_transport(&self, left: &Pointer, right: &Pointer) -> bool {
-        if pointers_proven_equal(left, right, self) {
+        if pointers_proven_equal_by_reasoning(left, right, self) {
             return true;
         }
         if left.block != right.block {
@@ -2862,7 +2860,7 @@ impl PureFactContext {
         // check; a late or transitive equality needs no alias walk. This
         // changes address matching only: the range still supplies authority
         // and its bounds still decide whether the access is covered.
-        let resolved = if pointer == base || self.pointer_equality_in_graph(pointer, base) {
+        let resolved = if pointer == base || self.pointers_known_equal(pointer, base) {
             base.clone()
         } else {
             crate::kernel::reasoning::resolve_symbolic_pointer_alias(pointer, self)

@@ -512,14 +512,6 @@ impl EqualityGraph {
         }
     }
 
-    pub(in crate::kernel) fn has_pointer_read_definition(&self, value: &Pointer) -> bool {
-        self.logical_reads
-            .lock()
-            .expect("logical pointer reads")
-            .definitions
-            .contains_key(value)
-    }
-
     fn register_logical_read_values(&self, state: &mut EqualityGraphState, values: [&Pointer; 2]) {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
@@ -717,6 +709,26 @@ impl EqualityGraph {
         }
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
+        // At an unclassed ordinary base, equality is just offset equality.
+        // Avoid registering pointer/address nodes for unrelated field checks.
+        // Load blocks still need application registration and congruence.
+        let is_load_block = match &left.block {
+            PointerBlock::LoadedPointer(_) => true,
+            PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
+            _ => false,
+        };
+        if left.block == right.block
+            && !is_load_block
+            && !state.parent.contains_key(&left.block)
+            && !state.members.contains_key(&left.block)
+        {
+            // With no offset merges, known equality is only reflexivity
+            // (handled above). Explicit offset normalization remains available
+            // through `are_offsets_equal`; ordinary unrelated field checks
+            // must not pay for it before their separation check.
+            return state.terms.has_equivalences()
+                && state.terms.are_equal(&left.offset, &right.offset);
+        }
         state.register_blocks([left.block.clone(), right.block.clone()]);
         // Different classes cannot meet by offset normalization. In
         // particular, do not traverse an unrelated allocation's offset just
@@ -736,58 +748,18 @@ impl EqualityGraph {
         if affine_equal {
             return true;
         }
-        // A congruence merge can equate two loads after each was already
-        // bridged to a storage-relative C value. Their blocks then share a
-        // representative but carry different symbolic displacements. The
-        // exact offset fragment retains that same-class equality.
-        if let (Some(left), Some(right)) = (
-            AffineOffset::of(&left.offset)
-                .and_then(|offset| left_delta.checked_add(&offset))
-                .and_then(|offset| offset.to_offset_term()),
-            AffineOffset::of(&right.offset)
-                .and_then(|offset| right_delta.checked_add(&offset))
-                .and_then(|offset| offset.to_offset_term()),
-        ) && state.terms.are_equal(&left, &right)
-        {
+        if state.offsets_equal_in_class(left, right, &left_delta, &right_delta) {
             return true;
         }
-        // An exact offset equality can cross blocks only after accounting
-        // for their known base displacement. The equal-base case uses the
-        // whole offsets directly; a constant displacement can be added to
-        // either side. Query both spellings so the answer is symmetric even
-        // when only one translated equality was explicitly stated.
-        if (left.block == right.block
-            || (left_delta == right_delta && state.terms.has_equivalences()))
-            && state.terms.are_equal(&left.offset, &right.offset)
-        {
-            return true;
-        }
-        if left.block == right.block
-            || !state.terms.has_equivalences()
-            || !left_delta.terms.is_empty()
-            || !right_delta.terms.is_empty()
-        {
+        if !state.terms.has_equivalences() {
             return false;
         }
-        let Some(displacement) = left_delta.constant.checked_sub(right_delta.constant) else {
-            return false;
-        };
-        let Ok(displacement) = i64::try_from(displacement) else {
-            return false;
-        };
-        let Some(reverse) = displacement.checked_neg() else {
-            return false;
-        };
-        let shifted_left = PointerOffsetTerm::Add(
-            Box::new(left.offset.clone()),
-            Box::new(PointerOffsetTerm::Constant(displacement)),
-        );
-        let shifted_right = PointerOffsetTerm::Add(
-            Box::new(right.offset.clone()),
-            Box::new(PointerOffsetTerm::Constant(reverse)),
-        );
-        state.terms.are_equal(&shifted_left, &right.offset)
-            || state.terms.are_equal(&left.offset, &shifted_right)
+        // The same address applications carry exact pointer premises and
+        // offset congruence. Preserve the raw applications even when a block
+        // displacement has no offset spelling (for example, -offset_variable).
+        let left = state.register_pointer_address(left);
+        let right = state.register_pointer_address(right);
+        state.terms.class_root(left) == state.terms.class_root(right)
     }
 
     /// Ask whether two pointer-typed reads in the same defining snapshot
@@ -891,10 +863,35 @@ impl EqualityGraph {
     pub(in crate::kernel) fn add_equality(&mut self, left: &Pointer, right: &Pointer) -> bool {
         let state = self.state.get_mut().expect("equality graph");
         state.register_blocks([left.block.clone(), right.block.clone()]);
+        // The affine fragment already carries spellable base displacements.
+        // Retain raw address applications only for relations whose symbolic
+        // displacement cannot be expressed as a whole offset term. Without
+        // these nodes, an offset-class merge cannot reach such a premise.
+        let needs_raw_addresses = match (
+            AffineOffset::of(&left.offset),
+            AffineOffset::of(&right.offset),
+        ) {
+            (Some(left), Some(right)) => right.checked_sub(&left).is_some_and(|delta| {
+                delta.to_offset_term().is_none()
+                    || delta
+                        .checked_negate()
+                        .is_some_and(|reverse| reverse.to_offset_term().is_none())
+            }),
+            _ => true,
+        };
+        let address_changed = if left.block != right.block && needs_raw_addresses {
+            let left_address = state.register_pointer_address(left);
+            let right_address = state.register_pointer_address(right);
+            state
+                .terms
+                .add_address_equality(left_address, right_address)
+        } else {
+            false
+        };
         let offset_changed =
             left.block == right.block && state.terms.add_equality(&left.offset, &right.offset);
         let pointer_changed = state.close(vec![(left.clone(), right.clone())]);
-        offset_changed || pointer_changed
+        address_changed || offset_changed || pointer_changed
     }
 }
 
@@ -1078,6 +1075,96 @@ impl EqualityGraphState {
             self.signatures.insert(signature.clone(), block.clone());
         }
         self.load_signatures.insert(block.clone(), signature);
+    }
+
+    /// Check offset-class equality at a known common affine block base.
+    /// This queries selected terms only; no cancellation or class walk runs.
+    fn offsets_equal_in_class(
+        &mut self,
+        left: &Pointer,
+        right: &Pointer,
+        left_delta: &AffineOffset,
+        right_delta: &AffineOffset,
+    ) -> bool {
+        // A congruence merge can equate two loads after each was already
+        // bridged to a storage-relative C value. Their blocks then share a
+        // representative but carry different symbolic displacements. The
+        // exact offset fragment retains that same-class equality.
+        if let (Some(left), Some(right)) = (
+            AffineOffset::of(&left.offset)
+                .and_then(|offset| left_delta.checked_add(&offset))
+                .and_then(|offset| offset.to_offset_term()),
+            AffineOffset::of(&right.offset)
+                .and_then(|offset| right_delta.checked_add(&offset))
+                .and_then(|offset| offset.to_offset_term()),
+        ) && self.terms.are_equal(&left, &right)
+        {
+            return true;
+        }
+        // An exact offset equality can cross blocks only after accounting
+        // for their known base displacement. The equal-base case uses the
+        // whole offsets directly; a constant displacement can be added to
+        // either side. Query both spellings so the answer is symmetric even
+        // when only one translated equality was explicitly stated.
+        if (left.block == right.block
+            || (left_delta == right_delta && self.terms.has_equivalences()))
+            && self.terms.are_equal(&left.offset, &right.offset)
+        {
+            return true;
+        }
+        if left.block == right.block
+            || !self.terms.has_equivalences()
+            || !left_delta.terms.is_empty()
+            || !right_delta.terms.is_empty()
+        {
+            return false;
+        }
+        let Some(displacement) = left_delta.constant.checked_sub(right_delta.constant) else {
+            return false;
+        };
+        let Ok(displacement) = i64::try_from(displacement) else {
+            return false;
+        };
+        let Some(reverse) = displacement.checked_neg() else {
+            return false;
+        };
+        let shifted_left = PointerOffsetTerm::Add(
+            Box::new(left.offset.clone()),
+            Box::new(PointerOffsetTerm::Constant(displacement)),
+        );
+        let shifted_right = PointerOffsetTerm::Add(
+            Box::new(right.offset.clone()),
+            Box::new(PointerOffsetTerm::Constant(reverse)),
+        );
+        self.terms.are_equal(&shifted_left, &right.offset)
+            || self.terms.are_equal(&left.offset, &shifted_right)
+    }
+
+    /// Register one address and its affine class coordinate, when spellable.
+    /// Exact pointer premises can always refer to the raw address application.
+    /// Work is in the selected offset and new parent uses, never class members.
+    fn register_pointer_address(&mut self, pointer: &Pointer) -> u64 {
+        let (representative, delta) = self.find(&pointer.block);
+        let (raw, new) = self
+            .terms
+            .address(pointer.block.clone(), pointer.offset.clone());
+        if new {
+            self.weights
+                .insert(representative.clone(), self.weight(&representative) + 1);
+        }
+        if representative != pointer.block
+            && let Some(delta) = delta.to_offset_term()
+        {
+            let translated =
+                PointerOffsetTerm::Add(Box::new(pointer.offset.clone()), Box::new(delta));
+            let (canonical, new) = self.terms.address(representative.clone(), translated);
+            if new {
+                self.weights
+                    .insert(representative.clone(), self.weight(&representative) + 1);
+            }
+            self.terms.add_address_equality(raw, canonical);
+        }
+        raw
     }
 
     fn close(&mut self, mut equalities: Vec<(Pointer, Pointer)>) -> bool {
@@ -1540,8 +1627,84 @@ mod tests {
             ),
             &y,
         );
-        assert!(!unspellable.are_equal(&left, &right));
-        assert!(!unspellable.are_equal(&right, &left));
+        // The raw address applications can use the stated MIN translation
+        // directly, without constructing its unrepresentable opposite sign.
+        assert!(unspellable.are_equal(&left, &right));
+        assert!(unspellable.are_equal(&right, &left));
+        assert!(!unspellable.are_equal(&left, &right.offset_by_bytes(1)));
+    }
+
+    #[test]
+    fn mixed_offset_and_block_premises_compose_in_any_order() {
+        let x = at_offset(
+            PointerBlock::ExternalArgument,
+            PointerOffsetTerm::Variable(Variable(930_001)),
+        );
+        let y = at_offset(
+            PointerBlock::ExternalArgument,
+            PointerOffsetTerm::Variable(Variable(930_002)),
+        );
+        let z = at(symbolic(930_003), 0);
+        for order in [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ] {
+            let mut graph = EqualityGraph::default();
+            for premise in order {
+                match premise {
+                    0 => {
+                        graph.add_offset_equality(&x.offset, &y.offset);
+                    }
+                    1 => {
+                        graph.add_equality(&y, &z);
+                    }
+                    2 => {
+                        graph.add_equality(&z, &Pointer::null());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            assert!(graph.are_equal(&x, &Pointer::null()), "order={order:?}");
+            assert!(graph.are_equal(&Pointer::null(), &x), "order={order:?}");
+            assert!(!graph.are_equal(&x, &Pointer::null().offset_by_bytes(1)));
+        }
+    }
+
+    #[test]
+    fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
+        for size in [8u64, 32, 128, 512] {
+            let offset = |i| PointerOffsetTerm::Variable(Variable(940_000 + i));
+            let x = at_offset(PointerBlock::ExternalArgument, offset(0));
+            let y = at_offset(PointerBlock::ExternalArgument, offset(size));
+            let z = at(symbolic(950_000), 0);
+            let mut graph = EqualityGraph::default();
+            let (_, construction) = crate::instrumentation::measure_deterministic_work(|| {
+                for i in 1..size {
+                    graph.add_offset_equality(&offset(i), &offset(i + 1));
+                }
+                graph.add_equality(&y, &z);
+                graph.add_equality(&z, &Pointer::null());
+            });
+            assert!(
+                construction < 128 * size as usize,
+                "size={size}, work={construction}"
+            );
+            assert!(!graph.are_equal(&x, &Pointer::null()));
+            let sibling = graph.clone();
+            let mut branch = graph.clone();
+            let (_, query) = crate::instrumentation::measure_deterministic_work(|| {
+                branch.add_offset_equality(&offset(0), &offset(1));
+                assert!(branch.are_equal(&x, &Pointer::null()));
+                assert!(branch.are_equal(&Pointer::null(), &x));
+            });
+            assert!(query < 128, "size={size}, work={query}");
+            assert!(!graph.are_equal(&x, &Pointer::null()));
+            assert!(!sibling.are_equal(&x, &Pointer::null()));
+        }
     }
 
     #[test]
@@ -2201,12 +2364,12 @@ mod tests {
         for (condition, value) in &selected {
             context = context.assume_condition(condition.clone(), *value);
         }
-        assert!(context.has_indexed_pointer_equality_path(&x, &y));
+        assert!(context.pointers_known_equal(&x, &y));
         let restricted = context.restricted_to_facts(&selected, &[]);
-        assert!(!restricted.has_indexed_pointer_equality_path(&x, &y));
+        assert!(!restricted.pointers_known_equal(&x, &y));
         let withdrawn = context.without_exact_fact(&Proposition::ConditionIs(address, true));
-        assert!(!withdrawn.has_indexed_pointer_equality_path(&x, &y));
-        assert!(context.has_indexed_pointer_equality_path(&x, &y));
+        assert!(!withdrawn.pointers_known_equal(&x, &y));
+        assert!(context.pointers_known_equal(&x, &y));
     }
 
     #[test]
