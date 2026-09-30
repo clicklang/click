@@ -59,15 +59,18 @@ After the pull request merges, fast-forward a clean local primary checkout from
 upstream with Git; begin any later effort on a new branch and pull request.
 
 Upstream `master` requires a pull request and a passing GitHub Actions `test`
-check. For a non-draft pull request opened at the repository owner's request
-through an agent, enable auto-merge as part of submission; GitHub adds it to
-the merge queue as soon as required checks pass. For other pull requests, once
-the change is ready and checks pass, a maintainer uses GitHub's **Merge when
-ready** control to add it to the queue. The queue runs the full
-`scripts/check.sh` gate against the prospective upstream tree, including the
-latest `master`, and merges one pull request at a time only after that check
-passes. A passing pull request check alone does not authorize a direct merge or
-push to upstream `master`.
+check. For a non-draft pull request the repository owner asks an agent to open,
+add it to the merge queue as soon as its required checks pass; do not wait for
+another prompt. If auto-merge is enabled, turn it on at submission so GitHub
+queues the pull request when checks pass. If auto-merge is disabled, wait for
+checks to pass and use `gh pr merge <number>` without a merge-method option, or
+GitHub's **Merge when ready** control, to add the ready pull request to the
+queue. For other pull requests, a maintainer adds ready changes after checks
+pass. The queue runs the full `scripts/check.sh` gate
+against the prospective upstream tree, including the latest `master`, and
+merges one pull request at a time only after that check passes. A passing pull
+request check alone does not authorize a direct merge or push to upstream
+`master`.
 
 The test workflow runs on pull requests, including those from forks. Fork
 pull requests do not need repository secrets for the test gate; GitHub may

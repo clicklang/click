@@ -17,12 +17,15 @@ upstream `master` on a new branch and pull request. Keep independent efforts in
 separate pull requests.
 
 Upstream `master` requires a pull request, a passing GitHub Actions `test`
-check, and the merge queue. When the repository owner asks an agent to open a
-non-draft pull request, enable auto-merge as part of submission so GitHub adds
-it to the queue as soon as required checks pass. For other pull requests,
-maintainers add ready changes to the queue after their checks pass. The queue
-runs `scripts/check.sh` on the prospective upstream tree and merges one pull
-request at a time. Do not merge directly or bypass the queue.
+check, and the merge queue. For a non-draft pull request the repository owner
+asks an agent to open, add it to the merge queue as soon as its required checks
+pass; do not wait for another prompt. If auto-merge is enabled, turn it on at
+submission so GitHub queues the PR when checks pass. If auto-merge is disabled,
+wait for checks to pass and use `gh pr merge <number>` without a merge-method
+option to add the ready PR to the required queue. For other pull requests,
+maintainers add ready changes after their checks pass. The queue runs
+`scripts/check.sh` on the prospective upstream tree and merges one pull request
+at a time. Do not merge directly or bypass the queue.
 
 Use `origin` for the contributor's fork and `upstream` for
 `git@github.com:clicklang/click.git`. Set `remote.pushDefault` to `origin`
