@@ -4,9 +4,17 @@
 
 Humans and agents contribute through a fork of
 [clicklang/click](https://github.com/clicklang/click). Develop in your fork and
-open a pull request against upstream `master` when the change is ready. This
+open a pull request against upstream `master` as soon as you have a coherent,
+green, reviewable unit of work. Do not wait for a larger effort to finish; use
+a draft pull request if more work is expected before it is ready to merge. This
 also applies to maintainers with write or admin access: push development
 branches to the fork, and integrate reviewed changes through pull requests.
+
+For follow-on work on the same effort, keep adding coherent, green increments
+to the existing open pull request and branch. Do not open a duplicate pull
+request for that effort. Once the pull request merges, start later work from
+current upstream `master` on a new branch and pull request. Keep independent
+efforts in separate pull requests.
 
 For a new checkout, create a personal fork on GitHub, then run these commands.
 Replace `YOUR_GITHUB_LOGIN` with the fork owner's login:
@@ -43,18 +51,26 @@ git push -u origin HEAD
 ```
 
 Open a pull request on GitHub from that fork branch to `clicklang/click`'s
-`master`. Describe the problem, the resulting behavior, and validation. Keep
-review updates on the same fork branch. If upstream moves, update the branch
-and rerun affected checks before merging. After the pull request merges,
-fast-forward a clean local primary checkout from upstream with Git.
+`master`. Describe the problem, the resulting behavior, and validation. For
+each follow-on increment on the same effort, run the relevant checks and push
+the changes to this same branch so the existing pull request stays current. If
+upstream moves, update the branch and rerun affected checks before merging.
+After the pull request merges, fast-forward a clean local primary checkout from
+upstream with Git; begin any later effort on a new branch and pull request.
 
 Upstream `master` requires a pull request and a passing GitHub Actions `test`
-check. Once the change is ready and checks pass, a maintainer uses GitHub's
-**Merge when ready** control to add the pull request to the merge queue.
-The queue runs the full `scripts/check.sh` gate against the prospective
-upstream tree, including the latest `master`, and merges one pull request
-at a time only after that check passes. A passing pull request check alone
-does not authorize a direct merge or push to upstream `master`.
+check. For a non-draft pull request the repository owner asks an agent to open,
+add it to the merge queue as soon as its required checks pass; do not wait for
+another prompt. If auto-merge is enabled, turn it on at submission so GitHub
+queues the pull request when checks pass. If auto-merge is disabled, wait for
+checks to pass and use `gh pr merge <number>` without a merge-method option, or
+GitHub's **Merge when ready** control, to add the ready pull request to the
+queue. For other pull requests, a maintainer adds ready changes after checks
+pass. The queue runs the full `scripts/check.sh` gate
+against the prospective upstream tree, including the latest `master`, and
+merges one pull request at a time only after that check passes. A passing pull
+request check alone does not authorize a direct merge or push to upstream
+`master`.
 
 The test workflow runs on pull requests, including those from forks. Fork
 pull requests do not need repository secrets for the test gate; GitHub may
