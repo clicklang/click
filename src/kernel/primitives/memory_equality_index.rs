@@ -393,11 +393,11 @@ impl AddressPoints {
     }
 }
 
-pub(super) enum MemoryReadEntries {
+pub(super) enum MemoryAccessEntries {
     Intervals(read_intervals::CoveringIntervals),
     Exact(crate::persistent::OwnedSetValues<ResourceEntryId>),
 }
-impl Iterator for MemoryReadEntries {
+impl Iterator for MemoryAccessEntries {
     type Item = ResourceEntryId;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -406,7 +406,7 @@ impl Iterator for MemoryReadEntries {
         }
     }
 }
-impl MemoryReadEntries {
+impl MemoryAccessEntries {
     pub(super) fn exact(&self) -> bool {
         matches!(self, Self::Exact(_))
     }
@@ -609,7 +609,29 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<MemoryReadEntries> {
+    ) -> Option<MemoryAccessEntries> {
+        self.concrete_access_entries(pointer, bytes, assumptions, true)
+    }
+
+    /// Complete affine interval candidates for writes. Read whole-cell
+    /// payloads are unsuitable: a matching view could hide a larger owner.
+    /// `None` selects the general checker before testing any candidate.
+    pub(super) fn concrete_write_entries(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<MemoryAccessEntries> {
+        self.concrete_access_entries(pointer, bytes, assumptions, false)
+    }
+
+    fn concrete_access_entries(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+        read_whole_cells: bool,
+    ) -> Option<MemoryAccessEntries> {
         let graph = &assumptions.equality_graph;
         let class = graph.address_class(pointer)?;
         let local = self.pair_for_query(assumptions);
@@ -621,7 +643,7 @@ impl ResourceContext {
             .expect("memory equality index");
         let index = cache.as_ref()?;
         let bucket = index.addresses.classes.get(&point.representative)?;
-        if index.points_initialized {
+        if read_whole_cells && index.points_initialized {
             let class = graph.address_class_root(class);
             let entries = index
                 .points
@@ -636,7 +658,7 @@ impl ResourceContext {
             // checker before any permission check. A bound whole-cell class
             // supplies checked address evidence and needs no spelling search.
             if !entries.is_empty() {
-                return Some(MemoryReadEntries::Exact(entries.owned_values()));
+                return Some(MemoryAccessEntries::Exact(entries.owned_values()));
             }
         }
         if graph.has_non_affine_term_equivalences()
@@ -654,7 +676,7 @@ impl ResourceContext {
         let start = point.offset.checked_add(&bucket.origin)?;
         let candidate_bytes = crate::kernel::assumptions::read_candidate_byte_width(bytes);
         let end = start.checked_add(&AffineOffset::constant(i128::from(candidate_bytes)))?;
-        Some(MemoryReadEntries::Intervals(
+        Some(MemoryAccessEntries::Intervals(
             bucket
                 .read_intervals
                 .covering(&AddressCoordinate(start), &AddressCoordinate(end)),
@@ -818,6 +840,61 @@ mod tests {
     }
 
     #[test]
+    fn write_intervals_preserve_authority_coverage_and_branch_isolation() {
+        let base = Pointer::symbolic(Variable(861_000));
+        let middle = Pointer::symbolic(Variable(861_001));
+        let alias = Pointer::symbolic(Variable(861_002));
+        let owned_range =
+            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 32u32.into(), 1);
+        let owned = CResourceFact::own_memory(owned_range.clone());
+        // An exact-size view must neither grant writes nor hide a longer owner.
+        let short = view(&base, 8, 12);
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(owned.clone())
+            .unchecked_with_fact(short.clone());
+        let empty = PureFactContext::new();
+        resources.synchronize_memory_equalities(&empty);
+        let sibling = resources.clone();
+        let displaced = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(8),
+        };
+        let facts = empty
+            .clone()
+            .assume_condition(
+                ConditionTerm::pointer_equal(displaced, middle.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::pointer_equal(middle, alias.clone()), true);
+        assert!(
+            resources
+                .concrete_write_entries(&alias, 4, &facts)
+                .is_some()
+        );
+        assert_eq!(
+            resources.memory_write_range(&alias, 4, &facts),
+            Some(&owned_range)
+        );
+        assert_eq!(
+            resources.memory_write_range(&alias, 24, &facts),
+            Some(&owned_range)
+        );
+        assert!(resources.memory_write_range(&alias, 25, &facts).is_none());
+        assert!(sibling.memory_write_range(&alias, 4, &empty).is_none());
+        let views = resources
+            .clone()
+            .without_exact_representation(&owned)
+            .unwrap();
+        assert!(views.permits_memory_read(&alias, 4, &facts));
+        assert!(views.memory_write_range(&alias, 4, &facts).is_none());
+        let restored = views.unchecked_with_fact(owned);
+        assert_eq!(
+            restored.memory_write_range(&alias, 24, &facts),
+            Some(&owned_range)
+        );
+    }
+
+    #[test]
     fn pointer_slot_candidates_preserve_the_checked_logical_width_rule() {
         let base = Pointer::symbolic(Variable(851_015));
         let facts = PureFactContext::new();
@@ -826,10 +903,23 @@ mod tests {
         ));
         assert!(slot.permits_memory_read(&base, C_POINTER_BYTE_WIDTH, &facts));
         assert!(!slot.permits_memory_read(&base, 16, &facts));
+        assert!(
+            slot.memory_write_range(&base, C_POINTER_BYTE_WIDTH, &facts)
+                .is_some()
+        );
+        assert!(slot.memory_write_range(&base, 16, &facts).is_none());
         // Candidate selection is an overapproximation. The logical rule does
         // not authorize a pointer read from a four-byte, byte-indexed view.
         let bytes = ResourceContext::new().unchecked_with_fact(view(&base, 0, 4));
         assert!(!bytes.permits_memory_read(&base, C_POINTER_BYTE_WIDTH, &facts));
+        let byte_owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1),
+        ));
+        assert!(
+            byte_owner
+                .memory_write_range(&base, C_POINTER_BYTE_WIDTH, &facts)
+                .is_none()
+        );
     }
 
     #[test]
