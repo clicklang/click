@@ -152,6 +152,10 @@ impl AffineOffset {
         }
     }
 
+    pub(in crate::kernel) fn is_constant(&self) -> bool {
+        self.terms.is_empty()
+    }
+
     /// Keep addresses with the same symbolic origin adjacent in span indexes.
     pub(in crate::kernel) fn address_order(&self, other: &Self) -> std::cmp::Ordering {
         self.terms

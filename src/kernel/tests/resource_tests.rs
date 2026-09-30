@@ -689,6 +689,55 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
     );
 }
 
+#[test]
+fn specification_read_candidates_do_not_scan_unrelated_memory_ranges() {
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let owner = Pointer::symbolic(Variable(850_000));
+        let alias = Pointer::symbolic(Variable(850_001));
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources =
+                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    owner.clone(),
+                    Bitvector32Term::Constant(i as u32 * 2),
+                    Bitvector32Term::Constant(i as u32 * 2 + 1),
+                )));
+        }
+        let facts = PureFactContext::new();
+        resources.synchronize_memory_equalities(&facts);
+        let facts =
+            facts.assume_condition(ConditionTerm::pointer_equal(owner, alias.clone()), true);
+        resources.synchronize_memory_equalities(&facts);
+        let at = |index| Pointer {
+            block: alias.block.clone(),
+            offset: PointerOffsetTerm::Constant(index * 4),
+        };
+        let ((allowed, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                resources.permits_memory_read(&at(size as i64), 4, &facts)
+            })
+        });
+        assert!(allowed);
+        let ((denied, miss_work), miss_map_work) =
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    resources.permits_memory_read(&at(size as i64 + 1), 4, &facts)
+                })
+            });
+        assert!(!denied, "a gap between ranges is not readable");
+        samples.push((size, work, map_work, miss_work, miss_map_work));
+    }
+    assert!(
+        samples[2].1 <= samples[0].1 * 2 + 32 && samples[2].3 <= samples[0].3 * 2 + 32,
+        "read checks scanned unrelated ranges: {samples:?}"
+    );
+    assert!(
+        samples[2].2 <= samples[0].2 * 3 + 128 && samples[2].4 <= samples[0].4 * 3 + 128,
+        "read index work scanned unrelated ranges: {samples:?}"
+    );
+}
+
 fn instance_memory_fixture() -> (ResourceInstance, CCompositeResourceDefinition, CState) {
     let schema =
         ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])

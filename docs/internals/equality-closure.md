@@ -489,13 +489,21 @@ Fold consumption uses this paired address/span index instead of enumerating
 pointer spellings. A selected candidate can express the requirement in its
 own block coordinates using the graph's affine relation; this visits no other
 class members. Existing local range matching remains responsible for
-same-block containment and endpoint reasoning. Specification-read candidate
-selection still has spelling compatibility paths. Whole-offset term-class
-merges and general symbolic cross-base containment need separate indexed
-coverage before this lookup can cover every graph-supported resource match.
+same-block containment and endpoint reasoning. Specification reads also use
+the paired index for concrete affine addresses in classes whose readable
+ranges all have one positive, fixed byte extent. The predecessor is complete
+for that fragment, including overlapping views; permission and bounds checks
+still decide the result. Persistent per-class shape counts select this path
+before lookup, and an indexed miss is final. This avoids scanning unrelated
+ranges for both hits and misses, including resources published before a later
+address equality. Reads outside that fragment retain the general checker.
+Whole-offset term-class merges, symbolic containment, mixed range extents,
+and snapshot-based matching need complete indexed coverage before the general
+read lookup can be retired.
 Deterministic regressions cover late aliases,
 nonzero displacement, branch isolation, insertion/removal and normalization,
-growing alias classes, disjoint spans sharing one base, and incremental merges
+growing alias classes, disjoint spans sharing one base, concrete read hits and
+misses, overlapping views, and incremental merges
 with a large resource payload. Resource-section publication uses the expansion
 delta rather than recreating views for unrelated ambient memory ranges.
 

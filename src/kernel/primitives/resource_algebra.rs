@@ -502,7 +502,7 @@ impl ResourceContextIndex {
                 insert_resource_index_entry(&result.memory_by_base, range.base().clone(), entry);
             result
                 .memory_addresses
-                .update(range, fact.is_own(), entry, true);
+                .update(range, fact.is_own(), entry, true, fact);
             if mode {
                 if fact
                     .owned_quantity_term()
@@ -695,7 +695,7 @@ impl ResourceContextIndex {
                 remove_resource_index_entry(&result.memory_by_base, range.base(), entry);
             result
                 .memory_addresses
-                .update(range, fact.is_own(), entry, false);
+                .update(range, fact.is_own(), entry, false, fact);
             if mode {
                 if fact
                     .owned_quantity_term()
@@ -4944,6 +4944,22 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Some(entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
+            return entries.into_iter().any(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                let resource = self.fact(entry);
+                let Some(range) = resource_fact_read_core_range(resource) else {
+                    return false;
+                };
+                let Some(address) = assumptions
+                    .equality_graph
+                    .pointer_in_block(pointer, &range.base().block)
+                else {
+                    return false;
+                };
+                memory_resource_fact_permits_read(resource, &address, byte_width, assumptions)
+            });
+        }
         // A contract expression can reload a pointer-valued field after an
         // opaque call. Match that kernel-minted name to the resource's
         // retained load origin before consulting the block and range
