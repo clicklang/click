@@ -1141,9 +1141,7 @@ fn canonicalized_pointer_value_from_int_cell(
     };
     if let Some((memory, address)) = registered_load_for_variable(&fresh) {
         if matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity) {
-            assumptions
-                .equality_graph
-                .register_pointer_read_definition(&loaded, &memory, &address);
+            assumptions.register_pointer_read(&loaded, &memory, &address);
         }
         // The cached scalar spelling still comes from this exact typed read.
         // Preserve the same producer evidence as the symbolic load route,
@@ -1350,9 +1348,7 @@ fn canonicalized_symbolic_load_value_with_identity(
         // its exact typed definition in the trusted graph's term metadata;
         // logical evaluation still exports no defining proposition premise.
         if let Bitvector32Term::MemoryLoad(memory, address) = &load {
-            assumptions
-                .equality_graph
-                .register_pointer_read_definition(&pointer, memory, address);
+            assumptions.register_pointer_read(&pointer, memory, address);
         }
     }
     record_load_variable_defining_fact_with_source_and_pointer(

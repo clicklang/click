@@ -20867,9 +20867,11 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
                         // The readable expression has passed every prerequisite.
                         // Retain its producer-known term definitions before
                         // comparing or publishing child indices. This adds no
-                        // hypothesis, read authority, or snapshot transport.
+                        // hypothesis or read authority. Publish checked read
+                        // equalities into the common context, so every consumer
+                        // uses the same graph rather than a fold-only rule.
                         for fact in &paths[0].facts {
-                            fact.retain_pointer_read_definition(&child_assumptions);
+                            fact.retain_pointer_read_definition(assumptions);
                         }
                         Ok(AlgebraicValue::C(value))
                     }

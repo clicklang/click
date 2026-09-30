@@ -100,6 +100,25 @@ historical reference material, not an integration target. Its failures mixed
 an incomplete representation change with semantic gaps. The P1 work does not
 require a representation flip.
 
+## Shared read-source admission, 2026-09-30
+
+A consumer-specific snapshot-history rule in `fold` was investigated and
+removed. The common typed-read producer now admits source equality for an
+exact materialization edge supplying the complete read footprint. A focused
+graph regression exercises ordinary equality checking, late address aliases,
+and transitivity without resources or `fold`. All consumers query the same
+closure. This introduces no extra proof premises, pointer representation
+change, or history scan.
+
+The rule is intentionally limited to the selected materialization edge.
+The sibling-write reduction and actual rbtree refold still need checked
+preservation across intervening memory transitions. Looking only at retained
+cell-map entries is unsound for this purpose: an unknown-alias low-level store
+can leave those entries present. The next slice should publish reusable
+preservation evidence at a shared kernel boundary, then exercise ordinary
+pointer claims and fold through the same checker. Do not restore the special
+fold comparison or add automatic history search.
+
 ## Reduced rbtree recheck, 2026-09-29
 
 The untouched frontier still reports statement 42, `augment_rotate(gparent,

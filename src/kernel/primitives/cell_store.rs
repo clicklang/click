@@ -340,6 +340,29 @@ impl CellRun {
         }
     }
 
+    /// Exact source of an entire footprint supplied by this materialization
+    /// edge. This says nothing about subsequent writes or other retained runs.
+    /// The egraph is trusted kernel state; admission checks only these slots.
+    pub(crate) fn read_source(&self, pointer: &Pointer, bytes: u32) -> Option<SharedCMemory> {
+        let width = self.element_width();
+        if bytes == 0
+            || width == 0
+            || width != self.value_width()
+            || !bytes.is_multiple_of(width)
+            || !matches!(self.value_mode(), RunValueMode::Load)
+        {
+            return None;
+        }
+        for offset in (0..bytes).step_by(width as usize) {
+            crate::instrumentation::record_deterministic_work(1);
+            let index = self.slot_index(&pointer.offset_by_bytes(offset))?;
+            if self.holes().contains(index) {
+                return None;
+            }
+        }
+        Some(self.source().clone())
+    }
+
     /// How the run spells each element's value.
     pub(crate) fn value_mode(&self) -> &RunValueMode {
         &self.mode

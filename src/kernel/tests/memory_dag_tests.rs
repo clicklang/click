@@ -2878,3 +2878,196 @@ fn constant_normalization_bridges_a_load_across_a_call() {
         "an unrecorded sum folds from its bridged operand"
     );
 }
+
+fn seeded_pointer_read_context(
+    old: &SharedCMemory,
+    current: &SharedCMemory,
+    address: &Pointer,
+    alias: &Pointer,
+) -> (PureFactContext, Pointer, Pointer) {
+    let context = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(address.clone(), alias.clone()),
+        true,
+    );
+    let left = Pointer::loaded_value(old, alias);
+    let right = Pointer::loaded_value(current, address);
+    context
+        .equality_graph
+        .register_pointer_read_definition(&left, old, alias);
+    context
+        .equality_graph
+        .register_pointer_read_definition(&right, current, address);
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    (context, left, right)
+}
+
+#[test]
+fn seeded_pointer_read_evidence_is_local_full_width_and_retargeting_safe() {
+    let a = Pointer::symbolic(Variable(98_300));
+    let b = Pointer::symbolic(Variable(98_301));
+    let old = intern_c_memory(CMemory::new());
+    let seeded =
+        old.memory()
+            .clone()
+            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+    let current = intern_c_memory(seeded);
+    let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
+    let sibling = context.clone();
+    let branch = context.clone();
+    let _scope = branch.enter_id_scope();
+    assert!(!pointers_proven_equal_for_memory_resolution(
+        &left, &right, &branch
+    ));
+    branch.register_pointer_read(&right, &current, &a);
+    assert!(branch.pointer_equality_in_graph(&left, &right));
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &left, &right, &branch
+    ));
+    assert!(!sibling.pointer_equality_in_graph(&left, &right));
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert_eq!(branch.pure_facts().len(), context.pure_facts().len());
+    assert!(!ResourceContext::new().permits_memory_read(&right, 8, &branch));
+    // Footprint lookup cannot be retargeted to the second half of the slot.
+    let derivation = current.derivation().unwrap();
+    let CMemoryDerivation::CellsSeeded { run, .. } = derivation.as_ref() else {
+        panic!("seed edge");
+    };
+    assert!(run.read_source(&a.offset_by_bytes(4), 8).is_none());
+}
+
+#[test]
+fn seeded_pointer_read_evidence_refuses_partial_changed_and_unknown_footprints() {
+    let a = Pointer::symbolic(Variable(98_310));
+    let b = Pointer::symbolic(Variable(98_311));
+    let unknown = Pointer::symbolic(Variable(98_312));
+    let old = intern_c_memory(CMemory::new());
+    let full =
+        old.memory()
+            .clone()
+            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+    let changed_source = intern_c_memory(old.memory().clone().store(a.clone(), int32(7)));
+    for (case, current) in [
+        old.memory()
+            .clone()
+            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 1, old.clone()),
+        old.memory()
+            .clone()
+            .with_seeded_cells(a.clone(), 4, CType::Int32, 1, 2, old.clone()),
+        old.memory()
+            .clone()
+            .with_constant_run(a.clone(), CType::Int32, 2, int32(0))
+            .unwrap(),
+        full.clone().store(a.offset_by_bytes(4), int32(7)),
+        full.store(unknown, int32(7)),
+        old.memory()
+            .clone()
+            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, changed_source),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let current = intern_c_memory(current);
+        let (context, left, right) = seeded_pointer_read_context(&old, &current, &a, &b);
+        context.register_pointer_read(&right, &current, &a);
+
+        assert!(
+            !context.pointer_equality_in_graph(&left, &right),
+            "case={case}"
+        );
+    }
+}
+
+#[test]
+fn seeded_pointer_read_evidence_does_not_enumerate_large_runs_or_alias_classes() {
+    for size in [16u32, 64, 256, 1024] {
+        let base = Pointer::symbolic(Variable(98_320));
+        let address = base.offset_by_bytes((size - 2) * 4);
+        let alias = Pointer::symbolic(Variable(98_321));
+        let old = intern_c_memory(CMemory::new());
+        let current = intern_c_memory(old.memory().clone().with_seeded_cells(
+            base,
+            4,
+            CType::Int32,
+            0,
+            size,
+            old.clone(),
+        ));
+        let (mut context, left, right) =
+            seeded_pointer_read_context(&old, &current, &address, &alias);
+        for i in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    address.clone(),
+                    Pointer::symbolic(Variable(99_000 + u64::from(i))),
+                ),
+                true,
+            );
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.register_pointer_read(&right, &current, &address);
+        });
+        assert!(context.pointer_equality_in_graph(&left, &right));
+        assert!(work < 500, "size={size}, work={work}");
+    }
+}
+
+#[test]
+fn pointer_read_producer_closes_seeded_snapshot_equality_in_the_shared_graph() {
+    let a = Pointer::symbolic(Variable(98_330));
+    let b = Pointer::symbolic(Variable(98_331));
+    let old = intern_c_memory(CMemory::new());
+    let seeded =
+        old.memory()
+            .clone()
+            .with_seeded_cells(a.clone(), 4, CType::Int32, 0, 2, old.clone());
+    let current = intern_c_memory(seeded);
+    let context = PureFactContext::new();
+    let left = Pointer::loaded_value(&old, &b);
+    let right = Pointer::loaded_value(&current, &a);
+    context.register_pointer_read(&left, &old, &b);
+    context.register_pointer_read(&right, &current, &a);
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    // Source normalization precedes the address alias. Ordinary congruence
+    // must propagate this later fact, with no producer retry or fold hook.
+    let context =
+        context.assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+    assert!(
+        context.pointer_equality_in_graph(&left, &right),
+        "producer evidence should power the ordinary graph query without a fold-specific rule"
+    );
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &left, &right, &context
+    ));
+    let third = Pointer::loaded_value(&current, &b);
+    assert!(context.pointer_equality_in_graph(&right, &third));
+    assert!(context.pointer_equality_in_graph(&left, &third));
+}
+
+#[test]
+fn pointer_read_source_registration_does_not_walk_growing_store_histories() {
+    for size in [8u32, 32, 128, 512] {
+        let address = Pointer::symbolic(Variable(98_340));
+        let old = intern_c_memory(CMemory::new());
+        let mut memory = old.memory().clone().with_seeded_cells(
+            address.clone(),
+            4,
+            CType::Int32,
+            0,
+            2,
+            old.clone(),
+        );
+        let context = PureFactContext::new();
+        for i in 0..size {
+            memory = memory.store(address.offset_by_bytes(16), int32(i));
+        }
+        let current = intern_c_memory(memory);
+        let left = Pointer::loaded_value(&old, &address);
+        let right = Pointer::loaded_value(&current, &address);
+        context.register_pointer_read(&left, &old, &address);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.register_pointer_read(&right, &current, &address);
+        });
+        assert!(!context.pointer_equality_in_graph(&left, &right));
+        assert!(work < 100, "size={size}, work={work}");
+    }
+}
