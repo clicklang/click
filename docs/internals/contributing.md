@@ -48,6 +48,14 @@ review updates on the same fork branch. If upstream moves, update the branch
 and rerun affected checks before merging. After the pull request merges,
 fast-forward a clean local primary checkout from upstream with Git.
 
+Upstream `master` requires a pull request and a passing GitHub Actions `test`
+check. Once the change is ready and checks pass, a maintainer uses GitHub's
+**Merge when ready** control to add the pull request to the merge queue.
+The queue runs the full `scripts/check.sh` gate against the prospective
+upstream tree, including the latest `master`, and merges one pull request
+at a time only after that check passes. A passing pull request check alone
+does not authorize a direct merge or push to upstream `master`.
+
 The test workflow runs on pull requests, including those from forks. Fork
 pull requests do not need repository secrets for the test gate; GitHub may
 require a maintainer to approve an outside contributor's workflow run. Release

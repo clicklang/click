@@ -4,6 +4,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 # A newer push to the same branch supersedes this run; only the tip matters.
 concurrency:
@@ -26,6 +28,12 @@ jobs:
           BEFORE: ${{ github.event.before }}
           HEAD: ${{ github.sha }}
         run: |
+          # Queue checks validate the complete prospective upstream tree.
+          if [[ "$EVENT_NAME" == "merge_group" ]]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
             base="$PR_BASE"
           else
