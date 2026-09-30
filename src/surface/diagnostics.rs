@@ -775,6 +775,83 @@ pub(super) fn describe_loop_head_refusal(refusal: &crate::kernel::CLoopHeadRefus
     format!("missing loop-head prerequisite{context}: `{fact}`")
 }
 
+/// The contract claims certification did not establish, each named by its
+/// claim label and spelled as the source clause wrote it, bounded by the
+/// diagnostic item limit.
+pub(super) fn describe_unverified_contract_claims(
+    function_block: &FunctionBlock,
+    keys: &[crate::kernel::CFunctionContractClaimKey],
+) -> String {
+    use crate::kernel::CFunctionContractClaimKey;
+    let function_name = function_block.signature().name();
+    let describe_clause = |label: String, clause: &EnsureClause| {
+        let spelling = match clause.ensure() {
+            Ensure::Proposition(proposition) => describe_click_proposition(proposition),
+            Ensure::Resource(resource) => {
+                let verb = if clause.borrowed() {
+                    "owns"
+                } else {
+                    "produces"
+                };
+                let spelling = format!(
+                    "{verb} {}",
+                    crate::surface::validation::describe_resource_clause(resource)
+                );
+                clause.condition().map_or(spelling.clone(), |guard| {
+                    format!("if {} {{ {spelling}; }}", describe_click_proposition(guard))
+                })
+            }
+        };
+        format!("{label} `{spelling}`")
+    };
+    let item_limit = diagnostic_item_limit();
+    let mut described = keys
+        .iter()
+        .take(item_limit)
+        .map(|key| match key {
+            CFunctionContractClaimKey::BodySafety => format!("{function_name} body safety"),
+            CFunctionContractClaimKey::Effect(index) => {
+                format!("{function_name} effect clause {index}")
+            }
+            CFunctionContractClaimKey::Ensure(index) => {
+                function_block.ensures().get(*index).map_or_else(
+                    || format!("{function_name}.ensures_{index}"),
+                    |clause| {
+                        describe_clause(
+                            crate::surface::verification::function_claim_label(
+                                function_name,
+                                &crate::surface::proof::FunctionClaimRef::Ensure(*index, clause),
+                            ),
+                            clause,
+                        )
+                    },
+                )
+            }
+            CFunctionContractClaimKey::ExceptionalEnsure(index) => function_block
+                .exceptional_ensures()
+                .get(*index)
+                .map_or_else(
+                    || format!("{function_name}.exceptional_ensures_{index}"),
+                    |clause| {
+                        describe_clause(
+                            crate::surface::verification::function_claim_label(
+                                function_name,
+                                &crate::surface::proof::FunctionClaimRef::ExceptionalEnsure(
+                                    *index, clause,
+                                ),
+                            ),
+                            clause,
+                        )
+                    },
+                ),
+        })
+        .collect::<Vec<_>>();
+    if keys.len() > item_limit {
+        described.push(format!("… {} more omitted", keys.len() - item_limit));
+    }
+    described.join(", ")
+}
+
 /// A fact as a proof would state it, spelled over `state`'s locals: the
 /// kernel variables a step or a loop head minted for them read as the
 /// locals' names.

@@ -3365,86 +3365,13 @@ fn verify_c0_sources_with_context(
                     &checked_propositions,
                 );
                 let detail = match &diagnostic_result {
-                    Ok(keys) if !keys.is_empty() => {
-                        let described = keys
-                            .iter()
-                            .map(|key| {
-                                let target = contract_function
-                                    .contract_claims()
-                                    .iter()
-                                    .find(|claim| claim.key() == key)
-                                    .map(CFunctionContractClaim::target);
-                                match target {
-                                    Some(CFunctionContractClaimTarget::EnsureProposition(
-                                        index,
-                                    )) => contract_function
-                                        .contract_ensures()
-                                        .get(*index)
-                                        .map_or_else(
-                                            || format!("{key:?}"),
-                                            |ensure| format!("{key:?} = {ensure:?}"),
-                                        ),
-                                    Some(
-                                        CFunctionContractClaimTarget::ExceptionalEnsureProposition(
-                                            index,
-                                        ),
-                                    ) => contract_function
-                                        .exceptional_ensures()
-                                        .get(*index)
-                                        .map_or_else(
-                                            || format!("{key:?}"),
-                                            |ensure| {
-                                                format!("{key:?} = exceptional ensures {ensure:?}")
-                                            },
-                                        ),
-                                    Some(CFunctionContractClaimTarget::EnsureResource(index)) => {
-                                        contract_function
-                                            .resource_ensures()
-                                            .get(*index)
-                                            .map_or_else(
-                                                || format!("{key:?}"),
-                                                |resource| {
-                                                    let source_index = resource
-                                                        .clause_position()
-                                                        .map_or(*index, |(index, _)| index);
-                                                    let source = function_block
-                                                        .ensures()
-                                                        .iter()
-                                                        .filter(|ensure| matches!(ensure.ensure(), Ensure::Resource(_)))
-                                                        .enumerate()
-                                                        .find(|(index, _)| {
-                                                            function_block.resource_ensure_positions()
-                                                                .get(*index)
-                                                                .map_or(*index, |(index, _)| *index)
-                                                                == source_index
-                                                        })
-                                                        .map(|(_, ensure)| ensure);
-                                                    source.map_or_else(
-                                                        || format!("{key:?} = resource clause {source_index}"),
-                                                        |ensure| {
-                                                            let Ensure::Resource(resource) = ensure.ensure() else {
-                                                                unreachable!("filtered resource ensure")
-                                                            };
-                                                            let clause = format!("{} {}",
-                                                                if ensure.borrowed() { "owns" } else { "produces" },
-                                                                crate::surface::validation::describe_resource_clause(resource));
-                                                            let clause = ensure.condition().map_or(clause.clone(), |guard| {
-                                                                format!("if {} {{ {clause}; }}",
-                                                                    crate::surface::diagnostics::describe_click_proposition(guard))
-                                                            });
-                                                            format!("{key:?} = {clause}")
-                                                        },
-                                                    )
-                                                },
-                                            )
-                                    }
-                                    _ => format!("{key:?}"),
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        format!("; unverified claims: {described}")
-                    }
+                    Ok(keys) if !keys.is_empty() => format!(
+                        "; unverified claims: {}",
+                        crate::surface::diagnostics::describe_unverified_contract_claims(
+                            &function_block,
+                            keys,
+                        )
+                    ),
                     Ok(_) => String::new(),
                     Err(failure) => format!("; {}", failure.reason),
                 };
@@ -3495,8 +3422,11 @@ fn verify_c0_sources_with_context(
                         .cloned()
                         .ok_or_else(|| {
                             ClickError::new(format!(
-                                "could not certify contract claim {key:?} for `{}`",
-                                function_block.signature.name(),
+                                "could not certify contract claim {}",
+                                crate::surface::diagnostics::describe_unverified_contract_claims(
+                                    &function_block,
+                                    std::slice::from_ref(&key),
+                                ),
                             ))
                         })
                 })
