@@ -3485,10 +3485,31 @@ pub(in crate::kernel) fn access_byte_overlap(
     right_bytes: u32,
     assumptions: &PureFactContext,
 ) -> AccessByteOverlap {
-    if let Some(shift) =
-        exact_constant_byte_shift(left, right).or_else(|| constant_byte_shift_between(left, right))
-    {
-        return if crate::kernel::byte_intervals_disjoint(
+    if let Some(overlap) = exact_access_byte_overlap(left, left_bytes, right, right_bytes) {
+        return overlap;
+    }
+    if one_element_gap_separates_bytes(left, left_bytes, right, right_bytes, assumptions) {
+        AccessByteOverlap::Separate
+    } else {
+        AccessByteOverlap::Unknown
+    }
+}
+
+/// Exact byte geometry only: no fact search, address-inequality ladder, or
+/// memory history. Suitable for admitting one select-over-store graph edge.
+pub(in crate::kernel) fn exact_access_byte_overlap(
+    left: &Pointer,
+    left_bytes: u32,
+    right: &Pointer,
+    right_bytes: u32,
+) -> Option<AccessByteOverlap> {
+    if left.blocks_proven_distinct(right) {
+        return Some(AccessByteOverlap::Separate);
+    }
+    let shift = exact_constant_byte_shift(left, right)
+        .or_else(|| constant_byte_shift_between(left, right))?;
+    Some(
+        if crate::kernel::byte_intervals_disjoint(
             shift,
             i64::from(left_bytes),
             0,
@@ -3497,13 +3518,8 @@ pub(in crate::kernel) fn access_byte_overlap(
             AccessByteOverlap::Separate
         } else {
             AccessByteOverlap::Overlaps
-        };
-    }
-    if one_element_gap_separates_bytes(left, left_bytes, right, right_bytes, assumptions) {
-        AccessByteOverlap::Separate
-    } else {
-        AccessByteOverlap::Unknown
-    }
+        },
+    )
 }
 
 /// The element-width half of [`access_byte_overlap`]: whether the gap an
