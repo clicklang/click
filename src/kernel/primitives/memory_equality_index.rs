@@ -3,6 +3,9 @@
 //! Equality only selects candidates. Consumption checks the live occurrence's
 //! ownership, quantity and coverage in the ordinary resource algebra. Derived
 //! roots are excluded from semantic resource equality and fork with the context.
+mod read_intervals;
+use read_intervals::ReadIntervals;
+
 use super::*;
 use crate::kernel::equality_graph::{AffineOffset, EqualityGraph, PointerClassMerge};
 
@@ -45,9 +48,9 @@ impl PartialOrd for AddressCoordinate {
     }
 }
 
-/// Only uniform, positive concrete read cores admit a complete predecessor
-/// answer. Other shapes retain the existing general read checker until its
-/// term and interval indexes are migrated.
+/// Positive concrete read cores contribute physical byte intervals.
+/// Unsupported entries are counted too, so incomplete coverage selects the
+/// existing general checker before lookup.
 fn read_extent(fact: &CResourceFact) -> Option<u64> {
     if let CResourceFact::Own(_, quantity) = fact
         && !quantity.as_const().is_some_and(|value| (value as i32) > 0)
@@ -71,7 +74,8 @@ struct AddressBucket {
     origin: AffineOffset,
     entries: PersistentMap<(AddressKind, AddressCoordinate), ResourceEntryIds>,
     weight: usize,
-    read_shapes: PersistentMap<Option<u64>, usize>,
+    read_intervals: ReadIntervals,
+    memory_count: usize,
     general_coordinates: usize,
 }
 
@@ -89,15 +93,14 @@ impl MemoryAddresses {
         insert: bool,
         fact: &CResourceFact,
     ) {
-        let mut shape = read_extent(fact);
+        let extent = read_extent(fact);
         for (kind, pointer) in range_addresses(range, owned) {
             let Some(offset) = AffineOffset::of(&pointer.offset) else {
-                shape = None;
                 continue;
             };
-            self.update_coordinate(pointer.block, kind, offset, entry, insert);
+            self.update_coordinate(pointer.block, kind, offset, entry, insert, extent);
         }
-        self.update_read_shape(range.base().block.clone(), shape, insert);
+        self.update_memory_count(range.base().block.clone(), insert);
     }
 
     fn update_in_graph(
@@ -117,28 +120,31 @@ impl MemoryAddresses {
         }) else {
             return;
         };
-        let mut shape = read_extent(fact);
+        let extent = read_extent(fact);
         for (kind, pointer) in range_addresses(range, owned) {
             let Some(pointer) = graph.canonical_pointer(&pointer) else {
-                shape = None;
                 continue;
             };
-            self.update_coordinate(pointer.representative, kind, pointer.offset, entry, insert);
+            self.update_coordinate(
+                pointer.representative,
+                kind,
+                pointer.offset,
+                entry,
+                insert,
+                extent,
+            );
         }
-        self.update_read_shape(base.representative, shape, insert);
+        self.update_memory_count(base.representative, insert);
     }
 
-    fn update_read_shape(&mut self, block: PointerBlock, shape: Option<u64>, insert: bool) {
+    fn update_memory_count(&mut self, block: PointerBlock, insert: bool) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
-        let count = bucket.read_shapes.get(&shape).copied().unwrap_or(0);
-        bucket.read_shapes = if insert {
-            bucket.read_shapes.with_inserted(shape, count + 1)
-        } else if count <= 1 {
-            bucket.read_shapes.without_key(&shape)
+        if insert {
+            bucket.memory_count += 1;
         } else {
-            bucket.read_shapes.with_inserted(shape, count - 1)
-        };
-        self.classes = if bucket.weight == 0 && bucket.read_shapes.is_empty() {
+            bucket.memory_count -= 1;
+        }
+        self.classes = if bucket.weight == 0 && bucket.memory_count == 0 {
             self.classes.without_key(&block)
         } else {
             self.classes.with_inserted(block, bucket)
@@ -152,6 +158,7 @@ impl MemoryAddresses {
         offset: AffineOffset,
         entry: ResourceEntryId,
         insert: bool,
+        read_extent: Option<u64>,
     ) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
         let Some(key) = offset.checked_add(&bucket.origin) else {
@@ -163,6 +170,23 @@ impl MemoryAddresses {
         let present = entries.contains(&entry);
         if insert == present {
             return;
+        }
+        if key.0 != AddressKind::Base
+            && let Some(extent) = read_extent
+        {
+            if insert {
+                if let Some(end) = key
+                    .1
+                    .0
+                    .checked_add(&AffineOffset::constant(i128::from(extent)))
+                {
+                    bucket
+                        .read_intervals
+                        .insert(key.1.clone(), AddressCoordinate(end), entry);
+                }
+            } else {
+                bucket.read_intervals.remove(key.1.clone(), entry);
+            }
         }
         if insert {
             bucket.entries = bucket.entries.with_inserted(key, entries.with_value(entry));
@@ -178,7 +202,7 @@ impl MemoryAddresses {
             bucket.weight -= 1;
             bucket.general_coordinates -= usize::from(general);
         }
-        self.classes = if bucket.weight == 0 && bucket.read_shapes.is_empty() {
+        self.classes = if bucket.weight == 0 && bucket.memory_count == 0 {
             self.classes.without_key(&block)
         } else {
             self.classes.with_inserted(block, bucket)
@@ -211,9 +235,17 @@ impl MemoryAddresses {
             moved.origin = origin;
             (moved, kept, shift)
         };
-        for (shape, count) in smaller.read_shapes.iter() {
-            let previous = larger.read_shapes.get(shape).copied().unwrap_or(0);
-            larger.read_shapes = larger.read_shapes.with_inserted(*shape, previous + count);
+        larger.memory_count += smaller.memory_count;
+        for (start, end, entry) in smaller.read_intervals.iter() {
+            let Some(start) = start.0.checked_add(&shift) else {
+                continue;
+            };
+            let Some(end) = end.0.checked_add(&shift) else {
+                continue;
+            };
+            larger
+                .read_intervals
+                .insert(AddressCoordinate(start), AddressCoordinate(end), entry);
         }
         for ((kind, offset), entries) in smaller.entries.iter() {
             crate::instrumentation::record_deterministic_work(1);
@@ -336,7 +368,7 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<Vec<ResourceEntryId>> {
+    ) -> Option<impl Iterator<Item = ResourceEntryId>> {
         let graph = &assumptions.equality_graph;
         if graph.has_term_equivalences() || matches!(pointer.block, PointerBlock::LoadedPointer(_))
         {
@@ -347,29 +379,29 @@ impl ResourceContext {
             return None;
         }
         self.synchronize_memory_equalities(assumptions);
+        let cache = self
+            .memory_equalities
+            .lock()
+            .expect("memory equality index");
+        let bucket = cache
+            .as_ref()?
+            .addresses
+            .classes
+            .get(&point.representative)?;
+        if bucket.general_coordinates != 0
+            || !bucket.origin.is_constant()
+            || bucket.read_intervals.len() != bucket.memory_count
         {
-            let cache = self
-                .memory_equalities
-                .lock()
-                .expect("memory equality index");
-            let bucket = cache
-                .as_ref()?
-                .addresses
-                .classes
-                .get(&point.representative)?;
-            if bucket.general_coordinates != 0
-                || !bucket.origin.is_constant()
-                || bucket.read_shapes.len() != 1
-                || bucket.read_shapes.contains_key(&None)
-            {
-                return None;
-            }
+            return None;
         }
-        Some(self.equal_address_entries(
-            &CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), bytes.into(), 1),
-            false,
-            assumptions,
-        ))
+        let start = point.offset.checked_add(&bucket.origin)?;
+        let candidate_bytes = crate::kernel::assumptions::read_candidate_byte_width(bytes);
+        let end = start.checked_add(&AffineOffset::constant(i128::from(candidate_bytes)))?;
+        Some(
+            bucket
+                .read_intervals
+                .covering(&AddressCoordinate(start), &AddressCoordinate(end)),
+        )
     }
 
     pub(super) fn equal_address_entries(
@@ -471,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn concrete_read_shape_tracks_resource_deltas_and_isolates_forks() {
+    fn concrete_read_coverage_tracks_resource_deltas_and_isolates_forks() {
         let base = Pointer::symbolic(Variable(851_000));
         let alias = Pointer::symbolic(Variable(851_001));
         let empty = PureFactContext::new();
@@ -486,7 +518,7 @@ mod tests {
         assert!(!resources.permits_memory_read(&alias, 1, &empty));
         let short = view(&base, 2, 4);
         let mixed = resources.clone().unchecked_with_fact(short.clone());
-        assert!(mixed.concrete_read_entries(&base, 8, &facts).is_none());
+        assert!(mixed.concrete_read_entries(&base, 8, &facts).is_some());
         // A shorter nearest predecessor must not hide the longer view.
         let interior = Pointer {
             block: base.block.clone(),
@@ -496,12 +528,12 @@ mod tests {
         let restored = mixed.clone().without_exact_representation(&short).unwrap();
         assert!(restored.concrete_read_entries(&alias, 8, &facts).is_some());
         assert!(resources.concrete_read_entries(&alias, 8, &facts).is_some());
-        assert!(mixed.concrete_read_entries(&alias, 8, &facts).is_none());
+        assert!(mixed.concrete_read_entries(&alias, 8, &facts).is_some());
         assert!(restored.memory_write_range(&alias, 1, &facts).is_none());
     }
 
     #[test]
-    fn uniform_overlapping_views_use_complete_read_predecessors() {
+    fn overlapping_views_use_complete_read_intervals() {
         let base = Pointer::symbolic(Variable(851_010));
         let facts = PureFactContext::new();
         let resources = ResourceContext::new()
@@ -515,5 +547,133 @@ mod tests {
         assert!(resources.permits_memory_read(&at(6), 6, &facts));
         assert!(!resources.permits_memory_read(&at(6), 7, &facts));
         assert!(!resources.permits_memory_read(&at(12), 1, &facts));
+    }
+
+    #[test]
+    fn pointer_slot_candidates_preserve_the_checked_logical_width_rule() {
+        let base = Pointer::symbolic(Variable(851_015));
+        let facts = PureFactContext::new();
+        let slot = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
+        ));
+        assert!(slot.permits_memory_read(&base, C_POINTER_BYTE_WIDTH, &facts));
+        assert!(!slot.permits_memory_read(&base, 16, &facts));
+        // Candidate selection is an overapproximation. The logical rule does
+        // not authorize a pointer read from a four-byte, byte-indexed view.
+        let bytes = ResourceContext::new().unchecked_with_fact(view(&base, 0, 4));
+        assert!(!bytes.permits_memory_read(&base, C_POINTER_BYTE_WIDTH, &facts));
+    }
+
+    #[test]
+    fn mixed_extent_reads_find_covering_view_hidden_by_shorter_predecessor() {
+        let base = Pointer::symbolic(Variable(851_020));
+        let alias = Pointer::symbolic(Variable(851_021));
+        let empty = PureFactContext::new();
+        let resources = ResourceContext::new()
+            .unchecked_with_fact(view(&base, 0, 32))
+            .unchecked_with_fact(view(&base, 4, 8));
+        resources.synchronize_memory_equalities(&empty);
+        let middle = Pointer::symbolic(Variable(851_022));
+        let displaced = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(8),
+        };
+        let facts = empty
+            .assume_condition(
+                ConditionTerm::pointer_equal(displaced, middle.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::pointer_equal(middle, alias.clone()), true);
+        let interior = Pointer {
+            block: alias.block,
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        assert!(
+            resources
+                .concrete_read_entries(&interior, 20, &facts)
+                .is_some()
+        );
+        assert!(resources.permits_memory_read(&interior, 20, &facts));
+        assert!(!resources.permits_memory_read(&interior, 21, &facts));
+        let without_long = resources
+            .clone()
+            .without_exact_representation(&view(&base, 0, 32))
+            .unwrap();
+        assert!(!without_long.permits_memory_read(&interior, 1, &facts));
+        assert!(resources.permits_memory_read(&interior, 20, &facts));
+    }
+
+    #[test]
+    fn mixed_extent_read_hits_and_misses_do_not_scan_unrelated_ranges() {
+        let mut samples = Vec::new();
+        for size in [16_u32, 64, 256, 1024] {
+            let base = Pointer::symbolic(Variable(851_030));
+            let alias = Pointer::symbolic(Variable(851_031));
+            let mut resources = ResourceContext::new()
+                .unchecked_with_fact(view(&base, 0, 4))
+                .unchecked_with_fact(view(&base, 1, 2));
+            for index in 1..=size {
+                resources = resources.unchecked_with_fact(view(
+                    &base,
+                    index * 8,
+                    index * 8 + 1 + index % 2,
+                ));
+            }
+            let empty = PureFactContext::new();
+            resources.synchronize_memory_equalities(&empty);
+            let facts =
+                empty.assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
+            resources.synchronize_memory_equalities(&facts);
+            let at = |offset| Pointer {
+                block: alias.block.clone(),
+                offset: PointerOffsetTerm::Constant(offset),
+            };
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    assert_eq!(
+                        resources
+                            .concrete_read_entries(&at(2), 2, &facts)
+                            .unwrap()
+                            .count(),
+                        1
+                    );
+                    assert!(resources.permits_memory_read(&at(2), 2, &facts));
+                    assert!(!resources.permits_memory_read(&at(4), 1, &facts));
+                    assert!(!resources.permits_memory_read(&at(2), 3, &facts));
+                })
+            });
+            samples.push((size, work, map_work));
+        }
+        assert!(
+            samples[3].1 <= samples[0].1 * 2 + 32,
+            "read checker scanned unrelated ranges: {samples:?}"
+        );
+        assert!(
+            samples[3].2 <= samples[0].2 * 3 + 128,
+            "interval lookup scanned unrelated ranges: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn a_read_does_not_materialize_all_covering_views() {
+        let mut samples = Vec::new();
+        for size in [16_u32, 64, 256, 1024] {
+            let base = Pointer::symbolic(Variable(851_040));
+            let facts = PureFactContext::new();
+            let mut resources = ResourceContext::new();
+            for end in 1..=size {
+                resources = resources.unchecked_with_fact(view(&base, 0, end));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let (allowed, work) = crate::persistent::measure_persistent_work(|| {
+                resources.permits_memory_read(&base, 1, &facts)
+            });
+            assert!(allowed);
+            samples.push((size, work));
+        }
+        assert!(
+            samples[3].1 <= samples[0].1 * 2 + 32,
+            "a read enumerated every covering view: {samples:?}"
+        );
     }
 }

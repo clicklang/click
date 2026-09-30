@@ -40,12 +40,23 @@ thread_local! {
 ///
 /// `None` for a width that names no elements at all, which declines the
 /// element question rather than rounding an answer onto a boundary.
+/// Minimum footprint a read candidate may need under the kernel's existing
+/// logical pointer-cell convention. This only selects candidates: the range's
+/// actual element width and the complete permission check remain authoritative.
+pub(in crate::kernel) fn read_candidate_byte_width(byte_width: u32) -> u32 {
+    if byte_width == crate::kernel::C_POINTER_BYTE_WIDTH {
+        4
+    } else {
+        byte_width
+    }
+}
+
 fn authorized_access_element_length(byte_width: u32, element_width: u32) -> Option<u32> {
     if element_width == 0 || byte_width == 0 {
         return None;
     }
-    if byte_width == crate::kernel::C_POINTER_BYTE_WIDTH && element_width == 4 {
-        return Some(1);
+    if element_width == 4 {
+        return Some(read_candidate_byte_width(byte_width).div_ceil(element_width));
     }
     Some(byte_width.div_ceil(element_width))
 }

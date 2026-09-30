@@ -65,10 +65,11 @@ to that range's selected base; the held range still supplies authority and its
 bounds still decide coverage. Fold consumption now uses a persistent paired
 resource/class address and concrete-span index, including late merges and
 displaced aliases, without enumerating pointer spellings. Specification-read
-candidate selection uses that index for concrete affine addresses in classes
-with readable ranges of one fixed byte extent; indexed hits and misses are
-decisive. Other read shapes still select the general checker before lookup.
-Whole-offset class updates, symbolic containment, mixed extents, and snapshot
+candidate selection uses a persistent interval summary for concrete affine
+addresses in classes with positive concrete read cores, including mixed extents
+and overlapping views. It delivers only covering candidates lazily, and an
+indexed miss is decisive. Other read shapes still select the general checker
+before lookup. Whole-offset class updates, symbolic containment, and snapshot
 matching remain indexed-coverage work; the rbtree acceptance remains open.
 
 The previous attempt to publish `load(M, p) == value` as a certified

@@ -4944,8 +4944,8 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        if let Some(entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
-            return entries.into_iter().any(|entry| {
+        if let Some(mut entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
+            return entries.any(|entry| {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
                 let Some(range) = resource_fact_read_core_range(resource) else {

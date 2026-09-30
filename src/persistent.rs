@@ -10,12 +10,12 @@ thread_local! {
 }
 
 #[cfg(test)]
-fn record_persistent_work(units: usize) {
+pub(crate) fn record_persistent_work(units: usize) {
     PERSISTENT_WORK.with(|work| work.set(work.get().saturating_add(units)));
 }
 
 #[cfg(not(test))]
-fn record_persistent_work(_units: usize) {}
+pub(crate) fn record_persistent_work(_units: usize) {}
 
 /// A persistent AVL map. Clones share the complete root; updating one key
 /// copies only the search path and any rotation nodes.

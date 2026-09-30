@@ -490,20 +490,31 @@ pointer spellings. A selected candidate can express the requirement in its
 own block coordinates using the graph's affine relation; this visits no other
 class members. Existing local range matching remains responsible for
 same-block containment and endpoint reasoning. Specification reads also use
-the paired index for concrete affine addresses in classes whose readable
-ranges all have one positive, fixed byte extent. The predecessor is complete
-for that fragment, including overlapping views; permission and bounds checks
-still decide the result. Persistent per-class shape counts select this path
-before lookup, and an indexed miss is final. This avoids scanning unrelated
+the paired index for concrete affine addresses in classes whose memory entries
+all have positive concrete read cores. A persistent AVL interval tree stores
+each occurrence's byte start/end and each subtree's maximum end. It lazily
+selects ranges covering the access's candidate footprint, including mixed extents and overlapping
+views where the nearest predecessor is too short. A read stops at the first
+candidate accepted by the ordinary permission and bounds checks; it does not
+materialize every overlapping view. Updates copy only the affected tree path,
+and class merges shift only the smaller resource payload's interval tree.
+The occurrence count detects incomplete index coverage and selects the general
+checker before lookup; an indexed miss is final. This avoids scanning unrelated
 ranges for both hits and misses, including resources published before a later
 address equality. Reads outside that fragment retain the general checker.
-Whole-offset term-class merges, symbolic containment, mixed range extents,
-and snapshot-based matching need complete indexed coverage before the general
-read lookup can be retired.
+Whole-offset term-class merges, symbolic containment, and snapshot-based
+matching need complete indexed coverage before the general read lookup can be
+retired. The interval summary is part of the trusted kernel's derived index;
+it creates no proposition or access capability.
+Candidate footprint calculation shares the kernel's existing logical
+pointer-cell rule: a pointer read may use one 4-byte logical element, while
+other element widths still need their own full range check. The index must not
+silently tighten that rule to physical pointer width during this migration.
 Deterministic regressions cover late aliases,
 nonzero displacement, branch isolation, insertion/removal and normalization,
 growing alias classes, disjoint spans sharing one base, concrete read hits and
-misses, overlapping views, and incremental merges
+misses, mixed extents, overlapping views, lazy delivery of covering ranges,
+interval updates against an independent model, and incremental merges
 with a large resource payload. Resource-section publication uses the expansion
 delta rather than recreating views for unrelated ambient memory ranges.
 

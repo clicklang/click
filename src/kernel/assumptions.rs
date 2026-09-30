@@ -29,6 +29,7 @@ pub(in crate::kernel) use constant_classes::ConstantClasses;
 mod memory_reasoning;
 pub(crate) use memory_reasoning::arm_frame_composite_definitions;
 pub(crate) use memory_reasoning::clear_frame_expansion_memo;
+pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping;
 pub(in crate::kernel) use memory_reasoning::{
     frame_composite_definitions, owned_instances_naming_access_base,
