@@ -5502,17 +5502,9 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .iter()
                 .map(|base| substitute_bitvector_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized_cells: memory
-                .heap
-                .initialized_cells
-                .iter()
-                .map(|(pointer, width)| {
-                    (
-                        substitute_bitvector_variable_in_pointer(pointer, from, to),
-                        *width,
-                    )
-                })
-                .collect(),
+            initialized: memory.heap.initialized.map_pointers(|pointer| {
+                substitute_bitvector_variable_in_pointer(pointer, from, to)
+            }),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations
@@ -7007,17 +6999,10 @@ pub(crate) fn substitute_pointer_variable_in_memory(
                 .iter()
                 .map(|base| substitute_pointer_variable_in_pointer(base, from, to))
                 .collect(),
-            initialized_cells: memory
+            initialized: memory
                 .heap
-                .initialized_cells
-                .iter()
-                .map(|(pointer, width)| {
-                    (
-                        substitute_pointer_variable_in_pointer(pointer, from, to),
-                        *width,
-                    )
-                })
-                .collect(),
+                .initialized
+                .map_pointers(|pointer| substitute_pointer_variable_in_pointer(pointer, from, to)),
             zeroed_allocations: memory
                 .heap
                 .zeroed_allocations

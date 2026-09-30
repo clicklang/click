@@ -583,6 +583,20 @@ pub(crate) fn uncharged_debug_check(check: impl FnOnce()) {
     UNCHARGED_DEBUG_CHECK.with(|flag| flag.set(previous));
 }
 
+/// Whether the caller runs inside an [`uncharged_debug_check`]. A rule that
+/// collects side results from a predicate the check re-invokes skips them
+/// there, so a debug build collects exactly what a release build does.
+pub(crate) fn in_uncharged_debug_check() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        UNCHARGED_DEBUG_CHECK.with(Cell::get)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
+}
+
 #[cfg(debug_assertions)]
 thread_local! {
     static DEBUG_CHECKS_SKIPPED: Cell<bool> = const { Cell::new(false) };

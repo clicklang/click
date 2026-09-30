@@ -1399,3 +1399,61 @@ fn memory_resolution_order_walk_ignores_shared_bounds_of_other_indices() {
         "the full-scan reference no longer grows with the bounds, so this test measures nothing: {scanned:?}"
     );
 }
+
+/// A store the facts cannot place forgets every element of a fully written
+/// automatic array, and records their bytes initialized as it goes: one run
+/// for the whole array, built in work N·log N in the array, and a later
+/// covering query is one lookup whatever the array's size.
+#[test]
+fn an_unplaced_store_records_a_local_array_as_one_run() {
+    let index = Bitvector32Term::Variable(Variable(7_001));
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let block = "local:scaling-array";
+        let written = (0..size).fold(
+            CMemory::new().with_block(block, u32::try_from(4 * size).unwrap()),
+            |memory, element| memory.store(scaling_cell(block, element), scaling_value(element)),
+        );
+        let unplaced = Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        };
+        let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
+            written.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
+        });
+        assert_eq!(
+            forgotten.cells.len(),
+            0,
+            "the unplaced store keeps no element"
+        );
+        assert_eq!(
+            forgotten.heap.initialized.as_map().len(),
+            1,
+            "{size} forgotten elements are one initialized run"
+        );
+        let (covered, query_work) = crate::instrumentation::measure_deterministic_work(|| {
+            forgotten.has_initialized_bytes_at(&scaling_cell(block, size - 1), 4)
+        });
+        assert!(covered);
+        assert!(
+            query_work <= 2,
+            "a covering query charged {query_work} units"
+        );
+        assert!(!forgotten.has_initialized_bytes_at(&scaling_cell(block, size), 4));
+        samples.push((size, work));
+    }
+    eprintln!("unplaced-store forget work (N, units): {samples:?}");
+    for pair in samples.windows(2) {
+        let [(small, small_work), (large, large_work)] = pair else {
+            unreachable!()
+        };
+        let allowed = (*large as f64 * log2(*large)) / (*small as f64 * log2(*small)) * 1.25;
+        let ratio = *large_work as f64 / *small_work as f64;
+        assert!(
+            ratio <= allowed,
+            "forgetting a local array grew by {ratio:.2} from {small} to {large} elements, \
+             above the N·log N ratio {allowed:.2}: {samples:?}"
+        );
+    }
+}

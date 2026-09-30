@@ -45,6 +45,8 @@ pub(crate) use cell_store::{
 };
 mod counted_populations;
 mod derivations;
+mod initialized_bytes;
+pub(crate) use initialized_bytes::InitializedBytes;
 mod memory_state;
 pub(crate) use counted_populations::CountedPopulations;
 mod persistent_map;
@@ -4370,10 +4372,16 @@ pub(super) struct CHeapMemory {
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
     pub(super) uninitialized_allocations: SnapshotSet<Pointer>,
-    /// Typed scalar cells that were initialized before a call or loop havoc
-    /// dropped their cached values.  The value is gone, but a later typed
-    /// load must not mistake the cell for never-written fresh storage.
-    pub(super) initialized_cells: SnapshotMap<Pointer, u32>,
+    /// Bytes of storage with an initialization history — fresh heap
+    /// allocations and automatic (`local:`) objects — that a C store has
+    /// initialized, whether or not their cached value survives. A store the
+    /// facts cannot place, a call or loop havoc, or a join forgets values,
+    /// never initialization, so a later load must not mistake such a byte
+    /// for never-written storage. Heap stores record here as they write;
+    /// automatic storage records a cell when its value is forgotten (a
+    /// cached local cell is itself the evidence until then). See
+    /// [`InitializedBytes`].
+    pub(super) initialized: InitializedBytes,
     /// Successful calloc storage reads as zero until individual cells are
     /// written. The set is separate from `uninitialized_allocations` so the
     /// same heap-lifetime machinery can represent both APIs.
@@ -4408,8 +4416,8 @@ impl CHeapMemory {
                 &base.uninitialized_allocations,
             )
             && self
-                .initialized_cells
-                .eq_relative_to(&other.initialized_cells, &base.initialized_cells)
+                .initialized
+                .eq_relative_to(&other.initialized, &base.initialized)
             && self
                 .zeroed_allocations
                 .eq_relative_to(&other.zeroed_allocations, &base.zeroed_allocations)

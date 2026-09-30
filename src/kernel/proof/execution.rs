@@ -891,8 +891,8 @@ fn memory_only_adds_named_cells(
             "union cells"
         } else if rebased.forgotten != before.forgotten {
             "forgotten-cell provenance"
-        } else if rebased.heap.initialized_cells != before.heap.initialized_cells {
-            "heap initialized cells"
+        } else if rebased.heap.initialized != before.heap.initialized {
+            "initialized bytes"
         } else {
             "heap allocation state"
         };
