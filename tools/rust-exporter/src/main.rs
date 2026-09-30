@@ -1,0 +1,461 @@
+#![feature(rustc_private)]
+extern crate rustc_ast;
+extern crate rustc_driver;
+extern crate rustc_hir;
+extern crate rustc_interface;
+extern crate rustc_middle;
+extern crate rustc_span;
+
+use rustc_driver::{Callbacks, Compilation};
+use rustc_hir::{self as hir, def::Res};
+use rustc_middle::ty::{self, TyCtxt};
+use std::collections::BTreeMap;
+#[path = "../../../src/languages/rust/schema.rs"]
+mod schema;
+use schema::*;
+
+struct Exporter {
+    logical_source: String,
+    result: Option<Result<RustExport, String>>,
+}
+// Refuse untracked module files, expansion inputs and ambient configuration
+// before expansion. This first slice is exactly one ordinary source file.
+struct SourceBoundary {
+    invalid: bool,
+}
+impl<'a> rustc_ast::visit::Visitor<'a> for SourceBoundary {
+    fn visit_item(&mut self, item: &'a rustc_ast::Item) {
+        if !matches!(
+            item.kind,
+            rustc_ast::ItemKind::Fn(_) | rustc_ast::ItemKind::Struct(..)
+        ) {
+            self.invalid = true;
+        }
+        rustc_ast::visit::walk_item(self, item);
+    }
+    fn visit_attribute(&mut self, attr: &'a rustc_ast::Attribute) {
+        if !attr.is_doc_comment() {
+            self.invalid = true;
+        }
+    }
+    fn visit_mac_call(&mut self, _: &'a rustc_ast::MacCall) {
+        self.invalid = true;
+    }
+}
+impl Callbacks for Exporter {
+    fn after_crate_root_parsing(
+        &mut self,
+        _: &rustc_interface::interface::Compiler,
+        krate: &mut rustc_ast::Crate,
+    ) -> Compilation {
+        use rustc_ast::visit::Visitor;
+        let mut boundary = SourceBoundary { invalid: false };
+        boundary.visit_crate(krate);
+        if boundary.invalid {
+            self.result = Some(Err("Rust source boundary supports one file containing functions and structs; modules, macros, imports and attributes are unsupported".into()));
+            Compilation::Stop
+        } else {
+            Compilation::Continue
+        }
+    }
+
+    fn after_analysis<'tcx>(
+        &mut self,
+        _: &rustc_interface::interface::Compiler,
+        tcx: TyCtxt<'tcx>,
+    ) -> Compilation {
+        self.result = Some(export(tcx, &self.logical_source));
+        Compilation::Stop
+    }
+}
+fn span(tcx: TyCtxt<'_>, s: rustc_span::Span) -> Span {
+    let loc = tcx.sess.source_map().lookup_char_pos(s.lo());
+    Span {
+        line: loc.line,
+        column: loc.col.0 + 1,
+    }
+}
+fn export_type(tcx: TyCtxt<'_>, t: ty::Ty<'_>) -> Result<Type, String> {
+    match t.kind() {
+        ty::Int(ty::IntTy::I32) => Ok(Type::I32),
+        ty::Bool => Ok(Type::Bool),
+        ty::Tuple(ts) if ts.is_empty() => Ok(Type::Unit),
+        ty::Ref(_, p, m) => {
+            let pointee = export_type(tcx, *p)?;
+            if !matches!(pointee, Type::I32 | Type::Record { .. }) {
+                return Err("reference pointee outside Rust slice".into());
+            }
+            Ok(Type::Reference {
+                mutable: m.is_mut(),
+                pointee: Box::new(pointee),
+            })
+        }
+        ty::Adt(def, args) if def.is_struct() && args.is_empty() && def.did().is_local() => {
+            Ok(Type::Record {
+                name: tcx.item_name(def.did()).to_string(),
+            })
+        }
+        _ => Err(format!("unsupported Rust type `{t}`")),
+    }
+}
+struct BodyExporter<'tcx> {
+    tcx: TyCtxt<'tcx>,
+    typeck: &'tcx ty::TypeckResults<'tcx>,
+    locals: BTreeMap<u32, String>,
+}
+impl<'tcx> BodyExporter<'tcx> {
+    fn error(&self, e: &hir::Expr<'_>, message: &str) -> String {
+        let s = span(self.tcx, e.span);
+        format!("Rust source {}:{}: {message}", s.line, s.column)
+    }
+    fn bind(&mut self, p: &hir::Pat<'tcx>, parameter: bool) -> Result<String, String> {
+        if let hir::PatKind::Binding(mode, id, ident, None) = p.kind {
+            if mode.0 != hir::ByRef::No {
+                return Err("ref patterns outside Rust slice".into());
+            }
+            let name = if parameter {
+                ident.to_string()
+            } else {
+                format!("__rust_{}_{}", ident, id.local_id.as_u32())
+            };
+            self.locals.insert(id.local_id.as_u32(), name.clone());
+            Ok(name)
+        } else {
+            Err("only plain Rust binding patterns are supported".into())
+        }
+    }
+    fn expr(&self, e: &hir::Expr<'tcx>) -> Result<Expression, String> {
+        // Built-in reference deref/reborrow adjustments keep the same address.
+        // Refuse trait-driven deref, pointer coercions and other implicit effects.
+        use ty::adjustment::{Adjust, AutoBorrow, DerefAdjustKind};
+        for adjustment in self.typeck.expr_adjustments(e) {
+            if !matches!(
+                adjustment.kind,
+                Adjust::Deref(DerefAdjustKind::Builtin) | Adjust::Borrow(AutoBorrow::Ref(..))
+            ) {
+                return Err(self.error(e, "implicit adjustment outside Rust slice"));
+            }
+        }
+        let t = self.typeck.expr_ty(e);
+        export_type(self.tcx, t).map_err(|m| self.error(e, &m))?;
+        match e.kind {
+            hir::ExprKind::Lit(lit) => match lit.node {
+                rustc_ast::LitKind::Int(v, _) => Ok(Expression::Integer {
+                    value: i32::try_from(v.get())
+                        .map_err(|_| self.error(e, "integer literal outside i32"))?,
+                }),
+                rustc_ast::LitKind::Bool(value) => Ok(Expression::Boolean { value }),
+                _ => Err(self.error(e, "unsupported Rust literal")),
+            },
+            hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => match path.res {
+                Res::Local(id) => Ok(Expression::Local {
+                    name: self
+                        .locals
+                        .get(&id.local_id.as_u32())
+                        .ok_or_else(|| self.error(e, "unbound Rust local"))?
+                        .clone(),
+                }),
+                _ => Err(self.error(e, "only resolved local values are supported")),
+            },
+            hir::ExprKind::Binary(op, l, r) => {
+                if self.typeck.type_dependent_def_id(e.hir_id).is_some() {
+                    return Err(self.error(e, "overloaded operators outside Rust slice"));
+                }
+                let operator = match op.node {
+                    hir::BinOpKind::Add => "add",
+                    hir::BinOpKind::Sub => "sub",
+                    hir::BinOpKind::Mul => "mul",
+                    hir::BinOpKind::Eq => "eq",
+                    hir::BinOpKind::Ne => "ne",
+                    hir::BinOpKind::Lt => "lt",
+                    hir::BinOpKind::Le => "le",
+                    hir::BinOpKind::Gt => "gt",
+                    hir::BinOpKind::Ge => "ge",
+                    hir::BinOpKind::And => "and",
+                    hir::BinOpKind::Or => "or",
+                    _ => return Err(self.error(e, "unsupported Rust binary operator")),
+                };
+                Ok(Expression::Binary {
+                    operator: operator.into(),
+                    left: Box::new(self.expr(l)?),
+                    right: Box::new(self.expr(r)?),
+                })
+            }
+            hir::ExprKind::Unary(hir::UnOp::Not, v) if t.is_bool() => Ok(Expression::Not {
+                value: Box::new(self.expr(v)?),
+            }),
+            hir::ExprKind::Unary(hir::UnOp::Neg, v)
+                if matches!(t.kind(), ty::Int(ty::IntTy::I32)) =>
+            {
+                Ok(Expression::Binary {
+                    operator: "sub".into(),
+                    left: Box::new(Expression::Integer { value: 0 }),
+                    right: Box::new(self.expr(v)?),
+                })
+            }
+            hir::ExprKind::Unary(hir::UnOp::Deref, v)
+                if matches!(self.typeck.expr_ty(v).kind(), ty::Ref(..)) =>
+            {
+                Ok(Expression::Deref {
+                    reference: Box::new(self.expr(v)?),
+                })
+            }
+            hir::ExprKind::AddrOf(hir::BorrowKind::Ref, _, v) => Ok(Expression::Borrow {
+                place: Box::new(self.expr(v)?),
+            }),
+            hir::ExprKind::Field(base, field) => {
+                let base_type = self.typeck.expr_ty(base).peel_refs();
+                let ty::Adt(def, _) = base_type.kind() else {
+                    return Err(self.error(e, "unsupported field base"));
+                };
+                Ok(Expression::Field {
+                    base: Box::new(self.expr(base)?),
+                    record: self.tcx.item_name(def.did()).to_string(),
+                    field: field.to_string(),
+                })
+            }
+            hir::ExprKind::Call(callee, args) => {
+                let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = callee.kind else {
+                    return Err(self.error(e, "only direct calls are supported"));
+                };
+                let Res::Def(hir::def::DefKind::Fn, id) = path.res else {
+                    return Err(self.error(e, "unsupported Rust call target"));
+                };
+                if !id.is_local() {
+                    return Err(self.error(e, "external calls outside Rust slice"));
+                }
+                Ok(Expression::Call {
+                    function: self.tcx.item_name(id).to_string(),
+                    arguments: args
+                        .iter()
+                        .map(|a| self.expr(a))
+                        .collect::<Result<_, _>>()?,
+                })
+            }
+            _ => Err(self.error(e, "expression outside the supported typed Rust subset")),
+        }
+    }
+    fn block(&mut self, b: &hir::Block<'tcx>, tail_return: bool) -> Result<Vec<Statement>, String> {
+        if !matches!(b.rules, hir::BlockCheckMode::DefaultBlock) {
+            return Err("unsafe blocks outside Rust slice".into());
+        }
+        let mut out = Vec::new();
+        for s in b.stmts {
+            match s.kind {
+                hir::StmtKind::Let(local) => {
+                    if local.els.is_some() {
+                        return Err("let-else outside Rust slice".into());
+                    }
+                    let init = local
+                        .init
+                        .ok_or("uninitialized locals outside Rust slice")?;
+                    let initializer = self.expr(init)?;
+                    let name = self.bind(local.pat, false)?;
+                    out.push(Statement::Declare {
+                        place: Place {
+                            name,
+                            value_type: export_type(self.tcx, self.typeck.pat_ty(local.pat))?,
+                            span: span(self.tcx, local.span),
+                        },
+                        initializer,
+                    });
+                }
+                hir::StmtKind::Expr(e) | hir::StmtKind::Semi(e) => {
+                    out.extend(self.statement(e, false)?)
+                }
+                _ => return Err("local items outside Rust slice".into()),
+            }
+        }
+        if let Some(e) = b.expr {
+            out.extend(self.statement(e, tail_return)?);
+        } else if tail_return {
+            out.push(Statement::Return { value: None });
+        }
+        Ok(out)
+    }
+    fn statement(
+        &mut self,
+        e: &hir::Expr<'tcx>,
+        tail_return: bool,
+    ) -> Result<Vec<Statement>, String> {
+        match e.kind {
+            hir::ExprKind::Block(b, None) => self.block(b, tail_return),
+            hir::ExprKind::If(c, t, f) => Ok(vec![Statement::If {
+                condition: self.expr(c)?,
+                then_body: self.statement(t, tail_return)?,
+                else_body: match f {
+                    Some(f) => self.statement(f, tail_return)?,
+                    None if tail_return => {
+                        return Err(self.error(e, "value-returning if needs both branches"));
+                    }
+                    None => Vec::new(),
+                },
+            }]),
+            hir::ExprKind::Ret(value) => Ok(vec![Statement::Return {
+                value: value.map(|v| self.expr(v)).transpose()?,
+            }]),
+            hir::ExprKind::Assign(target, value, _) => Ok(vec![Statement::Assign {
+                target: self.expr(target)?,
+                value: self.expr(value)?,
+            }]),
+            hir::ExprKind::AssignOp(op, target, value) => {
+                if self.typeck.type_dependent_def_id(e.hir_id).is_some() {
+                    return Err(self.error(e, "overloaded assignment outside Rust slice"));
+                }
+                let operator = match op.node {
+                    hir::AssignOpKind::AddAssign => "add",
+                    hir::AssignOpKind::SubAssign => "sub",
+                    _ => return Err(self.error(e, "unsupported assignment operator")),
+                };
+                let target = self.expr(target)?;
+                Ok(vec![Statement::Assign {
+                    value: Expression::Binary {
+                        operator: operator.into(),
+                        left: Box::new(target.clone()),
+                        right: Box::new(self.expr(value)?),
+                    },
+                    target,
+                }])
+            }
+            hir::ExprKind::DropTemps(value) => self.statement(value, tail_return),
+            _ if tail_return => Ok(vec![Statement::Return {
+                value: Some(self.expr(e)?),
+            }]),
+            _ => match self.expr(e)? {
+                Expression::Call {
+                    function,
+                    arguments,
+                } => Ok(vec![Statement::Call {
+                    function,
+                    arguments,
+                }]),
+                _ => Err(self.error(e, "discarded expressions outside Rust slice")),
+            },
+        }
+    }
+}
+fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
+    let mut functions = Vec::new();
+    let mut records = BTreeMap::new();
+    for id in tcx.hir_body_owners() {
+        if tcx.def_kind(id) != hir::def::DefKind::Fn {
+            return Err("only free Rust functions are supported".into());
+        }
+        let sig = tcx.fn_sig(id).instantiate_identity().skip_binder();
+        if sig.safety().is_unsafe() || !tcx.generics_of(id).own_params.is_empty() {
+            return Err("unsafe or generic functions outside Rust slice".into());
+        }
+        let body = tcx.hir_body_owned_by(id);
+        let typeck = tcx.typeck(id);
+        let mut cx = BodyExporter {
+            tcx,
+            typeck,
+            locals: BTreeMap::new(),
+        };
+        let parameters = body
+            .params
+            .iter()
+            .zip(sig.inputs())
+            .map(|(p, t)| {
+                Ok(Place {
+                    name: cx.bind(p.pat, true)?,
+                    value_type: export_type(tcx, *t)?,
+                    span: span(tcx, p.span),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        for t in sig.inputs() {
+            let t = t.peel_refs();
+            if let ty::Adt(def, _) = t.kind() {
+                let name = tcx.item_name(def.did()).to_string();
+                if records.contains_key(&name) {
+                    continue;
+                }
+                let layout = tcx
+                    .layout_of(ty::TypingEnv::fully_monomorphized().as_query_input(t))
+                    .map_err(|e| format!("Rust layout: {e:?}"))?;
+                let mut fields = Vec::new();
+                for (i, f) in def.non_enum_variant().fields.iter_enumerated() {
+                    if !matches!(
+                        export_type(
+                            tcx,
+                            tcx.type_of(f.did).instantiate_identity().skip_norm_wip()
+                        )?,
+                        Type::I32
+                    ) {
+                        return Err("only i32 struct fields are supported".into());
+                    }
+                    fields.push(Field {
+                        name: f.name.to_string(),
+                        offset: u32::try_from(layout.fields.offset(i.index()).bytes())
+                            .map_err(|_| "field offset too large")?,
+                    });
+                }
+                records.insert(
+                    name.clone(),
+                    Record {
+                        name,
+                        size: u32::try_from(layout.size.bytes())
+                            .map_err(|_| "record size too large")?,
+                        alignment: u32::try_from(layout.align.abi.bytes())
+                            .map_err(|_| "alignment too large")?,
+                        fields,
+                    },
+                );
+            }
+        }
+        let statements = cx.statement(body.value, true)?;
+        functions.push(Function {
+            name: tcx.item_name(id.to_def_id()).to_string(),
+            return_type: export_type(tcx, sig.output())?,
+            parameters,
+            body: statements,
+            span: span(tcx, body.value.span),
+        });
+    }
+    if functions.is_empty() {
+        return Err("Rust input has no supported functions".into());
+    }
+    Ok(RustExport {
+        schema: SCHEMA,
+        compiler_commit: COMPILER_COMMIT.into(),
+        target: TARGET.into(),
+        edition: "2024".into(),
+        overflow_checks: true,
+        panic: "abort".into(),
+        logical_source: logical.into(),
+        records: records.into_values().collect(),
+        functions,
+    })
+}
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let source = args.next().expect("source path");
+    let logical_source = args.next().expect("logical source");
+    let sysroot = env!("CLICK_RUST_SYSROOT").to_string();
+    assert!(args.next().is_none(), "unexpected exporter arguments");
+    let mut exporter = Exporter {
+        logical_source,
+        result: None,
+    };
+    let args = vec![
+        "rustc".into(),
+        source,
+        "--crate-name=click_rust_input".into(),
+        "--crate-type=lib".into(),
+        "--edition=2024".into(),
+        format!("--target={TARGET}"),
+        "-Coverflow-checks=on".into(),
+        "-Cpanic=abort".into(),
+        "--sysroot".into(),
+        sysroot,
+    ];
+    rustc_driver::run_compiler(&args, &mut exporter);
+    match exporter.result.expect("compiler must finish analysis") {
+        Ok(export) => println!("{}", serde_json::to_string(&export).unwrap()),
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    }
+}

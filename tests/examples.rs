@@ -11,8 +11,9 @@ use click::instrumentation::{self, ArtifactReuseRejection};
 use click::languages::refresh_compiler_import;
 use click::surface::{
     c0_prepared_project_tactic_source_position, c0_project_tactic_source_position,
-    c0_tactic_source_position, cpp_prepared_project_tactic_source_position,
-    verify_c0_prepared_project, verify_c0_project, verify_c0_sources, verify_cpp_prepared_project,
+    c0_tactic_source_position, program_prepared_project_tactic_source_position,
+    verify_c0_prepared_project, verify_c0_project, verify_c0_sources,
+    verify_program_prepared_project,
 };
 
 #[path = "support/limits.rs"]
@@ -358,8 +359,8 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                         CInput::Prepared(imports) => {
                             verify_c0_prepared_project(&click_project, imports)
                         }
-                        CInput::PreparedCpp(import) => {
-                            verify_cpp_prepared_project(&click_project, import)
+                        CInput::PreparedProgram(import) => {
+                            verify_program_prepared_project(&click_project, import)
                         }
                     }
                     .map(|_| ())
@@ -399,8 +400,8 @@ fn run_example_project(project: &Path) -> Result<(), String> {
                                         source_index,
                                     )
                                 }
-                                CInput::PreparedCpp(import) => {
-                                    cpp_prepared_project_tactic_source_position(
+                                CInput::PreparedProgram(import) => {
+                                    program_prepared_project_tactic_source_position(
                                         &click_project,
                                         import,
                                         claim,

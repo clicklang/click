@@ -46,9 +46,12 @@ whole program-language boundary. Rust follows once the shared borrowing model
 and that boundary have evidence behind them. Avoid doing both frontends
 simultaneously for the first milestone.
 
-The bounded C++ slice is P1 by explicit user direction. The launch remains
-P1 -> unchanged Linux rbtree verification -> public launch with rbtree as the
-key demo. Broad C++ coverage and Rust are later work. Neither a successful
+The bounded C++ slice was P1 by explicit user direction and has landed. The
+selected safe-Rust and shared C/Rust checksum milestones are now also P1 by
+user direction; [rust-support.md](../issues/rust-support.md) owns that roadmap.
+The launch remains P1 -> unchanged Linux rbtree verification -> public launch
+with rbtree as the key demo. Broad C++ and Rust coverage remain later work.
+Neither a successful
 compiler probe nor accepting C-shaped code with a `.cpp` extension is enough
 to announce the first slice as complete.
 
@@ -441,8 +444,9 @@ trait objects, closures, async, unsafe code, interior-mutability libraries,
 standard-library verification, and threading to later slices. Returned field
 borrows remain an early design model requirement in the stable-views design record; actual Rust
 surface support follows when contracts can bind the escaping lifetime and
-connect the final borrowed value to the recovered owner. No separate Rust
-implementation issue is filed until that milestone is requested.
+connect the final borrowed value to the recovered owner. The requested
+[P1 Rust issue](../issues/rust-support.md) owns the initial support milestone
+and subsequent shared-specification checksum demonstration.
 
 ## Later coverage and investigation gates
 

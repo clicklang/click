@@ -662,23 +662,23 @@ pub fn expand_c0_prepared_project_claim_source_by_label(
     )))
 }
 
-pub fn expand_cpp_prepared_claim_source_by_label(
+pub fn expand_program_prepared_claim_source_by_label(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
-    expand_cpp_prepared_claim_source_by_label_context(None, click_source, import, claim_label)
+    expand_program_prepared_claim_source_by_label_context(None, click_source, import, claim_label)
 }
 
-pub fn expand_cpp_prepared_project_claim_source_by_label(
+pub fn expand_program_prepared_project_claim_source_by_label(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_cpp_prepared_claim_source_by_label_context(
+    expand_program_prepared_claim_source_by_label_context(
         Some(project),
         click_source,
         import,
@@ -686,15 +686,15 @@ pub fn expand_cpp_prepared_project_claim_source_by_label(
     )
 }
 
-fn expand_cpp_prepared_claim_source_by_label_context(
+fn expand_program_prepared_claim_source_by_label_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::cpp(import)?.with_click_project(project),
-        None => CSourceContext::cpp(import)?,
+        Some(project) => CSourceContext::program(import)?.with_click_project(project),
+        None => CSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
@@ -704,7 +704,7 @@ fn expand_cpp_prepared_claim_source_by_label_context(
         let function_name = function.signature().name();
         if claim_label == format!("{function_name}.contract") && function.grouped_proof().is_some()
         {
-            return expand_cpp_prepared_claim_source_context(
+            return expand_program_prepared_claim_source_context(
                 project,
                 click_source,
                 import,
@@ -718,7 +718,7 @@ fn expand_cpp_prepared_claim_source_by_label_context(
                 |name| format!("{function_name}.{name}"),
             );
             if label == claim_label {
-                return expand_cpp_prepared_claim_source_context(
+                return expand_program_prepared_claim_source_context(
                     project,
                     click_source,
                     import,
@@ -733,7 +733,7 @@ fn expand_cpp_prepared_claim_source_by_label_context(
                 |name| format!("{function_name}.{name}"),
             );
             if label == claim_label {
-                return expand_cpp_prepared_claim_source_context(
+                return expand_program_prepared_claim_source_context(
                     project,
                     click_source,
                     import,
@@ -744,20 +744,20 @@ fn expand_cpp_prepared_claim_source_by_label_context(
         }
     }
     Err(ClickError::new(format!(
-        "could not locate C++ function claim `{claim_label}`"
+        "could not locate compiler-imported function claim `{claim_label}`"
     )))
 }
 
-fn expand_cpp_prepared_claim_source_context(
+fn expand_program_prepared_claim_source_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     function_name: &str,
     claim: CProofClaim,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::cpp(import)?.with_click_project(project),
-        None => CSourceContext::cpp(import)?,
+        Some(project) => CSourceContext::program(import)?.with_click_project(project),
+        None => CSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
@@ -778,9 +778,11 @@ fn expand_cpp_prepared_claim_source_context(
     let target = position_at_offset(click_source, edit.selector());
     let verified = match project {
         Some(project) => {
-            verify_cpp_prepared_project_at(project, import, target.line, target.column)?
+            verify_program_prepared_project_at(project, import, target.line, target.column)?
         }
-        None => verify_cpp_prepared_sources_at(click_source, import, target.line, target.column)?,
+        None => {
+            verify_program_prepared_sources_at(click_source, import, target.line, target.column)?
+        }
     };
     let theorem = select_expansion_theorem(&verified, function_name, claim)?;
     let replacement = checked_claim_expansion_source(
@@ -839,11 +841,11 @@ pub fn c0_prepared_smart_tactic_source_sites(
     c0_smart_tactic_source_sites_context(click_source, &sources)
 }
 
-pub fn cpp_prepared_smart_tactic_source_sites(
+pub fn program_prepared_smart_tactic_source_sites(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::cpp(import)?;
+    let sources = CSourceContext::program(import)?;
     c0_smart_tactic_source_sites_context(click_source, &sources)
 }
 
@@ -865,11 +867,11 @@ pub fn c0_prepared_project_smart_tactic_source_sites(
     c0_smart_tactic_source_sites_file(&file)
 }
 
-pub fn cpp_prepared_project_smart_tactic_source_sites(
+pub fn program_prepared_project_smart_tactic_source_sites(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
 ) -> Result<Vec<SmartTacticSourceSite>, ClickError> {
-    let sources = CSourceContext::cpp(import)?.with_click_project(project);
+    let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_smart_tactic_source_sites_file(&file)
 }
@@ -1494,37 +1496,43 @@ pub fn expand_c0_prepared_project_tactic_source_at(
     expand_c0_prepared_tactic_source_at_context(Some(project), click_source, imports, line, column)
 }
 
-pub fn expand_cpp_prepared_tactic_source_at(
+pub fn expand_program_prepared_tactic_source_at(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
-    expand_cpp_prepared_tactic_source_at_context(None, click_source, import, line, column)
+    expand_program_prepared_tactic_source_at_context(None, click_source, import, line, column)
 }
 
-pub fn expand_cpp_prepared_project_tactic_source_at(
+pub fn expand_program_prepared_project_tactic_source_at(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
-    expand_cpp_prepared_tactic_source_at_context(Some(project), click_source, import, line, column)
+    expand_program_prepared_tactic_source_at_context(
+        Some(project),
+        click_source,
+        import,
+        line,
+        column,
+    )
 }
 
-fn expand_cpp_prepared_tactic_source_at_context(
+fn expand_program_prepared_tactic_source_at_context(
     project: Option<&ClickProject>,
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: usize,
 ) -> Result<String, ClickError> {
     let sources = match project {
-        Some(project) => CSourceContext::cpp(import)?.with_click_project(project),
-        None => CSourceContext::cpp(import)?,
+        Some(project) => CSourceContext::program(import)?.with_click_project(project),
+        None => CSourceContext::program(import)?,
     };
     let file = match project {
         Some(project) => resolve_click_project_context(project, &sources)?,
@@ -1550,7 +1558,7 @@ fn expand_cpp_prepared_tactic_source_at_context(
         TacticSourceEdit::WholeProof(_),
     ) = (&selected.site, &selected.edit)
     {
-        return expand_cpp_prepared_claim_source_context(
+        return expand_program_prepared_claim_source_context(
             project,
             click_source,
             import,
@@ -1561,7 +1569,7 @@ fn expand_cpp_prepared_tactic_source_at_context(
     let replacement_tactics = match &selected.edit {
         TacticSourceEdit::Partial(_) | TacticSourceEdit::PartialProofClause(_) => {
             if let Some(project) = project {
-                super::proof::capture_cpp_prepared_project_tactic_expansion(
+                super::proof::capture_program_prepared_project_tactic_expansion(
                     project,
                     import,
                     selected.site.clone(),
@@ -1569,7 +1577,7 @@ fn expand_cpp_prepared_tactic_source_at_context(
                     &selected.nested,
                 )?
             } else {
-                super::proof::capture_cpp_prepared_tactic_expansion(
+                super::proof::capture_program_prepared_tactic_expansion(
                     click_source,
                     import,
                     selected.site.clone(),
@@ -1580,13 +1588,13 @@ fn expand_cpp_prepared_tactic_source_at_context(
         }
         TacticSourceEdit::WholeProof(_) => {
             if let Some(project) = project {
-                super::proof::capture_cpp_prepared_project_proof_site_expansion(
+                super::proof::capture_program_prepared_project_proof_site_expansion(
                     project,
                     import,
                     selected.site.clone(),
                 )?
             } else {
-                super::proof::capture_cpp_prepared_proof_site_expansion(
+                super::proof::capture_program_prepared_proof_site_expansion(
                     click_source,
                     import,
                     selected.site.clone(),
@@ -2604,13 +2612,13 @@ pub fn c0_prepared_select_smart_tactic(
     select_smart_tactic_file(click_source, &file, line, column)
 }
 
-pub fn cpp_prepared_select_smart_tactic(
+pub fn program_prepared_select_smart_tactic(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::cpp(import).map_err(SmartTacticSelectionError::from_error)?;
+    let sources = CSourceContext::program(import).map_err(SmartTacticSelectionError::from_error)?;
     let file = parse_source_with_c_layouts_context(click_source, &sources)
         .map_err(SmartTacticSelectionError::from_error)?;
     select_smart_tactic_file(click_source, &file, line, column)
@@ -2636,13 +2644,13 @@ pub fn c0_prepared_project_select_smart_tactic(
     select_project_smart_tactic(project, &sources, line, column)
 }
 
-pub fn cpp_prepared_project_select_smart_tactic(
+pub fn program_prepared_project_select_smart_tactic(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     line: usize,
     column: Option<usize>,
 ) -> Result<SmartTacticCandidate, SmartTacticSelectionError> {
-    let sources = CSourceContext::cpp(import)
+    let sources = CSourceContext::program(import)
         .map_err(SmartTacticSelectionError::from_error)?
         .with_click_project(project);
     select_project_smart_tactic(project, &sources, line, column)
@@ -3431,13 +3439,13 @@ pub fn c0_prepared_tactic_source_position(
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
-pub fn cpp_prepared_tactic_source_position(
+pub fn program_prepared_tactic_source_position(
     click_source: &str,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::cpp(import)?;
+    let sources = CSourceContext::program(import)?;
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
@@ -3473,13 +3481,13 @@ pub fn c0_prepared_project_tactic_source_position(
     )
 }
 
-pub fn cpp_prepared_project_tactic_source_position(
+pub fn program_prepared_project_tactic_source_position(
     project: &ClickProject,
-    import: &crate::languages::cpp::PreparedCppImport,
+    import: &impl crate::languages::PreparedProgramSource,
     claim_label: &str,
     source_index: usize,
 ) -> Result<SourcePosition, ClickError> {
-    let sources = CSourceContext::cpp(import)?.with_click_project(project);
+    let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_tactic_source_position_file(
         &file,

@@ -15,9 +15,10 @@ use click::surface::{
     c0_prepared_project_tactic_source_position, c0_prepared_smart_tactic_source_sites,
     c0_prepared_tactic_source_position, c0_project_smart_tactic_source_sites,
     c0_project_tactic_source_position, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    cpp_prepared_project_smart_tactic_source_sites, cpp_prepared_project_tactic_source_position,
-    cpp_prepared_smart_tactic_source_sites, cpp_prepared_tactic_source_position,
-    verify_c0_prepared_project, verify_c0_project, verify_c0_sources, verify_cpp_prepared_project,
+    program_prepared_project_smart_tactic_source_sites,
+    program_prepared_project_tactic_source_position, program_prepared_smart_tactic_source_sites,
+    program_prepared_tactic_source_position, verify_c0_prepared_project, verify_c0_project,
+    verify_c0_sources, verify_program_prepared_project,
 };
 
 /// The crash-containment bound per profiled project; see
@@ -644,11 +645,13 @@ fn count_smart_source_sites(
                     }
                     None => c0_prepared_smart_tactic_source_sites(&source.click_source, imports),
                 },
-                CInput::PreparedCpp(import) => match &source.project {
+                CInput::PreparedProgram(import) => match &source.project {
                     Some(project) => {
-                        cpp_prepared_project_smart_tactic_source_sites(project, import)
+                        program_prepared_project_smart_tactic_source_sites(project, import)
                     }
-                    None => cpp_prepared_smart_tactic_source_sites(&source.click_source, import),
+                    None => {
+                        program_prepared_smart_tactic_source_sites(&source.click_source, import)
+                    }
                 },
             }
             .map_err(|error| {
@@ -1557,14 +1560,14 @@ fn resolve_source_positions(
                     key.source_index,
                 ),
             },
-            CInput::PreparedCpp(import) => match &source.project {
-                Some(project) => cpp_prepared_project_tactic_source_position(
+            CInput::PreparedProgram(import) => match &source.project {
+                Some(project) => program_prepared_project_tactic_source_position(
                     project,
                     import,
                     &key.claim,
                     key.source_index,
                 ),
-                None => cpp_prepared_tactic_source_position(
+                None => program_prepared_tactic_source_position(
                     &source.click_source,
                     import,
                     &key.claim,
@@ -1616,10 +1619,10 @@ fn verify_mdtest(path: &Path) -> Result<(), String> {
             verify_c0_project(project, &source_refs(sources))
         }
         (CInput::Bundle(sources), None) => verify_c0_sources(click_source, &source_refs(sources)),
-        (CInput::PreparedCpp(import), Some(project)) => {
-            verify_cpp_prepared_project(project, import)
+        (CInput::PreparedProgram(import), Some(project)) => {
+            verify_program_prepared_project(project, import)
         }
-        (CInput::PreparedCpp(_), None) | (CInput::Prepared(_), _) => {
+        (CInput::PreparedProgram(_), None) | (CInput::Prepared(_), _) => {
             unreachable!("mdtests have no C compiler-import fence")
         }
     };
@@ -1669,7 +1672,9 @@ fn verify_sidecars(
         let result = match &inputs {
             CInput::Bundle(sources) => verify_c0_project(&click_project, &source_refs(sources)),
             CInput::Prepared(imports) => verify_c0_prepared_project(&click_project, imports),
-            CInput::PreparedCpp(import) => verify_cpp_prepared_project(&click_project, import),
+            CInput::PreparedProgram(import) => {
+                verify_program_prepared_project(&click_project, import)
+            }
         };
         result.map_err(|error| {
             format!(
