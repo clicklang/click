@@ -1,5 +1,21 @@
 # Working on Click
 
+## Develop in a fork and contribute through pull requests
+
+The upstream repository is `clicklang/click`. Humans and agents must develop
+in their own fork, push task branches there, and open a pull request against
+upstream `master` when the change is ready. Do not push development branches
+or changes directly to the upstream repository, even with write or admin
+access. Maintainers integrate reviewed changes through pull requests.
+
+Use `origin` for the contributor's fork and `upstream` for
+`git@github.com:clicklang/click.git`. Set `remote.pushDefault` to `origin`
+and `push.default` to `current` so ordinary pushes go to the fork even when
+a local branch tracks upstream. Verify the push destination before pushing;
+do not assume an existing checkout's `origin` is a fork. See the
+[contribution workflow](docs/internals/contributing.md#fork-and-pull-request-workflow)
+for setup commands.
+
 ## Isolate work from the primary checkout
 
 Unless already operating in a task-specific worktree, create a dedicated Git
@@ -8,7 +24,18 @@ formatting, tests, and commits there. Treat the shared primary checkout as an
 integration checkout, not a development workspace; do not expose other agents
 to partially implemented or failing changes.
 
-Integrate only a coherent green commit. Before integration, run the relevant
+Submit only a coherent green commit. Before opening a pull request, run the
+relevant focused and full gates in the task worktree (use the documentation-only
+gate for prose-only changes), then push the tested branch to the fork. Include
+the change's purpose and validation in the pull request. If upstream has moved,
+update the task branch and rerun any affected gates before merging.
+
+If updating the local primary checkout after a pull request merges, verify
+that it is clean and fast-forward it from upstream with Git. Never copy
+uncommitted files into it or merge an unreviewed task branch into upstream
+`master`. Stop and coordinate if unrelated changes prevent the update.
+
+Before integrating tested work into a local branch in the fork, run the relevant
 focused and full gates in the task worktree, verify that the primary checkout
 is clean, and confirm that its base has not moved unexpectedly. If the base did
 move, update the task branch and rerun any affected gates before integration.

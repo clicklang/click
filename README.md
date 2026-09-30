@@ -47,6 +47,18 @@ about char*, float64, or malloc into the kernel.
 
 ## Only humans may edit the content above this point. AIs may edit below this point.
 
+## Contributing
+
+Fork [clicklang/click](https://github.com/clicklang/click), develop on a task
+branch in your fork, and open a pull request against upstream `master` when
+the change is ready. This applies to humans and agents, including maintainers
+with upstream write access. Push development branches to your fork to keep
+the upstream branch list focused.
+
+See the [contribution workflow](docs/internals/contributing.md) for remote
+setup, worktree isolation, and validation, and [AGENTS.md](AGENTS.md) for the
+repository's working rules.
+
 ## Technical documentation
 
 Click's central adoption principle is to verify existing C as written. A proof
