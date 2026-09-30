@@ -67,21 +67,26 @@ jobs:
         with:
           path: ~/.cargo/bin/cargo-nextest
           key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
       - name: Set up full test environment
         run: scripts/setup-environment.sh
       - uses: Swatinem/rust-cache@v2
-      # Run shared checks and compiler-import tests here; build the larger
-      # mdtest and example suites once for the parallel runners below.
-      - name: Prepare fixture test archive
-        run: scripts/check.sh --ci-prepare target/nextest-archive.tar.zst
+      # Build every selected test binary and the C++ exporter once. All test
+      # execution happens on consumers of this immutable build artifact.
+      - name: Check quality and build test archive
+        run: scripts/check.sh --ci-prepare target/ci-tests
       - uses: actions/upload-artifact@v4
         with:
-          name: nextest-archive
-          path: target/nextest-archive.tar.zst
+          name: compiled-tests
+          path: target/ci-tests
+          compression-level: 0
           if-no-files-found: error
           retention-days: 1
 
-  fixture_shards:
+  test_shards:
     needs: [scope, prepare]
     if: needs.scope.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
@@ -89,25 +94,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [mdtests, examples]
+        include:
+          - { suite: unit, partition: '1/4' }
+          - { suite: unit, partition: '2/4' }
+          - { suite: unit, partition: '3/4' }
+          - { suite: unit, partition: '4/4' }
+          - { suite: mdtests, partition: '1/1' }
+          - { suite: examples, partition: '1/1' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/click/tools
-          key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
-      - uses: actions/cache@v4
-        with:
           path: ~/.cargo/bin/cargo-nextest
           key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
-      - name: Set up full test environment
-        run: scripts/setup-environment.sh
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/llvm
+          key: ${{ runner.os }}-${{ runner.arch }}-click-llvm-${{ hashFiles('scripts/setup-environment.sh') }}
+      - name: Set up test runner
+        run: scripts/setup-environment.sh --test-runner
       - uses: actions/download-artifact@v4
         with:
-          name: nextest-archive
-          path: target
-      - name: Run ${{ matrix.suite }} fixtures
-        run: scripts/check.sh --ci-shard target/nextest-archive.tar.zst "${{ matrix.suite }}"
+          name: compiled-tests
+          path: target/ci-tests
+      - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
+        run: scripts/check.sh --ci-shard target/ci-tests "${{ matrix.suite }}" "${{ matrix.partition }}"
 
   docs:
     needs: scope
@@ -130,10 +141,10 @@ jobs:
         run: scripts/check.sh --docs-only
 
   test:
-    # Keep one stable required check named `test` while the fixture suite runs
+    # Keep one stable required check named `test` while the test suite runs
     # in parallel and docs-only changes continue to use their focused gate.
     if: always()
-    needs: [scope, prepare, fixture_shards, docs]
+    needs: [scope, prepare, test_shards, docs]
     runs-on: ubuntu-24.04
     steps:
       - name: Require the selected gate to pass
@@ -141,7 +152,7 @@ jobs:
           DOCS_ONLY: ${{ needs.scope.outputs.docs_only }}
           SCOPE_RESULT: ${{ needs.scope.result }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
-          SHARDS_RESULT: ${{ needs.fixture_shards.result }}
+          SHARDS_RESULT: ${{ needs.test_shards.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
         run: |
           if [[ "$SCOPE_RESULT" != success ]]; then

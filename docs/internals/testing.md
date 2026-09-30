@@ -211,12 +211,29 @@ tree green". In order it runs `cargo fmt --check`, then
 docs lint, then the unit tests, followed by the mdtest, example, C
 compiler-import, and C++ semantic-import fixture harnesses one after the
 other. CI uses the same script in two internal modes for code-affecting
-changes: `--ci-prepare` runs the shared checks, unit tests, and compiler-import
-fixtures, then archives the mdtest and example test binaries. Two ordinary
-Linux runners use `--ci-shard` to run the mdtest and example suites separately
-in parallel. Each suite remains serial within its runner, and each runner has
-the full environment needed by C++ fixtures. A final `test` check requires
-preparation and both suites to pass. For docs-only changes, CI and the explicit
+changes: `--ci-prepare ARTIFACTS` runs formatting, Clippy, documentation, and
+the environment-setup regressions, then builds one archive containing all
+selected test binaries and copies the compiled C++ exporter beside it. It
+does not execute Rust tests. Six ordinary Linux runners consume that same
+artifact: four deterministic nextest hash partitions cover the unit and
+compiler-import tests, and mdtests and examples each have a dedicated runner.
+`--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
+without recompiling Click or the exporter. The mdtest and example suites
+remain serial within their respective runners. A final `test` check requires
+preparation and every test partition to pass.
+
+`scripts/setup-environment.sh` installs pinned nextest release binaries and
+reuses a matching installed version, including source-built versions without
+commit metadata. On Ubuntu 24.04 it caches the pinned LLVM package files;
+fresh runners restore those files instead of reinstalling Clang. CI caches
+these tools across runs, independently of the source revision, and caches
+Rust dependencies for the shared build job. Consumers use `--test-runner`,
+which needs nextest and LLVM but skips the Rust toolchain and mdBook.
+GitHub checks out the same source revision at the same absolute path on every
+runner, preserving fixture paths embedded at compile time; test archives are
+extracted at the checkout root for embedded CLI paths.
+
+For docs-only changes, CI and the explicit
 `scripts/check.sh --docs-only` path run only the focused documentation gate
 described above. The proof fixtures verify their inputs on every core. Judge
 the verdict from the script's exit status.

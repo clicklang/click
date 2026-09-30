@@ -17,39 +17,60 @@ if [[ "${1:-}" == "--docs-only" ]]; then
     exec scripts/check-docs.sh "$@"
 fi
 
-parallel_fixture_targets=(--test mdtests --test examples)
-single_runner_fixture_targets=(
+fixture_targets=(
+    --test mdtests
+    --test examples
     --test compiler_import
     --test cpp_import
     --test bitcoin_core_money_range
 )
-fixture_targets=("${parallel_fixture_targets[@]}" "${single_runner_fixture_targets[@]}")
+unit_targets=(--lib --bin click --test documentation --test condition_transport_api)
 
 if [[ "${1:-}" == "--ci-shard" ]]; then
-    archive="${2:?usage: scripts/check.sh --ci-shard ARCHIVE SUITE}"
-    suite="${3:?usage: scripts/check.sh --ci-shard ARCHIVE SUITE}"
+    artifacts="${2:?usage: scripts/check.sh --ci-shard ARTIFACTS SUITE [SHARD/TOTAL]}"
+    suite="${3:?usage: scripts/check.sh --ci-shard ARTIFACTS SUITE [SHARD/TOTAL]}"
+    partition="${4:-1/1}"
+    nextest_args=()
     case "$suite" in
-        mdtests|examples) ;;
-        *) echo "error: CI fixture suite must be mdtests or examples" >&2; exit 2 ;;
+        unit)
+            filter='not (binary(mdtests) | binary(examples))'
+            nextest_args=(--partition "hash:$partition")
+            ;;
+        mdtests|examples)
+            filter="binary($suite)"
+            nextest_args=(--no-capture)
+            ;;
+        *) echo "error: CI suite must be unit, mdtests, or examples" >&2; exit 2 ;;
     esac
 
     # A few expansion regressions recurse deeply enough to overflow the
     # default per-test thread stack on otherwise healthy runners.
     export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
-    # The mdtest and example suites include C++ fixtures that execute the
-    # repository-owned exporter, so each full-environment runner builds it.
+    # All consumers reuse the exporter and Rust binaries from the build job.
+    # Keep the exporter in a tar file because Actions artifacts do not retain
+    # executable permissions on individual uploaded files.
+    tar -xf "$artifacts/exporter.tar" -C "$artifacts"
     export CLICK_CPP_EXPORTER
-    CLICK_CPP_EXPORTER="$(scripts/build-cpp-exporter.sh)"
+    CLICK_CPP_EXPORTER="$(cd "$artifacts" && pwd -P)/click-cpp-exporter"
+    if [[ ! -x "$CLICK_CPP_EXPORTER" ]]; then
+        echo "error: shared C++ exporter is missing at $CLICK_CPP_EXPORTER" >&2
+        exit 1
+    fi
 
-    cargo nextest run --archive-file "$archive" --filterset "binary($suite)" --no-capture
+    # Extract at the checkout root so compile-time CARGO_BIN_EXE paths still
+    # work on GitHub's identical build/test checkout paths. No Cargo build or
+    # Rust toolchain is needed to run a nextest archive.
+    cargo-nextest nextest run --archive-file "$artifacts/tests.tar.zst" \
+        --extract-to "$PWD" --extract-overwrite \
+        --filterset "$filter" "${nextest_args[@]}"
     exit 0
 fi
 
-ci_archive=""
+ci_artifacts=""
 nextest_args=("$@")
 if [[ "${1:-}" == "--ci-prepare" ]]; then
-    ci_archive="${2:?usage: scripts/check.sh --ci-prepare ARCHIVE}"
+    ci_artifacts="${2:?usage: scripts/check.sh --ci-prepare ARTIFACTS}"
     nextest_args=()
 fi
 
@@ -60,6 +81,7 @@ export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 # Formatting is part of the gate: the same command judges locally and in CI,
 # so drift cannot accumulate. Run `cargo fmt` to fix a failure.
 cargo fmt --check
+scripts/test-setup-environment.sh
 
 # The first C++ frontend is a small repository-owned LibTooling executable.
 # Build it before Rust tests so the gate fails clearly when the exact pinned
@@ -97,19 +119,20 @@ fi
 # Cargo also discovers those source files as standalone binaries under
 # `src/bin/`, so `--bins` runs their identical test bodies a second time.
 # Test the shipped entry point once; clippy above still checks every target.
-cargo nextest run --lib --bin click --test documentation --test condition_transport_api "${nextest_args[@]}"
+if [[ -n "$ci_artifacts" ]]; then
+    mkdir -p "$ci_artifacts"
+    cargo nextest archive "${unit_targets[@]}" "${fixture_targets[@]}" \
+        --archive-file "$ci_artifacts/tests.tar.zst"
+    tar -cf "$ci_artifacts/exporter.tar" \
+        -C "$(dirname "$CLICK_CPP_EXPORTER")" "$(basename "$CLICK_CPP_EXPORTER")"
+    exit 0
+fi
+
+cargo nextest run "${unit_targets[@]}" "${nextest_args[@]}"
 # The fixture harnesses run one at a time, and each verifies its fixtures on
 # every core. Their proof verdicts come from deterministic tactic-work
 # budgets; nextest's outer timeout is process-level hang containment, not a
 # proof budget. Their output is not captured: each fixture prints a line when
 # it starts and when it finishes, so a stall is visible as it happens and
 # named.
-if [[ -n "$ci_archive" ]]; then
-    # Compiler-import tests need LLVM and stay on this full-environment runner.
-    # The larger mdtest and example suites are archived and partitioned across
-    # independent standard runners below.
-    cargo nextest run "${single_runner_fixture_targets[@]}" --test-threads 1 --no-capture
-    cargo nextest archive "${parallel_fixture_targets[@]}" --archive-file "$ci_archive"
-else
-    cargo nextest run "${fixture_targets[@]}" --test-threads 1 --no-capture "${nextest_args[@]}"
-fi
+cargo nextest run "${fixture_targets[@]}" --test-threads 1 --no-capture "${nextest_args[@]}"
