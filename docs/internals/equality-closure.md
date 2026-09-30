@@ -614,6 +614,14 @@ Already admitted single-store edges compose through ordinary graph closure;
 unknown store-address aliases require a later producer check once the needed
 separation is available. Unregistered intermediate edges remain unknown.
 
+A recorded `CellsForgotten` edge also preserves a read: it removes cached
+knowledge without writing program bytes. The producer admits equality with
+that edge's immediate base, subject to the same access-width agreement.
+Unrecorded cell-map pruning supplies no such authority. This rule does not
+cross a subsequent overlapping write or havoc. Publication and lookup still
+check just one selected transition; increasing older history does not increase
+registration work.
+
 A retained cell-map entry alone is insufficient preservation evidence:
 low-level snapshot construction can leave it present after a write through a
 possibly aliasing address. Other memory transitions and separation forms

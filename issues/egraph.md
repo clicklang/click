@@ -128,6 +128,31 @@ the actual rbtree leaf before selecting its next missing transition; do not
 infer that the complete sibling-write refold now works from this one-edge
 regression alone.
 
+## Sibling-write integration recheck, 2026-09-30
+
+The no-write fixture `mdtests/egraph_recursive_child_alias.md` remains green.
+Its sibling-write reduction adds `int tag` to the struct, adds `owns &p->tag`
+to the nonempty resource arm, changes the C body to `p->tag = 1;`, and inserts
+`step();` between unfold and refold. It still fails with `selected child does
+not satisfy the proposed parent model`; the ordinary refold has not been
+established by the one-store graph regression.
+
+Bounded investigation identifies the final read's snapshot chain as `Store`
+then `CellsForgotten`, then three `CellsSeeded` edges, then the original child
+snapshot. The store admission already connects the final read to its immediate
+base. A resource-free red regression identified missing equality across a
+recorded `CellsForgotten` edge. The shared producer now admits that immediate
+no-write edge, with branch isolation, late read aliases, overwrite/havoc
+negatives, and constant registration work beside growing older histories.
+
+That one-edge addition does not complete this integration case: constructing
+a source load term does not publish a read at each intermediate snapshot.
+The next boundary is incremental publication/composition across materialized
+and forgotten snapshots. Do not silently add a history walk to equality
+queries or `fold`, or claim the rbtree leaf is fixed. Keep this reduction's C
+write unchanged and require expansion/rechecking after ordinary verification
+succeeds.
+
 ## Reduced rbtree recheck, 2026-09-29
 
 The untouched frontier still reports statement 42, `augment_rotate(gparent,
