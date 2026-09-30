@@ -6054,6 +6054,16 @@ fn evaluate_resource_count_paths(
                     .creation
                     .as_ref()
                     .ok_or(ExecutionLimit::AuthorityCountNeedsOwnership)?;
+                // Consuming an authority after its population is proved empty
+                // preserves that exact zero as an immutable observation. It
+                // does not restore ownership or permission to change members.
+                if creation.checked_empty_population(&description) {
+                    return Ok(SpecExpressionPath {
+                        value: CValue::Int32(Bitvector32Term::Constant(0)),
+                        facts,
+                        obligations,
+                    });
+                }
                 if !state
                     .resources
                     .satisfies_fact(&authority, &path_assumptions)

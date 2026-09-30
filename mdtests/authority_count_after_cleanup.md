@@ -1,7 +1,7 @@
-# Retired authority cannot create a new member
+# An empty population remains observable after free
 
-Consuming an empty authority preserves its proven zero count. That observation
-does not restore authority or permit another membership change.
+The exact family whose authority was consumed at zero remains empty. The
+proof can use that fact before and after freeing the anchor.
 
 ```c filename=spent_count.c
 struct object { int32 refs; };
@@ -37,10 +37,13 @@ int32 spent_count() {
     unfold(control(obj));
     unfold(authority(reference(obj)));
     have count(reference(obj)) == 0 by simp;
-    fold(reference(obj));
+    step();
+    have count(reference(obj)) == 0 by simp;
+    execute();
+    simp();
 }
 ```
 
 ```expect
-fail: Requires owns authority(reference(p))
+pass
 ```

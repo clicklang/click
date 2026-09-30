@@ -25,15 +25,18 @@ fixtures now use authority: population/body equality, population lifetime,
 independent populations, and retain/nonfinal release. Their external entry
 counts are arbitrary and observed through checked current control ownership.
 The missing-private-body negative and ordinary abstract transfer fixture also
-use authority. The nonfinal-allocation and initialized-cleanup fixtures remain
-legacy until their final-zero postconditions have an agreed observation rule;
-the full sequential group is not yet complete.
+use authority. The nonfinal-allocation and initialized-cleanup fixtures now
+also use authority, preserving their C and all original count postconditions.
+Checked empty authority cleanup preserves a read-only zero for the exact
+family, including after free. Initialization uses an ordinary storage resource
+containing authority, independent of the not-yet-initialized C counter. The
+sequential refcount group is complete.
 
 ## Source-backed example and design groups
 
 | Group and current path | Checked-in files | Existing property to preserve |
 | --- | --- | --- |
-| Sequential refcount project; authority | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. Four related count-contract fixtures also use authority; remaining fixtures are listed above. |
+| Sequential refcount project; authority | `examples/refcount/refcount.click`, `examples/refcount/README.md` | Counter equals the reference population through initialize, retain, symbolic retain/release, nonfinal release, final free, allocation failure, and callers. A final release needs the final member and reclaims once. All six related positive count-contract fixtures also use authority. |
 | Shared parent; legacy | `design/shared-heap-probes/shared_parent.click`, `design/shared-heap-probes/README.md` | Parent wrappers carry child references through attachment, detach, nested calls, both destruction orders, surviving-parent reads, and final reclamation. The design probe's C is a source pattern to retain. |
 | Bounded pool; legacy | `examples/bounded-pool/bounded_pool.click`, `examples/bounded-pool/README.md` | `count(pool_object(pool, _))` is a per-pool wildcard total; exact objects and slot counts support checkout, return, resize, zero capacity, private object writes, and source-to-destination transfer. |
 | Earlier authority design; non-executable | `design/concurrency-probes/shared-count-authority.md`, `design/concurrency-probes/explicit-authority.md`, `design/concurrency-probes/README.md` | Preserve the motivating hostile cases and protocol questions; these documents do not define the approved source interface. The migration issue supersedes the whole-population mutex-custody plan. |

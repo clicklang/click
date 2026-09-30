@@ -4497,7 +4497,9 @@ impl CState {
         if !events.owns_population_authority(&description) {
             return Err("Requires owns authority(R(p))".into());
         }
-        let count = if anchor.offset == PointerOffsetTerm::Constant(0) {
+        let count = if anchor.block != PointerBlock::ExternalArgument
+            && anchor.offset == PointerOffsetTerm::Constant(0)
+        {
             events
                 .observe_term(&anchor.block, description.family())
                 .map_err(|_| "Requires a current authority count")?
@@ -4546,15 +4548,15 @@ impl CState {
         Ok(next)
     }
 
-    /// Authenticate the only symbolic-count import shape. The control's
-    /// declared fact ties the entry counter cell to this exact population;
-    /// neither an arbitrary memory load nor an unrelated count is accepted.
+    /// Authenticate an exact authority-bearing wrapper. An explicit counter
+    /// equality supplies its owned cell load as the entry count witness; a
+    /// generic wrapper leaves the count arbitrary for the ledger to name.
     pub(in crate::kernel) fn checked_authority_wrapper_import_components(
         &self,
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceDescription, Bitvector32Term), String> {
+    ) -> Result<(ResourceDescription, Option<Bitvector32Term>), String> {
         if !self.resources.contains_exact_representation(selected) {
             return Err("Requires the declared owned control resource".into());
         }
@@ -4590,9 +4592,8 @@ impl CState {
         if children.len() != 1 + memory_cells.len() + allocations.len()
             || allocations.len() > 1
             || allocations.iter().any(|(base, _)| *base != &anchor)
-            || !owns_counter
         {
-            return Err("control must own the exact counter cell and authority".into());
+            return Err("control must own exact memory, allocation, and authority".into());
         }
         let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
         let is_counter_load = |expression: &SpecExpression| {
@@ -4633,17 +4634,17 @@ impl CState {
             || (is_population_count(left) && is_counter_load(right)))
         });
         if !exact_count_fact {
-            return Err(format!(
-                "Requires the counter cell to equal count({}({parameter}))",
-                description.family()
-            ));
+            return Ok((description, None));
+        }
+        if !owns_counter {
+            return Err("coupled control must own its exact counter cell".into());
         }
         Ok((
             description,
-            Bitvector32Term::MemoryLoad(
+            Some(Bitvector32Term::MemoryLoad(
                 intern_c_memory_ref(&self.memory),
                 Box::new(anchor.clone()),
-            ),
+            )),
         ))
     }
 
@@ -4855,7 +4856,7 @@ impl CState {
                 .without_fact_incrementally(selected, assumptions)
                 .ok_or("Requires owns authority(R(p))")?;
             let (history, evidence) = if imported_retirement {
-                events.checked_retire_imported(description)
+                events.checked_retire_imported(description, assumptions)
             } else {
                 events.checked_retire(&anchor.block, description)
             }

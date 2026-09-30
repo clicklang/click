@@ -33,6 +33,7 @@ void child_release(struct child* obj) {
     if old(obj->refs) > 1 {
         produces child_control(obj);
     }
+    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
     ensures old(count(child_ref(obj))) > 1 implies obj->payload == old(obj->payload);
 } by {
     unfold(child_control(obj));

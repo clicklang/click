@@ -196,12 +196,13 @@ return. A verified helper can also create or consume one exact member with a
 private owned-memory body while returning authority. Its contract transfers
 the entire body through ordinary memory `consumes` or `produces` clauses, its
 standalone proof checks the birth or death, and the call applies that change
-to the concrete ledger. Creation checks live anchor storage. Other contract transitions, symbolic totals,
-recorded-state count, field-bearing or nested member bodies, and worker calls
-remain unsupported in authority mode. This is not yet a usable general counted-resource
-implementation. `construct(...)` has not been extended. The remainder of
-checkpoint 2 and checkpoints 3–12 remain
-pending.
+to the concrete ledger. Creation checks live anchor storage. Checkpoints 1–4 now support the sequential
+refcount group, current and historical exact count, checked authority-bearing
+wrappers, private member bodies, numeric nested helper transfers, conditional
+release, and standalone symbolic batches. Symbolic nested transfers,
+field-bearing/wildcard populations, shared-parent migration, and worker/mutex
+migration remain pending in checkpoints 5–12. `construct(...)` has not been
+extended; authority establishment and empty cleanup use `fold`/`unfold`.
 Update this status and the inventory as commits land.
 
 | Checkpoints | Deliverable | What happens to old clients |
@@ -380,13 +381,25 @@ and reject stranded ownership. Their postconditions observe the checked member
 delta before the caller resumes. Symbolic nested transfers remain explicitly
 unsupported; standalone symbolic batch proofs remain supported.
 
-The remaining sequential fixtures are
+The sequential refcount group is complete: both
 `counted_release_preserves_nonfinal_allocation.md` and
-`population_initialized_cleanup.md`. Their original postconditions observe
-`count(R(p))` even after final retirement and free. Decide whether checked
-retirement permits only a final-zero observation before migrating these; do
-not silently weaken those claims or grant population-update permission after
-retirement. Do not mark the sequential group complete until both use authority.
+`population_initialized_cleanup.md` now use authority with unchanged C and
+all original postconditions. Consuming authority requires proof that the exact
+population is empty; this preserves a read-only `count(R(p)) == 0`, including
+after free. It grants no membership-update, storage-access, or reestablishment
+permission. An unrelated freed pointer cannot supply that evidence, and a new
+object lifetime cannot reuse it. Imported authority cleanup independently
+checks the global total, rather than merely local member exhaustion.
+
+A generic authority-bearing storage resource can describe an object before its
+C counter is initialized. Its helper-entry count is an arbitrary opaque value;
+a declared counter equality is used only when the wrapper actually provides
+one. Initialization can require zero and produce the first reference using
+ordinary contracts. Checked wrapper opening supplies authority for helper
+preconditions and historical count postconditions without changing actual
+custody. Both migrated fixtures pass verification and expansion audit;
+`authority_count_after_cleanup.md` covers zero before and after free, while
+spent-authority and unregistered-family negatives preserve permission checks.
 
 ### 5. Migrate shared-parent ownership
 

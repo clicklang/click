@@ -3944,7 +3944,12 @@ fn execute_verified_function_applications_with_suspension(
                         continue;
                     }
                 };
-            let (retired, _) = match spent.checked_retire(&pointer.pointer().block, &description) {
+            let retirement = if spent.recognizes_imported_population(&description) {
+                spent.checked_retire_imported(&description, &effective_assumptions)
+            } else {
+                spent.checked_retire(&pointer.pointer().block, &description)
+            };
+            let (retired, _) = match retirement {
                 Ok(exchange) => exchange,
                 Err(refusal) => {
                     paths.push(resource_call_failure(&format!(
@@ -5062,22 +5067,32 @@ fn prepare_verified_function_call<'a>(
         .any(|fact| matches!(fact.resource(), CResource::Composite { .. }))
     {
         let definitions = contract_interface.composite_resource_definitions();
-        expand_all_composite_resource_facts(
-            entry_contract_state.resources(),
-            definitions,
-            entry_contract_state.memory(),
-            &path_assumptions,
-        )
-        .map(|opened| {
-            let opened = expand_decidable_composite_resource_frontier(
-                &opened,
+        let opened = if entry_contract_state.uses_population_authority_semantics() {
+            expand_all_composite_resource_facts_at_state(
+                entry_contract_state.resources(),
+                definitions,
+                &entry_contract_state,
+                &path_assumptions,
+            )
+        } else {
+            expand_all_composite_resource_facts(
+                entry_contract_state.resources(),
                 definitions,
                 entry_contract_state.memory(),
                 &path_assumptions,
-            );
-            entry_contract_state.clone().with_resource_context(opened)
-        })
-        .unwrap_or_else(|| entry_contract_state.clone())
+            )
+        };
+        opened
+            .map(|opened| {
+                let opened = expand_decidable_composite_resource_frontier(
+                    &opened,
+                    definitions,
+                    entry_contract_state.memory(),
+                    &path_assumptions,
+                );
+                entry_contract_state.clone().with_resource_context(opened)
+            })
+            .unwrap_or_else(|| entry_contract_state.clone())
     } else {
         entry_contract_state.clone()
     };
@@ -12014,6 +12029,22 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     // the whole fact list per ensure was quadratic in the ensure count, and
     // uncharged. The facts and obligations are sets of assumptions, so
     // assuming a later fact after the obligations names the same context.
+    let opened_entry_state = if entry_contract_state.uses_population_authority_semantics() {
+        expand_all_composite_resource_facts_at_state(
+            entry_contract_state.resources(),
+            interface.composite_resource_definitions(),
+            entry_contract_state,
+            effective_assumptions,
+        )
+        .map(|resources| {
+            entry_contract_state
+                .clone()
+                .with_resource_context(resources)
+        })
+    } else {
+        None
+    };
+    let entry_contract_state = opened_entry_state.as_ref().unwrap_or(entry_contract_state);
     let mut ensure_assumptions =
         assumptions_with_path_context(effective_assumptions, facts, obligations);
     let mut facts_have_memory_effect_summary = facts

@@ -1,7 +1,7 @@
-# Retired authority cannot create a new member
+# Free alone does not establish an unrelated empty population
 
-Consuming an empty authority preserves its proven zero count. That observation
-does not restore authority or permit another membership change.
+Without checked authority cleanup for this exact family, freeing a pointer
+does not justify a count observation.
 
 ```c filename=spent_count.c
 struct object { int32 refs; };
@@ -32,15 +32,13 @@ int32 spent_count() {
     step();
     branch { then { step(); simp(); } else {} }
     step();
-    fold(authority(reference(obj)));
-    fold(control(obj));
-    unfold(control(obj));
-    unfold(authority(reference(obj)));
+    step();
     have count(reference(obj)) == 0 by simp;
-    fold(reference(obj));
+    execute();
+    simp();
 }
 ```
 
 ```expect
-fail: Requires owns authority(reference(p))
+fail: count(...) requires owning authority for that population
 ```

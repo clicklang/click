@@ -26,10 +26,19 @@ int32 cleanup(int32 payload) {
 }
 ```
 
-```click
-resource child_ref(obj: struct child*) {
+```click resource_semantics=authority
+resource child_ref(obj: struct child*) {}
+
+resource child_storage(obj: struct child*) {
     contains allocation(obj, sizeof(struct child));
     owns object(obj);
+    owns authority(child_ref(obj));
+}
+
+resource child_control(obj: struct child*) {
+    contains allocation(obj, sizeof(struct child));
+    owns object(obj);
+    owns authority(child_ref(obj));
     fact defined(obj->refs);
     fact defined(obj->payload);
     fact obj->refs == count(child_ref(obj));
@@ -38,51 +47,53 @@ resource child_ref(obj: struct child*) {
 verifying "cleanup.c";
 
 void child_init(struct child* obj, int32 payload) {
-    consumes allocation(obj, sizeof(struct child));
-    consumes object(obj);
+    requires count(child_ref(obj)) == 0;
+    owns child_storage(obj);
     produces child_ref(obj);
+    ensures obj->refs == 1;
+    ensures defined(obj->refs);
+    ensures defined(obj->payload);
     ensures obj->payload == payload;
 } by {
-    execute();
+    unfold(child_storage(obj));
+    step();
+    step();
     fold(child_ref(obj));
+    fold(child_storage(obj));
+    execute();
     simp();
 }
 
 void child_release(struct child* obj) {
     requires 1 <= obj->refs;
+    consumes child_control(obj);
     consumes child_ref(obj);
+    if old(obj->refs) > 1 {
+        produces child_control(obj);
+    }
     ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;
     ensures old(count(child_ref(obj))) > 1 implies obj->payload == old(obj->payload);
 } by {
+    unfold(child_control(obj));
     if obj->refs == 1 {
         unfold(child_ref(obj));
+        unfold(authority(child_ref(obj)));
         execute();
         simp();
     } else {
-        open(child_ref(obj)) {
-            execute();
+        unfold(child_ref(obj));
+        have 1 < obj->refs by {
+            arithmetic() using { 1 <= obj->refs; obj->refs != 1; }
         }
-        have 1 < old(obj->refs) by {
-            arithmetic() using {
-                1 <= old(obj->refs);
-                old(obj->refs) != 1;
+        have obj->refs - 1 >= 1 by {
+            apply(int32_above_one_predecessor_is_at_least_one(obj->refs)) using {
+                1 < obj->refs;
             }
         }
-        have old(obj->refs) - 1 >= 1 by {
-            apply(int32_above_one_predecessor_is_at_least_one(old(obj->refs))) using {
-                1 < old(obj->refs);
-            }
-        }
-        have old(obj->refs) == old(count(child_ref(obj))) by { simp(); }
-        have old(count(child_ref(obj))) > 1 by {
-            simp() using {
-                old(obj->refs) > 1;
-                old(obj->refs) == old(count(child_ref(obj)));
-            }
-        }
-        have count(child_ref(obj)) != 0 by {
-            arithmetic() using { old(count(child_ref(obj))) > 1; }
-        }
+        step();
+        step();
+        fold(child_control(obj));
+        execute();
         simp();
     }
 }
@@ -93,7 +104,11 @@ int32 cleanup(int32 payload) {
     step();
     step();
     branch { then { step(); simp(); } else {} }
+    fold(authority(child_ref(kid)));
+    fold(child_storage(kid));
     step();
+    unfold(child_storage(kid));
+    fold(child_control(kid));
     step();
     step();
     branch { then { step(); step(); simp(); } else {} }

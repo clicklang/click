@@ -859,7 +859,22 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let (spent, _) = imported_with_member
         .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
         .unwrap();
-    let (retired, _) = spent.checked_retire_imported(&description).unwrap();
+    let retirement_assumptions =
+        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(spent.observe_symbolic(&description).unwrap().entry_count),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            true,
+        ));
+    assert!(
+        spent
+            .checked_retire_imported(&description, &PureFactContext::new())
+            .is_err()
+    );
+    let (retired, _) = spent
+        .checked_retire_imported(&description, &retirement_assumptions)
+        .unwrap();
     assert!(!retired.owns_population_authority(&description));
     assert_eq!(observed.delta, 0);
     assert_eq!(observed.entry_owned_members, 0);
@@ -909,7 +924,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     );
     let mut retired_control = folded.clone();
     Arc::make_mut(&mut retired_control.population_effects).creation = Some(retired.clone());
-    assert!(evaluate_count(&retired_control).is_err());
+    assert_eq!(
+        evaluate_count(&retired_control).unwrap()[0].value,
+        CValue::Int32(Bitvector32Term::Constant(0))
+    );
     let mut nested_control = folded.clone();
     Arc::make_mut(&mut nested_control.population_effects).creation = Some(imported.enter_call());
     assert!(evaluate_count(&nested_control).is_err());
@@ -961,7 +979,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert!(evaluate_count(&nested).is_err());
     let mut retired_state = projected.clone();
     Arc::make_mut(&mut retired_state.population_effects).creation = Some(retired);
-    assert!(evaluate_count(&retired_state).is_err());
+    assert_eq!(
+        evaluate_count(&retired_state).unwrap()[0].value,
+        CValue::Int32(Bitvector32Term::Constant(0))
+    );
     assert!(
         evaluate_count(&state).is_err(),
         "a folded wrapper alone cannot read count"
@@ -994,11 +1015,25 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert!(imported.observe_symbolic(&wrong).is_none());
     let mut wrong_fact = definition.clone();
     wrong_fact.facts.clear();
-    assert!(
+    let arbitrary = entry
+        .import_checked_control_wrapper(&state, &selected, &wrong_fact, &PureFactContext::new())
+        .unwrap();
+    let arbitrary_count = arbitrary
+        .observe_symbolic(&description)
+        .unwrap()
+        .entry_count;
+    assert!(matches!(arbitrary_count, Bitvector32Term::Variable(_)));
+    assert_ne!(arbitrary_count, Bitvector32Term::Constant(0));
+    assert_eq!(
+        arbitrary_count,
         entry
             .import_checked_control_wrapper(&state, &selected, &wrong_fact, &PureFactContext::new())
-            .is_err()
+            .unwrap()
+            .observe_symbolic(&description)
+            .unwrap()
+            .entry_count
     );
+    assert!(!arbitrary.checked_empty_population(&description));
     assert!(
         entry
             .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
@@ -1376,4 +1411,116 @@ fn opaque_transfer_and_finish_index_scale_with_selected_population() {
         work.push(measured);
     }
     assert!(work[2] < work[0].saturating_mul(2) + 40, "{work:?}");
+}
+
+#[test]
+fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
+    let block = PointerBlock::Heap(980_100);
+    let description = member_description(block.clone());
+    let created = CreationEvents::new().created(block.clone());
+    assert!(!created.checked_empty_population(&description));
+    let (established, _) = created.checked_establish(&block, &description).unwrap();
+    assert!(!established.checked_empty_population(&description));
+    let (retired, _) = established.checked_retire(&block, &description).unwrap();
+    assert!(retired.checked_empty_population(&description));
+    assert!(!retired.owns_population_authority(&description));
+    assert!(
+        retired
+            .checked_member_exchange(&block, &description, true)
+            .is_err()
+    );
+    let freed = retired.retired(&block).unwrap();
+    assert!(freed.checked_empty_population(&description));
+    let wrong_family = ResourceDescription::new(
+        "other_reference".into(),
+        description.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    assert!(!freed.checked_empty_population(&wrong_family));
+    let wrong_offset = ResourceDescription::new(
+        "reference".into(),
+        vec![
+            CValue::pointer(Pointer {
+                block: block.clone(),
+                offset: PointerOffsetTerm::Constant(4),
+            })
+            .into(),
+        ]
+        .into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    );
+    assert!(!freed.checked_empty_population(&wrong_offset));
+    let recreated = freed.created(block.clone());
+    assert!(!recreated.checked_empty_population(&description));
+}
+
+#[test]
+fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry_count = Bitvector32Term::Variable(Variable(980_200));
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            1,
+            Some(entry_count.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    let (spent, _) = entry
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    assert!(!spent.checked_empty_population(&description));
+    assert_eq!(
+        spent
+            .checked_retire_imported(&description, &PureFactContext::new())
+            .unwrap_err(),
+        CreationRefusal::UnknownTotal
+    );
+    let wrong_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(entry_count.clone()),
+            Box::new(Bitvector32Term::Constant(2)),
+        ),
+        true,
+    ));
+    assert!(
+        spent
+            .checked_retire_imported(&description, &wrong_total)
+            .is_err()
+    );
+    let right_total = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(entry_count),
+            Box::new(Bitvector32Term::Constant(1)),
+        ),
+        true,
+    ));
+    let (retired, _) = spent
+        .checked_retire_imported(&description, &right_total)
+        .unwrap();
+    assert!(retired.checked_empty_population(&description));
+    assert!(!retired.owns_population_authority(&description));
+}
+
+#[test]
+fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
+    let mut work = Vec::new();
+    for size in [64_u64, 256, 1024] {
+        let mut events = CreationEvents::new();
+        for id in 0..size {
+            let block = PointerBlock::Heap(990_000 + id);
+            let description = member_description(block.clone());
+            events = events.created(block.clone());
+            events = events.checked_establish(&block, &description).unwrap().0;
+            events = events.checked_retire(&block, &description).unwrap().0;
+            events = events.retired(&block).unwrap();
+        }
+        let selected = member_description(PointerBlock::Heap(990_000 + size / 2));
+        let ((), measured) = crate::persistent::measure_persistent_work(|| {
+            assert!(events.checked_empty_population(&selected));
+        });
+        work.push(measured);
+    }
+    assert!(work[2] < work[0].saturating_mul(2) + 10, "{work:?}");
 }

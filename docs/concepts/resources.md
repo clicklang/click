@@ -348,19 +348,27 @@ resource object_control(obj: struct object*) {
 }
 ```
 
-On this path, `count(object_ref(obj))` requires the matching live authority.
+On this path, observing a live population with `count(object_ref(obj))`
+requires the matching authority.
 An owned folded `object_control(obj)` also permits the observation: Click checks its
 definition and current custody as if opening it for the count read and closing
 it again. The observation grants no field access or permission to change the
-population. A view, a control for another population, or a transferred or
-retired authority cannot justify it. At function entry the count is arbitrary,
+population. A view, a control for another population, or a transferred
+authority cannot justify it. At function entry the count is arbitrary,
 constrained by the control invariant and supplied preconditions; it is not zero.
 Contracts and proof expressions use the same checked rule.
 
 Creating or consuming a reference requires exposed authority, and opening the
 control exposes its owned counter field. Updating both the field and the
 population by the same amount lets the proof restore the control invariant.
-Authority must be retired at count zero before its storage is freed.
+Authority must be consumed at count zero before its storage is freed. This
+checked operation preserves the fact that the exact family is empty:
+`count(object_ref(obj))` can still equal zero in a final postcondition after
+`unfold(authority(object_ref(obj)))` and after `free(obj)`. It grants no
+ownership, field access, or permission to create or consume members. Merely
+knowing that a pointer was freed does not establish an unrelated family’s
+count. The [cleanup fixture](https://github.com/lacker/click/blob/master/mdtests/authority_count_after_cleanup.md)
+checks this observation before and after free.
 
 Ordinary wrappers can package existing members with `contains R(p)` and later
 expose them with `unfold`; these transfers require no authority and do not
@@ -376,6 +384,14 @@ authority, and frees storage. Numeric nested calls transfer these capabilities
 explicitly; a helper cannot strand a reference while returning control.
 The [conditional release fixture](https://github.com/lacker/click/blob/master/mdtests/authority_conditional_release_transfer.md)
 checks both lifetime branches and the caller’s exact count and payload claims.
+
+An authority-bearing resource need not tie its count to a C field. Before an
+initializer writes the C counter, its storage resource can carry authority
+with an arbitrary logical entry count; `requires count(R(p)) == 0` establishes
+the initializer’s empty-population precondition. Click does not assume zero
+or read an uninitialized field to obtain that count. The
+[initialization fixture](https://github.com/lacker/click/blob/master/mdtests/population_initialized_cleanup.md)
+checks that the initializer still produces its first reference.
 Standalone symbolic batch exchange is supported, but symbolic nested transfers
 are not yet supported on this migration path.
 

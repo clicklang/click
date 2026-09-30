@@ -68,6 +68,8 @@ struct Root {
     /// Call completion checks this index without visiting unrelated imports.
     opaque_holders: PersistentMap<Holder, u32>,
     opaque_transfers: Mutex<BTreeMap<(Holder, Holder, u64, bool, u32), CreationEvents>>,
+    opaque_entry_counts: Mutex<BTreeMap<ResourceDescription, Bitvector32Term>>,
+    empty_populations: PersistentMap<PointerBlock, PersistentSet<String>>,
 }
 
 #[derive(Clone)]
@@ -262,10 +264,9 @@ impl CreationEvents {
         self.import_opaque_contract_population_inner(description, owned_members, None, None, None)
     }
 
-    /// Import a folded control only after independently checking its exact
-    /// owned cell, contained authority, and `cell == count(family)` body fact.
-    /// The entry cell load is then a sound witness for this one population's
-    /// arbitrary initial total. Direct authority imports never receive one.
+    /// Import only an exact owned wrapper and its contained authority. A
+    /// declared counter equality supplies a checked entry load; otherwise a
+    /// fresh private symbol names this population's arbitrary entry total.
     pub(in crate::kernel) fn import_checked_control_wrapper(
         &self,
         state: &CState,
@@ -278,6 +279,32 @@ impl CreationEvents {
         }
         let (description, entry_count) =
             state.checked_authority_wrapper_import_components(selected, definition, assumptions)?;
+        let entry_count = match entry_count {
+            Some(count) => count,
+            None => {
+                if let Some(existing) = self.0.opaque_imports.get(&description) {
+                    existing
+                        .entry_count
+                        .clone()
+                        .ok_or("opaque population has no entry count witness")?
+                } else {
+                    let mut counts = self
+                        .0
+                        .opaque_entry_counts
+                        .lock()
+                        .expect("opaque entry count cache");
+                    if let Some(count) = counts.get(&description) {
+                        count.clone()
+                    } else {
+                        let variable = crate::kernel::Variable::allocate_fresh()
+                            .ok_or("opaque entry count identity exhausted")?;
+                        let count = Bitvector32Term::Variable(variable);
+                        counts.insert(description.clone(), count.clone());
+                        count
+                    }
+                }
+            }
+        };
         let member = CResource::Composite {
             name: description.family().to_owned(),
             arguments: description.arguments().to_vec().into(),
@@ -384,6 +411,8 @@ impl CreationEvents {
                     + u32::from(owned_members > 0 || symbolic_members.is_some()),
             ),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports,
         })))
     }
@@ -747,6 +776,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: holders,
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: imports,
         }));
         Ok(self
@@ -757,6 +788,28 @@ impl CreationEvents {
             .entry(key)
             .or_insert(successor)
             .clone())
+    }
+
+    /// Immutable zero evidence from an actual checked empty retirement. This
+    /// grants neither resource ownership nor permission to recreate authority.
+    pub(in crate::kernel) fn checked_empty_population(
+        &self,
+        description: &ResourceDescription,
+    ) -> bool {
+        if let Some(import) = self.0.opaque_imports.get(description) {
+            return import.description == *description && import.retired_authority;
+        }
+        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            return false;
+        };
+        let block = &pointer.pointer().block;
+        if self.exact_member_block(block, description).is_err() {
+            return false;
+        }
+        self.0
+            .empty_populations
+            .get(block)
+            .is_some_and(|families| families.contains(&description.family().to_owned()))
     }
 
     fn exact_member_block<'a>(
@@ -964,6 +1017,8 @@ impl CreationEvents {
                 tainted,
                 opaque_holders: self.0.opaque_holders.clone(),
                 opaque_transfers: Mutex::new(BTreeMap::new()),
+                opaque_entry_counts: Mutex::new(BTreeMap::new()),
+                empty_populations: self.0.empty_populations.clone(),
                 opaque_imports: self.0.opaque_imports.clone(),
             }));
             let evidence = CheckedPopulationMemberExchange {
@@ -1021,6 +1076,8 @@ impl CreationEvents {
                 produce,
             ),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.with_inserted(
                 description.clone(),
                 OpaqueImport {
@@ -1111,6 +1168,8 @@ impl CreationEvents {
                     next_held > 0,
                 ),
                 opaque_transfers: Mutex::new(BTreeMap::new()),
+                opaque_entry_counts: Mutex::new(BTreeMap::new()),
+                empty_populations: self.0.empty_populations.clone(),
                 opaque_imports: self.0.opaque_imports.with_inserted(
                     description.clone(),
                     OpaqueImport {
@@ -1181,6 +1240,8 @@ impl CreationEvents {
             tainted,
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         let evidence = CheckedPopulationMemberExchange {
@@ -1211,6 +1272,8 @@ impl CreationEvents {
             tainted: PersistentMap::default(),
             opaque_holders: PersistentMap::default(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: PersistentMap::default(),
             opaque_imports: PersistentMap::default(),
         }))
     }
@@ -1242,6 +1305,8 @@ impl CreationEvents {
                     tainted: self.0.tainted.clone(),
                     opaque_holders: self.0.opaque_holders.clone(),
                     opaque_transfers: Mutex::new(BTreeMap::new()),
+                    opaque_entry_counts: Mutex::new(BTreeMap::new()),
+                    empty_populations: self.0.empty_populations.clone(),
                     opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
@@ -1273,6 +1338,8 @@ impl CreationEvents {
                     tainted: self.0.tainted.clone(),
                     opaque_holders: self.0.opaque_holders.clone(),
                     opaque_transfers: Mutex::new(BTreeMap::new()),
+                    opaque_entry_counts: Mutex::new(BTreeMap::new()),
+                    empty_populations: self.0.empty_populations.clone(),
                     opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
@@ -1403,6 +1470,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         Ok(self
@@ -1452,6 +1521,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
@@ -1520,6 +1591,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         self.0
@@ -1566,6 +1639,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1597,8 +1672,10 @@ impl CreationEvents {
         let mut creators = self.0.creators.clone();
         let mut anchors = self.0.anchors.clone();
         let mut authority = self.0.authority.clone();
+        let mut empty_populations = self.0.empty_populations.clone();
         let mut tainted = self.0.tainted.without_key(pending_block);
         if let Some(block) = live_block {
+            empty_populations.remove(&block);
             debug_assert!(matches!(&block, PointerBlock::Heap(_)));
             assert!(
                 !creators.contains_key(&block),
@@ -1630,6 +1707,8 @@ impl CreationEvents {
             tainted,
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations,
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1652,7 +1731,7 @@ impl CreationEvents {
         let (authority, anchor) = self.0.authority.allocate_anchor(self.0.invocation);
         let mut anchors = self.0.anchors.clone();
         anchors.insert(block.clone(), anchor);
-        creators.insert(block, self.0.invocation);
+        creators.insert(block.clone(), self.0.invocation);
         Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),
@@ -1671,6 +1750,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.without_key(&block),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1733,6 +1814,8 @@ impl CreationEvents {
             tainted,
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1783,6 +1866,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
@@ -1807,6 +1892,7 @@ impl CreationEvents {
         block: &PointerBlock,
         description: &ResourceDescription,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
+        self.exact_member_block(block, description)?;
         let after = self.retire_authority(block, description.family())?;
         let evidence = CheckedPopulationAuthorityExchange {
             before: self.0.identity,
@@ -1817,12 +1903,12 @@ impl CreationEvents {
         Ok((after, evidence))
     }
 
-    /// A standalone proof can retire the imported authority only after its
-    /// last imported member is spent. The caller has separately proved the
-    /// entry count was one through the checked control-cell invariant.
+    /// Retire only after spending the local unit and independently proving
+    /// that its authenticated arbitrary global entry count was exactly one.
     pub(in crate::kernel) fn checked_retire_imported(
         &self,
         description: &ResourceDescription,
+        assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
         let import = self
             .0
@@ -1834,6 +1920,13 @@ impl CreationEvents {
         }
         if import.entry_owned_members != 1 || import.owned_members != 0 {
             return Err(CreationRefusal::OutstandingMembers);
+        }
+        let entry_count = import
+            .entry_count
+            .as_ref()
+            .ok_or(CreationRefusal::UnknownTotal)?;
+        if !same_quantity(entry_count, &Bitvector32Term::Constant(1), assumptions) {
+            return Err(CreationRefusal::UnknownTotal);
         }
         let after = Self(Arc::new(Root {
             identity: fresh_identity(),
@@ -1853,6 +1946,8 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.adjust_opaque_right(self.0.opaque_actor, true, false),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.with_inserted(
                 description.clone(),
                 OpaqueImport {
@@ -1911,6 +2006,16 @@ impl CreationEvents {
             tainted: self.0.tainted.clone(),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.with_inserted(
+                block.clone(),
+                self.0
+                    .empty_populations
+                    .get(block)
+                    .cloned()
+                    .unwrap_or_default()
+                    .with_value(family.to_owned()),
+            ),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
@@ -1966,6 +2071,8 @@ impl CreationEvents {
             tainted: self.0.tainted.without_key(block),
             opaque_holders: self.0.opaque_holders.clone(),
             opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_entry_counts: Mutex::new(BTreeMap::new()),
+            empty_populations: self.0.empty_populations.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
