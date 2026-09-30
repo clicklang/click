@@ -5107,6 +5107,21 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
+        if let Some(mut entries) = self.concrete_write_entries(pointer, byte_width, assumptions) {
+            return entries.find_map(|entry| {
+                crate::instrumentation::record_deterministic_work(1);
+                let resource = self.fact(entry);
+                let range = resource.memory_own_range()?;
+                // Translate the access into the owner's coordinates using
+                // checked graph equality. Candidate selection supplies no
+                // authority; the existing write and bounds judgment decides.
+                let address = assumptions
+                    .equality_graph
+                    .pointer_in_block(pointer, &range.base().block)?;
+                memory_resource_fact_permits_write(resource, &address, byte_width, assumptions)
+                    .then_some(range)
+            });
+        }
         // A kernel-minted address resolves to its load term first, so it
         // matches owned ranges still written through loads; a proved
         // pointer equality's other spelling is consulted as for reads.
