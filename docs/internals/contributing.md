@@ -1,5 +1,61 @@
 # Contributing to Click
 
+## Fork and pull request workflow
+
+Humans and agents contribute through a fork of
+[clicklang/click](https://github.com/clicklang/click). Develop in your fork and
+open a pull request against upstream `master` when the change is ready. This
+also applies to maintainers with write or admin access: push development
+branches to the fork, and integrate reviewed changes through pull requests.
+
+For a new checkout, create a personal fork on GitHub, then run these commands.
+Replace `YOUR_GITHUB_LOGIN` with the fork owner's login:
+
+```console
+git clone git@github.com:YOUR_GITHUB_LOGIN/click.git
+cd click
+git remote add upstream git@github.com:clicklang/click.git
+git config remote.pushDefault origin
+git config push.default current
+git fetch upstream
+git worktree add -b codex/your-change ../click-your-change upstream/master
+cd ../click-your-change
+```
+
+Use `origin` for the fork and `upstream` for the organization repository. In an
+existing checkout whose `origin` points to `clicklang/click`, rename that
+remote to `upstream` and add the fork as `origin` before pushing. Verify both
+destinations with `git remote -v`. The push settings above send ordinary
+pushes to the fork even when a local branch tracks upstream. Agents use the
+`codex/` branch prefix by default; humans can choose a descriptive branch name.
+
+Perform edits, experiments, tests, and commits in the task worktree. Keep the
+shared primary checkout clean. Follow the isolation and tooling rules in
+[AGENTS.md](https://github.com/clicklang/click/blob/master/AGENTS.md).
+
+Before submission, run focused checks and `scripts/check.sh` unpiped. For
+changes limited to prose or documentation metadata, use
+`scripts/check.sh --docs-only`. Commit a coherent passing change, then push
+the task branch to the fork:
+
+```console
+git push -u origin HEAD
+```
+
+Open a pull request on GitHub from that fork branch to `clicklang/click`'s
+`master`. Describe the problem, the resulting behavior, and validation. Keep
+review updates on the same fork branch. If upstream moves, update the branch
+and rerun affected checks before merging. After the pull request merges,
+fast-forward a clean local primary checkout from upstream with Git.
+
+The test workflow runs on pull requests, including those from forks. Fork
+pull requests do not need repository secrets for the test gate; GitHub may
+require a maintainer to approve an outside contributor's workflow run. Release
+publishing uses version-tag pushes, so opening a pull request does not publish
+a release.
+
+## Implementing a change
+
 Most Click changes should start from a proof need, not from an isolated syntax
 idea.
 
