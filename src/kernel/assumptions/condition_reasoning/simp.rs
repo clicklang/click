@@ -15,9 +15,7 @@ impl PureFactContext {
             }
             ConditionTerm::Constant(value) => Some(*value),
             ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-            ConditionTerm::PointerEqual(left, right)
-                if self.pointer_equality_in_graph(left, right) =>
-            {
+            ConditionTerm::PointerEqual(left, right) if self.pointers_known_equal(left, right) => {
                 Some(true)
             }
             ConditionTerm::PointerEqual(left, right) if left.blocks_proven_distinct(right) => {

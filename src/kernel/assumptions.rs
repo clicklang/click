@@ -3267,65 +3267,6 @@ impl PureFactContext {
             .flat_map(|aliases| aliases.iter().map(|(alias, _)| alias))
     }
 
-    /// Whether exact pointer equalities connect these addresses. Each
-    /// adjacency lookup is keyed by the current pointer or offset, so the
-    /// walk visits only the equality component reachable from `left` rather
-    /// than rescanning every path condition for every separation candidate.
-    pub(in crate::kernel) fn has_indexed_pointer_equality_path(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
-        // An equality already established by the trusted graph needs no
-        // component walk. For one block, ask the exact offset fragment rather
-        // than expanding the pointer affine fragment's scope here. Skip that
-        // query when there are no term merges, so unrelated owned cells do
-        // not each pay to intern their offsets. The walk remains for mixed
-        // exact offset and block alias chains the graph cannot yet compose.
-        let graph_equal = if left.block == right.block {
-            self.equality_graph.has_term_equivalences()
-                && self
-                    .equality_graph
-                    .are_offsets_equal(&left.offset, &right.offset)
-        } else {
-            self.equality_graph.are_equal(left, right)
-        };
-        if graph_equal {
-            return true;
-        }
-        let matches = |candidate: &Pointer, expected: &Pointer| {
-            candidate == expected
-                || candidate.block == expected.block
-                    && crate::kernel::api::canonicalize_pointer_loads(candidate)
-                        == crate::kernel::api::canonicalize_pointer_loads(expected)
-        };
-        let mut seen = std::collections::BTreeSet::from([left.clone()]);
-        let mut frontier = vec![left.clone()];
-        while let Some(current) = frontier.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            if matches(&current, right) {
-                return true;
-            }
-            for alias in self.exact_pointer_aliases(&current) {
-                if matches(alias, right) {
-                    return true;
-                }
-                if seen.insert(alias.clone()) {
-                    frontier.push(alias.clone());
-                }
-            }
-            for alias in self.exact_pointer_offset_aliases(&current) {
-                if matches(&alias, right) {
-                    return true;
-                }
-                if seen.insert(alias.clone()) {
-                    frontier.push(alias);
-                }
-            }
-        }
-        false
-    }
-
     pub(super) fn rebuild_null_pointer_offsets(&mut self) {
         self.null_pointer_offsets = crate::persistent::PersistentMap::default();
         let facts = self

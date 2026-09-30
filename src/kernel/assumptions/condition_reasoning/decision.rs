@@ -431,10 +431,10 @@ impl PureFactContext {
     /// pointer the alias indexes connect it to, through block aliases and
     /// same-block offset aliases alike. Each spelling is paired with the
     /// spelling it was reached from, so the equalities a conclusion rests
-    /// on can be taken back through the exact check. This is the walk
-    /// `has_indexed_pointer_equality_path` takes: each adjacency is a keyed
-    /// lookup, and the walk visits only the equality component reachable
-    /// from `start`.
+    /// on can be taken back through the exact check. Evidence-producing
+    /// consumers retain this output-sensitive enumeration; Boolean equality
+    /// queries use `pointers_known_equal` instead. Each adjacency is keyed,
+    /// and the walk visits only the component reachable from `start`.
     pub(in crate::kernel) fn pointer_equality_component(
         &self,
         start: &Pointer,
