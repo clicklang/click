@@ -71,7 +71,7 @@ fn read_extent(fact: &CResourceFact) -> Option<u64> {
 // Whole-cell candidates carry their own authorized read footprints. The existing int32-slot interpretation of pointer reads is special:
 // eight bytes may read one logical four-byte element, including an interior
 // element of a longer range. Those partial reads retain the range checker.
-fn exact_read_sizes(fact: &CResourceFact) -> Vec<u32> {
+fn exact_access_sizes(fact: &CResourceFact) -> Vec<u32> {
     let Some(extent) = read_extent(fact).and_then(|extent| u32::try_from(extent).ok()) else {
         return Vec::new();
     };
@@ -306,6 +306,9 @@ struct AddressPointBucket {
     // this address or elsewhere in the pointer-block class.
     entries: ResourceEntryIds,
     reads: PersistentMap<u32, ResourceEntryIds>,
+    // Writes require their own payload: a read footprint may contain only
+    // views, even when a larger owner shares the same start address.
+    writes: PersistentMap<u32, ResourceEntryIds>,
 }
 
 #[derive(Clone, Default)]
@@ -327,16 +330,21 @@ impl AddressPoints {
             crate::instrumentation::record_deterministic_work(1);
             larger.entries = larger.entries.with_value(*entry);
         }
-        // Each occurrence contributes at most two footprints. Using the
+        // Each occurrence contributes at most two footprints per access kind. Using the
         // same smaller occurrence payload for both indexes bounds all moves,
         // even when the graph chooses the other class representative.
-        for (bytes, entries) in smaller.reads.iter() {
-            let mut combined = larger.reads.get(bytes).cloned().unwrap_or_default();
-            for entry in entries.iter() {
-                crate::instrumentation::record_deterministic_work(1);
-                combined = combined.with_value(*entry);
+        for (larger_access, smaller_access) in [
+            (&mut larger.reads, &smaller.reads),
+            (&mut larger.writes, &smaller.writes),
+        ] {
+            for (bytes, entries) in smaller_access.iter() {
+                let mut combined = larger_access.get(bytes).cloned().unwrap_or_default();
+                for entry in entries.iter() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    combined = combined.with_value(*entry);
+                }
+                larger_access.insert(*bytes, combined);
             }
-            larger.reads.insert(*bytes, combined);
         }
         self.classes.insert(kept, larger);
     }
@@ -372,17 +380,22 @@ impl AddressPoints {
         } else {
             bucket.entries.without_value(&entry)
         };
-        for bytes in exact_read_sizes(fact) {
-            let entries = bucket.reads.get(&bytes).cloned().unwrap_or_default();
-            let entries = if insert {
-                entries.with_value(entry)
-            } else {
-                entries.without_value(&entry)
-            };
-            if entries.is_empty() {
-                bucket.reads.remove(&bytes);
-            } else {
-                bucket.reads.insert(bytes, entries);
+        let sizes = exact_access_sizes(fact);
+        for access in
+            std::iter::once(&mut bucket.reads).chain(fact.is_own().then_some(&mut bucket.writes))
+        {
+            for bytes in &sizes {
+                let entries = access.get(bytes).cloned().unwrap_or_default();
+                let entries = if insert {
+                    entries.with_value(entry)
+                } else {
+                    entries.without_value(&entry)
+                };
+                if entries.is_empty() {
+                    access.remove(bytes);
+                } else {
+                    access.insert(*bytes, entries);
+                }
             }
         }
         if bucket.entries.is_empty() {
@@ -610,11 +623,11 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<MemoryAccessEntries> {
-        self.concrete_access_entries(pointer, bytes, assumptions, true)
+        self.concrete_access_entries(pointer, bytes, assumptions, false)
     }
 
-    /// Complete affine interval candidates for writes. Read whole-cell
-    /// payloads are unsuitable: a matching view could hide a larger owner.
+    /// Owned whole-cell matches or complete affine interval candidates for
+    /// writes. Read payloads are unsuitable: a matching view could hide an owner.
     /// `None` selects the general checker before testing any candidate.
     pub(super) fn concrete_write_entries(
         &self,
@@ -622,7 +635,7 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Option<MemoryAccessEntries> {
-        self.concrete_access_entries(pointer, bytes, assumptions, false)
+        self.concrete_access_entries(pointer, bytes, assumptions, true)
     }
 
     fn concrete_access_entries(
@@ -630,37 +643,39 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-        read_whole_cells: bool,
+        owned: bool,
     ) -> Option<MemoryAccessEntries> {
         let graph = &assumptions.equality_graph;
         let class = graph.address_class(pointer)?;
         let local = self.pair_for_query(assumptions);
         let paired = local.as_ref().unwrap_or(self);
-        let point = graph.canonical_pointer(pointer)?;
         let cache = paired
             .memory_equalities
             .lock()
             .expect("memory equality index");
         let index = cache.as_ref()?;
-        let bucket = index.addresses.classes.get(&point.representative)?;
-        if read_whole_cells && index.points_initialized {
+        if index.points_initialized {
             let class = graph.address_class_root(class);
             let entries = index
                 .points
                 .classes
                 .get(&class)
-                .and_then(|bucket| bucket.reads.get(&bytes))
+                .and_then(|bucket| if owned { &bucket.writes } else { &bucket.reads }.get(&bytes))
                 .cloned()
                 .unwrap_or_default();
             // A graph answer is equality or unknown, not disequality. Scalar
-            // arithmetic and snapshot transport can justify a read outside
+            // arithmetic and snapshot transport can justify an access outside
             // this address closure, so an unbound class selects the existing
             // checker before any permission check. A bound whole-cell class
             // supplies checked address evidence and needs no spelling search.
+            // Writes select only positive concrete owners under the same
+            // footprint/width eligibility rule; views never enter that payload.
             if !entries.is_empty() {
                 return Some(MemoryAccessEntries::Exact(entries.owned_values()));
             }
         }
+        let point = graph.canonical_pointer(pointer)?;
+        let bucket = index.addresses.classes.get(&point.representative)?;
         if graph.has_non_affine_term_equivalences()
             || matches!(pointer.block, PointerBlock::LoadedPointer(_))
             || !point.offset.is_constant()

@@ -44,7 +44,12 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
         .fold(PureFactContext::new(), |context, fact| {
             context.assume_execution_pure_fact(fact)
         });
-    let cell = view(&x, 0, 4);
+    let cell = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        x.clone(),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
     let resources = ResourceContext::new().unchecked_with_fact(cell.clone());
     resources.synchronize_memory_equalities(&facts);
     let sibling = resources.clone();
@@ -59,7 +64,18 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
             .exact()
     );
     assert!(resources.permits_memory_read(&y, 4, &connected));
+    assert!(
+        resources
+            .concrete_write_entries(&y, 4, &connected)
+            .unwrap()
+            .exact()
+    );
+    assert_eq!(
+        resources.memory_write_range(&y, 4, &connected),
+        cell.memory_own_range()
+    );
     assert!(!sibling.permits_memory_read(&y, 4, &facts));
+    assert!(sibling.memory_write_range(&y, 4, &facts).is_none());
     assert!(!resources.permits_memory_read(&y.offset_by_bytes(4), 4, &connected));
     let old = Pointer::loaded_value(&snapshot, &a);
     assert!(
@@ -69,15 +85,33 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
             .exact()
     );
     assert!(resources.permits_memory_read(&old, 4, &connected));
+    assert!(
+        resources
+            .concrete_write_entries(&old, 4, &connected)
+            .unwrap()
+            .exact()
+    );
+    assert_eq!(
+        resources.memory_write_range(&old, 4, &connected),
+        cell.memory_own_range()
+    );
     let later = crate::kernel::intern_c_memory(memory.with_block("later", 8));
     assert!(!resources.permits_memory_read(&Pointer::loaded_value(&later, &a), 4, &connected));
+    assert!(
+        resources
+            .memory_write_range(&Pointer::loaded_value(&later, &a), 4, &connected)
+            .is_none()
+    );
+    assert!(resources.memory_write_range(&y, 5, &connected).is_none());
     let removed = resources
         .clone()
         .without_exact_representation(&cell)
         .unwrap();
     assert!(!removed.permits_memory_read(&y, 4, &connected));
+    assert!(removed.memory_write_range(&y, 4, &connected).is_none());
     let restored = removed.unchecked_with_fact(cell).normalized(&connected);
     assert!(restored.permits_memory_read(&y, 4, &connected));
+    assert!(restored.memory_write_range(&y, 4, &connected).is_some());
 }
 
 #[test]
@@ -116,6 +150,16 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
             .exact()
     );
     assert!(resources.permits_memory_read(&alias, 4, &facts));
+    assert!(
+        resources
+            .concrete_write_entries(&alias, 4, &facts)
+            .unwrap()
+            .exact()
+    );
+    assert_eq!(
+        resources.memory_write_range(&alias, 4, &facts),
+        cell(owner.clone()).memory_own_range()
+    );
     let entries =
         resources.equal_address_entries(cell(alias.clone()).memory_range().unwrap(), true, &facts);
     assert_eq!(entries.len(), 1);
@@ -133,10 +177,71 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
     );
     let view_only = ResourceContext::new().unchecked_with_fact(view(&owner, 0, 4));
     assert!(view_only.permits_memory_read(&alias, 4, &facts));
+    assert!(view_only.memory_write_range(&alias, 4, &facts).is_none());
     assert!(
         view_only
             .without_fact_incrementally(&cell(alias), &facts)
             .is_none()
+    );
+}
+
+#[test]
+fn whole_cell_write_merges_and_queries_do_not_scan_other_payloads() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let at = |id| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(862_000 + id)),
+        };
+        let owner = CResourceFact::own_memory(CMemoryRange::new(at(0), 0u32.into(), 1u32.into()));
+        let mut resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+        for i in 0..size {
+            // Large footprint payload at the alias, plus unrelated owners.
+            resources = resources
+                .unchecked_with_fact(view(&at(1), 0, 8 + i as u32 * 4))
+                .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                    at(i + 2),
+                    0u32.into(),
+                    1u32.into(),
+                )));
+        }
+        let empty = PureFactContext::new();
+        resources.synchronize_memory_equalities(&empty);
+        let ((facts, merge_work), merge_map_work) =
+            crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let facts = empty.assume_condition(
+                        ConditionTerm::pointer_offset_equal(at(0).offset, at(1).offset),
+                        true,
+                    );
+                    resources.synchronize_memory_equalities(&facts);
+                    facts
+                })
+            });
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for bytes in [4, C_POINTER_BYTE_WIDTH] {
+                    let entries = resources
+                        .concrete_write_entries(&at(1), bytes, &facts)
+                        .unwrap();
+                    assert!(entries.exact());
+                    assert_eq!(entries.count(), 1);
+                    assert_eq!(
+                        resources.memory_write_range(&at(1), bytes, &facts),
+                        owner.memory_own_range()
+                    );
+                }
+            })
+        });
+        samples.push((size, merge_work, merge_map_work, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 32 && samples[3].3 <= samples[0].3 * 2 + 32,
+        "write merge/query scanned other payloads: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 3 + 128 && samples[3].4 <= samples[0].4 * 3 + 128,
+        "write merge/query rebuilt other payloads: {samples:?}"
     );
 }
 
