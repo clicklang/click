@@ -2065,6 +2065,13 @@ impl CMemory {
         std::sync::Arc::make_mut(&mut memory.forgotten)
             .ended_local_blocks
             .insert(block.clone());
+        // A later object is uninitialized until written; the tombstone
+        // already refuses every access to this one.
+        if own.any_entry(memory.heap.initialized.as_map(), |_, _| true) {
+            std::sync::Arc::make_mut(&mut memory.heap)
+                .initialized
+                .forget_block(block);
+        }
         record_c_memory_derivation(
             &mut memory,
             CMemoryDerivation::LocalLifetimeEnded {
@@ -2143,7 +2150,8 @@ impl CMemory {
         candidates.retain_map(&mut heap.zeroed_prefix_allocations, |base, _| {
             !freed_within(base)
         });
-        candidates.retain_map(&mut heap.initialized_cells, |cell, _| !freed_within(cell));
+        heap.initialized
+            .retain_candidates(&candidates, |cell, _| !freed_within(cell));
         std::sync::Arc::make_mut(&mut self.cells).retain_candidates(&candidates, |cell, _| {
             !aliased_blocks.contains(&cell.block) && !freed_within(cell)
         });
@@ -2395,9 +2403,8 @@ impl CMemory {
         candidates.retain_map(&mut heap.zeroed_prefix_allocations, |candidate, _| {
             !retired_claim(candidate)
         });
-        candidates.retain_map(&mut heap.initialized_cells, |candidate, _| {
-            !retired_cell(candidate)
-        });
+        heap.initialized
+            .retain_candidates(&candidates, |candidate, _| !retired_cell(candidate));
         std::sync::Arc::make_mut(&mut self.cells)
             .retain_candidates(&candidates, |candidate, _| !retired_cell(candidate));
         candidates.retain_map(
@@ -2627,18 +2634,29 @@ impl CMemory {
         // plus the ones something else keeps (declared locals and
         // loan-protected bytes), charged by `retain`.
         let union_widths = union_overlay_widths(&self);
+        // The body can only initialize more: every automatic cell whose value
+        // goes stays initialized at the head and after the loop.
+        let mut dropped_initialized = Vec::new();
         std::sync::Arc::make_mut(&mut self.cells).retain_by(
             |pointer, value| {
-                loan_preserving_havoc_keeps_cell(
+                let kept = loan_preserving_havoc_keeps_cell(
                     pointer,
                     value,
                     &union_widths,
                     preserved_blocks,
                     ledger,
-                )
+                );
+                if !kept {
+                    push_dropped_initialized(
+                        &mut dropped_initialized,
+                        (pointer.clone(), value.byte_width()),
+                    );
+                }
+                kept
             },
             |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
         );
+        self.record_dropped_local_cells(&dropped_initialized);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("havoc:{}", variable.0).into(),
             CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
@@ -2756,16 +2774,34 @@ impl CMemory {
             uninitialized_allocations.extend(memory.heap.uninitialized_allocations.iter().cloned());
         }
 
-        // A scalar cell is definitely initialized at the join only when every
-        // incoming arm has initialized a compatible cell at that address.
-        // This metadata carries initialization, not a value, so it remains
-        // useful after the join's conservative value havoc.
-        let mut initialized_cells = first.heap.initialized_cells.clone();
-        initialized_cells.retain(|pointer, width| {
-            sibling_memories
-                .iter()
-                .all(|memory| memory.heap.initialized_cells.get(pointer) == Some(width))
-        });
+        // A byte is definitely initialized at the join only when every
+        // incoming arm initialized it: in the arm's record, or as an
+        // automatic cell the arm still caches (the cell is its own evidence
+        // until the join forgets it). This carries initialization, not a
+        // value, so it remains useful after the join's conservative value
+        // havoc. Cells of preserved blocks survive the join as cells.
+        let arm_initialized = |memory: &CMemory| {
+            let mut record = memory.heap.initialized.clone();
+            let mut visited = 0usize;
+            for (pointer, value) in local_block_entries(memory.cells.logical()) {
+                visited += 1;
+                if !preserved_blocks.contains(&pointer.block) {
+                    record.record(pointer, value.byte_width());
+                }
+            }
+            for ((pointer, c_type), _) in local_block_entries(&memory.union_cells) {
+                visited += 1;
+                if !preserved_blocks.contains(&pointer.block) {
+                    record.record(pointer, c_type.byte_width());
+                }
+            }
+            crate::instrumentation::record_deterministic_work(visited);
+            record
+        };
+        let mut initialized = arm_initialized(first);
+        for memory in &sibling_memories[1..] {
+            initialized = initialized.intersection(&arm_initialized(memory));
+        }
 
         // A zero marker is a value guarantee, so it is retained only when
         // every arm provides it. (The uninitialized marker above is instead
@@ -2843,7 +2879,7 @@ impl CMemory {
             deallocated_allocations,
             pending_allocations,
             uninitialized_allocations,
-            initialized_cells,
+            initialized,
             zeroed_allocations,
             zeroed_prefix_allocations,
             zeroed_pending_allocations,
@@ -2885,6 +2921,9 @@ impl CMemory {
         let base = Some(intern_derivation_base(&mut self));
         let mut flat_hits = Vec::new();
         let candidates = call_havoc_candidates(mutable_ranges);
+        // A callee can only initialize more: the automatic cells whose values
+        // it may overwrite stay initialized.
+        let mut dropped_initialized = Vec::new();
         std::sync::Arc::make_mut(&mut self.cells).retain_candidates(
             &candidates,
             |pointer, value| match call_havoc_keeps_cell(
@@ -2901,9 +2940,13 @@ impl CMemory {
                 // named across the edge at its pre-call value.
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
                     false
                 }
-                CallHavocCellRule::Dropped => false,
+                CallHavocCellRule::Dropped => {
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
+                    false
+                }
             },
         );
         // A typed union view is a cached value like any other, and it is the
@@ -2924,11 +2967,16 @@ impl CMemory {
                 CallHavocCellRule::Separate => true,
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
                     false
                 }
-                CallHavocCellRule::Dropped => false,
+                CallHavocCellRule::Dropped => {
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
+                    false
+                }
             },
         );
+        self.record_dropped_local_cells(&dropped_initialized);
         let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
@@ -2970,7 +3018,7 @@ impl CMemory {
         assumptions: &PureFactContext,
         kept: Option<&CallKeptOwnership>,
     ) -> bool {
-        if self.heap != before.heap || self.blocks.len() != before.blocks.len() + 2 {
+        if self.blocks.len() != before.blocks.len() + 2 {
             return false;
         }
         // `self.blocks` must be `before.blocks` plus exactly two new blocks.
@@ -3007,15 +3055,20 @@ impl CMemory {
         let mut visited = 0usize;
         let mut flat_hits = Vec::new();
         let mut dropped_cells = Vec::new();
+        let mut dropped_initialized = Vec::new();
         for (pointer, value) in before.cells.candidate_logical_entries(&candidates) {
             visited += 1;
             match call_havoc_keeps_cell(&pointer, &value, mutable_ranges, assumptions, kept, true) {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
                     dropped_cells.push(pointer);
                 }
-                CallHavocCellRule::Dropped => dropped_cells.push(pointer),
+                CallHavocCellRule::Dropped => {
+                    dropped_initialized.push((pointer.clone(), value.byte_width()));
+                    dropped_cells.push(pointer);
+                }
             }
         }
         let dropped_cells = dropped_cells.iter().collect::<Vec<_>>();
@@ -3026,12 +3079,23 @@ impl CMemory {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
+                    dropped_initialized.push((key.0.clone(), value.byte_width()));
                     dropped_union_cells.push(key);
                 }
-                CallHavocCellRule::Dropped => dropped_union_cells.push(key),
+                CallHavocCellRule::Dropped => {
+                    dropped_initialized.push((key.0.clone(), value.byte_width()));
+                    dropped_union_cells.push(key);
+                }
             }
         }
         crate::instrumentation::record_deterministic_work(visited);
+        // The producer's heap: `before`'s, with the automatic cells it
+        // dropped recorded initialized.
+        let mut expected = before.clone();
+        expected.record_dropped_local_cells(&dropped_initialized);
+        if self.heap != expected.heap {
+            return false;
+        }
         let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
         let write_set_marker =
             call_write_set_marker(variable, mutable_ranges, kept_ranges.as_ref());
@@ -3445,7 +3509,7 @@ impl CMemory {
             if (self.heap.uninitialized_allocations.contains(&base)
                 || self.heap.zeroed_allocations.contains(&base)
                 || self.heap.zeroed_prefix_allocations.contains_key(&base))
-                && !self.has_initialized_cell_at(&pointer, value.byte_width())
+                && !self.has_initialized_bytes_at(&pointer, value.byte_width())
             {
                 return self;
             }
@@ -3480,10 +3544,12 @@ impl CMemory {
         }
         let base = intern_derivation_base(&mut self);
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
-        if self.is_live_heap_address(&pointer, context) {
+        if self.is_live_heap_address(&pointer, context)
+            && !self.heap.initialized.covers(&pointer, value.byte_width())
+        {
             std::sync::Arc::make_mut(&mut self.heap)
-                .initialized_cells
-                .insert(pointer.clone(), value.byte_width());
+                .initialized
+                .record(&pointer, value.byte_width());
         }
         // Skipped when empty so an ordinary store neither visits nor
         // reallocates the shared overlay map.
@@ -3626,17 +3692,69 @@ impl CMemory {
         }
     }
 
-    /// Whether a typed scalar at this exact heap address was initialized
-    /// before cached values were forgotten by a call or loop havoc.
-    pub(in crate::kernel) fn has_initialized_cell_at(
+    /// Whether the `byte_width` bytes at `pointer` are recorded initialized,
+    /// whether or not a cached value for them survives (see
+    /// [`InitializedBytes`]). A constant offset is covered by the run of its
+    /// block holding it; a symbolic offset by the same spelling.
+    pub(in crate::kernel) fn has_initialized_bytes_at(
         &self,
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        self.heap
-            .initialized_cells
-            .get(pointer)
-            .is_some_and(|width| *width >= byte_width)
+        self.heap.initialized.covers(pointer, byte_width)
+    }
+
+    /// [`Self::has_initialized_bytes_at`], and also for an element index the
+    /// facts bound: `a[u]` under `0 <= u < n` reads bytes of `a[0..n]`, so a
+    /// run covering all of those covers the read wherever `u` lands. The
+    /// bound is the index's signed interval; the offset must be the block's
+    /// base plus one scaled index and a constant, as an element access is.
+    pub(in crate::kernel) fn has_initialized_bytes_under(
+        &self,
+        pointer: &Pointer,
+        byte_width: u32,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        if self.heap.initialized.is_empty() {
+            return false;
+        }
+        if self.has_initialized_bytes_at(pointer, byte_width) {
+            return true;
+        }
+        if pointer.offset.as_const().is_some() {
+            return false;
+        }
+        let (atoms, shift) =
+            crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant(&pointer.offset);
+        let [
+            PointerOffsetTerm::Int32Scaled {
+                value,
+                byte_width: scale,
+            },
+        ] = atoms.as_slice()
+        else {
+            return false;
+        };
+        if *scale <= 0 {
+            return false;
+        }
+        let Some((low, high)) = assumptions.signed_interval(value) else {
+            return false;
+        };
+        let (Some(start), Some(end)) = (
+            low.checked_mul(*scale)
+                .and_then(|bytes| bytes.checked_add(shift)),
+            high.checked_mul(*scale)
+                .and_then(|bytes| bytes.checked_add(shift))
+                .and_then(|bytes| bytes.checked_add(i64::from(byte_width))),
+        ) else {
+            return false;
+        };
+        start < end
+            && self
+                .heap
+                .initialized
+                .covers_interval(&pointer.block, start, end)
     }
 
     /// Whether any typed union overlay is recorded at exactly this pointer.
@@ -3694,24 +3812,21 @@ impl CMemory {
             written_bytes,
             &PureFactContext::new(),
         );
-        let mut initialized_widths = BTreeMap::<Pointer, u32>::new();
+        let mut initialized = Vec::new();
         for (pointer, value_type, value) in views {
             std::sync::Arc::make_mut(&mut memory.union_cells)
                 .insert((pointer.clone(), value_type), value);
-            if memory.is_live_heap_address(&pointer, &PureFactContext::new()) {
-                initialized_widths
-                    .entry(pointer)
-                    .and_modify(|width| *width = (*width).max(value_type.byte_width()))
-                    .or_insert(value_type.byte_width());
+            if memory.is_live_heap_address(&pointer, &PureFactContext::new())
+                && !memory.has_initialized_bytes_at(&pointer, value_type.byte_width())
+            {
+                initialized.push((pointer, value_type.byte_width()));
             }
         }
-        for (pointer, width) in initialized_widths {
-            let initialized_cells =
-                &mut std::sync::Arc::make_mut(&mut memory.heap).initialized_cells;
-            let width = initialized_cells
-                .get(&pointer)
-                .map_or(width, |existing| (*existing).max(width));
-            initialized_cells.insert(pointer, width);
+        if !initialized.is_empty() {
+            let record = &mut std::sync::Arc::make_mut(&mut memory.heap).initialized;
+            for (pointer, width) in initialized {
+                record.record(&pointer, width);
+            }
         }
         memory
     }
@@ -3753,9 +3868,15 @@ impl CMemory {
             std::sync::Arc::make_mut(&mut memory.union_cells),
             |(pointer, _), _| !overlaps(pointer),
         );
-        own.retain_map(
-            &mut std::sync::Arc::make_mut(&mut memory.heap).initialized_cells,
-            |pointer, _| !overlaps(pointer),
+        // The copy wrote the field with no value it can name, from a source
+        // whose field it could not check, so its bytes are not known
+        // initialized either.
+        memory.forget_initialized_bytes(
+            &Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Constant(field_start),
+            },
+            c_type.byte_width(),
         );
         // Nothing restores these cells — the copy could not carry the field —
         // so the result knows strictly less than its source and must not be
@@ -3773,10 +3894,45 @@ impl CMemory {
         let mut memory = self.clone();
         std::sync::Arc::make_mut(&mut memory.cells).remove(pointer);
         memory.remove_union_views_at(pointer);
-        std::sync::Arc::make_mut(&mut memory.heap)
-            .initialized_cells
-            .remove(pointer);
+        // The hypothetical memory a load's distinct case reads also drops the
+        // cell's initialization mark, as it always has, so it re-interns as
+        // the state before the store that wrote the cell when nothing else
+        // differs. Only that load reads it, at an address distinct from the
+        // cell's.
+        let width = self
+            .cells
+            .get(pointer)
+            .map_or(0, |value| value.byte_width());
+        memory.forget_initialized_bytes(pointer, width);
         memory
+    }
+
+    /// Records the bytes of cells whose cached values an operation dropped
+    /// as initialized, where they are automatic storage: a store only ever
+    /// initializes, so the bytes stay initialized with the value unknown.
+    /// Heap cells need nothing here — a heap store records its bytes as it
+    /// writes them. Costs the dropped cells.
+    fn record_dropped_local_cells(&mut self, dropped: &[(Pointer, u32)]) {
+        let mut record = self.heap.initialized.clone();
+        let mut changed = false;
+        for (pointer, width) in dropped {
+            if pointer.block.starts_with("local:") {
+                changed |= record.record(pointer, *width);
+            }
+        }
+        if changed {
+            std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
+    }
+
+    /// Forgets the initialization of the `byte_width` bytes at `pointer`
+    /// (see [`InitializedBytes::forget`]), leaving the heap shared when the
+    /// record holds none of them.
+    fn forget_initialized_bytes(&mut self, pointer: &Pointer, byte_width: u32) {
+        let mut record = self.heap.initialized.clone();
+        if record.forget(pointer, byte_width) {
+            std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
     }
 
     /// Forgets every cell of `self` the write of `bytes` bytes at `pointer`
@@ -3834,6 +3990,12 @@ impl CMemory {
         // state it describes. A possibly aliasing cell is knowledge the
         // result no longer has, and that is what has to show in the content.
         let mut forgot_live_knowledge = false;
+        // Cells of automatic storage whose values go but whose bytes the
+        // store does not rewrite: they stay initialized (see
+        // `record_dropped_local_cells`). A completely overwritten cell is
+        // left out, as it is stale rather than forgotten: the store writes a
+        // cell there again.
+        let mut dropped_initialized = Vec::<(Pointer, u32)>::new();
         // Every cell in a block proven distinct from the written one is kept
         // by each ladder below (its bytes are `Separate` and its address is
         // proven distinct on the first rung), so only the candidates are
@@ -3883,9 +4045,13 @@ impl CMemory {
                 // Only a cell the store writes *completely* is stale. One it
                 // writes part of leaves the untouched bytes unrecorded, so the
                 // result knows strictly less than its source and has to say so.
-                forgot_live_knowledge |= !written.as_ref().is_some_and(|written| {
+                let partly = !written.as_ref().is_some_and(|written| {
                     written.overwrites_completely(&normalized_cell_pointer, cell_value)
                 });
+                forgot_live_knowledge |= partly;
+                if partly {
+                    dropped_initialized.push((cell_pointer.clone(), cell_value.byte_width()));
+                }
                 return false;
             }
             if assumptions.access_owned_apart_from_store(
@@ -3941,6 +4107,9 @@ impl CMemory {
                 )
                 .is_some();
             forgot_live_knowledge |= !kept;
+            if !kept {
+                dropped_initialized.push((cell_pointer.clone(), cell_value.byte_width()));
+            }
             kept
         };
         #[cfg(debug_assertions)]
@@ -3976,9 +4145,13 @@ impl CMemory {
                         written.overwrites_typed(&normalized_cell_pointer, *cell_type)
                     })
                 {
-                    forgot_live_knowledge |= !written.as_ref().is_some_and(|written| {
+                    let partly = !written.as_ref().is_some_and(|written| {
                         written.overwrites_typed_completely(&normalized_cell_pointer, *cell_type)
                     });
+                    forgot_live_knowledge |= partly;
+                    if partly {
+                        dropped_initialized.push((cell_pointer.clone(), cell_type.byte_width()));
+                    }
                     return false;
                 }
                 if assumptions.access_owned_apart_from_store(
@@ -4016,32 +4189,10 @@ impl CMemory {
                 )
                 .is_some();
                 forgot_live_knowledge |= !kept;
+                if !kept {
+                    dropped_initialized.push((cell_pointer.clone(), cell_type.byte_width()));
+                }
                 kept
-            },
-        );
-        candidates.retain_map(
-            &mut std::sync::Arc::make_mut(&mut memory.heap).initialized_cells,
-            |cell_pointer, width| {
-                let normalized_cell_pointer = Pointer {
-                    block: cell_pointer.block.clone(),
-                    offset: normalize_exact_memory_loads_in_pointer_offset(
-                        &cell_pointer.offset,
-                        assumptions,
-                    ),
-                };
-                let separate = crate::kernel::reasoning::access_byte_overlap(
-                    &normalized_cell_pointer,
-                    *width,
-                    &normalized_pointer,
-                    bytes,
-                    assumptions,
-                ) == crate::kernel::reasoning::AccessByteOverlap::Separate;
-                separate
-                    && (pointers_proven_distinct_for_memory_resolution(
-                        &normalized_cell_pointer,
-                        &normalized_pointer,
-                        assumptions,
-                    ) || normalized_cell_pointer.block != normalized_pointer.block)
             },
         );
         // Forgetting nothing is not a transition: the memory is the same
@@ -4049,10 +4200,12 @@ impl CMemory {
         // instead of stopping at an edge that records no write.
         if memory.cells.len() == self.cells.len()
             && memory.union_cells.len() == self.union_cells.len()
-            && memory.heap.initialized_cells == self.heap.initialized_cells
         {
             return self.clone();
         }
+        // A store never de-initializes: the heap marks of the cells it may
+        // alias stay as they are, and the automatic cells it forgot join them.
+        memory.record_dropped_local_cells(&dropped_initialized);
         if let Some(base) = base {
             // The mark goes on before interning, because it is what the
             // result is interned *as*. Without it the emptied cell map can
@@ -6063,7 +6216,7 @@ mod contract_retirement_tests {
         heap.zeroed_allocations.insert(unrelated.clone());
         memory = memory.store_with_context(aliases[0].clone(), int32(9), &assumptions);
         memory = memory.store(unrelated.clone(), int32(11));
-        assert!(memory.has_initialized_cell_at(&aliases[0], 4));
+        assert!(memory.has_initialized_bytes_at(&aliases[0], 4));
         let retired = memory.retire_contract_heap_allocation_claim(
             &base,
             &Bitvector32Term::Constant(4),
@@ -6077,7 +6230,7 @@ mod contract_retirement_tests {
         }
         assert!(retired.heap.zeroed_allocations.contains(&unrelated));
         assert_eq!(retired.known_value(&aliases[0]), None);
-        assert!(!retired.has_initialized_cell_at(&aliases[0], 4));
+        assert!(!retired.has_initialized_bytes_at(&aliases[0], 4));
         assert_eq!(retired.known_value(&unrelated), Some(int32(11)));
     }
 }
@@ -6218,5 +6371,152 @@ mod hunt_investigation_join_dspelling_tests {
             once.free_heap_block(&q, &assumptions).is_ok(),
             "BUG: freeing the same allocation through its second joined spelling succeeds"
         );
+    }
+}
+
+/// Collects one dropped cell for [`CMemory::record_dropped_local_cells`],
+/// except from inside a debug self-check that re-asks a retain predicate:
+/// that would record, in a debug build only, cells a release build keeps
+/// by a whole-run answer.
+fn push_dropped_initialized(dropped: &mut Vec<(Pointer, u32)>, cell: (Pointer, u32)) {
+    if !crate::instrumentation::in_uncharged_debug_check() {
+        dropped.push(cell);
+    }
+}
+
+/// The entries of automatic (`local:`) blocks in a pointer-keyed map, which
+/// are one contiguous key range: `local:` blocks are `Concrete` names sharing
+/// that prefix.
+fn local_block_entries<'a, K: BlockKeyed, V>(
+    map: &'a SnapshotMap<K, V>,
+) -> impl Iterator<Item = (&'a K, &'a V)> + 'a {
+    map.range(K::first_key_of(&PointerBlock::from("local:"))..)
+        .take_while(|(key, _)| key.key_block().starts_with("local:"))
+}
+
+#[cfg(test)]
+mod initialization_record_tests {
+    use super::*;
+
+    fn element(block: &str, index: i64) -> Pointer {
+        Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::Constant(4 * index),
+        }
+    }
+
+    fn unplaced(block: &str) -> Pointer {
+        Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(924_001)), 4),
+        }
+    }
+
+    fn written_pair(block: &str) -> CMemory {
+        CMemory::new()
+            .with_block(block, 8)
+            .store(
+                element(block, 0),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            )
+            .store(
+                element(block, 1),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            )
+    }
+
+    fn forgotten_pair(block: &str) -> CMemory {
+        written_pair(block).without_possible_aliasing_cells(
+            &unplaced(block),
+            4,
+            &PureFactContext::new(),
+        )
+    }
+
+    #[test]
+    fn an_unplaced_store_keeps_the_bytes_it_forgets_initialized() {
+        let block = "local:record-pair";
+        assert!(!written_pair(block).has_initialized_bytes_at(&element(block, 0), 4));
+        let forgotten = forgotten_pair(block);
+        assert!(!forgotten.has_known_cell_at(&element(block, 0)));
+        assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 8));
+        assert!(!forgotten.has_initialized_bytes_at(&element(block, 1), 8));
+        // The store the forgetting precedes only initializes more.
+        let stored = forgotten.store(unplaced(block), CValue::Int32(Bitvector32Term::Constant(7)));
+        assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
+    }
+
+    #[test]
+    fn loop_havoc_keeps_forgotten_automatic_bytes_initialized() {
+        let block = "local:record-loop";
+        let havoc = written_pair(block).with_loop_memory_havoc_preserving_loans(
+            Variable(924_002),
+            &BTreeSet::new(),
+            None,
+            None,
+        );
+        assert!(!havoc.has_known_cell_at(&element(block, 1)));
+        assert!(havoc.has_initialized_bytes_at(&element(block, 0), 8));
+    }
+
+    #[test]
+    fn a_join_keeps_only_bytes_every_arm_initialized() {
+        let block = "local:record-join";
+        // One arm forgot both values but keeps their initialization; the
+        // other still caches only the first element.
+        let forgotten = forgotten_pair(block);
+        let first_only = CMemory::new().with_block(block, 8).store(
+            element(block, 0),
+            CValue::Int32(Bitvector32Term::Constant(5)),
+        );
+        let arms = [&forgotten, &first_only];
+        let joined = forgotten
+            .clone()
+            .with_interface_memory_havoc_preserving_loans(
+                Variable(924_003),
+                &BTreeSet::new(),
+                &arms,
+                None,
+            )
+            .expect("the interface join should run");
+        assert!(joined.has_initialized_bytes_at(&element(block, 0), 4));
+        assert!(!joined.has_initialized_bytes_at(&element(block, 1), 4));
+    }
+
+    #[test]
+    fn an_ended_lifetime_forgets_its_initialization() {
+        let block = "local:record-lifetime";
+        let forgotten = forgotten_pair(block);
+        assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 4));
+        let ended = forgotten.without_local_block(&PointerBlock::from(block));
+        assert!(!ended.has_initialized_bytes_at(&element(block, 0), 4));
+    }
+
+    #[test]
+    fn an_element_index_the_facts_bound_reads_a_covering_run() {
+        let block = "local:record-index";
+        let forgotten = forgotten_pair(block);
+        let index = Bitvector32Term::Variable(Variable(924_004));
+        let read = Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        };
+        let bounded = |high: u32| {
+            PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(
+                        index.clone(),
+                        Bitvector32Term::Constant(high),
+                    ),
+                    true,
+                )
+        };
+        assert!(forgotten.has_initialized_bytes_under(&read, 4, &bounded(1)));
+        assert!(!forgotten.has_initialized_bytes_under(&read, 4, &bounded(2)));
+        assert!(!forgotten.has_initialized_bytes_under(&read, 4, &PureFactContext::new()));
     }
 }

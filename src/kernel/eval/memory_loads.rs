@@ -649,7 +649,7 @@ fn evaluate_c_memory_load_case(
     // never-written heap cell into an unconstrained initialized value.
     if purpose != LoadPurpose::Logical
         && memory.is_uninitialized_heap_address(&pointer, value_type.byte_width(), assumptions)
-        && !memory.has_initialized_cell_at(&pointer, value_type.byte_width())
+        && !memory.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type)
     {
         return vec![CExpressionPath {
@@ -1022,12 +1022,16 @@ fn evaluate_c_memory_load_case(
     // Automatic storage is allocated by a declaration, but allocation alone
     // does not initialize it. Once all possibly-aliasing stored cells have
     // been considered above, a local load with no matching cell is an
-    // uninitialized read rather than an unconstrained value. A symbolic
-    // offset must not bypass this check: allocation bounds are independent
-    // of whether the addressed element has ever been written.
+    // uninitialized read rather than an unconstrained value — unless the
+    // memory's initialization record holds its bytes: a store the facts could
+    // not place, a havoc or a join forgot the cell's value, never that it was
+    // written, and the load then reads an unknown initialized value below. A
+    // symbolic offset must not bypass this check: allocation bounds are
+    // independent of whether the addressed element has ever been written.
     if purpose != LoadPurpose::Logical
         && pointer.block.starts_with("local:")
         && memory.has_block(&pointer.block)
+        && !memory.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
     {
         return vec![CExpressionPath {

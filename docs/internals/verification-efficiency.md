@@ -191,8 +191,13 @@ charged to visible semantic output rather than hidden ambient state:
   memoized walk with the full scan on generated fact sets. The `N^2/2`
   questions for symbolic indices remain a known violation of the contract;
   removing them needs the cells indexed by the index terms the facts order,
-  which no rule has yet. Heap `initialized_cells` and union views are still
-  visited per candidate on every store.
+  which no rule has yet. Union views are still visited per candidate on
+  every store. The initialization record (`InitializedBytes` in
+  `src/kernel/primitives/initialized_bytes.rs`) is not visited by a store:
+  a store only adds to it, merging constant-offset bytes into one run per
+  block with a predecessor lookup, and a forgotten cell's bytes are recorded
+  at the cost of the forgetting itself
+  (`an_unplaced_store_records_a_local_array_as_one_run`).
 - Every fact a context is built from is charged one unit of deterministic
   work (`PureFactContext::assume_proposition` and `assume_condition`), so a
   context rebuilt from a growing list at each step shows as quadratic work

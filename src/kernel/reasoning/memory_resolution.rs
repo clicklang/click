@@ -2548,8 +2548,8 @@ fn observable_heap_metadata_matches_for_load(
         observable,
     ) && observable_entries_match(
         candidates,
-        &left.heap.initialized_cells,
-        &right.heap.initialized_cells,
+        left.heap.initialized.as_map(),
+        right.heap.initialized.as_map(),
         observable,
     ) && observable_elements_match(
         candidates,
