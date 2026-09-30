@@ -250,6 +250,14 @@ enum Token {
     Pipe,
 }
 
+/// Diagnostics print a token as [`Token::describe`] spells it, never as its
+/// Debug form.
+impl std::fmt::Display for Token {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.describe())
+    }
+}
+
 impl Token {
     /// A human-readable rendering for diagnostics, such as `` identifier `x` ``
     /// or `` `;` ``.
@@ -1477,7 +1485,7 @@ impl Parser {
                 return Err(self.error("an `abstract resource` cannot have a body"));
             }
             Some(token) => {
-                return Err(self.error(format!("expected resource body, got {token:?}")));
+                return Err(self.error(format!("expected resource body, got {token}")));
             }
             None => {
                 return Err(self.error("expected resource body, got end of input"));
@@ -2042,7 +2050,7 @@ impl Parser {
                     ));
                 }
                 Some(token) => {
-                    return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                    return Err(self.error(format!("expected `,` or `)`, got {token}")));
                 }
                 None => return Err(self.error("expected `,` or `)`, got end of input")),
             }
@@ -3015,7 +3023,7 @@ impl Parser {
                     });
                 }
                 Some(token) => {
-                    return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                    return Err(self.error(format!("expected `,` or `)`, got {token}")));
                 }
                 None => return Err(self.error("expected `,` or `)`, got end of input")),
             }
@@ -3360,7 +3368,7 @@ impl Parser {
                     Some(Token::RParen) => break,
                     Some(token) => {
                         return Err(self.error(format!(
-                            "expected `,` or `)` in function-pointer parameter list, got {token:?}"
+                            "expected `,` or `)` in function-pointer parameter list, got {token}"
                         )));
                     }
                     None => return Err(self.error(
@@ -4195,7 +4203,7 @@ impl Parser {
                 "expected `invariant`, got `{kind}`"
             ))),
             Some(token) => Err(self.error(format!(
-                "expected `invariant`, got {token:?}"
+                "expected `invariant`, got {token}"
             ))),
             None => Err(self.error("expected `invariant`, got end of input")),
         }
@@ -4557,7 +4565,7 @@ impl Parser {
                 Some(Token::Number(alignment)) if alignment.is_power_of_two() => alignment,
                 Some(token) => {
                     return Err(self.error(format!(
-                        "aligned expects a power-of-two byte alignment, got {token:?}"
+                        "aligned expects a power-of-two byte alignment, got {token}"
                     )));
                 }
                 None => {
@@ -4936,7 +4944,7 @@ impl Parser {
                     }
                     Some(Token::RParen) => break,
                     Some(token) => {
-                        return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                        return Err(self.error(format!("expected `,` or `)`, got {token}")));
                     }
                     None => return Err(self.error("expected `,` or `)`, got end of input")),
                 }
@@ -4977,7 +4985,7 @@ impl Parser {
             Token::BangEqual => Ok(ComparisonOperator::NotEqual),
             Token::Ident(operator) if operator == "in" => Ok(ComparisonOperator::In),
             token => Err(self.error(format!(
-                "expected comparison operator in `{clause}`, got {token:?}"
+                "expected comparison operator in `{clause}`, got {token}"
             ))),
         }
     }
@@ -6286,7 +6294,7 @@ impl Parser {
                     Some(Token::Comma) => self.position += 1,
                     Some(Token::RParen) => break,
                     Some(token) => {
-                        return Err(self.error(format!("expected `,` or `)`, got {token:?}")));
+                        return Err(self.error(format!("expected `,` or `)`, got {token}")));
                     }
                     None => return Err(self.error("expected `,` or `)`, got end of input")),
                 }
@@ -7099,7 +7107,7 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `statement(N)`, or label, got {token:?}"
+                "expected code region `function`, `loop(N)`, `statement(N)`, or label, got {token}"
             ))),
             None => Err(self.error(
                 "expected code region `function`, `loop(N)`, `statement(N)`, or label, got end of input",
@@ -7120,7 +7128,7 @@ impl Parser {
                 return Err(self.error(format!("expected tactic, got `{name}`")));
             }
             Some(token) => {
-                return Err(self.error(format!("expected tactic, got {token:?}")));
+                return Err(self.error(format!("expected tactic, got {token}")));
             }
             None => return Err(self.error("expected tactic, got end of input")),
         };
@@ -9112,7 +9120,7 @@ impl Parser {
                 Some(Token::Number(bytes)) => bytes,
                 Some(token) => {
                     return Err(self.error(format!(
-                        "byte offset expects a nonnegative byte count, got {token:?}"
+                        "byte offset expects a nonnegative byte count, got {token}"
                     )));
                 }
                 None => {
@@ -9231,7 +9239,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(expression)
             }
-            Some(token) => Err(self.error(format!("expected contract expression, got {token:?}"))),
+            Some(token) => Err(self.error(format!("expected contract expression, got {token}"))),
             None => Err(self.error("expected contract expression, got end of input")),
         }
     }
@@ -9272,7 +9280,7 @@ impl Parser {
                 Some(Token::RBracket) => {}
                 Some(token) => {
                     return Err(self.error(format!(
-                        "expected `,` or `]` after sequence element, got {token:?}"
+                        "expected `,` or `]` after sequence element, got {token}"
                     )));
                 }
                 None => return Err(self.error("expected `]` after sequence element")),
@@ -9719,7 +9727,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(expression)
             }
-            Some(token) => Err(self.error(format!("expected result expression, got {token:?}"))),
+            Some(token) => Err(self.error(format!("expected result expression, got {token}"))),
             None => Err(self.error("expected result expression, got end of input")),
         }
     }

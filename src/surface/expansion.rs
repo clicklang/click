@@ -13,6 +13,18 @@ pub enum CProofClaim {
     Grouped,
 }
 
+impl CProofClaim {
+    /// The claim as a diagnostic names it: the zero-based source clause, or
+    /// the function's one grouped proof.
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Ensure(index) => format!("`ensures` clause {index}"),
+            Self::ExceptionalEnsure(index) => format!("`exceptional ensures` clause {index}"),
+            Self::Grouped => "grouped contract proof".to_string(),
+        }
+    }
+}
+
 pub fn verifying_source_paths(click_source: &str) -> Result<Vec<String>, ClickError> {
     let tokens = scan_source_tokens(click_source)?;
     let mut paths = Vec::new();
@@ -1386,7 +1398,8 @@ fn expand_c0_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             (
@@ -1398,7 +1411,8 @@ fn expand_c0_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             let replacement = super::printing::format_proof_certificate(&certificate);
@@ -1603,7 +1617,8 @@ fn expand_cpp_prepared_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             (
@@ -1615,7 +1630,8 @@ fn expand_cpp_prepared_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             let replacement = super::printing::format_proof_certificate(&certificate);
@@ -1734,7 +1750,8 @@ fn expand_c0_prepared_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             (
@@ -1746,7 +1763,8 @@ fn expand_c0_prepared_tactic_source_at_context(
             let certificate =
                 ProofCertificate::from_proof_tactics(&replacement_tactics).map_err(|error| {
                     ClickError::new(format!(
-                        "selected tactic did not produce a surface certificate: {error:?}"
+                        "selected tactic did not produce a surface certificate: its expansion still contains {}",
+                        error.message()
                     ))
                 })?;
             let replacement = super::printing::format_proof_certificate(&certificate);
@@ -1938,7 +1956,8 @@ fn select_expansion_theorem<'a>(
     };
     selected.ok_or_else(|| {
         ClickError::new(format!(
-            "verified function `{function_name}` has no {claim:?} claim"
+            "verified function `{function_name}` has no verified {}",
+            claim.describe()
         ))
     })
 }
@@ -2217,7 +2236,8 @@ fn find_claim_proof_span(
     match find_claim_proof_edit(tokens, function, claim)? {
         ProofSourceEdit::Explicit(span) => Ok(span),
         ProofSourceEdit::DefaultTerminator { .. } => Err(ClickError::new(format!(
-            "selected {claim:?} uses a default proof and has no explicit source tactic"
+            "selected {} uses a default proof and has no explicit source tactic",
+            claim.describe()
         ))),
         ProofSourceEdit::OmittedLoopPhase { .. } => {
             unreachable!("function claim edits are never loop phases")
@@ -2274,7 +2294,8 @@ fn find_claim_proof_edit(
             index,
         ),
         CProofClaim::Grouped => Err(ClickError::new(format!(
-            "could not locate source clause for {claim:?}"
+            "could not locate the source clause for the {}",
+            claim.describe()
         ))),
     }
 }
@@ -2471,7 +2492,7 @@ impl ProofSite {
             Self::FunctionClaim {
                 function_name,
                 claim,
-            } => format!("function `{function_name}` {claim:?}"),
+            } => format!("function `{function_name}` {}", claim.describe()),
             Self::TheoremEnsure {
                 theorem_name,
                 ensure_index,

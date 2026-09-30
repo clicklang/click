@@ -3681,7 +3681,8 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
     };
     let _tactic_index = tactic_index.ok_or_else(|| {
         ClickError::new(format!(
-            "whole-proof capture is not supported for function claim {claim:?}"
+            "whole-proof capture is not supported for function claim {}",
+            claim.describe()
         ))
     })?;
     let function_block = file
@@ -3704,7 +3705,8 @@ pub(in crate::surface) fn tactic_expansion_required_functions(
     }
     .ok_or_else(|| {
         ClickError::new(format!(
-            "selected {claim:?} proof for `{function_name}` is not an explicit tactic script"
+            "selected {} proof for `{function_name}` is not an explicit tactic script",
+            claim.describe()
         ))
     })?;
     let Some((kernel_name, _, parsed)) =
