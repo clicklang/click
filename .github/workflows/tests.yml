@@ -77,11 +77,11 @@ jobs:
       # Build every selected test binary and the C++ exporter once. All test
       # execution happens on consumers of this immutable build artifact.
       - name: Check quality and build test archive
-        run: scripts/check.sh --ci-prepare target/ci-tests
+        run: scripts/check.sh --ci-prepare "$RUNNER_TEMP/compiled-tests"
       - uses: actions/upload-artifact@v4
         with:
           name: compiled-tests
-          path: target/ci-tests
+          path: ${{ runner.temp }}/compiled-tests
           compression-level: 0
           if-no-files-found: error
           retention-days: 1
@@ -116,9 +116,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: compiled-tests
-          path: target/ci-tests
+          path: ${{ runner.temp }}/compiled-tests
       - name: Run ${{ matrix.suite }} tests (${{ matrix.partition }})
-        run: scripts/check.sh --ci-shard target/ci-tests "${{ matrix.suite }}" "${{ matrix.partition }}"
+        run: scripts/check.sh --ci-shard "$RUNNER_TEMP/compiled-tests" "${{ matrix.suite }}" "${{ matrix.partition }}"
 
   docs:
     needs: scope

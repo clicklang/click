@@ -50,9 +50,10 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
     # All consumers reuse the exporter and Rust binaries from the build job.
     # Keep the exporter in a tar file because Actions artifacts do not retain
     # executable permissions on individual uploaded files.
-    tar -xf "$artifacts/exporter.tar" -C "$artifacts"
+    mkdir -p target/cpp-exporter
+    tar -xf "$artifacts/exporter.tar" -C target/cpp-exporter
     export CLICK_CPP_EXPORTER
-    CLICK_CPP_EXPORTER="$(cd "$artifacts" && pwd -P)/click-cpp-exporter"
+    CLICK_CPP_EXPORTER="$PWD/target/cpp-exporter/click-cpp-exporter"
     if [[ ! -x "$CLICK_CPP_EXPORTER" ]]; then
         echo "error: shared C++ exporter is missing at $CLICK_CPP_EXPORTER" >&2
         exit 1
