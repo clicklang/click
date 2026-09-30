@@ -1354,6 +1354,146 @@ fn r28_shared_and_exclusive_reborrows_preserve_parent_dependency() {
     assert_eq!(model.parent_read(parent, 1), Ok(12));
 }
 
+// Paired with design/borrow-probes/resource_correspondence*.rs. These
+// transitions test resource laws independently of rustc's rejection of the
+// corresponding invalid programs; they do not verify Rust source.
+#[test]
+fn rust_correspondence_move_transfers_authority_without_copying_it() {
+    let original = ContextId(0);
+    let recipient = ContextId(1);
+    let reader = ContextId(2);
+    let whole = ByteRange::new(0, 2);
+    let mut model = RangeOwnershipModel::new([(whole, original, 4)]);
+    model.transfer(whole, original, recipient).unwrap();
+    assert_eq!(
+        model.write(original, whole, 8),
+        Err(RangeRefusal::MissingOwner)
+    );
+    assert_eq!(
+        model.transfer(whole, original, reader),
+        Err(RangeRefusal::WrongContext)
+    );
+    model.write(recipient, whole, 8).unwrap();
+
+    let (loan, root) = model.lend_shared(recipient, reader, whole).unwrap();
+    assert_eq!(
+        model.transfer(whole, recipient, original),
+        Err(RangeRefusal::WrongContext)
+    );
+    assert_eq!(model.recover(loan), Err(RangeRefusal::ScopeStillActive));
+    assert_eq!(model.read_shared(root, reader), Ok(8));
+    model.end_shared(loan, reader).unwrap();
+    model.recover(loan).unwrap();
+    assert_eq!(model.recover(loan), Err(RangeRefusal::AlreadyRecovered));
+    assert_eq!(
+        model.read_shared(root, reader),
+        Err(RangeRefusal::WrongHolder)
+    );
+    model.write(recipient, whole, 10).unwrap();
+    assert!(model.invariant_holds());
+}
+
+#[test]
+fn rust_correspondence_shared_field_preserves_value_and_allows_disjoint_write() {
+    let parent = ContextId(0);
+    let child = ContextId(1);
+    let mut model = FieldDependencyModel::new(parent, [(0, 4), (1, 9)]);
+    let loan = model
+        .reborrow(parent, child, 0, ReborrowMode::Shared)
+        .unwrap();
+    assert_eq!(
+        model.parent_write(parent, 0, 8),
+        Err(FieldRefusal::ParentSuspended)
+    );
+    assert_eq!(
+        model.child_write(child, loan, 8),
+        Err(FieldRefusal::ChildWriteThroughShared)
+    );
+    model.parent_write(parent, 1, 12).unwrap();
+    assert_eq!(model.child_read(child, loan), Ok(4));
+    assert_eq!(model.end_child(child, loan), Ok(4));
+    model.parent_write(parent, 0, 8).unwrap();
+    assert_eq!(model.parent_read(parent, 0), Ok(8));
+    assert_eq!(model.parent_read(parent, 1), Ok(12));
+}
+
+#[test]
+fn rust_correspondence_exclusive_reborrow_recovers_updated_value_once() {
+    let parent = ContextId(0);
+    let child = ContextId(1);
+    let stranger = ContextId(2);
+    let mut model = FieldDependencyModel::new(parent, [(0, 4), (1, 9)]);
+    let loan = model
+        .reborrow(parent, child, 0, ReborrowMode::ExclusiveModelOnly)
+        .unwrap();
+    assert_eq!(
+        model.parent_read(parent, 0),
+        Err(FieldRefusal::ParentSuspended)
+    );
+    assert_eq!(
+        model.parent_write(parent, 0, 8),
+        Err(FieldRefusal::ParentSuspended)
+    );
+    assert_eq!(
+        model.reborrow(parent, stranger, 0, ReborrowMode::Shared),
+        Err(FieldRefusal::ActiveChild)
+    );
+    model.child_write(child, loan, 7).unwrap();
+
+    // A forged recovery must leave the outstanding child and its value intact.
+    let before = model.clone();
+    assert_eq!(
+        model.end_child(stranger, loan),
+        Err(FieldRefusal::WrongChild)
+    );
+    assert_eq!(model, before);
+    assert_eq!(
+        model.end_child(child, loan + 1),
+        Err(FieldRefusal::WrongChild)
+    );
+    assert_eq!(model, before);
+    assert_eq!(model.end_child(child, loan), Ok(7));
+    model.parent_write(parent, 0, 8).unwrap();
+    assert_eq!(model.parent_read(parent, 0), Ok(8));
+    assert_eq!(model.parent_read(parent, 1), Ok(9));
+    // Borrow legality alone does not imply the stale/false final-value claim.
+    assert_ne!(model.parent_read(parent, 0), Ok(7));
+    assert_eq!(model.child_read(child, loan), Err(FieldRefusal::WrongChild));
+    assert_eq!(
+        model.child_write(child, loan, 99),
+        Err(FieldRefusal::WrongChild)
+    );
+    assert_eq!(model.end_child(child, loan), Err(FieldRefusal::WrongChild));
+}
+
+#[test]
+fn rust_correspondence_partition_supports_disjoint_exclusive_access() {
+    let parent = ContextId(0);
+    let left_user = ContextId(1);
+    let right_user = ContextId(2);
+    let whole = ByteRange::new(0, 2);
+    let mut model = RangeOwnershipModel::new([(whole, parent, 4)]);
+    let (left, right) = model.partition(parent, whole, 1).unwrap();
+    model.transfer(left, parent, left_user).unwrap();
+    model.transfer(right, parent, right_user).unwrap();
+    assert_eq!(
+        model.write(parent, whole, 99),
+        Err(RangeRefusal::MissingOwner)
+    );
+    assert_eq!(
+        model.write(left_user, right, 99),
+        Err(RangeRefusal::MissingOwner)
+    );
+    model.write(left_user, left, 8).unwrap();
+    model.write(right_user, right, 12).unwrap();
+    model.transfer(left, left_user, parent).unwrap();
+    model.transfer(right, right_user, parent).unwrap();
+    assert_eq!(model.join(left, right, parent), Ok(whole));
+    assert_eq!(model.values[&0], 8);
+    assert_eq!(model.values[&1], 12);
+    assert!(model.invariant_holds());
+}
+
 #[test]
 fn r29_returned_field_loan_recovers_updated_value_after_dependency() {
     let parent = ContextId(0);
