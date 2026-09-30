@@ -812,6 +812,9 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
+        if left == right {
+            return true;
+        }
         self.state
             .lock()
             .expect("equality graph")

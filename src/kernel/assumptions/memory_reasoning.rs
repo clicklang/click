@@ -3223,7 +3223,7 @@ impl PureFactContext {
                     value: right,
                     byte_width: right_width,
                 },
-            ) => left_width == right_width && self.bitvector_terms_equal_from_facts(left, right),
+            ) => left_width == right_width && self.int32_values_known_equal(left, right),
             _ => false,
         }
     }

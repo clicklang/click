@@ -336,8 +336,7 @@ impl PureFactContext {
                     return Some(value);
                 }
                 if let ConditionTerm::Bitvector32Equal(left, right) = condition
-                    && (self.equality_graph.has_term_equivalences()
-                        && self.equality_graph.are_int32_equal(left, right)
+                    && (self.int32_values_known_equal(left, right)
                         || super::super::super::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                             left,
                             right,
@@ -1007,7 +1006,7 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> Option<bool> {
-        if left == right || self.equality_graph.are_int32_equal(left, right) {
+        if self.int32_values_known_equal(left, right) {
             return Some(true);
         }
         if let Some(value) =
@@ -1117,42 +1116,22 @@ impl PureFactContext {
         evaluate(self, term, &mut BTreeSet::new(), &mut BTreeMap::new())
     }
 
-    pub(in crate::kernel) fn bitvector_terms_equal_from_facts(
+    /// Query wrapping int32 value equality maintained by the trusted graph.
+    /// This performs no fact-component walk, arithmetic search, or snapshot
+    /// transport. `false` means unknown. Equal residues establish exact byte
+    /// offsets only through the separate offset judgment's no-wrap guards.
+    pub(in crate::kernel) fn int32_values_known_equal(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        if left == right {
-            return true;
-        }
-
-        // Memoized only under an enclosing id scope; this search is called
-        // from deep memory-resolution recursions where hashing the fact set
-        // per call would cost more than the search itself.
-        let memo_id = ambient_assumptions_memo_id(self);
-        let memo_key = memo_id.map(|memo_id| (memo_id, left.clone(), right.clone()));
-        if let Some(memo_key) = &memo_key
-            && let Some(hit) =
-                EQUAL_FROM_FACTS_MEMO.with(|memo| memo.borrow().get(memo_key).copied())
-        {
-            return hit;
-        }
-        let result = self.bitvector_terms_equal_from_facts_uncached(left, right);
-        if let Some(memo_key) = memo_key {
-            EQUAL_FROM_FACTS_MEMO.with(|memo| {
-                let mut memo = memo.borrow_mut();
-                if memo.len() >= DECIDE_MEMO_LIMIT {
-                    memo.clear();
-                }
-                memo.insert(memo_key, result);
-            });
-        }
-        result
+        left == right || self.equality_graph.are_int32_equal(left, right)
     }
 
     /// The other terms exact equality facts join to `term`: its equality
-    /// class in the int32 equality graph, less `term` itself, in canonical
-    /// form. Empty when no equality fact mentions `term`.
+    /// component in the exact-premise adjacency index, less `term` itself,
+    /// in canonical form. This enumerates evidence spellings; Boolean value
+    /// equality uses `int32_values_known_equal`. Empty when no fact mentions it.
     ///
     /// Work is the class the search reaches and the edges inside it, never
     /// the whole fact set once the graph is built, so an index keyed by
@@ -1185,33 +1164,6 @@ impl PureFactContext {
         seen.remove(&start);
         seen.remove(term);
         seen.into_iter().collect()
-    }
-
-    /// The equality-graph search behind [`Self::bitvector_terms_equal_from_facts`].
-    /// This search is pure — it consults no fuel or depth guards — so both
-    /// positive and negative results are memoizable by content identity.
-    fn bitvector_terms_equal_from_facts_uncached(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        let equality_index = self.bitvector_equality_index();
-        let target = equality_graph_term_key(right);
-        let mut seen = BTreeSet::new();
-        let mut stack = vec![equality_graph_term_key(left)];
-        while let Some(term) = stack.pop() {
-            if !seen.insert(term.clone()) {
-                continue;
-            }
-            if term == target {
-                return true;
-            }
-            if let Some(neighbors) = equality_index.get(&term) {
-                stack.extend(neighbors.keys().cloned());
-            }
-        }
-
-        false
     }
 
     /// Retain one deterministic path made only from exact int32 equality

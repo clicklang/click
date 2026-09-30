@@ -766,7 +766,7 @@ impl PureFactContext {
     /// `lower` are each a constant or a variable that cannot name a load,
     /// that comparison has exactly these routes: structural identity, two
     /// exact constants (which then decide it outright, true or false), the
-    /// equality graph (`bitvector_terms_equal_from_facts`), and an exact
+    /// trusted graph (`int32_values_known_equal`), and an exact
     /// offset-equality fact over the two scaled terms. Every other route
     /// needs a load (the load view of a load variable, the value stored under
     /// a load, two loads' derivations) or a sum (additive cancellation, a

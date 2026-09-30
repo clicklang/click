@@ -735,7 +735,7 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
             ),
         ]);
         assert_eq!(warm.normalized(&assumptions).facts().len(), 1);
-        assert!(assumptions.bitvector_terms_equal_from_facts(
+        assert!(assumptions.int32_values_known_equal(
             &Bitvector32Term::Variable(Variable(end)),
             &Bitvector32Term::Variable(Variable(start)),
         ));

@@ -21,6 +21,11 @@ reasoning and guarded memory resolution remain distinct judgments. Insertion
 order, late merges, branch isolation, and increasing alias classes have focused
 regressions. This cleanup changes no C pointer-value representation.
 
+Int32 known-value equality likewise has one graph query. Its Boolean
+fact-component walk and memo are removed; exact-offset no-wrap checks,
+load-width guards, and evidence-producing enumeration remain explicit.
+Wider scalar theories are future work rather than additional P1 requirements.
+
 ## Required behavior
 
 1. **Reliable address equality.** Given checked equalities such as `a == b`
