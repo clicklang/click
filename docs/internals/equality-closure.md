@@ -614,13 +614,36 @@ Already admitted single-store edges compose through ordinary graph closure;
 unknown store-address aliases require a later producer check once the needed
 separation is available. Unregistered intermediate edges remain unknown.
 
-A recorded `CellsForgotten` edge also preserves a read: it removes cached
-knowledge without writing program bytes. The producer admits equality with
-that edge's immediate base, subject to the same access-width agreement.
-Unrecorded cell-map pruning supplies no such authority. This rule does not
-cross a subsequent overlapping write or havoc. Publication and lookup still
-check just one selected transition; increasing older history does not increase
-registration work.
+Snapshot producers also maintain an immutable **read identity** for graph
+load congruence. A recorded `CellsForgotten` edge inherits its base's identity:
+removing cached knowledge changes no program bytes. A load-valued `CellsSeeded`
+run inherits it only when the run's source and base already share that identity
+and each slot's stride equals its value width. Copying the same bytes already
+in the base is materialization, including successive sibling runs copied from
+an equivalent earlier snapshot. Other transitions receive a distinct identity.
+The pointer and int32 graph-load signatures use this key while the existing
+load terms and C pointer values retain their original snapshot representation.
+
+This metadata is part of the trusted kernel and establishes value equality
+only. It does not establish snapshot equality, read permission, initialization,
+allocation continuity, or framing. Unrecorded pruning, constant or symbolic
+storage runs, changed sources, stores, and havoc cannot inherit a key by this
+rule. Checked separate-store unions still belong to their proof branch.
+
+The key is fixed at first interning. If a snapshot was already interned without
+this annotation, recording a later edge conservatively loses the new equality;
+existing graph applications never require relabeling or rescanning. Arena reset
+keeps prior-session keys distinct. Production uses immediate-source key lookups
+and does not enumerate slots or registered reads. Endpoint queries compose
+arbitrarily many already-produced materialization/forgetting transitions with
+ordinary congruence, without intermediate read publication or a history walk.
+Deterministic regressions check approximately linear production over increasing
+histories and constant endpoint-query work. The redundant per-read forgetting
+admission rule has been removed.
+
+The recursive unfold → sibling-field write → refold fixture now verifies,
+expands, and independently rechecks. Overwriting the pointer field instead
+rejects the expanded proof.
 
 A retained cell-map entry alone is insufficient preservation evidence:
 low-level snapshot construction can leave it present after a write through a
