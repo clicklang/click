@@ -55,7 +55,7 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 fn identity(config: &str, source: &str, exporter: &str, artifact: &str) -> String {
-    digest(format!("click-rust-import-v1\n{config}\n{source}\n{exporter}\n{artifact}\n{COMPILER_COMMIT}\n{TARGET}").as_bytes())
+    digest(format!("click-rust-import-v2\n{config}\n{source}\n{exporter}\n{artifact}\n{COMPILER_COMMIT}\n{TARGET}").as_bytes())
 }
 fn read(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
     if !fs::symlink_metadata(path)
@@ -129,6 +129,7 @@ fn decode(bytes: &[u8], c: &Config) -> Result<RustExport, String> {
         || export.edition != "2024"
         || !export.overflow_checks
         || export.panic != "abort"
+        || export.mir_opt_level != 0
         || export.logical_source != c.source
     {
         return Err("Rust artifact differs from the supported compiler profile".into());

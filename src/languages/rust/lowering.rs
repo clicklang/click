@@ -1,4 +1,5 @@
-use super::schema::{Expression as E, Function, RustExport, Statement as S, Type};
+use super::schema::{Expression as E, Function, Record, RustExport, Statement as S, Type};
+mod moves;
 use crate::kernel::*;
 use crate::languages::c::syntax::{C0Function, C0Parameter, C0StructLayout, C0Type};
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,41 +22,76 @@ pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
-        let layout = C0StructLayout::from_explicit_fields(
-            record
-                .fields
-                .iter()
-                .map(|f| (f.name.clone(), C0Type::Int32, f.offset, 4))
-                .collect(),
-            record.size,
-            record.alignment,
-        )?;
+        let mut layout_fields = record
+            .fields
+            .iter()
+            .map(|f| {
+                Ok((
+                    f.name.clone(),
+                    scalar_type(&f.value_type)?,
+                    f.offset,
+                    if matches!(f.value_type, Type::Reference { .. }) {
+                        8
+                    } else {
+                        4
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        // Rust may reorder fields; declaration order still selects constructor
+        // operands, while layout validation consumes physical offset order.
+        layout_fields.sort_by_key(|f| f.2);
+        let layout =
+            C0StructLayout::from_explicit_fields(layout_fields, record.size, record.alignment)?;
         if layouts.insert(record.name.clone(), layout).is_some() {
             return Err("duplicate Rust record".into());
         }
         for f in &record.fields {
             if fields
-                .insert((record.name.as_str(), f.name.as_str()), f.offset)
+                .insert(
+                    (record.name.as_str(), f.name.as_str()),
+                    (f.offset, scalar_type(&f.value_type)?.to_kernel_type()),
+                )
                 .is_some()
             {
                 return Err("duplicate Rust field".into());
             }
         }
     }
+    let record_index = export
+        .records
+        .iter()
+        .map(|r| (r.name.as_str(), r))
+        .collect::<BTreeMap<_, _>>();
+    let function_index = export
+        .functions
+        .iter()
+        .map(|f| (f.name.as_str(), f))
+        .collect::<BTreeMap<_, _>>();
     let mut names = BTreeSet::new();
     let mut functions = Vec::new();
     for f in &export.functions {
         if !names.insert(f.name.clone()) {
             return Err("duplicate Rust function name".into());
         }
-        functions.push(lower_function(export, f, &fields)?);
+        functions.push(lower_function(
+            export,
+            f,
+            &fields,
+            &layouts,
+            &record_index,
+            &function_index,
+        )?);
     }
     Ok((functions, layouts))
 }
 fn lower_function(
     export: &RustExport,
     f: &Function,
-    fields: &BTreeMap<(&str, &str), u32>,
+    fields: &BTreeMap<(&str, &str), (u32, CType)>,
+    layouts: &BTreeMap<String, C0StructLayout>,
+    records: &BTreeMap<&str, &Record>,
+    functions: &BTreeMap<&str, &Function>,
 ) -> Result<C0Function, String> {
     if !matches!(f.return_type, Type::I32 | Type::Bool | Type::Unit) {
         return Err("Rust reference/aggregate returns are not supported".into());
@@ -88,14 +124,22 @@ fn lower_function(
             .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
     }
     let mut cx = Context {
+        owned_locals: BTreeSet::new(),
         source: &export.logical_source,
         function: &f.name,
         fields,
         next_load: 0,
         locals,
         return_type,
+        layouts,
+        records,
+        functions,
     };
-    let body = cx.body(&f.body)?;
+    let body = match &f.mir {
+        Some(mir) if f.body.is_empty() => moves::lower(&mut cx, f, mir)?,
+        Some(_) => return Err("Rust function must select exactly one body representation".into()),
+        None => cx.body(&f.body)?,
+    };
     let kernel = c_function(
         return_type.to_kernel_type(),
         &f.name,
@@ -108,12 +152,16 @@ fn lower_function(
     )
 }
 struct Context<'a> {
+    owned_locals: BTreeSet<String>,
     source: &'a str,
     function: &'a str,
-    fields: &'a BTreeMap<(&'a str, &'a str), u32>,
+    fields: &'a BTreeMap<(&'a str, &'a str), (u32, CType)>,
     next_load: u32,
     locals: BTreeSet<String>,
     return_type: C0Type,
+    layouts: &'a BTreeMap<String, C0StructLayout>,
+    records: &'a BTreeMap<&'a str, &'a Record>,
+    functions: &'a BTreeMap<&'a str, &'a Function>,
 }
 impl Context<'_> {
     fn body(&mut self, body: &[S]) -> Result<CStatement, String> {
@@ -144,7 +192,7 @@ impl Context<'_> {
             S::Assign { target, value } => Ok(c_typed_store(
                 self.address(target)?,
                 self.expr(value)?,
-                CType::Int32,
+                self.place_type(target)?,
             )),
             S::If {
                 condition,
@@ -209,18 +257,32 @@ impl Context<'_> {
                 record,
                 field,
             } => {
-                let offset = *self
+                let (offset, _) = *self
                     .fields
                     .get(&(record.as_str(), field.as_str()))
                     .ok_or("unknown Rust field")?;
-                // This slice admits record *references*, not by-value records.
+                // Field bases are either record references or local stack objects.
                 let pointer = match base.as_ref() {
                     E::Deref { reference } => self.expr(reference)?,
                     _ => self.expr(base)?,
                 };
                 Ok(c_pointer_offset_bytes(pointer, offset))
             }
+            E::Local { name } if self.owned_locals.contains(name) => {
+                Ok(c_cast(c_variable(name), CType::Int32Pointer))
+            }
             _ => Err("only reference-backed Rust places can be borrowed or stored".into()),
+        }
+    }
+    fn place_type(&self, e: &E) -> Result<CType, String> {
+        match e {
+            E::Field { record, field, .. } => self
+                .fields
+                .get(&(record.as_str(), field.as_str()))
+                .map(|(_, t)| *t)
+                .ok_or("unknown Rust field type".into()),
+            E::Deref { .. } => Ok(CType::Int32),
+            _ => Err("unsupported Rust memory place type".into()),
         }
     }
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
@@ -234,7 +296,7 @@ impl Context<'_> {
                 Ok(c_variable(name))
             }
             E::Not { value } => Ok(c_not(self.expr(value)?)),
-            E::Borrow { place } => self.address(place),
+            E::Borrow { place } => Ok(c_cast(self.address(place)?, CType::Int32Pointer)),
             E::Deref { .. } | E::Field { .. } => {
                 let pointer = self.address(e)?;
                 let occurrence = self.next_load;
@@ -244,7 +306,7 @@ impl Context<'_> {
                     .ok_or("Rust load identity exhausted")?;
                 Ok(c_typed_load_with_source(
                     pointer,
-                    CType::Int32,
+                    self.place_type(e)?,
                     Some(LoadSourceId {
                         owner: LoadSourceOwnerId {
                             source_unit: self.source.into(),

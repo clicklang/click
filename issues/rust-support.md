@@ -23,9 +23,17 @@ for the library demonstration to announce the supported subset.
 
 ## Unmet capability and required invariant
 
-Click currently has C and bounded C++ frontends, but no Rust source import or
-verification path. The Rust compiler/runtime probes and independent resource
-models are groundwork, not verified Rust programs.
+Click now has an experimental Rust source import and verification path. The
+borrow fixture and move/drop guard verify unchanged Rust through shared Click
+proof tooling. General library support and the shared checksum demonstration
+remain unmet. Borrowing a field of a local owned struct into another guard
+also needs shared field-loan recovery: returning the child field owner leaves
+fragments that cannot supply the outer destructor call. The unchanged Rust
+rejection regression is `rust_owned_field_loan_recovery_fails_closed`; acceptance
+is to verify the two nested guards with the final caller value 42, retaining
+the source and rejecting a final-value claim of 1. See
+[the supported subset](../docs/reference/rust.md) for exact bounds and
+reproduction commands.
 
 For supported source, compiler-established type and borrow guarantees must
 survive translation into the checked execution model. Mutations, calls,

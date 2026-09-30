@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "language": "rust",
   "target": "x86_64-unknown-linux-gnu",
   "source": "borrow.rs",
