@@ -54,8 +54,7 @@ Euclidean division: for nonzero `d`,
 `a == (a / d) * d + a % d` and `0 <= a % d < abs(d)`.
 
 Thus `-7 / 3 == -3` and `-7 % 3 == 2`; this is distinct from C's truncation
-toward zero. A zero divisor is a definedness obligation. See the deferred
-[division and remainder issue](https://github.com/clicklang/click/blob/master/issues/integer-division-and-remainder.md).
+toward zero. A zero divisor is a definedness obligation.
 
 Every checked conversion and every future checked division must establish its
 definedness in the current proof context before a theorem or execution

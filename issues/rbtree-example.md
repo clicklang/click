@@ -705,6 +705,5 @@ The maintained language explanation is
 Integer specification coverage is landed and documented in
 [the mathematical-integer internals](../docs/internals/mathematical-integers.md);
 this MVR model work has no pending dependency on the retired Integer P1
-issue. Related: [algebraic-data-types.md](algebraic-data-types.md),
-[resource-algebra-extensions.md](resource-algebra-extensions.md), and
+issue. Related: [algebraic-data-types.md](algebraic-data-types.md) and
 [recursion.md](recursion.md).
