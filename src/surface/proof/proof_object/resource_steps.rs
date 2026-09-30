@@ -24,6 +24,35 @@ impl<'a> Proof<'a> {
             })
     }
 
+    /// Ordinary wrappers transfer existing children; they do not create or
+    /// destroy a member by exposing its private memory body.
+    fn is_authority_transfer_wrapper(&self, resource: &ResourceClause) -> bool {
+        let ResourceClause::Declared { name, .. } = resource else {
+            return false;
+        };
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return false;
+        };
+        let Some(definition) = context.resource_environment.get(name) else {
+            return false;
+        };
+        let Some(body) = definition.composite_body() else {
+            return false;
+        };
+        definition.resource_parameters().is_empty()
+            && definition.fields().is_empty()
+            && body.children.is_empty()
+            && body.guarded_by.is_none()
+            && body.matched.is_none()
+            && body.condition.is_none()
+            && body.facts.is_empty()
+            && body.witnesses.is_empty()
+            && !body.contains.is_empty()
+            && body.contains.iter().all(|child| {
+                matches!(child, ResourceClause::Declared { name, .. } if name != "authority")
+            })
+    }
+
     fn apply_execution_population_member_exchange(
         &self,
         resource: &ResourceClause,
@@ -102,7 +131,41 @@ impl<'a> Proof<'a> {
                 compiled_definition,
                 before_facts.assumptions(),
             )
-            .map_err(|message| self.step_error(message))?;
+            .map_err(|message| {
+                if produce && message.contains("Requires the private body") {
+                    let missing = resource_argument_substitutions(
+                        definition,
+                        resource,
+                        context.claim_label,
+                        context.tactic_index,
+                    )
+                    .ok()
+                    .and_then(|substitutions| {
+                        body.contains.iter().find_map(|clause| {
+                            let clause =
+                                instantiate_resource_clause(clause, &substitutions).ok()?;
+                            let fact = lower_resource_clause_at_state(
+                                &clause,
+                                context.parsed_function.parameters(),
+                                context.arguments,
+                                &execution.core.state,
+                            )
+                            .ok()?;
+                            (!execution
+                                .core
+                                .state
+                                .resources()
+                                .satisfies_fact(&fact, before_facts.assumptions()))
+                            .then(|| describe_resource_clause(&clause))
+                        })
+                    });
+                    if let Some(missing) = missing {
+                        return self
+                            .step_error(format!("{message}; missing resource fact `{missing}`"));
+                    }
+                }
+                self.step_error(message)
+            })?;
         let entry_successor = execution
             .core
             .record_population_member_rewrite(
@@ -1833,6 +1896,7 @@ impl<'a> Proof<'a> {
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
+            && !self.is_authority_transfer_wrapper(resource)
         {
             return self.apply_execution_population_member_exchange(resource, false);
         }
@@ -1911,6 +1975,7 @@ impl<'a> Proof<'a> {
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
             && !matches!(resource, ResourceClause::Declared { name, .. } if name == "authority")
             && !self.is_authority_control_resource(resource)
+            && !self.is_authority_transfer_wrapper(resource)
         {
             return self.apply_execution_population_member_exchange(resource, true);
         }
@@ -1999,6 +2064,7 @@ impl<'a> Proof<'a> {
         if self
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !self.is_authority_transfer_wrapper(resource)
         {
             return Err(self.step_error(
                 "resource unfold after function outcome is unavailable in authority mode",
@@ -2026,6 +2092,9 @@ impl<'a> Proof<'a> {
         )
         .map_err(|message| self.step_error(message))?;
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
+        let mut execution = branch_state.execution.as_deref().cloned().ok_or_else(|| {
+            self.step_error("outcome resource unfold lost its execution snapshot")
+        })?;
         let mut data = (*goal.data).clone();
         let checked = unfold_composite_resource_for_proof(
             context.resource_environment,
@@ -2041,6 +2110,20 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             false,
         )?;
+        if checked.state.uses_population_authority_semantics() {
+            execution
+                .core
+                .record_return_transfer_wrapper_rewrite(
+                    context.function,
+                    goal.path_index,
+                    self.facts(),
+                    &checked.selected,
+                    &goal.data.core.state,
+                    &checked.state,
+                    &checked.facts,
+                )
+                .map_err(|message| self.step_error(message))?;
+        }
         data.core.state = checked.state.into();
         let mut updated = goal.clone();
         updated.data = Arc::new(data);
@@ -2051,7 +2134,7 @@ impl<'a> Proof<'a> {
                 BranchState {
                     facts: checked.facts,
                     unfolded_predicates: branch_state.unfolded_predicates.clone(),
-                    execution: branch_state.execution.clone(),
+                    execution: Some(Arc::new(execution)),
                 },
             )),
             added_facts: checked.added_facts.clone(),
@@ -2069,6 +2152,7 @@ impl<'a> Proof<'a> {
         if self
             .execution()
             .is_some_and(|execution| execution.core.state.uses_population_authority_semantics())
+            && !self.is_authority_transfer_wrapper(resource)
         {
             return Err(self.step_error(
                 "resource fold after function outcome is unavailable in authority mode",
@@ -2119,7 +2203,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("outcome resource `fold` requires a focused outcome goal"));
         };
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
-        let execution = branch_state.execution.as_deref().ok_or_else(|| {
+        let mut execution = branch_state.execution.as_deref().cloned().ok_or_else(|| {
             self.step_error("outcome resource `fold` lost its execution snapshot")
         })?;
         let pre_state = execution
@@ -2149,6 +2233,29 @@ impl<'a> Proof<'a> {
         let CFunctionOutcome::Return { value, state } = checked.outcome else {
             unreachable!("folding a return outcome preserves its outcome kind")
         };
+        if state.uses_population_authority_semantics()
+            && self.is_authority_transfer_wrapper(resource)
+        {
+            let selected = lower_resource_clause_at_state_with_result(
+                resource,
+                context.parsed_function.parameters(),
+                context.arguments,
+                &state,
+                &value,
+            )?;
+            execution
+                .core
+                .record_return_transfer_wrapper_rewrite(
+                    context.function,
+                    goal.path_index,
+                    self.facts(),
+                    &selected,
+                    &goal.data.core.state,
+                    &state,
+                    &checked.facts,
+                )
+                .map_err(|message| self.step_error(message))?;
+        }
         let mut data = (*goal.data).clone();
         data.core.result = Arc::new(value);
         data.core.state = state.into();
@@ -2157,7 +2264,7 @@ impl<'a> Proof<'a> {
         let state = BranchState {
             facts: checked.facts,
             unfolded_predicates: branch_state.unfolded_predicates.clone(),
-            execution: branch_state.execution.clone(),
+            execution: Some(Arc::new(execution)),
         };
         Ok(CheckedFocusedTransition {
             locals: self.state().locals().clone(),

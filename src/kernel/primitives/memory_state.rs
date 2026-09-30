@@ -4579,14 +4579,18 @@ impl CState {
             .iter()
             .filter_map(CResourceFact::allocation)
             .collect::<Vec<_>>();
-        if children.len() != 2 + allocations.len()
+        let owns_counter = memory_cells.iter().any(|range| {
+            range.base() == &anchor
+                && range.start().as_const() == Some(0)
+                && range.end().as_const().is_some_and(|end| {
+                    end.checked_mul(range.element_width())
+                        .is_some_and(|bytes| bytes >= 4)
+                })
+        });
+        if children.len() != 1 + memory_cells.len() + allocations.len()
             || allocations.len() > 1
             || allocations.iter().any(|(base, _)| *base != &anchor)
-            || memory_cells.len() != 1
-            || memory_cells[0].base() != &anchor
-            || memory_cells[0].start().as_const() != Some(0)
-            || memory_cells[0].end().as_const() != Some(1)
-            || memory_cells[0].element_width() != 4
+            || !owns_counter
         {
             return Err("control must own the exact counter cell and authority".into());
         }
@@ -4620,12 +4624,14 @@ impl CState {
                 if name == description.family()
                     && matches!(arguments.as_slice(), [Some(argument)] if is_parameter(argument)))
         };
-        let exact_count_fact = matches!(definition.facts(), [SpecProposition::Comparison {
+        let exact_count_fact = definition.facts().iter().any(|fact| {
+            matches!(fact, SpecProposition::Comparison {
             left,
             operator: CComparisonOperator::Equal,
             right,
-        }] if (is_counter_load(left) && is_population_count(right))
-            || (is_population_count(left) && is_counter_load(right)));
+        } if (is_counter_load(left) && is_population_count(right))
+            || (is_population_count(left) && is_counter_load(right)))
+        });
         if !exact_count_fact {
             return Err(format!(
                 "Requires the counter cell to equal count({}({parameter}))",

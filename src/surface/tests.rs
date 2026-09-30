@@ -2262,6 +2262,7 @@ fn ensure_comparison(
 }
 
 mod authority_private_body_tests;
+mod authority_transfer_wrapper_tests;
 mod contract_tests;
 mod diagnostic_tests;
 mod execution_tests;
@@ -2690,3 +2691,5 @@ fn mutex_use_resource_type_checks_its_dependent_argument() {
         error.message()
     );
 }
+
+mod authority_conditional_release_tests;

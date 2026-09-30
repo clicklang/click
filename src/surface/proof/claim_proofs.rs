@@ -947,6 +947,13 @@ mod exit_claim {
             }
         }
         pub(super) fn checked_resource_claim_has_grouped_transition(&self) -> bool {
+            // A checked false guard returns no resource units, so it has no
+            // grouped transfer left to validate. Explicit assumption completion
+            // carries the same exact guard evidence as the smart closer.
+            if matches!(&self.evidence, ClaimEvidence::Resource(checked) if checked.has_inactive_guard())
+            {
+                return true;
+            }
             matches!(
                 (&self.evidence, &self.certificate),
                 (

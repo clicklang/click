@@ -1361,6 +1361,204 @@ impl CheckedResourceRewrite {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn check_transfer_wrapper(
+        before_state: &CState,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+        call_events: &CheckedCallEvents,
+        definition: &CCompositeResourceDefinition,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
+        else {
+            return Err("transfer wrapper requires one owned resource".into());
+        };
+        if quantity.as_const() != Some(1)
+            || !definition.resource_parameters.is_empty()
+            || definition.guarded_by.is_some()
+            || definition.matched.is_some()
+            || !definition.witnesses.is_empty()
+            || definition.condition.is_some()
+            || !definition.children.is_empty()
+            || !definition.facts.is_empty()
+            || definition
+                .instance_schema
+                .as_ref()
+                .is_some_and(|schema| !schema.fields().is_empty())
+            || definition.contains().iter().any(|spec| {
+                spec.access() != crate::kernel::CResourceAccessMode::Own
+                    || spec.quantity() != &crate::kernel::CResourceQuantity::One
+                    || spec.guard().is_some()
+                    || !spec.resource_arguments().is_empty()
+            })
+            || selected_children
+                .as_ref()
+                .is_some_and(|children| !children.is_empty())
+        {
+            return Err("authority-mode transfer wrapper has an unsupported body".into());
+        }
+        let description = crate::kernel::ResourceDescription::new(
+            name.clone(),
+            arguments.clone(),
+            crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty schema"),
+        );
+        if before_state
+            .population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|ledger| {
+                ledger.tracks_population(&description)
+                    || ledger.recognizes_imported_population(&description)
+            })
+        {
+            return Err("an authority member cannot use an ordinary wrapper rewrite".into());
+        }
+        let assumptions = before_facts.assumptions();
+        let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+        let expanded = crate::kernel::functions::expand_composite_resource_fact(
+            &singleton,
+            selected,
+            std::slice::from_ref(definition),
+            before_state.memory(),
+            assumptions,
+        )
+        .ok_or("cannot instantiate authority-mode transfer wrapper")?;
+        let exposing = before_state
+            .resources()
+            .satisfies_fact(selected, assumptions)
+            && !after_state
+                .resources()
+                .satisfies_fact(selected, assumptions);
+        let expected = if exposing {
+            before_state
+                .resources()
+                .clone()
+                .without_fact_incrementally(selected, assumptions)
+                .ok_or("transfer wrapper is missing its folded resource")?
+                .try_compose_with_facts_delaying_normalization(
+                    expanded.facts().iter().cloned(),
+                    assumptions,
+                )
+                .map_err(|_| "transfer wrapper overlaps existing children")?
+        } else {
+            let mut resources = before_state.resources().clone();
+            for child in expanded.facts() {
+                resources = resources
+                    .without_fact_incrementally(child, assumptions)
+                    .ok_or("transfer wrapper is missing an existing child")?;
+            }
+            resources
+                .try_compose_with_facts_delaying_normalization(
+                    std::iter::once(selected.clone()),
+                    assumptions,
+                )
+                .map_err(|_| "transfer wrapper duplicates its folded resource")?
+        };
+        if !before_state.loan_bindings_are_consistent()
+            || !after_state.loan_bindings_are_consistent()
+            || !after_state
+                .resources()
+                .same_exchange_from(&expected, before_state.resources())
+            || !Arc::ptr_eq(
+                &after_state.resources.loan_dependencies,
+                &expected.loan_dependencies,
+            )
+        {
+            return Err("transfer wrapper has the wrong resource exchange".into());
+        }
+        let same_bindings = match (
+            &before_state.resource_bindings,
+            &after_state.resource_bindings,
+        ) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        };
+        if !before_state
+            .memory()
+            .same_storage_roots(after_state.memory())
+            || before_state.population_access != after_state.population_access
+            || !same_bindings
+            || !Arc::ptr_eq(&before_state.locals.bindings, &after_state.locals.bindings)
+            || !Arc::ptr_eq(&before_state.locals.slots, &after_state.locals.slots)
+            || !Arc::ptr_eq(
+                &before_state.instance_field_scope.storage,
+                &after_state.instance_field_scope.storage,
+            )
+            || !Arc::ptr_eq(
+                &before_state.instance_field_scope.loan_dependencies,
+                &after_state.instance_field_scope.loan_dependencies,
+            )
+            || before_state.loan_ledger != after_state.loan_ledger
+            || before_state.loan_participant != after_state.loan_participant
+            || before_state.loan_view_bindings != after_state.loan_view_bindings
+            || before_state.thread_ledger != after_state.thread_ledger
+            || before_state.mutex_ledger != after_state.mutex_ledger
+            || before_state.preserves_mutex_protocols != after_state.preserves_mutex_protocols
+            || before_state.mutex_input_reservations != after_state.mutex_input_reservations
+            || before_state.opaque_mutex_acquisitions != after_state.opaque_mutex_acquisitions
+            || before_state.named_mutex_authorities != after_state.named_mutex_authorities
+            || before_state.pending_thread_create != after_state.pending_thread_create
+            || before_state.population_effects.creation != after_state.population_effects.creation
+            || !before_state
+                .counted_populations
+                .shares_storage_with(&after_state.counted_populations)
+            || !before_state
+                .population_effects
+                .committed_consumptions
+                .shares_storage_with(&after_state.population_effects.committed_consumptions)
+            || !before_state
+                .population_effects
+                .pending_counts
+                .shares_storage_with(&after_state.population_effects.pending_counts)
+            || before_state.next_local_frame != after_state.next_local_frame
+            || before_state.next_local_lifetime != after_state.next_local_lifetime
+            || before_state.enclosing_frame_holds_locals != after_state.enclosing_frame_holds_locals
+        {
+            return Err("transfer wrapper changed state outside its resources".into());
+        }
+        let introduced = after_facts
+            .introduced_since(before_facts)
+            .ok_or("transfer wrapper facts do not descend from their input")?;
+        let child_context =
+            ResourceContext::new().unchecked_with_facts(expanded.facts().iter().cloned());
+        let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
+        for child in expanded.facts() {
+            if let Some(owned) = child.owned_resource() {
+                allowed.push(Proposition::CResourceContains {
+                    parent: selected.resource().clone(),
+                    child: owned.clone(),
+                })
+            }
+        }
+        allowed.push(Proposition::CResourceComposition(child_context));
+        if introduced.iter().any(|fact| {
+            !allowed.contains(fact)
+                && !assumptions.proves_exact(fact)
+                && !resource_composition_is_supported_by(fact, &expected, assumptions)
+        }) {
+            return Err("transfer wrapper introduced unchecked facts".into());
+        }
+        Ok(Self {
+            before_state: before_state.clone(),
+            after_state: after_state.clone(),
+            before_facts: before_facts.clone(),
+            after_facts: after_facts.clone(),
+            definition: definition.clone(),
+            consumption_contract: None,
+            instance: None,
+            selected_children: None,
+            load_equalities: crate::kernel::CheckedLoadEqualityCapture::start_with_call_events(
+                call_events,
+            )
+            .finish(),
+            delta_proofs: Arc::new(Vec::new()),
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn check_with_children(
         function: &CFunction,
         before_state: &CState,
@@ -1382,6 +1580,28 @@ impl CheckedResourceRewrite {
                 })
             {
                 return Self::check_authority_wrapper(
+                    before_state,
+                    before_facts,
+                    selected,
+                    after_state,
+                    after_facts,
+                    call_events,
+                    definition,
+                    selected_children,
+                );
+            }
+            if let CResourceFact::Own(CResource::Composite { name, .. }, _) = selected
+                && let Some(definition) = function.composite_resource_definition(name)
+                && !definition.contains().is_empty()
+                && definition.contains().iter().all(|spec| {
+                    matches!(
+                        spec.term(),
+                        crate::kernel::CResourceTerm::Composite { .. }
+                            | crate::kernel::CResourceTerm::Token { .. }
+                    )
+                })
+            {
+                return Self::check_transfer_wrapper(
                     before_state,
                     before_facts,
                     selected,
@@ -7992,6 +8212,91 @@ impl ExecutionProofCore {
         Ok(())
     }
 
+    /// Checks and retains an ordinary wrapper exchange on a completed path.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_return_transfer_wrapper_rewrite(
+        &mut self,
+        function: &CFunction,
+        path_index: usize,
+        before_facts: &ProofFacts,
+        selected: &CResourceFact,
+        presented_before_state: &CState,
+        after_state: &CState,
+        after_facts: &ProofFacts,
+    ) -> Result<(), String> {
+        if !self.evidence_completed {
+            return Err("return resource rewrite requires completed execution".into());
+        }
+        let mut trace = self
+            .return_resource_rewrites
+            .get(&path_index)
+            .or_else(|| self.execution_evidence.get(path_index))
+            .cloned()
+            .ok_or_else(|| "return resource rewrite selected an unknown path".to_string())?;
+        // Read only the completing suffix. Persistent pop does not copy the
+        // path's earlier history, and no sibling path is inspected.
+        let before_state = loop {
+            match trace.pop() {
+                Some(CheckedExecutionEvent::ResourceRewrite(rewrite)) => {
+                    break rewrite.after_state;
+                }
+                Some(CheckedExecutionEvent::Statement(theorem)) => {
+                    let Proposition::CStatementVerifies {
+                        outcome: CStatementOutcome::Return { state, .. },
+                        ..
+                    } = checked_evidence_conclusion(&theorem)
+                    else {
+                        return Err("return resource rewrite requires a returning path".to_string());
+                    };
+                    break state.clone();
+                }
+                Some(
+                    CheckedExecutionEvent::Context(_)
+                    | CheckedExecutionEvent::Call(_)
+                    | CheckedExecutionEvent::ProofCase(_),
+                ) => {}
+                _ => {
+                    return Err("return resource rewrite has no completing theorem".to_string());
+                }
+            }
+        };
+        // The expression-facing outcome has already projected local bindings.
+        // Validate both representations and retain the C-body snapshot.
+        CheckedResourceRewrite::check_with_children(
+            function,
+            presented_before_state,
+            before_facts,
+            selected,
+            after_state,
+            after_facts,
+            &self.checked_call_events,
+            None,
+        )?;
+        let retained_after_state = before_state
+            .clone()
+            .with_resource_context(after_state.resources().clone());
+        let rewrite = CheckedResourceRewrite::check_with_children(
+            function,
+            &before_state,
+            before_facts,
+            selected,
+            &retained_after_state,
+            after_facts,
+            &self.checked_call_events,
+            None,
+        )?;
+        let mut trace = self
+            .return_resource_rewrites
+            .get(&path_index)
+            .unwrap_or(&self.execution_evidence[path_index])
+            .clone();
+        trace.push(CheckedExecutionEvent::ResourceRewrite(rewrite));
+        self.return_resource_rewrites = self
+            .return_resource_rewrites
+            .with_inserted(path_index, trace);
+        Ok(())
+    }
+
     /// Records a branch node only after [`CheckedExecutionBranch::check`]
     /// has validated exact source coverage, both persistent arm suffixes,
     /// the common continuation, and the joined state.
@@ -12266,6 +12571,124 @@ mod population_authority_rewrite_tests {
             )
             .err(),
             Some(crate::kernel::ExecutionLimit::AuthorityCountNeedsExactPointer),
+        );
+    }
+}
+
+#[cfg(test)]
+mod authority_transfer_wrapper_scaling_tests {
+    use super::*;
+    use crate::kernel::{CResourceAccessMode, CResourceSpec, CType, c_function, int32};
+
+    #[test]
+    fn ordinary_authority_wrapper_checks_only_its_delta() {
+        let definition = CCompositeResourceDefinition::new(
+            "held",
+            vec![],
+            None,
+            false,
+            vec![CResourceSpec::token(
+                CResourceAccessMode::Own,
+                "member".into(),
+                vec![],
+                vec![],
+            )],
+            vec![],
+        );
+        let function = c_function(
+            CType::Void,
+            "wrapper_scaling",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition]);
+        let selected = CResourceFact::own_composite("held".into(), vec![]);
+        let child = CResourceFact::own_token("member".into(), vec![]);
+        let samples = [64usize, 256, 1024].map(|size| {
+            let mut before = CState::new().with_population_creation_tracking();
+            let mut facts = ProofFacts::default();
+            let mut memory = CMemory::new();
+            let mut resources = ResourceContext::new().unchecked_with_fact(child.clone());
+            for index in 0..size {
+                let unrelated = CResourceFact::own_token(format!("other_{index}"), vec![]);
+                resources = resources.unchecked_with_fact(unrelated);
+                before = before.with_local(format!("local_{index}"), int32(index as u32));
+                memory = memory.with_block(format!("block_{index}"), 4);
+                facts = facts.with_fact(Proposition::ConditionIs(
+                    crate::kernel::ConditionTerm::Bitvector32Equal(
+                        Box::new(Bitvector32Term::Variable(Variable(index as u64 + 100))),
+                        Box::new(Bitvector32Term::Constant(index as u32)),
+                    ),
+                    true,
+                ));
+            }
+            before = before.with_memory(memory).with_resource_context(resources);
+            let folded_resources = before
+                .resources()
+                .clone()
+                .without_fact_incrementally(&child, facts.assumptions())
+                .unwrap()
+                .try_compose_with_facts_delaying_normalization(
+                    std::iter::once(selected.clone()),
+                    facts.assumptions(),
+                )
+                .unwrap();
+            let folded = before.clone().with_resource_context(folded_resources);
+            let unfolded_resources = folded
+                .resources()
+                .clone()
+                .without_fact_incrementally(&selected, facts.assumptions())
+                .unwrap()
+                .try_compose_with_facts_delaying_normalization(
+                    std::iter::once(child.clone()),
+                    facts.assumptions(),
+                )
+                .unwrap();
+            let unfolded = folded.clone().with_resource_context(unfolded_resources);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for (input, output) in [(&before, &folded), (&folded, &unfolded)] {
+                    CheckedResourceRewrite::check(
+                        &function,
+                        input,
+                        &facts,
+                        &selected,
+                        output,
+                        &facts,
+                        &CheckedCallEvents::default(),
+                    )
+                    .expect("one wrapper rewrite preserves its unrelated frame");
+                }
+            });
+            let unrelated = CResourceFact::own_token("other_0".into(), vec![]);
+            let forged = folded.clone().with_resource_context(
+                folded
+                    .resources()
+                    .clone()
+                    .without_fact_incrementally(&unrelated, facts.assumptions())
+                    .unwrap(),
+            );
+            assert!(
+                CheckedResourceRewrite::check(
+                    &function,
+                    &before,
+                    &facts,
+                    &selected,
+                    &forged,
+                    &facts,
+                    &CheckedCallEvents::default(),
+                )
+                .is_err(),
+                "the unrelated frame must remain authenticated"
+            );
+            work
+        });
+        assert!(
+            samples[0] > 0,
+            "the measured checker must charge work: {samples:?}"
+        );
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] + 128),
+            "wrapper work must grow at most logarithmically with its unrelated frame: {samples:?}"
         );
     }
 }

@@ -1,29 +1,22 @@
-# A population unit is produced only with its body
+# A population unit requires its private body
 
-A counted population's body is population-wide, and a unit of it exists
-only once that body has been folded into the family. A verified producer
-that owns nothing of the body cannot mint a unit: the fold demands the
-body's memory. This is what lets a produced unit skip the produced-body
-overlap check, since the bytes it packages left the producer's context.
+Authority permits a membership change; it does not provide the member's
+private memory. Producing a reference without `owns o[0..1]` is rejected.
 
-```click
+```click resource_semantics=authority
 resource ref(o: struct s*) {
     owns o->x;
-}
-
-predicate live(o: struct s*) {
-    1 <= count(ref(o))
 }
 
 verifying "mint.c";
 
 int32 mint(struct s* o) {
     requires o != 0;
-    requires count(ref(o)) == 0;
+    owns authority(ref(o));
     produces 1 of ref(o);
 } by {
-    execute();
     fold(1 of ref(o));
+    execute();
     simp();
 }
 ```

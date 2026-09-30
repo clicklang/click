@@ -24,9 +24,10 @@ the complete pipeline including allocation failure. Four positive count-contract
 fixtures now use authority: population/body equality, population lifetime,
 independent populations, and retain/nonfinal release. Their external entry
 counts are arbitrary and observed through checked current control ownership.
-The nonfinal-allocation and initialized-cleanup fixtures, missing-private-body
-negative, and abstract transfer fixture remain legacy; the full sequential
-group is not yet complete.
+The missing-private-body negative and ordinary abstract transfer fixture also
+use authority. The nonfinal-allocation and initialized-cleanup fixtures remain
+legacy until their final-zero postconditions have an agreed observation rule;
+the full sequential group is not yet complete.
 
 ## Source-backed example and design groups
 
@@ -42,6 +43,7 @@ group is not yet complete.
 ## Sequential mdtest dependency groups
 
 Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
+`counted_resource_transfer.md`, `population_unit_needs_its_body.md`,
 `counted_resource_refcount_transitions.md`,
 `counted_resource_population_body.md`,
 `counted_resource_population_lifetime.md`, and
@@ -49,6 +51,7 @@ Unless marked otherwise, these are legacy-path fixtures. In the refcount row,
 `counted_resource_rejects_minting.md`,
 `counted_resource_rejects_double_spend.md`, and
 `population_simple_exit_rejects_final_leak.md` select authority semantics;
+`authority_conditional_release_transfer.md`,
 `counted_resource_authority_retained_control.md` and the three
 `authority_count_rejects_*.md` fixtures add checked authority regressions. The
 paths in each row are relative to `mdtests/`. The pass/fail ledger below comes

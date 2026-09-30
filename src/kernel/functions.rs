@@ -491,13 +491,13 @@ fn transfer_population_call_facts<'a>(
                 .iter()
                 .filter_map(CResourceFact::allocation)
                 .collect::<Vec<_>>();
-            if memory_count != 1
+            if memory_count == 0
                 || authorities.len() != 1
                 || allocations.len() > 1
-                || children.len() != 2 + allocations.len()
+                || children.len() != 1 + memory_count + allocations.len()
             {
                 return Err(CRuntimeError::FunctionContract(
-                    "population call control requires one cell, one authority, and at most one allocation".into(),
+                    "population call control requires owned memory, one authority, and at most one allocation".into(),
                 ));
             }
             let description = authorities[0];
@@ -519,13 +519,19 @@ fn transfer_population_call_facts<'a>(
                         "population call allocation does not match its authority anchor".into(),
                     ));
                 }
-                events = events
-                    .transfer_call_anchor(from_events, to_events, &base.block)
-                    .map_err(|refusal| {
-                        CRuntimeError::FunctionContract(format!(
-                            "population call allocation transfer refused: {refusal:?}"
-                        ))
-                    })?;
+                // An external control carries its checked allocation fact,
+                // but no C creation event or creator right. Its authority
+                // custody moved above; only real anchors have an additional
+                // creation-ledger capability to transfer.
+                if !events.recognizes_imported_population(description) {
+                    events = events
+                        .transfer_call_anchor(from_events, to_events, &base.block)
+                        .map_err(|refusal| {
+                            CRuntimeError::FunctionContract(format!(
+                                "population call allocation transfer refused: {refusal:?}"
+                            ))
+                        })?;
+                }
             }
             continue;
         }
@@ -2145,6 +2151,9 @@ fn authority_mode_member_quantity_admitted(
 }
 
 fn authority_mode_consumes_member_contract(interface: &CFunctionContractInterface) -> bool {
+    if authority_mode_conditional_release_contract(interface) {
+        return true;
+    }
     if !interface.resource_constructors().is_empty()
         || interface.resource_requires().len() != 2
         || interface.resource_ensures().is_empty()
@@ -2218,7 +2227,11 @@ fn authority_mode_produces_member_contract(interface: &CFunctionContractInterfac
 /// verified body must spend the member, retire the empty authority, and
 /// release the allocation before the contract can be applied at a call.
 fn authority_mode_final_release_contract(interface: &CFunctionContractInterface) -> bool {
-    if !interface.resource_constructors().is_empty() || !interface.resource_ensures().is_empty() {
+    interface.resource_ensures().is_empty() && authority_mode_release_control_inputs(interface)
+}
+
+fn authority_mode_release_control_inputs(interface: &CFunctionContractInterface) -> bool {
+    if !interface.resource_constructors().is_empty() {
         return false;
     }
     let [control, member] = interface.resource_requires() else {
@@ -2251,6 +2264,51 @@ fn authority_mode_final_release_contract(interface: &CFunctionContractInterface)
             })
             .count()
             == 1
+}
+
+/// A release may return its consumed control under an existing conditional
+/// `produces` clause. Each body path must either restore that exact control or
+/// spend the final member and retire the authority before releasing storage.
+fn authority_mode_conditional_release_contract(interface: &CFunctionContractInterface) -> bool {
+    let [returned] = interface.resource_ensures() else {
+        return false;
+    };
+    let [control, _] = interface.resource_requires() else {
+        return false;
+    };
+    if returned.term() != control.term()
+        || returned.role() != CResourceTransferRole::Produce
+        || returned.access() != CResourceAccessMode::Own
+        || returned.quantity() != &CResourceQuantity::One
+        || returned.guard().is_none()
+        || !returned.resource_arguments().is_empty()
+    {
+        return false;
+    }
+    authority_mode_release_control_inputs(interface)
+}
+
+fn authority_mode_release_retires_control(
+    entry: &CState,
+    post: &CState,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<bool, CRuntimeError>> {
+    if authority_mode_final_release_contract(interface) {
+        return Ok(Ok(true));
+    }
+    if !authority_mode_conditional_release_contract(interface) {
+        return Ok(Ok(false));
+    }
+    resource_spec_guard_is_active(
+        entry,
+        post,
+        &interface.resource_ensures()[0],
+        assumptions,
+        budget,
+    )
+    .map(|result| result.map(|returned| !returned))
 }
 
 fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterface) -> bool {
@@ -3804,9 +3862,29 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        if caller_state.uses_population_authority_semantics()
-            && authority_mode_final_release_contract(interface)
-        {
+        let authority_release_retires = if caller_state.uses_population_authority_semantics() {
+            match authority_mode_release_retires_control(
+                &entry_contract_state,
+                &post_state,
+                interface,
+                &effective_assumptions,
+                budget,
+            )? {
+                Ok(retires) => retires,
+                Err(error) => {
+                    paths.push(CFunctionPath {
+                        outcome: CFunctionOutcome::RuntimeError(error),
+                        facts,
+                        obligations,
+                        loan_evidence: empty_checked_loan_evidence_sequence(),
+                    });
+                    continue;
+                }
+            }
+        } else {
+            false
+        };
+        if authority_release_retires {
             let member = match evaluate_function_resource_spec_with_entry(
                 &entry_contract_state,
                 &post_state,
@@ -3876,6 +3954,110 @@ fn execute_verified_function_applications_with_suspension(
                 }
             };
             Arc::make_mut(&mut post_state.population_effects).creation = Some(retired);
+        }
+        // Publish the checked population delta before lowering postcondition counts.
+        if caller_state.uses_population_authority_semantics()
+            && !authority_release_retires
+            && (authority_mode_consumes_member_contract(interface)
+                || authority_mode_produces_member_contract(interface))
+        {
+            let produce = authority_mode_produces_member_contract(interface);
+            let produced_member = if produce {
+                match evaluate_function_resource_spec_with_entry(
+                    &entry_contract_state,
+                    &post_state,
+                    &interface.resource_ensures()[1],
+                    &effective_assumptions,
+                    budget,
+                )? {
+                    Ok(fact) => Some(fact),
+                    Err(error) => {
+                        paths.push(CFunctionPath {
+                            outcome: CFunctionOutcome::RuntimeError(error),
+                            facts,
+                            obligations,
+                            loan_evidence: empty_checked_loan_evidence_sequence(),
+                        });
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            let consumed_member = if produce {
+                None
+            } else {
+                match evaluate_function_resource_spec_with_entry(
+                    &entry_contract_state,
+                    &post_state,
+                    &interface.resource_requires()[1],
+                    &effective_assumptions,
+                    budget,
+                )? {
+                    Ok(fact) => Some(fact),
+                    Err(error) => {
+                        paths.push(CFunctionPath {
+                            outcome: CFunctionOutcome::RuntimeError(error),
+                            facts,
+                            obligations,
+                            loan_evidence: empty_checked_loan_evidence_sequence(),
+                        });
+                        continue;
+                    }
+                }
+            };
+            let Some(CResourceFact::Own(CResource::Composite { name, arguments }, quantity)) =
+                produced_member.as_ref().or(consumed_member.as_ref())
+            else {
+                paths.push(resource_call_failure(
+                    "population helper has no checked member transfer",
+                ));
+                continue;
+            };
+            let description = ResourceDescription::new(
+                name.clone(),
+                arguments.clone(),
+                ResourceFieldSchema::new(vec![]).expect("empty schema"),
+            );
+            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                paths.push(resource_call_failure(
+                    "population helper needs one pointer anchor",
+                ));
+                continue;
+            };
+            let Some(events) = post_state.population_effects.creation.as_ref() else {
+                paths.push(resource_call_failure(
+                    "population helper lost its creation history",
+                ));
+                continue;
+            };
+            let anchor = pointer.pointer();
+            if produce
+                && (anchor.offset != PointerOffsetTerm::Constant(0)
+                    || !(matches!(&anchor.block, PointerBlock::Heap(_))
+                        && post_state.memory.live_heap_block_size(anchor).is_some()
+                        || anchor.block.starts_with("local:")
+                            && post_state.memory.has_block(&anchor.block)))
+            {
+                paths.push(resource_call_failure("Requires live base storage for R(p)"));
+                continue;
+            }
+            let (next, _) = match events.checked_member_exchange_quantity(
+                &anchor.block,
+                &description,
+                produce,
+                quantity,
+                &effective_assumptions,
+            ) {
+                Ok(exchange) => exchange,
+                Err(refusal) => {
+                    paths.push(resource_call_failure(&format!(
+                        "population helper member transition refused: {refusal:?}"
+                    )));
+                    continue;
+                }
+            };
+            Arc::make_mut(&mut post_state.population_effects).creation = Some(next);
         }
         let canonical_entry_contract_state = with_canonical_borrowed_pointer_memory(
             &entry_contract_state,
@@ -4123,91 +4305,6 @@ fn execute_verified_function_applications_with_suspension(
             }
         };
 
-        if caller_state.uses_population_authority_semantics()
-            && (authority_mode_consumes_member_contract(interface)
-                || authority_mode_produces_member_contract(interface))
-        {
-            let produce = authority_mode_produces_member_contract(interface);
-            let produced_member = if produce {
-                match evaluate_function_resource_spec_with_entry(
-                    &entry_contract_state,
-                    &post_state,
-                    &interface.resource_ensures()[1],
-                    &effective_assumptions,
-                    budget,
-                )? {
-                    Ok(fact) => Some(fact),
-                    Err(error) => {
-                        paths.push(CFunctionPath {
-                            outcome: CFunctionOutcome::RuntimeError(error),
-                            facts,
-                            obligations,
-                            loan_evidence: empty_checked_loan_evidence_sequence(),
-                        });
-                        continue;
-                    }
-                }
-            } else {
-                None
-            };
-            let Some(CResourceFact::Own(CResource::Composite { name, arguments }, quantity)) =
-                produced_member.as_ref().or_else(|| {
-                    transfer.consumed_inputs.iter().find_map(|checked| {
-                        matches!(checked.fact.resource(), CResource::Composite { .. })
-                            .then_some(&checked.fact)
-                    })
-                })
-            else {
-                paths.push(resource_call_failure(
-                    "population helper has no checked member transfer",
-                ));
-                continue;
-            };
-            let description = ResourceDescription::new(
-                name.clone(),
-                arguments.clone(),
-                ResourceFieldSchema::new(vec![]).expect("empty schema"),
-            );
-            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
-                paths.push(resource_call_failure(
-                    "population helper needs one pointer anchor",
-                ));
-                continue;
-            };
-            let Some(events) = post_state.population_effects.creation.as_ref() else {
-                paths.push(resource_call_failure(
-                    "population helper lost its creation history",
-                ));
-                continue;
-            };
-            let anchor = pointer.pointer();
-            if produce
-                && (anchor.offset != PointerOffsetTerm::Constant(0)
-                    || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                        && post_state.memory.live_heap_block_size(anchor).is_some()
-                        || anchor.block.starts_with("local:")
-                            && post_state.memory.has_block(&anchor.block)))
-            {
-                paths.push(resource_call_failure("Requires live base storage for R(p)"));
-                continue;
-            }
-            let (next, _) = match events.checked_member_exchange_quantity(
-                &anchor.block,
-                &description,
-                produce,
-                quantity,
-                &effective_assumptions,
-            ) {
-                Ok(exchange) => exchange,
-                Err(refusal) => {
-                    paths.push(resource_call_failure(&format!(
-                        "population helper member transition refused: {refusal:?}"
-                    )));
-                    continue;
-                }
-            };
-            Arc::make_mut(&mut post_state.population_effects).creation = Some(next);
-        }
         let mut return_state = caller_state.clone();
         return_state.set_memory(post_state.memory.clone());
         return_state.resources = return_resources;
@@ -11942,6 +12039,31 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             budget,
         )?;
         for ensure_path in ensure_paths {
+            // Certified lowering facts are consequences of the selected
+            // path, such as a checked count's entry-owned lower bound. Keep
+            // their branch guards, but do not turn those consequences into
+            // new caller prerequisites for the specialized ensure.
+            let authority_semantics = post_contract_state.uses_population_authority_semantics();
+            let branch_facts = if authority_semantics {
+                ensure_path
+                    .facts
+                    .iter()
+                    .filter(|fact| !fact.certified)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            } else {
+                ensure_path.facts.clone()
+            };
+            if authority_semantics {
+                for fact in ensure_path.facts.iter().filter(|fact| fact.certified) {
+                    facts.push(ExecutionPureFact::certified(wrap_path_context(
+                        fact.proposition().clone(),
+                        &branch_facts,
+                        &[],
+                    )));
+                }
+            }
+
             for path_obligation in &ensure_path.obligations {
                 facts.push(ExecutionPureFact::certified(wrap_path_context(
                     path_obligation.proposition().clone(),
@@ -11972,10 +12094,47 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             let mut specialized = ensure_path.proposition.clone();
             let mut discharged_premises: Vec<Proposition> = Vec::new();
             while let Proposition::Implies(premise, body) = specialized {
-                let available = specialized_assumptions.proves_exact(&premise)
-                    || discharged_premises
-                        .iter()
-                        .any(|discharged| discharged == premise.as_ref());
+                let reversed_order = match premise.as_ref() {
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedGreaterThan(left, right),
+                        value,
+                    ) => Some(Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedLessThan(right.clone(), left.clone()),
+                        *value,
+                    )),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+                        value,
+                    ) => Some(Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedLessEqual(right.clone(), left.clone()),
+                        *value,
+                    )),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedLessThan(left, right),
+                        value,
+                    ) => Some(Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedGreaterThan(right.clone(), left.clone()),
+                        *value,
+                    )),
+                    Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedLessEqual(left, right),
+                        value,
+                    ) => Some(Proposition::ConditionIs(
+                        ConditionTerm::Bitvector32SignedGreaterEqual(right.clone(), left.clone()),
+                        *value,
+                    )),
+                    _ => None,
+                };
+                let available = if authority_semantics {
+                    specialized_assumptions.states_required_goal(&premise)
+                        || reversed_order.as_ref().is_some_and(|premise| {
+                            specialized_assumptions.states_required_goal(premise)
+                        })
+                } else {
+                    specialized_assumptions.proves_exact(&premise)
+                } || discharged_premises
+                    .iter()
+                    .any(|discharged| discharged == premise.as_ref());
                 if !available {
                     specialized = Proposition::Implies(premise, body);
                     break;
@@ -11986,7 +12145,7 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             if !discharged_premises.is_empty() {
                 facts.push(ExecutionPureFact::certified(wrap_path_context(
                     specialized,
-                    &ensure_path.facts,
+                    &branch_facts,
                     &[],
                 )));
             }
@@ -27019,7 +27178,16 @@ pub(super) fn contract_exit_outcome(
             )));
         };
         let produce = authority_mode_produces_member_contract(function.contract_interface());
-        let final_release = authority_mode_final_release_contract(function.contract_interface());
+        let final_release = match authority_mode_release_retires_control(
+            &callee_state,
+            state,
+            function.contract_interface(),
+            assumptions,
+            budget,
+        )? {
+            Ok(retires) => retires,
+            Err(error) => return Ok(Err(error)),
+        };
         let member_spec = if produce {
             &function.resource_ensures()[1]
         } else {

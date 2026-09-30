@@ -49,6 +49,9 @@ struct Root {
     returns: Mutex<BTreeMap<u64, CreationEvents>>,
     c_events: Mutex<BTreeMap<CEvent, CreationEvents>>,
     invocation: Holder,
+    /// Standalone proof entry preserves only declared opaque custody; the C
+    /// invocation remains fresh and cannot inherit storage creation rights.
+    opaque_actor: Holder,
     pending: PersistentMap<PointerBlock, Holder>,
     creators: PersistentMap<PointerBlock, Holder>,
     anchors: PersistentMap<PointerBlock, Anchor>,
@@ -61,6 +64,10 @@ struct Root {
     /// Exact declared population inputs. Each carries no creator right,
     /// storage event, or asserted total.
     opaque_imports: PersistentMap<ResourceDescription, OpaqueImport>,
+    /// Number of authority/member fragments held by each opaque actor.
+    /// Call completion checks this index without visiting unrelated imports.
+    opaque_holders: PersistentMap<Holder, u32>,
+    opaque_transfers: Mutex<BTreeMap<(Holder, Holder, u64, bool, u32), CreationEvents>>,
 }
 
 #[derive(Clone)]
@@ -71,6 +78,9 @@ struct SymbolicBatch {
 
 #[derive(Clone)]
 struct OpaqueImport {
+    identity: u64,
+    authority_holder: Holder,
+    member_holders: PersistentMap<Holder, u32>,
     description: ResourceDescription,
     /// The checked definition used to open this exact entry control for a
     /// read-only count observation. Current ownership is checked on each read.
@@ -333,11 +343,15 @@ impl CreationEvents {
         let opaque_imports = self.0.opaque_imports.with_inserted(
             description.clone(),
             OpaqueImport {
+                identity: fresh_identity(),
+                authority_holder: self.0.opaque_actor,
+                member_holders: PersistentMap::default()
+                    .with_inserted(self.0.opaque_actor, owned_members),
                 description: description.clone(),
                 control,
                 entry_owned_members: owned_members,
                 owned_members,
-                entry_symbolic_members: symbolic_members,
+                entry_symbolic_members: symbolic_members.clone(),
                 symbolic_delta: None,
                 entry_count,
                 retired_authority: false,
@@ -351,6 +365,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -358,6 +373,17 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.with_inserted(
+                self.0.opaque_actor,
+                self.0
+                    .opaque_holders
+                    .get(&self.0.opaque_actor)
+                    .copied()
+                    .unwrap_or(0)
+                    + 1
+                    + u32::from(owned_members > 0 || symbolic_members.is_some()),
+            ),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports,
         })))
     }
@@ -370,7 +396,9 @@ impl CreationEvents {
             .0
             .opaque_imports
             .get(description)
-            .is_some_and(|import| !import.retired_authority)
+            .is_some_and(|import| {
+                !import.retired_authority && import.authority_holder == self.0.opaque_actor
+            })
         {
             return true;
         }
@@ -413,6 +441,7 @@ impl CreationEvents {
             return false;
         };
         !import.retired_authority
+            && import.authority_holder == self.0.opaque_actor
             && state
                 .checked_authority_wrapper_body(selected, definition, assumptions)
                 .is_ok()
@@ -460,13 +489,17 @@ impl CreationEvents {
             .get(description)
             .is_some_and(|import| {
                 import.description == *description
-                    && (import.owned_members > 0
-                        || import
-                            .symbolic_delta
-                            .as_ref()
-                            .map_or(import.entry_symbolic_members.is_some(), |(produce, _)| {
-                                *produce
-                            }))
+                    && (import
+                        .member_holders
+                        .get(&self.0.opaque_actor)
+                        .copied()
+                        .unwrap_or(0)
+                        > 0
+                        || (import.authority_holder == self.0.opaque_actor
+                            && import.symbolic_delta.as_ref().map_or(
+                                import.entry_symbolic_members.is_some(),
+                                |(produce, _)| *produce,
+                            )))
             })
     }
 
@@ -477,7 +510,10 @@ impl CreationEvents {
         description: &ResourceDescription,
     ) -> Option<(bool, Bitvector32Term)> {
         let import = self.0.opaque_imports.get(description)?;
-        if import.description != *description || import.retired_authority {
+        if import.description != *description
+            || import.retired_authority
+            || import.authority_holder != self.0.opaque_actor
+        {
             return None;
         }
         import.symbolic_delta.clone().or_else(|| {
@@ -503,7 +539,7 @@ impl CreationEvents {
             (Some(start), Some(end)) => {
                 start.description == end.description
                     && end.owned_members.checked_add(1) == Some(start.owned_members)
-                    && before.0.invocation == self.0.invocation
+                    && before.0.opaque_actor == self.0.opaque_actor
             }
             _ => false,
         }
@@ -521,7 +557,7 @@ impl CreationEvents {
             (Some(start), Some(end)) => {
                 start.description == end.description
                     && start.owned_members.checked_add(1) == Some(end.owned_members)
-                    && before.0.invocation == self.0.invocation
+                    && before.0.opaque_actor == self.0.opaque_actor
             }
             _ => false,
         }
@@ -541,7 +577,7 @@ impl CreationEvents {
                     && !start.retired_authority
                     && end.retired_authority
                     && end.owned_members == 0
-                    && before.0.invocation == self.0.invocation
+                    && before.0.opaque_actor == self.0.opaque_actor
             }
             _ => false,
         }
@@ -572,7 +608,10 @@ impl CreationEvents {
         description: &ResourceDescription,
     ) -> Option<SymbolicPopulationCount> {
         let import = self.0.opaque_imports.get(description)?;
-        if import.description != *description || import.retired_authority {
+        if import.description != *description
+            || import.retired_authority
+            || import.authority_holder != self.0.opaque_actor
+        {
             return None;
         }
         Some(SymbolicPopulationCount {
@@ -586,6 +625,138 @@ impl CreationEvents {
             entry_symbolic_members: import.entry_symbolic_members.clone(),
             symbolic_delta: import.symbolic_delta.clone(),
         })
+    }
+
+    fn adjust_opaque_right(
+        &self,
+        holder: Holder,
+        before: bool,
+        after: bool,
+    ) -> PersistentMap<Holder, u32> {
+        Self::adjust_rights(self.0.opaque_holders.clone(), holder, before, after)
+    }
+
+    fn adjust_rights(
+        mut holders: PersistentMap<Holder, u32>,
+        holder: Holder,
+        before: bool,
+        after: bool,
+    ) -> PersistentMap<Holder, u32> {
+        if before == after {
+            return holders;
+        }
+        let count = holders.get(&holder).copied().unwrap_or(0);
+        let next = if after {
+            count.checked_add(1).expect("opaque rights overflow")
+        } else {
+            count.checked_sub(1).expect("opaque rights index")
+        };
+        if next == 0 {
+            holders.remove(&holder);
+        } else {
+            holders.insert(holder, next);
+        }
+        holders
+    }
+
+    fn transfer_opaque(
+        &self,
+        from: &Self,
+        to: &Self,
+        description: &ResourceDescription,
+        authority_fact: bool,
+        quantity: &Bitvector32Term,
+    ) -> Result<Self, CreationRefusal> {
+        let import = self
+            .0
+            .opaque_imports
+            .get(description)
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
+            return Err(CreationRefusal::InvalidQuantity);
+        }
+        let quantity = quantity
+            .as_const()
+            .filter(|q| *q > 0 && *q <= i32::MAX as u32)
+            .ok_or(CreationRefusal::InvalidQuantity)?;
+        let sender = from.0.opaque_actor;
+        let receiver = to.0.opaque_actor;
+        let key = (sender, receiver, import.identity, authority_fact, quantity);
+        if let Some(cached) = self
+            .0
+            .opaque_transfers
+            .lock()
+            .expect("opaque transfer cache")
+            .get(&key)
+        {
+            return Ok(cached.clone());
+        }
+        let mut updated = import.clone();
+        let mut holders = self.0.opaque_holders.clone();
+        if authority_fact {
+            if quantity != 1 {
+                return Err(CreationRefusal::InvalidQuantity);
+            }
+            if import.retired_authority || import.authority_holder != sender {
+                return Err(CreationRefusal::MissingAuthority);
+            }
+            updated.authority_holder = receiver;
+            if sender != receiver {
+                holders = Self::adjust_rights(holders, sender, true, false);
+                holders = Self::adjust_rights(holders, receiver, false, true);
+            }
+        } else {
+            let held = import.member_holders.get(&sender).copied().unwrap_or(0);
+            let remaining = held
+                .checked_sub(quantity)
+                .ok_or(CreationRefusal::MissingMembers)?;
+            if sender != receiver {
+                let received = import.member_holders.get(&receiver).copied().unwrap_or(0);
+                let next = received
+                    .checked_add(quantity)
+                    .ok_or(CreationRefusal::InvalidQuantity)?;
+                updated.member_holders = if remaining == 0 {
+                    updated.member_holders.without_key(&sender)
+                } else {
+                    updated.member_holders.with_inserted(sender, remaining)
+                };
+                updated.member_holders.insert(receiver, next);
+                holders = Self::adjust_rights(holders, sender, held > 0, remaining > 0);
+                holders = Self::adjust_rights(holders, receiver, received > 0, next > 0);
+            }
+        }
+        let imports = self
+            .0
+            .opaque_imports
+            .with_inserted(description.clone(), updated);
+        let successor = Self(Arc::new(Root {
+            identity: fresh_identity(),
+            entry_call: OnceLock::new(),
+            proof_entry: OnceLock::new(),
+            transfers: Mutex::new(BTreeMap::new()),
+            returns: Mutex::new(BTreeMap::new()),
+            c_events: Mutex::new(BTreeMap::new()),
+            invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
+            pending: self.0.pending.clone(),
+            creators: self.0.creators.clone(),
+            anchors: self.0.anchors.clone(),
+            authority: self.0.authority.clone(),
+            symbolic_batches: self.0.symbolic_batches.clone(),
+            symbolic_holders: self.0.symbolic_holders.clone(),
+            tainted: self.0.tainted.clone(),
+            opaque_holders: holders,
+            opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_imports: imports,
+        }));
+        Ok(self
+            .0
+            .opaque_transfers
+            .lock()
+            .expect("opaque transfer cache")
+            .entry(key)
+            .or_insert(successor)
+            .clone())
     }
 
     fn exact_member_block<'a>(
@@ -783,6 +954,7 @@ impl CreationEvents {
                 returns: Mutex::new(BTreeMap::new()),
                 c_events: Mutex::new(BTreeMap::new()),
                 invocation: self.0.invocation,
+                opaque_actor: self.0.opaque_actor,
                 pending: self.0.pending.clone(),
                 creators: self.0.creators.clone(),
                 anchors: self.0.anchors.clone(),
@@ -790,6 +962,8 @@ impl CreationEvents {
                 symbolic_batches: batches,
                 symbolic_holders: holders,
                 tainted,
+                opaque_holders: self.0.opaque_holders.clone(),
+                opaque_transfers: Mutex::new(BTreeMap::new()),
                 opaque_imports: self.0.opaque_imports.clone(),
             }));
             let evidence = CheckedPopulationMemberExchange {
@@ -806,7 +980,10 @@ impl CreationEvents {
             .get(description)
             .filter(|import| import.entry_count.is_some())
             .ok_or(CreationRefusal::MissingAuthority)?;
-        if import.retired_authority || import.symbolic_delta.is_some() {
+        if import.retired_authority || import.authority_holder != self.0.opaque_actor {
+            return Err(CreationRefusal::MissingAuthority);
+        }
+        if import.symbolic_delta.is_some() {
             return Err(CreationRefusal::InvalidQuantity);
         }
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
@@ -830,6 +1007,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -837,6 +1015,12 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.adjust_opaque_right(
+                self.0.opaque_actor,
+                import.entry_symbolic_members.is_some(),
+                produce,
+            ),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.with_inserted(
                 description.clone(),
                 OpaqueImport {
@@ -869,17 +1053,28 @@ impl CreationEvents {
             if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
                 return Err(CreationRefusal::InvalidQuantity);
             }
-            // This ledger is proof-local. A birth is transferred only at a
-            // verified call whose concrete authority still has a live anchor.
+            // Opaque custody follows only checked exact contract transfers;
+            // numeric exchanges change the global fragment total separately.
             let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
                 return Err(CreationRefusal::InvalidMember);
             };
             if &pointer.pointer().block != block {
                 return Err(CreationRefusal::InvalidMember);
             }
-            if import.retired_authority {
+            if import.retired_authority || import.authority_holder != self.0.opaque_actor {
                 return Err(CreationRefusal::MissingAuthority);
             }
+            let held = import
+                .member_holders
+                .get(&self.0.opaque_actor)
+                .copied()
+                .unwrap_or(0);
+            let next_held = if produce {
+                held.checked_add(1)
+            } else {
+                held.checked_sub(1)
+            }
+            .ok_or(CreationRefusal::MissingMembers)?;
             let owned_members = if produce {
                 import
                     .owned_members
@@ -902,6 +1097,7 @@ impl CreationEvents {
                 returns: Mutex::new(BTreeMap::new()),
                 c_events: Mutex::new(BTreeMap::new()),
                 invocation: self.0.invocation,
+                opaque_actor: self.0.opaque_actor,
                 pending: self.0.pending.clone(),
                 creators: self.0.creators.clone(),
                 anchors: self.0.anchors.clone(),
@@ -909,10 +1105,23 @@ impl CreationEvents {
                 symbolic_batches: self.0.symbolic_batches.clone(),
                 symbolic_holders: self.0.symbolic_holders.clone(),
                 tainted: self.0.tainted.clone(),
+                opaque_holders: self.adjust_opaque_right(
+                    self.0.opaque_actor,
+                    held > 0,
+                    next_held > 0,
+                ),
+                opaque_transfers: Mutex::new(BTreeMap::new()),
                 opaque_imports: self.0.opaque_imports.with_inserted(
                     description.clone(),
                     OpaqueImport {
                         owned_members,
+                        member_holders: if next_held == 0 {
+                            import.member_holders.without_key(&self.0.opaque_actor)
+                        } else {
+                            import
+                                .member_holders
+                                .with_inserted(self.0.opaque_actor, next_held)
+                        },
                         ..import.clone()
                     },
                 ),
@@ -962,6 +1171,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -969,6 +1179,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted,
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         let evidence = CheckedPopulationMemberExchange {
@@ -989,6 +1201,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: Holder::fresh(),
+            opaque_actor: Holder::fresh(),
             pending: PersistentMap::default(),
             creators: PersistentMap::default(),
             anchors: PersistentMap::default(),
@@ -996,6 +1209,8 @@ impl CreationEvents {
             symbolic_batches: PersistentMap::default(),
             symbolic_holders: PersistentMap::default(),
             tainted: PersistentMap::default(),
+            opaque_holders: PersistentMap::default(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: PersistentMap::default(),
         }))
     }
@@ -1017,6 +1232,7 @@ impl CreationEvents {
                     returns: Mutex::new(BTreeMap::new()),
                     c_events: Mutex::new(BTreeMap::new()),
                     invocation: Holder::fresh(),
+                    opaque_actor: Holder::fresh(),
                     pending: self.0.pending.clone(),
                     creators: self.0.creators.clone(),
                     anchors: self.0.anchors.clone(),
@@ -1024,7 +1240,9 @@ impl CreationEvents {
                     symbolic_batches: self.0.symbolic_batches.clone(),
                     symbolic_holders: self.0.symbolic_holders.clone(),
                     tainted: self.0.tainted.clone(),
-                    opaque_imports: PersistentMap::default(),
+                    opaque_holders: self.0.opaque_holders.clone(),
+                    opaque_transfers: Mutex::new(BTreeMap::new()),
+                    opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
             .clone()
@@ -1045,6 +1263,7 @@ impl CreationEvents {
                     returns: Mutex::new(BTreeMap::new()),
                     c_events: Mutex::new(BTreeMap::new()),
                     invocation: Holder::fresh(),
+                    opaque_actor: self.0.opaque_actor,
                     pending: self.0.pending.clone(),
                     creators: self.0.creators.clone(),
                     anchors: self.0.anchors.clone(),
@@ -1052,6 +1271,8 @@ impl CreationEvents {
                     symbolic_batches: self.0.symbolic_batches.clone(),
                     symbolic_holders: self.0.symbolic_holders.clone(),
                     tainted: self.0.tainted.clone(),
+                    opaque_holders: self.0.opaque_holders.clone(),
+                    opaque_transfers: Mutex::new(BTreeMap::new()),
                     opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
@@ -1087,6 +1308,9 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
+        if self.0.opaque_imports.contains_key(description) {
+            return self.transfer_opaque(from, to, description, authority_fact, quantity);
+        }
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return Err(CreationRefusal::InvalidMember);
         };
@@ -1169,6 +1393,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1176,6 +1401,8 @@ impl CreationEvents {
             symbolic_batches: batches,
             symbolic_holders: holders,
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         Ok(self
@@ -1215,6 +1442,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1222,11 +1450,16 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
 
     pub(in crate::kernel) fn tracks_population(&self, description: &ResourceDescription) -> bool {
+        if self.0.opaque_imports.contains_key(description) {
+            return true;
+        }
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return false;
         };
@@ -1245,7 +1478,9 @@ impl CreationEvents {
     /// ownership it received. In particular it cannot strand a member while
     /// returning the authority, or retain a creator anchor from local storage.
     pub(in crate::kernel) fn finish_call(&self, caller: &Self) -> Result<Self, CreationRefusal> {
-        if self.0.symbolic_holders.contains_key(&self.0.invocation) {
+        if self.0.opaque_holders.contains_key(&self.0.opaque_actor)
+            || self.0.symbolic_holders.contains_key(&self.0.invocation)
+        {
             return Err(CreationRefusal::OutstandingOwnership);
         }
         self.0
@@ -1275,6 +1510,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: caller.0.invocation,
+            opaque_actor: caller.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1282,7 +1518,9 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
-            opaque_imports: caller.0.opaque_imports.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
+            opaque_imports: self.0.opaque_imports.clone(),
         }));
         self.0
             .returns
@@ -1318,6 +1556,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending,
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1325,6 +1564,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1379,6 +1620,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending,
             creators,
             anchors,
@@ -1386,6 +1628,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted,
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1417,6 +1661,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators,
             anchors,
@@ -1424,6 +1669,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1476,6 +1723,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1483,6 +1731,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted,
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1523,6 +1773,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1530,6 +1781,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
@@ -1576,8 +1829,10 @@ impl CreationEvents {
             .opaque_imports
             .get(description)
             .ok_or(CreationRefusal::MissingAuthority)?;
-        if import.retired_authority || import.entry_owned_members != 1 || import.owned_members != 0
-        {
+        if import.retired_authority || import.authority_holder != self.0.opaque_actor {
+            return Err(CreationRefusal::MissingAuthority);
+        }
+        if import.entry_owned_members != 1 || import.owned_members != 0 {
             return Err(CreationRefusal::OutstandingMembers);
         }
         let after = Self(Arc::new(Root {
@@ -1588,6 +1843,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1595,6 +1851,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.adjust_opaque_right(self.0.opaque_actor, true, false),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.with_inserted(
                 description.clone(),
                 OpaqueImport {
@@ -1643,6 +1901,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators: self.0.creators.clone(),
             anchors: self.0.anchors.clone(),
@@ -1650,6 +1909,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.clone(),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
@@ -1695,6 +1956,7 @@ impl CreationEvents {
             returns: Mutex::new(BTreeMap::new()),
             c_events: Mutex::new(BTreeMap::new()),
             invocation: self.0.invocation,
+            opaque_actor: self.0.opaque_actor,
             pending: self.0.pending.clone(),
             creators,
             anchors,
@@ -1702,6 +1964,8 @@ impl CreationEvents {
             symbolic_batches: self.0.symbolic_batches.clone(),
             symbolic_holders: self.0.symbolic_holders.clone(),
             tainted: self.0.tainted.without_key(block),
+            opaque_holders: self.0.opaque_holders.clone(),
+            opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }

@@ -1375,6 +1375,12 @@ fn prepare_function_claim_path(
     let mut post_state = entry_state.clone().with_memory(exit_memory);
     post_state = post_state.with_resource_context(post_resources.clone());
     post_state.counted_populations = raw_exit_state.counted_populations.clone();
+    // Authority counts live in the creation ledger, while legacy counted
+    // resources use counted_populations. Both observations must describe
+    // the checked exit, not the reconstructed entry used to bind locals.
+    if post_state.uses_population_authority_semantics() {
+        post_state.population_effects = raw_exit_state.population_effects.clone();
+    }
     if exceptional {
         post_state.locals.set_typed(
             C_EXCEPTIONAL_RESULT_NAME.to_string(),

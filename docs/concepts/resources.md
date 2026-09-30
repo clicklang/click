@@ -362,6 +362,23 @@ control exposes its owned counter field. Updating both the field and the
 population by the same amount lets the proof restore the control invariant.
 Authority must be retired at count zero before its storage is freed.
 
+Ordinary wrappers can package existing members with `contains R(p)` and later
+expose them with `unfold`; these transfers require no authority and do not
+change the population. A wrapper cannot create a missing child or bypass the
+authority requirement for membership changes. The source-backed
+[transfer fixture](https://github.com/lacker/click/blob/master/mdtests/counted_resource_transfer.md)
+checks packaging after a C return as well as ordinary helper transfer.
+
+A release helper can consume control and a reference, then conditionally
+produce the control on its nonfinal branch using the existing guarded
+`produces` clause. The final branch consumes its last reference, retires
+authority, and frees storage. Numeric nested calls transfer these capabilities
+explicitly; a helper cannot strand a reference while returning control.
+The [conditional release fixture](https://github.com/lacker/click/blob/master/mdtests/authority_conditional_release_transfer.md)
+checks both lifetime branches and the caller’s exact count and payload claims.
+Standalone symbolic batch exchange is supported, but symbolic nested transfers
+are not yet supported on this migration path.
+
 The rest of this section describes the legacy population path, retained while
 its consumers are migrated. The
 [migration inventory](../internals/authority-migration-inventory.md) records

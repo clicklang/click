@@ -3404,7 +3404,37 @@ fn verify_c0_sources_with_context(
                                             .map_or_else(
                                                 || format!("{key:?}"),
                                                 |resource| {
-                                                    format!("{key:?} = produces {resource:?}")
+                                                    let source_index = resource
+                                                        .clause_position()
+                                                        .map_or(*index, |(index, _)| index);
+                                                    let source = function_block
+                                                        .ensures()
+                                                        .iter()
+                                                        .filter(|ensure| matches!(ensure.ensure(), Ensure::Resource(_)))
+                                                        .enumerate()
+                                                        .find(|(index, _)| {
+                                                            function_block.resource_ensure_positions()
+                                                                .get(*index)
+                                                                .map_or(*index, |(index, _)| *index)
+                                                                == source_index
+                                                        })
+                                                        .map(|(_, ensure)| ensure);
+                                                    source.map_or_else(
+                                                        || format!("{key:?} = resource clause {source_index}"),
+                                                        |ensure| {
+                                                            let Ensure::Resource(resource) = ensure.ensure() else {
+                                                                unreachable!("filtered resource ensure")
+                                                            };
+                                                            let clause = format!("{} {}",
+                                                                if ensure.borrowed() { "owns" } else { "produces" },
+                                                                crate::surface::validation::describe_resource_clause(resource));
+                                                            let clause = ensure.condition().map_or(clause.clone(), |guard| {
+                                                                format!("if {} {{ {clause}; }}",
+                                                                    crate::surface::diagnostics::describe_click_proposition(guard))
+                                                            });
+                                                            format!("{key:?} = {clause}")
+                                                        },
+                                                    )
                                                 },
                                             )
                                     }

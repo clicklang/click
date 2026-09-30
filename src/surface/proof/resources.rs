@@ -3326,6 +3326,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 // Built-in tokens such as `allocation` are not counted
                 // resource declarations. Exposing one must not create a
                 // legacy population as a side effect of opening a control.
+                && !state.uses_population_authority_semantics()
                 && name != CResourceFact::ALLOCATION_RESOURCE_NAME
                 && resource_environment.get(name).is_some()
                 && state.counted_population(name, resource_arguments).is_none()
@@ -3858,6 +3859,9 @@ fn fold_composite_resources_on_outcome_with_facts(
                             describe_resource_clause(resource)
                         ))
                     })?;
+            } else if state.uses_population_authority_semantics() {
+                // An ordinary wrapper transfers its existing children without
+                // installing a legacy population ledger.
             } else if let Some(count) = state.counted_population(name, population_arguments) {
                 let matching_quantity = Proposition::ConditionIs(
                     ConditionTerm::Bitvector32Equal(
@@ -4380,6 +4384,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
         }
         if closure == ResourceBodyClosure::Initialize
+            && !guard_state.uses_population_authority_semantics()
             && !authority_control_body
             && !lowered_contained.is_empty()
         {

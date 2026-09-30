@@ -17,6 +17,31 @@ fn project(click_source: &str) -> ClickProject {
 }
 
 #[test]
+fn authority_control_extra_payload_does_not_replace_counter_ownership() {
+    let c_source = "struct object { int32 refs; int32 payload; }; void keep(struct object* obj) {}";
+    let click_source = r#"
+        resource reference(obj: struct object*) {}
+        resource control(obj: struct object*) {
+            owns obj->payload;
+            owns authority(reference(obj));
+            fact obj->refs == count(reference(obj));
+        }
+        verifying "private_body.c";
+        void keep(struct object* obj) {
+            owns control(obj);
+        } by { execute(); simp(); }
+    "#;
+    let error = verify_c0_project(&project(click_source), &[("private_body.c", c_source)])
+        .expect_err("payload ownership does not authenticate the counter load");
+    assert!(
+        error
+            .message()
+            .contains("without a covering contained memory resource"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn authority_member_local_body_requires_explicit_ownership() {
     let c_source = r#"
         int32 value(void) {

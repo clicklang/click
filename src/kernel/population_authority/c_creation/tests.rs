@@ -1163,3 +1163,217 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
         Some(CreationRefusal::MissingAuthority)
     );
 }
+
+#[test]
+fn opaque_nested_numeric_custody_transfer_and_return() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population(&description, 2)
+        .unwrap();
+    assert!(entry.tracks_population(&description));
+    let child = entry.enter_call();
+    assert!(matches!(
+        child.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        Err(CreationRefusal::MissingAuthority)
+    ));
+    let sent = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    assert_eq!(
+        sent,
+        child
+            .transfer_call_fact(&entry, &child, &description, true)
+            .unwrap()
+    );
+    assert!(sent.owns_population_authority(&description));
+    assert!(
+        !sent
+            .return_to(&entry)
+            .owns_population_authority(&description)
+    );
+    assert!(matches!(
+        sent.checked_member_exchange(&PointerBlock::ExternalArgument, &description, false),
+        Err(CreationRefusal::MissingMembers)
+    ));
+    let sent = sent
+        .transfer_call_fact(&entry, &child, &description, false)
+        .unwrap();
+    assert_eq!(
+        sent.0
+            .opaque_imports
+            .get(&description)
+            .unwrap()
+            .owned_members,
+        2
+    );
+    assert_eq!(
+        sent.finish_call(&entry),
+        Err(CreationRefusal::OutstandingOwnership)
+    );
+    let (spent, _) = sent
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    assert_eq!(
+        spent
+            .0
+            .opaque_imports
+            .get(&description)
+            .unwrap()
+            .owned_members,
+        1
+    );
+    assert!(!spent.owns_population_member(&description));
+    let returned = spent
+        .transfer_call_fact(&child, &entry, &description, true)
+        .unwrap();
+    let returned = returned.finish_call(&entry).unwrap();
+    assert!(returned.owns_population_authority(&description));
+    assert!(returned.owns_population_member(&description));
+    assert!(returned.spent_imported_member_since(&entry, &description));
+    assert_eq!(
+        returned
+            .0
+            .opaque_imports
+            .get(&description)
+            .unwrap()
+            .owned_members,
+        1
+    );
+}
+
+#[test]
+fn opaque_returned_authority_cannot_strand_members() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population(&description, 1)
+        .unwrap();
+    let child = entry.enter_call();
+    let sent = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap()
+        .transfer_call_fact(&entry, &child, &description, false)
+        .unwrap();
+    let authority_returned = sent
+        .transfer_call_fact(&child, &entry, &description, true)
+        .unwrap();
+    assert_eq!(
+        authority_returned.finish_call(&entry),
+        Err(CreationRefusal::OutstandingOwnership)
+    );
+    assert!(matches!(
+        authority_returned.checked_member_exchange(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false
+        ),
+        Err(CreationRefusal::MissingAuthority)
+    ));
+    let all_returned = authority_returned
+        .transfer_call_fact(&child, &entry, &description, false)
+        .unwrap()
+        .finish_call(&entry)
+        .unwrap();
+    assert!(all_returned.owns_population_member(&description));
+    assert_eq!(
+        all_returned.imported_member_delta_since_entry(&description),
+        None
+    );
+}
+
+#[test]
+fn opaque_symbolic_nested_transfer_is_explicitly_unsupported() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(7)),
+            Some(Bitvector32Term::Constant(3)),
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    assert_eq!(
+        child.transfer_call_fact(&entry, &child, &description, true),
+        Err(CreationRefusal::InvalidQuantity)
+    );
+    assert_eq!(
+        child.transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &Bitvector32Term::Constant(3),
+            &PureFactContext::new()
+        ),
+        Err(CreationRefusal::InvalidQuantity)
+    );
+}
+
+#[test]
+fn proof_entry_keeps_opaque_assumptions_without_creator_privilege() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let imported = CreationEvents::new()
+        .import_opaque_contract_population(&description, 1)
+        .unwrap();
+    let block = PointerBlock::Heap(777);
+    let created = imported.created(block.clone());
+    let proof = created.enter_proof_entry();
+    assert!(proof.owns_population_authority(&description));
+    assert!(!proof.created_here(&block));
+    assert_eq!(
+        proof.establish(&block, "reference"),
+        Err(CreationRefusal::NotCreationEnvironment)
+    );
+}
+
+#[test]
+fn opaque_transfer_and_finish_index_scale_with_selected_population() {
+    let mut work = Vec::new();
+    for size in [64_u64, 256, 1024] {
+        let description_at = |id| {
+            ResourceDescription::new(
+                "reference".into(),
+                vec![
+                    CValue::pointer(Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::Variable(Variable(970_000 + id)),
+                    })
+                    .into(),
+                ]
+                .into(),
+                ResourceFieldSchema::new(vec![]).unwrap(),
+            )
+        };
+        let mut entry = CreationEvents::new();
+        for id in 0..size {
+            entry = entry
+                .import_opaque_contract_population(&description_at(id), 1)
+                .unwrap();
+        }
+        let selected = description_at(size / 2);
+        let child = entry.enter_call();
+        let ((), measured) = crate::persistent::measure_persistent_work(|| {
+            let sent = child
+                .transfer_call_fact(&entry, &child, &selected, true)
+                .unwrap()
+                .transfer_call_fact(&entry, &child, &selected, false)
+                .unwrap();
+            assert_eq!(
+                sent.finish_call(&entry),
+                Err(CreationRefusal::OutstandingOwnership)
+            );
+            let returned = sent
+                .transfer_call_fact(&child, &entry, &selected, true)
+                .unwrap()
+                .transfer_call_fact(&child, &entry, &selected, false)
+                .unwrap()
+                .finish_call(&entry)
+                .unwrap();
+            assert!(returned.owns_population_authority(&selected));
+            assert!(returned.owns_population_member(&selected));
+        });
+        work.push(measured);
+    }
+    assert!(work[2] < work[0].saturating_mul(2) + 40, "{work:?}");
+}

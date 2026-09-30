@@ -368,12 +368,25 @@ absent ownership, views, nested calls, retirement, and historical versus current
 observations. A false-zero regression ensures that authenticating an external
 control does not assume its entry count is zero.
 
+The ordinary abstract transfer fixture and missing-private-body negative now
+use authority. Ordinary wrappers package and expose existing members without
+changing their population; the kernel checks and retains those exchanges,
+including proof operations after the C return.
+
+Conditional release helpers use existing `consumes` and guarded `produces`
+clauses to return control only on the nonfinal branch. Nested numeric calls
+transfer authority and members explicitly, preserve updated population state,
+and reject stranded ownership. Their postconditions observe the checked member
+delta before the caller resumes. Symbolic nested transfers remain explicitly
+unsupported; standalone symbolic batch proofs remain supported.
+
 The remaining sequential fixtures are
-`counted_release_preserves_nonfinal_allocation.md`,
-`population_initialized_cleanup.md`, `population_unit_needs_its_body.md`, and
-`counted_resource_transfer.md`. Finish guarded final/nonfinal helper effects
-and ordinary abstract-resource wrappers while preserving their original claims
-and failures. Do not mark the group complete until these also use authority.
+`counted_release_preserves_nonfinal_allocation.md` and
+`population_initialized_cleanup.md`. Their original postconditions observe
+`count(R(p))` even after final retirement and free. Decide whether checked
+retirement permits only a final-zero observation before migrating these; do
+not silently weaken those claims or grant population-update permission after
+retirement. Do not mark the sequential group complete until both use authority.
 
 ### 5. Migrate shared-parent ownership
 

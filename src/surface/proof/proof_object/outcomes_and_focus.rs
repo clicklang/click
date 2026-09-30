@@ -216,7 +216,21 @@ impl<'a> Proof<'a> {
                                 .execution_start_state(&execution.core.state)
                         });
                     let guard_post_state = match self.focused_outcome_snapshot() {
-                        Ok(CFunctionOutcome::Return { state, .. }) => state,
+                        Ok(CFunctionOutcome::Return { state, .. }) => {
+                            // Function exits restore caller locals. Rebind the
+                            // callee parameters before lowering a guard, whose
+                            // old-memory pointer still uses those names.
+                            c_function_entry_state(
+                                &state,
+                                checked_execution.function(),
+                                context.arguments,
+                            )
+                            .ok_or_else(|| {
+                                self.step_error(
+                                    "could not bind function parameters for the resource guard",
+                                )
+                            })?
+                        }
                         _ => guard_state.clone(),
                     };
                     crate::kernel::evaluate_guarded_contract_condition_with_loop_entry(

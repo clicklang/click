@@ -29,7 +29,7 @@ int32 package_one_ref(int32 object) {
 }
 ```
 
-```click
+```click resource_semantics=authority
 abstract resource object_ref(object: int32);
 
 resource held_ref(object: int32) {
