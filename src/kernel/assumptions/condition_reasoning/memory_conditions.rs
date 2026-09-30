@@ -101,9 +101,7 @@ impl PureFactContext {
         };
         let graph_proves_resolved_int32 =
             |load: &Bitvector32Term, resolved: &Bitvector32Term, other: &Bitvector32Term| {
-                is_four_byte_load(load)
-                    && self.equality_graph.has_term_equivalences()
-                    && self.equality_graph.are_int32_equal(resolved, other)
+                is_four_byte_load(load) && self.int32_values_known_equal(resolved, other)
             };
         if let Some(resolved_left) = self.resolve_memory_load_term(left) {
             if resolved_left == *right || graph_proves_resolved_int32(left, &resolved_left, right) {
@@ -113,21 +111,16 @@ impl PureFactContext {
             // when neither value equals the other load's opaque name.
             if is_four_byte_load(left)
                 && is_four_byte_load(right)
-                && self.equality_graph.has_term_equivalences()
                 && let Some(resolved_right) = self.resolve_memory_load_term(right)
-                && self
-                    .equality_graph
-                    .are_int32_equal(&resolved_left, &resolved_right)
+                && self.int32_values_known_equal(&resolved_left, &resolved_right)
             {
                 return true;
             }
-            return self.bitvector_terms_equal_from_facts(&resolved_left, right)
-                || checked_load_equality(&resolved_left, right);
+            return checked_load_equality(&resolved_left, right);
         }
         if let Some(resolved_right) = self.resolve_memory_load_term(right) {
             return *left == resolved_right
                 || graph_proves_resolved_int32(right, &resolved_right, left)
-                || self.bitvector_terms_equal_from_facts(left, &resolved_right)
                 || checked_load_equality(left, &resolved_right);
         }
         false

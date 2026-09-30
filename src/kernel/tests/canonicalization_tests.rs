@@ -833,8 +833,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
 
     let without_index_fact = PureFactContext::new();
     assert!(
-        !without_index_fact
-            .bitvector_terms_equal_from_facts(&indexed_load_variable, &first_load_variable)
+        !without_index_fact.int32_values_known_equal(&indexed_load_variable, &first_load_variable)
     );
 
     let with_index_fact = PureFactContext::new().assume_condition(
@@ -842,8 +841,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         true,
     );
     assert!(
-        !with_index_fact
-            .bitvector_terms_equal_from_facts(&indexed_load_variable, &first_load_variable)
+        !with_index_fact.int32_values_known_equal(&indexed_load_variable, &first_load_variable)
     );
     let goal = Proposition::ConditionIs(
         ConditionTerm::equal(indexed_load_variable.clone(), first_load_variable.clone()),
