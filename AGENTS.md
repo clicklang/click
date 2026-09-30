@@ -3,10 +3,18 @@
 ## Develop in a fork and contribute through pull requests
 
 The upstream repository is `clicklang/click`. Humans and agents must develop
-in their own fork, push task branches there, and open a pull request against
-upstream `master` when the change is ready. Do not push development branches
-or changes directly to the upstream repository, even with write or admin
-access. Maintainers integrate reviewed changes through pull requests.
+in their own fork and open a pull request against upstream `master` as soon as
+they have a coherent, green, reviewable unit of work. Do not wait for a larger
+effort to finish; use a draft pull request if more work is expected before it
+is ready to merge. Do not push development branches or changes directly to the
+upstream repository, even with write or admin access. Maintainers integrate
+reviewed changes through pull requests.
+
+For follow-on work on the same effort, keep updating its existing open pull
+request and branch with each coherent green increment; do not open a duplicate
+pull request. Once that pull request merges, start later work from current
+upstream `master` on a new branch and pull request. Keep independent efforts in
+separate pull requests.
 
 Upstream `master` requires a pull request, a passing GitHub Actions `test`
 check, and the merge queue. Once a pull request is ready and its checks pass,
@@ -30,11 +38,12 @@ formatting, tests, and commits there. Treat the shared primary checkout as an
 integration checkout, not a development workspace; do not expose other agents
 to partially implemented or failing changes.
 
-Submit only a coherent green commit. Before opening a pull request, run the
-relevant focused and full gates in the task worktree (use the documentation-only
-gate for prose-only changes), then push the tested branch to the fork. Include
-the change's purpose and validation in the pull request. If upstream has moved,
-update the task branch and rerun any affected gates before merging.
+Submit only coherent green commits. Before opening or updating a pull request,
+run the relevant focused and full gates in the task worktree (use the
+documentation-only gate for prose-only changes), then push the tested branch to
+the fork. Include the change's purpose and validation in the pull request. If
+upstream has moved, update the task branch and rerun any affected gates before
+merging.
 
 If updating the local primary checkout after a pull request merges, verify
 that it is clean and fast-forward it from upstream with Git. Never copy
