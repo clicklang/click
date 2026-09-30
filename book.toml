@@ -11,7 +11,7 @@ create-missing = false
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "navy"
-git-repository-url = "https://github.com/lacker/click"
+git-repository-url = "https://github.com/clicklang/click"
 additional-css = ["docs/theme/click.css"]
 additional-js = ["docs/theme/click.js"]
 

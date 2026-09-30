@@ -277,7 +277,7 @@ initialization, both segment mutations, and a first-segment read.
 ## A modeled loop, end to end
 
 `tree_leftmost` in
-[`examples/modeled-binary-tree`](https://github.com/lacker/click/tree/master/examples/modeled-binary-tree)
+[`examples/modeled-binary-tree`](https://github.com/clicklang/click/tree/master/examples/modeled-binary-tree)
 is the smallest complete instance of the pattern every walk over a recursive
 structure uses, including the Linux rbtree traversals. Its C does three
 things — reject null, run `while (root->left != 0) root = root->left;`, return

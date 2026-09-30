@@ -255,7 +255,7 @@ have viewable(a[0..k]) by { simp(); }
 That matters for induction over an array range, where
 the hypothesis needs the narrowed range as an exactly available fact before it
 can be applied; see
-[`fold_reading_a_viewed_array_is_nonnegative_over_its_own_range.md`](https://github.com/lacker/click/blob/master/mdtests/fold_reading_a_viewed_array_is_nonnegative_over_its_own_range.md).
+[`fold_reading_a_viewed_array_is_nonnegative_over_its_own_range.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_reading_a_viewed_array_is_nonnegative_over_its_own_range.md).
 
 ## Old memory
 

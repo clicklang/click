@@ -636,7 +636,7 @@ destination's range. Symbolic values require established lower and upper bounds;
 for example, `to_int32(z)` requires `z >= -2147483648` and `z <= 2147483647`.
 Missing either bound rejects the conversion, including inside reflexive claims.
 No conversion wraps, truncates, or implicitly mixes the two types.
-See [conversion examples](https://github.com/lacker/click/blob/master/mdtests/integer_machine_conversions.md).
+See [conversion examples](https://github.com/clicklang/click/blob/master/mdtests/integer_machine_conversions.md).
 
 <!-- verified-example: mdtests/integer_successor.md -->
 ```click
@@ -672,13 +672,13 @@ Resources may declare `field total: Integer;`: folding checks the resource's
 facts, and `old(model.total)` retains the entry value across updates.
 Checked resource pattern bindings retain each field's declared carrier, name,
 entry/current snapshot, and definedness while the pattern is lowered and
-rechecked. See [resource field examples](https://github.com/lacker/click/blob/master/mdtests/integer_resource_fields.md).
+rechecked. See [resource field examples](https://github.com/clicklang/click/blob/master/mdtests/integer_resource_fields.md).
 
 Pure functions with Integer parameters and results are supported. Calls remain
 opaque until an explicit `unfold(function(args))` exposes the defining equation.
 Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
-See [the function example](https://github.com/lacker/click/blob/master/mdtests/integer_function_successor.md).
+See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
 Integer and mixed C/Integer quantifiers support checked introduction and
 instantiation over their logical, unbounded domains. Integer range folds support
@@ -1003,18 +1003,18 @@ The proof may relate `result` to current or `old` memory and to guarantees
 from other applicable contracts. There is no extra proof step to expose the
 result, and no new result-binding syntax. Existing supported scalar and pointer
 return types retain their C types. See the
-[end-to-end return-valued buffer proof](https://github.com/lacker/click/blob/master/mdtests/c_contract_executes_return_buffer.md).
+[end-to-end return-valued buffer proof](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_return_buffer.md).
 
 An explicit proof `if` after `step(Contract)` may distinguish success and
 failure using `result`. Conditional postconditions remain conditional until
 their guard is established; `extract` exposes the selected consequence.
 Each case must return the target resources, and failure does not inherit
 success's update guarantee (nor success failure's preservation guarantee).
-The [status-returning callback tests](https://github.com/lacker/click/blob/master/mdtests/c_contract_executes_status.md)
+The [status-returning callback tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_status.md)
 cover this refinement and an ordinary C caller that checks the returned status.
 These proof cases may nest: each inner arm receives its own condition, and
 the continuation after an inner `if` must check in every reachable case.
-See the [nested status cases](https://github.com/lacker/click/blob/master/mdtests/c_contract_executes_status_nested.md),
+See the [nested status cases](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_status_nested.md),
 including an impossible arm and a shared continuation containing another case.
 
 This slice supports one nongeneric callback theorem parameter, one
@@ -1076,7 +1076,7 @@ positionally. A C function's binders live in its `owns`, `consumes`, and
 `step(increment(state), { first: k })` passes them by binder name, as in
 [Calls that transport named instances](#calls-that-transport-named-instances).
 
-The [counter refinement tests](https://github.com/lacker/click/blob/master/mdtests/c_contract_executes_counter.md)
+The [counter refinement tests](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_counter.md)
 demonstrate an exact field increment refined to progress while framing an
 unrelated caller-owned counter. Unmentioned fields of the selected counter are
 not implicitly preserved.
@@ -1110,7 +1110,7 @@ execute exactly one call, as in the abstract form.
 `apply(increment_is_exact())` then introduces `Exact(&increment)` at a call site
 exactly like a concrete `unfold(Name)` refinement theorem. This is the explicit
 route for a target contract with proof parameters, which `unfold(Name)` refuses.
-The [modeled-instance variant](https://github.com/lacker/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
+The [modeled-instance variant](https://github.com/clicklang/click/blob/master/mdtests/c_contract_executes_concrete_model.md)
 carries a tree instance through the same two maps.
 
 ### Automatic formation at `&f`
@@ -2129,7 +2129,7 @@ and destruction as
 `step(pthread_mutex_destroy(mu), { lifetime: life });`.
 The input/output names belong to the runtime declaration; `life` and `initial`
 are caller names. The former initialization key `invariant` is no longer
-accepted. See the [checked lifecycle example](https://github.com/lacker/click/blob/master/mdtests/mutex_lifetime_named_runtime.md).
+accepted. See the [checked lifecycle example](https://github.com/clicklang/click/blob/master/mdtests/mutex_lifetime_named_runtime.md).
 
 A preserving helper may declare `owns lifetime: mutex_live(mu)` or
 `owns guard: mutex_guard(mu)` and receive the named authority through an
@@ -2142,7 +2142,7 @@ reborrow a named `mutex_use` authority. The map selects that exact permission;
 the helper receives a scoped use permission, and the caller recovers its original
 authority and name when the helper returns. Nested helper calls follow the same
 rule. Unary `mutex_use` permits balanced locking without granting protected
-payload ownership. See the [checked nested example](https://github.com/lacker/click/blob/master/mdtests/mutex_use_named_nested_call.md).
+payload ownership. See the [checked nested example](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_named_nested_call.md).
 
 Named primitive children and theorem parameters, and general
 consuming/producing primitive helper clauses remain unsupported. The complete

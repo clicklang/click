@@ -233,7 +233,7 @@ Passing the inducted argument alone still means "every other parameter
 unchanged", so `ih(tail)` and a complete list that repeats the other
 parameters name the same instance.
 
-[`examples/modeled-binary-tree`](https://github.com/lacker/click/tree/master/examples/modeled-binary-tree)
+[`examples/modeled-binary-tree`](https://github.com/clicklang/click/tree/master/examples/modeled-binary-tree)
 proves `plug_inorder_transport` this way: in the `Context::Left` arm the goal
 is the theorem for the enclosing frame `up` at two rebuilt subtrees, and the
 proof writes `ih(up, HeapTree::Node(parent, value, a, sibling),

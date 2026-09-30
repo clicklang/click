@@ -280,7 +280,7 @@ For example, after a store to `p[k]`, explicit transport can use `i != k` to
 prove that `p[i]` equals its entry value. With `i == j`, normalization then
 combines this edge with current-snapshot load congruence to prove the same for
 `p[j]`. The graph needs no frame search or snapshot-merging operation.
-[The executable composition example](https://github.com/lacker/click/blob/master/mdtests/normalize_using_transported_int32_loads.md)
+[The executable composition example](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_transported_int32_loads.md)
 keeps the transport and graph steps explicit. Regression tests remove either
 premise or the bridge, reject an overlapping store, recheck expansion, and
 verify that withdrawing the bridge removes only its cross-snapshot consequences.

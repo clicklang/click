@@ -8,7 +8,7 @@ ledger, certificate representation, or tactic dispatcher to judge those things.
 This document puts that boundary before the implementation plan.
 
 It refines the [resource-invariant design](resource-invariants.md)
-and the [shared-counter protocol](https://github.com/lacker/click/blob/master/design/concurrency-probes/mutex-shared-protocol.md). Existing failure
+and the [shared-counter protocol](https://github.com/clicklang/click/blob/master/design/concurrency-probes/mutex-shared-protocol.md). Existing failure
 classification is described in [proof-failure triage](../concepts/proof-failure-triage.md).
 
 The uniform target interfaces for initialization, lock, unlock, and destruction
@@ -318,7 +318,7 @@ that equality; continuity is not the only possible proof.
 
 ## Loop contracts use existence, not fixed acquisition numbers
 
-For the unchanged [parity program](https://github.com/lacker/click/blob/master/design/concurrency-probes/mutex_held_parity.c), the intended loop meaning
+For the unchanged [parity program](https://github.com/clicklang/click/blob/master/design/concurrency-probes/mutex_held_parity.c), the intended loop meaning
 is: an even index owns no acquisition; an odd index owns some current acquisition
 of this initialized mutex. The model can express `Idle` and `Holding` with the
 guard as a resource ingredient in the `Holding` arm.
@@ -334,7 +334,7 @@ that no other thread currently holds the lock.
 
 ### Implemented parity checkpoint
 
-The [unchanged parity sidecar](https://github.com/lacker/click/blob/master/design/concurrency-probes/mutex_held_parity.click)
+The [unchanged parity sidecar](https://github.com/clicklang/click/blob/master/design/concurrency-probes/mutex_held_parity.click)
 uses an ordinary scalar field and conditional `owns mutex_guard(...)` body.
 At a loop head, the kernel records symbolic heldness and a fresh acquisition
 description only after checking the declared wrapper against real entry

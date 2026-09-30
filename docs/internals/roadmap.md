@@ -3,7 +3,7 @@
 Click's current roadmap is to complete the P1 work, verify the Linux kernel
 rbtree implementation, and launch publicly with rbtree as the key demo.
 
-The [issue list](https://github.com/lacker/click/blob/master/issues/README.md)
+The [issue list](https://github.com/clicklang/click/blob/master/issues/README.md)
 is authoritative for the P1 work and the minimum viable rbtree (MVR) proof
 scope. This page describes the launch strategy; it does not maintain a second
 feature backlog.
@@ -77,7 +77,7 @@ The P2 list records deferred work. Broader C coverage, additional targets,
 concurrency beyond the selected demo, other library demos, C++ beyond its
 selected basic and exception-demo slices, and Rust remain later work. General
 goto, type punning, and cyclic-graph reclamation also remain deferred. The
-[supporting more languages design](https://github.com/lacker/click/blob/master/design/supporting-more-languages.md)
+[supporting more languages design](https://github.com/clicklang/click/blob/master/design/supporting-more-languages.md)
 records the language sequence and longer-term architecture. Revisit deferred
 work after the rbtree launch; the issue list remains authoritative for explicit
 priority decisions and tooling blockers.

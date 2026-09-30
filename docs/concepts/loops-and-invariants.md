@@ -126,7 +126,7 @@ executes under rather than the ordinary spelling its sidecar contract uses,
 which is what lets the plan reach the function the call site names
 (`mdtests/inline_helper_ranked_loop.md`).
 
-The [`perpetual-service`](https://github.com/lacker/click/tree/master/examples/perpetual-service) example
+The [`perpetual-service`](https://github.com/clicklang/click/tree/master/examples/perpetual-service) example
 combines a `diverges` contract with an opaque verified call and a composite
 resource transferred through every iteration.
 
