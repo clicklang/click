@@ -173,5 +173,5 @@ struct rb_node* rb_next(struct rb_node* node) {
 ```
 
 ```expect
-fail: MissingResource
+fail: the read requires `views node[2..3]`, which is not available
 ```
