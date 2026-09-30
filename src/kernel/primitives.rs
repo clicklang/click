@@ -2147,6 +2147,11 @@ pub enum CStatement {
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
+        /// Present for an automatic array declared with an initializer: the
+        /// declaration zero-fills the object, and the initializer's written
+        /// elements follow as ordinary stores. Absent, the object is
+        /// uninitialized.
+        zero_fill: Option<CZeroFill>,
     },
     /// Declare an address-backed scalar-only aggregate. Aggregate values are
     /// not runtime `CValue`s; their local binding exposes the block base so
@@ -2538,6 +2543,71 @@ impl From<Vec<CValue>> for CArrayContents {
                 .enumerate()
                 .map(|(index, value)| (index as u32, value)),
         )
+    }
+}
+
+/// `count` cells holding `value`, `stride` bytes apart from `offset` bytes
+/// into an object: one [`CellRun`] of an object's known initial contents
+/// ([`CMemory::with_constant_runs`]).
+///
+/// [`CellRun`]: crate::kernel::primitives::CellRun
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CConstantRun {
+    pub(crate) offset: u32,
+    pub(crate) stride: u32,
+    pub(crate) count: u32,
+    pub(crate) value: CValue,
+}
+
+/// What an automatic array declared with an initializer holds before the
+/// initializer's written elements are stored: C zero-initializes every
+/// element the initializer does not name (C11 6.7.9p21), so the declaration
+/// fills the whole object with zeros at a cost that does not depend on its
+/// length, and the written elements follow as ordinary stores. An automatic
+/// array declared without an initializer carries none and stays
+/// uninitialized.
+///
+/// The object is `count` elements `stride` bytes apart, and every element
+/// receives the same stores of `cells`: each a typed store of a zero
+/// initializer at a byte offset within the element, exactly as the frontend
+/// would spell element 0's zero stores. The declaration leaves the cells
+/// those stores into every element leave.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CZeroFill {
+    pub(super) stride: u32,
+    pub(super) count: u32,
+    pub(super) cells: std::sync::Arc<[CZeroCell]>,
+}
+
+/// One zero store of every element of a [`CZeroFill`]: `zero`, the zero
+/// initializer's value, stored as a `value_type` cell `offset` bytes into
+/// the element, with the store's pointee qualification.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct CZeroCell {
+    pub(super) offset: u32,
+    pub(super) value_type: CType,
+    pub(super) pointee_constant: bool,
+    pub(super) zero: CValue,
+}
+
+impl CZeroFill {
+    pub fn new(stride: u32, count: u32, cells: Vec<CZeroCell>) -> Self {
+        Self {
+            stride,
+            count,
+            cells: cells.into(),
+        }
+    }
+}
+
+impl CZeroCell {
+    pub fn new(offset: u32, value_type: CType, pointee_constant: bool, zero: CValue) -> Self {
+        Self {
+            offset,
+            value_type,
+            pointee_constant,
+            zero,
+        }
     }
 }
 

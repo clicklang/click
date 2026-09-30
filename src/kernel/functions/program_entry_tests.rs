@@ -643,3 +643,290 @@ fn a_constant_array_at_function_entry_costs_the_same_whatever_its_length() {
          {samples:?}"
     );
 }
+
+/// `struct node { int32 key; uint8 tag; int32 *next; int32 pair[2]; }`,
+/// with `wide` extra bytes of inline array when asked for one.
+fn node_layout(wide: u32) -> CAggregateLayout {
+    let mut fields = vec![
+        CAggregateField::new("key", 0, CType::Int32),
+        CAggregateField::new("tag", 4, CType::UInt8),
+        CAggregateField::new("next", 8, CType::Int32Pointer),
+        CAggregateField::new("pair", 16, CType::Int32Array(2)),
+    ];
+    if wide > 0 {
+        fields.push(CAggregateField::new("bytes", 24, CType::UInt8Array(wide)));
+    }
+    CAggregateLayout::new((24 + wide).next_multiple_of(8), 8, fields)
+}
+
+/// A global `struct node pool[length]` writing element 2's key and the last
+/// element's `pair[1]`, and a static local `slots[length]` writing element
+/// 0's tag.
+fn function_with_aggregate_arrays(length: u32, wide: u32, constant: bool) -> CFunction {
+    let size = node_layout(wide).size_bytes();
+    storage_function("main", vec![])
+        .with_global_aggregate_arrays(vec![
+            CGlobalAggregateArray::new(
+                "pool",
+                "pool",
+                node_layout(wide),
+                length,
+                vec![
+                    CAggregateInitializer::new(2 * size, int32(7)),
+                    CAggregateInitializer::new((length - 1) * size + 20, int32(3)),
+                ],
+            )
+            .with_constant(constant),
+        ])
+        .with_static_aggregate_arrays(vec![CStaticAggregateArray::new(
+            "slots",
+            "slots",
+            node_layout(wide),
+            length,
+            vec![CAggregateInitializer::new(4, uint8(255))],
+        )])
+}
+
+/// Program startup stores an array of structs as one zero run per field
+/// with the written fields stored over them, and that leaves exactly the
+/// cells of zeroing every element's fields one by one and then storing the
+/// written fields, with startup permissions owning the same bytes. An
+/// inline array field longer than the struct count is one run per struct
+/// instead.
+#[test]
+fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
+    for (length, wide) in [(3u32, 0u32), (4, 0), (5, 12), (12, 8), (65, 0), (3, 100)] {
+        let function = function_with_aggregate_arrays(length, wide, false);
+        let startup = initialize_c_program_storage([function.clone()]);
+        let layout = node_layout(wide);
+        let mut reference = CMemory::new();
+        for (pointer, initializers) in [
+            (
+                CMemory::global_pointer("pool"),
+                function.global_aggregate_arrays()[0].initializers(),
+            ),
+            (
+                CMemory::static_pointer("main", "slots"),
+                function.static_aggregate_arrays()[0].initializers(),
+            ),
+        ] {
+            reference = reference.clone().with_block_or_read_only(
+                pointer.block.clone(),
+                length * layout.size_bytes(),
+                false,
+            );
+            for element in 0..length {
+                reference = zero_aggregate_fields(
+                    reference,
+                    &pointer.offset_by_bytes(element * layout.size_bytes()),
+                    &layout,
+                );
+            }
+            reference = initialize_aggregate_fields(reference, &pointer, initializers);
+        }
+        assert_eq!(
+            startup.memory().cells.logical(),
+            reference.cells.logical(),
+            "[{length} x {wide}] holds the per-field cells"
+        );
+        // The per-field cells partition each block by cell width, a range
+        // per field per element; the runs' periodic block is one range of
+        // struct-sized elements. Both own exactly the same bytes.
+        let per_field = initial_static_resources(&reference, || {});
+        assert_eq!(
+            owned_bytes(startup.resources()),
+            owned_bytes(&per_field),
+            "[{length} x {wide}] owns the bytes the per-field cells own"
+        );
+        if wide == 0 && length > 1 {
+            assert_eq!(
+                startup.resources().facts().len(),
+                2,
+                "[{length}] each array of structs is one range"
+            );
+        }
+    }
+}
+
+/// Every block's owned bytes, as ascending disjoint half-open intervals.
+fn owned_bytes(resources: &ResourceContext) -> BTreeMap<PointerBlock, Vec<(i64, i64)>> {
+    let mut bytes = BTreeMap::<PointerBlock, Vec<(i64, i64)>>::new();
+    for fact in resources.facts() {
+        let range = fact
+            .memory_own_range()
+            .expect("startup permissions own memory");
+        let PointerOffsetTerm::Constant(offset) = range.base().offset else {
+            panic!("startup ranges have constant bases");
+        };
+        let width = i64::from(range.element_width());
+        let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const()) else {
+            panic!("startup ranges have constant bounds");
+        };
+        bytes.entry(range.base().block.clone()).or_default().push((
+            offset + i64::from(start) * width,
+            offset + i64::from(end) * width,
+        ));
+    }
+    for intervals in bytes.values_mut() {
+        intervals.sort_unstable();
+        let mut merged: Vec<(i64, i64)> = Vec::new();
+        for (low, high) in intervals.drain(..) {
+            match merged.last_mut() {
+                Some((_, end)) if *end == low => *end = high,
+                _ => merged.push((low, high)),
+            }
+        }
+        *intervals = merged;
+    }
+    bytes
+}
+
+/// Program startup, and loads of written and zero fields and a store then a
+/// load, cost the same whatever the length of an array of structs, and
+/// every load is exact. Startup used to store every field of every element.
+#[test]
+fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
+    let samples = [100u32, 10_000, 1_000_000].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = function_with_aggregate_arrays(length, 0, false);
+        let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialize_c_program_storage([function.clone()])
+        });
+        let pool = CMemory::global_pointer("pool");
+        let slots = CMemory::static_pointer("main", "slots");
+        let field = |element: u32, offset: u32| pool.offset_by_bytes(element * 24 + offset);
+        let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
+            let memory = startup.memory();
+            let stored = memory.clone().store(field(5, 0), int32(9));
+            [
+                memory.load(&field(2, 0)),
+                memory.load(&field(5, 0)),
+                memory.load(&field(5, 8)),
+                memory.load(&field(length - 1, 20)),
+                memory.load(&field(length - 1, 16)),
+                memory.load(&slots.offset_by_bytes(4)),
+                memory.load(&slots.offset_by_bytes((length - 1) * 24 + 4)),
+                stored.load(&field(5, 0)),
+                stored.load(&field(6, 0)),
+            ]
+        });
+        let value = CExpressionOutcome::Value;
+        assert_eq!(
+            loads,
+            [
+                value(int32(7)),
+                value(int32(0)),
+                value(CValue::typed_pointer(Pointer::null(), CType::Int32Pointer)),
+                value(int32(3)),
+                value(int32(0)),
+                value(uint8(255)),
+                value(uint8(0)),
+                value(int32(9)),
+                value(int32(0)),
+            ],
+            "[{length}] reads its initializer"
+        );
+        (
+            length,
+            startup_work,
+            load_work,
+            startup.memory().cells.representation_len(),
+            startup.resources().facts().len(),
+        )
+    });
+    let (_, startup_work, load_work, entries, facts) = samples[0];
+    assert!(
+        samples
+            .iter()
+            .all(|sample| (sample.1, sample.2, sample.3, sample.4)
+                == (startup_work, load_work, entries, facts)),
+        "startup cost depends on the aggregate arrays' length (length, startup work, load \
+         work, cell entries, startup permissions): {samples:?}"
+    );
+}
+
+/// An ordinary function's entry names every field of a symbolic array of
+/// structs as its symbolic entry value, one run per field, and that leaves
+/// exactly the cells of materializing every struct's fields one by one. A
+/// layout with more cells than there are structs is materialized struct by
+/// struct.
+#[test]
+fn a_symbolic_aggregate_array_at_function_entry_holds_exactly_the_per_struct_cells() {
+    for length in [1u32, 2, 5, 64, 65] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = function_with_aggregate_arrays(length, 0, false);
+        let entry = initialize_c_function_globals(&CState::new(), &function);
+        let layout = node_layout(0);
+        let mut reference = CMemory::new();
+        for pointer in [
+            CMemory::global_pointer("pool"),
+            CMemory::static_pointer("main", "slots"),
+        ] {
+            reference = reference.clone().with_block_or_read_only(
+                pointer.block.clone(),
+                length * layout.size_bytes(),
+                false,
+            );
+            for element in 0..length {
+                reference = materialize_symbolic_aggregate_fields(
+                    reference,
+                    &pointer.offset_by_bytes(element * layout.size_bytes()),
+                    &layout,
+                );
+            }
+        }
+        assert_eq!(
+            entry.memory().cells.logical(),
+            reference.cells.logical(),
+            "[{length}] holds the per-struct cells"
+        );
+    }
+}
+
+/// An ordinary function's entry, and loads of its fields, cost the same
+/// whatever the length of a symbolic array of structs, and name no field it
+/// does not read. Entry used to name every field of every struct, so a
+/// million-struct pool exhausted the load identities.
+#[test]
+fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_length() {
+    let samples = [100u32, 10_000, 1_000_000].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let function = function_with_aggregate_arrays(length, 0, false);
+        let registered = crate::kernel::eval::load_variable_registry_len();
+        let (entry, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
+            initialize_c_function_globals(&CState::new(), &function)
+        });
+        let pool = CMemory::global_pointer("pool");
+        let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
+            [
+                entry.memory().load(&pool.offset_by_bytes(24 * 7)),
+                entry
+                    .memory()
+                    .load(&pool.offset_by_bytes(24 * (length - 1) + 20)),
+            ]
+        });
+        assert!(
+            loads.iter().all(|load| matches!(
+                load,
+                CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Variable(_)))
+            )),
+            "[{length}] a field reads as its load: {loads:?}"
+        );
+        (
+            length,
+            entry_work,
+            load_work,
+            entry.memory().cells.representation_len(),
+            crate::kernel::eval::load_variable_registry_len() - registered,
+        )
+    });
+    let (_, entry_work, load_work, entries, named) = samples[0];
+    assert!(
+        samples
+            .iter()
+            .all(|sample| (sample.1, sample.2, sample.3, sample.4)
+                == (entry_work, load_work, entries, named)),
+        "a symbolic aggregate array's entry depends on its length (length, entry work, load \
+         work, cell entries, load identities named): {samples:?}"
+    );
+}

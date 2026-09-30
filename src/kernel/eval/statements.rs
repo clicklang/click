@@ -2818,6 +2818,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
             pointee_volatile,
             constant,
             pointee_constant,
+            zero_fill,
         } => {
             let outcome = if *c_type == CType::Void {
                 CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch)
@@ -2830,7 +2831,11 @@ pub(in crate::kernel) fn execute_c_statement_paths(
                     *pointee_volatile,
                     *constant,
                     *pointee_constant,
-                ) {
+                )
+                .and_then(|state| match zero_fill {
+                    Some(zero_fill) => zero_fill_declared_array(state, name, zero_fill),
+                    None => Ok(state),
+                }) {
                     Ok(state) => {
                         CStatementOutcome::Normal(note_declared_population_storage(state, name))
                     }
@@ -3895,6 +3900,86 @@ fn note_declared_population_storage(mut state: CState, name: &str) -> CState {
         state.record_population_storage_creation(slot.block);
     }
     state
+}
+
+/// Zero-fills the automatic array `name` that was just declared, as its
+/// initializer does before the elements it writes are stored: C
+/// zero-initializes every element and field the initializer does not name
+/// (C11 6.7.9p21). Each zero cell of an element holds the zero initializer
+/// coerced to the cell's type exactly as its typed store would coerce it,
+/// and holds it in every element, so the cells are one constant run each
+/// over the fresh block: the declaration costs the element's cells, not the
+/// array's length. Where the memory refuses runs the cells are stored one by
+/// one, which leaves the same cells.
+fn zero_fill_declared_array(
+    mut state: CState,
+    name: &str,
+    zero_fill: &CZeroFill,
+) -> Result<CState, CRuntimeError> {
+    let slot = state
+        .locals
+        .slot(name)
+        .cloned()
+        .filter(|slot| slot.block.starts_with("local:") && state.memory.has_block(&slot.block))
+        .ok_or(CRuntimeError::TypeMismatch)?;
+    let object_bytes = zero_fill
+        .stride
+        .checked_mul(zero_fill.count)
+        .ok_or(CRuntimeError::TypeMismatch)?;
+    if state
+        .memory
+        .block_size(&slot.block)
+        .and_then(Bitvector32Term::as_const)
+        != Some(object_bytes)
+    {
+        return Err(CRuntimeError::TypeMismatch);
+    }
+    let mut runs = Vec::with_capacity(zero_fill.cells.len());
+    let mut element_end = 0u32;
+    for cell in zero_fill.cells.iter() {
+        crate::instrumentation::record_deterministic_work(1);
+        let mut obligations = Vec::new();
+        let value = crate::kernel::functions::coerce_c_value_with_pointee_constant(
+            cell.zero.clone(),
+            cell.value_type,
+            cell.pointee_constant,
+            &mut obligations,
+            &PureFactContext::new(),
+        )
+        .filter(|_| obligations.is_empty())
+        .ok_or(CRuntimeError::TypeMismatch)?;
+        // The cells of one element are ascending and disjoint, and lie in it.
+        let end = cell
+            .offset
+            .checked_add(value.byte_width())
+            .filter(|end| cell.offset >= element_end && *end <= zero_fill.stride)
+            .ok_or(CRuntimeError::TypeMismatch)?;
+        element_end = end;
+        runs.push(CConstantRun {
+            offset: cell.offset,
+            stride: zero_fill.stride,
+            count: zero_fill.count,
+            value,
+        });
+    }
+    let memory = match state.memory.clone().with_constant_runs(&slot, &runs) {
+        Ok(filled) => filled,
+        Err(mut memory) => {
+            for run in &runs {
+                for index in 0..run.count {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let offset = index
+                        .checked_mul(run.stride)
+                        .and_then(|offset| offset.checked_add(run.offset))
+                        .ok_or(CRuntimeError::TypeMismatch)?;
+                    memory = memory.store(slot.offset_by_bytes(offset), run.value.clone());
+                }
+            }
+            memory
+        }
+    };
+    state.set_memory(memory);
+    Ok(state)
 }
 
 pub(in crate::kernel) fn declare_local(

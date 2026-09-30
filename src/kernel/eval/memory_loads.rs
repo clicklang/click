@@ -1657,20 +1657,36 @@ struct SymbolicArrayAccessWidths {
     /// The byte distance between elements.
     stride: i64,
     count: u32,
-    /// The width of every element's load.
-    bytes: u32,
+    /// The loads of one element: each one's byte offset within the element,
+    /// ascending and below `stride`, and its width. A scalar array's element
+    /// is one load at offset 0; an array of structs has one per field.
+    loads: std::sync::Arc<[(i64, u32)]>,
 }
 
 impl SymbolicArrayAccessWidths {
-    /// The byte just past the last element's first byte, for an array based
-    /// at `base`.
+    /// The byte just past the last element's last load's first byte, for an
+    /// array based at `base`.
     fn end(&self, base: i64) -> i64 {
         base.saturating_add(
             i64::from(self.count)
                 .saturating_sub(1)
                 .saturating_mul(self.stride),
         )
+        .saturating_add(self.loads.last().map_or(0, |(offset, _)| *offset))
         .saturating_add(1)
+    }
+
+    /// The width of the load at `offset` bytes past the array's base, when
+    /// one of its elements' loads is there.
+    fn width_at(&self, base: i64, offset: i64) -> Option<u32> {
+        if offset < base || offset >= self.end(base) {
+            return None;
+        }
+        let within = (offset - base) % self.stride;
+        self.loads
+            .binary_search_by_key(&within, |(offset, _)| *offset)
+            .ok()
+            .map(|position| self.loads[position].1)
     }
 }
 
@@ -1701,10 +1717,12 @@ fn declared_array_access_width(pointer: &Pointer) -> Option<(SharedCMemory, u32)
         let ((block, base), array) = arrays
             .range(..=(pointer.block.clone(), offset))
             .next_back()?;
-        (*block == pointer.block
-            && offset < array.end(*base)
-            && (offset - base) % array.stride == 0)
-            .then(|| (array.source.clone(), array.bytes))
+        if *block != pointer.block {
+            return None;
+        }
+        array
+            .width_at(*base, offset)
+            .map(|bytes| (array.source.clone(), bytes))
     })
 }
 
@@ -1733,17 +1751,40 @@ pub(in crate::kernel) fn declare_symbolic_array_access_widths(
     count: u32,
     bytes: u32,
 ) -> bool {
+    declare_symbolic_element_access_widths(source, base, stride, count, &[(0, bytes)])
+}
+
+/// [`declare_symbolic_array_access_widths`] for an array whose every
+/// element is read by several loads, one per `(offset, bytes)` of `loads`
+/// (ascending offsets within the element, each below `stride`): an array of
+/// structs, whose fields are its elements' loads. `false` declares nothing,
+/// as there.
+pub(in crate::kernel) fn declare_symbolic_element_access_widths(
+    source: &SharedCMemory,
+    base: &Pointer,
+    stride: u32,
+    count: u32,
+    loads: &[(u32, u32)],
+) -> bool {
     let PointerOffsetTerm::Constant(offset) = base.offset else {
         return false;
     };
-    if count == 0 || stride == 0 {
+    if count == 0
+        || stride == 0
+        || loads.is_empty()
+        || !loads.windows(2).all(|pair| pair[0].0 < pair[1].0)
+        || loads.last().is_some_and(|(within, _)| *within >= stride)
+    {
         return false;
     }
     let declared = SymbolicArrayAccessWidths {
         source: source.clone(),
         stride: i64::from(stride),
         count,
-        bytes,
+        loads: loads
+            .iter()
+            .map(|(within, bytes)| (i64::from(*within), *bytes))
+            .collect(),
     };
     let end = declared.end(offset);
     SYMBOLIC_ARRAY_ACCESS_WIDTHS.with(|arrays| {
@@ -1754,7 +1795,7 @@ pub(in crate::kernel) fn declare_symbolic_array_access_widths(
             return held.source == declared.source
                 && held.stride == declared.stride
                 && held.count == declared.count
-                && held.bytes == declared.bytes;
+                && held.loads == declared.loads;
         }
         let below = arrays
             .range(..&key)

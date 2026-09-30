@@ -200,7 +200,7 @@ fn walk_expression(expression: &C0Expression, summary: &mut AddressTakenSummary)
 
 /// Every name an expression mentions, at any depth and through any form,
 /// including the names its embedded statements declare and read.
-fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<String>) {
+pub(super) fn mentioned_names(expression: &C0Expression, names: &mut BTreeSet<String>) {
     match expression {
         C0Expression::Variable(name) | C0Expression::Assignment { name, .. } => {
             names.insert(name.clone());

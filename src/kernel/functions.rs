@@ -14767,14 +14767,76 @@ pub(crate) fn initialize_c_program_storage(
     state
 }
 
+/// The blocks holding an array of structs laid out as the zero runs of
+/// [`aggregate_array_zero_runs`] leave it: runs of one stride `stride` and
+/// one count `count`, based within the first element, filling the block,
+/// at least one of them stepping over more than its own cell, and every
+/// concrete cell of the block a written field, of its run's width, at one of
+/// the runs' slots. Every element then holds cells of the same widths at the
+/// same offsets, so the block's cells repeat with period `stride` and the
+/// block is one range of `count` struct-sized elements. Costs the block's
+/// runs and concrete cells, not its elements.
+fn periodic_struct_array_blocks(
+    memory: &CMemory,
+    constant_offset: impl Fn(&Pointer) -> u32,
+) -> BTreeMap<PointerBlock, (u32, u32)> {
+    let mut runs_by_block = BTreeMap::<&PointerBlock, Vec<&CellRun>>::new();
+    for run in memory.cells.runs() {
+        runs_by_block
+            .entry(&run.base().block)
+            .or_default()
+            .push(run);
+    }
+    let mut periodic = BTreeMap::new();
+    for (block, runs) in runs_by_block {
+        let (stride, count) = (runs[0].element_width(), runs[0].count());
+        let strided = runs
+            .iter()
+            .any(|run| run.element_width() != run.value_width());
+        let aligned = runs.iter().all(|run| {
+            run.element_width() == stride
+                && run.count() == count
+                && constant_offset(run.base()) + run.value_width() <= stride
+        });
+        let fills_block = stride.checked_mul(count).is_some_and(|bytes| {
+            memory
+                .blocks
+                .get(block)
+                .and_then(|block| block.size().as_const())
+                == Some(bytes)
+        });
+        if !strided || !aligned || !fills_block {
+            continue;
+        }
+        let written_fields = AliasCandidates::only_block(block)
+            .entries(memory.cells.concrete())
+            .all(|(pointer, value)| {
+                runs.iter().any(|run| {
+                    run.slot_index(pointer).is_some() && run.value_width() == value.byte_width()
+                })
+            });
+        if written_fields {
+            periodic.insert(block.clone(), (stride, count));
+        }
+    }
+    periodic
+}
+
 /// Partition physical storage using its initialized cell types. Adjacent
 /// cells of one width form an ordinary typed array range; padding and opaque
-/// union storage remain byte ranges. No cross-width ownership rule is added.
+/// union storage remain byte ranges.
 ///
 /// The cells are read as the store holds them: a concrete cell is one span
 /// of its width, and each stretch of a run's live slots is one span of
 /// contiguous cells, so a million-element array initialized as one run
 /// costs its stretches, not its elements.
+///
+/// The one exception to typing by cell width is an array of structs whose
+/// elements all hold the same cells ([`periodic_struct_array_blocks`]): its
+/// block is one range of struct-sized elements, which owns exactly the
+/// bytes the per-field ranges would, padding included. Partitioned by cell
+/// width it would be a range per field per element, so its permissions
+/// would cost the array's length.
 fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> ResourceContext {
     let constant_offset = |pointer: &Pointer| {
         let PointerOffsetTerm::Constant(offset) = pointer.offset else {
@@ -14784,8 +14846,21 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
     };
     // Each block's initialized spans: start, end and cell width.
     let mut spans_by_block = BTreeMap::<PointerBlock, Vec<(u32, u32, u32)>>::new();
+    // An array of structs whose every element holds the same cells is one
+    // range of struct-sized elements, however many there are.
+    let periodic = periodic_struct_array_blocks(memory, constant_offset);
+    for (block, &(stride, count)) in &periodic {
+        visit();
+        spans_by_block
+            .entry(block.clone())
+            .or_default()
+            .push((0, stride * count, stride));
+    }
     for (pointer, value) in memory.cells.concrete().iter() {
         visit();
+        if periodic.contains_key(&pointer.block) {
+            continue;
+        }
         let offset = constant_offset(pointer);
         spans_by_block
             .entry(pointer.block.clone())
@@ -14793,6 +14868,9 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
             .push((offset, offset + value.byte_width(), value.byte_width()));
     }
     for run in memory.cells.runs() {
+        if periodic.contains_key(&run.base().block) {
+            continue;
+        }
         let spans = spans_by_block.entry(run.base().block.clone()).or_default();
         let width = run.value_width();
         for (low, high) in run.holes().gap_intervals(run.count()) {
@@ -15541,12 +15619,107 @@ fn materialize_symbolic_aggregate_fields(
     memory
 }
 
+/// Whether a symbolic static-storage cell of `c_type` holds an entry value:
+/// the element types [`materialize_symbolic_array`] makes a run of.
+fn symbolic_storage_has_value(c_type: CType) -> bool {
+    c_type.is_pointer()
+        || matches!(
+            c_type,
+            CType::Bool
+                | CType::Int8
+                | CType::Int16
+                | CType::Int32
+                | CType::UInt8
+                | CType::UInt16
+                | CType::UInt32
+                | CType::Int64
+                | CType::UInt64
+                | CType::Float32
+                | CType::Float64
+        )
+}
+
+/// The cells [`materialize_symbolic_aggregate_fields`] names in one struct
+/// of `layout`, as `(offset, type)` ascending: each scalar field, and each
+/// element of an inline scalar array field. `None` for a layout with unions
+/// or with a field kind that routine does not name this way.
+fn symbolic_aggregate_cells(layout: &CAggregateLayout) -> Option<Vec<(u32, CType)>> {
+    if !layout.unions().is_empty() {
+        return None;
+    }
+    let mut cells = Vec::new();
+    for field in layout.fields() {
+        let (element_type, length) = match field.c_type() {
+            CType::Int32Array(length) => (CType::Int32, length),
+            CType::Int64Array(length) => (CType::Int64, length),
+            CType::UInt64Array(length) => (CType::UInt64, length),
+            CType::UInt8Array(length) => (CType::UInt8, length),
+            CType::Float32Array(length) => (CType::Float32, length),
+            CType::Float64Array(length) => (CType::Float64, length),
+            c_type if symbolic_storage_has_value(c_type) => (c_type, 1),
+            _ => return None,
+        };
+        for index in 0..length {
+            cells.push((
+                field
+                    .offset_bytes()
+                    .checked_add(index.checked_mul(element_type.byte_width())?)?,
+                element_type,
+            ));
+        }
+    }
+    cells.sort_by_key(|(offset, _)| *offset);
+    Some(cells)
+}
+
+/// Every struct of a symbolic static-storage array of `length` structs at
+/// `base` holds its fields' symbolic entry values, as
+/// [`materialize_symbolic_aggregate_fields`] of each struct in order leaves
+/// them. Each field is one [`CellRun`] stepping by the struct's size, and
+/// the fields' access widths are one declaration, so entry costs the
+/// layout rather than the struct count; where either is refused, or the
+/// layout has more cells than there are structs, the structs are
+/// materialized one by one.
+///
+/// [`CellRun`]: crate::kernel::primitives::CellRun
 fn materialize_symbolic_aggregate_array(
     mut memory: CMemory,
     base: &Pointer,
     layout: &CAggregateLayout,
     length: u32,
 ) -> CMemory {
+    if let Some(cells) = symbolic_aggregate_cells(layout)
+        && !cells.is_empty()
+        && cells.len() <= length as usize
+    {
+        let source = crate::kernel::intern_c_memory(symbolic_memory_base(&memory, base));
+        // An object pointer's load records no width, so it declares none.
+        let widths = cells
+            .iter()
+            .filter(|(_, c_type)| !c_type.is_object_pointer())
+            .map(|(offset, c_type)| (*offset, c_type.byte_width()))
+            .collect::<Vec<_>>();
+        let widths_declared = widths.is_empty()
+            || crate::kernel::eval::declare_symbolic_element_access_widths(
+                &source,
+                base,
+                layout.size_bytes(),
+                length,
+                &widths,
+            );
+        if widths_declared {
+            match memory.with_symbolic_storage_runs(
+                base,
+                layout.size_bytes(),
+                length,
+                &cells,
+                source,
+            ) {
+                Ok(materialized) => return materialized,
+                Err(unchanged) => memory = unchanged,
+            }
+        }
+    }
     for index in 0..length {
         let element_base = base.offset_by_bytes(
             index
@@ -15558,11 +15731,13 @@ fn materialize_symbolic_aggregate_array(
     memory
 }
 
-fn zero_aggregate_fields(
-    mut memory: CMemory,
-    base: &Pointer,
-    layout: &CAggregateLayout,
-) -> CMemory {
+/// The zero-initialized scalar fields of `layout`, as static storage holds
+/// them before any initializer: each field's byte offset, how many elements
+/// it holds (one, or an inline array's length), each element's width, and
+/// the zero every element holds. A field kind with no modeled zero is left
+/// out, as it is left without a cell. Unions are not included.
+fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32, u32, CValue)> {
+    let mut zero_fields = Vec::with_capacity(layout.fields().len());
     for field in layout.fields() {
         let (element_type, element_count) = match field.c_type() {
             CType::Int8 => (field.c_type(), 1),
@@ -15651,12 +15826,27 @@ fn zero_aggregate_fields(
                 | CType::UInt64PointerPointer => continue,
             }
         };
+        zero_fields.push((
+            field.offset_bytes(),
+            element_count,
+            element_type.byte_width(),
+            zero,
+        ));
+    }
+    zero_fields
+}
+
+fn zero_aggregate_fields(
+    mut memory: CMemory,
+    base: &Pointer,
+    layout: &CAggregateLayout,
+) -> CMemory {
+    for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
         for index in 0..element_count {
-            let offset = field
-                .offset_bytes()
+            let offset = field_offset
                 .checked_add(
                     index
-                        .checked_mul(element_type.byte_width())
+                        .checked_mul(element_width)
                         .expect("validated aggregate zero field offset"),
                 )
                 .expect("validated aggregate zero field offset");
@@ -15710,12 +15900,56 @@ fn initialize_aggregate_fields(
     memory
 }
 
+/// The zero contents of `length` consecutive structs of `layout`, as
+/// constant runs: a scalar field is one run over every element, stepping by
+/// the struct's size, and an inline array field of `n` elements is `n` such
+/// runs or, when the array is the longer of the two, one run per struct
+/// stepping by the field's element width. So the runs cost the layout, and
+/// never more than the struct count per array field, rather than the
+/// struct count times the layout. `None` for a layout with unions, whose
+/// zero views are typed overlays a run does not stand for.
+fn aggregate_array_zero_runs(layout: &CAggregateLayout, length: u32) -> Option<Vec<CConstantRun>> {
+    if !layout.unions().is_empty() || layout.size_bytes() == 0 {
+        return None;
+    }
+    let stride = layout.size_bytes();
+    let mut runs = Vec::new();
+    for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
+        if element_count <= length {
+            for index in 0..element_count {
+                runs.push(CConstantRun {
+                    offset: field_offset.checked_add(index.checked_mul(element_width)?)?,
+                    stride,
+                    count: length,
+                    value: zero.clone(),
+                });
+            }
+        } else {
+            for element in 0..length {
+                runs.push(CConstantRun {
+                    offset: element.checked_mul(stride)?.checked_add(field_offset)?,
+                    stride: element_width,
+                    count: element_count,
+                    value: zero.clone(),
+                });
+            }
+        }
+    }
+    Some(runs)
+}
+
 fn zero_aggregate_array_fields(
     mut memory: CMemory,
     base: &Pointer,
     layout: &CAggregateLayout,
     length: u32,
 ) -> CMemory {
+    if let Some(runs) = aggregate_array_zero_runs(layout, length) {
+        match memory.with_constant_runs(base, &runs) {
+            Ok(filled) => return filled,
+            Err(unchanged) => memory = unchanged,
+        }
+    }
     for index in 0..length {
         let element_base = base.offset_by_bytes(
             index

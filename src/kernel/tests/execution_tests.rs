@@ -102,6 +102,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
         },
         &PureFactContext::new(),
         &CExecutionEnvironment::new(),
@@ -141,6 +142,7 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
         },
         &PureFactContext::new(),
         &CExecutionEnvironment::new(),
@@ -174,6 +176,7 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
         },
         &PureFactContext::new(),
         &CExecutionEnvironment::new(),
@@ -2938,5 +2941,200 @@ fn loop_entry_lowering_limit_is_spelled_in_words() {
     assert_eq!(
         refusal,
         "could not lower entry invariants: they stopped at a model field of a resource instance this state does not hold"
+    );
+}
+
+/// The declaration `struct node items[length] = {…}` as the C frontend
+/// lowers it when the declaration zero-fills: a 16-byte struct whose
+/// element zero stores are an int32 key, a byte tag and a pointer, then
+/// the stores of the fields the initializer writes.
+fn zero_filled_node_array(length: u32, written: &[(u32, CValue, CType)]) -> CStatement {
+    let fill = CZeroFill::new(
+        16,
+        length,
+        vec![
+            CZeroCell::new(0, CType::Int32, false, int32(0)),
+            CZeroCell::new(4, CType::UInt8, false, int32(0)),
+            CZeroCell::new(8, CType::Int32Pointer, false, int32(0)),
+        ],
+    );
+    written.iter().fold(
+        c_declare_with_zero_fill(
+            "items",
+            CType::UInt8Array(length * 16),
+            false,
+            false,
+            false,
+            false,
+            Some(fill),
+        ),
+        |statement, (offset, value, value_type)| {
+            c_seq(
+                statement,
+                c_typed_store(
+                    c_pointer_offset_bytes(c_variable("items"), *offset),
+                    CExpression::Value(value.clone()),
+                    *value_type,
+                ),
+            )
+        },
+    )
+}
+
+/// `statements` in order as a balanced sequence, so executing a long one
+/// does not recurse once per statement.
+fn balanced_c_seq(statements: &[CStatement]) -> CStatement {
+    match statements {
+        [] => CStatement::Skip,
+        [statement] => statement.clone(),
+        _ => {
+            let (first, second) = statements.split_at(statements.len() / 2);
+            c_seq(balanced_c_seq(first), balanced_c_seq(second))
+        }
+    }
+}
+
+fn load_items_field(state: &CState, offset: u32, value_type: CType) -> CExpressionOutcome {
+    let paths = evaluate_c_expression_paths(
+        state,
+        &c_typed_load(
+            c_pointer_offset_bytes(c_variable("items"), offset),
+            value_type,
+        ),
+        &PureFactContext::new(),
+        &mut ExecutionBudget::default(),
+    )
+    .expect("a field load executes");
+    let [path] = paths.as_slice() else {
+        panic!("one load path: {paths:?}");
+    };
+    path.outcome.clone()
+}
+
+fn execute_declaration(state: &CState, statement: &CStatement) -> CState {
+    normal_state(
+        &execute_c_statement_paths(
+            state,
+            statement,
+            &PureFactContext::new(),
+            &CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+            &mut ExecutionBudget::default(),
+        )
+        .expect("the declaration executes"),
+    )
+}
+
+/// A zero-filled automatic struct array holds exactly the cells of storing
+/// every element's zero fields and then the written fields one by one, and
+/// an array declared without an initializer holds no cell, so reading one
+/// of its elements stays an uninitialized read.
+#[test]
+fn a_zero_filled_automatic_array_holds_exactly_the_per_element_stores() {
+    for length in [1u32, 2, 5, 64, 65] {
+        let written = [
+            (16 * (length - 1), int32(7), CType::Int32),
+            (4, uint8(9), CType::UInt8),
+        ];
+        let filled = execute_declaration(&CState::new(), &zero_filled_node_array(length, &written));
+        let stores = (0..length)
+            .flat_map(|element| {
+                [
+                    (16 * element, int32(0), CType::Int32),
+                    (16 * element + 4, int32(0), CType::UInt8),
+                    (16 * element + 8, int32(0), CType::Int32Pointer),
+                ]
+            })
+            .chain(written.iter().cloned())
+            .map(|(offset, value, value_type)| {
+                c_typed_store(
+                    c_pointer_offset_bytes(c_variable("items"), offset),
+                    CExpression::Value(value),
+                    value_type,
+                )
+            })
+            .collect::<Vec<_>>();
+        let per_element = c_seq(
+            c_declare("items", CType::UInt8Array(length * 16)),
+            balanced_c_seq(&stores),
+        );
+        let stored = execute_declaration(&CState::new(), &per_element);
+        assert_eq!(
+            filled.memory().cells.logical(),
+            stored.memory().cells.logical(),
+            "[{length}] holds the per-element cells"
+        );
+        assert!(
+            filled.memory().cells.representation_len() <= 5,
+            "[{length}] is three runs and two written cells"
+        );
+        let declared = execute_declaration(
+            &CState::new(),
+            &c_declare("items", CType::UInt8Array(length * 16)),
+        );
+        assert_eq!(
+            load_items_field(&declared, 16 * (length - 1), CType::Int32),
+            CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+            "[{length}] an array declared without an initializer is uninitialized"
+        );
+    }
+}
+
+/// A zero-filled automatic array's declaration, a load of a written field,
+/// of a zero one, and a store then a load, cost the same whatever the
+/// array's length, and every load is exact. The declaration used to store
+/// every field of every element.
+#[test]
+fn a_zero_filled_automatic_array_costs_the_same_whatever_its_length() {
+    let samples = [100u32, 10_000, 1_000_000].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let statement = zero_filled_node_array(length, &[(20, int32(7), CType::Int32)]);
+        let (state, declaration_work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_declaration(&CState::new(), &statement)
+        });
+        let last = 16 * (length - 1);
+        let (loads, load_work) = crate::instrumentation::measure_deterministic_work(|| {
+            let stored = execute_declaration(
+                &state,
+                &c_typed_store(
+                    c_pointer_offset_bytes(c_variable("items"), last),
+                    c_int32_literal(9),
+                    CType::Int32,
+                ),
+            );
+            [
+                load_items_field(&state, 20, CType::Int32),
+                load_items_field(&state, last, CType::Int32),
+                load_items_field(&state, last + 4, CType::UInt8),
+                load_items_field(&stored, last, CType::Int32),
+                load_items_field(&stored, last - 16, CType::Int32),
+            ]
+        });
+        let value = CExpressionOutcome::Value;
+        assert_eq!(
+            loads,
+            [
+                value(int32(7)),
+                value(int32(0)),
+                value(uint8(0)),
+                value(int32(9)),
+                value(int32(0)),
+            ],
+            "[{length}] reads its initializer"
+        );
+        (
+            length,
+            declaration_work,
+            load_work,
+            state.memory().cells.representation_len(),
+        )
+    });
+    let (_, declaration_work, load_work, entries) = samples[0];
+    assert!(
+        samples
+            .iter()
+            .all(|sample| (sample.1, sample.2, sample.3) == (declaration_work, load_work, entries)),
+        "a zero-filled declaration's cost depends on the array's length (length, declaration \
+         work, load work, cell entries): {samples:?}"
     );
 }
