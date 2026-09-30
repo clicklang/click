@@ -2921,6 +2921,9 @@ impl PureFactContext {
         }
     }
 
+    /// Broader expression reasoning, including conditionals, folds, and
+    /// checked memory resolution. Maintained int32 equality is queried through
+    /// `int32_values_known_equal` without invoking these rules.
     pub(in crate::kernel) fn bitvector_terms_proven_equal(
         &self,
         left: &Bitvector32Term,
@@ -2981,11 +2984,9 @@ impl PureFactContext {
         right: &Bitvector32Term,
     ) -> bool {
         // Transport compares int32 values, so wrapping equality from the
-        // trusted graph is sufficient here. Check it before the legacy fact
-        // walk; an empty graph should not intern unrelated transport terms.
-        if self.equality_graph.has_term_equivalences()
-            && self.equality_graph.are_int32_equal(left, right)
-            || self.bitvector_terms_equal_from_facts(left, right)
+        // trusted graph is sufficient here. Broader proof reasoning remains
+        // separate from this known-value query.
+        if self.int32_values_known_equal(left, right)
             || self.bitvector_terms_proven_equal(left, right)
         {
             return true;
@@ -3223,9 +3224,7 @@ impl PureFactContext {
         left == right
             || self.bitvector_if_terms_proven_equal(left, right)
             || self.range_fold_terms_alpha_equivalent(left, right)
-            || (self.equality_graph.has_term_equivalences()
-                && self.equality_graph.are_int32_equal(left, right))
-            || self.bitvector_terms_equal_from_facts(left, right)
+            || self.int32_values_known_equal(left, right)
             || self.memory_loads_proven_equal(left, right)
     }
 
@@ -3434,7 +3433,7 @@ impl PureFactContext {
 
         let terms_equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
             left == right
-                || self.bitvector_terms_equal_from_facts(left, right)
+                || self.int32_values_known_equal(left, right)
                 || bitvector_terms_may_be_theory_equal(left, right)
                     && self.bitvector_terms_proven_equal(left, right)
         };

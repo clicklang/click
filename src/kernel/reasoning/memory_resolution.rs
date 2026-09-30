@@ -1016,7 +1016,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             {
                 return Some(value);
             }
-            if assumptions.bitvector_terms_equal_from_facts(&delta.index, &expected) {
+            if assumptions.int32_values_known_equal(&delta.index, &expected) {
                 return Some(true);
             }
         }
@@ -1586,9 +1586,8 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     {
         return true;
     }
-    // Equality facts first: the indexed, memoized walk over the context's
-    // equality graph decides nearly every query any layer here decides.
-    if assumptions.bitvector_terms_equal_from_facts(left, right) {
+    // Maintained int32 equality first; no fact-component walk is needed.
+    if assumptions.int32_values_known_equal(left, right) {
         return true;
     }
     // Two loads of one cell whose derivations resolve to the same source
@@ -1699,8 +1698,7 @@ pub(in crate::kernel) fn int32_values_proven_equal_for_memory_resolution(
     right: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
-    (assumptions.equality_graph.has_term_equivalences()
-        && assumptions.equality_graph.are_int32_equal(left, right))
+    assumptions.int32_values_known_equal(left, right)
         || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
 }
 

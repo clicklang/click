@@ -830,9 +830,6 @@ thread_local! {
     static NEXT_ASSUMPTIONS_MEMO_ID: Cell<u64> = const { Cell::new(0) };
     static LOGICAL_READ_MEMO_IDS: RefCell<std::collections::HashMap<(u64, u64), u64>> =
         RefCell::new(std::collections::HashMap::new());
-    static EQUAL_FROM_FACTS_MEMO: RefCell<
-        std::collections::HashMap<(u64, Bitvector32Term, Bitvector32Term), bool>,
-    > = RefCell::new(std::collections::HashMap::new());
     static TRANSPORT_EQUAL_MEMO: RefCell<
         std::collections::HashMap<(u64, Bitvector32Term, Bitvector32Term), bool>,
     > = RefCell::new(std::collections::HashMap::new());
@@ -856,7 +853,6 @@ pub(crate) fn clear_assumption_memos() {
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
     ASSUMPTIONS_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
     LOGICAL_READ_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
-    EQUAL_FROM_FACTS_MEMO.with(|memo| memo.borrow_mut().clear());
     TRANSPORT_EQUAL_MEMO.with(|memo| memo.borrow_mut().clear());
     CONSTANT_NORMALIZATION_MEMO.with(|memo| memo.borrow_mut().clear());
     SIGNED_INTERVAL_MEMO.with(|memo| memo.borrow_mut().clear());
@@ -5515,8 +5511,7 @@ fn exact_less_equal_for_memory_resolution(
     if left == right
         // These are signed int32 endpoint *values*, not exact byte offsets.
         // Equal bitpatterns therefore satisfy `<=` in this same-base check.
-        || (assumptions.equality_graph.has_term_equivalences()
-            && assumptions.equality_graph.are_int32_equal(left, right))
+        || assumptions.int32_values_known_equal(left, right)
         || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
             left.clone(),
             right.clone(),
@@ -5894,7 +5889,7 @@ fn pointer_offsets_match_by_shallow_fact_graph(
                 value: right,
                 byte_width: right_width,
             },
-        ) => left_width == right_width && assumptions.bitvector_terms_equal_from_facts(left, right),
+        ) => left_width == right_width && assumptions.int32_values_known_equal(left, right),
         _ => false,
     }
 }

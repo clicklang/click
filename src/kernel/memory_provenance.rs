@@ -191,15 +191,7 @@ fn bitvectors_match_for_resource_check(
     }
     // Memory-range endpoints are int32 values. Their equality does not
     // identify byte offsets or grant access to either range.
-    if assumptions.equality_graph.has_term_equivalences()
-        && assumptions.equality_graph.are_int32_equal(left, right)
-    {
-        return true;
-    }
-    if assumptions.bitvector_terms_equal_from_facts(left, right) {
-        return true;
-    }
-    false
+    assumptions.int32_values_known_equal(left, right)
 }
 
 pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
@@ -226,7 +218,7 @@ pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
             },
         ) => {
             left_width == right_width
-                && (assumptions.bitvector_terms_equal_from_facts(left, right)
+                && (assumptions.int32_values_known_equal(left, right)
                     || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
                     || explicit_atomic_equality_from_memory_derivations(left, right, assumptions))
         }

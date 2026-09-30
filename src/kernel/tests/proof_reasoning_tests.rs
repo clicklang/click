@@ -992,7 +992,54 @@ fn contradicts_recognizes_a_comparison_and_its_arithmetic_negation() {
 }
 
 #[test]
-fn equality_graph_queries_share_one_condition_fact_index_build() {
+fn known_scalar_equality_uses_congruence_without_building_a_fact_index() {
+    let a = Bitvector32Term::Variable(Variable(990_001));
+    let b = Bitvector32Term::Variable(Variable(990_002));
+    let c = Bitvector32Term::Variable(Variable(990_003));
+    let left = Bitvector32Term::Add(Box::new(a.clone()), Box::new(c.clone()));
+    let right = Bitvector32Term::Add(Box::new(b.clone()), Box::new(c));
+    let before = PureFactContext::new();
+    assert!(!before.int32_values_known_equal(&left, &right));
+    let sibling = before.clone();
+    let branch = before
+        .clone()
+        .assume_condition(ConditionTerm::equal(a, b), true);
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(branch.int32_values_known_equal(&left, &right));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    assert!(!before.int32_values_known_equal(&left, &right));
+    assert!(!sibling.int32_values_known_equal(&left, &right));
+}
+
+#[test]
+fn known_scalar_queries_have_bounded_work_beside_growing_classes() {
+    for size in [8u64, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let var = |i| Bitvector32Term::Variable(Variable(991_000 + i));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let mut context = PureFactContext::new();
+        for i in 0..size {
+            context = context.assume_condition(ConditionTerm::equal(var(i), var(i + 1)), true);
+            context = context.assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(992_000 + i)),
+                    Bitvector32Term::Constant(i as u32),
+                ),
+                true,
+            );
+        }
+        PureFactContext::reset_bitvector_equality_index_fact_visits();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(context.int32_values_known_equal(&sum(var(0)), &sum(var(size))));
+            assert!(!context.int32_values_known_equal(&sum(var(0)), &sum(var(size + 1))));
+        });
+        assert!(work < 128, "size={size}, work={work}");
+        assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    }
+}
+
+#[test]
+fn equality_graph_queries_do_not_build_the_condition_fact_index() {
     let root = Bitvector32Term::Variable(Variable(210_000));
     let mut assumptions = PureFactContext::new();
     let mut connected = Vec::new();
@@ -1011,18 +1058,17 @@ fn equality_graph_queries_share_one_condition_fact_index_build() {
             true,
         );
     }
-    let expected_visits = assumptions.condition_facts.len();
     let _scope = assumptions.enter_id_scope();
     PureFactContext::reset_bitvector_equality_index_fact_visits();
 
     for term in &connected {
-        assert!(assumptions.bitvector_terms_equal_from_facts(&root, term));
+        assert!(assumptions.int32_values_known_equal(&root, term));
     }
 
     assert_eq!(
         PureFactContext::bitvector_equality_index_fact_visits(),
-        expected_visits,
-        "distinct equality queries must share one index build instead of rescanning ambient facts"
+        0,
+        "known equality queries must not build or scan the legacy fact index"
     );
 }
 
@@ -3008,7 +3054,7 @@ fn bitvector_equality_derivation_retains_its_exact_oriented_path() {
 }
 
 #[test]
-fn arithmetic_normalization_does_not_select_contextual_representatives() {
+fn scalar_graph_literal_evaluation_supplies_checkable_simp_equality() {
     let left = Bitvector32Term::Variable(Variable(218));
     let right = Bitvector32Term::Variable(Variable(219));
     let one = Bitvector32Term::Constant(1);
@@ -3027,10 +3073,26 @@ fn arithmetic_normalization_does_not_select_contextual_representatives() {
         .assume_proposition(left_is_one.clone())
         .assume_proposition(right_is_one.clone());
 
+    // Congruence and literal evaluation prove this directly; no contextual
+    // representative search or arithmetic normalization is required.
+    PureFactContext::reset_bitvector_equality_index_fact_visits();
+    assert!(assumptions.int32_values_known_equal(
+        &Bitvector32Term::Add(Box::new(left.clone()), Box::new(right.clone())),
+        &Bitvector32Term::Constant(2),
+    ));
+    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
+    // Explicit derivation construction may enumerate its premise evidence;
+    // that is separate from the Boolean equality query measured above.
+    assert_checkable_derivation(&assumptions, &goal);
     assert!(
-        assumptions.derive_simp_proposition(&goal).is_none(),
-        "the kernel must not choose equality-class representatives to make an arithmetic goal normalize"
+        PureFactContext::new()
+            .derive_simp_proposition(&goal)
+            .is_none()
     );
+    assert!(!assumptions.int32_values_known_equal(
+        &Bitvector32Term::Add(Box::new(left), Box::new(right)),
+        &Bitvector32Term::Constant(3),
+    ));
 }
 
 #[test]
