@@ -4349,6 +4349,7 @@ mod tests {
                 pointee_volatile: false,
                 constant: false,
                 pointee_constant: false,
+                zero_fill: None,
             },
             CStatement::DeclareAggregate {
                 name: "holder".into(),

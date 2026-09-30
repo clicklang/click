@@ -1710,6 +1710,30 @@ pub fn c_declare_with_all_qualifiers(
         pointee_volatile,
         constant,
         pointee_constant,
+        zero_fill: None,
+    }
+}
+
+/// [`c_declare_with_all_qualifiers`], zero-filling the object first when
+/// `zero_fill` says how: an automatic array declared with an initializer,
+/// whose written elements follow as ordinary stores ([`CZeroFill`]).
+pub fn c_declare_with_zero_fill(
+    name: impl Into<String>,
+    c_type: CType,
+    volatile: bool,
+    pointee_volatile: bool,
+    constant: bool,
+    pointee_constant: bool,
+    zero_fill: Option<CZeroFill>,
+) -> CStatement {
+    CStatement::Declare {
+        name: name.into(),
+        c_type,
+        volatile,
+        pointee_volatile,
+        constant,
+        pointee_constant,
+        zero_fill,
     }
 }
 

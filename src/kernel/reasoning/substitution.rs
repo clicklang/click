@@ -3217,6 +3217,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_volatile,
             constant,
             pointee_constant,
+            zero_fill,
         } => CStatement::Declare {
             name: name.clone(),
             c_type: *c_type,
@@ -3224,6 +3225,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
             pointee_volatile: *pointee_volatile,
             constant: *constant,
             pointee_constant: *pointee_constant,
+            zero_fill: zero_fill.clone(),
         },
         CStatement::DeclareAggregate {
             name,

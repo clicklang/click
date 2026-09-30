@@ -7453,11 +7453,18 @@ pub(super) fn statement_may_write_memory(state: &CState, statement: &CStatement)
         | CStatement::Break
         | CStatement::Continue
         | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
+        | CStatement::Declare {
+            zero_fill: None, ..
+        }
         | CStatement::DeclareAggregate { .. }
         | CStatement::Assert { .. }
         | CStatement::Throw(_)
         | CStatement::Return(_) => false,
+        // A zero-filled declaration stores into the object it declares, as
+        // the element stores it stands for did.
+        CStatement::Declare {
+            zero_fill: Some(_), ..
+        } => true,
         CStatement::Assign { name, .. } => state.locals.is_global_object(name),
         CStatement::CallAssign { .. }
         | CStatement::Call { .. }

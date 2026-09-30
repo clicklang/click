@@ -83,7 +83,8 @@ pub(super) use memory_loads::{
     evaluate_spec_memory_load_paths, symbolic_load_value,
 };
 pub(in crate::kernel) use memory_loads::{
-    declare_symbolic_array_access_widths, symbolic_storage_cell_value,
+    declare_symbolic_array_access_widths, declare_symbolic_element_access_widths,
+    symbolic_storage_cell_value,
 };
 #[cfg(test)]
 pub(super) use memory_loads::{load_substitution_term_visits, reset_load_substitution_term_visits};

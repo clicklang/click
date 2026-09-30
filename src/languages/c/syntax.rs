@@ -1472,6 +1472,169 @@ impl C0ArrayInitializer {
     }
 }
 
+/// The zero stores an automatic array's initializer makes into every one of
+/// its elements before the elements it writes: `count` elements `stride`
+/// bytes apart, each receiving the typed stores `cells` spell for element 0,
+/// as `(offset, value type, pointee qualification, zero initializer)`,
+/// ascending by offset. The declaration carries this instead of one store
+/// per element, so `int32 buf[1000000] = {0};` costs its element's cells.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct C0ZeroFill {
+    stride: u32,
+    count: u32,
+    cells: std::sync::Arc<[(u32, C0Type, bool, C0Expression)]>,
+}
+
+impl C0ZeroFill {
+    /// The zero stores of element 0 of a `count`-element array, recovered
+    /// from `stores`, which the caller spelled into the element at
+    /// `C0Expression::Variable(base)`. `None` unless every store is a typed
+    /// store of a literal at a constant byte offset from that base, so the
+    /// fill stands for exactly the stores the caller would otherwise emit.
+    fn from_element_stores(
+        base: &str,
+        stride: u32,
+        count: u32,
+        stores: &[C0Statement],
+    ) -> Option<Self> {
+        let mut cells = stores
+            .iter()
+            .map(|store| {
+                let (offset, value_type, pointee_constant, value) = typed_store_at(base, store)?;
+                (offset < stride
+                    && matches!(
+                        value.to_kernel_expression(),
+                        crate::kernel::CExpression::Value(_)
+                    ))
+                .then(|| (offset, value_type, pointee_constant, value.clone()))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        cells.sort_by_key(|(offset, ..)| *offset);
+        Some(Self {
+            stride,
+            count,
+            cells: cells.into(),
+        })
+    }
+
+    /// `stores` without each one this fill already makes: a typed store at
+    /// a constant offset from `base` spelled exactly as the fill's zero store
+    /// at that offset within its element, which would leave the cell the
+    /// fill left. A store at an offset another of `stores` also writes is
+    /// kept, so the order of the two is kept too.
+    fn without_its_own_stores(&self, base: &str, stores: Vec<C0Statement>) -> Vec<C0Statement> {
+        let mut writes = BTreeMap::<u32, usize>::new();
+        for store in &stores {
+            if let Some((offset, ..)) = typed_store_at(base, store) {
+                *writes.entry(offset).or_default() += 1;
+            }
+        }
+        stores
+            .into_iter()
+            .filter(|store| {
+                let Some((offset, value_type, pointee_constant, value)) =
+                    typed_store_at(base, store)
+                else {
+                    return true;
+                };
+                let within = offset % self.stride;
+                !(writes[&offset] == 1
+                    && offset / self.stride < self.count
+                    && self
+                        .cells
+                        .binary_search_by_key(&within, |(offset, ..)| *offset)
+                        .is_ok_and(|position| {
+                            let (_, cell_type, cell_constant, zero) = &self.cells[position];
+                            *cell_type == value_type
+                                && *cell_constant == pointee_constant
+                                && zero == value
+                        }))
+            })
+            .collect()
+    }
+
+    fn to_kernel(&self) -> crate::kernel::CZeroFill {
+        crate::kernel::CZeroFill::new(
+            self.stride,
+            self.count,
+            self.cells
+                .iter()
+                .map(|(offset, value_type, pointee_constant, zero)| {
+                    let crate::kernel::CExpression::Value(zero) = zero.to_kernel_expression()
+                    else {
+                        unreachable!("a zero fill holds only literal zero initializers")
+                    };
+                    crate::kernel::CZeroCell::new(
+                        *offset,
+                        value_type.to_kernel_type(),
+                        *pointee_constant,
+                        zero,
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+/// A typed store into the object named `base` at a constant byte offset
+/// from it: the offset, the stored type, its pointee qualification and the
+/// stored expression. `None` for any other statement.
+fn typed_store_at<'a>(
+    base: &str,
+    store: &'a C0Statement,
+) -> Option<(u32, C0Type, bool, &'a C0Expression)> {
+    let C0Statement::Store {
+        pointer,
+        value,
+        value_type: Some(value_type),
+        pointee_constant,
+    } = store
+    else {
+        return None;
+    };
+    let mut offset = 0u32;
+    let mut pointer = pointer;
+    loop {
+        match pointer {
+            C0Expression::Variable(name) if name == base => break,
+            C0Expression::PointerOffsetBytes {
+                pointer: inner,
+                bytes,
+            } => {
+                offset = offset.checked_add(*bytes)?;
+                pointer = inner;
+            }
+            // Only the element store `base + index` of a scalar array, whose
+            // index scales by the stored element type.
+            C0Expression::Add(inner, index) if matches!(inner.as_ref(), C0Expression::Variable(name) if name == base) =>
+            {
+                let C0Expression::Int32Literal(index) = index.as_ref() else {
+                    return None;
+                };
+                offset = offset.checked_add(index.checked_mul(value_type.abi_size_bytes())?)?;
+                pointer = inner;
+            }
+            _ => return None,
+        }
+    }
+    Some((offset, *value_type, *pointee_constant, value))
+}
+
+/// Whether no initializer expression in `stores` names the object `base`
+/// being initialized, so none can observe whether an element it does not
+/// write is zero yet. The declaration's zero fill then stands for the zero
+/// stores whatever order they are made in.
+fn stores_do_not_read_the_object(base: &str, stores: &[C0Statement]) -> bool {
+    stores.iter().all(|store| {
+        let C0Statement::Store { value, .. } = store else {
+            return false;
+        };
+        let mut names = BTreeSet::new();
+        super::address_taken::mentioned_names(value, &mut names);
+        !names.contains(base)
+    })
+}
+
 fn zero_initializer(c_type: C0Type) -> C0Expression {
     match c_type {
         C0Type::Float32 => C0Expression::Float32Literal(0),
@@ -2254,6 +2417,10 @@ pub enum C0Statement {
         pointee_volatile: bool,
         constant: bool,
         pointee_constant: bool,
+        /// The zero stores an initializer makes into every element of an
+        /// automatic array before the elements it writes; absent for an
+        /// object declared without one, which stays uninitialized.
+        zero_fill: Option<C0ZeroFill>,
     },
     DeclareStructValue {
         name: String,
@@ -4027,13 +4194,15 @@ impl C0Statement {
                 pointee_volatile,
                 constant,
                 pointee_constant,
-            } => crate::kernel::c_declare_with_all_qualifiers(
+                zero_fill,
+            } => crate::kernel::c_declare_with_zero_fill(
                 name.clone(),
                 c_type.to_kernel_type(),
                 *volatile,
                 *pointee_volatile,
                 *constant,
                 *pointee_constant,
+                zero_fill.as_ref().map(C0ZeroFill::to_kernel),
             ),
             Self::DeclareStructValue { name, layout } => crate::kernel::c_declare_aggregate(
                 name.clone(),
@@ -11465,12 +11634,19 @@ impl Parser {
         }
     }
 
+    /// The stores of an automatic scalar array's initializer. When `compact`
+    /// (the object is not volatile), the declaration can zero-fill the
+    /// array instead of one store per element: the zero fill is returned
+    /// with the stores of the elements the initializer writes, which are
+    /// then all that follows the declaration. Otherwise every element is
+    /// stored, the unwritten ones with the zero initializer.
     fn parse_local_array_initializer(
         &mut self,
         name: &str,
         c_type: C0Type,
         array_shape: Option<&[u32]>,
-    ) -> Result<C0Statement, C0SyntaxError> {
+        compact: bool,
+    ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
         let (length, element_type) = match c_type {
             C0Type::Int32Array(length) => (length, C0Type::Int32),
             C0Type::CharArray(length) => (length, C0Type::Char),
@@ -11487,37 +11663,75 @@ impl Parser {
             _ => unreachable!("array initializer called for a scalar type"),
         };
         let zero = zero_initializer(element_type);
-        let mut values = Vec::new();
         let dimensions = array_shape
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| vec![length]);
-        self.parse_array_initializer_level(name, &dimensions, 0, &mut values, &zero)?;
+        let mut written = Vec::new();
+        let mut next = 0u32;
+        self.parse_sparse_array_initializer_level(name, &dimensions, 0, &mut written, &mut next)?;
+        let store = |index: u32, value: C0Expression| C0Statement::Store {
+            pointer: C0Expression::Add(
+                Box::new(C0Expression::Variable(name.to_string())),
+                Box::new(C0Expression::Int32Literal(index)),
+            ),
+            value,
+            value_type: Some(element_type),
+            pointee_constant: false,
+        };
+        // The declaration zero-fills the array, and only the written
+        // elements that are not the zero initializer are stored after it.
+        if compact {
+            let written_stores = written
+                .iter()
+                .map(|(index, value)| store(*index, value.clone()))
+                .collect::<Vec<_>>();
+            if let Some(zero_fill) = C0ZeroFill::from_element_stores(
+                name,
+                element_type.abi_size_bytes(),
+                length,
+                &[store(0, zero.clone())],
+            )
+            .filter(|_| stores_do_not_read_the_object(name, &written_stores))
+            {
+                let stores = zero_fill.without_its_own_stores(name, written_stores);
+                return Ok((
+                    Some(zero_fill),
+                    balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+                ));
+            }
+        }
 
+        let mut values = Vec::with_capacity(length as usize);
+        for (index, value) in written {
+            values.resize(index as usize, zero.clone());
+            values.push(value);
+        }
         let mut stores = Vec::with_capacity(length as usize);
         for index in 0..length {
             let value = values
                 .get(index as usize)
                 .cloned()
                 .unwrap_or_else(|| zero.clone());
-            stores.push(C0Statement::Store {
-                pointer: C0Expression::Add(
-                    Box::new(C0Expression::Variable(name.to_string())),
-                    Box::new(C0Expression::Int32Literal(index)),
-                ),
-                value,
-                value_type: Some(element_type),
-                pointee_constant: false,
-            });
+            stores.push(store(index, value));
         }
-        Ok(balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip))
+        Ok((
+            None,
+            balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+        ))
     }
 
+    /// The stores of an automatic struct array's initializer, zero-filled by
+    /// the declaration when `compact` as for
+    /// [`Self::parse_local_array_initializer`]: every element receives the
+    /// zero stores an omitted element would, and only the listed fields that
+    /// are not those zeros are stored after it.
     fn parse_local_struct_array_initializer(
         &mut self,
         name: &str,
         struct_name: &str,
         array_shape: &[u32],
-    ) -> Result<C0Statement, C0SyntaxError> {
+        compact: bool,
+    ) -> Result<(Option<C0ZeroFill>, C0Statement), C0SyntaxError> {
         if self.peek() != Some(&Token::LBrace) {
             return Err(self.error_here(
                 "local struct array elements require nested `{...}` initializer groups",
@@ -11528,6 +11742,44 @@ impl Parser {
             .get(struct_name)
             .expect("validated local struct array has a layout")
             .size_bytes;
+        let zero_fill = compact
+            .then(|| {
+                let count = array_shape
+                    .iter()
+                    .try_fold(1u32, |count, dimension| count.checked_mul(*dimension))?;
+                C0ZeroFill::from_element_stores(
+                    name,
+                    element_width,
+                    count,
+                    &self.zero_struct_initializer_level(
+                        C0Expression::Variable(name.to_string()),
+                        struct_name,
+                    ),
+                )
+            })
+            .flatten();
+        let start = self.position;
+        if let Some(zero_fill) = zero_fill {
+            let stores = self.parse_embedded_struct_array_initializer_level(
+                C0Expression::Variable(name.to_string()),
+                struct_name,
+                array_shape,
+                0,
+                0,
+                element_width,
+                false,
+            )?;
+            if stores_do_not_read_the_object(name, &stores) {
+                let stores = zero_fill.without_its_own_stores(name, stores);
+                return Ok((
+                    Some(zero_fill),
+                    balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+                ));
+            }
+            // An initializer that reads the array keeps every store in
+            // element order: parse it again with the omitted elements' zeros.
+            self.position = start;
+        }
         let stores = self.parse_embedded_struct_array_initializer_level(
             C0Expression::Variable(name.to_string()),
             struct_name,
@@ -11535,8 +11787,12 @@ impl Parser {
             0,
             0,
             element_width,
+            true,
         )?;
-        Ok(balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip))
+        Ok((
+            None,
+            balanced_statement_sequence(stores).unwrap_or(C0Statement::Skip),
+        ))
     }
 
     /// One brace level of a nested array initializer, appended to `values`
@@ -12285,6 +12541,7 @@ impl Parser {
                 0,
                 0,
                 element_width,
+                true,
             );
         }
         if field.c_type == C0Type::Int32
@@ -12335,6 +12592,11 @@ impl Parser {
         }])
     }
 
+    /// The stores of one brace level of a struct array's initializer: the
+    /// elements it lists, and, when `zero_omitted`, the zero stores of every
+    /// element it leaves out. A caller whose declaration zero-fills the array
+    /// passes `false`, so an omitted element costs nothing.
+    #[allow(clippy::too_many_arguments)]
     fn parse_embedded_struct_array_initializer_level(
         &mut self,
         target_pointer: C0Expression,
@@ -12343,6 +12605,7 @@ impl Parser {
         depth: usize,
         flat_prefix: u32,
         element_width: u32,
+        zero_omitted: bool,
     ) -> Result<Vec<C0Statement>, C0SyntaxError> {
         let child_count = dimensions[depth];
         self.expect(Token::LBrace)?;
@@ -12407,6 +12670,7 @@ impl Parser {
                         depth + 1,
                         flat_index,
                         element_width,
+                        zero_omitted,
                     )?);
                 }
                 match self.peek() {
@@ -12433,6 +12697,9 @@ impl Parser {
         }
         self.expect(Token::RBrace)?;
 
+        if !zero_omitted {
+            return Ok(stores);
+        }
         for child_index in 0..child_count {
             if initialized_children.contains(&child_index) {
                 continue;
@@ -12673,6 +12940,7 @@ impl Parser {
                 pointee_volatile: false,
                 constant: false,
                 pointee_constant: false,
+                zero_fill: None,
             };
             let statement = if self.peek() == Some(&Token::Equal) {
                 self.position += 1;
@@ -12891,6 +13159,7 @@ impl Parser {
                 pointee_volatile,
                 constant: object_constant,
                 pointee_constant,
+                zero_fill: None,
             };
             let statement = if self.peek() == Some(&Token::Equal) {
                 self.position += 1;
@@ -12903,14 +13172,46 @@ impl Parser {
                         | C0Type::Float64Array(_)
                         | C0Type::PointerArray(_, _)
                 ) {
-                    let initializer = if is_plain_struct_type(&parsed_type) {
+                    // A volatile object keeps one access per element.
+                    let compact = !object_volatile && !pointee_volatile;
+                    let (zero_fill, initializer) = if is_plain_struct_type(&parsed_type) {
                         let struct_name = parsed_type.struct_name.as_deref().unwrap();
                         let dimensions = array_shape.as_deref().expect(
                             "local struct array initializers retain their declared dimensions",
                         );
-                        self.parse_local_struct_array_initializer(&name, struct_name, dimensions)?
+                        self.parse_local_struct_array_initializer(
+                            &name,
+                            struct_name,
+                            dimensions,
+                            compact,
+                        )?
                     } else {
-                        self.parse_local_array_initializer(&name, c_type, array_shape.as_deref())?
+                        self.parse_local_array_initializer(
+                            &name,
+                            c_type,
+                            array_shape.as_deref(),
+                            compact,
+                        )?
+                    };
+                    let declaration = match declaration {
+                        C0Statement::Declare {
+                            c_type,
+                            name,
+                            volatile,
+                            pointee_volatile,
+                            constant,
+                            pointee_constant,
+                            zero_fill: None,
+                        } => C0Statement::Declare {
+                            c_type,
+                            name,
+                            volatile,
+                            pointee_volatile,
+                            constant,
+                            pointee_constant,
+                            zero_fill,
+                        },
+                        _ => unreachable!("an array declaration is a plain declaration"),
                     };
                     C0Statement::Seq(Box::new(declaration), Box::new(initializer))
                 } else if matches!(self.peek(), Some(Token::Ident(_)))
@@ -13472,6 +13773,7 @@ impl Parser {
                     pointee_volatile,
                     constant: object_constant,
                     pointee_constant,
+                    zero_fill: None,
                 }),
                 Box::new(C0Statement::Assign { name, expression }),
             ));
@@ -14877,6 +15179,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    zero_fill: None,
                 });
                 prefix.push(C0Statement::Assign {
                     name: callback_name.clone(),
@@ -15290,6 +15593,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    zero_fill: None,
                 });
                 // Conversion happens once when the typed temporary receives
                 // the right operand. The target and expression result then
@@ -15487,6 +15791,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant: false,
+                    zero_fill: None,
                 });
                 prefix.push(C0Statement::If {
                     condition,
@@ -15525,6 +15830,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    zero_fill: None,
                 }];
                 prefix.push(body);
                 prefix.extend(value_prefix);
@@ -15624,6 +15930,7 @@ impl Parser {
                     pointee_volatile: false,
                     constant: false,
                     pointee_constant,
+                    zero_fill: None,
                 });
                 prefix.push(C0Statement::Assign {
                     name: temporary.clone(),
@@ -15789,6 +16096,7 @@ impl Parser {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
         });
         prefix.push(C0Statement::Assign {
             name: callback_name.clone(),
@@ -15889,6 +16197,7 @@ impl Parser {
             pointee_volatile: false,
             constant: false,
             pointee_constant: false,
+            zero_fill: None,
         });
         prefix.push(C0Statement::If {
             condition: left,

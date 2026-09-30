@@ -2045,9 +2045,20 @@ impl CMemory {
         let mut memory = self.clone();
         let base = intern_derivation_base(&mut memory);
         std::sync::Arc::make_mut(&mut memory.blocks).remove(block);
-        // Only the retired block's own cells go: one key range each.
+        // Only the retired block's own cells go: one key range each, and a
+        // run of the block (a zero-filled automatic array) as a whole.
         let own = AliasCandidates::only_block(block);
-        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates(&own, |_, _| false);
+        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates_outside_by(
+            &own,
+            &[],
+            |_, _| false,
+            |_| {
+                (
+                    SlotSet::Nothing,
+                    crate::kernel::primitives::RuleAnswer::Exact,
+                )
+            },
+        );
         own.retain_map(std::sync::Arc::make_mut(&mut memory.union_cells), |_, _| {
             false
         });
@@ -3165,6 +3176,67 @@ impl CMemory {
         ))
     }
 
+    /// [`Self::with_symbolic_storage_run`] for an array of `count` structs
+    /// `stride` bytes apart at `base`, whose scalar fields are `fields` (each
+    /// one's offset within the struct and type): one [`CellRun`] per field,
+    /// stepping by `stride`, at a cost of the fields and the block's existing
+    /// cells rather than the struct count. A field element that already
+    /// holds a cell keeps it, as [`Self::materialize_named_cell`] would. The
+    /// refusals are [`Self::with_symbolic_storage_run`]'s, and a block that
+    /// already holds a run is refused too, so no two runs' slots meet.
+    pub(crate) fn with_symbolic_storage_runs(
+        mut self,
+        base: &Pointer,
+        stride: u32,
+        count: u32,
+        fields: &[(u32, CType)],
+        source: SharedCMemory,
+    ) -> Result<Self, Self> {
+        if base.block.starts_with("local:")
+            || matches!(base.block, PointerBlock::Heap(_))
+            || !self.run_can_stand_for_cells_at(base)
+            || self.cells.runs_in_block(&base.block).next().is_some()
+        {
+            return Err(self);
+        }
+        let existing = AliasCandidates::only_block(&base.block)
+            .entries(self.cells.concrete())
+            .map(|(pointer, _)| pointer.clone())
+            .collect::<Vec<_>>();
+        for (offset, element_type) in fields {
+            crate::instrumentation::record_deterministic_work(1 + existing.len());
+            let probe = CellRun::new_with_mode(
+                base.offset_by_bytes(*offset),
+                stride,
+                *element_type,
+                count,
+                source.clone(),
+                RunValueMode::SymbolicStorage,
+                IndexIntervals::default(),
+            );
+            let mut holes = IndexIntervals::default();
+            for pointer in &existing {
+                if let Some(index) = probe.slot_index(pointer) {
+                    holes.insert(index);
+                }
+            }
+            if holes.count() >= u64::from(count) {
+                continue;
+            }
+            let run = probe.with_holes(holes);
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        Ok(self)
+    }
+
     /// A store of `value` into each of the `count` elements of `element_type`
     /// at `base`, in element order, as one [`CellRun`] at a cost that does
     /// not depend on `count`: the known initial contents of static storage
@@ -3210,6 +3282,67 @@ impl CMemory {
             source,
             RunValueMode::Constant(value),
         ))
+    }
+
+    /// The stores of one object's known initial contents, as one constant
+    /// [`CellRun`] per entry of `runs`, at a cost of the runs rather than the
+    /// cells they hold: the zero contents of an array of structs (one run per
+    /// scalar field, stepping by the struct's size) or of an automatic array
+    /// declared with an initializer. The runs' slots are exactly the cells
+    /// the stores of each run's value into each of its slots would leave, and
+    /// one `CellsSeeded` edge per run stands for them.
+    ///
+    /// The object at `base` must be fresh: its block holds no cell and no run
+    /// yet, so no slot of a run is already a cell and the runs start with no
+    /// hole. The caller builds the runs from one layout, so no two slots of
+    /// them overlap; a slot's value is no wider than its run's step. Unlike
+    /// [`Self::with_constant_run`] an automatic object's block is accepted:
+    /// a store into a live local block records its cell and nothing else,
+    /// and the declaration that just created the block is what calls this.
+    /// A heap block (a store there marks the cell initialized), typed union
+    /// views to displace, or a base in a live allocation are refused, and
+    /// `Err` hands the memory back unchanged for the caller's own stores.
+    pub(crate) fn with_constant_runs(
+        mut self,
+        base: &Pointer,
+        runs: &[CConstantRun],
+    ) -> Result<Self, Self> {
+        if matches!(base.block, PointerBlock::Heap(_))
+            || !self.run_can_stand_for_cells_at(base)
+            || AliasCandidates::only_block(&base.block)
+                .entries(self.cells.concrete())
+                .next()
+                .is_some()
+            || self.cells.runs_in_block(&base.block).next().is_some()
+            || runs.iter().any(|run| {
+                run.stride == 0 || (run.count > 1 && run.value.byte_width() > run.stride)
+            })
+        {
+            return Err(self);
+        }
+        let source = crate::kernel::intern_c_memory(CMemory::new());
+        for run in runs.iter().filter(|run| run.count > 0) {
+            crate::instrumentation::record_deterministic_work(1);
+            let run = CellRun::new_with_mode(
+                base.offset_by_bytes(run.offset),
+                run.stride,
+                run.value.c_type(),
+                run.count,
+                source.clone(),
+                RunValueMode::Constant(run.value.clone()),
+                IndexIntervals::default(),
+            );
+            let derivation_base = intern_derivation_base(&mut self);
+            std::sync::Arc::make_mut(&mut self.cells).add_run(run.clone());
+            record_c_memory_derivation(
+                &mut self,
+                CMemoryDerivation::CellsSeeded {
+                    base: derivation_base,
+                    run: std::sync::Arc::new(run),
+                },
+            );
+        }
+        Ok(self)
     }
 
     /// Whether a run at `base` stands for the cells it seeds with nothing
