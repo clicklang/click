@@ -3224,3 +3224,122 @@ fn pointer_read_single_store_edges_compose_with_near_linear_work() {
         previous_work = Some(work);
     }
 }
+
+#[test]
+fn pointer_read_producer_admits_recorded_cache_forgetting() {
+    let address = arc_pointer(0);
+    let seeded = intern_c_memory(CMemory::new().with_block("arg-memory", 32).store(
+        address.clone(),
+        CValue::Int64(Bitvector32Term::Int64Constant(7)),
+    ));
+    let context = PureFactContext::new();
+    let forgotten = intern_c_memory(seeded.memory().without_possible_aliasing_cells(
+        &address.offset_by_bytes(4),
+        1,
+        &context,
+    ));
+    assert!(matches!(
+        forgotten.derivation().unwrap().as_ref(),
+        CMemoryDerivation::CellsForgotten { .. }
+    ));
+    let left = Pointer::loaded_value(&seeded, &address);
+    let right = Pointer::loaded_value(&forgotten, &address);
+    context.register_pointer_read(&left, &seeded, &address);
+    let branch = context.clone();
+    let sibling = context.clone();
+    assert!(!branch.pointer_equality_in_graph(&left, &right));
+    branch.register_pointer_read(&right, &forgotten, &address);
+    assert!(
+        branch.pointer_equality_in_graph(&left, &right),
+        "forgetting cached cells changes no bytes"
+    );
+    assert!(pointers_proven_equal_for_memory_resolution(
+        &left, &right, &branch
+    ));
+    assert!(!context.pointer_equality_in_graph(&left, &right));
+    assert!(!sibling.pointer_equality_in_graph(&left, &right));
+    assert_eq!(branch.pure_facts().len(), context.pure_facts().len());
+    assert!(!ResourceContext::new().permits_memory_read(&address, 8, &branch));
+    let alias = Pointer::symbolic(Variable(98_400));
+    let alias_read = Pointer::loaded_value(&forgotten, &alias);
+    branch.register_pointer_read(&alias_read, &forgotten, &alias);
+    let branch = branch.assume_condition(ConditionTerm::pointer_equal(address, alias), true);
+    assert!(branch.pointer_equality_in_graph(&left, &alias_read));
+}
+
+#[test]
+fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_pruning() {
+    let address = arc_pointer(0);
+    let seeded = intern_c_memory(CMemory::new().with_block("arg-memory", 32).store(
+        address.clone(),
+        CValue::Int64(Bitvector32Term::Int64Constant(9)),
+    ));
+    let context = PureFactContext::new();
+    let forgotten = intern_c_memory(seeded.memory().without_possible_aliasing_cells(
+        &address.offset_by_bytes(4),
+        1,
+        &context,
+    ));
+    let left = Pointer::loaded_value(&seeded, &address);
+    context.register_pointer_read(&left, &seeded, &address);
+    let forgotten_read = Pointer::loaded_value(&forgotten, &address);
+    context.register_pointer_read(&forgotten_read, &forgotten, &address);
+    assert!(context.pointer_equality_in_graph(&left, &forgotten_read));
+    for changed in [
+        forgotten
+            .memory()
+            .clone()
+            .store(address.offset_by_bytes(4), CValue::UInt8(1u32.into())),
+        forgotten
+            .memory()
+            .clone()
+            .store(Pointer::symbolic(Variable(98_401)), int32(1)),
+        seeded
+            .memory()
+            .clone()
+            .with_loop_memory_havoc_preserving_loans(
+                Variable(98_402),
+                &BTreeSet::new(),
+                None,
+                None,
+            ),
+        seeded.memory().without_cell(&address),
+    ] {
+        let changed = intern_c_memory(changed);
+        let right = Pointer::loaded_value(&changed, &address);
+        context.register_pointer_read(&right, &changed, &address);
+        assert!(!context.pointer_equality_in_graph(&left, &right));
+    }
+}
+
+#[test]
+fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
+    for size in [8u32, 32, 128, 512] {
+        let address = arc_pointer(0);
+        let mut memory = CMemory::new().with_block("arg-memory", 32);
+        let original = intern_c_memory(memory.clone());
+        for i in 0..size {
+            memory = memory.store(
+                address.clone(),
+                CValue::Int64(Bitvector32Term::Int64Constant(i as i64)),
+            );
+        }
+        let before = intern_c_memory(memory.clone());
+        let context = PureFactContext::new();
+        let forgotten = intern_c_memory(memory.without_possible_aliasing_cells(
+            &address.offset_by_bytes(4),
+            1,
+            &context,
+        ));
+        let old_read = Pointer::loaded_value(&original, &address);
+        let before_read = Pointer::loaded_value(&before, &address);
+        let after_read = Pointer::loaded_value(&forgotten, &address);
+        context.register_pointer_read(&old_read, &original, &address);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.register_pointer_read(&after_read, &forgotten, &address);
+        });
+        assert!(context.pointer_equality_in_graph(&before_read, &after_read));
+        assert!(!context.pointer_equality_in_graph(&old_read, &after_read));
+        assert!(work < 100, "size={size}, work={work}");
+    }
+}

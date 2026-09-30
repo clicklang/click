@@ -3008,7 +3008,8 @@ impl PureFactContext {
 
     /// Publish a typed read's definition and locally checked source equality.
     /// The graph is part of the trusted kernel. One exact materialization or
-    /// separate store edge is checked here; equality queries never search history.
+    /// separate store or recorded cache-forgetting edge is checked here;
+    /// equality queries never search history.
     /// No proposition or read authority is introduced. Checked unions belong
     /// only to this persistent proof context; definitions are unconditional.
     pub(in crate::kernel) fn register_pointer_read(
@@ -3033,6 +3034,10 @@ impl PureFactContext {
         };
         let source = match derivation.as_ref() {
             CMemoryDerivation::CellsSeeded { run, .. } => run.read_source(address, bytes),
+            // This recorded edge drops cached knowledge, not program bytes.
+            // It is not a store or havoc, and arbitrary cell-map pruning
+            // without this derivation supplies no equality authority.
+            CMemoryDerivation::CellsForgotten { base } => Some(base.clone()),
             CMemoryDerivation::Store {
                 base,
                 pointer: write,
