@@ -77,16 +77,17 @@ cargo test --test examples
 ## Compiler import fixtures
 
 On Linux, the gate runs `tests/compiler_import.rs` against GCC at
-`/usr/bin/gcc`. Provision GCC before running `scripts/check.sh` there (the
-Linux CI runner includes it). Missing GCC fails the preparation fixture; the
-gate never downloads a compiler or silently skips these checks. The fixture
-creates artifacts and locks in an isolated temporary directory, then checks
-offline loading, verification, and expansion. On macOS, compiler-independent
-unit regressions load and verify a relocated C artifact with no GCC or target
-headers installed, and reject changed source, artifact, local header, and lock
-identity bytes. A committed artifact prepared on Ubuntu with GCC additionally
-verifies and expands through the ordinary C import path after relocation; its
-opened Linux system headers and compiler backend are absent on macOS.
+`/usr/bin/gcc`. `scripts/setup-environment.sh` installs GCC on Ubuntu 24.04;
+provision it manually on other Linux distributions. Missing GCC fails the
+preparation fixture; the gate never downloads a compiler or silently skips
+these checks. The fixture creates artifacts and locks in an isolated
+temporary directory, then checks offline loading, verification, and expansion.
+On macOS, compiler-independent unit regressions load and verify a relocated C
+artifact with no GCC or target headers installed, and reject changed source,
+artifact, local header, and lock identity bytes. A committed artifact prepared
+on Ubuntu with GCC additionally verifies and expands through the ordinary C
+import path after relocation; its opened Linux system headers and compiler
+backend are absent on macOS.
 The frozen fork/join C source also has a committed Ubuntu GCC import. Its
 Mac regression loads the relocated artifact and verifies the unchanged worker
 and parent proof under the explicit modeled pthread runtime, without
@@ -109,9 +110,9 @@ finds, so that installation's headers must be present too (on Debian and
 Ubuntu, `libstdc++-N-dev` for the newest `/usr/lib/gcc/x86_64-linux-gnu/N`);
 a distribution update that moves the libstdc++ runtime forward without its
 headers is the usual cause of a sudden `<algorithm>` not found. The build
-script checks this first and names the missing package. The Linux CI job
-installs the pinned development packages, including those headers, before
-entering the network-free gate.
+script checks this first and names the missing package. On Ubuntu 24.04,
+`scripts/setup-environment.sh` installs the pinned development packages,
+including those headers, before the network-free gate runs.
 
 The C++ fixtures refresh typed artifacts for C++20 functions in a translation
 unit or one selected included project header through one exact JSON
@@ -239,12 +240,14 @@ shrink automatically; clean an old target directory only when no task is using
 it.
 
 Prover regressions usually manifest as hangs rather than failures, so the
-suite has a hard per-test time budget enforced by cargo-nextest. Install it
-once with `cargo install cargo-nextest --locked` (or `brew install
-cargo-nextest`). The gate also renders the documentation with the pinned
-mdBook, installed once per machine into a root shared by every worktree with
-`scripts/install-tools.sh`; `scripts/check.sh` only looks tools up and never
-reaches the network. Then run:
+suite has a hard per-test time budget enforced by cargo-nextest. Prepare all
+prerequisites for the full gate once per machine with
+`scripts/setup-environment.sh`. For prose and documentation metadata changes,
+use `scripts/setup-environment.sh --docs-only` to skip the LLVM packages used
+only by the full gate. The setup script installs the Rust toolchain pinned in
+`rust-toolchain.toml`, cargo-nextest, the pinned mdBook, and (on Ubuntu 24.04)
+the pinned LLVM development packages. `scripts/check.sh` only looks tools up
+and never reaches the network. Then run:
 
 ```sh
 cargo nextest run

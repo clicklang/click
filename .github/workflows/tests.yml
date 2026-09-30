@@ -49,28 +49,27 @@ jobs:
           else
             echo "docs_only=false" >> "$GITHUB_OUTPUT"
           fi
-      # Installs the toolchain pinned in `rust-toolchain.toml`, the same one
-      # local runs use.
-      - run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@nextest
-      # The C++ semantic exporter is built against the exact Clang/LLVM API
-      # pinned by scripts/build-cpp-exporter.sh. The gate never downloads it.
-      - name: Install Clang 19.1.7 development libraries
-        if: steps.scope.outputs.docs_only != 'true'
-        run: |
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
-          echo "deb https://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee /etc/apt/sources.list.d/llvm-19.list
-          sudo apt-get update
-          sudo apt-get install -y clang-19 libclang-19-dev llvm-19-dev libstdc++-14-dev
-      # The documentation tooling is installed once into the shared tool
-      # root (`scripts/tools.sh`) and cached by version; the gate itself
-      # never installs anything or touches the network.
+      # Cache actions restore before setup and save after the job. Setup can
+      # reuse installed tools, and the completed run refreshes the caches.
       - uses: actions/cache@v4
         with:
           path: ~/.cache/click/tools
           key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
-      - run: scripts/install-tools.sh
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest
+          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+      # One provisioning script serves CI and future cloud environments. Its
+      # docs-only mode skips LLVM packages used only by the full gate.
+      - name: Set up environment for documentation checks
+        if: steps.scope.outputs.docs_only == 'true'
+        run: scripts/setup-environment.sh --docs-only
+      - name: Set up environment for full checks
+        if: steps.scope.outputs.docs_only != 'true'
+        run: scripts/setup-environment.sh
+      # Restore Rust build artifacts after the pinned toolchain is available;
+      # updated artifacts are saved automatically after the job completes.
+      - uses: Swatinem/rust-cache@v2
       # The same script a developer runs locally, so the two cannot drift.
       - name: Run documentation-only gate
         if: steps.scope.outputs.docs_only == 'true'
