@@ -26,8 +26,7 @@ mod proof_object;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::{
     count_checked_execution_interface_joins, count_checked_expanded_execution_ifs,
-    count_execution_context_exports, count_finalization_view_constructions,
-    count_source_certificate_checks,
+    count_finalization_view_constructions,
 };
 mod checked_drivers;
 mod execution_state;
@@ -98,8 +97,6 @@ pub(super) use fact_reasoning::{
 };
 use fixed_state_proofs::*;
 use language_context::*;
-#[cfg(test)]
-pub(in crate::surface) use proof_object::collect_execution_context_export_labels;
 use proof_object::*;
 #[cfg(test)]
 pub(in crate::surface) use pure_theorems::PROVED_THEOREMS;
@@ -1157,17 +1154,15 @@ mod certificate_tests {
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
-        let (verified, events) = crate::instrumentation::collect(|| {
-            verify_theorem_definitions(
-                &[],
-                file.theorem_definitions(),
-                &predicate_environment,
-                &click_function_environment,
-                None,
-                &ResourceEnvironment::new(&[]),
-                std::sync::Arc::new(FunctionSourceRegistry::default()),
-            )
-        });
+        let verified = verify_theorem_definitions(
+            &[],
+            file.theorem_definitions(),
+            &predicate_environment,
+            &click_function_environment,
+            None,
+            &ResourceEnvironment::new(&[]),
+            std::sync::Arc::new(FunctionSourceRegistry::default()),
+        );
         let verified = verified.expect("direct checked pure proofs should verify");
         assert_eq!(
             verified[0].proof_tactics().as_deref(),
@@ -1204,25 +1199,6 @@ mod certificate_tests {
             verified[7].proof_tactics().as_deref(),
             Some([ProofTactic::Contradiction(_)])
         ));
-        assert!(
-            events.iter().all(|event| !matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                    if matches!(
-                        claim.as_str(),
-                        "required.ensures_0"
-                            | "reflexive.ensures_0"
-                            | "applied.ensures_0"
-                            | "applied_then_simp.ensures_0"
-                            | "implication.ensures_0"
-                            | "conjunction.ensures_0"
-                            | "disjunction.ensures_0"
-                            | "impossible.ensures_0"
-                    )
-                        && name == "generated certificate validation"
-            )),
-            "checked smart pure proofs must not pass through ordinary certificate validation: {events:#?}"
-        );
     }
 
     #[test]

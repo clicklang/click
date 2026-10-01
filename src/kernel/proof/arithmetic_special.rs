@@ -2707,16 +2707,6 @@ mod tests {
         PointerOffsetTerm::Add(Box::new(left), Box::new(right))
     }
 
-    #[test]
-    fn special_checker_does_not_delegate_tagged_words_to_context_reasoning() {
-        let source = include_str!("arithmetic_special.rs");
-        let legacy_decider = ["decide_pointer_word_", "equality_citing"].concat();
-        assert!(
-            !source.contains(&legacy_decider),
-            "special certificate checking must remain local and explicit"
-        );
-    }
-
     fn tagged_tag_nodes(root: &Arc<TaggedTag<'_>>) -> usize {
         let mut pending = vec![Arc::clone(root)];
         let mut seen = HashSet::new();

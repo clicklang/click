@@ -12,7 +12,7 @@ coverage, and documentation land.
 - [Narrow integer parameters lack their type range at entry](narrow-parameters-lack-their-type-range.md)
 - [`simp` and `arithmetic()` stop at short order chains](unsigned-and-long-order-chains-in-simp-and-arithmetic.md)
 - [A refused store through a widened unsigned index doesn't name the element](store-refusal-through-unsigned-index-names-no-element.md)
-- [A struct-field read inside an `&&` branch fails `execute()`](struct-field-read-in-conjunctive-branch-fails-execute.md)
 - [Whole-path refusals don't name a C statement](whole-path-refusals-lack-a-statement-location.md)
 - [`simp` and `arithmetic()` treat sign-bit-flipped unsigned values as opaque](unsigned-order-arithmetic-in-closers.md)
 - [A ranked loop whose body branches loses its decrease member](branching-loop-body-ranking-member-not-certified.md)
+- [An interface join keeps two live spellings of one allocation](interface-join-keeps-two-live-spellings-of-one-allocation.md)

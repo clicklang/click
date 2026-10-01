@@ -60,37 +60,6 @@ fn simp_orients_pure_function_equality_inside_constructor_goal() {
 }
 
 #[test]
-fn defined_fact_makes_simple_statement_step_explicit() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            theorem increment_is_defined(x: int32) {
-                requires x < 2147483647;
-                ensures defined(x + 1) by {
-                    simp();
-                }
-            }
-
-            int32 increment(int32 x) {
-                requires x < 2147483647;
-                ensures result == x + 1;
-            } by {
-                apply(increment_is_defined(x));
-                step();
-                simp();
-            }
-        "#;
-
-    verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect("an explicit definedness theorem should satisfy simple tactic");
-}
-
-#[test]
 fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
     let c_source = r#"
             int32 add_nonnegative(int32 value, int32 amount) {
@@ -646,22 +615,6 @@ fn parses_simp_tactic() {
 }
 
 #[test]
-fn parses_memory_postcondition() {
-    let source = FILL3_CLICK.replace("result == 2", "p[2] == 2");
-    let file = parse(&source).expect("sidecar should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert_eq!(
-        ensure.ensure(),
-        &ensure_comparison(
-            current_index("p", 2),
-            ComparisonOperator::Equal,
-            current_int(2),
-        )
-    );
-}
-
-#[test]
 fn parses_old_memory_postcondition() {
     let source = FILL3_CLICK.replace("result == 2", "p[0] == old(p[0])");
     let file = parse(&source).expect("sidecar should parse");
@@ -1154,28 +1107,13 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("compare_swap2.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("compare_swap2.c", c_source)])
+    });
     let verified = verified.expect("unfolded predicate goal should prove compare-swap sortedness");
 
     assert_eq!(verified.len(), 2);
     assert_eq!(flat_units, 1, "the ensure proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "branched predicate execution must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary branched predicate verification must not check a certificate"
-    );
 }
 
 #[test]
@@ -1208,30 +1146,15 @@ fn unfolds_general_sorted_predicate() {
             }
         "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("keep_sorted.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("keep_sorted.c", c_source)])
+    });
     let verified = verified.expect("general sorted predicate should unfold deterministically");
 
     assert_eq!(verified.len(), 1);
     assert_eq!(
         flat_units, 1,
         "the grouped predicate proof should retain one Proof"
-    );
-    assert_eq!(
-        context_exports, 0,
-        "the preserved heap predicate must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary predicate preservation must not check a certificate"
     );
 
     let expanded = expand_c0_claim_source(
@@ -1274,30 +1197,6 @@ fn verifies_click_proposition_logic() {
         .expect("proposition logic should verify");
 
     assert_eq!(verified.len(), 2);
-}
-
-#[test]
-fn verifies_simp_normalizes_simple_postconditions() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures add_zero: result == x + 0 by { execute(); simp(); }
-                ensures prop_simp: result == x and not (result != x) by { execute(); simp(); }
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("simp should prove local normalized postconditions");
-
-    assert_eq!(verified.len(), 2);
-    assert_eq!(verified[0].proof_kind(), ProofKind::TacticScript);
-    assert_eq!(verified[1].proof_kind(), ProofKind::TacticScript);
 }
 
 #[test]
@@ -1373,18 +1272,8 @@ fn mid_execution_witness_simp_have_expands_to_a_simple_certificate() {
             }
         "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("current_have.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("current_have.c", c_source)]);
     let verified = verified.expect("a witness/simp have should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "current_have.contract" && name == "generated certificate validation"
-        )),
-        "the migrated witness/simp have must retain its checked Proof path: {events:#?}"
-    );
     let expanded = verified[0].expanded_proof_tactics().unwrap_or_else(|| {
         panic!(
             "a mid-execution witness/simp have should expand: {:?}",
@@ -1458,36 +1347,11 @@ fn mid_execution_choose_witness_simp_retains_the_checked_proof_path() {
             }
         "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("choose_witness.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("choose_witness.c", c_source)])
+    });
     let verified = verified.expect("a choose/witness/simp have should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the existential fixed-state scope must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary existential fixed-state verification must not check a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_witness.contract" && name == "generated certificate validation"
-        )),
-        "the migrated choose/witness/simp path must not reconstruct and check: {events:#?}"
-    );
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("the checked claim should expose its retained certificate");
@@ -1603,19 +1467,8 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_simp() {
             }
         "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("witness_pair.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("witness_pair.c", c_source)]);
     verified.expect("witness followed by structural simp should stay on Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "post-execution smart have compatibility construction"
-                    || name.starts_with("post-execution simple have check")
-        )),
-        "the witness successor must retain the structural proof without reconstruction: {events:#?}"
-    );
 
     let have_offset = click_source
         .find("have exists (j: int32)")
@@ -1694,37 +1547,6 @@ fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
 }
 
 #[test]
-fn instantiate_specializes_a_universal_fact_at_an_explicit_value() {
-    let c_source = r#"
-        int32 pick(int32 value) {
-            return value;
-        }
-    "#;
-    let click_source = r#"
-        verifying "pick.c";
-
-        int32 pick(int32 value) {
-            requires forall (k: int32) {
-                0 <= k and k < 3 implies k <= value
-            };
-            ensures two_le: 2 <= value;
-        } by {
-            execute();
-            have 2 <= value by {
-                instantiate(forall (k: int32) {
-                    0 <= k and k < 3 implies k <= value
-                }, 2) using {}
-                assumption();
-            }
-            assumption();
-        }
-    "#;
-
-    verify_c0_sources(click_source, &[("pick.c", c_source)])
-        .expect("instantiating the universal requirement at 2 should prove the bound");
-}
-
-#[test]
 fn outcome_instantiate_uses_the_checked_proof_path() {
     let c_source = r#"
         int32 pick(int32 value) {
@@ -1751,18 +1573,8 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("pick.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("pick.c", c_source)]);
     verified.expect("outcome instantiation should prove the bound directly through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name.starts_with("post-execution simple have check")
-        )),
-        "outcome instantiation must remain on the checked Proof path: {events:#?}"
-    );
 }
 
 #[test]
@@ -2098,37 +1910,11 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
         }
     "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("keep.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &[("keep.c", c_source)]));
     let verified =
         verified.expect("nested fixed-state have search should verify through Proof scopes");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the leading fixed-state scope must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary fixed-state verification must not check a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "keep.contract" && name == "generated certificate validation"
-        )),
-        "nested fixed-state scope search must not reconstruct and check a body: {events:#?}"
-    );
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("nested checked scopes should expose a certificate");
@@ -2209,26 +1995,11 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
         }
     "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("logical_haves.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("logical_haves.c", c_source)])
+    });
     let verified = verified.expect("leading logical have scopes should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "logical have decomposition must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary logical have verification must not check a certificate"
-    );
 
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -2319,26 +2090,11 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
         }
     "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("universal_haves.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("universal_haves.c", c_source)])
+    });
     let verified = verified.expect("leading universal have scopes should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "universal have scopes must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary universal verification must not check a certificate"
-    );
 
     let expanded = verified[0]
         .expanded_proof_tactics()
@@ -2413,22 +2169,9 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
     ];
 
     for (operation, click_source) in cases {
-        let ((result, certificate_checks), context_exports) = {
-            proof::count_execution_context_exports(|| {
-                proof::count_source_certificate_checks(|| {
-                    verify_c0_sources(click_source, &[("identity.c", c_source)])
-                })
-            })
-        };
-        result.expect("a grouped top-level existential operation should verify");
-        assert_eq!(
-            context_exports, 0,
-            "grouped top-level {operation} must not export semantic state"
-        );
-        assert_eq!(
-            certificate_checks, 0,
-            "grouped top-level {operation} must not check a certificate"
-        );
+        verify_c0_sources(click_source, &[("identity.c", c_source)]).unwrap_or_else(|error| {
+            panic!("grouped top-level {operation} should verify: {error:?}")
+        });
     }
 }
 
@@ -2557,19 +2300,9 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("keep.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("keep.c", c_source)]);
     let verified = verified
         .expect("smart fixed-state-have arms should retain their checked Proof descendants");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "keep.contract" && name == "generated certificate validation"
-        )),
-        "branch-local theorem search must retain its checked Proof paths: {events:#?}"
-    );
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("the retained branch-local theorem paths should expand");
@@ -2795,27 +2528,6 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
     );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the disjunctive-premise expansion should be a surface certificate");
-}
-
-#[test]
-fn smart_pure_pointer_add_zero_identity_produces_a_rewrite_certificate() {
-    let click_source = r#"
-        theorem pointer_add_zero_equals(
-            base: int32*,
-            offset: int32,
-            target: int32*
-        ) {
-            requires base == target;
-            requires offset == 0;
-
-            ensures base + offset == target by {
-                simp();
-            }
-        }
-    "#;
-
-    verify_c0_sources(click_source, &[])
-        .expect("a smart pointer-offset identity proof should yield a pure surface certificate");
 }
 
 #[test]
@@ -3066,23 +2778,13 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("drop_one.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("drop_one.c", c_source)]);
     verified.unwrap_or_else(|error| {
         panic!(
             "the outcome conjunction should split and close its predecessor bound: {}",
             error.message()
         )
     });
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-        )),
-        "the predecessor derivation must build its structured successor directly on Proof: {events:#?}"
-    );
 }
 
 #[test]

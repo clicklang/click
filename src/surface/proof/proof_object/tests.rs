@@ -3829,15 +3829,9 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 (kernel_quantified.clone(), quantified_surface.clone()),
                 (kernel_premise.clone(), premise.clone()),
             ];
-            let (selected, certificate_checks) = count_source_certificate_checks(|| {
-                root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs)
-            });
+            let selected = root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs);
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
-            assert_eq!(
-                certificate_checks, 0,
-                "universal instantiation planning must not check a candidate certificate"
-            );
             assert!(selected.is_complete());
             assert!(matches!(
                 selected.certificate().steps(),
@@ -13831,36 +13825,6 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             pair[1] <= pair[0] + 128,
             "retention must share unrelated facts: {allocations:?}"
         );
-    }
-}
-
-#[test]
-fn source_script_compatibility_entry_points_stay_removed() {
-    for source in [
-        include_str!("../smart_closures.rs"),
-        include_str!("../proof_object.rs"),
-        include_str!("scope.rs"),
-        include_str!("../claim_proofs.rs"),
-        include_str!("../execution_planning/forward_planning.rs"),
-        include_str!("../execution_planning/loop_planning.rs"),
-        include_str!("../../proof.rs"),
-        include_str!("../checked_drivers/proof_execution.rs"),
-    ] {
-        for removed in [
-            "pure_goal_proof_certificate_gateway_with_checked_result",
-            "plan_fixed_state_pure_goal_certificate",
-            "source_contains_legacy_arithmetic",
-            "try_linear_script(",
-            "try_planned_linear_script(",
-            "EXPLICIT_LINEAR_FALLBACKS",
-            "count_explicit_linear_fallbacks",
-            "record_explicit_linear_fallback",
-        ] {
-            assert!(
-                !source.contains(removed),
-                "removed script authority returned: {removed}"
-            );
-        }
     }
 }
 

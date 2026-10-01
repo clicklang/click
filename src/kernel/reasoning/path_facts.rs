@@ -1043,9 +1043,42 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
             ConditionTerm::equal(left_index, right_index),
             value,
         )?;
+    } else if let Some((index, element)) = single_scaled_index_equal_to_constant(&left, &right)
+        .or_else(|| single_scaled_index_equal_to_constant(&right, &left))
+    {
+        add_condition_path_fact(
+            facts,
+            assumptions,
+            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(element as u32)),
+            value,
+        )?;
     }
 
     Some(())
+}
+
+/// `scaled == constant` as the index it selects, when `scaled` is one scaled
+/// `int32` index plus constants, `sext(x) * stride + c`: `x * 8 + 4 == 12`
+/// holds exactly when `x == 1`. The offset sum is exact, so the equivalence
+/// holds in both polarities, at any stride. `None` when the constant is not
+/// one of the offsets the index reaches; the offset equality then folds to
+/// false (see `pointer_offsets_differ_by_residue`).
+pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
+    scaled: &'term PointerOffsetTerm,
+    constant: &PointerOffsetTerm,
+) -> Option<(&'term Bitvector32Term, i32)> {
+    let target = constant.as_const()?;
+    let (leaves, offset) = scaled.int32_scaled_linear_form()?;
+    let [(index, stride)] = leaves.as_slice() else {
+        return None;
+    };
+    let delta = target.checked_sub(offset)?;
+    if *stride == 0 || delta % stride != 0 {
+        return None;
+    }
+    i32::try_from(delta / stride)
+        .ok()
+        .map(|element| (*index, element))
 }
 
 pub(in crate::kernel) fn add_proof_obligation(

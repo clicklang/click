@@ -1378,3 +1378,33 @@ fn rust_readable_local_names_preserve_shadowed_binding_identities() {
         .is_err()
     );
 }
+
+#[test]
+fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
+    let p = Project::new(include_str!("../examples/rust-byte-sum/sum.rs"));
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar =
+        include_str!("../examples/rust-byte-sum/sum.click").replace("sum.rs", "borrow.rs");
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for invalid in [
+        sidecar.replace(
+            "ensures to_integer(result) == old(prefix",
+            "ensures to_integer(result) + 1 == old(prefix",
+        ),
+        sidecar.replace("invariant i <= bytes_len;", "invariant i < bytes_len;"),
+        sidecar.replace(
+            "invariant to_integer(total) == prefix(bytes, (int32)(uint32)i);",
+            "invariant to_integer(total) + 1 == prefix(bytes, (int32)(uint32)i);",
+        ),
+        sidecar.replace("decreases bytes_len - i;", "decreases i;"),
+        sidecar.replace("requires bytes_len <= 1000u64;", ""),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}

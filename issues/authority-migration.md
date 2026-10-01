@@ -190,7 +190,7 @@ exposes that body without changing its count. Current exact `count(R(p))`
 observes the authority ledger. The transitions have independent certificate
 checks. Verified ordinary C helpers can borrow and return the same exact
 authority and member; standalone helper proofs treat their declared input as
-an opaque population with no count or creator permission. Such a helper can
+an opaque population with an arbitrary count and no creator permission. Such a helper can
 open a transferred member's private memory body, use it, and close it before
 return. A verified helper can also create or consume one exact member with a
 private owned-memory body while returning authority. Its contract transfers
@@ -507,6 +507,17 @@ The initial implementation admits concrete pointer/int32 indices and the
 helper's selected member; unresolved aliases, partial patterns, and symbolic
 batch subset observations remain deferred. Indexed lookup/update scaling and
 rejections for missing authority and unproved exact cardinality are covered.
+
+Helpers now also pair one unit consumption and one unit production from
+separate families at one anchor, borrowing each family's explicit authority.
+Direct unary authority inputs have arbitrary observable totals, matching the
+wildcard rule. Direct and nested checkout fixtures preserve retained members
+and private object contents; negative fixtures and kernel checks enforce both
+transitions, authority custody, body ownership, and checked external extents.
+The local-stack object ownership bridge is not included: its unchanged C
+reproduction remains an expected rejection, distinct from explicitly owned
+external objects. Multi-authority control wrappers and batches remain later
+work; this does not migrate bounded pool yet.
 
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count

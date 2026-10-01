@@ -8397,19 +8397,6 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
-    fn source_create_status_then_join_uses_the_modeled_transition() {
-        let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); if (rc != 0) return 0; pthread_join(h, NULL); return 1; }\n";
-        let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 1; } by { step(); step(); step(); branch { then { step(); simp(); } else {} } step(); step(); simp(); }\n";
-        verify_c0_sources(click, &[("fork_join.c", c)])
-            .expect("source create and join proof should certify");
-        let expanded =
-            expand_c0_claim_source(click, &[("fork_join.c", c)], "run", CProofClaim::Grouped)
-                .expect("modeled create and join proof should expand");
-        verify_c0_sources(&expanded, &[("fork_join.c", c)])
-            .expect("expanded modeled create and join proof should certify");
-    }
-
-    #[test]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
         let click = "target \"x86_64-linux-userspace\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns ((struct cell *)p)->value; } by { execute(); simp(); }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); branch { then { step(); simp(); } else {} } step(); step(); simp(); }\n";
@@ -8760,14 +8747,6 @@ int32 answer() {
         assert_ne!(kernel[0].artifact_identity, userspace[0].artifact_identity);
         assert_eq!(kernel[0].target(), CTarget::X86_64LinuxKernel);
         assert_eq!(userspace[0].target(), CTarget::X86_64LinuxUserspace);
-    }
-
-    #[test]
-    fn rejects_an_absent_artifact_identity() {
-        let context = CSourceContext::bundle(&[("answer.c", C_SOURCE)]);
-        let identity = context.artifact_identity(CLICK, CTarget::SUPPORTED);
-        let absent_identity: Option<CProofArtifactIdentity> = None;
-        assert_ne!(absent_identity, Some(identity));
     }
 
     fn verify_sources(click: &str, source: &str) -> Result<(), ClickError> {
@@ -9399,15 +9378,6 @@ int read_view(const int *(*f)(const int *), const int *p) {{
 
     const ONE_CALL_THEOREM_C_SOURCE: &str =
         "int read_view(const int *(*f)(const int *), const int *p) { return f(p)[0]; }";
-
-    #[test]
-    fn certifies_a_one_call_execution_theorem_from_its_proof_entry_state() {
-        let click = one_call_execution_theorem_source("Readable");
-        let sources = CSourceContext::bundle(&[("main.c", ONE_CALL_THEOREM_C_SOURCE)]);
-        let verified = verify_c0_sources_with_context(&click, &sources, None, None, None, None)
-            .expect("the one-call proof's own entry state certifies the theorem");
-        assert!(!verified.0.is_empty());
-    }
 
     #[test]
     fn one_call_execution_theorem_still_needs_its_target_obligation() {

@@ -5918,11 +5918,15 @@ impl AnnotationLowerer<'_> {
             CExpression::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_c_fragment_to_spec(expression, environment)?,
             ))),
+            // A signed-word cast around a byte read must keep the source
+            // pointee type; raw C inference could make it a four-byte load.
             CExpression::Cast {
                 expression,
                 target_type,
                 ..
-            } if *target_type == CType::UInt32 || target_type.is_pointer() => {
+            } if matches!(target_type, CType::Int32 | CType::UInt32)
+                || target_type.is_pointer() =>
+            {
                 Ok(SpecExpression::Cast(
                     Box::new(self.lower_c_fragment_to_spec(expression, environment)?),
                     *target_type,

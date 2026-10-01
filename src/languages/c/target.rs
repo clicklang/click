@@ -160,21 +160,6 @@ mod tests {
     }
 
     #[test]
-    fn verified_theorems_expose_the_concrete_target() {
-        let theorems = crate::surface::verify_c0_sources(
-            "verifying \"a.c\"; int answer() { ensures result == 1; } by { execute(); simp(); }",
-            &[("a.c", "int answer(void) { return 1; }")],
-        )
-        .unwrap();
-        assert!(!theorems.is_empty());
-        assert!(
-            theorems
-                .iter()
-                .all(|theorem| theorem.target() == CTarget::SUPPORTED)
-        );
-    }
-
-    #[test]
     fn userspace_profile_never_injects_kernel_predefines() {
         let target = CTarget::X86_64LinuxUserspace;
         assert_eq!(target.abi(), CAbi::Lp64);

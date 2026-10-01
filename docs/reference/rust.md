@@ -220,6 +220,15 @@ cargo run --bin click -- import lock examples/rust-loops/loops.click
 cargo run --bin click -- verify examples/rust-loops/loops.click
 ```
 
+The [byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
+proves a functional loop over arbitrary input bytes. For slices of length
+`0..=1000`, its unchanged Rust source returns the exact mathematical sum of
+the input at function entry. A prefix fold and the bound
+`0 <= to_integer(total) <= 255 * to_integer((int32)(uint32)i)` establish the
+result and safety of every intermediate addition. Checked full-width bounds
+connect the `usize` counter to the fold's signed-word endpoint. It covers
+empty input and supports profiling, audit, and expanded-proof reverification.
+
 ## Moves and drops
 
 [`examples/rust-move-drop/guard.rs`](https://github.com/clicklang/click/blob/master/examples/rust-move-drop/guard.rs)

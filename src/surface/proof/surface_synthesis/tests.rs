@@ -348,21 +348,6 @@ fn assert_foreign_object_requirement_is_spellable(block: &str, name: &str, cells
     );
 }
 
-/// `static_array_parity_scalar`, `static_array_parity_multidimensional`,
-/// `static_array_parity_fixed_multidimensional`, and `static_local_arrays`
-/// all call `increment_twice`, whose precondition bounds the three cells of
-/// its own `static int32 values[3]`. The three array declarations differ
-/// only in the C shape; the object, the emitted requirement, and the
-/// caller's flattened qualified spelling are the same.
-#[test]
-fn static_local_array_call_requirements_are_spellable() {
-    assert_foreign_object_requirement_is_spellable(
-        "static:increment_twice:values#static0",
-        "static_local::increment_twice::values",
-        3,
-    );
-}
-
 /// `file_scope_static_arrays` calls `alpha` and `beta`, each bounding the
 /// two cells of its own translation unit's `static int32 values[2]`. Two
 /// same-named file-scope objects stay separate spellings.

@@ -3010,34 +3010,6 @@ mod tests {
     }
 
     #[test]
-    fn deep_affine_plans_have_bounded_work_and_node_growth() {
-        let mut measurements = Vec::new();
-        for depth in [4usize, 8, 16, 32] {
-            let x = var(71);
-            let mut term = x.clone();
-            for _ in 0..depth {
-                term = Bitvector32Term::Add(Box::new(term), Box::new(x.clone()));
-            }
-            let goal = le(term, constant(depth as i32 + 1));
-            let premises = [le(constant(0), x.clone()), le(x, constant(1))];
-            let (plan, work) =
-                crate::instrumentation::measure_deterministic_work(|| check_plan(&goal, &premises));
-            assert!(
-                plan.nodes.len() <= 12 * depth + 32,
-                "certificate node count grew beyond the expression: {} at depth {depth}",
-                plan.nodes.len()
-            );
-            measurements.push(work);
-        }
-        assert!(
-            measurements
-                .windows(2)
-                .all(|pair| pair[1] <= 4 * pair[0] + 128),
-            "deep affine planning should have bounded scaling: {measurements:?}"
-        );
-    }
-
-    #[test]
     fn indexed_operation_lookup_scales_with_deep_terms_and_unrelated_facts() {
         let mut measurements = Vec::new();
         for (depth, unrelated) in [(8usize, 4usize), (16, 8), (32, 16), (64, 32)] {

@@ -1391,14 +1391,27 @@ impl Bitvector32Term {
     pub(crate) fn uint32_from_64(value: Self) -> Self {
         // Children are already constructed bottom-up. Only inspect the root:
         // rescanning the operand here makes repeated conversions quadratic.
+        fn root(value: Bitvector32Term) -> Bitvector32Term {
+            match value {
+                Bitvector32Term::UInt64Constant(bits) => Bitvector32Term::Constant(bits as u32),
+                Bitvector32Term::Int64Constant(bits) => Bitvector32Term::Constant(bits as u32),
+                Bitvector32Term::UInt64From32(value)
+                | Bitvector32Term::Int64From32(value)
+                | Bitvector32Term::Int64FromUInt32(value)
+                | Bitvector32Term::UInt64FromInt32(value) => *value,
+                value => Bitvector32Term::UInt32From64(Box::new(value)),
+            }
+        }
         match value {
-            Self::UInt64Constant(bits) => Self::Constant(bits as u32),
-            Self::Int64Constant(bits) => Self::Constant(bits as u32),
-            Self::UInt64From32(value)
-            | Self::Int64From32(value)
-            | Self::Int64FromUInt32(value)
-            | Self::UInt64FromInt32(value) => *value,
-            value => Self::UInt32From64(Box::new(value)),
+            Self::UInt64Add(a, b) if b.uint64_as_const().is_some() => Self::add(
+                root(*a),
+                Self::Constant(b.uint64_as_const().unwrap() as u32),
+            ),
+            Self::UInt64Add(a, b) if a.uint64_as_const().is_some() => Self::add(
+                Self::Constant(a.uint64_as_const().unwrap() as u32),
+                root(*b),
+            ),
+            value => root(value),
         }
     }
 
@@ -1730,6 +1743,46 @@ impl PointerOffsetTerm {
         Self::Constant(value)
     }
 
+    /// This offset as `sum(sext(index) * stride) + constant`, when every
+    /// leaf is a constant or a scaled `int32` index: the scaled leaves and
+    /// the constant. The sum is exact, with no wrap, so it describes the
+    /// offset's integer value.
+    pub(in crate::kernel) fn int32_scaled_linear_form(
+        &self,
+    ) -> Option<(Vec<(&Bitvector32Term, i64)>, i64)> {
+        // Each leaf's magnitude stays below `2^31 * 2^24`, so a sum of at
+        // most this many of them, and their constant, fits in an `i64`.
+        const MAX_LEAVES: usize = 64;
+        const MAX_STRIDE: i64 = 1 << 24;
+        const MAX_CONSTANT: i64 = 1 << 48;
+        let mut scaled = Vec::new();
+        let mut constant = 0i64;
+        let mut pending = vec![self];
+        let mut leaves = 0usize;
+        while let Some(term) = pending.pop() {
+            leaves += 1;
+            if leaves > MAX_LEAVES {
+                return None;
+            }
+            match term {
+                Self::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                Self::Constant(value) if value.unsigned_abs() < MAX_CONSTANT as u64 => {
+                    constant += value;
+                }
+                Self::Int32Scaled { value, byte_width }
+                    if byte_width.unsigned_abs() <= MAX_STRIDE as u64 =>
+                {
+                    scaled.push((value.as_ref(), *byte_width));
+                }
+                _ => return None,
+            }
+        }
+        Some((scaled, constant))
+    }
+
     pub(in crate::kernel) fn as_const(&self) -> Option<i64> {
         match self {
             Self::Constant(value) => Some(*value),
@@ -1959,6 +2012,63 @@ impl ConditionTerm {
             (Some(left), Some(right)) => Self::Constant(left >= right),
             _ => Self::Bitvector64SignedGreaterEqual(Box::new(left), Box::new(right)),
         }
+    }
+
+    /// Checked full-width guards for truncated index bounds and order.
+    /// Order requires the upper endpoint to fit in the signed word range;
+    /// low-word equality follows from exact full-width equality.
+    pub(crate) fn uint64_index_order_guards(&self) -> Option<[Self; 2]> {
+        fn wide(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+            match term {
+                Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
+                Bitvector32Term::Add(left, right) if right.as_const().is_some() => {
+                    let Bitvector32Term::UInt32From64(value) = left.as_ref() else {
+                        return None;
+                    };
+                    Some(Bitvector32Term::uint64_add(
+                        value.as_ref().clone(),
+                        Bitvector32Term::UInt64Constant(right.as_const()? as u64),
+                    ))
+                }
+                _ => None,
+            }
+        }
+        if let Self::Bitvector32Equal(a, b) = self {
+            return Some([Self::int64_equal(wide(a)?, wide(b)?), Self::Constant(true)]);
+        }
+        let (a, b, strict) = match self {
+            Self::Bitvector32SignedLessThan(a, b) => (a, b, true),
+            Self::Bitvector32SignedGreaterThan(a, b) => (b, a, true),
+            Self::Bitvector32SignedLessEqual(a, b) => (a, b, false),
+            Self::Bitvector32SignedGreaterEqual(a, b) => (b, a, false),
+            _ => return None,
+        };
+        if !strict && a.as_const() == Some(0) {
+            let b = wide(b)?;
+            return Some([
+                Self::uint64_less_equal(b, Bitvector32Term::UInt64Constant(i32::MAX as u64)),
+                Self::Constant(true),
+            ]);
+        }
+        let a = wide(a)?;
+        if !strict
+            && let Some(limit) = b.as_const()
+            && limit <= i32::MAX as u32
+        {
+            return Some([
+                Self::uint64_less_equal(a.clone(), Bitvector32Term::UInt64Constant(limit as u64)),
+                Self::Constant(true),
+            ]);
+        }
+        let b = wide(b)?;
+        Some([
+            if strict {
+                Self::uint64_less_than(a.clone(), b.clone())
+            } else {
+                Self::uint64_less_equal(a.clone(), b.clone())
+            },
+            Self::uint64_less_equal(b.clone(), Bitvector32Term::UInt64Constant(i32::MAX as u64)),
+        ])
     }
 
     /// A sufficient guard for two non-wrapping unsigned successor rules.
@@ -2388,6 +2498,7 @@ impl ConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
+            _ if pointer_offsets_differ_by_residue(&left, &right) => Self::Constant(false),
             _ => Self::PointerOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
@@ -2403,6 +2514,34 @@ impl ConditionTerm {
             Self::PointerEqual(Box::new(left), Box::new(right))
         }
     }
+}
+
+/// Whether two offsets can never be equal because they differ by a constant
+/// that no combination of their scaled indexes makes up: every scaled leaf
+/// is a multiple of the strides' greatest common divisor, so offsets whose
+/// constants differ modulo it are distinct. `items[x].y` at `x * 8 + 4` is
+/// never the cell at `0` or `8`.
+fn pointer_offsets_differ_by_residue(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
+    let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
+        left.int32_scaled_linear_form(),
+        right.int32_scaled_linear_form(),
+    ) else {
+        return false;
+    };
+    let divisor = left_scaled
+        .iter()
+        .chain(&right_scaled)
+        .fold(0u64, |divisor, (_, stride)| {
+            gcd(divisor, stride.unsigned_abs())
+        });
+    divisor > 1 && (left_constant - right_constant).unsigned_abs() % divisor != 0
+}
+
+fn gcd(mut left: u64, mut right: u64) -> u64 {
+    while right != 0 {
+        (left, right) = (right, left % right);
+    }
+    left
 }
 
 fn classify_float_bits(

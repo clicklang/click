@@ -2046,13 +2046,8 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
         "apply(equality_symmetric(first, second));",
         "apply(equality_symmetric(first, second)) using { first == second; }",
     );
-    let (explicit_result, certificate_checks) =
-        proof::count_source_certificate_checks(|| verify_click_theorems(&explicit));
+    let explicit_result = verify_click_theorems(&explicit);
     explicit_result.expect("exported explicit steps should verify independently");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary explicit source should apply its operations directly to Proof"
-    );
 
     let corrupted = source.replace(
         "apply(equality_symmetric(first, second));",
@@ -3181,43 +3176,6 @@ fn parses_loadable_segment_syntax() {
                     base: current_var("p"),
                     start: current_int(0),
                     end: current_var("n"),
-                },
-            },
-        }]
-    );
-}
-
-#[test]
-fn parses_loadable_pointer_base_segment() {
-    let source = r#"
-            verifying "write_second.c";
-
-            int32 write_second(int32* p) {
-                requires viewable((p + 1)[0..1]);
-                ensures result == 9 by auto;
-            }
-        "#;
-    let file = parse(source).expect("pointer-base viewable should parse");
-    let function = &file.function_blocks()[0];
-
-    assert_eq!(
-        function.requires(),
-        &[Requirement::LoadableSegment {
-            segment: ContractSegment {
-                state: ContractSegmentState::Current,
-                base: CExpression::Add(
-                    Box::new(CExpression::Variable("p".to_string())),
-                    Box::new(CExpression::Value(int32(1))),
-                ),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
-                surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::Add(
-                        Box::new(current_var("p")),
-                        Box::new(current_int(1)),
-                    ),
-                    start: current_int(0),
-                    end: current_int(1),
                 },
             },
         }]

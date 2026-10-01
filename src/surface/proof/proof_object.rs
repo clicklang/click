@@ -24,15 +24,6 @@ thread_local! {
     static CHECKED_EXECUTION_INTERFACE_JOINS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
-    static SOURCE_CERTIFICATE_CHECKS: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-    static EXECUTION_CONTEXT_EXPORTS: std::cell::Cell<usize> = const {
-        std::cell::Cell::new(0)
-    };
-    static COLLECTED_EXECUTION_CONTEXT_EXPORT_LABELS: std::cell::RefCell<Option<Vec<String>>> = const {
-        std::cell::RefCell::new(None)
-    };
     static CHECKED_EXPANDED_EXECUTION_IFS: std::cell::Cell<usize> = const {
         std::cell::Cell::new(0)
     };
@@ -60,26 +51,6 @@ pub(in crate::surface) fn count_checked_execution_interface_joins<R>(
 }
 
 #[cfg(test)]
-pub(in crate::surface) fn count_source_certificate_checks<R>(
-    operation: impl FnOnce() -> R,
-) -> (R, usize) {
-    let before = SOURCE_CERTIFICATE_CHECKS.with(std::cell::Cell::get);
-    let result = operation();
-    let after = SOURCE_CERTIFICATE_CHECKS.with(std::cell::Cell::get);
-    (result, after - before)
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn count_execution_context_exports<R>(
-    operation: impl FnOnce() -> R,
-) -> (R, usize) {
-    let before = EXECUTION_CONTEXT_EXPORTS.with(std::cell::Cell::get);
-    let result = operation();
-    let after = EXECUTION_CONTEXT_EXPORTS.with(std::cell::Cell::get);
-    (result, after - before)
-}
-
-#[cfg(test)]
 pub(in crate::surface) fn count_finalization_view_constructions<R>(
     operation: impl FnOnce() -> R,
 ) -> (R, usize) {
@@ -87,27 +58,6 @@ pub(in crate::surface) fn count_finalization_view_constructions<R>(
     let result = operation();
     let after = FINALIZATION_VIEW_CONSTRUCTIONS.with(std::cell::Cell::get);
     (result, after - before)
-}
-
-#[cfg(test)]
-pub(in crate::surface) fn collect_execution_context_export_labels<R>(
-    operation: impl FnOnce() -> R,
-) -> (R, Vec<String>) {
-    COLLECTED_EXECUTION_CONTEXT_EXPORT_LABELS.with(|labels| {
-        assert!(
-            labels.borrow().is_none(),
-            "execution-export label collectors cannot nest"
-        );
-        *labels.borrow_mut() = Some(Vec::new());
-    });
-    let result = operation();
-    let labels = COLLECTED_EXECUTION_CONTEXT_EXPORT_LABELS.with(|labels| {
-        labels
-            .borrow_mut()
-            .take()
-            .expect("the active execution-export label collector was retained")
-    });
-    (result, labels)
 }
 
 #[cfg(test)]

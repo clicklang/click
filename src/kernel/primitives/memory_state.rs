@@ -5337,7 +5337,7 @@ impl CState {
     }
 
     /// Admit exactly one explicitly owned helper input as an opaque existing
-    /// population. A standalone proof receives no count or creator right.
+    /// population. Its observable entry total is arbitrary, with no creator right.
     pub(crate) fn import_opaque_population(
         &self,
         authority: &CResourceFact,
@@ -5369,7 +5369,7 @@ impl CState {
             .creation
             .as_ref()
             .ok_or("opaque import requires authority mode")?
-            .import_opaque_contract_population(description, owned_members)
+            .import_observable_contract_population(description, owned_members)
             .map_err(|refusal| format!("opaque population import refused: {refusal:?}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
@@ -6100,7 +6100,14 @@ impl CState {
             let base = range
                 .base()
                 .offset_by_elements(range.start().clone(), range.element_width());
-            if !imported_member_exchange && !self.memory.access_in_bounds(&base, bytes) {
+            if !imported_member_exchange
+                && !self.memory.access_in_bounds(&base, bytes)
+                && !assumptions.proves_memory_loadable_for_memory_resolution(
+                    &self.memory,
+                    &base,
+                    &Bitvector32Term::Constant(bytes),
+                )
+            {
                 return Err("member private memory exceeds live storage".into());
             }
             if let Some(ledger) = self.loan_ledger() {

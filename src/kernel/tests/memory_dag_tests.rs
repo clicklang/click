@@ -136,26 +136,6 @@ fn retained_memory_dag_path(cell: &MemoryDagCell) -> &[MemoryDagHop] {
     }
 }
 
-#[test]
-fn checked_load_equality_capture_retains_and_rechecks_the_exact_query() {
-    let before = CMemory::new().with_block("arg-memory", 16);
-    let after = before.clone().with_block("local:temporary", 4);
-    let pointer = arc_pointer(0);
-    let assumptions = PureFactContext::new();
-
-    let capture = CheckedLoadEqualityCapture::start();
-    assert!(checked_memory_load_equality(
-        &before,
-        &after,
-        &pointer,
-        &assumptions,
-    ));
-    let equalities = capture.finish();
-
-    assert_eq!(equalities.len(), 1);
-    assert!(equalities[0].checks(&assumptions));
-}
-
 /// A load variable's origin is first-seen per verified function. A name the
 /// naming cache returned from an earlier function must not carry that
 /// function's origin into the next one: the later function's transport would

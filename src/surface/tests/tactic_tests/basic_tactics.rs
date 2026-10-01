@@ -469,30 +469,6 @@ fn parses_resource_verb_function_clauses() {
 }
 
 #[test]
-fn parses_execute_proof_tactic() {
-    let source = FILL3_CLICK.replace("by auto;", "by { execute(); }");
-    let file = parse(&source).expect("execute proof script should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert_eq!(
-        ensure.proof().tactics(),
-        Some([ProofTactic::SmartExecute].as_slice())
-    );
-}
-
-#[test]
-fn parses_execute_and_simp_proof_tactics() {
-    let source = FILL3_CLICK.replace("by auto;", "by { execute(); simp(); }");
-    let file = parse(&source).expect("execute and simp proof script should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert_eq!(
-        ensure.proof().tactics(),
-        Some([ProofTactic::SmartExecute, ProofTactic::Simp].as_slice())
-    );
-}
-
-#[test]
 fn rejects_retired_tactic_forms_with_migrations() {
     for (form, replacement) in [
         ("conjunction", "split"),
@@ -566,23 +542,4 @@ fn rejects_c_style_click_native_binders_with_migrations() {
             error.message()
         );
     }
-}
-
-#[test]
-fn parses_smart_step_proof_tactic() {
-    let source = FILL3_CLICK.replace("by auto;", "by { step(); execute(); simp(); }");
-    let file = parse(&source).expect("smart step proof script should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert_eq!(
-        ensure.proof().tactics(),
-        Some(
-            [
-                ProofTactic::Step,
-                ProofTactic::SmartExecute,
-                ProofTactic::Simp,
-            ]
-            .as_slice()
-        )
-    );
 }

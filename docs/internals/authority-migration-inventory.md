@@ -70,6 +70,16 @@ retained neighboring members, equal-member multiplicity, and refusal to infer
 a global exact count from local custody. Kernel regressions cover authority
 transfer, unresolved indices, arbitrary entry counts, and indexed scaling.
 
+The `authority_family_exchange*` fixtures add one unit consumption and one
+unit production from different families at the same anchor, with explicit
+borrowed unary/wildcard authorities and ordinary object ownership. Direct and
+nested caller proofs preserve retained members and check both count changes.
+Rejections cover missing authority or object ownership, missing consumption or
+production, and equating a unary total to local custody. Kernel checks cover
+admission and checked external body extents. The unchanged stack-object case
+is preserved as a separate expected rejection: implicit local access is not
+currently transferable object ownership.
+
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
 ```sh
