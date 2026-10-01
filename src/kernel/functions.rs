@@ -539,6 +539,87 @@ fn bounded_contract_resource_frontier(resources: &ResourceContext) -> String {
     heads.join(", ")
 }
 
+/// Enumerate only the explicit owned transfer and its plain contained resources.
+/// Each definition lookup is indexed; the ambient caller frame is never walked.
+fn population_transfer_frontier<'a>(
+    facts: impl Iterator<Item = &'a CResourceFact>,
+    definitions: &[CCompositeResourceDefinition],
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> Result<Vec<CResourceFact>, CRuntimeError> {
+    enum Work {
+        Fact(CResourceFact),
+        Leave(String),
+    }
+    let mut frontier = Vec::new();
+    let mut active = BTreeSet::new();
+    let mut work = Vec::new();
+    for fact in facts {
+        work.push(Work::Fact(fact.clone()));
+        while let Some(item) = work.pop() {
+            let fact = match item {
+                Work::Leave(name) => {
+                    active.remove(&name);
+                    continue;
+                }
+                Work::Fact(fact) => fact,
+            };
+            if let CResourceFact::Own(CResource::Composite { name, .. }, quantity) = &fact
+                && quantity.as_const() == Some(1)
+                && let Ok(index) = definitions.binary_search_by(|definition| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    definition.name().cmp(name)
+                })
+                && let definition = &definitions[index]
+                && definition.resource_parameters().is_empty()
+                && definition.instance_schema.is_none()
+                && definition.guarded_by.is_none()
+                && definition.matched.is_none()
+                && definition.witnesses.is_empty()
+                && definition.condition.is_none()
+                && !definition.facts_claim_liveness
+                && definition.children.is_empty()
+                && definition.contains().iter().all(|child| {
+                    matches!(
+                        child.term(),
+                        CResourceTerm::Memory(_) | CResourceTerm::Composite { .. }
+                    ) && child.access() == CResourceAccessMode::Own
+                        && child.quantity() == &CResourceQuantity::One
+                        && child.guard().is_none()
+                        && child.resource_arguments().is_empty()
+                })
+                && definition
+                    .contains()
+                    .iter()
+                    .any(|child| matches!(child.term(), CResourceTerm::Composite { .. }))
+            {
+                if !active.insert(name.clone()) {
+                    return Err(CRuntimeError::FunctionContract(
+                        "contained resource transfer has a recursive body".into(),
+                    ));
+                }
+                let singleton = ResourceContext::new().unchecked_with_fact(fact.clone());
+                let children = expand_composite_resource_fact(
+                    &singleton,
+                    &fact,
+                    std::slice::from_ref(definition),
+                    memory,
+                    assumptions,
+                )
+                .ok_or_else(|| {
+                    CRuntimeError::FunctionContract(
+                        "cannot instantiate contained resource transfer".into(),
+                    )
+                })?;
+                work.push(Work::Leave(name.clone()));
+                work.extend(children.facts().iter().rev().cloned().map(Work::Fact));
+            }
+            frontier.push(fact);
+        }
+    }
+    Ok(frontier)
+}
+
 /// Mirror the checked owned contract partition in the population ledger.
 /// A composite outside a registered population follows ordinary resource
 /// transfer; authority itself must always name a registered population.
@@ -565,7 +646,9 @@ fn transfer_population_call_facts<'a>(
         ));
     };
     let mut transferred_anchors = BTreeSet::new();
-    for fact in facts {
+    let frontier =
+        population_transfer_frontier(facts, definitions, validation_state.memory(), assumptions)?;
+    for fact in &frontier {
         if let Some((base, _)) = fact.allocation() {
             if events.tracks_storage_anchor(&base.block)
                 && transferred_anchors.insert(base.block.clone())
@@ -2476,6 +2559,35 @@ fn authority_mode_member_companions_admitted(interface: &CFunctionContractInterf
         };
         spec.access() == CResourceAccessMode::Own && spec.quantity() == &CResourceQuantity::One && spec.resource_arguments().is_empty() && interface.composite_resource_definition(name).is_some_and(|definition| definition.contains().iter().any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { protected, .. } if matches!(protected.resource.term(), CResourceTerm::Composite { name, .. } if name == member_name))))
     };
+    // The checked member exchange transfers its existing body resources.
+    // Admitting a declared child here changes no child-population total; the
+    // ordinary resource planner and verified body check the exact arguments.
+    let is_member_body_transfer = |input: bool, spec: &CResourceSpec| {
+        let CResourceTerm::Composite {
+            name: child_name, ..
+        } = spec.term()
+        else {
+            return false;
+        };
+        spec.access() == CResourceAccessMode::Own
+            && spec.quantity() == &CResourceQuantity::One
+            && spec.guard().is_none()
+            && spec.resource_arguments().is_empty()
+            && spec.role() == if input { CResourceTransferRole::Consume } else { CResourceTransferRole::Produce }
+            && effects.iter().any(|(produce, member)| {
+                if *produce != input { return false; }
+                let CResourceTerm::Composite { name, .. } = member.term() else { return false; };
+                interface.composite_resource_definition(name).is_some_and(|definition| {
+                    definition.contains().iter().any(|child| {
+                        child.access() == CResourceAccessMode::Own
+                            && child.quantity() == &CResourceQuantity::One
+                            && child.guard().is_none()
+                            && child.resource_arguments().is_empty()
+                            && matches!(child.term(), CResourceTerm::Composite { name, .. } if name == child_name)
+                    })
+                })
+            })
+    };
     let mut inputs = Vec::new();
     let mut outputs = Vec::new();
     for (input, clauses) in [
@@ -2491,6 +2603,9 @@ fn authority_mode_member_companions_admitted(interface: &CFunctionContractInterf
                     ResourceFamily::Composite | ResourceFamily::PopulationAuthority
                 )
             {
+                continue;
+            }
+            if is_member_body_transfer(input, spec) {
                 continue;
             }
             if is_control(spec) && spec.role() != CResourceTransferRole::Borrow {
@@ -2753,6 +2868,88 @@ fn authority_mode_supports_resource_contract(interface: &CFunctionContractInterf
 #[cfg(test)]
 mod authority_helper_admission_tests {
     use super::*;
+
+    #[test]
+    fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
+        let pointer = Pointer {
+            block: "payload".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = CMemory::new().with_block("payload", 4);
+        let assumptions = PureFactContext::new();
+        let root =
+            CResourceFact::own_composite("wrapper-0000".into(), vec![CValue::pointer(pointer)]);
+        let definition = |name: String, next: Option<String>| {
+            CCompositeResourceDefinition::new(
+                name,
+                vec![c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                next.into_iter()
+                    .map(|next| {
+                        CResourceSpec::composite(
+                            CResourceAccessMode::Own,
+                            next,
+                            vec![c_variable("p")],
+                            vec![CType::Int32Pointer],
+                        )
+                    })
+                    .collect(),
+                vec![],
+            )
+        };
+        let sample = |depth, unrelated| {
+            let mut definitions = (0..depth)
+                .map(|index| {
+                    definition(
+                        format!("wrapper-{index:04}"),
+                        if index + 1 == depth {
+                            None
+                        } else {
+                            Some(format!("wrapper-{:04}", index + 1))
+                        },
+                    )
+                })
+                .chain(
+                    (0..unrelated).map(|index| definition(format!("unrelated-{index:04}"), None)),
+                )
+                .collect::<Vec<_>>();
+            definitions.sort_by(|a, b| a.name().cmp(b.name()));
+            let (frontier, work) = crate::instrumentation::measure_deterministic_work(|| {
+                population_transfer_frontier(
+                    std::iter::once(&root),
+                    &definitions,
+                    &memory,
+                    &assumptions,
+                )
+                .unwrap()
+            });
+            assert_eq!(frontier.len(), depth);
+            work
+        };
+        let depths = [sample(16, 512), sample(32, 512), sample(64, 512)];
+        for pair in depths.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 3 + 32,
+                "contained transfer rescans ancestors: {depths:?}"
+            );
+        }
+        let frames = [sample(16, 16), sample(16, 64), sample(16, 256)];
+        for pair in frames.windows(2) {
+            assert!(
+                pair[1] <= pair[0] * 2 + 32,
+                "contained transfer scans unrelated definitions: {frames:?}"
+            );
+        }
+        let recursive = vec![definition(
+            "wrapper-0000".into(),
+            Some("wrapper-0000".into()),
+        )];
+        assert!(
+            population_transfer_frontier(std::iter::once(&root), &recursive, &memory, &assumptions)
+                .is_err()
+        );
+    }
 
     #[test]
     fn boundary_receipt_rejects_other_callers_functions_and_arguments() {

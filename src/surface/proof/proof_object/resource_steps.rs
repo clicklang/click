@@ -33,6 +33,34 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return false;
         };
+        let Some(execution) = self.execution() else {
+            return false;
+        };
+        let (state, result) = match self.focused_obligation() {
+            Some(Obligation::FunctionOutcome(goal)) => {
+                (&*goal.data.core.state, Some(&*goal.data.core.result))
+            }
+            _ => (&*execution.core.state, None),
+        };
+        let selected = if let Some(result) = result {
+            lower_resource_clause_at_state_with_result(
+                resource,
+                context.parsed_function.parameters(),
+                context.arguments,
+                state,
+                result,
+            )
+        } else {
+            lower_resource_clause_at_state(
+                resource,
+                context.parsed_function.parameters(),
+                context.arguments,
+                state,
+            )
+        };
+        if selected.is_ok_and(|selected| state.tracks_authority_member(&selected)) {
+            return false;
+        }
         let Some(definition) = context.resource_environment.get(name) else {
             return false;
         };
@@ -86,20 +114,21 @@ impl<'a> Proof<'a> {
                 "`{name}` is abstract; its members require an ordinary producing contract"
             )));
         };
+        let contains_nonprivate_resource = body.contains.iter().any(|clause| {
+            !matches!(clause, ResourceClause::OwnMemory(_))
+                && !matches!(clause, ResourceClause::Declared { name, .. } if name != "authority")
+        });
         if !definition.resource_parameters().is_empty()
             || !definition.fields().is_empty()
             || !body.children.is_empty()
             || body.guarded_by.is_some()
             || body.matched.is_some()
             || body.condition.is_some()
-            || body
-                .contains
-                .iter()
-                .any(|clause| !matches!(clause, ResourceClause::OwnMemory(_)))
+            || contains_nonprivate_resource
             || !body.witnesses.is_empty()
         {
             return Err(self.step_error(format!(
-                "authority-mode fold/unfold of `{name}` requires a private owned-memory body"
+                "authority-mode fold/unfold of `{name}` requires a private body of owned memory or declared resources"
             )));
         }
         self.require_execution_frontier("population member change")?;

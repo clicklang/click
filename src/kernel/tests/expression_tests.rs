@@ -3078,6 +3078,35 @@ fn excluded_small_integer_range_is_inconsistent() {
 }
 
 #[test]
+fn excluded_range_endpoints_force_the_remaining_value() {
+    // `0 <= k < 4` with `k != 0`, `k != 1` and `k != 3` leaves only `k == 2`;
+    // without the exclusion at either end the value stays undecided.
+    let k = Bitvector32Term::Variable(Variable(87));
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(4)),
+            true,
+        );
+    let exclude = |assumptions: PureFactContext, value: u32| {
+        assumptions.assume_condition(
+            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(value)),
+            false,
+        )
+    };
+    let is_two = ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(2));
+    let all = exclude(exclude(exclude(bounded.clone(), 0), 1), 3);
+    assert_eq!(all.decide(&is_two), Some(true));
+    let low_only = exclude(exclude(bounded.clone(), 0), 1);
+    assert_eq!(low_only.decide(&is_two), None);
+    let high_only = exclude(exclude(bounded, 1), 3);
+    assert_eq!(high_only.decide(&is_two), None);
+}
+
+#[test]
 fn singleton_integer_range_forces_equality() {
     let k = Bitvector32Term::Variable(Variable(86));
     let assumptions = PureFactContext::new()

@@ -739,10 +739,6 @@ uint32 shift(uint32 x, uint64 n) { requires x == 1u32; requires n == 31u64; ensu
 fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
     for (source, message) in [
         (
-            "pub fn bad(bytes:&[u8])->usize { bytes.len() + 1 }",
-            "usize arithmetic",
-        ),
-        (
             "pub fn bad(bytes:&mut [u8], index:usize) { bytes[index] += 1; }",
             "indexed compound assignments",
         ),
@@ -1062,4 +1058,184 @@ fn rust_array_to_slice_calls_preserve_untouched_local_elements() {
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\"; uint8 first(const uint8* bytes, uint64 bytes_len) { requires bytes_len > 0u64; requires bytes_len <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } void set(uint8* bytes, uint64 bytes_len) { requires bytes_len > 1u64; requires bytes_len <= 2147483647u64; owns bytes[1..2]; ensures bytes[1] == 7; } by { execute(); simp(); } uint8 untouched() { ensures result == 3; } by { execute(); simp(); } uint8 initial() { ensures result == 3; } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+}
+
+const USIZE_SOURCE: &str = include_str!("../examples/rust-usize/arithmetic.rs");
+const USIZE_SIDECAR: &str = include_str!("../examples/rust-usize/arithmetic.click");
+
+#[test]
+fn rust_usize_arithmetic_casts_and_expansion_verify() {
+    let p = Project::new(USIZE_SOURCE);
+    let sidecar = USIZE_SIDECAR.replace("arithmetic.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let general_mul = sidecar.replace(
+        "requires x == 4294967296u64;\n    requires y == 2147483648u64;\n    ensures result == 9223372036854775808u64;",
+        "requires y != 0u64;\n    requires x <= 18446744073709551615u64 / y;\n    ensures result == x * y;",
+    );
+    assert_ne!(general_mul, sidecar);
+    C0VerificationSession::new_program_prepared(&general_mul, &prepared).unwrap();
+    for changed in [
+        sidecar.replace("requires index == 0u64;", "requires index == 1u64;"),
+        sidecar.replace(
+            "requires index == 0u64;",
+            "requires index == 18446744073709551615u64;",
+        ),
+        sidecar.replace(
+            "requires bytes_len <= 18446744073709551614u64;",
+            "requires bytes_len == 18446744073709551615u64;",
+        ),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&changed, &prepared).is_err());
+    }
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace(
+                "ensures result == 9223372036854775808u64;",
+                "ensures result == 0u64;"
+            ),
+            &prepared,
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "add.contract",
+        "mul.contract",
+        "right.contract",
+        "computed.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn rust_usize_panic_paths_are_rejected() {
+    for (expression, precondition) in [
+        ("x + 1", "x == 18446744073709551615u64"),
+        ("x - 1", "x == 0u64"),
+        ("x * 2", "x == 9223372036854775808u64"),
+        ("1 / x", "x == 0u64"),
+        ("1 % x", "x == 0u64"),
+        ("1 << x", "x == 64u64"),
+        ("1 >> x", "x == 4294967296u64"),
+        ("1 << x", "x == 18446744073709551615u64"),
+    ] {
+        let p = Project::new(&format!("pub fn bad(x:usize)->usize {{ {expression} }}"));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint64 bad(uint64 x) {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
+        );
+        assert!(
+            C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
+            "accepted {expression} at {precondition}"
+        );
+    }
+}
+
+#[test]
+fn rust_usize_boundaries_and_nested_checks() {
+    for (source, return_type, precondition, expected, valid) in [
+        (
+            "x + 0",
+            "uint64",
+            "x == 18446744073709551615u64",
+            "18446744073709551615u64",
+            true,
+        ),
+        (
+            "x * 0",
+            "uint64",
+            "x == 18446744073709551615u64",
+            "0u64",
+            true,
+        ),
+        (
+            "x * 1",
+            "uint64",
+            "x == 18446744073709551615u64",
+            "18446744073709551615u64",
+            true,
+        ),
+        (
+            "x - 1",
+            "uint64",
+            "x == 9223372036854775808u64",
+            "9223372036854775807u64",
+            true,
+        ),
+        (
+            "x / 2",
+            "uint64",
+            "x == 18446744073709551615u64",
+            "9223372036854775807u64",
+            true,
+        ),
+        (
+            "x % 2",
+            "uint64",
+            "x == 18446744073709551615u64",
+            "1u64",
+            true,
+        ),
+        (
+            "{ let mut y = x; y += 1; y -= 1; y *= 1; y /= 1; y %= 2; y <<= 63; y >>= 63; y }",
+            "uint64",
+            "x == 4294967297u64",
+            "1u64",
+            true,
+        ),
+        (
+            "(x + 1) as u32",
+            "uint32",
+            "x == 18446744073709551615u64",
+            "0u32",
+            false,
+        ),
+        (
+            "false && x + 1 > 0",
+            "bool",
+            "x == 18446744073709551615u64",
+            "0",
+            true,
+        ),
+        (
+            "true || x + 1 > 0",
+            "bool",
+            "x == 18446744073709551615u64",
+            "1",
+            true,
+        ),
+        (
+            "true && x + 1 > 0",
+            "bool",
+            "x == 18446744073709551615u64",
+            "1",
+            false,
+        ),
+    ] {
+        let ty = match return_type {
+            "uint32" => "u32",
+            "bool" => "bool",
+            _ => "usize",
+        };
+        let p = Project::new(&format!("pub fn check(x:usize)->{ty} {{ {source} }}"));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; {return_type} check(uint64 x) {{ requires {precondition}; ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        let result = C0VerificationSession::new_program_prepared(&sidecar, &prepared);
+        assert_eq!(result.is_ok(), valid, "{source}: {:?}", result.err());
+    }
+    let p = Project::new("pub fn right(x:usize, n:i32)->usize { x >> n }");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\"; uint64 right(uint64 x, int32 n) { requires n == -1; ensures result == result; } by { execute(); simp(); }";
+    assert!(C0VerificationSession::new_program_prepared(sidecar, &prepared).is_err());
 }

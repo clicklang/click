@@ -118,7 +118,7 @@ fn authority_transfer_wrapper_preserves_a_tracked_member() {
 }
 
 #[test]
-fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family() {
+fn authority_member_wrapper_requires_population_cleanup_before_free() {
     let source = r#"
         resource member(p: int32*) { owns p[0..1]; }
         resource held(p: int32*) { contains member(p); }
@@ -136,16 +136,17 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family() {
             fold(member(p));
             fold(authority(held(p)));
             fold(held(p));
+            have count(held(p)) == 1 by simp;
+            have count(member(p)) == 1 by simp;
             execute();
         }
     "#;
     let c = "int32 run(void) { int32* p = malloc(4); if (p == 0) return 0; free(p); return 1; }";
-    let error = verify_c0_project(&project(source), &[("wrapper.c", c)])
-        .expect_err("a registered family must use checked member creation");
+    let error = verify_c0_project(&project(source), &[("wrapper.c", c)]).expect_err(
+        "a registered outer member must be consumed and both authorities retired before free",
+    );
     assert!(
-        error
-            .message()
-            .contains("an authority member cannot use an ordinary wrapper rewrite"),
+        error.message().contains("OutstandingAuthority"),
         "{error:?}"
     );
 }
@@ -179,7 +180,7 @@ fn authority_transfer_wrapper_cannot_rewrite_its_own_tracked_family_at_outcome()
     assert!(
         error
             .message()
-            .contains("an authority member cannot use an ordinary wrapper rewrite"),
+            .contains("resource fold after function outcome is unavailable in authority mode"),
         "{error:?}"
     );
 }

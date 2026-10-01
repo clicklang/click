@@ -8182,10 +8182,14 @@ pub struct BitvectorEqualityDerivationStep {
 }
 
 /// Target-directed evidence that two pointer offsets are equal by structural
-/// congruence and exact ground-int32 equality premises.
+/// congruence, exact integer equality premises, and bounded full-width
+/// constant arithmetic.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum PointerOffsetCongruenceEvidence {
     Exact,
+    WideScaledConstant {
+        value: i64,
+    },
     ExactPremise(Box<Proposition>),
     Add {
         first: Box<PointerOffsetCongruenceEvidence>,

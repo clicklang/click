@@ -677,8 +677,11 @@ fn checks_population_member_exchange(
         || definition.condition.is_some()
         || definition.facts_claim_liveness
         || definition.contains.iter().any(|spec| {
-            !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
-                || spec.access() != crate::kernel::CResourceAccessMode::Own
+            !matches!(
+                spec.term(),
+                crate::kernel::CResourceTerm::Memory(_)
+                    | crate::kernel::CResourceTerm::Composite { .. }
+            ) || spec.access() != crate::kernel::CResourceAccessMode::Own
                 || spec.quantity() != &crate::kernel::CResourceQuantity::One
                 || spec.guard().is_some()
                 || !spec.resource_arguments().is_empty()
@@ -689,7 +692,7 @@ fn checks_population_member_exchange(
             .as_ref()
             .is_some_and(|schema| !schema.fields().is_empty())
     {
-        return Err("population member rewrite requires a private owned-memory body".into());
+        return Err("population member rewrite requires a private body of owned memory or declared resources".into());
     }
     if batch && (!definition.contains().is_empty() || !definition.facts().is_empty()) {
         return Err("quantified population members need an empty body".into());
@@ -1633,8 +1636,15 @@ impl CheckedResourceRewrite {
                     selected_children,
                 );
             }
-            if let CResourceFact::Own(CResource::Composite { name, .. }, _) = selected
+            if let CResourceFact::Own(CResource::Composite { name, arguments }, _) = selected
                 && let Some(definition) = function.composite_resource_definition(name)
+                && !before_state.tracks_authority_member(selected)
+                && before_state.population_body_is_open(name, arguments, before_facts.assumptions())
+                    == after_state.population_body_is_open(
+                        name,
+                        arguments,
+                        after_facts.assumptions(),
+                    )
                 && !definition.contains().is_empty()
                 && definition.contains().iter().all(|spec| {
                     matches!(
@@ -1675,8 +1685,11 @@ impl CheckedResourceRewrite {
                     .as_ref()
                     .is_some_and(|schema| !schema.fields().is_empty())
                 || definition.contains.iter().any(|spec| {
-                    !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
-                        || spec.access() != crate::kernel::CResourceAccessMode::Own
+                    !matches!(
+                        spec.term(),
+                        crate::kernel::CResourceTerm::Memory(_)
+                            | crate::kernel::CResourceTerm::Composite { .. }
+                    ) || spec.access() != crate::kernel::CResourceAccessMode::Own
                         || spec.quantity() != &crate::kernel::CResourceQuantity::One
                         || spec.guard().is_some()
                         || !spec.resource_arguments().is_empty()
@@ -1684,7 +1697,7 @@ impl CheckedResourceRewrite {
                 || selected_children.is_some()
             {
                 return Err(
-                    "authority-mode body access requires a private owned-memory body".into(),
+                    "authority-mode body access requires a private body of owned memory or declared resources".into(),
                 );
             }
             if !before_state.loan_bindings_are_consistent()
@@ -1729,19 +1742,22 @@ impl CheckedResourceRewrite {
             )
             .ok_or("authority-mode body access cannot instantiate its private body")?;
             let children = expanded.facts();
-            if children
-                .iter()
-                .any(|fact| fact.memory_own_range().is_none())
-            {
-                return Err("authority-mode body access contains a nonprivate resource".into());
-            }
             // The exact owned member checked above carries its private body,
             // including at an abstract helper entry. Body access does not
             // change membership and requires no population authority import.
             // Concrete bodies still need live bounds; a caller can only fold
             // a member by transferring those owned memory ranges into it.
             for child in children {
-                let range = child.memory_own_range().expect("body shape checked above");
+                let Some(range) = child.memory_own_range() else {
+                    if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                        && quantity.as_const() == Some(1)
+                    {
+                        // The exact child stays folded until its own checked
+                        // open; no body facts or memory are published here.
+                        continue;
+                    }
+                    return Err("authority-mode body access contains a nonprivate resource".into());
+                };
                 let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
                 else {
                     return Err("authority-mode private body needs concrete bounds".into());
@@ -12517,6 +12533,107 @@ mod population_authority_rewrite_tests {
                 false,
                 definition,
                 facts.assumptions()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn checked_member_exchange_transfers_exact_contained_resource() {
+        let (state, authority) = source_state();
+        let facts = ProofFacts::default();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let child = CResourceFact::own(CResource::Composite {
+            name: "payload".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::composite(
+                crate::kernel::CResourceAccessMode::Own,
+                "payload".into(),
+                vec![crate::kernel::c_variable("p")],
+                vec![CType::Int32Pointer],
+            )],
+            vec![],
+        );
+        let function = c_function(
+            CType::Void,
+            "member",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let (empty, _) = state
+            .checked_population_authority_exchange(&authority, true, facts.assumptions())
+            .unwrap();
+        assert!(empty.checked_population_member_exchange(
+            &member, true, &definition, facts.assumptions(),
+        ).is_err());
+        let empty = empty
+            .clone()
+            .with_resource_context(empty.resources().clone().unchecked_with_fact(child.clone()));
+        let (one, birth) = empty
+            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+            .unwrap();
+        assert!(!one.resources().satisfies_fact(&child, facts.assumptions()));
+        assert!(one.resources().satisfies_fact(&member, facts.assumptions()));
+        let event = CheckedPopulationMemberRewrite::check(
+            &function, &empty, &facts, &member, true, &birth, &one, &facts,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&empty, &facts).is_some());
+        let duplicated = one
+            .clone()
+            .with_resource_context(one.resources().clone().unchecked_with_fact(child.clone()));
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function,
+                &empty,
+                &facts,
+                &member,
+                true,
+                &birth,
+                &duplicated,
+                &facts,
+            )
+            .is_err()
+        );
+        assert!(one.checked_population_member_exchange(
+            &member, true, &definition, facts.assumptions(),
+        ).is_err());
+        let (zero, death) = one
+            .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+            .unwrap();
+        assert!(zero.resources().satisfies_fact(&child, facts.assumptions()));
+        assert!(
+            !zero
+                .resources()
+                .satisfies_fact(&member, facts.assumptions())
+        );
+        let event = CheckedPopulationMemberRewrite::check(
+            &function, &one, &facts, &member, false, &death, &zero, &facts,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&one, &facts).is_some());
+        let missing = zero.clone().with_resource_context(
+            zero.resources()
+                .clone()
+                .without_fact_incrementally(&child, facts.assumptions())
+                .unwrap(),
+        );
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &one, &facts, &member, false, &death, &missing, &facts,
             )
             .is_err()
         );

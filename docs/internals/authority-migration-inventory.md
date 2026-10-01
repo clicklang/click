@@ -51,6 +51,16 @@ Two disjoint members retain their totals and private values. Rejections cover
 false birth, invalidating writes at close, and an invariant reading a cell
 outside its own body even when the caller owns that cell. Kernel regressions
 reject unchecked birth and forged facts during consumption or checked event application.
+The `authority_wildcard_contained_resource*` fixtures add ordinary owned
+resources inside a member body. Creation helpers consume the exact child;
+consumption helpers return it; member-only helpers open both layers. Direct
+and nested callers retain another member and preserve the child family's
+population total. Rejections cover missing or wrong children, independent
+return of a child retained in a member, wrong returned identity, and an
+unchanged total promised for a birth. `authority_wildcard_contained_object`
+covers the built-in `owns object(p)` form. The kernel checks the exact body
+exchange, and helper custody follows only the explicit contained-resource
+frontier, without scanning the caller frame.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

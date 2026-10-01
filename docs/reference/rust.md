@@ -47,7 +47,7 @@ and reference locals, branches, direct calls within the selected file,
 references to `i32`, `u8`, and `u32`, and plain structs with those integers or reference fields, field
 access, and local reborrowing of reference-backed places. Arithmetic supports addition,
 subtraction, multiplication, division, remainder, bitwise operations, comparisons,
-and boolean operations. Unsigned shifts support `u8` and `u32`; signed shifts
+and boolean operations. Unsigned shifts support `u8`, `u32`, and `usize`; signed shifts
 remain unsupported. Integer `as` casts preserve Rust truncation and bit
 interpretation. Record
 size, alignment, and field offsets come from rustc for the selected target;
@@ -62,7 +62,7 @@ not prove a functional claim or panic freedom.
 Unsigned arithmetic has Rust's checked semantics: addition, subtraction, and
 multiplication require overflow freedom, and division/remainder require a
 nonzero divisor. A shift count must be nonnegative and less than the left
-operand's width (8 or 32); shifting away high bits is allowed. Casts to `u8`
+operand's width (8, 32, or 64); shifting away high bits is allowed. Casts to `u8`
 retain the low eight bits. Checks follow operand evaluation order and respect
 `&&`/`||` short circuiting. Compound assignments use the same operations.
 These obligations are checked during execution; C unsigned wrapping alone
@@ -90,8 +90,14 @@ Slice references lower to paired parameters: `bytes: &[u8]` becomes
 `const uint8* bytes, uint64 bytes_len`; a mutable slice uses `uint8*`.
 The generated `<parameter>_len` name must not collide with another parameter.
 On the pinned target, `usize` is a 64-bit unsigned value, including lengths,
-index literals, comparisons, casts, and returns. General `usize` arithmetic
-remains unsupported.
+index literals, comparisons, casts, returns, and general scalar arithmetic.
+Addition, subtraction, and multiplication require checked overflow freedom at
+the full 64-bit width; division/remainder require a nonzero divisor. Bitwise
+operations, checked shifts, and scalar compound assignments are supported.
+Casts to `u32`/`i32` retain the low 32 bits, casts to `u8` retain the low eight
+bits, and `i32 as usize` sign-extends before interpreting the bits as unsigned.
+See [`examples/rust-usize`](https://github.com/clicklang/click/tree/master/examples/rust-usize)
+for contracts over arithmetic, casts, computed indices, and length increments.
 
 Every index checks `index < length` at the full target width before address
 formation. Shared reads require `views`; writes require `owns`. Local slice

@@ -41,6 +41,7 @@ Current projects:
   disjoint struct fields through the pinned Rust compiler import.
 - `rust-move-drop/` verifies a moved Rust guard that restores borrowed storage
   on normal and early return through a checked destructor contract.
+- `rust-usize/` checks full-width checked arithmetic, casts, and computed slice indices.
 - `rust-unsigned/` checks Rust byte and word arithmetic, casts, and panic freedom.
 - `rust-slices/` checks byte-slice lengths, indexed reads/writes, and slice calls.
 - `rust-arrays/` checks fixed-array reference lengths, typed indexing, element
