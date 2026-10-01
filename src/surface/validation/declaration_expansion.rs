@@ -344,7 +344,7 @@ fn expand_declared_resources_in_function_block(
     let declared_binders = function
         .requires
         .iter()
-        .filter_map(|requirement| match requirement.inner() {
+        .filter_map(|requirement| match requirement {
             Requirement::Resource(ResourceClause::Named { binding, .. }) => {
                 Some(binding.name.clone())
             }
@@ -502,13 +502,6 @@ fn expand_declared_resource_requirement(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<Requirement, ClickError> {
     match requirement {
-        Requirement::Labeled { label, requirement } => Ok(Requirement::Labeled {
-            label,
-            requirement: Box::new(expand_declared_resource_requirement(
-                *requirement,
-                resource_definitions,
-            )?),
-        }),
         Requirement::Proposition(ClickProposition::PredicateCall { name, arguments })
             if resource_definitions.contains_key(&name) =>
         {

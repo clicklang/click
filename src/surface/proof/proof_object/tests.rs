@@ -3032,11 +3032,6 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
     )
     .expect("existential requirement should parse");
     let function_block = &click_file.function_blocks()[0];
-    assert_eq!(
-        function_block.requirement_label_indices().get("source"),
-        None,
-        "requirements no longer have source labels"
-    );
     let parsed_function = syntax::parse_function("int32 choose_source(int32 x) { return x; }")
         .expect("test function should parse");
     let state = CState::new().with_local("x", int32(7));
@@ -3095,17 +3090,16 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             &[],
             &[],
             function_block.requires(),
-            function_block.requirement_label_indices(),
         );
         let retained_root = root.clone();
         let missing = root
             .apply_step(ProofStep::Choose(ProofChoice {
                 name: "candidate".to_string(),
-                source: ProofFactSource::RequirementLabel("missing".to_string()),
+                source: ProofFactSource::Requirement(1),
             }))
             .err()
-            .expect("an unknown label must reject the candidate");
-        assert!(missing.message().contains("unknown requirement label"));
+            .expect("an out-of-range requirement must reject the candidate");
+        assert!(missing.message().contains("is out of range"));
         assert!(root.state.shares_state_with(&retained_root.state));
 
         let choice = ProofChoice {
@@ -5511,7 +5505,6 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
             &[],
             &[],
             function_block.requires(),
-            function_block.requirement_label_indices(),
         );
         let before = fact_node_allocations();
         let complete = root
@@ -9468,7 +9461,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9582,7 +9575,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9694,7 +9687,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -9816,7 +9809,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })
@@ -13951,7 +13944,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
     let resource = function_block
         .requires()
         .iter()
-        .find_map(|requirement| match requirement.inner() {
+        .find_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource.clone()),
             _ => None,
         })

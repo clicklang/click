@@ -19,10 +19,6 @@ fn substitute_requirement(
         Requirement::LoadableSegment { segment } => Requirement::LoadableSegment {
             segment: substitute_contract_segment(segment, substitutions)?,
         },
-        Requirement::Labeled { label, requirement } => Requirement::Labeled {
-            label: label.clone(),
-            requirement: Box::new(substitute_requirement(requirement, substitutions)?),
-        },
     })
 }
 

@@ -448,7 +448,7 @@ impl<'a> Proof<'a> {
         {
             let parameters = context.parsed_function.parameters();
             for requirement in requires {
-                let Requirement::Resource(resource) = requirement.inner() else {
+                let Requirement::Resource(resource) = requirement else {
                     continue;
                 };
                 let mut resource: &ResourceClause = resource;

@@ -46,7 +46,6 @@ pub(in crate::surface::proof) struct FixedStateProofContext<'a> {
     pub(in crate::surface::proof) effect_facts: &'a [ExecutionPureFact],
     pub(in crate::surface::proof) lowering_context: Arc<Vec<Proposition>>,
     pub(in crate::surface::proof) original_requirements: &'a [Requirement],
-    pub(in crate::surface::proof) requirement_label_indices: Option<&'a BTreeMap<String, usize>>,
     pub(in crate::surface::proof) requirement_facts: &'a [Proposition],
     /// The recorder for a selected expansion target written inside a `have`
     /// body this phase checks, as for an execution proof's constants.

@@ -486,14 +486,6 @@ fn instantiate_requirement(
     algebraic_parameters: &BTreeMap<String, ContractExpression>,
 ) -> Result<Requirement, String> {
     Ok(match requirement {
-        Requirement::Labeled { label, requirement } => Requirement::Labeled {
-            label: label.clone(),
-            requirement: Box::new(instantiate_requirement(
-                requirement,
-                substitution,
-                algebraic_parameters,
-            )?),
-        },
         Requirement::Proposition(proposition) => {
             Requirement::Proposition(substitute_click_proposition(
                 &instantiate_proposition(proposition, substitution)?,

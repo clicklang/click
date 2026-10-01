@@ -975,9 +975,7 @@ impl Parser {
                 .collect::<BTreeSet<_>>();
             let mut owned_parameters = BTreeSet::new();
             for requirement in function_block.requires() {
-                if let Requirement::Resource(ResourceClause::Named { binding, .. }) =
-                    requirement.inner()
-                {
+                if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement {
                     if !identities.contains(&binding.identity) {
                         return Err(self.error(format!(
                             "resource `{}` must be declared in the contract proof-parameter list",
@@ -2717,7 +2715,7 @@ impl Parser {
             && (!constructs.is_empty()
                 || requires
                     .iter()
-                    .any(|requirement| matches!(requirement.inner(), Requirement::Resource(_)))
+                    .any(|requirement| matches!(requirement, Requirement::Resource(_)))
                 || ensures
                     .iter()
                     .any(|ensure| matches!(ensure.ensure(), Ensure::Resource(_))))
@@ -2811,13 +2809,6 @@ impl Parser {
                 .into_iter()
                 .map(Requirement::Proposition),
         );
-        let requirement_label_indices = requires
-            .iter()
-            .enumerate()
-            .filter_map(|(index, requirement)| {
-                requirement.label().map(|label| (label.to_string(), index))
-            })
-            .collect();
 
         Ok(FunctionBlock {
             signature,
@@ -2825,7 +2816,6 @@ impl Parser {
             one_call_proof: false,
             requires,
             requirement_source_clauses,
-            requirement_label_indices,
             decreases,
             structural_clauses: Vec::new(),
             constructs,
@@ -10041,13 +10031,6 @@ fn expand_aggregate_resource_clause(resource: ResourceClause) -> Vec<ResourceCla
 
 fn expand_aggregate_requirement(requirement: Requirement) -> Vec<Requirement> {
     match requirement {
-        Requirement::Labeled { label, requirement } => expand_aggregate_requirement(*requirement)
-            .into_iter()
-            .map(|requirement| Requirement::Labeled {
-                label: label.clone(),
-                requirement: Box::new(requirement),
-            })
-            .collect(),
         Requirement::Resource(resource) => expand_aggregate_resource_clause(resource)
             .into_iter()
             .map(Requirement::Resource)
@@ -10413,9 +10396,6 @@ fn requirement_object_alignment_facts(
     out: &mut Vec<ClickProposition>,
 ) {
     match requirement {
-        Requirement::Labeled { requirement, .. } => {
-            requirement_object_alignment_facts(requirement, struct_layouts, out);
-        }
         Requirement::Resource(clause) => out.extend(object_alignment_fact(clause, struct_layouts)),
         Requirement::LoadableSegment { .. } | Requirement::Proposition(_) => {}
     }

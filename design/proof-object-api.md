@@ -1120,12 +1120,11 @@ without constructing and checking another body certificate; its expansion
 regression checks the exact retained path and independently verifies the
 serialized proof.
 
-Fixed-state proof `Choose` is now a checked refinement too. Function parsing builds
-the requirement-label index once, so a named source is not rediscovered by a
-linear requirement scan. The successor stores the fresh int32 choice in a
-persistent proof-local value map and inserts only the instantiated existential
-body into `ProofFacts`; failed labels and duplicate names leave the ancestor
-unchanged. Subsequent surface inputs collect the names in their explicit
+Fixed-state proof `Choose` is now a checked refinement too. Its source is an
+indexed requirement, so it is not rediscovered by a linear requirement scan.
+The successor stores the fresh int32 choice in a persistent proof-local value
+map and inserts only the instantiated existential body into `ProofFacts`;
+out-of-range sources and duplicate names leave the ancestor unchanged. Subsequent surface inputs collect the names in their explicit
 syntax, probe only those proof-local values, and substitute that bounded set
 before ordinary lowering, rather than materializing every preceding choice.
 The common smart `choose; witness; simp` path consequently retains its exact

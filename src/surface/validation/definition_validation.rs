@@ -402,7 +402,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             function
                 .requires()
                 .iter()
-                .filter_map(|requirement| match requirement.inner() {
+                .filter_map(|requirement| match requirement {
                     Requirement::Resource(resource) => Some(resource),
                     _ => None,
                 }),
@@ -453,16 +453,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
             }
         }
 
-        let mut requirement_labels = BTreeSet::new();
         for requirement in function.requires() {
-            if let Some(label) = requirement.label()
-                && !requirement_labels.insert(label.to_string())
-            {
-                return Err(ClickError::new(format!(
-                    "duplicate requirement label `{label}` in `{}`",
-                    function.signature().name()
-                )));
-            }
             if let Some(proposition) = requirement.proposition() {
                 let context = format!("requires clause in `{}`", function.signature().name());
                 reject_held_outside_execution(proposition, &context)?;
@@ -479,7 +470,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
                     &click_function_types,
                     &context,
                 )?;
-            } else if let Requirement::Resource(resource) = requirement.inner() {
+            } else if let Requirement::Resource(resource) = requirement {
                 validate_resource_clause(
                     resource,
                     &resources,
@@ -840,16 +831,7 @@ fn validate_theorem_definition(
     }
 
     let variables = theorem_type_environment(theorem);
-    let mut requirement_labels = BTreeSet::new();
     for requirement in theorem.requires() {
-        if let Some(label) = requirement.label()
-            && !requirement_labels.insert(label.to_string())
-        {
-            return Err(ClickError::new(format!(
-                "duplicate requirement label `{label}` in theorem `{}`",
-                theorem.name()
-            )));
-        }
         let Some(proposition) = requirement.theorem_proposition() else {
             return Err(ClickError::new(theorem_resource_clause_refusal(
                 theorem.name(),
