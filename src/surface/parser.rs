@@ -97,6 +97,7 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
         aggregate_objects_by_function,
         aggregate_array_objects_by_function,
         global_array_shapes_by_function,
+        None,
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
     parser.qualified_objects = Some(qualified_objects);
@@ -113,7 +114,7 @@ pub(super) fn parse_with_layouts_and_aggregate_objects(
 /// does not tokenize) counts as an entry, so a module is never skipped by
 /// mistake for a file that owns a proof.
 pub(super) fn declares_only_definitions(source: &str) -> bool {
-    let Ok((tokens, _)) = tokenizer::tokenize(source) else {
+    let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
         return false;
     };
     let mut depth = 0_usize;
@@ -158,6 +159,7 @@ pub(super) fn parse_file_items(source: &str) -> Result<ClickFile, ClickError> {
 pub(super) fn parse_file_items_for_module(
     source: &str,
     identity: &str,
+    line_offset: usize,
     imported_algebraic_types: &[AlgebraicTypeDefinition],
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
     union_layouts: BTreeMap<String, syntax::C0UnionLayout>,
@@ -174,17 +176,9 @@ pub(super) fn parse_file_items_for_module(
         aggregate_objects_by_function,
         aggregate_array_objects_by_function,
         global_array_shapes_by_function,
+        Some(&crate::source::SourceContainer::new(identity, line_offset)),
     )
     .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
-    let filename: std::sync::Arc<str> = std::sync::Arc::from(identity);
-    for position in &mut parser.positions {
-        *position = crate::source::SourcePosition::with_origin(
-            position.line,
-            position.column,
-            filename.clone(),
-            position.line,
-        );
-    }
     for definition in imported_algebraic_types {
         for variant in definition.variants() {
             parser.algebraic_variant_fields.insert(
@@ -677,6 +671,7 @@ impl Parser {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
+            None,
         )
     }
 
@@ -687,8 +682,9 @@ impl Parser {
         aggregate_objects_by_function: BTreeMap<String, BTreeMap<String, String>>,
         aggregate_array_objects_by_function: BTreeMap<String, BTreeSet<String>>,
         global_array_shapes_by_function: BTreeMap<String, BTreeMap<String, GlobalArrayShape>>,
+        container: Option<&crate::source::SourceContainer>,
     ) -> Result<Self, ClickError> {
-        let (tokens, positions) = tokenize(source)?;
+        let (tokens, positions) = tokenize(source, container)?;
         let matching_parentheses = validate_parenthesis_nesting(&tokens, &positions)?;
         Ok(Self {
             source_aliases: BTreeMap::new(),

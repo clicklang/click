@@ -831,6 +831,69 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// A syntax error inside an mdtest block names the line of the markdown
+    /// file a person edits, not the line inside its fenced block.
+    #[test]
+    fn mdtest_syntax_errors_name_the_markdown_line() {
+        let directory =
+            std::env::temp_dir().join(format!("click-mdtest-lines-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let mdtest = |c_body: &str, click_body: &str| {
+            format!(
+                "# Located\n\nProse before the blocks.\n\n```c filename=inc.c\n{c_body}\n```\n\nMore prose.\n\n```click\n{click_body}\n```\n\n```expect\npass\n```\n"
+            )
+        };
+        let valid_c = "int32 inc(int32 x) {\n    return x;\n}";
+        let path = directory.join("located.md");
+        let verify = || entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+
+        // The C block body starts on line 6; its `return x +;` is line 7.
+        fs::write(
+            &path,
+            mdtest(
+                "int32 inc(int32 x) {\n    return x +;\n}",
+                "verifying \"inc.c\";",
+            ),
+        )
+        .unwrap();
+        let c_error = verify();
+        assert!(c_error.starts_with("syntax error:"), "{c_error}");
+        assert!(c_error.contains("\n  located.md:7\n"), "{c_error}");
+
+        // The Click block body starts on line 14; the labeled `have` is
+        // its third line, line 16 of the file.
+        fs::write(
+            &path,
+            mdtest(
+                valid_c,
+                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures result == x by { have same: x == x by { simp(); } step(); simp(); }\n}",
+            ),
+        )
+        .unwrap();
+        let click_error = verify();
+        assert!(click_error.starts_with("syntax error:"), "{click_error}");
+        assert!(click_error.contains("\n  located.md:16\n"), "{click_error}");
+
+        // A token the tokenizer refuses is located the same way.
+        fs::write(
+            &path,
+            mdtest(
+                valid_c,
+                "verifying \"inc.c\";\nint32 inc(int32 x) {\n    ensures !x;\n}",
+            ),
+        )
+        .unwrap();
+        let token_error = verify();
+        assert!(
+            token_error.contains("\n  located.md:16\n  expected `!=`"),
+            "{token_error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn dispatches_import_help_without_spawning() {
         entry(["import".to_string(), "--help".to_string()]).unwrap();

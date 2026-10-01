@@ -86,6 +86,25 @@ impl ExpandedLineMap {
         self.builtin_pthread_lines.contains(&line)
     }
 
+    /// The same map with each origin in a source extracted from a larger
+    /// file, such as a ```c block of an mdtest, moved to its line in that
+    /// file. Other origins are unchanged.
+    pub(crate) fn in_containers(
+        &self,
+        containers: &BTreeMap<String, crate::source::SourceContainer>,
+    ) -> std::borrow::Cow<'_, Self> {
+        if containers.is_empty() {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut relocated = self.clone();
+        for origin in relocated.origins.iter_mut().flatten() {
+            if let Some(container) = containers.get(origin.filename.as_ref()) {
+                *origin = Arc::new(container.origin(origin.line));
+            }
+        }
+        std::borrow::Cow::Owned(relocated)
+    }
+
     /// Maps an expanded-TU position to its bundle origin. Lines with no
     /// origin (removed directives) keep their expanded position.
     pub fn lookup(&self, position: SourcePosition) -> SourcePosition {
