@@ -880,7 +880,7 @@ fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
         ),
         (
             "pub fn bad(bytes: &[u8; 4]) -> &[u8] { bytes }",
-            "implicit adjustment",
+            "reference/aggregate returns",
         ),
         (
             "pub fn bad(bytes: &mut [u8; 4]) { let child = &mut bytes[0]; bytes[0] = 1; *child = 2; }",
@@ -944,4 +944,122 @@ fn rust_whole_array_copies_require_authority_for_every_element() {
             "unexpectedly verified: {unsupported}"
         );
     }
+}
+
+#[test]
+fn rust_arrays_coerce_to_byte_slices_with_lengths_and_authority() {
+    let p = Project::new(include_str!("../examples/rust-array-slices/arrays.rs"));
+    let sidecar = include_str!("../examples/rust-array-slices/arrays.click")
+        .replace("arrays.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "local.contract",
+        "alias.contract",
+        "retarget_mut.contract",
+        "empty.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+    for incorrect in [
+        sidecar.replace("ensures result == 4u64;", "ensures result == 1u64;"),
+        sidecar.replace(
+            "uint8 read(const uint8* bytes) {\n    views bytes[0..1];",
+            "uint8 read(const uint8* bytes) {",
+        ),
+        sidecar.replace(
+            "uint8 mutate(uint8* bytes) {\n    owns bytes[1..2];",
+            "uint8 mutate(uint8* bytes) {\n    views bytes[1..2];",
+        ),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
+    }
+    let overflow = Project::new(
+        &include_str!("../examples/rust-array-slices/arrays.rs")
+            .replace("[3u8, 5, 9]", "[255u8, 5, 9]"),
+    );
+    refresh_import(&overflow.config()).unwrap();
+    let overflow_prepared = load_import(&overflow.config()).unwrap();
+    let error = C0VerificationSession::new_program_prepared(&sidecar, &overflow_prepared)
+        .err()
+        .expect("overflow must be rejected");
+    assert!(
+        error.message().contains("Rust add panic check"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn rust_array_to_slice_coercions_preserve_bounds_and_borrow_checks() {
+    for (source, diagnostic) in [
+        (
+            "pub fn bad(bytes: &[u8; 4]) { let s: &mut [u8] = bytes; s[0] = 1; }",
+            "mismatched types",
+        ),
+        (
+            "pub fn bad(words: &[u32; 4]) -> usize { let s: &[u32] = words; s.len() }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(bytes: &mut [u8; 4]) { let s: &mut [u8] = bytes; bytes[0] = 1; s[0] = 2; }",
+            "cannot assign",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "expected {diagnostic}: {error}");
+    }
+    let p = Project::new(
+        "pub fn read(bytes: &[u8; 2], index: usize) -> u8 { let s: &[u8] = bytes; s[index] }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    for index in ["2u64", "4294967296u64", "18446744073709551615u64"] {
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint8 read(const uint8* bytes, uint64 index) {{ requires index == {index}; views bytes[0..2]; ensures result == 0; }} by {{ execute(); simp(); }}"
+        );
+        assert!(C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err());
+    }
+}
+
+#[test]
+fn rust_local_array_authority_and_copies_scale_with_array_length() {
+    let mut samples = Vec::new();
+    for length in [4, 16, 64] {
+        let p = Project::new(&format!(
+            "pub fn first(bytes: &[u8]) -> u8 {{ bytes[0] }} pub fn run() -> u8 {{ let bytes = [7u8; {length}]; let copied = bytes; first(&copied) }}"
+        ));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = "verifying \"borrow.rs\"; uint8 first(const uint8* bytes, uint64 bytes_len) { requires bytes_len > 0u64; requires bytes_len <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } uint8 run() { ensures result == 7; } by { execute(); simp(); }";
+        let (result, work) = click::instrumentation::measure_deterministic_work(|| {
+            C0VerificationSession::new_program_prepared(sidecar, &prepared)
+        });
+        result.unwrap();
+        assert!(work > 0);
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 8,
+            "array verification grew faster than its explicit operations: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn rust_array_to_slice_calls_preserve_untouched_local_elements() {
+    let p = Project::new(
+        "pub fn first(bytes: &[u8]) -> u8 { bytes[0] } pub fn set(bytes: &mut [u8]) { bytes[1] = 7; } pub fn untouched() -> u8 { let mut bytes = [3u8, 5, 9]; set(&mut bytes); bytes[0] } pub fn initial() -> u8 { let bytes = [3u8, 5, 9]; first(&bytes) }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\"; uint8 first(const uint8* bytes, uint64 bytes_len) { requires bytes_len > 0u64; requires bytes_len <= 2147483647u64; views bytes[0..1]; ensures result == bytes[0]; } by { execute(); simp(); } void set(uint8* bytes, uint64 bytes_len) { requires bytes_len > 1u64; requires bytes_len <= 2147483647u64; owns bytes[1..2]; ensures bytes[1] == 7; } by { execute(); simp(); } uint8 untouched() { ensures result == 3; } by { execute(); simp(); } uint8 initial() { ensures result == 3; } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }

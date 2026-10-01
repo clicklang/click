@@ -675,6 +675,7 @@ fn checks_population_member_exchange(
         || definition.matched.is_some()
         || !definition.witnesses.is_empty()
         || definition.condition.is_some()
+        || definition.facts_claim_liveness
         || definition.contains.iter().any(|spec| {
             !matches!(spec.term(), crate::kernel::CResourceTerm::Memory(_))
                 || spec.access() != crate::kernel::CResourceAccessMode::Own
@@ -683,7 +684,6 @@ fn checks_population_member_exchange(
                 || !spec.resource_arguments().is_empty()
         })
         || !definition.children.is_empty()
-        || !definition.facts.is_empty()
         || definition
             .instance_schema
             .as_ref()
@@ -691,7 +691,7 @@ fn checks_population_member_exchange(
     {
         return Err("population member rewrite requires a private owned-memory body".into());
     }
-    if batch && !definition.contains().is_empty() {
+    if batch && (!definition.contains().is_empty() || !definition.facts().is_empty()) {
         return Err("quantified population members need an empty body".into());
     }
     let description = crate::kernel::ResourceDescription::new(
@@ -840,13 +840,7 @@ impl CheckedPopulationMemberRewrite {
             witness,
             before_facts.assumptions(),
         )?;
-        if !after_facts
-            .introduced_since(before_facts)
-            .is_some_and(|introduced| introduced.is_empty())
-        {
-            return Err("population member rewrite introduced unchecked pure facts".into());
-        }
-        Ok(Self {
+        let rewrite = Self {
             before_state: before_state.clone(),
             after_state: after_state.clone(),
             before_facts: before_facts.clone(),
@@ -855,17 +849,40 @@ impl CheckedPopulationMemberRewrite {
             produce,
             witness: witness.clone(),
             definition: definition.clone(),
-        })
+        };
+        rewrite
+            .checked_introductions()
+            .ok_or("population member rewrite introduced unchecked pure facts")?;
+        Ok(rewrite)
+    }
+
+    fn checked_introductions(&self) -> Option<Vec<Proposition>> {
+        let introduced = self.after_facts.introduced_since(&self.before_facts)?;
+        if introduced.is_empty() {
+            return Some(introduced);
+        }
+        if self.produce || self.definition.facts().is_empty() {
+            return None;
+        }
+        let allowed = crate::kernel::functions::instantiate_private_member_body_facts(
+            &self.selected,
+            &self.definition,
+            self.before_state.memory(),
+            self.before_facts.assumptions(),
+        )?
+        .propositions
+        .into_iter()
+        .collect::<std::collections::BTreeSet<_>>();
+        introduced
+            .iter()
+            .all(|fact| allowed.contains(fact))
+            .then_some(introduced)
     }
 
     fn advance_checked(&self, state: &CState, facts: &ProofFacts) -> Option<ProofFacts> {
         if state.memory.diagnostic_identity() != self.before_state.memory.diagnostic_identity()
             || !state.shares_non_memory_storage_with(&self.before_state)
             || facts.introduced_since(&self.before_facts).is_none()
-            || !self
-                .after_facts
-                .introduced_since(&self.before_facts)
-                .is_some_and(|introduced| introduced.is_empty())
             || checks_population_member_exchange(
                 &self.definition,
                 state,
@@ -879,7 +896,11 @@ impl CheckedPopulationMemberRewrite {
         {
             return None;
         }
-        Some(facts.clone())
+        let mut advanced = facts.clone();
+        for fact in self.checked_introductions()? {
+            advanced = advanced.with_kernel_checked_fact(fact);
+        }
+        Some(advanced)
     }
 }
 
@@ -1647,8 +1668,8 @@ impl CheckedResourceRewrite {
                 || definition.matched.is_some()
                 || !definition.witnesses.is_empty()
                 || definition.condition.is_some()
+                || definition.facts_claim_liveness
                 || !definition.children.is_empty()
-                || !definition.facts.is_empty()
                 || definition
                     .instance_schema
                     .as_ref()
@@ -1768,6 +1789,26 @@ impl CheckedResourceRewrite {
                 )
             {
                 allowed.extend(propositions);
+            }
+            if !definition.facts().is_empty() {
+                let body_facts = crate::kernel::functions::instantiate_private_member_body_facts(
+                    selected,
+                    definition,
+                    after_state.memory(),
+                    assumptions,
+                )
+                .ok_or("Requires ownership of every cell read by member body facts")?;
+                if !now_open
+                    && body_facts
+                        .declared
+                        .iter()
+                        .any(|(_, fact)| !assumptions.proves_exact(fact))
+                {
+                    return Err(
+                        "authority-mode body close requires its current declared facts".into(),
+                    );
+                }
+                allowed.extend(body_facts.propositions);
             }
             let allowed_assumptions = allowed.iter().fold(assumptions.clone(), |facts, fact| {
                 facts.assume_proposition(fact.clone())
@@ -12479,6 +12520,166 @@ mod population_authority_rewrite_tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn private_member_facts_cannot_use_ambient_cell_ownership() {
+        use crate::kernel::{CMemorySegment, c_int32_literal, c_parameter, c_variable};
+        let (_, authority) = source_state();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+        else {
+            unreachable!()
+        };
+        let pointer = pointer.pointer();
+        let memory = CMemory::new().with_block(pointer.block.clone(), 8).store(
+            pointer.offset_by_elements(1.into(), 4),
+            crate::kernel::int32(0),
+        );
+        let resources = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 0.into(), 1.into())),
+            CResourceFact::own_memory(CMemoryRange::new(pointer.clone(), 1.into(), 2.into())),
+        ]);
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            ))],
+            vec![crate::kernel::SpecProposition::Comparison {
+                left: crate::kernel::SpecExpression::CExpression(crate::kernel::c_index(
+                    c_variable("p"),
+                    c_int32_literal(1),
+                )),
+                operator: crate::kernel::CComparisonOperator::Equal,
+                right: crate::kernel::SpecExpression::Value(crate::kernel::int32(0)),
+            }],
+        );
+        let assumptions = PureFactContext::default();
+        assert!(
+            crate::kernel::functions::instantiate_composite_resource_facts(
+                &member,
+                std::slice::from_ref(&definition),
+                &memory,
+                &resources,
+                &assumptions,
+            )
+            .is_some()
+        );
+        assert!(
+            crate::kernel::functions::instantiate_private_member_body_facts(
+                &member,
+                &definition,
+                &memory,
+                &assumptions,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts() {
+        let (state, authority) = source_state();
+        let facts = ProofFacts::default();
+        let (state, _) = state
+            .checked_population_authority_exchange(&authority, true, facts.assumptions())
+            .unwrap();
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let definition = |right| {
+            CCompositeResourceDefinition::new(
+                "reference",
+                vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+                None,
+                false,
+                vec![],
+                vec![crate::kernel::SpecProposition::Comparison {
+                    left: crate::kernel::SpecExpression::Value(crate::kernel::int32(1)),
+                    operator: crate::kernel::CComparisonOperator::Equal,
+                    right: crate::kernel::SpecExpression::Value(crate::kernel::int32(right)),
+                }],
+            )
+        };
+        assert!(
+            state
+                .checked_population_member_exchange(
+                    &member,
+                    true,
+                    &definition(2),
+                    facts.assumptions()
+                )
+                .is_err()
+        );
+        let definition = definition(1);
+        let function = c_function(
+            CType::Void,
+            "member",
+            vec![],
+            CStatement::Return(CExpression::Value(CValue::Void)),
+        )
+        .with_composite_resource_definitions(vec![definition.clone()]);
+        let (one, birth) = state
+            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+            .unwrap();
+        CheckedPopulationMemberRewrite::check(
+            &function, &state, &facts, &member, true, &birth, &one, &facts,
+        )
+        .unwrap();
+        let (zero, death) = one
+            .checked_population_member_exchange(&member, false, &definition, facts.assumptions())
+            .unwrap();
+        let body_facts = crate::kernel::functions::instantiate_composite_resource_facts(
+            &member,
+            std::slice::from_ref(&definition),
+            one.memory(),
+            zero.resources(),
+            facts.assumptions(),
+        )
+        .unwrap();
+        let mut exposed = facts.clone();
+        for fact in body_facts.propositions {
+            exposed = exposed.with_fact(fact);
+        }
+        let event = CheckedPopulationMemberRewrite::check(
+            &function, &one, &facts, &member, false, &death, &zero, &exposed,
+        )
+        .unwrap();
+        assert!(event.advance_checked(&one, &facts).is_some());
+        let forged_facts = exposed.with_fact(Proposition::ConditionIs(
+            crate::kernel::ConditionTerm::Constant(false),
+            true,
+        ));
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function,
+                &one,
+                &facts,
+                &member,
+                false,
+                &death,
+                &zero,
+                &forged_facts
+            )
+            .is_err()
+        );
+        let mut forged = event;
+        forged.after_facts = forged_facts;
+        assert!(forged.advance_checked(&one, &facts).is_none());
     }
 
     #[test]
