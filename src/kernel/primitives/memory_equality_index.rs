@@ -6,6 +6,7 @@
 #[cfg(test)]
 mod cell_tests;
 mod read_intervals;
+pub(super) mod structural;
 use read_intervals::ReadIntervals;
 
 use super::*;
@@ -53,7 +54,7 @@ impl PartialOrd for AddressCoordinate {
 /// Positive concrete read cores contribute physical byte intervals.
 /// Unsupported entries are counted too, so incomplete coverage selects the
 /// existing general checker before lookup.
-fn read_extent(fact: &CResourceFact) -> Option<u64> {
+pub(super) fn read_extent(fact: &CResourceFact) -> Option<u64> {
     if let CResourceFact::Own(_, quantity) = fact
         && !quantity.as_const().is_some_and(|value| (value as i32) > 0)
     {
@@ -409,6 +410,7 @@ impl AddressPoints {
 pub(super) enum MemoryAccessEntries {
     Intervals(read_intervals::CoveringIntervals),
     Exact(crate::persistent::OwnedSetValues<ResourceEntryId>),
+    Structural(std::collections::btree_set::IntoIter<ResourceEntryId>),
 }
 impl Iterator for MemoryAccessEntries {
     type Item = ResourceEntryId;
@@ -416,6 +418,7 @@ impl Iterator for MemoryAccessEntries {
         match self {
             Self::Intervals(entries) => entries.next(),
             Self::Exact(entries) => entries.next(),
+            Self::Structural(entries) => entries.next(),
         }
     }
 }

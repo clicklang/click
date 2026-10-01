@@ -1378,7 +1378,7 @@ impl SignedConstantResolution {
     }
 }
 
-fn memory_blind_pointer_fingerprint(pointer: &Pointer) -> u64 {
+pub(in crate::kernel) fn memory_blind_pointer_fingerprint(pointer: &Pointer) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     hash_memory_blind_pointer(pointer, &mut hasher);
     std::hash::Hasher::finish(&hasher)

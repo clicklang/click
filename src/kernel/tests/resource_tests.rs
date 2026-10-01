@@ -690,6 +690,63 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
 }
 
 #[test]
+fn structural_memory_lookup_ignores_unrelated_pointer_parameters() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let at = |id| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(870_000 + id)),
+        };
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new(at(i), 0u32.into(), 1u32.into()),
+            ));
+        }
+        let limit = Bitvector32Term::Variable(Variable(871_100));
+        let index = Bitvector32Term::Variable(Variable(869_000));
+        let symbolic = resources
+            .clone()
+            .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+                at(size),
+                0u32.into(),
+                limit.clone(),
+            )));
+        let concrete = resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
+            at(size),
+            0u32.into(),
+            4u32.into(),
+        )));
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                true,
+            )
+            .assume_condition(ConditionTerm::signed_less_than(index.clone(), limit), true);
+        let query = at(size).offset_by_elements(index, 4);
+        let required =
+            |base| CResourceFact::view_memory(CMemoryRange::new(base, 1u32.into(), 2u32.into()));
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(symbolic.permits_memory_read_structurally(&query, 4, &facts));
+                assert!(!symbolic.permits_memory_read_structurally(&at(size + 1), 4, &facts));
+                assert!(concrete.satisfies_memory_fact_structurally(&required(at(size))));
+                assert!(!concrete.satisfies_memory_fact_structurally(&required(at(size + 1))));
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "structural lookup scanned unrelated parameters: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 3 + 128,
+        "structural index scanned unrelated parameters: {samples:?}"
+    );
+}
+
+#[test]
 fn write_candidates_do_not_scan_unrelated_memory_ranges() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256] {

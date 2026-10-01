@@ -5714,6 +5714,9 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Structural candidates maintained at resource publication, independent
+    /// of proof-graph registration. Keys never establish access authority.
+    structural_memory: memory_equality_index::structural::StructuralMemory,
     /// Raw persistent roots for pairing with an equality graph, maintained
     /// alongside the spelling index so pairing never scans the resource store.
     memory_addresses: memory_equality_index::MemoryAddresses,
