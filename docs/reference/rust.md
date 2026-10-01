@@ -80,14 +80,25 @@ move, and consume the source. Reads and drops require a live value. Cleanup
 must consume every destructor-bearing local before return. The flags prevent
 stale struct bytes from justifying duplicate moves, duplicate drops, or omitted
 cleanup. Struct storage uses existing checked stack allocation and typed field
-loads/stores. Calls that return a field borrowed from a local owned struct
-currently expose a shared resource-matching gap: the field fragment cannot
-be reassembled with its parent for the next destructor call. Extraction rejects
-that case pending field-loan recovery. Moving a reference field carries the
-same borrowed address; it does not create allocation or deallocation authority.
+loads/stores. Moving a reference field carries the same borrowed address; it
+does not create allocation or deallocation authority.
 
-This slice excludes source borrows of owned local structs or their fields,
-partial moves, nested owned fields, Copy trait support,
+Borrowing fields of local owned structs is supported. In
+[`examples/rust-field-borrow/guard.rs`](https://github.com/clicklang/click/blob/master/examples/rust-field-borrow/guard.rs),
+a child guard borrows its parent's saved field. Its destructor writes 42 to
+that field, and the parent's destructor subsequently writes 42 to the caller.
+Existing `owns` contracts suffice: the checked call planner consumes the
+returned field owner and the retained storage fragments to supply the next
+call. Each actual supplier is consumed once; views and gaps cannot supply
+ownership. Regressions also cover parent mutation after explicit child drop,
+disjoint mutable field borrows, false final-value claims, and compiler rejection
+of conflicting parent access and use after move. The example passes verification,
+profiling, audit, expansion, and re-verification without new Click syntax.
+
+rustc establishes source borrow legality. These checks do not yet extract a
+complete Rust loan protocol or infer ownership contracts from Rust types.
+
+This slice excludes partial moves, nested owned fields, Copy trait support,
 by-value aggregate calls/returns, cycles or unstructured shared MIR regions,
 heap owners such as `Box`/`Vec`, and panic unwinding. Owned-value MIR currently
 supports scalar/reference assignments and comparisons; arithmetic in these
@@ -97,6 +108,8 @@ arithmetic support.
 ```sh
 cargo run --bin click -- import lock examples/rust-move-drop/guard.click
 cargo run --bin click -- verify examples/rust-move-drop/guard.click
+cargo run --bin click -- import lock examples/rust-field-borrow/guard.click
+cargo run --bin click -- verify examples/rust-field-borrow/guard.click
 ```
 
 ## Borrow and proof boundary

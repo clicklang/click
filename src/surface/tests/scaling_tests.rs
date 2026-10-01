@@ -4132,13 +4132,14 @@ fn an_unfolded_constant_composite_range_costs_the_same_whatever_its_length() {
     assert!(least > 0, "{samples:?}");
     // Flat across seven orders of magnitude of length: the samples differ
     // by a few dozen units of fixed work that read the length's constant
-    // (about 4k units in all), while one unit per element would be 10^9.
+    // (about 6k units in all), while one unit per element would be 10^9.
     // At 10^9 pointer elements the range's byte count overflows, so that
-    // entry gains one fact, `false`; every fact context built from the entry
-    // facts is charged one unit per fact, which makes about 15 of the
-    // difference (measured on 2026-09-27: 4171, 4187, 4187, 4209).
+    // entry gains one fact, `false`. The typed pointer-read candidate index
+    // charges that fixed fact and its lookup keys too. Allow at most 64
+    // fixed units across all sizes, including that extra overflow fact;
+    // this still excludes any per-element work (6124, 6156, 6156, 6180).
     assert!(
-        most - least <= 48,
+        most - least <= 64,
         "deterministic work depends on the composite range's length: {samples:?}"
     );
 }

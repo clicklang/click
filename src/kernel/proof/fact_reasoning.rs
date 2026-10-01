@@ -1871,15 +1871,21 @@ impl<'a> OriginsUnchanged<'a> {
         else {
             return false;
         };
-        // The unchanged proof comes from recorded derivations crossed with
-        // exact-fact distinctness, never from whole-snapshot alias search.
-        left_pointer == right_pointer
-            && left_kind == right_kind
-            && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &left_load,
-                &right_load,
-                self.assumptions,
-            )
+        // Retain the selected, checked alias/snapshot path when different
+        // pointer spellings identify this cell. The read kind is preserved.
+        left_kind == right_kind
+            && ((left_pointer.block != right_pointer.block
+                && crate::kernel::memory_provenance::checked_origin_load_equality(
+                    &Bitvector32Term::Variable(left),
+                    &Bitvector32Term::Variable(right),
+                    self.assumptions,
+                ))
+                || left_pointer == right_pointer
+                    && crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                        &left_load,
+                        &right_load,
+                        self.assumptions,
+                    ))
     }
 }
 

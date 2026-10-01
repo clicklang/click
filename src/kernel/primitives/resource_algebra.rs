@@ -2610,6 +2610,44 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         use_separation: bool,
     ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        // Complete concrete interval candidates avoid a block-wide scan on
+        // misses, including a request that must be assembled from fragments.
+        if let Some(range) = required.memory_own_range()
+            && let Some((start, end)) = concrete_memory_range_bounds(range)
+            && let Ok(bytes) = u32::try_from(end - start)
+            && let Some(entries) = self.concrete_write_entries(
+                &Pointer {
+                    block: range.base().block.clone(),
+                    offset: PointerOffsetTerm::Constant(start),
+                },
+                bytes,
+                assumptions,
+            )
+        {
+            for entry in entries {
+                crate::instrumentation::record_deterministic_work(1);
+                let candidate = self.fact(entry);
+                let Some(available) = candidate.memory_own_range() else {
+                    continue;
+                };
+                let Some(base) = assumptions
+                    .equality_graph
+                    .pointer_in_block(range.base(), &available.base().block)
+                else {
+                    continue;
+                };
+                let mut translated = range.clone();
+                translated.base = base;
+                let translated = CResourceFact::Own(
+                    CResource::Memory(translated),
+                    required.owned_quantity_term()?.clone().into(),
+                );
+                if resource_fact_entails(candidate, &translated, assumptions) {
+                    return Some((self.occurrence(entry), candidate));
+                }
+            }
+            return None;
+        }
         let entails = |candidate: &CResourceFact| {
             if !use_separation
                 && let (Some(available), Some(required)) = (
@@ -2756,6 +2794,77 @@ impl ResourceContext {
         let entry = self.storage.entry_by_occurrence.get(&occurrence)?;
         let fact = self.storage.facts.get(entry)?;
         fact.is_own().then_some(fact)
+    }
+
+    /// Reserve a concrete owned footprint from its live byte fragments. Each
+    /// step checks and consumes the actual indexed occurrence; a view, gap,
+    /// stale occurrence, or unsupported coordinate proves no ownership. The
+    /// returned provenance retains every supplier rather than inventing a
+    /// single owner for the joined range. Work follows the consumed fragments,
+    /// with logarithmic queries and edits, not unrelated memory in the block.
+    pub(crate) fn reserve_owned_memory_fragments(
+        mut self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
+        if required.owned_quantity_term()?.as_const()? != 1 {
+            return None;
+        }
+        let range = required.memory_own_range()?;
+        let (mut cursor, end) = concrete_memory_range_bounds(range)?;
+        let mut supports = Vec::new();
+        while cursor < end {
+            let pointer = Pointer {
+                block: range.base().block.clone(),
+                offset: PointerOffsetTerm::Constant(cursor),
+            };
+            let entries = self.owned_fragment_candidates(&pointer, assumptions)?;
+            let mut selected = None;
+            for entry in entries {
+                crate::instrumentation::record_deterministic_work(1);
+                let candidate = self.fact(entry);
+                let Some(available) = candidate.memory_own_range() else {
+                    continue;
+                };
+                let Some(base) = assumptions
+                    .equality_graph
+                    .pointer_in_block(&pointer, &available.base().block)
+                else {
+                    continue;
+                };
+                let Some(at) = base.offset.as_const() else {
+                    continue;
+                };
+                let Some((_, available_end)) = concrete_memory_range_bounds(available) else {
+                    continue;
+                };
+                let Some(bytes) = available_end
+                    .checked_sub(at)
+                    .map(|bytes| bytes.min(end - cursor))
+                    .filter(|bytes| *bytes > 0)
+                    .and_then(|bytes| u32::try_from(bytes).ok())
+                else {
+                    continue;
+                };
+                let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    base,
+                    0u32.into(),
+                    bytes.into(),
+                    1,
+                ));
+                if resource_fact_entails(candidate, &piece, assumptions) {
+                    selected = Some((entry, self.occurrence(entry), piece, bytes));
+                    break;
+                }
+            }
+            let (entry, support, piece, bytes) = selected?;
+            if !self.consume_fact_from_candidates(&piece, assumptions, std::iter::once(entry)) {
+                return None;
+            }
+            supports.push(support);
+            cursor = cursor.checked_add(i64::from(bytes))?;
+        }
+        Some((self, supports))
     }
 
     fn concrete_memory_start_candidates(

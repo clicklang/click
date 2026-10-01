@@ -26,12 +26,11 @@ for the library demonstration to announce the supported subset.
 Click now has an experimental Rust source import and verification path. The
 borrow fixture and move/drop guard verify unchanged Rust through shared Click
 proof tooling. General library support and the shared checksum demonstration
-remain unmet. Borrowing a field of a local owned struct into another guard
-also needs shared field-loan recovery: returning the child field owner leaves
-fragments that cannot supply the outer destructor call. The unchanged Rust
-rejection regression is `rust_owned_field_loan_recovery_fails_closed`; acceptance
-is to verify the two nested guards with the final caller value 42, retaining
-the source and rejecting a final-value claim of 1. See
+remain unmet. The nested owned-field regression now verifies the unchanged
+Rust source with final caller value 42 and rejects a claim of 1. Shared call
+rules reserve the returned field and retained storage fragments exactly once.
+Parent mutation after explicit child drop and disjoint mutable field borrows
+also verify; conflicting borrows and use after move are rejected by rustc. See
 [the supported subset](../docs/reference/rust.md) for exact bounds and
 reproduction commands.
 
@@ -86,15 +85,11 @@ a disjoint write. Verification, profiling, auditing,
 and expansion share the existing engine. See `docs/reference/rust.md` for the
 exact subset and trust boundary.
 
-This is an increment toward milestone 1, not its completion. The supported
-subset includes whole-value moves and checked drops. Explicit authority
-suspension/recovery and wider source coverage remain outstanding. The owned
-field-borrow prototype in [PR #29](https://github.com/clicklang/click/pull/29)
-is a draft with failing verification checks; nested owned field borrows must
-not yet be listed as supported. Its unchanged child-borrow/parent-drop
-regression must prove the child's value 42 and reject the stale value 1,
-while preserving existing C++ destructor proofs. Shared call-memory and
-pointer-read evidence repair takes priority over further frontend features.
+This is an increment toward milestone 1, not its completion. The production
+subset now includes whole-value moves, checked drops, nested field borrows,
+and disjoint mutable field regressions. Explicit extracted loan authority
+suspension/recovery and wider source coverage remain outstanding; source borrow
+legality currently comes from the pinned compiler.
 
 ## Initial assessment
 
@@ -112,8 +107,7 @@ algorithm's simplicity means its optimized implementations are already supported
 
 The [pinned checksum assessment](../design/rust-checksum-assessment.md) records
 zlib 1.3.1 and adler2 2.0.1, selected build configurations, reachable constructs,
-and the shared specification. After the shared checker blocker above is fixed,
-the next checksum-facing increment is unsigned Rust scalar arithmetic; byte
+and the shared specification. The next checksum-facing increment is unsigned Rust scalar arithmetic; byte
 slices, crate extraction, and iterator loops follow. Neither library is verified
 by this assessment.
 

@@ -1266,13 +1266,12 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
 
     assert_eq!(verified.len(), 1);
     let verified = &verified[0];
-    let base = Pointer {
-        block: PointerBlock::ExternalArgument,
-        offset: scale_int32_offset(
-            Bitvector32Term::Variable(Variable(POINTER_ARGUMENT_VARIABLE_BASE)),
-            4,
-        ),
+    let crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(argument)) =
+        &verified.specification.arguments()[0]
+    else {
+        panic!("fill3's input is a pointer");
     };
+    let base = argument.pointer().clone();
     let first = base.clone();
     let second = offset_pointer_by_int32_elements(base.clone(), Bitvector32Term::Constant(1));
     let third = offset_pointer_by_int32_elements(base.clone(), Bitvector32Term::Constant(2));

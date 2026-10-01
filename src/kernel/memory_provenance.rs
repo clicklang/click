@@ -465,6 +465,38 @@ pub(crate) struct CheckedLoadEquality {
     evidence: CheckedLoadEqualityEvidence,
 }
 
+/// A bounded candidate path through aliases indexed under the endpoints.
+/// Each retained edge is checked against its exact named premise on checking.
+fn selected_pointer_alias_path(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> Option<Vec<(Pointer, Pointer)>> {
+    let equal = |first: &Pointer, second: &Pointer| {
+        first == second
+            || assumptions.proves_exact(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(first.clone(), second.clone()),
+                true,
+            ))
+            || assumptions.proves_exact(&Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(second.clone(), first.clone()),
+                true,
+            ))
+    };
+    for middle in assumptions.exact_pointer_aliases(left).take(8) {
+        if !equal(left, middle) {
+            continue;
+        }
+        if equal(middle, right) {
+            return Some(vec![
+                (left.clone(), middle.clone()),
+                (middle.clone(), right.clone()),
+            ]);
+        }
+    }
+    None
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum CheckedLoadEqualityEvidence {
     OriginStoredValue {
@@ -487,6 +519,16 @@ enum CheckedLoadEqualityEvidence {
         left: OriginLoadEndpoint,
         right: OriginLoadEndpoint,
         offset: PointerOffsetCongruenceEvidence,
+    },
+    /// Equal-width scalar reads at one execution snapshot, with one exact
+    /// pointer equality retained as their address witness. The source load
+    /// names remain distinct, so explicit proof rewrites keep their addresses.
+    OriginAliasedSnapshot {
+        left: OriginLoadEndpoint,
+        right: OriginLoadEndpoint,
+        alias: Box<Proposition>,
+        alias_path: Option<Vec<(Pointer, Pointer)>>,
+        snapshots: Option<Box<CheckedLoadEquality>>,
     },
     /// The two source-level load terms meet along the recorded memory DAG
     /// when viewed at their original execution snapshots.
@@ -515,6 +557,18 @@ struct OriginLoadEndpoint {
     memory: SharedCMemory,
     pointer: Pointer,
     kind: LoadKind,
+}
+
+fn origin_load_width(term: &Bitvector32Term) -> Option<u32> {
+    match term {
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::eval::registered_load_bytes_for_variable(variable)
+        }
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => Some(
+            crate::kernel::load_term_access_width(memory, pointer, *kind),
+        ),
+        _ => None,
+    }
 }
 
 impl OriginLoadEndpoint {
@@ -985,6 +1039,78 @@ impl CheckedLoadEquality {
                         assumptions,
                     )
             }
+            CheckedLoadEqualityEvidence::OriginAliasedSnapshot {
+                left,
+                right,
+                alias,
+                alias_path,
+                snapshots,
+            } => {
+                left.matches_term(&self.left)
+                    && right.matches_term(&self.right)
+                    && left.kind == right.kind
+                    && match snapshots {
+                        None => left.memory == right.memory,
+                        Some(equality) => {
+                            let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &equality.left
+                            else {
+                                return false;
+                            };
+                            memory == &left.memory
+                                && *kind == left.kind
+                                && (pointer.as_ref() == &left.pointer
+                                    || pointer.as_ref() == &right.pointer)
+                                && equality.right
+                                    == Bitvector32Term::MemoryLoad(
+                                        right.memory.clone(),
+                                        pointer.clone(),
+                                        right.kind,
+                                    )
+                                && equality.checks_with_call_events(assumptions, call_events)
+                        }
+                    }
+                    && origin_load_width(&self.left) == Some(4)
+                    && origin_load_width(&self.right) == Some(4)
+                    && (alias.as_ref()
+                        == &Proposition::ConditionIs(
+                            ConditionTerm::pointer_equal(
+                                left.pointer.clone(),
+                                right.pointer.clone(),
+                            ),
+                            true,
+                        )
+                        || alias.as_ref()
+                            == &Proposition::ConditionIs(
+                                ConditionTerm::pointer_equal(
+                                    right.pointer.clone(),
+                                    left.pointer.clone(),
+                                ),
+                                true,
+                            ))
+                    && match alias_path {
+                        None => assumptions.proves_exact(alias),
+                        Some(path) => {
+                            path.first().is_some_and(|step| step.0 == left.pointer)
+                                && path.last().is_some_and(|step| step.1 == right.pointer)
+                                && path.windows(2).all(|steps| steps[0].1 == steps[1].0)
+                                && path.iter().all(|step| {
+                                    assumptions.proves_exact(&Proposition::ConditionIs(
+                                        ConditionTerm::pointer_equal(
+                                            step.0.clone(),
+                                            step.1.clone(),
+                                        ),
+                                        true,
+                                    )) || assumptions.proves_exact(&Proposition::ConditionIs(
+                                        ConditionTerm::pointer_equal(
+                                            step.1.clone(),
+                                            step.0.clone(),
+                                        ),
+                                        true,
+                                    ))
+                                })
+                        }
+                    }
+            }
             CheckedLoadEqualityEvidence::OriginEffectSummary {
                 left,
                 right,
@@ -1070,6 +1196,7 @@ impl CheckedLoadEquality {
             CheckedLoadEqualityEvidence::Canonical
             | CheckedLoadEqualityEvidence::OriginStoredValue { .. }
             | CheckedLoadEqualityEvidence::OriginDirectSnapshot { .. }
+            | CheckedLoadEqualityEvidence::OriginAliasedSnapshot { .. }
             | CheckedLoadEqualityEvidence::OriginMemoryDag { .. }
             | CheckedLoadEqualityEvidence::OriginEffectSummary { .. }
             | CheckedLoadEqualityEvidence::SameCheckedCallEvent(_) => None,
@@ -1233,9 +1360,76 @@ pub(crate) fn checked_origin_load_equality(
     ) else {
         return false;
     };
-    if left_endpoint.pointer.block != right_endpoint.pointer.block
-        || left_endpoint.kind != right_endpoint.kind
-    {
+    if left_endpoint.kind != right_endpoint.kind {
+        return false;
+    }
+    if left_endpoint.pointer.block != right_endpoint.pointer.block {
+        if origin_load_width(left) == Some(4) && origin_load_width(right) == Some(4) {
+            for (first, second) in [
+                (&left_endpoint.pointer, &right_endpoint.pointer),
+                (&right_endpoint.pointer, &left_endpoint.pointer),
+            ] {
+                let alias = Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(first.clone(), second.clone()),
+                    true,
+                );
+                let alias_path = if assumptions.proves_exact(&alias) {
+                    None
+                } else {
+                    if first != &left_endpoint.pointer {
+                        continue;
+                    }
+                    let Some(path) = selected_pointer_alias_path(first, second, assumptions) else {
+                        continue;
+                    };
+                    Some(path)
+                };
+                {
+                    let snapshots = if left_endpoint.memory == right_endpoint.memory {
+                        None
+                    } else {
+                        let mut selected = None;
+                        for pointer in [&left_endpoint.pointer, &right_endpoint.pointer] {
+                            let first = Bitvector32Term::MemoryLoad(
+                                left_endpoint.memory.clone(),
+                                Box::new(pointer.clone()),
+                                left_endpoint.kind,
+                            );
+                            let second = Bitvector32Term::MemoryLoad(
+                                right_endpoint.memory.clone(),
+                                Box::new(pointer.clone()),
+                                right_endpoint.kind,
+                            );
+                            let capture = CheckedLoadEqualityCapture::start_with_call_events(
+                                &active_checked_call_events(),
+                            );
+                            let equal = checked_origin_load_equality(&first, &second, assumptions);
+                            let mut evidence = capture.finish();
+                            if equal && evidence.len() == 1 {
+                                selected = evidence.pop().map(Box::new);
+                                break;
+                            }
+                        }
+                        let Some(selected) = selected else {
+                            continue;
+                        };
+                        Some(selected)
+                    };
+                    retain_checked_load_equality(CheckedLoadEquality {
+                        left: left.clone(),
+                        right: right.clone(),
+                        evidence: CheckedLoadEqualityEvidence::OriginAliasedSnapshot {
+                            left: left_endpoint.clone(),
+                            right: right_endpoint.clone(),
+                            alias: Box::new(alias),
+                            alias_path,
+                            snapshots,
+                        },
+                    });
+                    return true;
+                }
+            }
+        }
         return false;
     }
     // The arms below compare the two origin snapshots' cell maps, and a cell

@@ -13,6 +13,56 @@ pub(in crate::surface) struct ConcreteMemoryRangeSeed {
     pub(in crate::surface) struct_layout: Option<syntax::C0StructLayout>,
 }
 
+// Input addresses from different function proofs must not share load/type
+// metadata. A context-local parameter index alone names unrelated universal
+// inputs with the same term, e.g. an eight-byte `self->slot` and a four-byte
+// caller `value[0]`. Keep content-based names collision-checked and outside
+// the scalar-load and ordinary lexical-variable namespaces. Inputs occupy
+// `100_000 .. 1_000_000`, below execution and load names so ordinary inputs
+// remain preferred canonical address representatives.
+thread_local! {
+    static INPUT_SCOPES: std::cell::RefCell<std::collections::HashMap<u64, String>> = Default::default();
+    static INPUT_VARIABLES: std::cell::RefCell<std::collections::HashMap<(u64, usize), Variable>> = Default::default();
+}
+
+fn input_scope(name: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut hasher);
+    let mut slot = hasher.finish();
+    INPUT_SCOPES.with(|scopes| {
+        let mut scopes = scopes.borrow_mut();
+        loop {
+            match scopes.get(&slot) {
+                Some(known) if known == name => return slot,
+                Some(_) => slot = slot.wrapping_add(1),
+                None => {
+                    scopes.insert(slot, name.to_string());
+                    return slot;
+                }
+            }
+        }
+    })
+}
+
+fn input_pointer_variable(scope: u64, index: usize) -> Result<Variable, ClickError> {
+    INPUT_VARIABLES.with(|variables| {
+        let mut variables = variables.borrow_mut();
+        if let Some(variable) = variables.get(&(scope, index)) {
+            return Ok(*variable);
+        }
+        let name = POINTER_ARGUMENT_VARIABLE_BASE + variables.len() as u64;
+        if name >= 1_000_000 {
+            return Err(ClickError::new(
+                "pointer input variable namespace exhausted",
+            ));
+        }
+        let variable = Variable(name);
+        variables.insert((scope, index), variable);
+        Ok(variable)
+    })
+}
+
 pub(in crate::surface) fn initial_call_state(
     requires: &[Requirement],
     parameters: &[syntax::C0Parameter],
@@ -20,6 +70,11 @@ pub(in crate::surface) fn initial_call_state(
     composite_definitions: &[CCompositeResourceDefinition],
     resource_semantics_mode: ResourceSemanticsMode,
 ) -> Result<(CState, Vec<CExpression>), ClickError> {
+    if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
+        return Err(ClickError::new(
+            "function parameter variable namespace exhausted",
+        ));
+    }
     let aggregate_parameters = parameters
         .iter()
         .filter(|parameter| parameter.is_struct_value())
@@ -31,6 +86,7 @@ pub(in crate::surface) fn initial_call_state(
         }
     }
     let mut arguments = Vec::new();
+    let scope = input_scope(function.name());
 
     for (index, parameter) in parameters.iter().enumerate() {
         if parameter.is_struct_value() {
@@ -38,9 +94,7 @@ pub(in crate::surface) fn initial_call_state(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: scale_int32_offset(
-                        Bitvector32Term::Variable(Variable(
-                            POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                        )),
+                        Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
                         1,
                     ),
                 },
@@ -65,9 +119,7 @@ pub(in crate::surface) fn initial_call_state(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
+                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
                             1,
                         ),
                     },
@@ -76,9 +128,7 @@ pub(in crate::surface) fn initial_call_state(
             }
             C0Type::FunctionPointer(_) => {
                 arguments.push(c_typed_pointer_value(
-                    Pointer::symbolic_function(Variable(
-                        POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                    )),
+                    Pointer::symbolic_function(input_pointer_variable(scope, index)?),
                     parameter.c_type().to_kernel_type(),
                 ));
             }
@@ -104,9 +154,7 @@ pub(in crate::surface) fn initial_call_state(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
+                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
                             i64::from(element_width),
                         ),
                     },
@@ -154,9 +202,7 @@ pub(in crate::surface) fn initial_call_state(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
-                                POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
-                            )),
+                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
                             i64::from(element_width),
                         ),
                     },
@@ -3134,4 +3180,29 @@ pub(in crate::surface) fn lower_resource_reference_arguments(
                 })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod input_identity_tests {
+    use super::*;
+    #[test]
+    fn pointer_input_names_are_stable_and_function_specific() {
+        let first = input_scope("input-identity-first");
+        let second = input_scope("input-identity-second");
+        assert_eq!(
+            input_pointer_variable(first, 0).unwrap(),
+            input_pointer_variable(input_scope("input-identity-first"), 0).unwrap()
+        );
+        assert_ne!(
+            input_pointer_variable(first, 0).unwrap(),
+            input_pointer_variable(first, 1).unwrap()
+        );
+        assert!(
+            input_pointer_variable(first, 0).unwrap() < input_pointer_variable(first, 1).unwrap()
+        );
+        assert_ne!(
+            input_pointer_variable(first, 0).unwrap(),
+            input_pointer_variable(second, 0).unwrap()
+        );
+    }
 }

@@ -498,16 +498,16 @@ fn guarded_postcondition_consequent_expands_and_reverifies() {
     }
 }
 
-/// An equality chain through a scope's own `have`s, and an equality
-/// rewritten through a loaded pointer field, expand to explicit `rewrite`
-/// steps that re-verify.
+/// Scoped equality chains and loaded pointer fields expand to checked
+/// certificates that verify. The array case can transport its entry contract
+/// directly; pointer chains use explicit rewrites.
 #[test]
 fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
     for (relative, function, expected) in [
         (
             "mdtests/simp_chains_equalities_stated_in_a_scope.md",
             "caller",
-            "rewrite(at(b, occ[k]) == at(a, occ[k]));",
+            "transport(at(function.entry, occ[k] == 0), occ[k] == 0)",
         ),
         (
             "mdtests/rewrite_through_a_loaded_pointer_field.md",

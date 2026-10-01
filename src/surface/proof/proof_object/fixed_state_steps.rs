@@ -2225,7 +2225,12 @@ impl<'a> Proof<'a> {
                     view.click_function_environment,
                 )
                 .map_err(|message| {
-                    self.step_error(format!("could not lower `rewrite` equality: {message}"))
+                    let source =
+                        crate::surface::printing::source_click_proposition(surface_equality);
+                    let source: String = source.chars().take(1024).collect();
+                    self.step_error(format!(
+                        "could not lower `rewrite` equality: {message}\n  equality: {source}"
+                    ))
                 })?,
             ),
         };

@@ -772,6 +772,32 @@ impl ResourceContext {
         self.concrete_access_entries(pointer, bytes, assumptions, true)
     }
 
+    /// Positive affine candidates for joining owned fragments. This index
+    /// need not cover symbolic coordinates: callers validate and consume each
+    /// supplier and fail closed if the candidates do not cover the footprint.
+    pub(super) fn owned_fragment_candidates(
+        &self,
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Option<MemoryAccessEntries> {
+        let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
+        let point = index.graph.canonical_pointer(pointer)?;
+        if !point.offset.is_constant() {
+            return None;
+        }
+        let bucket = index.addresses.classes.get(&point.representative)?;
+        if !bucket.origin.is_constant() {
+            return None;
+        }
+        let start = point.offset.checked_add(&bucket.origin)?;
+        let end = start.checked_add(&AffineOffset::constant(1))?;
+        Some(MemoryAccessEntries::Intervals(
+            bucket
+                .read_intervals
+                .covering(&AddressCoordinate(start), &AddressCoordinate(end)),
+        ))
+    }
+
     fn concrete_access_entries(
         &self,
         pointer: &Pointer,

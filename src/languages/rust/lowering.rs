@@ -146,8 +146,22 @@ fn lower_function(
         kernel_parameters,
         body,
     );
+    let local_records = f
+        .mir
+        .as_ref()
+        .map(|mir| {
+            mir.locals
+                .iter()
+                .filter_map(|local| match &local.value_type {
+                    Type::Record { name } => Some((local.name.clone(), name.clone())),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     Ok(
         C0Function::external(return_type, f.name.clone(), parameters)
+            .with_local_struct_values(local_records)
             .with_prelowered_kernel_function(kernel),
     )
 }

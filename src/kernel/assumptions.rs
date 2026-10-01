@@ -50,7 +50,23 @@ pub(in crate::kernel) fn pointers_equal_with_load_atoms(
     right: &Pointer,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
-    left.block == right.block
+    (left.block == right.block
+        || match (&left.block, &right.block) {
+            (PointerBlock::Symbolic(_), PointerBlock::Symbolic(_)) => {
+                let base = |pointer: &Pointer| Pointer {
+                    block: pointer.block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                let (Some(first), Some(second)) = (
+                    super::equality_graph::logical_pointer_read_term(&base(left)),
+                    super::equality_graph::logical_pointer_read_term(&base(right)),
+                ) else {
+                    return false;
+                };
+                terms_equal_with_load_atoms(&first, &second, loads_match)
+            }
+            _ => false,
+        })
         && offsets_equal_with_load_atoms(&left.offset, &right.offset, loads_match)
 }
 

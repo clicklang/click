@@ -125,14 +125,9 @@ impl<'tcx> Context<'_, 'tcx> {
                 }
                 let expression = match value {
                     Rvalue::Use(value, _) => self.operand(value)?,
-                    Rvalue::Ref(_, _, p) => {
-                        if matches!(self.body.local_decls[p.local].ty.kind(), ty::Adt(..)) {
-                            return Err("borrowing an owned local struct or its fields requires field-loan recovery outside this slice".into());
-                        }
-                        Expression::Borrow {
-                            place: Box::new(self.place(*p)?),
-                        }
-                    }
+                    Rvalue::Ref(_, _, p) => Expression::Borrow {
+                        place: Box::new(self.place(*p)?),
+                    },
                     Rvalue::BinaryOp(op, values) => {
                         let operator = match op {
                             mir::BinOp::Eq => "eq",

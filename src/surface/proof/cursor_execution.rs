@@ -1864,6 +1864,7 @@ pub(super) fn prepare_call_outcome_split(
             try_statement_index,
             handler_statement_index,
             after_try_statement_index,
+            ..
         } = source_region.kind
         else {
             break;
@@ -2289,6 +2290,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 try_statement_index,
                 handler_statement_index,
                 after_try_statement_index,
+                ..
             } => (
                 try_statement_index,
                 handler_statement_index,

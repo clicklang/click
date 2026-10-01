@@ -1489,9 +1489,20 @@ impl PureFactContext {
             if spelled.contains(&range) || spellings.contains(range.base()) {
                 continue;
             }
-            if spellings.iter().any(|base| {
-                crate::kernel::reasoning::kept_range_bases_proven_equal(base, range.base(), self)
-            }) {
+            // A fixed interior offset is a candidate for this parent's
+            // footprint. A symbolic difference between unrelated argument
+            // bases is not: admitting it would query every kept range.
+            if pointer
+                .element_index_from_base_with_width(range.base(), range.element_width())
+                .is_some_and(|index| index.as_const().is_some())
+                || spellings.iter().any(|base| {
+                    crate::kernel::reasoning::kept_range_bases_proven_equal(
+                        base,
+                        range.base(),
+                        self,
+                    )
+                })
+            {
                 aliased.push(range);
             }
         }

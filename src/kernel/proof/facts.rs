@@ -122,6 +122,7 @@ struct IntegerConditionAlphaCandidate {
 enum BitvectorEqualityAtomKey {
     Constant(u32),
     Variable(Variable),
+    PointerReadSource(u64),
     ClickFunctionApplication {
         name: String,
         arguments_hash: u64,
@@ -1603,26 +1604,28 @@ fn index_bitvector_equality_fact(
                 _ => return index,
             }
         }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
-            match (&left.offset, &right.offset) {
-                (
-                    PointerOffsetTerm::Int32Scaled { value: left, .. },
-                    PointerOffsetTerm::Int32Scaled { value: right, .. },
-                ) => (left.as_ref(), right.as_ref()),
-                _ => return index,
+        Proposition::ConditionIs(condition @ ConditionTerm::PointerEqual(_, _), true) => {
+            let mut atoms = BTreeSet::new();
+            collect_condition_bitvector_atoms(condition, &mut atoms);
+            for atom in atoms {
+                let mut bucket = index.get(&atom).cloned().unwrap_or_default();
+                // Each fact is published once and the atom set is unique.
+                // Do not scan a bucket to rediscover that identity.
+                bucket.push(fact.clone());
+                index = index.with_inserted(atom, bucket);
             }
+            return index;
         }
         _ => return index,
     };
+    let mut atoms = BTreeSet::new();
     for term in [left, right] {
-        let Some(key) = bitvector_equality_atom_key(term) else {
-            continue;
-        };
+        collect_bitvector_atoms(term, &mut atoms);
+    }
+    for key in atoms {
         let mut bucket = index.get(&key).cloned().unwrap_or_default();
-        if !bucket.iter().any(|candidate| Arc::ptr_eq(candidate, fact)) {
-            bucket.push(fact.clone());
-            index = index.with_inserted(key, bucket);
-        }
+        bucket.push(fact.clone());
+        index = index.with_inserted(key, bucket);
     }
     index
 }
@@ -1931,8 +1934,8 @@ fn collect_condition_bitvector_atoms(
             collect_pointer_offset_bitvector_atoms(right, atoms);
         }
         ConditionTerm::PointerEqual(left, right) => {
-            collect_pointer_offset_bitvector_atoms(&left.offset, atoms);
-            collect_pointer_offset_bitvector_atoms(&right.offset, atoms);
+            collect_pointer_bitvector_atoms(left, atoms);
+            collect_pointer_bitvector_atoms(right, atoms);
         }
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
     }
@@ -2028,11 +2031,9 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             }
         }
         Bitvector32Term::MemoryLoad(_, pointer, _) => {
-            collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms)
+            collect_pointer_bitvector_atoms(pointer, atoms)
         }
-        Bitvector32Term::PointerAddress(pointer) => {
-            collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms)
-        }
+        Bitvector32Term::PointerAddress(pointer) => collect_pointer_bitvector_atoms(pointer, atoms),
         // A load variable names one read; the atoms of the address it read
         // are the atoms an equality must rewrite to reach it (`p->q->x`
         // under `p->q == r`). Follow registered addresses a bounded number
@@ -2059,6 +2060,15 @@ fn collect_load_address_atoms(
     let Some((_, pointer)) = crate::kernel::eval::registered_load_for_variable(&variable) else {
         return;
     };
+    let mut source_hasher = std::collections::hash_map::DefaultHasher::new();
+    pointer.hash(&mut source_hasher);
+    atoms.insert(BitvectorEqualityAtomKey::PointerReadSource(
+        source_hasher.finish(),
+    ));
+    if let PointerBlock::Symbolic(inner) = pointer.block {
+        atoms.insert(BitvectorEqualityAtomKey::Variable(inner));
+        collect_load_address_atoms(inner, atoms, depth + 1);
+    }
     let mut pending = vec![&pointer.offset];
     while let Some(offset) = pending.pop() {
         match offset {
@@ -2078,6 +2088,22 @@ fn collect_load_address_atoms(
             PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
         }
     }
+}
+
+fn collect_pointer_bitvector_atoms(
+    pointer: &Pointer,
+    atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
+) {
+    let mut address_hasher = std::collections::hash_map::DefaultHasher::new();
+    pointer.hash(&mut address_hasher);
+    atoms.insert(BitvectorEqualityAtomKey::PointerReadSource(
+        address_hasher.finish(),
+    ));
+    if let PointerBlock::Symbolic(variable) = pointer.block {
+        atoms.insert(BitvectorEqualityAtomKey::Variable(variable));
+        collect_load_address_atoms(variable, atoms, 0);
+    }
+    collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms);
 }
 
 fn collect_pointer_offset_bitvector_atoms(
@@ -2298,6 +2324,47 @@ mod integer_equality_fact_index_tests {
         Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, Variable,
     };
+
+    #[test]
+    fn opaque_pointer_alias_selection_ignores_unrelated_facts() {
+        let read = Pointer::symbolic(Variable(949_001));
+        let target = Pointer::symbolic(Variable(949_002));
+        let alias =
+            Proposition::ConditionIs(ConditionTerm::pointer_equal(read.clone(), target), true);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory(CMemory::new()),
+                    Box::new(read.offset_by_bytes(4)),
+                    crate::kernel::LoadKind::Bits32,
+                ),
+                Bitvector32Term::Constant(42),
+            ),
+            true,
+        );
+        for size in [16_u32, 64, 256, 1024, 4096] {
+            let mut facts = ProofFacts::default();
+            for index in 0..size {
+                facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(
+                        Pointer::symbolic(Variable(950_000 + 2 * u64::from(index))),
+                        Pointer::symbolic(Variable(950_001 + 2 * u64::from(index))),
+                    ),
+                    true,
+                ));
+            }
+            facts = facts.with_kernel_checked_fact(alias.clone());
+            assert_eq!(facts.load_equalities_mentioning(&goal), vec![alias.clone()]);
+            let comparisons = facts
+                .equality_atom_lookup_comparisons(&Bitvector32Term::Variable(Variable(949_001)));
+            let height = (u32::BITS - size.leading_zeros()) as usize;
+            assert!(comparisons <= 2 * height + 4, "{size}: {comparisons}");
+            assert!(
+                !facts.contains(&goal),
+                "candidate selection grants no equality"
+            );
+        }
+    }
 
     fn integer_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Integer {

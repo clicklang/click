@@ -341,7 +341,7 @@ fn rust_conditional_move_and_explicit_drop_verify() {
 }
 
 #[test]
-fn rust_owned_field_loan_recovery_fails_closed() {
+fn rust_owned_field_loan_recovery_verifies() {
     // Preserve the ordinary Rust source that exposed fragmented ownership at
     // the outer destructor call. Do not alter it to make the proof pass.
     let source = format!(
@@ -349,12 +349,93 @@ fn rust_owned_field_loan_recovery_fails_closed() {
         MOVE_SOURCE.split("pub fn restore").next().unwrap()
     );
     let (p, _) = moves_project(&source);
-    let error = refresh_import(&p.config()).unwrap_err();
-    assert!(error.contains("field-loan recovery"), "{error}");
+    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 42; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("value[0] == 42", "value[0] == 1"),
+            &prepared
+        )
+        .is_err()
+    );
     assert_eq!(
         fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
         source
     );
+}
+
+#[test]
+fn rust_owned_field_loan_cli_expands_and_reverifies() {
+    let p = Project::new(include_str!("../examples/rust-field-borrow/guard.rs"));
+    fs::write(
+        p.root.join("borrow.click"),
+        include_str!("../examples/rust-field-borrow/guard.click").replace("guard.rs", "borrow.rs"),
+    )
+    .unwrap();
+    refresh_import(&p.config()).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "cleanup.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn rust_owned_field_parent_can_write_after_explicit_child_drop() {
+    let source = format!(
+        "{}pub fn cleanup(value:&mut i32) {{ let mut first = Guard {{slot:value,saved:1}}; let second = Guard {{slot:&mut first.saved,saved:42}}; std::mem::drop(second); first.saved = 43; }}",
+        MOVE_SOURCE.split("pub fn restore").next().unwrap()
+    );
+    let (p, _) = moves_project(&source);
+    let sidecar = format!("{}void cleanup(int32* value) {{ owns value[0..1]; ensures value[0] == 43; }} by {{ execute(); simp(); }}", MOVE_SIDECAR.split("int32 restore").next().unwrap()).replace("guard.rs", "borrow.rs");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+}
+
+#[test]
+fn rust_owned_disjoint_mutable_fields_verify() {
+    let source = "pub struct Pair {pub x:i32,pub y:i32} pub fn set(left:&mut i32,right:&mut i32) {*left=7;*right=9;} pub fn fields()->i32 {let mut pair=Pair{x:1,y:2}; let left=&mut pair.x; let right=&mut pair.y; set(left,right); if pair.y == 9 {pair.x} else {0}}";
+    let p = Project::new(source);
+    let sidecar = "verifying \"borrow.rs\"; void set(int32* left,int32* right) {owns left[0..1];owns right[0..1];ensures left[0]==7;ensures right[0]==9;} by {execute();simp();} int32 fields() {ensures result==7;} by {execute();simp();}";
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("result==7", "result==0"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_owned_field_conflicting_parent_access_is_rejected_by_compiler() {
+    let prefix = MOVE_SOURCE.split("pub fn restore").next().unwrap();
+    for (suffix, diagnostic) in [
+        ("first.saved=5; std::mem::drop(second);", "cannot assign"),
+        (
+            "std::mem::drop(first); std::mem::drop(second);",
+            "cannot move out",
+        ),
+        (
+            "std::mem::drop(second); *second.slot=5;",
+            "use of moved value",
+        ),
+    ] {
+        let source = format!(
+            "{prefix}pub fn bad(value:&mut i32) {{ let mut first=Guard{{slot:value,saved:1}}; let second=Guard{{slot:&mut first.saved,saved:42}}; {suffix} }}"
+        );
+        let p = Project::new(&source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert_eq!(
+            fs::read_to_string(p.root.join("borrow.rs")).unwrap(),
+            source
+        );
+    }
 }
 
 #[test]
