@@ -20,12 +20,10 @@ use click::languages::c::target::CTarget;
 use click::surface::verify_c0_sources;
 use click::surface::{
     ClickError, ClickErrorKind, ClickProject, VerifiedCTheorem, accepted_proof_trace,
-    c0_incremental_selection, c0_prepared_project_external_dependencies,
-    c0_prepared_project_selected_proof_count, c0_prepared_project_selected_proof_names,
-    c0_prepared_project_tactic_source_position, c0_project_external_dependencies,
-    c0_project_selected_proof_count, c0_project_selected_proof_names,
-    c0_project_tactic_source_position, nested_tactic_source_position,
-    program_prepared_project_external_dependencies, program_prepared_project_selected_proof_count,
+    c0_incremental_selection, c0_prepared_project_selected_proof_names,
+    c0_prepared_project_summary, c0_prepared_project_tactic_source_position,
+    c0_project_selected_proof_names, c0_project_summary, c0_project_tactic_source_position,
+    nested_tactic_source_position, program_prepared_project_summary,
     program_prepared_project_tactic_source_position, selected_c_target,
     tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
@@ -485,9 +483,9 @@ fn verify_changed_sidecar(
     if !full_rebuild && selected.is_empty() {
         return Ok(ChangedSidecar::Skipped);
     }
-    let dependencies = {
+    let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
-        c0_project_external_dependencies(&project, &refs).map_err(click_message)?
+        c0_project_summary(&project, &refs).map_err(click_message)?
     };
     let verified_theorems = if full_rebuild {
         verify_c0_project(&project, &refs)
@@ -495,7 +493,7 @@ fn verify_changed_sidecar(
         verify_c0_project_functions(&project, &refs, selected.clone())
     }
     .map_err(|error| proof_error_report(&error, sidecar, false, &project, &inputs, 0, None))?;
-    print_external_dependencies(&dependencies, &verified_theorems);
+    print_external_dependencies(&summary.external_dependencies, &verified_theorems);
     if full_rebuild
         && project.modules().len() == 1
         && project.c_profile().is_none()
@@ -1211,20 +1209,17 @@ fn verify_file_within_limits(
     let trace_target = trace_to
         .map(|target| resolve_trace_target(&click_source, line_offset, target))
         .transpose()?;
-    let dependencies = {
+    let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
         match &inputs {
             CInput::Bundle(sources) => {
-                c0_project_external_dependencies(&project, &source_refs(sources))
-                    .map_err(click_message)?
+                c0_project_summary(&project, &source_refs(sources)).map_err(click_message)?
             }
             CInput::Prepared(imports) => {
-                c0_prepared_project_external_dependencies(&project, imports)
-                    .map_err(click_message)?
+                c0_prepared_project_summary(&project, imports).map_err(click_message)?
             }
             CInput::PreparedProgram(import) => {
-                program_prepared_project_external_dependencies(&project, import)
-                    .map_err(click_message)?
+                program_prepared_project_summary(&project, import).map_err(click_message)?
             }
         }
     };
@@ -1322,24 +1317,13 @@ fn verify_file_within_limits(
         })?;
         println!("{trace}\n");
     }
-    print_external_dependencies(&dependencies, &verified);
+    print_external_dependencies(&summary.external_dependencies, &verified);
+    // The count comes from the summary's resolution of the sources, so
+    // reporting it does not parse every source again after verification.
     let selected = if trace_proof.is_some() {
         1
     } else {
-        match &inputs {
-            CInput::Bundle(sources) => {
-                c0_project_selected_proof_count(&project, &source_refs(sources))
-                    .map_err(click_message)?
-            }
-            CInput::Prepared(imports) => {
-                c0_prepared_project_selected_proof_count(&project, imports)
-                    .map_err(click_message)?
-            }
-            CInput::PreparedProgram(import) => {
-                program_prepared_project_selected_proof_count(&project, import)
-                    .map_err(click_message)?
-            }
-        }
+        summary.selected_proof_count
     };
     println!("{selected} selected proof{} verified", plural(selected));
     let admissions = click::surface::take_sorry_admissions();
@@ -1405,20 +1389,17 @@ fn verify_location_within_limits(
     let LoadedTarget {
         project, inputs, ..
     } = target;
-    let dependencies = {
+    let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
         match &inputs {
             CInput::Bundle(sources) => {
-                c0_project_external_dependencies(&project, &source_refs(sources))
-                    .map_err(click_message)?
+                c0_project_summary(&project, &source_refs(sources)).map_err(click_message)?
             }
             CInput::Prepared(imports) => {
-                c0_prepared_project_external_dependencies(&project, imports)
-                    .map_err(click_message)?
+                c0_prepared_project_summary(&project, imports).map_err(click_message)?
             }
             CInput::PreparedProgram(import) => {
-                program_prepared_project_external_dependencies(&project, import)
-                    .map_err(click_message)?
+                program_prepared_project_summary(&project, import).map_err(click_message)?
             }
         }
     };
@@ -1446,7 +1427,7 @@ fn verify_location_within_limits(
             )
         })
     }?;
-    print_external_dependencies(&dependencies, &verified);
+    print_external_dependencies(&summary.external_dependencies, &verified);
     println!("1 selected proof verified");
     Ok(())
 }
@@ -1816,8 +1797,8 @@ mod tests {
     }
 
     /// Program-entry storage is as large as the program's static objects.
-    /// Building it (for the external-dependency summary, then again for the
-    /// frontend) once ran before the run's limits were installed and without
+    /// Building it (once for the external-dependency summary, then again for
+    /// the frontend) once ran before the run's limits were installed and without
     /// a checkpoint, so a 10,000-element zeroed struct pool ran for over an
     /// hour past both the work budget and the ten-minute crash bound. Zeroed
     /// struct arrays are now strided runs, but an explicit initializer list
@@ -1861,12 +1842,88 @@ mod tests {
         let second = run();
         fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
         assert!(
-            first.contains(
-                "(60000 limit) while running external dependency summary > program-entry storage phase"
-            ) && !first.contains("crash-containment"),
+            first.contains("(60000 limit) while running frontend > program-entry storage phase")
+                && !first.contains("crash-containment"),
             "{first}"
         );
         assert_eq!(first, second, "a work-budget verdict is deterministic");
+    }
+
+    /// The project summary (external dependencies and the selected proof
+    /// count) reads function names, signatures, and call graphs. It once
+    /// built `main`'s whole program-entry storage too and dropped it, which
+    /// doubled the setup cost of a program with large static objects. It now
+    /// enters no program-entry storage phase, and beyond resolving the
+    /// sources it spends the same work whatever a static array's
+    /// initializer holds, while verification still builds that storage.
+    #[test]
+    fn the_project_summary_builds_no_program_entry_storage() {
+        use click::instrumentation::{VerificationEvent, collect, measure_deterministic_work};
+        let costs = [100usize, 2000].map(|elements| {
+            let initializers = (0..elements)
+                .map(|index| format!("{{{}, 0}}", index % 97))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let (root, click_path) = temporary_project(
+                "summary-entry",
+                &format!(
+                    "struct node {{ int32 key; struct node *next; }};\n\
+                     struct node pool[{elements}] = {{{initializers}}};\n\
+                     int main(void) {{ return pool[0].key; }}\n"
+                ),
+                "verifying \"program.c\";\n\
+                 int main() {\n\
+                     ensures result == 0;\n\
+                 } by {\n\
+                     execute();\n\
+                     simp();\n\
+                 }\n",
+            );
+            let LoadedTarget {
+                project, inputs, ..
+            } = load_target_inputs(&click_path, Some(&root)).expect("the project loads");
+            let CInput::Bundle(sources) = &inputs else {
+                panic!("a plain C project is a source bundle");
+            };
+            let refs = source_refs(sources);
+            // Warm the process-wide caches so both sizes are measured alike.
+            click::surface::c0_project_function_names(&project, &refs)
+                .expect("the sources resolve");
+            let ((summary, summary_events), summary_work) =
+                measure_deterministic_work(|| collect(|| c0_project_summary(&project, &refs)));
+            let (resolution, resolution_work) = measure_deterministic_work(|| {
+                click::surface::c0_project_function_names(&project, &refs)
+            });
+            let (verified, verify_events) = collect(|| verify_c0_project(&project, &refs));
+            fs::remove_dir_all(&root)
+                .expect("temporary verification directory should be removable");
+            let summary = summary.expect("the summary resolves");
+            resolution.expect("the sources resolve");
+            verified.expect("the program verifies");
+            let builds_storage = |events: &[VerificationEvent]| {
+                events.iter().any(|event| {
+                    matches!(
+                        event,
+                        VerificationEvent::PhaseStarted("program-entry storage")
+                    )
+                })
+            };
+            assert!(
+                !builds_storage(&summary_events),
+                "the summary built entry storage"
+            );
+            assert!(
+                builds_storage(&verify_events),
+                "verification builds entry storage"
+            );
+            assert_eq!(summary.selected_proof_count, 1);
+            assert!(summary.external_dependencies.is_empty());
+            summary_work as i64 - resolution_work as i64
+        });
+        assert_eq!(
+            costs[0], costs[1],
+            "beyond resolution, the summary's work grew with the initializer: {costs:?}"
+        );
     }
 
     /// The crash-containment bound is installed before the run loads its

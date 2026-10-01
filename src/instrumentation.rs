@@ -487,8 +487,8 @@ fn active_work_description() -> String {
 }
 
 /// The open phases, outermost first, as a limit's message names them:
-/// `external dependency summary > program-entry storage phase` says both
-/// what the run was doing and which part of it.
+/// `frontend > program-entry storage phase` says both what the run was
+/// doing and which part of it.
 fn active_phase_description() -> Option<String> {
     ACTIVE_PHASES.with(|active| {
         let active = active.borrow();
@@ -1122,10 +1122,10 @@ impl Drop for OperationTiming {
 ///
 /// The open phases are what a limit's message names as running (a work
 /// budget or the crash-containment bound that fires inside them says
-/// "while running external dependency summary > program-entry storage
-/// phase"), so every phase of a run, including source loading and
-/// program-entry construction before any tactic budget is installed, is
-/// named when a limit stops it. Profiling (`CLICK_TIMINGS`, a collector)
+/// "while running frontend > program-entry storage phase"), so every
+/// phase of a run, including source loading and program-entry
+/// construction before any tactic budget is installed, is named when a
+/// limit stops it. Profiling (`CLICK_TIMINGS`, a collector)
 /// additionally records its wall time. Phases are coarse, so emitting them
 /// unconditionally costs a handful of events per run.
 pub struct VerificationPhase {

@@ -1307,20 +1307,6 @@ pub fn c0_project_function_names(
         .collect())
 }
 
-pub fn c0_project_selected_proof_count(
-    project: &ClickProject,
-    c_sources: &[(&str, &str)],
-) -> Result<usize, ClickError> {
-    let sources = CSourceContext::bundle(c_sources).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(file.function_blocks().len()
-        + file
-            .theorem_definitions()
-            .iter()
-            .filter(|theorem| file.theorem_is_selected(theorem.name()))
-            .count())
-}
-
 pub fn c0_project_selected_proof_names(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
@@ -1328,34 +1314,6 @@ pub fn c0_project_selected_proof_names(
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     Ok(selected_entry_proof_names(&file))
-}
-
-pub fn c0_prepared_project_selected_proof_count(
-    project: &ClickProject,
-    imports: &[PreparedCImport],
-) -> Result<usize, ClickError> {
-    let sources = CSourceContext::prepared(imports).with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(file.function_blocks().len()
-        + file
-            .theorem_definitions()
-            .iter()
-            .filter(|theorem| file.theorem_is_selected(theorem.name()))
-            .count())
-}
-
-pub fn program_prepared_project_selected_proof_count(
-    project: &ClickProject,
-    import: &impl PreparedProgramSource,
-) -> Result<usize, ClickError> {
-    let sources = CSourceContext::program(import)?.with_click_project(project);
-    let file = resolve_click_project_context(project, &sources)?;
-    Ok(file.function_blocks().len()
-        + file
-            .theorem_definitions()
-            .iter()
-            .filter(|theorem| file.theorem_is_selected(theorem.name()))
-            .count())
 }
 
 pub fn c0_prepared_project_selected_proof_names(
@@ -3890,43 +3848,66 @@ pub fn c0_external_dependencies(
     c0_external_dependencies_context(click_source, &sources)
 }
 
-pub fn c0_project_external_dependencies(
+/// What `click verify` reports about a project beside its verdict, from one
+/// resolution of its sources: the external contracts each selected function
+/// relies on, and how many proof units are selected.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct CProjectSummary {
+    /// Each selected function's assumed external contracts, by function.
+    pub external_dependencies: BTreeMap<String, Vec<String>>,
+    /// Selected function proofs plus selected theorems.
+    pub selected_proof_count: usize,
+}
+
+fn c0_project_summary_file(
+    file: &ClickFile,
+    sources: &CSourceContext<'_>,
+) -> Result<CProjectSummary, ClickError> {
+    Ok(CProjectSummary {
+        external_dependencies: c0_external_dependencies_file(file, sources)?,
+        selected_proof_count: file.function_blocks().len()
+            + file
+                .theorem_definitions()
+                .iter()
+                .filter(|theorem| file.theorem_is_selected(theorem.name()))
+                .count(),
+    })
+}
+
+pub fn c0_project_summary(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    // The summary builds kernel state, program-entry storage among it, and
-    // the run's budget charges that work, so it gets its own kernel session:
-    // what this thread verified before cannot change the units it spends.
+) -> Result<CProjectSummary, ClickError> {
+    // The run's budget charges the summary's work, so it gets its own kernel
+    // session: what this thread verified before cannot change its units.
     let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_external_dependencies_file(&file, &sources)
+    c0_project_summary_file(&file, &sources)
 }
 
-pub fn c0_prepared_project_external_dependencies(
+pub fn c0_prepared_project_summary(
     project: &ClickProject,
     imports: &[PreparedCImport],
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    // The summary builds kernel state, program-entry storage among it, and
-    // the run's budget charges that work, so it gets its own kernel session:
-    // what this thread verified before cannot change the units it spends.
+) -> Result<CProjectSummary, ClickError> {
+    // The run's budget charges the summary's work, so it gets its own kernel
+    // session: what this thread verified before cannot change its units.
     let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::prepared(imports).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_external_dependencies_file(&file, &sources)
+    c0_project_summary_file(&file, &sources)
 }
 
-pub fn program_prepared_project_external_dependencies(
+pub fn program_prepared_project_summary(
     project: &ClickProject,
     import: &impl PreparedProgramSource,
-) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    // The summary builds kernel state, program-entry storage among it, and
-    // the run's budget charges that work, so it gets its own kernel session:
-    // what this thread verified before cannot change the units it spends.
+) -> Result<CProjectSummary, ClickError> {
+    // The run's budget charges the summary's work, so it gets its own kernel
+    // session: what this thread verified before cannot change its units.
     let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
-    c0_external_dependencies_file(&file, &sources)
+    c0_project_summary_file(&file, &sources)
 }
 
 /// Reports the same explicit external-contract assumptions for compiler imports.
@@ -3968,7 +3949,10 @@ fn c0_external_dependencies_file(
     file: &ClickFile,
     sources: &CSourceContext<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
-    let parsed_sources = parse_verified_sources_context(file, sources)?;
+    // The summary reads function names and call graphs, never `main`'s
+    // program-entry storage, so it does not build it.
+    let parsed_sources =
+        parse_verified_sources_context_with_entry(file, sources, ProgramEntryStorage::Skip)?;
     let function_blocks = combined_external_function_blocks(file)?;
     let external_names = function_blocks
         .iter()
@@ -5630,6 +5614,26 @@ pub(in crate::surface) fn parse_verified_sources_context(
     file: &ClickFile,
     c_sources: &CSourceContext<'_>,
 ) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+    parse_verified_sources_context_with_entry(file, c_sources, ProgramEntryStorage::Build)
+}
+
+/// Whether parsing the verifying sources also builds `main`'s program-entry
+/// storage. Storage is as large as the program's static objects; a caller
+/// that reads only function names, signatures, and call graphs (the
+/// external-dependency summary) skips it. Static initializers are validated
+/// either way, so both report the same source errors.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::surface) enum ProgramEntryStorage {
+    Build,
+    Skip,
+}
+
+pub(in crate::surface) fn parse_verified_sources_context_with_entry(
+    file: &ClickFile,
+    c_sources: &CSourceContext<'_>,
+    entry_storage: ProgramEntryStorage,
+) -> Result<BTreeMap<String, (String, syntax::C0Function)>, ClickError> {
+    let build_storage = entry_storage == ProgramEntryStorage::Build;
     if file.selected_thread_runtime()
         == crate::languages::c::thread_runtime::CThreadRuntime::ModeledPthread
     {
@@ -6291,10 +6295,14 @@ pub(in crate::surface) fn parse_verified_sources_context(
     }
 
     if parsed.contains_key("main") {
-        let mut storage_functions = parsed
-            .values()
-            .map(|(_, function)| function.to_kernel_static_storage(function.name() == "main"))
-            .collect::<Vec<_>>();
+        let mut storage_functions = if build_storage {
+            parsed
+                .values()
+                .map(|(_, function)| function.to_kernel_static_storage(function.name() == "main"))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         // Main already supplies the linked external objects and its own
         // translation unit's private objects. Visit each remaining unit's
         // declarations once, including data-only files; do not copy every
@@ -6365,21 +6373,25 @@ pub(in crate::surface) fn parse_verified_sources_context(
             storage
                 .validate_static_initializers()
                 .map_err(|error| ClickError::new(error.to_string()))?;
-            storage_functions.push(storage.to_kernel_static_storage(true));
+            if build_storage {
+                storage_functions.push(storage.to_kernel_static_storage(true));
+            }
         }
-        parsed
-            .get_mut("main")
-            .expect("main was found")
-            .1
-            .program_entry_state = Some(std::sync::Arc::new({
-            let _timing = VerificationTimingPhase::new("program-entry storage");
-            crate::kernel::initialize_c_program_storage(storage_functions).ok_or_else(|| {
-                ClickError::new(format!(
-                    "verification budget exhausted inside {}",
-                    instrumentation::deadline_context()
-                ))
-            })?
-        }));
+        if build_storage {
+            parsed
+                .get_mut("main")
+                .expect("main was found")
+                .1
+                .program_entry_state = Some(std::sync::Arc::new({
+                let _timing = VerificationTimingPhase::new("program-entry storage");
+                crate::kernel::initialize_c_program_storage(storage_functions).ok_or_else(|| {
+                    ClickError::new(format!(
+                        "verification budget exhausted inside {}",
+                        instrumentation::deadline_context()
+                    ))
+                })?
+            }));
+        }
     }
     Ok(parsed)
 }

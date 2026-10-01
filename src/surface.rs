@@ -166,13 +166,11 @@ use validation::{
 pub(in crate::surface) use verification::CSourceContext;
 pub(in crate::surface) use verification::*;
 pub use verification::{
-    C0IncrementalSelection, CProofArtifactIdentity, SorryAdmission, c0_external_dependencies,
-    c0_function_names, c0_incremental_selection, c0_prepared_external_dependencies,
-    c0_prepared_project_external_dependencies, c0_prepared_project_selected_proof_count,
-    c0_prepared_project_selected_proof_names, c0_project_external_dependencies,
-    c0_project_function_names, c0_project_selected_proof_count, c0_project_selected_proof_names,
-    parse, program_prepared_project_external_dependencies,
-    program_prepared_project_selected_proof_count, take_sorry_admissions,
+    C0IncrementalSelection, CProjectSummary, CProofArtifactIdentity, SorryAdmission,
+    c0_external_dependencies, c0_function_names, c0_incremental_selection,
+    c0_prepared_external_dependencies, c0_prepared_project_selected_proof_names,
+    c0_prepared_project_summary, c0_project_function_names, c0_project_selected_proof_names,
+    c0_project_summary, parse, program_prepared_project_summary, take_sorry_admissions,
     verify_c0_prepared_project, verify_c0_prepared_project_at,
     verify_c0_prepared_project_functions, verify_c0_prepared_sources,
     verify_c0_prepared_sources_at, verify_c0_prepared_sources_functions, verify_c0_project,
