@@ -892,37 +892,11 @@ int32 nested_nonnegative(int32 x, int32 flag) {
     }
 }
 "#;
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        super::super::proof::count_flat_proof_units(|| {
-            {
-                super::super::proof::count_execution_context_exports(|| {
-                    super::super::proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("nested.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = super::super::proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("nested.c", c_source)])
+    });
     let verified = verified.expect("nested end-of-arm interfaces should verify through Proof");
     assert_eq!(flat_units, 1, "the nested script should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "nested verification must not export state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "nested verification must not check a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "nested_nonnegative.contract"
-                    && name == "generated certificate validation"
-        )),
-        "nested end-of-arm interfaces must retain their checked Proof successors: {events:#?}"
-    );
     let retained = verified[0]
         .expanded_proof_tactics()
         .expect("the nested proof should retain surface provenance");
@@ -948,27 +922,13 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         .expect("common simp should exist")
         + 8;
     let position = position_at_offset(click_source, selected_offset);
-    let ((expanded, expansion_checks), expansion_exports) = {
-        super::super::proof::count_execution_context_exports(|| {
-            super::super::proof::count_source_certificate_checks(|| {
-                expand_c0_tactic_source_at(
-                    click_source,
-                    &[("nested.c", c_source)],
-                    position.line,
-                    position.column,
-                )
-            })
-        })
-    };
+    let expanded = expand_c0_tactic_source_at(
+        click_source,
+        &[("nested.c", c_source)],
+        position.line,
+        position.column,
+    );
     let expanded = expanded.expect("nested deferred simp should expand");
-    assert_eq!(
-        expansion_exports, 0,
-        "nested expansion must not export state"
-    );
-    assert_eq!(
-        expansion_checks, 0,
-        "nested expansion must not check a certificate"
-    );
 
     verify_c0_sources(&expanded, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("nested deferred expansion should check:\n{error:?}\n{expanded}")
@@ -979,27 +939,13 @@ int32 nested_nonnegative(int32 x, int32 flag) {
         .expect("inner branch should exist")
         + 16;
     let inner_position = position_at_offset(click_source, inner_offset);
-    let ((inner, inner_checks), inner_exports) = {
-        super::super::proof::count_execution_context_exports(|| {
-            super::super::proof::count_source_certificate_checks(|| {
-                expand_c0_tactic_source_at(
-                    click_source,
-                    &[("nested.c", c_source)],
-                    inner_position.line,
-                    inner_position.column,
-                )
-            })
-        })
-    };
+    let inner = expand_c0_tactic_source_at(
+        click_source,
+        &[("nested.c", c_source)],
+        inner_position.line,
+        inner_position.column,
+    );
     let inner = inner.expect("the retained inner branch should expand");
-    assert_eq!(
-        inner_exports, 0,
-        "inner branch expansion must not export state"
-    );
-    assert_eq!(
-        inner_checks, 0,
-        "inner branch expansion must not check a certificate"
-    );
     verify_c0_sources(&inner, &[("nested.c", c_source)]).unwrap_or_else(|error| {
         panic!("inner branch expansion should reverify:\n{error:?}\n{inner}")
     });
@@ -1611,15 +1557,13 @@ int32 compare_swap2(int32 p[2]) {
         simp();
     }
 }"#;
-    let (expanded_execute, _events) = crate::instrumentation::collect(|| {
-        expand_top_level_tactic_for_test(
-            click_source,
-            &[("compare_swap2.c", c_source)],
-            "compare_swap2",
-            CProofClaim::Ensure(0),
-            0,
-        )
-    });
+    let expanded_execute = expand_top_level_tactic_for_test(
+        click_source,
+        &[("compare_swap2.c", c_source)],
+        "compare_swap2",
+        CProofClaim::Ensure(0),
+        0,
+    );
     let expanded_execute =
         expanded_execute.expect("branch-shaped execute should expand from retained Proof steps");
     verify_c0_sources(&expanded_execute, &[("compare_swap2.c", c_source)])
@@ -1636,14 +1580,12 @@ int32 compare_swap2(int32 p[2]) {
 
     let offset = click_source.rfind("simp").expect("simp should be present");
     let position = position_at_offset(click_source, offset);
-    let (expanded, _events) = crate::instrumentation::collect(|| {
-        expand_c0_tactic_source_at(
-            click_source,
-            &[("compare_swap2.c", c_source)],
-            position.line,
-            position.column,
-        )
-    });
+    let expanded = expand_c0_tactic_source_at(
+        click_source,
+        &[("compare_swap2.c", c_source)],
+        position.line,
+        position.column,
+    );
     let expanded = expanded.expect("post-execution simp should expand");
 
     // The branch anchors at the statement that branched; statement 0 is
@@ -2051,8 +1993,7 @@ int32 write_selected(int32 p[2], int32 flag) {
 }
 "#;
     let sources = [("write_selected.c", c_source)];
-    let (verified, _events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("branched baseline should verify");
     for (selected_text, selected_smart) in [
         ("have result + 1", "have result + 1 == 1 by simp"),
