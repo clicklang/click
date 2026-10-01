@@ -5945,8 +5945,8 @@ impl CState {
             || definition.matched.is_some()
             || !definition.witnesses.is_empty()
             || definition.condition.is_some()
+            || definition.facts_claim_liveness
             || !definition.children.is_empty()
-            || !definition.facts.is_empty()
             || definition
                 .instance_schema
                 .as_ref()
@@ -6019,7 +6019,7 @@ impl CState {
             .creation
             .as_ref()
             .ok_or("authority mode has no creation history")?;
-        if batch && !definition.contains().is_empty() {
+        if batch && (!definition.contains().is_empty() || !definition.facts().is_empty()) {
             return Err("a quantified member needs an empty private body".into());
         }
         let body = if definition.contains().is_empty() {
@@ -6062,6 +6062,20 @@ impl CState {
                 ledger
                     .permits_memory_access_with_assumptions(range, assumptions)
                     .map_err(|_| "member private memory has an active borrow")?;
+            }
+        }
+        if produce && !definition.facts().is_empty() {
+            let instantiated = crate::kernel::functions::instantiate_private_member_body_facts(
+                selected,
+                definition,
+                &self.memory,
+                assumptions,
+            )
+            .ok_or("Requires ownership of every cell read by member body facts")?;
+            for (index, fact) in instantiated.declared {
+                if !assumptions.proves_exact(&fact) {
+                    return Err(format!("Requires member body fact #{index}"));
+                }
             }
         }
         let resources = if produce {

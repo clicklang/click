@@ -44,6 +44,13 @@ arbitrary; each ledger checks the exact decrement or increment. Rejections
 cover absent authority or bounds, missing exchange, incorrect totals, aliased
 pools, and reuse of the consumed source membership. An unrelated member may
 be framed beside an authority; it is not imported into that authority's pool.
+The `authority_wildcard_body_facts*` fixtures add private invariants to unit
+memory-bearing members. Folding checks current facts, opening/closing maintains
+them without authority, and consumption exposes the exact member's invariant.
+Two disjoint members retain their totals and private values. Rejections cover
+false birth, invalidating writes at close, and an invariant reading a cell
+outside its own body even when the caller owns that cell. Kernel regressions
+reject unchecked birth and forged facts during consumption or checked event application.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 
