@@ -1335,7 +1335,7 @@ fn symbolic_index_run_load(
                 return false;
             }
             let first_element = shift.div_euclid(width);
-            let Some((low, high)) = assumptions.signed_interval(&index) else {
+            let Some((low, high)) = assumptions.signed_interval_past_exclusions(&index) else {
                 return false;
             };
             let (Some(first), Some(last)) = (

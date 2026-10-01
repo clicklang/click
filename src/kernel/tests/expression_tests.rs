@@ -3107,6 +3107,34 @@ fn excluded_range_endpoints_force_the_remaining_value() {
 }
 
 #[test]
+fn a_signed_interval_moves_past_excluded_endpoints() {
+    let k = Bitvector32Term::Variable(Variable(88));
+    let assumptions = [1, 2, 3, 5].into_iter().fold(
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(4)),
+                true,
+            ),
+        |assumptions, value| {
+            assumptions.assume_condition(
+                ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(value)),
+                false,
+            )
+        },
+    );
+    assert_eq!(assumptions.signed_interval(&k), Some((0, 3)));
+    // `k != 5` lies outside the range and moves nothing.
+    assert_eq!(
+        assumptions.signed_interval_past_exclusions(&k),
+        Some((0, 0))
+    );
+}
+
+#[test]
 fn singleton_integer_range_forces_equality() {
     let k = Bitvector32Term::Variable(Variable(86));
     let assumptions = PureFactContext::new()
