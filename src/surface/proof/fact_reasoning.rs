@@ -334,7 +334,7 @@ pub(super) fn describe_statement_prerequisite_failure(
         .filter(|fact| !path_facts.contains(fact))
         .cloned()
         .collect::<Vec<_>>();
-    describe_access_bound_prerequisite(proposition, &consulted, state, statement)
+    let refusal = describe_access_bound_prerequisite(proposition, &consulted, state, statement)
         .or_else(|| describe_assertion_prerequisite(proposition, &consulted, state, statement))
         .unwrap_or_else(|| {
             describe_derivation_failure(
@@ -344,7 +344,11 @@ pub(super) fn describe_statement_prerequisite_failure(
                 environment,
                 predicate_environment,
             )
-        })
+        });
+    format!(
+        "{refusal}{}",
+        crate::surface::diagnostics::describe_c_statement_site()
+    )
 }
 
 /// "the store to `items[i]` may write outside `items`: could not show

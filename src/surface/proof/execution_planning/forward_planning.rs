@@ -36,6 +36,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             else_branch,
         } => {
             let statement_index = *next_statement_index;
+            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+                environment.source_layout,
+                statement_index,
+            );
             let source_region = environment
                 .source_layout
                 .statement(statement_index)
@@ -111,6 +115,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
             ..
         } => {
             let statement_index = *next_statement_index;
+            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+                environment.source_layout,
+                statement_index,
+            );
             let loop_index = *next_loop_index;
             *next_loop_index += 1;
             let source_region = environment
@@ -218,9 +226,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 }
                 .map_err(|refusal| {
                     ClickError::new(format!(
-                        "`{}.loop({loop_index}).preserve`: {}",
+                        "`{}.loop({loop_index}).preserve`: {}{}",
                         environment.function_block.signature().name(),
-                        crate::surface::diagnostics::describe_loop_head_refusal(&refusal)
+                        crate::surface::diagnostics::describe_loop_head_refusal(&refusal),
+                        crate::surface::diagnostics::describe_c_statement_site()
                     ))
                 })?;
                 for preservation in preservation_contexts {
@@ -487,6 +496,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
         }
         _ => {
             let statement_index = *next_statement_index;
+            let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+                environment.source_layout,
+                statement_index,
+            );
             *next_statement_index = environment
                 .source_layout
                 .statement(statement_index)
@@ -815,16 +828,18 @@ fn advance_execution_proof_statement(
                 CStatementOutcome::VerificationDiverges => {}
                 CStatementOutcome::UndefinedBehavior(kind) => {
                     return Err(ClickError::new(format!(
-                        "execution proof traversal for {} statement({statement_index}) produced undefined behavior: {}",
+                        "execution proof traversal for {} statement({statement_index}) produced undefined behavior: {}{}",
                         environment.function_block.signature().name(),
-                        kind.description()
+                        kind.description(),
+                        crate::surface::diagnostics::describe_c_statement_site()
                     )));
                 }
                 CStatementOutcome::RuntimeError(error) => {
                     return Err(ClickError::new(format!(
-                        "execution proof traversal for {} statement({statement_index}) could not verify C operation: {}\nresource facts in context: {}",
+                        "execution proof traversal for {} statement({statement_index}) could not verify C operation: {}{}\nresource facts in context: {}",
                         environment.function_block.signature().name(),
                         describe_runtime_error(&error, &[], &[]),
+                        crate::surface::diagnostics::describe_c_statement_site(),
                         context.state.resources().facts().len()
                     ))
                     .with_kind(crate::surface::diagnostics::runtime_refusal_kind(&error)));

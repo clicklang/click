@@ -690,11 +690,14 @@ fn c0_plain_char_qualified_pointee_casts_preserve_read_only_views() {
             .expect("a const-qualified pointee cast should parse");
     assert!(matches!(
         functions[0].body(),
-        C0Statement::Return(C0Expression::Cast {
-            c_type: C0Type::CharPointer,
-            pointee_constant: true,
-            ..
-        })
+        C0Statement::Return(
+            C0Expression::Cast {
+                c_type: C0Type::CharPointer,
+                pointee_constant: true,
+                ..
+            },
+            _
+        )
     ));
 
     crate::surface::verify_c0_sources(
@@ -782,7 +785,7 @@ fn c0_plain_char_explicit_byte_pointer_casts_preserve_source_identity() {
         .zip([C0Type::CharPointer, C0Type::UInt8Pointer])
     {
         assert!(
-            matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }) if *c_type == expected)
+            matches!(function.body(), C0Statement::Return(C0Expression::Cast { c_type, .. }, _) if *c_type == expected)
         );
     }
     crate::surface::verify_c0_sources(
@@ -2632,7 +2635,7 @@ fn c0_accepts_incomplete_outer_dimension_extern_scalar_arrays() {
     assert_eq!(values.incomplete_shape(), Some(&[3][..]));
     assert!(matches!(
         function.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index))
+        syntax::C0Statement::Return(syntax::C0Expression::Index(base, index), _)
             if matches!(base.as_ref(), syntax::C0Expression::Variable(name) if name == "values")
                 && matches!(index.as_ref(), syntax::C0Expression::Add(left, right)
                     if matches!(left.as_ref(), syntax::C0Expression::Multiply(multiplier, stride)
@@ -3397,7 +3400,7 @@ fn c0_collects_string_literals_with_terminators() {
         function.to_kernel_function().string_literals()[0].bytes(),
         b"ok\n\0"
     );
-    assert!(matches!(function.body(), syntax::C0Statement::Return(_)));
+    assert!(matches!(function.body(), syntax::C0Statement::Return(_, _)));
 }
 
 #[test]
@@ -3869,7 +3872,7 @@ fn c0_builtin_expect_is_an_identity_and_unknown_builtins_fail() {
             .expect("__builtin_expect should preserve the first operand");
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Variable(name)) if name == "value"
+        syntax::C0Statement::Return(syntax::C0Expression::Variable(name), _) if name == "value"
     ));
 
     let error = syntax::parse_functions(
@@ -4293,7 +4296,7 @@ fn c0_syntax_lowers_scalar_declaration_initializers_in_source_order() {
                         assignment.as_ref(),
                         syntax::C0Statement::Assign {
                             name,
-                            expression: syntax::C0Expression::Int32Literal(7)
+                            expression: syntax::C0Expression::Int32Literal(7), ..
                         } if name == "value"
                     )
             )
@@ -4626,7 +4629,9 @@ fn c0_syntax_accepts_switch_cases_and_nested_loop_control() {
         }
     }
 
-    let Some(syntax::C0Statement::Switch { expression, cases }) = find_switch(function.body())
+    let Some(syntax::C0Statement::Switch {
+        expression, cases, ..
+    }) = find_switch(function.body())
     else {
         panic!("expected native switch statement");
     };
@@ -4882,7 +4887,7 @@ fn c0_syntax_accepts_scalar_casts_and_conditional_expressions() {
             condition,
             then_branch,
             else_branch,
-        }) if matches!(condition.as_ref(), syntax::C0Expression::Variable(name) if name == "condition")
+        }, _) if matches!(condition.as_ref(), syntax::C0Expression::Variable(name) if name == "condition")
             && matches!(
                 then_branch.as_ref(),
                 syntax::C0Expression::Cast {
@@ -5046,7 +5051,7 @@ fn c0_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
             | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_)
+            | syntax::C0Statement::Return(_, _)
             | syntax::C0Statement::Store { .. }
             | syntax::C0Statement::SequentialStore { .. }
             | syntax::C0Statement::AggregateCopy { .. }
@@ -5090,7 +5095,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("negative literals should parse");
     assert!(matches!(
         literal.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value))
+        syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(value), _)
             if *value == (-1i32) as u32
     ));
 
@@ -5108,7 +5113,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
             expression,
             c_type: syntax::C0Type::Int32,
             ..
-        }) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-2147483648))
+        }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-2147483648))
     ));
 
     let negation = syntax::parse_function(
@@ -5121,7 +5126,7 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
     .expect("general unary minus should parse");
     assert!(matches!(
         negation.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Subtract(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Subtract(left, right), _)
             if matches!(
                 left.as_ref(),
                 syntax::C0Expression::Int32Literal(0)
@@ -5144,7 +5149,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("C integer literal radices and suffixes should parse");
     assert!(matches!(
         literals.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::BitwiseOr(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::BitwiseOr(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::UInt32Literal(15))
                 && matches!(right.as_ref(), syntax::C0Expression::UInt32Literal(8))
     ));
@@ -5159,7 +5164,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("large octal literals should consider unsigned int before long");
     assert!(matches!(
         octal.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::UInt32Literal(0xffff_ffff))
+        syntax::C0Statement::Return(syntax::C0Expression::UInt32Literal(0xffff_ffff), _)
     ));
 
     let minimum = syntax::parse_function(
@@ -5176,7 +5181,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
             expression,
             c_type: syntax::C0Type::Int32,
             ..
-        }) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-0x8000_0000))
+        }, _) if matches!(expression.as_ref(), syntax::C0Expression::Int64Literal(-0x8000_0000))
     ));
 
     let conditional = syntax::parse_function(
@@ -5189,7 +5194,7 @@ fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     .expect("conditional operands should use their common C type");
     assert!(matches!(
         conditional.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right), _)
             if matches!(right.as_ref(), syntax::C0Expression::Int32Literal(0))
                 && matches!(
                     left.as_ref(),
@@ -5305,12 +5310,15 @@ fn c0_syntax_retains_struct_pointee_types_across_chained_fields() {
         .expect("node child field");
     assert_eq!(child.struct_name(), Some("leaf"));
 
-    let syntax::C0Statement::Return(syntax::C0Expression::Field {
-        pointer,
-        field_type: syntax::C0Type::Int32,
-        field_struct_name: None,
-        ..
-    }) = function.body()
+    let syntax::C0Statement::Return(
+        syntax::C0Expression::Field {
+            pointer,
+            field_type: syntax::C0Type::Int32,
+            field_struct_name: None,
+            ..
+        },
+        _,
+    ) = function.body()
     else {
         panic!("the terminal scalar field should retain its resolved type")
     };
@@ -5524,7 +5532,7 @@ fn c0_tagged_union_layout_overlaps_members_and_preserves_member_types() {
             field_type: syntax::C0Type::Int32,
             union_name,
             ..
-        }) if union_name == "payload"
+        }, _) if union_name == "payload"
     ));
 }
 
@@ -5754,7 +5762,7 @@ fn c0_tagged_union_member_addresses_preserve_member_type_and_offset() {
         .iter()
         .find(|function| function.name() == "address_number")
         .expect("scalar member address function");
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target)) =
+    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) =
         address_number.body()
     else {
         panic!("scalar union member address should remain an address-of lvalue")
@@ -5898,7 +5906,7 @@ fn c0_struct_aggregate_lvalues_support_load_copy_argument_and_return() {
         syntax::C0Statement::Return(syntax::C0Expression::AggregateAddress {
             struct_name,
             ..
-        }) if struct_name == "outer"
+        }, _) if struct_name == "outer"
     ));
     for name in [
         "clone",
@@ -6075,6 +6083,7 @@ fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => {
                 assert_eq!(target, "item");
                 assert!(!zeroed);
@@ -6087,7 +6096,7 @@ fn c0_syntax_lowers_struct_malloc_sizeof_and_free() {
                 );
                 (true, false)
             }
-            syntax::C0Statement::HeapFree { pointer } => {
+            syntax::C0Statement::HeapFree { pointer, .. } => {
                 assert_eq!(pointer, &syntax::C0Expression::Variable("item".to_string()));
                 (false, true)
             }
@@ -6196,6 +6205,7 @@ fn c0_syntax_lowers_calloc_to_zeroed_runtime_allocation() {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => Some((target, bytes, *zeroed)),
             syntax::C0Statement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
@@ -6258,6 +6268,7 @@ fn c0_syntax_accepts_matching_struct_calloc() {
                 target,
                 bytes,
                 zeroed,
+                ..
             } => Some((target, bytes, *zeroed)),
             syntax::C0Statement::Seq(first, second) => {
                 find_allocation(first).or_else(|| find_allocation(second))
@@ -6297,6 +6308,7 @@ fn c0_syntax_accepts_matching_pointer_array_calloc() {
                     target: allocation_target,
                     bytes,
                     zeroed,
+                    ..
                 } if allocation_target == target => {
                     assert!(*zeroed);
                     Some(bytes)
@@ -6357,7 +6369,7 @@ fn c0_syntax_accepts_sizeof_for_scalar_and_pointer_types() {
     )
     .expect("sizeof should accept every supported scalar and pointer type");
 
-    let syntax::C0Statement::Return(expression) = function.body() else {
+    let syntax::C0Statement::Return(expression, _) = function.body() else {
         panic!("sizeof expression should remain in the return statement");
     };
     let kernel_expression = expression.to_kernel_expression();
@@ -9266,7 +9278,7 @@ fn c0_struct_scalar_array_element_address_preserves_row_major_offset() {
     )
     .expect("address of an inline scalar array element should parse");
 
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target)) = function.body()
+    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) = function.body()
     else {
         panic!("array element address should remain an address-of lvalue")
     };
@@ -9743,7 +9755,8 @@ fn c0_struct_field_lowering_uses_explicit_byte_offsets() {
         "#,
     )
     .expect("mixed struct getter should parse");
-    let syntax::C0Statement::Return(syntax::C0Expression::Field { pointer, .. }) = function.body()
+    let syntax::C0Statement::Return(syntax::C0Expression::Field { pointer, .. }, _) =
+        function.body()
     else {
         panic!("getter should return a field load")
     };
@@ -9777,7 +9790,8 @@ fn c0_field_source_ids_distinguish_same_layout_occurrences() {
         "field-id.c",
     )
     .expect("same-layout field accesses should parse");
-    let syntax::C0Statement::Return(syntax::C0Expression::Add(left, right)) = functions[0].body()
+    let syntax::C0Statement::Return(syntax::C0Expression::Add(left, right), _) =
+        functions[0].body()
     else {
         panic!("the two field accesses should remain in the return expression")
     };
@@ -9931,7 +9945,7 @@ fn c0_struct_field_address_lowering_preserves_nested_byte_offset() {
         std::mem::offset_of!(HostInner, value)
     );
 
-    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target)) = function.body()
+    let syntax::C0Statement::Return(syntax::C0Expression::AddressOf(target), _) = function.body()
     else {
         panic!("nested field address should remain an address-of lvalue")
     };
@@ -10269,7 +10283,7 @@ fn c0_equality_binds_looser_than_relational_comparison() {
     .expect("a mixed equality and relational chain should parse");
     assert!(matches!(
         mixed.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "a")
                 && matches!(right.as_ref(), syntax::C0Expression::LessThan(_, _))
     ));
@@ -10284,7 +10298,7 @@ fn c0_equality_binds_looser_than_relational_comparison() {
     .expect("relational operands on both sides of `==` should parse");
     assert!(matches!(
         paired.body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Equal(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::LessThan(_, _))
                 && matches!(right.as_ref(), syntax::C0Expression::LessThan(_, _))
     ));
@@ -10391,7 +10405,7 @@ fn c0_syntax_accepts_else_if_and_unbraced_controlled_statements() {
             then_branch,
             else_branch,
             ..
-        } if matches!(then_branch.as_ref(), syntax::C0Statement::Return(_))
+        } if matches!(then_branch.as_ref(), syntax::C0Statement::Return(_, _))
             && matches!(else_branch.as_ref(), syntax::C0Statement::If { .. })
     ));
 
@@ -11839,14 +11853,20 @@ fn c0_floating_point_literals_use_declared_binary_formats() {
         .expect("binary32 literal should parse");
     assert_eq!(
         single.body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float32Literal(1.5f32.to_bits(),))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float32Literal(1.5f32.to_bits(),),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
 
     let double = syntax::parse_function("double double_value() { return 1.5; }")
         .expect("binary64 literal should parse");
     assert_eq!(
         double.body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float64Literal(1.5f64.to_bits(),))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float64Literal(1.5f64.to_bits(),),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
 
     let hex = syntax::parse_function("double hex() { return 0x1.0p0; }")
@@ -11884,24 +11904,39 @@ fn c0_floating_point_constants_cover_ties_signs_and_classification() {
 
     assert_eq!(
         functions[0].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float32Literal(0x4b80_0000))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float32Literal(0x4b80_0000),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     assert_eq!(
         functions[1].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float64Literal(0x4340_0000_0000_0000,))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float64Literal(0x4340_0000_0000_0000,),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     assert_eq!(
         functions[2].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float32Literal(0x8000_0000))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float32Literal(0x8000_0000),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     assert_eq!(
         functions[3].body(),
-        &syntax::C0Statement::Return(syntax::C0Expression::Float64Literal(0xfff0_0000_0000_0000,))
+        &syntax::C0Statement::Return(
+            syntax::C0Expression::Float64Literal(0xfff0_0000_0000_0000,),
+            crate::languages::c::syntax::C0Site::NONE
+        )
     );
     for function in &functions[4..] {
         assert_eq!(
             function.body(),
-            &syntax::C0Statement::Return(syntax::C0Expression::Int32Literal(1))
+            &syntax::C0Statement::Return(
+                syntax::C0Expression::Int32Literal(1),
+                crate::languages::c::syntax::C0Site::NONE
+            )
         );
     }
 }
@@ -11918,13 +11953,13 @@ fn c0_floating_point_conditions_accept_symbolic_operands() {
 
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::LessThan(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::Variable(name) if name == "value")
                 && matches!(right.as_ref(), syntax::C0Expression::Float32Literal(bits) if *bits == 1.0f32.to_bits())
     ));
     assert!(matches!(
         functions[1].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::And(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::And(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::FloatClassification {
                 expression,
                 classification: syntax::C0FloatClassification::Finite,
@@ -11954,7 +11989,7 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
 
     assert!(matches!(
         functions[0].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Multiply(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Multiply(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::FloatNegate(inner)
                 if matches!(inner.as_ref(), syntax::C0Expression::Add(_, _)))
                 && matches!(right.as_ref(), syntax::C0Expression::Float32Literal(bits)
@@ -11962,7 +11997,7 @@ fn c0_floating_point_arithmetic_accepts_symbolic_same_width_operands() {
     ));
     assert!(matches!(
         functions[1].body(),
-        syntax::C0Statement::Return(syntax::C0Expression::Divide(left, right))
+        syntax::C0Statement::Return(syntax::C0Expression::Divide(left, right), _)
             if matches!(left.as_ref(), syntax::C0Expression::Multiply(_, _))
                 && matches!(right.as_ref(), syntax::C0Expression::Float64Literal(bits)
                     if *bits == 3.0f64.to_bits())

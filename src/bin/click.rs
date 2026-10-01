@@ -216,7 +216,7 @@ mod tests {
             )
             .unwrap();
         };
-        let bound = "  `step()` is missing prerequisite\n  the store to `items[i]` may write outside `items`\n  could not show `0 <= i && i < 4` from the facts `i <= 4`, `i >= 0`\n  C operation\n  *(items + i) = 7;";
+        let bound = "  `step()` is missing prerequisite\n  the store to `items[i]` may write outside `items`\n  could not show `0 <= i && i < 4` from the facts `i <= 4`, `i >= 0`\n  C operation\n  *(items + i) = 7;\n  C statement at f.c:6:9\n  `items[i] = 7;`";
 
         write_proof("");
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
@@ -238,6 +238,118 @@ mod tests {
         for kernel_spelling in ["can-store(", "snapshot#", "local:items", "value A"] {
             assert!(!error.contains(kernel_spelling), "{error}");
         }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A refused C step names the file, line, and column of the statement it
+    /// checked and quotes the statement as written, not as Click lowered it:
+    /// a struct-field store reads `items[i].x = 7;` rather than a byte
+    /// offset, without its comment. A call names the call statement, an
+    /// overflow names the statement whose arithmetic overflowed, a macro
+    /// names and quotes its expansion site, and a header's inline body names
+    /// the header line.
+    #[test]
+    fn verify_names_and_quotes_the_c_statement_a_step_refused() {
+        let directory =
+            std::env::temp_dir().join(format!("click-c-statement-sites-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("sum.h"),
+            "#define SUM(a, b) ((a) + (b))\n\nstatic inline int32 twice(int32 x) {\n    int32 r;\n    r = x + x;\n    return r;\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "#include \"sum.h\"\n\nstruct item { int32 x; int32 y; };\n\nint32 store() {\n    struct item items[4];\n    int32 i;\n    i = 0;\n    while (i < 5) {\n        items[i].x = 7;   // the field store\n        i = i + 1;\n    }\n    return 0;\n}\n\nint32 add(int32 a, int32 b) {\n    int32 total;\n    total = a + b;\n    return total;\n}\n\nint32 callee(int32 n) {\n    return n;\n}\n\nint32 caller(int32 n) {\n    int32 r;\n    r = callee(n) + 1;\n    return r;\n}\n\nint32 summed(int32 a, int32 b) {\n    int32 total;\n    total = SUM(a, b);\n    return total;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        let verify = |proof: &str| {
+            fs::write(&sidecar, format!("verifying \"f.c\";\n{proof}")).unwrap();
+            entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err()
+        };
+        let three_steps = "} by {\n    step(); step(); step(); simp();\n}\n";
+
+        let store = verify(
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); simp();\n}\n",
+        );
+        assert!(
+            store.contains(
+                "could not show `i >= 0 && i < 4` from the facts `i <= 4`, `i >= 0`\n  C statement at f.c:10:9\n  `items[i].x = 7;`"
+            ),
+            "{store}"
+        );
+        assert!(!store.contains("the field store"), "{store}");
+
+        let overflow = verify(&format!(
+            "int32 add(int32 a, int32 b) {{\n    ensures result == a + b;\n{three_steps}"
+        ));
+        assert!(
+            overflow.contains(
+                "`step()` produced undefined behavior\n  signed overflow\n  C statement at f.c:18:5\n  `total = a + b;`\n"
+            ),
+            "{overflow}"
+        );
+
+        let call = verify(&format!(
+            "int32 callee(int32 n) {{\n    requires n >= 0;\n    ensures result == n;\n}}\nint32 caller(int32 n) {{\n    ensures result == n + 1;\n{three_steps}"
+        ));
+        assert!(
+            call.contains("`step()` is missing prerequisite (callee precondition)"),
+            "{call}"
+        );
+        assert!(
+            call.contains("\n  C statement at f.c:28:5\n  `r = callee(n) + 1;`\n"),
+            "{call}"
+        );
+
+        let macro_site = verify(&format!(
+            "int32 summed(int32 a, int32 b) {{\n    ensures result == a + b;\n{three_steps}"
+        ));
+        assert!(
+            macro_site.contains("\n  C statement at f.c:34:5\n  `total = SUM(a, b);`\n"),
+            "{macro_site}"
+        );
+
+        let header = verify(&format!(
+            "int32 twice(int32 x) {{\n    ensures result == x + x;\n{three_steps}"
+        ));
+        assert!(
+            header.contains("\n  C statement at sum.h:5:5\n  `r = x + x;`\n"),
+            "{header}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// In an mdtest the refused statement is named at its line of the
+    /// markdown file, the line a person edits.
+    #[test]
+    fn mdtest_c_statement_sites_name_the_markdown_line() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-mdtest-statement-sites-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("located.md");
+        // The C block body starts on line 6; `total = a + b;` is line 8.
+        fs::write(
+            &path,
+            "# Located\n\nProse before the blocks.\n\n```c filename=add.c\nint32 add(int32 a, int32 b) {\n    int32 total;\n    total = a + b;\n    return total;\n}\n```\n\n```click\nverifying \"add.c\";\nint32 add(int32 a, int32 b) {\n    ensures result == a + b;\n} by {\n    step(); step(); step(); simp();\n}\n```\n\n```expect\nfail: signed overflow\n```\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), path.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains(
+                "\n  signed overflow\n  C statement at located.md:8:5\n  `total = a + b;`\n"
+            ),
+            "{error}"
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 

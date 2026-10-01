@@ -423,6 +423,10 @@ pub(super) fn execute_branch_step_from_frontier_position(
     let state: &mut CState = &mut execution.core.state;
 
     let statement_index = execution.core.frontier.next_statement_index;
+    let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+        &proof_context.constants.source_layout,
+        statement_index,
+    );
     let source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
@@ -2202,6 +2206,10 @@ fn execute_step_from_frontier_position_selecting_path(
         });
     }
     let mut statement_index = execution.core.frontier.next_statement_index;
+    let _site_scope = crate::surface::diagnostics::CStatementSiteScope::enter(
+        &proof_context.constants.source_layout,
+        statement_index,
+    );
     let mut source_region = proof_context.constants.source_layout.statement(statement_index).ok_or_else(|| {
         ClickError::new(format!(
             "`{claim_label}` tactic {tactic_index}: `{tactic_name}` could not resolve source statement({statement_index})"
@@ -2838,8 +2846,9 @@ fn execute_step_from_frontier_position_selecting_path(
         {
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{}\n{}",
                 describe_function_outcome(&outcome, parameters, arguments),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -2876,10 +2885,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 return Err(ClickError::new(detail).with_kind(kind));
             }
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -2906,9 +2916,10 @@ fn execute_step_from_frontier_position_selecting_path(
             String::new()
         };
         let error = ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}\n{}{}{}{}",
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}{}\n{}{}{}{}",
             describe_c_statement_head(&step_statement),
             transitions.len(),
+            crate::surface::diagnostics::describe_c_statement_site(),
             describe_undecided_statement_successors(&transitions, parameters, arguments),
             case_split_guidance,
             describe_multiple_statement_successors_guidance(&step_statement, transitions.len()),
@@ -3491,8 +3502,9 @@ fn execute_step_from_frontier_position_selecting_path(
         CStatementOutcome::UndefinedBehavior(kind) => {
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{}\n{}",
                 describe_function_outcome(&outcome, parameters, arguments),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,
@@ -3523,10 +3535,11 @@ fn execute_step_from_frontier_position_selecting_path(
                 return Err(ClickError::new(detail).with_kind(kind));
             }
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}\n{}",
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
                 describe_call_bindings(&step_statement, function_environment),
+                crate::surface::diagnostics::describe_c_statement_site(),
                 describe_proof_context(
                     &listed_context_pure_facts(available_pure_facts, context),
                     &current_resources,

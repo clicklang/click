@@ -2341,8 +2341,12 @@ impl AnnotationLowerer<'_> {
                 self.lower_statement(first, control_targets)?,
                 self.lower_statement(second, control_targets)?,
             ),
-            syntax::C0Statement::While { condition, body }
-            | syntax::C0Statement::DoWhile { condition, body } => {
+            syntax::C0Statement::While {
+                condition, body, ..
+            }
+            | syntax::C0Statement::DoWhile {
+                condition, body, ..
+            } => {
                 self.next_statement_index();
                 let loop_index = self.next_loop_index();
                 let lowered_body = self.lower_statement(body, control_targets)?;
@@ -2379,6 +2383,7 @@ impl AnnotationLowerer<'_> {
                 condition,
                 step,
                 body,
+                ..
             } => {
                 let lowered_initializer = self.lower_statement(initializer, control_targets)?;
                 self.next_statement_index();
@@ -2408,6 +2413,7 @@ impl AnnotationLowerer<'_> {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.next_statement_index();
                 c_if(
