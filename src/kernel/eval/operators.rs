@@ -1768,7 +1768,10 @@ fn pointer_offset_by_elements_paths(
         }];
     }
 
-    let result = pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide);
+    let result = match byte_stride_index(&offset, byte_width, unsigned, wide, &facts, assumptions) {
+        Some((index, stride)) => pointer.offset_by_typed_elements(index, stride, false, false),
+        None => pointer.offset_by_typed_elements(offset.clone(), byte_width, unsigned, wide),
+    };
     let mut guards = Vec::new();
 
     // Pointer offsets are exact i64 terms, but the source index is a signed
@@ -1808,6 +1811,52 @@ fn pointer_offset_by_elements_paths(
         obligations,
         assumptions,
     )
+}
+
+/// The element index and stride of a byte displacement `index * stride`.
+///
+/// The C frontend addresses an element of a struct array through the bytes
+/// of the array: `items[i]` is the byte pointer `items + i * sizeof(item)`,
+/// with the multiplication evaluated as a C `int`. That spelling is a byte
+/// offset whose index is a product, and the element-index rules that bound a
+/// scalar store `values[i]` by `0 <= i < n` cannot read it. Forming the
+/// address as `i` scaled by the stride gives it the scalar shape, with the
+/// struct size as the element width, so the same membership rules apply.
+///
+/// The two spellings name one address only where the product did not wrap:
+/// the scaled form sign-extends `i` before scaling, the product form
+/// sign-extends the wrapped product. The multiplication that produced the
+/// product refused the overflowing path, so its result path carries that
+/// exclusion, and the rewrite is taken only when the path facts decide it.
+fn byte_stride_index(
+    offset: &Bitvector32Term,
+    byte_width: u32,
+    unsigned: bool,
+    wide: bool,
+    facts: &[ExecutionPureFact],
+    assumptions: &PureFactContext,
+) -> Option<(Bitvector32Term, u32)> {
+    if byte_width != 1 || unsigned || wide {
+        return None;
+    }
+    let Bitvector32Term::Multiply(left, right) = offset else {
+        return None;
+    };
+    let (index, stride) = match (left.as_const(), right.as_const()) {
+        (None, Some(stride)) => (left.as_ref(), stride),
+        (Some(stride), None) => (right.as_ref(), stride),
+        _ => return None,
+    };
+    // Only a positive stride that is itself an `int32` names an element width.
+    if stride < 2 || stride > i32::MAX as u32 {
+        return None;
+    }
+    let overflow = ConditionTerm::signed_multiply_overflows(
+        normalize_exact_memory_loads_in_bitvector(left, assumptions),
+        normalize_exact_memory_loads_in_bitvector(right, assumptions),
+    );
+    (decide_with_facts(assumptions, facts, &overflow) == Some(false))
+        .then(|| (index.clone(), stride))
 }
 
 pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
@@ -2090,6 +2139,12 @@ fn pointer_block_bounds(
         return Some(guards);
     }
 
+    if byte_width == 1
+        && let Some(guards) = strided_block_bounds(&pointer.offset, &block_size)
+    {
+        return Some(guards);
+    }
+
     let (offset, size) = if byte_width == 1 {
         let Some(offset) = byte_offset_from_pointer_offset(&pointer.offset) else {
             return Some(Vec::new());
@@ -2115,6 +2170,59 @@ fn pointer_block_bounds(
         },
         PointerFormationGuard {
             condition: ConditionTerm::signed_less_equal(offset, size),
+            value: true,
+        },
+    ])
+}
+
+/// The formation bound of a byte pointer into a struct array, stated over its
+/// element index.
+///
+/// `items + i * stride + field` stays inside a block of `count * stride`
+/// bytes exactly when `0 <= i` and either `i <= count` (the field is at the
+/// start of its element, so one past the last element is a valid address) or
+/// `i < count` (any other field inside the element). This is the scalar
+/// element bound with the struct size as the element width; the byte
+/// spelling `0 <= i * stride + field <= bytes` says the same thing in terms
+/// a linear order check cannot read.
+fn strided_block_bounds(
+    offset: &PointerOffsetTerm,
+    block_size: &Bitvector32Term,
+) -> Option<Vec<PointerFormationGuard>> {
+    let (index, stride, field) = match offset {
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
+        PointerOffsetTerm::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (
+                PointerOffsetTerm::Int32Scaled { value, byte_width },
+                PointerOffsetTerm::Constant(field),
+            )
+            | (
+                PointerOffsetTerm::Constant(field),
+                PointerOffsetTerm::Int32Scaled { value, byte_width },
+            ) => (value, *byte_width, *field),
+            _ => return None,
+        },
+        _ => return None,
+    };
+    if stride < 2 || !(0..stride).contains(&field) {
+        return None;
+    }
+    let count = element_count_from_bytes(block_size, u32::try_from(stride).ok()?)?;
+    let upper = if field == 0 {
+        ConditionTerm::signed_less_equal(index.as_ref().clone(), count)
+    } else {
+        ConditionTerm::signed_less_than(index.as_ref().clone(), count)
+    };
+    Some(vec![
+        PointerFormationGuard {
+            condition: ConditionTerm::signed_greater_equal(
+                index.as_ref().clone(),
+                Bitvector32Term::Constant(0),
+            ),
+            value: true,
+        },
+        PointerFormationGuard {
+            condition: upper,
             value: true,
         },
     ])

@@ -486,6 +486,12 @@ pub(in crate::kernel) fn element_index_from_offset(
         {
             Some(value.as_ref().clone())
         }
+        // A byte index is the byte offset. A struct-array element is scaled
+        // by its stride, and its byte offset is the same residue the byte
+        // spelling `items + i * stride` gives.
+        PointerOffsetTerm::Int32Scaled { .. } if element_width == 1 => {
+            byte_offset_from_pointer_offset(offset)
+        }
         PointerOffsetTerm::Constant(offset) if offset % i64::from(element_width) == 0 => {
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
