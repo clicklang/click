@@ -491,6 +491,15 @@ invariants can read only their own body, not unrelated ambient ownership.
 Dedicated fixtures and kernel forgery regressions cover this independently.
 Named proof fields and field-bearing population identity remain deferred.
 
+Unit private bodies now also compose ordinary owned declared resources.
+Direct and nested helpers transfer exact children into and out of members;
+member-only nested opens expose their memory without authority. The child
+population total is preserved, while the outer population records its birth
+or consumption. Caller custody tracks the explicit contained-resource
+frontier. Dedicated negative fixtures reject missing, mismatched, and duplicated
+children, and kernel checks reject forged body exchanges. Built-in object
+ownership is covered separately. Named proof fields remain a later increment.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count
 individually identified members without erasing fields or treating equal

@@ -5437,6 +5437,26 @@ impl CState {
             .is_some_and(|events| events.recognizes_population_authority(description))
     }
 
+    /// Whether an exact resource belongs to an established or imported population.
+    /// Wrapping such a resource's body must use the population exchange law.
+    pub(crate) fn tracks_authority_member(&self, selected: &CResourceFact) -> bool {
+        let CResource::Composite { name, arguments } = selected.resource() else {
+            return false;
+        };
+        let description = super::super::ResourceDescription::new(
+            name.clone(),
+            arguments.clone(),
+            super::super::ResourceFieldSchema::new(vec![]).expect("empty schema"),
+        );
+        self.population_effects
+            .creation
+            .as_ref()
+            .is_some_and(|events| {
+                events.tracks_population(&description)
+                    || events.recognizes_imported_population(&description)
+            })
+    }
+
     /// Project the exact body of a folded, field-free control resource for
     /// checking its current facts. This does not publish the projection: the
     /// resource-rewrite certificate independently checks the eventual exchange.
@@ -5952,14 +5972,17 @@ impl CState {
                 .as_ref()
                 .is_some_and(|schema| !schema.fields().is_empty())
             || definition.contains().iter().any(|spec| {
-                !matches!(spec.term(), super::super::CResourceTerm::Memory(_))
-                    || spec.access() != super::super::CResourceAccessMode::Own
+                !matches!(
+                    spec.term(),
+                    super::super::CResourceTerm::Memory(_)
+                        | super::super::CResourceTerm::Composite { .. }
+                ) || spec.access() != super::super::CResourceAccessMode::Own
                     || spec.quantity() != &super::super::CResourceQuantity::One
                     || spec.guard().is_some()
                     || !spec.resource_arguments().is_empty()
             })
         {
-            return Err("member exchange requires a field-free private owned-memory body".into());
+            return Err("member exchange requires a field-free private body of owned memory or declared resources".into());
         }
         let description = super::super::ResourceDescription::new(
             name.clone(),
@@ -6036,11 +6059,19 @@ impl CState {
             .ok_or("cannot instantiate the member's private body")?;
             expanded.facts().to_vec()
         };
-        if body.iter().any(|fact| fact.memory_own_range().is_none()) {
-            return Err("member body must contain only owned memory".into());
-        }
         for child in &body {
-            let range = child.memory_own_range().expect("body shape checked above");
+            let Some(range) = child.memory_own_range() else {
+                if let CResourceFact::Own(CResource::Composite { .. }, quantity) = child
+                    && quantity.as_const() == Some(1)
+                {
+                    // Transfer the folded child; do not expose its contents or
+                    // change its population membership.
+                    continue;
+                }
+                return Err(
+                    "member body must contain owned memory or owned declared resources".into(),
+                );
+            };
             let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
             else {
                 return Err("member private memory needs concrete bounds".into());
