@@ -85,6 +85,8 @@ struct OpaqueImport {
     authority_holder: Holder,
     member_holders: PersistentMap<Holder, u32>,
     description: ResourceDescription,
+    /// A wildcard helper borrows one identified member, not an arbitrary unit.
+    wildcard_member: Option<ResourceDescription>,
     /// The checked definition used to open this exact entry control for a
     /// read-only count observation. Current ownership is checked on each read.
     control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
@@ -266,6 +268,53 @@ impl CreationEvents {
         self.import_opaque_contract_population_inner(description, owned_members, None, None, None)
     }
 
+    /// Borrow an existing wildcard population and one concrete member. Its
+    /// total is opaque and may include ownership retained by other callers.
+    pub(in crate::kernel) fn import_opaque_wildcard_population(
+        &self,
+        description: &ResourceDescription,
+        member: &ResourceDescription,
+    ) -> Result<Self, CreationRefusal> {
+        if description.population_arity() != Some(member.arguments().len())
+            || member.population_arity().is_some()
+            || member.family() != description.family()
+            || member.arguments().first() != description.arguments().first()
+            || member.schema() != description.schema()
+            || !member.resource_arguments().is_empty()
+        {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        let count = if let Some(import) = self.0.opaque_imports.get(description) {
+            import
+                .entry_count
+                .clone()
+                .ok_or(CreationRefusal::UnknownTotal)?
+        } else {
+            let mut counts = self
+                .0
+                .opaque_entry_counts
+                .lock()
+                .expect("opaque entry count cache");
+            counts
+                .entry(description.clone())
+                .or_insert_with(|| {
+                    Bitvector32Term::Variable(
+                        crate::kernel::Variable::allocate_fresh()
+                            .expect("opaque entry count identity exhausted"),
+                    )
+                })
+                .clone()
+        };
+        self.import_opaque_contract_population_with_member(
+            description,
+            1,
+            Some(count),
+            None,
+            None,
+            Some(member.clone()),
+        )
+    }
+
     /// Import only an exact owned wrapper and its contained authority. A
     /// declared counter equality supplies a checked entry load; otherwise a
     /// fresh private symbol names this population's arbitrary entry total.
@@ -346,10 +395,29 @@ impl CreationEvents {
         symbolic_members: Option<Bitvector32Term>,
         control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
     ) -> Result<Self, CreationRefusal> {
+        self.import_opaque_contract_population_with_member(
+            description,
+            owned_members,
+            entry_count,
+            symbolic_members,
+            control,
+            None,
+        )
+    }
+
+    fn import_opaque_contract_population_with_member(
+        &self,
+        description: &ResourceDescription,
+        owned_members: u32,
+        entry_count: Option<Bitvector32Term>,
+        symbolic_members: Option<Bitvector32Term>,
+        control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
+        wildcard_member: Option<ResourceDescription>,
+    ) -> Result<Self, CreationRefusal> {
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if description.population_arity().is_some()
+        if description.population_arity().is_some() != wildcard_member.is_some()
             || pointer.pointer().block != PointerBlock::ExternalArgument
             || !description.schema().is_countable()
             || !description.resource_arguments().is_empty()
@@ -362,6 +430,7 @@ impl CreationEvents {
                 && existing.entry_count == entry_count
                 && existing.entry_symbolic_members == symbolic_members
                 && existing.control == control
+                && existing.wildcard_member == wildcard_member
             {
                 return Ok(self.clone());
             }
@@ -378,6 +447,7 @@ impl CreationEvents {
                 member_holders: PersistentMap::default()
                     .with_inserted(self.0.opaque_actor, owned_members),
                 description: description.clone(),
+                wildcard_member,
                 control,
                 entry_owned_members: owned_members,
                 owned_members,
@@ -517,23 +587,30 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> bool {
-        self.0
-            .opaque_imports
-            .get(description)
-            .is_some_and(|import| {
-                import.description == *description
-                    && (import
-                        .member_holders
-                        .get(&self.0.opaque_actor)
-                        .copied()
-                        .unwrap_or(0)
-                        > 0
-                        || (import.authority_holder == self.0.opaque_actor
-                            && import.symbolic_delta.as_ref().map_or(
-                                import.entry_symbolic_members.is_some(),
-                                |(produce, _)| *produce,
-                            )))
-            })
+        let Some(scope) = self.governing_authority(description) else {
+            return false;
+        };
+        self.0.opaque_imports.get(&scope).is_some_and(|import| {
+            (import
+                .wildcard_member
+                .as_ref()
+                .map_or(import.description == *description, |member| {
+                    member == description
+                }))
+                && (import
+                    .member_holders
+                    .get(&self.0.opaque_actor)
+                    .copied()
+                    .unwrap_or(0)
+                    > 0
+                    || (import.authority_holder == self.0.opaque_actor
+                        && import
+                            .symbolic_delta
+                            .as_ref()
+                            .map_or(import.entry_symbolic_members.is_some(), |(produce, _)| {
+                                *produce
+                            })))
+        })
     }
 
     /// Exact signed batch delta from a checked control import. The quantity may
@@ -620,7 +697,8 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> bool {
-        self.0.opaque_imports.contains_key(description)
+        self.governing_authority(description)
+            .is_some_and(|scope| self.0.opaque_imports.contains_key(&scope))
     }
 
     pub(in crate::kernel) fn recognizes_population_authority(
@@ -829,6 +907,24 @@ impl CreationEvents {
             return None;
         }
         crate::instrumentation::record_deterministic_work(1);
+        let imported_scope = if description.population_arity().is_some() {
+            Some(description.clone())
+        } else if description.arguments().len() > 1 {
+            ResourceDescription::new(
+                description.family().into(),
+                vec![description.arguments()[0].clone()].into(),
+                description.schema().clone(),
+            )
+            .with_population_arity(description.arguments().len())
+            .ok()
+        } else {
+            None
+        };
+        if let Some(scope) = imported_scope
+            && self.0.opaque_imports.contains_key(&scope)
+        {
+            return Some(scope);
+        }
         match self
             .0
             .scopes
@@ -1421,10 +1517,22 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
-        if self.0.opaque_imports.contains_key(description) {
-            return self.transfer_opaque(from, to, description, authority_fact, quantity);
+        if let Some(scope) = self.governing_authority(description)
+            && let Some(import) = self.0.opaque_imports.get(&scope)
+        {
+            if import.wildcard_member.is_some()
+                && if authority_fact {
+                    description != &scope
+                } else {
+                    import.wildcard_member.as_ref() != Some(description)
+                }
+            {
+                return Err(CreationRefusal::InvalidMember);
+            }
+            return self.transfer_opaque(from, to, &scope, authority_fact, quantity);
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        else {
             return Err(CreationRefusal::InvalidMember);
         };
         let block = self.exact_member_block(&pointer.pointer().block, description)?;
@@ -1585,12 +1693,16 @@ impl CreationEvents {
     }
 
     pub(in crate::kernel) fn tracks_population(&self, description: &ResourceDescription) -> bool {
-        if self.0.opaque_imports.contains_key(description) {
+        if self.recognizes_imported_population(description) {
             return true;
         }
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        else {
             return false;
         };
+        if self.governing_authority(description).is_none() {
+            return false;
+        }
         self.0
             .anchors
             .get(&pointer.pointer().block)

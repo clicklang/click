@@ -439,8 +439,14 @@ Dedicated `authority_wildcard_*` fixtures check local member creation and
 consumption, aggregate totals, duplicate authority, wrong-pool updates,
 nonempty retirement, and consumption of an unowned member. Kernel scaling
 covers lookup and exchange beside unrelated pools. This is one independently
-tested capability; identified proof fields, exact subsets, helper transfer,
-and bounded-pool migration remain separate subsequent changes.
+tested capability. Ordinary helper contracts now borrow and return wildcard
+authority together with one concrete member, including nested calls. Their
+entry total is arbitrary and preserves members retained by the caller; helper
+entry grants no creation permission. Dedicated fixtures and kernel checks
+cover custody, exact member identity, unchanged total, intended refusals, and
+indexed transfer beside unrelated imports. Wildcard member creation/consumption
+inside helpers, identified proof fields, exact subsets, and bounded-pool
+migration remain separate subsequent changes.
 
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and a checked transfer between two authorities. Count

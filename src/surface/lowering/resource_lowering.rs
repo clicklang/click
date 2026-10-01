@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::CResourceTerm;
+use crate::kernel::{CResourceTerm, ResourceFieldSchema};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
@@ -300,8 +300,33 @@ pub(in crate::surface) fn initial_call_state(
     if resource_semantics_mode == ResourceSemanticsMode::Authority {
         // A standalone helper is proved for an arbitrary population supplied
         // by its caller. Import only the explicitly declared ownership, with
-        // no count or C creation right; the call site later checks the actual
+        // no exact total or C creation right; the call site later checks the actual
         // authority and member transfer against its concrete ledger.
+        // Index only this entry's concrete member inputs once. Selecting one
+        // wildcard family must not repeatedly scan unrelated input facts.
+        let mut wildcard_members =
+            BTreeMap::<crate::kernel::ResourceDescription, Vec<CResourceFact>>::new();
+        for fact in state.resources().facts() {
+            let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact
+            else {
+                continue;
+            };
+            if arguments.len() < 2 || quantity.as_const() != Some(1) {
+                continue;
+            }
+            let scope = crate::kernel::ResourceDescription::new(
+                name.clone(),
+                vec![arguments[0].clone()].into(),
+                ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
+            )
+            .with_population_arity(arguments.len());
+            if let Ok(scope) = scope {
+                wildcard_members
+                    .entry(scope)
+                    .or_default()
+                    .push(fact.clone());
+            }
+        }
         let authorities = state
             .resources()
             .facts()
@@ -313,6 +338,23 @@ pub(in crate::surface) fn initial_call_state(
             let CResource::PopulationAuthority(description) = authority.resource() else {
                 unreachable!();
             };
+            if description.population_arity().is_some() {
+                let Some(members) = wildcard_members.get(description) else {
+                    return Err(ClickError::new(format!(
+                        "Requires owns {}(anchor, member) for the declared wildcard authority",
+                        description.family(),
+                    )));
+                };
+                if members.len() != 1 {
+                    return Err(ClickError::new(
+                        "wildcard helper entry currently supports one concrete member",
+                    ));
+                }
+                state = state
+                    .import_opaque_wildcard_population(&authority, &members[0])
+                    .map_err(ClickError::new)?;
+                continue;
+            }
             let member = CResourceFact::own(CResource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),

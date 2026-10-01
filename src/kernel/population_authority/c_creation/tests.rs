@@ -1926,6 +1926,141 @@ mod wildcard_scope_tests {
             .unwrap()
     }
 
+    fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
+        let anchor = CValue::pointer(Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
+        });
+        let scope = ResourceDescription::new(
+            "slot".into(),
+            vec![anchor.clone().into()].into(),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        )
+        .with_population_arity(2)
+        .unwrap();
+        let member = ResourceDescription::new(
+            "slot".into(),
+            vec![anchor.into(), int32(7).into()].into(),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        );
+        (scope, member)
+    }
+
+    #[test]
+    fn wildcard_helper_borrows_exact_member_without_asserting_total() {
+        let (scope, member) = opaque_scope(1);
+        let entry = CreationEvents::new();
+        let imported = entry
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let total = imported.observe_symbolic(&scope).unwrap().entry_count;
+        assert!(matches!(total, Bitvector32Term::Variable(_)));
+        assert!(imported.owns_imported_population_member(&member));
+        assert!(!imported.owns_imported_population_member(&scope));
+        assert_eq!(
+            imported
+                .import_opaque_wildcard_population(&scope, &member)
+                .unwrap(),
+            imported
+        );
+        let (wrong_pool, wrong_member) = opaque_scope(2);
+        assert!(
+            entry
+                .import_opaque_wildcard_population(&scope, &wrong_member)
+                .is_err()
+        );
+        assert!(!imported.owns_imported_population_member(&wrong_member));
+        let mut different_arguments = member.arguments().to_vec();
+        different_arguments[1] = int32(8).into();
+        let different_member = ResourceDescription::new(
+            "slot".into(),
+            different_arguments.into(),
+            member.schema().clone(),
+        );
+        assert!(
+            imported
+                .import_opaque_wildcard_population(&scope, &different_member)
+                .is_err()
+        );
+        let helper = imported.enter_call();
+        let held = imported
+            .transfer_call_fact(&imported, &helper, &scope, true)
+            .unwrap();
+        assert!(held.observe_symbolic(&scope).is_none());
+        assert!(
+            held.transfer_call_fact(&imported, &helper, &different_member, false)
+                .is_err()
+        );
+        let held = held
+            .transfer_call_fact(&imported, &helper, &member, false)
+            .unwrap()
+            .return_to(&helper);
+        assert!(held.observe_symbolic(&wrong_pool).is_none());
+        assert_eq!(held.observe_symbolic(&scope).unwrap().entry_count, total);
+        assert!(held.finish_call(&imported).is_err());
+        assert!(
+            held.checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
+                .is_err()
+        );
+        assert!(
+            held.checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                .is_err()
+        );
+        let returned = held
+            .transfer_call_fact(&helper, &imported, &member, false)
+            .unwrap();
+        let returned = returned
+            .transfer_call_fact(&helper, &imported, &scope, true)
+            .unwrap()
+            .finish_call(&imported)
+            .unwrap();
+        assert_eq!(
+            returned.observe_symbolic(&scope).unwrap().entry_count,
+            total
+        );
+        assert!(returned.owns_imported_population_member(&member));
+        assert!(
+            returned
+                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wildcard_helper_transfer_does_not_scan_unrelated_imports() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, member) = opaque_scope(0);
+            let mut entry = CreationEvents::new()
+                .import_opaque_wildcard_population(&scope, &member)
+                .unwrap();
+            for index in 1..=size {
+                let (other, member) = opaque_scope(index);
+                entry = entry
+                    .import_opaque_wildcard_population(&other, &member)
+                    .unwrap();
+            }
+            let helper = entry.enter_call();
+            let ((held, work), indexed_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let held = entry
+                        .transfer_call_fact(&entry, &helper, &scope, true)
+                        .unwrap();
+                    held.transfer_call_fact(&entry, &helper, &member, false)
+                        .unwrap()
+                })
+            });
+            let held = held.return_to(&helper);
+            assert!(held.owns_imported_population_member(&member));
+            assert!(held.observe_symbolic(&scope).is_some());
+            assert!(work > 0);
+            indexed_work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 64 * index, "{samples:?}");
+        }
+    }
+
     #[test]
     fn wildcard_scope_checks_signature_and_conserves_aggregate_total() {
         let pool = PointerBlock::Heap(920_001);
