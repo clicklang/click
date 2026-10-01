@@ -1082,6 +1082,65 @@ fn cell_value_is_exactly_load(
     }
 }
 
+/// A unit checkout preserves the mathematical sum only when neither child
+/// update wraps. Check the three original domains through named/indexed facts;
+/// modular equality of the two sums alone is insufficient.
+fn authority_control_evaluation_condition_proven(
+    assumptions: &PureFactContext,
+    goal: &Proposition,
+) -> bool {
+    use crate::kernel::ConditionTerm;
+    let stated = |goal: &Proposition| {
+        matches!(crate::kernel::canonical_condition_fact(goal), Proposition::ConditionIs(condition, truth)
+            if assumptions.exact_condition_value(&condition) == Some(truth))
+    };
+    if stated(goal) {
+        return true;
+    }
+    let Proposition::ConditionIs(ConditionTerm::Bitvector32SignedAddOverflows(left, right), false) =
+        goal
+    else {
+        return false;
+    };
+    let pair = match (left.as_ref(), right.as_ref()) {
+        (Bitvector32Term::Add(value, increment), Bitvector32Term::Subtract(other, decrement))
+        | (Bitvector32Term::Subtract(other, decrement), Bitvector32Term::Add(value, increment))
+            if increment.as_const() == Some(1) && decrement.as_const() == Some(1) =>
+        {
+            (value.as_ref(), other.as_ref())
+        }
+        _ => return false,
+    };
+    let one = Bitvector32Term::Constant(1);
+    let guards = [
+        ConditionTerm::signed_add_overflows(pair.0.clone(), pair.1.clone()),
+        ConditionTerm::signed_add_overflows(pair.0.clone(), one.clone()),
+        ConditionTerm::signed_subtract_overflows(pair.1.clone(), one),
+    ];
+    guards.iter().all(|condition| {
+        if stated(&Proposition::ConditionIs(condition.clone(), false)) {
+            return true;
+        }
+        match condition {
+            ConditionTerm::Bitvector32SignedAddOverflows(value, one)
+                if one.as_const() == Some(1) =>
+            {
+                assumptions
+                    .indexed_constant_interval(value)
+                    .is_some_and(|(_, high)| high < i64::from(i32::MAX))
+            }
+            ConditionTerm::Bitvector32SignedSubtractOverflows(value, one)
+                if one.as_const() == Some(1) =>
+            {
+                assumptions
+                    .indexed_constant_interval(value)
+                    .is_some_and(|(low, _)| low > i64::from(i32::MIN))
+            }
+            _ => false,
+        }
+    })
+}
+
 impl CheckedResourceRewrite {
     pub(crate) fn before_state(&self) -> &CState {
         &self.before_state
@@ -1165,21 +1224,26 @@ impl CheckedResourceRewrite {
                 .iter()
                 .filter(|child| matches!(child.resource(), CResource::PopulationAuthority(_)))
                 .count()
-                != 1
+                == 0
         {
             return Err("authority control has an unsupported body".into());
         }
-        let imported_count = folded
+        let imported_counts = folded
             .checked_authority_wrapper_import_components(selected, definition, assumptions)
             .ok()
-            .and_then(|(description, _)| {
-                folded
-                    .population_effects
-                    .creation
-                    .as_ref()
-                    .and_then(|ledger| ledger.observe_symbolic(&description))
+            .and_then(|components| {
+                components
+                    .iter()
+                    .map(|(description, _)| {
+                        folded
+                            .population_effects
+                            .creation
+                            .as_ref()
+                            .and_then(|ledger| ledger.observe_symbolic(description))
+                    })
+                    .collect::<Option<Vec<_>>>()
             });
-        let imported_control_cell = imported_count.is_some();
+        let imported_control_cell = imported_counts.is_some();
         for child in &children {
             let Some(range) = child.memory_own_range() else {
                 continue;
@@ -1297,7 +1361,8 @@ impl CheckedResourceRewrite {
         allowed.push(Proposition::CResourceComposition(
             ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children),
         ));
-        let evaluation_assumptions = if let Some(imported) = imported_count {
+        let mut evaluation_assumptions = assumptions.clone();
+        for imported in imported_counts.into_iter().flatten() {
             let bound = Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_greater_equal(
                     imported.entry_count,
@@ -1309,10 +1374,8 @@ impl CheckedResourceRewrite {
                 true,
             );
             allowed.push(bound.clone());
-            assumptions.clone().assume_proposition(bound)
-        } else {
-            assumptions.clone()
-        };
+            evaluation_assumptions = evaluation_assumptions.assume_proposition(bound);
+        }
         if let Some(loadable) =
             crate::kernel::functions::evaluate_composite_resource_loadable_propositions(
                 selected,
@@ -1338,14 +1401,17 @@ impl CheckedResourceRewrite {
             let path =
                 crate::kernel::api::exactly_selected_spec_proposition_path(&paths, assumptions)
                     .ok_or("authority control invariant needs one checked path")?;
-            if !path
-                .facts
-                .iter()
-                .all(|fact| evaluation_assumptions.states_required_goal(fact.proposition()))
-                || !path.obligations.iter().all(|obligation| {
-                    evaluation_assumptions.states_required_goal(obligation.proposition())
-                })
-            {
+            if !path.facts.iter().all(|fact| {
+                authority_control_evaluation_condition_proven(
+                    &evaluation_assumptions,
+                    fact.proposition(),
+                )
+            }) || !path.obligations.iter().all(|obligation| {
+                authority_control_evaluation_condition_proven(
+                    &evaluation_assumptions,
+                    obligation.proposition(),
+                )
+            }) {
                 return Err(
                     "authority control invariant has an unproved evaluation condition".into(),
                 );
@@ -8988,6 +9054,115 @@ pub(crate) fn old_reference_state<'a>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn balanced_unit_sum_domain_requires_all_three_original_domains() {
+        use crate::kernel::ConditionTerm;
+        let a = Bitvector32Term::Variable(Variable(100));
+        let b = Bitvector32Term::Variable(Variable(101));
+        let one = Bitvector32Term::Constant(1);
+        let guards = [
+            ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+            ConditionTerm::signed_add_overflows(a.clone(), one.clone()),
+            ConditionTerm::signed_subtract_overflows(b.clone(), one.clone()),
+        ];
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::signed_add_overflows(
+                Bitvector32Term::add(a.clone(), one.clone()),
+                Bitvector32Term::subtract(b.clone(), one.clone()),
+            ),
+            false,
+        );
+        for missing in 0..=3 {
+            let facts = guards
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != missing)
+                .fold(PureFactContext::new(), |facts, (_, condition)| {
+                    facts.assume_condition(condition.clone(), false)
+                });
+            assert_eq!(
+                super::authority_control_evaluation_condition_proven(&facts, &goal),
+                missing == 3
+            );
+        }
+        // The original sum fits, but the increment wraps at MAX, or the
+        // predecessor wraps at MIN. Modular equality must not certify either.
+        for (left, right) in [(i32::MAX, 0), (0, i32::MIN)] {
+            assert!(left.checked_add(right).is_some());
+            assert!(
+                left.checked_add(1)
+                    .and_then(|x| right.checked_sub(1).and_then(|y| x.checked_add(y)))
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
+        use crate::kernel::ConditionTerm;
+        let a = Bitvector32Term::Variable(Variable(200));
+        let b = Bitvector32Term::Variable(Variable(201));
+        let one = Bitvector32Term::Constant(1);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::signed_add_overflows(
+                Bitvector32Term::add(a.clone(), one.clone()),
+                Bitvector32Term::subtract(b.clone(), one),
+            ),
+            false,
+        );
+        let mut measurements = Vec::new();
+        for n in [8, 32, 128, 512] {
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+                    false,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(
+                        a.clone(),
+                        Bitvector32Term::Constant(i32::MAX as u32),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::Constant(1)),
+                    true,
+                );
+            for i in 0..n {
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Variable(Variable(1000 + i)),
+                        Bitvector32Term::Constant(100),
+                    ),
+                    true,
+                );
+            }
+            let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
+                super::authority_control_evaluation_condition_proven(&facts, &goal)
+            });
+            assert!(valid);
+            // Removing the old domain must fail without searching the frame.
+            let missing_old = PureFactContext::new().assume_condition(
+                ConditionTerm::signed_less_than(
+                    a.clone(),
+                    Bitvector32Term::Constant(i32::MAX as u32),
+                ),
+                true,
+            );
+            assert!(!super::authority_control_evaluation_condition_proven(
+                &missing_old,
+                &goal
+            ));
+            measurements.push(work);
+        }
+        assert!(
+            measurements
+                .iter()
+                .all(|work| *work <= measurements[0] + 16),
+            "{measurements:?}"
+        );
+    }
+
     #[test]
     fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
         use crate::kernel::{CMemory, Pointer, PointerBlock, PointerOffsetTerm};

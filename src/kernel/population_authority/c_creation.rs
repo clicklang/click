@@ -372,7 +372,7 @@ impl CreationEvents {
         )
     }
 
-    /// Import only an exact owned wrapper and its contained authority. A
+    /// Import only an exact owned wrapper and each contained authority. A
     /// declared counter equality supplies a checked entry load; otherwise a
     /// fresh private symbol names this population's arbitrary entry total.
     pub(in crate::kernel) fn import_checked_control_wrapper(
@@ -385,63 +385,69 @@ impl CreationEvents {
         if state.population_effects.creation.as_ref() != Some(self) {
             return Err("control import requires the current creation ledger".into());
         }
-        let (description, entry_count) =
+        let components =
             state.checked_authority_wrapper_import_components(selected, definition, assumptions)?;
-        let entry_count = match entry_count {
-            Some(count) => count,
-            None => {
-                if let Some(existing) = self.0.opaque_imports.get(&description) {
-                    existing
-                        .entry_count
-                        .clone()
-                        .ok_or("opaque population has no entry count witness")?
-                } else {
-                    let mut counts = self
-                        .0
-                        .opaque_entry_counts
-                        .lock()
-                        .expect("opaque entry count cache");
-                    if let Some(count) = counts.get(&description) {
-                        count.clone()
+        let mut events = self.clone();
+        for (description, entry_count) in components {
+            let entry_count = match entry_count {
+                Some(count) => count,
+                None => {
+                    if let Some(existing) = events.0.opaque_imports.get(&description) {
+                        existing
+                            .entry_count
+                            .clone()
+                            .ok_or("opaque population has no entry count witness")?
                     } else {
-                        let variable = crate::kernel::Variable::allocate_fresh()
-                            .ok_or("opaque entry count identity exhausted")?;
-                        let count = Bitvector32Term::Variable(variable);
-                        counts.insert(description.clone(), count.clone());
-                        count
+                        let mut counts = events
+                            .0
+                            .opaque_entry_counts
+                            .lock()
+                            .expect("opaque entry count cache");
+                        if let Some(count) = counts.get(&description) {
+                            count.clone()
+                        } else {
+                            let variable = crate::kernel::Variable::allocate_fresh()
+                                .ok_or("opaque entry count identity exhausted")?;
+                            let count = Bitvector32Term::Variable(variable);
+                            counts.insert(description.clone(), count.clone());
+                            count
+                        }
                     }
                 }
-            }
-        };
-        let member = CResource::Composite {
-            name: description.family().to_owned(),
-            arguments: description.arguments().to_vec().into(),
-        };
-        let owned = state
-            .resources()
-            .exact_resource_facts(&member)
-            .into_iter()
-            .filter_map(|fact| fact.owned_quantity_term().cloned())
-            .collect::<Vec<_>>();
-        let numeric_members = owned
-            .iter()
-            .try_fold(0_u32, |total, quantity| {
-                total.checked_add(quantity.as_const()?)
-            })
-            .filter(|n| *n <= i32::MAX as u32);
-        let (owned_members, symbolic_members) = match (numeric_members, owned.as_slice()) {
-            (Some(quantity), _) => (quantity, None),
-            (None, [quantity]) => (0, Some(quantity.clone())),
-            _ => return Err("control import needs one owned member quantity".into()),
-        };
-        self.import_opaque_contract_population_inner(
-            &description,
-            owned_members,
-            Some(entry_count),
-            symbolic_members,
-            Some((selected.clone(), Arc::new(definition.clone()))),
-        )
-        .map_err(|refusal| format!("control import refused: {refusal:?}"))
+            };
+            let member = CResource::Composite {
+                name: description.family().to_owned(),
+                arguments: description.arguments().to_vec().into(),
+            };
+            let owned = state
+                .resources()
+                .exact_resource_facts(&member)
+                .into_iter()
+                .filter_map(|fact| fact.owned_quantity_term().cloned())
+                .collect::<Vec<_>>();
+            let numeric_members = owned
+                .iter()
+                .try_fold(0_u32, |total, quantity| {
+                    total.checked_add(quantity.as_const()?)
+                })
+                .filter(|n| *n <= i32::MAX as u32);
+            let (owned_members, symbolic_members) = match (numeric_members, owned.as_slice()) {
+                (Some(quantity), _) => (quantity, None),
+                (None, [quantity]) => (0, Some(quantity.clone())),
+                _ => return Err("control import needs one owned member quantity".into()),
+            };
+            events = events
+                .import_opaque_contract_population_with_member(
+                    &description,
+                    owned_members,
+                    Some(entry_count),
+                    symbolic_members,
+                    Some((selected.clone(), Arc::new(definition.clone()))),
+                    None,
+                )
+                .map_err(|refusal| format!("control import refused: {refusal:?}"))?;
+        }
+        Ok(events)
     }
 
     fn import_opaque_contract_population_inner(
@@ -1487,14 +1493,14 @@ impl CreationEvents {
                         .clone()
                         .ok_or(CreationRefusal::UnknownTotal)?;
                     let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
-                        total,
+                        total.clone(),
                         Bitvector32Term::Constant(1),
                     );
                     if !assumptions.is_some_and(|facts| {
-                        facts.proves_exact(&crate::kernel::Proposition::ConditionIs(
-                            no_overflow,
-                            false,
-                        ))
+                        facts.exact_condition_value(&no_overflow) == Some(false)
+                            || facts
+                                .indexed_constant_interval(&total)
+                                .is_some_and(|(_, high)| high < i64::from(i32::MAX))
                     }) {
                         return Err(CreationRefusal::InvalidQuantity);
                     }

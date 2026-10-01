@@ -516,8 +516,18 @@ and private object contents; negative fixtures and kernel checks enforce both
 transitions, authority custody, body ownership, and checked external extents.
 The local-stack object ownership bridge is not included: its unchanged C
 reproduction remains an expected rejection, distinct from explicitly owned
-external objects. Multi-authority control wrappers and batches remain later
-work; this does not migrate bounded pool yet.
+external objects. Ordinary controls now also package a unary slot authority,
+a wildcard item authority, and the pool fields with both count relationships.
+Direct and nested checkout helpers open and restore that control, and a caller
+retains an additional slot. Standalone imports authenticate each population
+without creation rights or zero assumptions. Return/call checks transfer each
+contained authority independently. A narrow checked unit-sum domain rule
+requires defined original arithmetic and both updates, with indexed scaling
+and wrapping-update refusals. Dedicated fixtures reject missing consumption,
+production, authority, duplicates, and an incorrect C counter update.
+This checkpoint admits at most two distinct authorities at the same anchor;
+general wrappers and batches remain later work. It does not migrate bounded
+pool yet.
 
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count
