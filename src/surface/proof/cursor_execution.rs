@@ -2901,17 +2901,18 @@ fn execute_step_from_frontier_position_selecting_path(
             .with_kind(kind));
         }
         let path_case_split = statement_successors_are_path_cases(&transitions);
-        let case_split_guidance = if path_case_split {
+        let split_condition = if path_case_split {
             let cases = transitions
                 .iter()
                 .map(PathCase::of_statement)
                 .collect::<Vec<_>>();
-            describe_path_case_split_guidance(
-                &cases,
-                available_pure_facts,
-                &current_state,
-                proof_context,
-            )
+            path_case_split_condition(&cases, available_pure_facts, &current_state, proof_context)
+                .map(|(_, condition)| condition)
+        } else {
+            None
+        };
+        let case_split_guidance = if path_case_split {
+            describe_path_case_split_guidance(split_condition.as_ref(), transitions.len())
         } else {
             String::new()
         };
@@ -2931,10 +2932,10 @@ fn execute_step_from_frontier_position_selecting_path(
                 &[]
             )
         ));
-        return Err(if path_case_split {
-            error.with_path_case_split()
-        } else {
-            error
+        return Err(match (path_case_split, split_condition) {
+            (true, Some(condition)) => error.with_path_case_condition(condition),
+            (true, None) => error.with_path_case_split(),
+            (false, _) => error,
         });
     }
     let transition = transitions
@@ -4400,21 +4401,19 @@ fn describe_path_cases(
 /// proof `if` on the condition a planner would split on first, which gives
 /// each side its own frontier.
 fn describe_path_case_split_guidance(
-    cases: &[PathCase<'_>],
-    available: &[Proposition],
-    state: &CState,
-    proof_context: &ExecutionProofContext<'_>,
+    split_condition: Option<&ClickProposition>,
+    case_count: usize,
 ) -> String {
-    let split = match path_case_split_condition(cases, available, state, proof_context) {
-        Some((_, condition)) => format!(
+    let split = match split_condition {
+        Some(condition) => format!(
             "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\n",
-            crate::surface::diagnostics::describe_click_proposition(&condition)
+            crate::surface::diagnostics::describe_click_proposition(condition)
         ),
         None => "No case condition has a Click spelling, so the cases cannot yet be split in source terms.\n".to_string(),
     };
     format!(
         "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}`execute()` makes this split itself.\n",
-        cases.len(),
+        case_count,
     )
 }
 
