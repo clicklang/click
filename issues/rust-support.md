@@ -128,7 +128,12 @@ General `usize` scalar arithmetic now includes checked addition/subtraction/
 multiplication, division/remainder, shifts, bitwise operations, compound
 assignments, and integer casts at the full 64-bit target width. Computed slice
 indices and length increments, full-width boundary values, panic rejection,
-and proof expansion have regressions.
+and proof expansion have regressions. Unlabeled HIR `while` loops now use
+shared invariants, resource clauses, and decreasing measures, with scalar
+accumulation, full-width byte-slice iteration, nested loops, panic rejection,
+and checked expansion regressions. Guards currently exclude calls, indexing,
+and arithmetic; iterator/control-flow coverage and owned-value MIR loops
+remain outstanding.
 By-value array parameters/returns, non-byte slices, crate extraction, and
 iterator loops remain outstanding. Neither library is verified
 by this assessment.

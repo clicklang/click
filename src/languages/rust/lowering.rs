@@ -375,6 +375,36 @@ impl Context<'_> {
                     c_typed_store(address, value, self.place_type(target)?),
                 ))
             }
+            S::While { condition, body } => {
+                fn simple_guard(expression: &E) -> bool {
+                    match expression {
+                        E::Integer { .. }
+                        | E::UnsignedInteger { .. }
+                        | E::UsizeInteger { .. }
+                        | E::Boolean { .. }
+                        | E::Local { .. }
+                        | E::SliceLength { .. } => true,
+                        E::Not { value } | E::Cast { value, .. } => simple_guard(value),
+                        E::Binary {
+                            operator,
+                            left,
+                            right,
+                            ..
+                        } => {
+                            matches!(
+                                operator.as_str(),
+                                "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
+                            ) && simple_guard(left)
+                                && simple_guard(right)
+                        }
+                        _ => false,
+                    }
+                }
+                if !simple_guard(condition) {
+                    return Err("Rust while conditions currently require scalar comparisons without calls, indexing or arithmetic".into());
+                }
+                Ok(c_while(self.expr(condition)?, Vec::new(), self.body(body)?))
+            }
             S::If {
                 condition,
                 then_body,

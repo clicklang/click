@@ -1016,7 +1016,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     lowerer.loop_resources = loop_resources;
     let parsed_kernel_function = parsed_function.to_kernel_function();
     let body = if parsed_function.prelowered_kernel_function().is_some() {
-        parsed_kernel_function.body().clone()
+        lowerer.lower_kernel_statement(parsed_kernel_function.body())?
     } else {
         lowerer.lower_statement(parsed_function.body(), parsed_function.control_targets())?
     };
@@ -2331,6 +2331,92 @@ fn spec_integer_to_term(
 }
 
 impl AnnotationLowerer<'_> {
+    /// Attach the same checked loop clauses to compiler-lowered statements.
+    fn lower_kernel_statement(&mut self, statement: &CStatement) -> Result<CStatement, ClickError> {
+        Ok(match statement {
+            CStatement::Seq(a, b) => c_seq(
+                self.lower_kernel_statement(a)?,
+                self.lower_kernel_statement(b)?,
+            ),
+            CStatement::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                self.next_statement_index();
+                c_if(
+                    condition.clone(),
+                    self.lower_kernel_statement(then_branch)?,
+                    self.lower_kernel_statement(else_branch)?,
+                )
+            }
+            CStatement::While {
+                condition,
+                invariant,
+                invariant_checks,
+                effect_checks,
+                resource_specs,
+                ranking_measures,
+                structural_measure,
+                do_while,
+                backedge_target,
+                natural_exit_target,
+                body,
+            } => {
+                self.next_statement_index();
+                let index = self.next_loop_index();
+                let body = self.lower_kernel_statement(body)?;
+                let (measures, structural) = self.loop_measure_clauses(index)?;
+                if (!ranking_measures.is_empty() || structural_measure.is_some())
+                    && (!measures.is_empty() || structural.is_some())
+                {
+                    return Err(ClickError::new("duplicate typed-frontend loop measures"));
+                }
+                let mut checks = invariant_checks.clone();
+                checks.extend(self.loop_invariant_checks(index)?);
+                let mut effects = effect_checks.clone();
+                effects.extend(self.loop_frame_checks(index)?);
+                let mut resources = resource_specs.clone();
+                resources.extend(self.loop_resource_specs(index));
+                CStatement::While {
+                    condition: condition.clone(),
+                    invariant: invariant.clone(),
+                    invariant_checks: checks,
+                    effect_checks: effects,
+                    resource_specs: resources,
+                    ranking_measures: if measures.is_empty() {
+                        ranking_measures.clone()
+                    } else {
+                        measures
+                    },
+                    structural_measure: structural.or_else(|| structural_measure.clone()),
+                    do_while: *do_while,
+                    backedge_target: *backedge_target,
+                    natural_exit_target: *natural_exit_target,
+                    body: Box::new(body),
+                }
+            }
+            CStatement::TryCatchInt32 {
+                try_body,
+                binding,
+                handler,
+                cleanup_unwind,
+            } => {
+                self.next_statement_index();
+                crate::kernel::c_try_catch_int32_with_cleanup(
+                    self.lower_kernel_statement(try_body)?,
+                    binding.clone(),
+                    self.lower_kernel_statement(handler)?,
+                    *cleanup_unwind,
+                )
+            }
+            _ => {
+                self.next_statement_index();
+                statement.clone()
+            }
+        })
+    }
+
     fn lower_statement(
         &mut self,
         statement: &syntax::C0Statement,

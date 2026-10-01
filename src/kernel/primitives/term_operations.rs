@@ -1961,6 +1961,35 @@ impl ConditionTerm {
         }
     }
 
+    /// A sufficient guard for two non-wrapping unsigned successor rules.
+    /// The guard is deliberately a premise, never an unconditional rewrite.
+    pub(crate) fn uint64_successor_guard(&self) -> Option<Self> {
+        fn predecessor(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+            match term {
+                Bitvector32Term::UInt64Add(a, b) if b.uint64_as_const() == Some(1) => Some(a),
+                Bitvector32Term::UInt64Add(a, b) if a.uint64_as_const() == Some(1) => Some(b),
+                _ => None,
+            }
+        }
+        match self {
+            Self::Bitvector64UnsignedLessEqual(next, n) => Some(Self::uint64_less_than(
+                predecessor(next)?.clone(),
+                n.as_ref().clone(),
+            )),
+            Self::Bitvector64UnsignedLessThan(next_distance, old_distance) => {
+                let Bitvector32Term::UInt64Subtract(n, next) = next_distance.as_ref() else {
+                    return None;
+                };
+                let Bitvector32Term::UInt64Subtract(other_n, old) = old_distance.as_ref() else {
+                    return None;
+                };
+                (n == other_n && predecessor(next) == Some(old.as_ref()))
+                    .then(|| Self::uint64_less_than(old.as_ref().clone(), n.as_ref().clone()))
+            }
+            _ => None,
+        }
+    }
+
     pub(crate) fn uint64_less_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         // A value masked by a constant is bounded by that mask, so a tag
         // read `word & m` is below any bound above `m`.

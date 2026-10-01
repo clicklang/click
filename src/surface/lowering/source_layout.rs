@@ -28,7 +28,31 @@ pub(in crate::surface) fn count_loops(statement: &syntax::C0Statement) -> usize 
 }
 
 pub(in crate::surface) fn count_loop_regions(function: &syntax::C0Function) -> usize {
-    count_loops(function.body()) + usize::from(function.natural_control_loop().is_some())
+    let Some(kernel) = function.prelowered_kernel_function() else {
+        return count_loops(function.body())
+            + usize::from(function.natural_control_loop().is_some());
+    };
+    let mut pending = vec![kernel.body()];
+    let mut count = 0;
+    while let Some(statement) = pending.pop() {
+        match statement {
+            CStatement::Seq(a, b) => pending.extend([a.as_ref(), b.as_ref()]),
+            CStatement::If {
+                then_branch,
+                else_branch,
+                ..
+            } => pending.extend([then_branch.as_ref(), else_branch.as_ref()]),
+            CStatement::TryCatchInt32 {
+                try_body, handler, ..
+            } => pending.extend([try_body.as_ref(), handler.as_ref()]),
+            CStatement::While { body, .. } => {
+                count += 1;
+                pending.push(body);
+            }
+            _ => {}
+        }
+    }
+    count + usize::from(function.natural_control_loop().is_some())
 }
 
 #[derive(Clone, Default)]
@@ -193,8 +217,23 @@ impl SourceExecutionLayout {
                     );
                     Ok(statement_index)
                 }
-                CStatement::While { .. } | CStatement::Switch { .. } => Err(ClickError::new(
-                    "typed-frontend source layout does not yet support loop or switch statements",
+                CStatement::While { body, .. } => {
+                    let statement_index = *next_statement_index;
+                    *next_statement_index += 1;
+                    let loop_index = layout.loop_bodies.len();
+                    layout.loop_bodies.insert(loop_index, *next_statement_index);
+                    visit(body, next_statement_index, layout)?;
+                    layout.statements.insert(
+                        statement_index,
+                        SourceStatementRegion {
+                            continuation_node: *next_statement_index,
+                            kind: SourceStatementKind::Loop { loop_index },
+                        },
+                    );
+                    Ok(statement_index)
+                }
+                CStatement::Switch { .. } => Err(ClickError::new(
+                    "typed-frontend source layout does not yet support switch statements",
                 )),
                 CStatement::TryCatchInt32 {
                     try_body, handler, ..

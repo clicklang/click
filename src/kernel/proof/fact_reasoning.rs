@@ -2624,3 +2624,85 @@ mod integer_reflexivity_tests {
         assert!(!normalizes_context_free(&equality));
     }
 }
+
+#[cfg(test)]
+mod uint64_loop_tests {
+    use super::*;
+    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+
+    #[test]
+    fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_facts() {
+        let i = Bitvector32Term::Variable(Variable(980001));
+        let n = Bitvector32Term::Variable(Variable(980002));
+        let next = Bitvector32Term::uint64_add(i.clone(), Bitvector32Term::UInt64Constant(1));
+        let guard =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
+        let successor = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(next.clone(), n.clone()),
+            true,
+        );
+        let descent = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_than(
+                Bitvector32Term::uint64_subtract(n.clone(), next),
+                Bitvector32Term::uint64_subtract(n.clone(), i.clone()),
+            ),
+            true,
+        );
+        let mut samples = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut premises = vec![guard.clone()];
+            premises.extend((0..size).map(|k| {
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_than(
+                        Bitvector32Term::Variable(Variable(990000 + k)),
+                        Bitvector32Term::UInt64Constant(17),
+                    ),
+                    true,
+                )
+            }));
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&successor, std::slice::from_ref(&guard), &facts)?;
+                normalize_using_conditions(&descent, std::slice::from_ref(&guard), &facts)
+            });
+            result.unwrap();
+            samples.push(work);
+            // Ambient facts do not substitute for explicit certificate inputs.
+            assert!(normalize_using_conditions(&successor, &[], &facts).is_err());
+            assert!(normalize_using_conditions(&descent, &[], &facts).is_err());
+        }
+        assert!(samples[0] > 0);
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        let weak =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(i.clone(), n.clone()), true);
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&weak));
+        assert!(
+            normalize_using_conditions(&successor, std::slice::from_ref(&weak), &facts).is_err()
+        );
+        assert!(normalize_using_conditions(&descent, std::slice::from_ref(&weak), &facts).is_err());
+        let missing = crate::kernel::proof::ProofFacts::from_ordered(&[]);
+        assert!(matches!(
+            normalize_using_conditions(&successor, &[guard], &missing),
+            Err(ConditionalNormalizationError::UnavailablePremise(0))
+        ));
+    }
+
+    #[test]
+    fn uint64_equality_certificate_requires_both_order_premises() {
+        let a = Bitvector32Term::Variable(Variable(981001));
+        let b = Bitvector32Term::Variable(Variable(981002));
+        let goal = Proposition::ConditionIs(ConditionTerm::int64_equal(a.clone(), b.clone()), true);
+        let le =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(a.clone(), b.clone()), true);
+        let not_lt = Proposition::ConditionIs(ConditionTerm::uint64_less_than(a, b), false);
+        let premises = [le, not_lt];
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+        normalize_using_conditions(&goal, &premises, &facts).unwrap();
+        for selection in [&premises[..1], &premises[1..], &premises[..0]] {
+            assert!(normalize_using_conditions(&goal, selection, &facts).is_err());
+        }
+    }
+}
