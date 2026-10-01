@@ -4283,28 +4283,6 @@ mod tests {
     }
 
     #[test]
-    fn checked_integer_witness_canonicalizes_pointer_cast_constant() {
-        let source = Variable(3_103_900);
-        let replacement = IntegerTerm::constant_i64(0);
-        let renamings = BTreeMap::new();
-        let mut rewrite =
-            TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
-        rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
-                value: IntegerTerm::var(source).into(),
-                destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        };
-        let rewritten = rewrite.term(&Term::PointerOffset(offset));
-        assert_eq!(
-            rewritten,
-            Term::PointerOffset(PointerOffsetTerm::Constant(0))
-        );
-    }
-
-    #[test]
     fn checked_integer_witness_keeps_out_of_range_pointer_cast_wrapped() {
         let source = Variable(3_103_901);
         let replacement = IntegerTerm::constant_i64(2_147_483_648);

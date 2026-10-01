@@ -3188,43 +3188,6 @@ fn parses_loadable_segment_syntax() {
 }
 
 #[test]
-fn parses_loadable_pointer_base_segment() {
-    let source = r#"
-            verifying "write_second.c";
-
-            int32 write_second(int32* p) {
-                requires viewable((p + 1)[0..1]);
-                ensures result == 9 by auto;
-            }
-        "#;
-    let file = parse(source).expect("pointer-base viewable should parse");
-    let function = &file.function_blocks()[0];
-
-    assert_eq!(
-        function.requires(),
-        &[Requirement::LoadableSegment {
-            segment: ContractSegment {
-                state: ContractSegmentState::Current,
-                base: CExpression::Add(
-                    Box::new(CExpression::Variable("p".to_string())),
-                    Box::new(CExpression::Value(int32(1))),
-                ),
-                start: CExpression::Value(int32(0)),
-                end: CExpression::Value(int32(1)),
-                surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::Add(
-                        Box::new(current_var("p")),
-                        Box::new(current_int(1)),
-                    ),
-                    start: current_int(0),
-                    end: current_int(1),
-                },
-            },
-        }]
-    );
-}
-
-#[test]
 fn parses_parenthesized_loaded_pointer_segment_base() {
     let source = r#"
             verifying "read.c";

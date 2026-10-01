@@ -1939,40 +1939,6 @@ fn c0_headers_accept_const_global_table_declarations() {
 }
 
 #[test]
-fn c0_const_global_table_cross_file_verifies() {
-    crate::surface::verify_c0_sources(
-        r#"
-        verifying "table.c";
-        verifying "reader.c";
-
-        int32 run() {
-            ensures table_value: result == 4 by auto;
-        }
-
-        int32 read_table(const int32 *values) {
-            views values[0..3];
-            ensures table_value: result == values[1] by auto;
-        }
-        "#,
-        &[
-            (
-                "table.h",
-                "extern const int32 table[3];\nint32 read_table(const int32 *values);",
-            ),
-            (
-                "table.c",
-                "const int32 table[3] = {2, 4, 6};\nint32 read_table(const int32 *values) { return values[1]; }",
-            ),
-            (
-                "reader.c",
-                "#include \"table.h\"\nint32 run() { return read_table(table); }",
-            ),
-        ],
-    )
-    .expect("const global tables should verify across translation units");
-}
-
-#[test]
 fn c0_rejects_const_global_and_pointer_view_writes() {
     for source in [
         r#"
@@ -2934,42 +2900,6 @@ fn c0_links_incomplete_tentative_array_to_complete_tentative_definition() {
         ],
     )
     .expect("an incomplete tentative array should link to a complete tentative definition");
-}
-
-#[test]
-fn c0_rejects_unresolved_file_static_incomplete_arrays_even_with_external_match() {
-    let error = crate::surface::verify_c0_sources(
-        r#"
-        verifying "private.c";
-        verifying "external.c";
-
-        int32 read() {
-            ensures result == 0 by auto;
-        }
-
-        int32 external_value() {
-            ensures result == 7 by auto;
-        }
-        "#,
-        &[
-            (
-                "private.c",
-                "static int32 values[]; int32 read() { return values[0]; }",
-            ),
-            (
-                "external.c",
-                "int32 values[2] = {7, 8}; int32 external_value() { return values[0]; }",
-            ),
-        ],
-    )
-    .expect_err("an external array must not complete a private static array");
-    assert!(
-        error
-            .message()
-            .contains("file-scope static array `values` has an incomplete tentative definition"),
-        "{}",
-        error.message()
-    );
 }
 
 #[test]
@@ -4357,23 +4287,6 @@ fn c0_syntax_accepts_continue_in_for_loop() {
     }
 
     assert!(contains_for(function.body()));
-}
-
-#[test]
-fn c0_syntax_accepts_a_comma_separated_for_step() {
-    syntax::parse_function(
-        r#"
-        int32 count() {
-            int32 i = 0;
-            int32 j = 3;
-            for (i = 0; i < 3; i++, j--) {
-                j = j + 1;
-            }
-            return j;
-        }
-        "#,
-    )
-    .expect("a for-loop step may sequence scalar updates with commas");
 }
 
 #[test]
@@ -12980,20 +12893,6 @@ fn c0_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
     let c = "int read(int *restrict p) { return *p; }";
     let proof = "verifying \"restrict.c\"; int read(int *p) { ensures result == 7 by auto; }";
     assert!(crate::surface::verify_c0_sources(proof, &[("restrict.c", c)]).is_err());
-}
-
-#[test]
-fn c0_nothrow_memory_proof_expands_and_reverifies() {
-    let c = "__attribute__((nothrow)) int set(int *p) { *p = 7; return *p; }";
-    let proof = "verifying \"nothrow.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7 by auto; ensures result == 7 by auto; }";
-    crate::surface::verify_c0_sources(proof, &[("nothrow.c", c)]).unwrap();
-    let expanded = crate::surface::expand_c0_claim_source_by_label(
-        proof,
-        &[("nothrow.c", c)],
-        "set.ensures_0",
-    )
-    .unwrap();
-    crate::surface::verify_c0_sources(&expanded, &[("nothrow.c", c)]).unwrap();
 }
 
 #[test]

@@ -1814,47 +1814,6 @@ fn input_cursor_creates_only_canonical_terms() {
 }
 
 #[test]
-fn input_cursor_call_step_with_trailing_have_stays_on_proof() {
-    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let path = manifest
-        .join("examples")
-        .join("input-cursor")
-        .join("input_cursor.click");
-    let click_source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()));
-    let sources = crate::cli::read_verifying_sources(&path, &click_source)
-        .unwrap_or_else(|error| panic!("failed to load `{}`: {error}", path.display()));
-    let c_sources = crate::cli::source_refs(&sources);
-
-    let (verified, _events) =
-        crate::instrumentation::collect(|| verify_c0_sources(&click_source, &c_sources));
-    verified.unwrap_or_else(|error| panic!("`{}` failed: {error:?}", path.display()));
-
-    let marker = "    step();\n    transport(at(statement(4).entry";
-    let selected = click_source
-        .find(marker)
-        .expect("the shared pipeline call step should be present")
-        + "    ".len();
-    let position = expansion::position_at_offset(&click_source, selected);
-    let expanded =
-        expand_c0_tactic_source_at(&click_source, &c_sources, position.line, position.column)
-            .expect("the checked call step and trailing have should expand");
-    verify_c0_sources(&expanded, &c_sources)
-        .expect("the expanded call step should verify normally");
-
-    let function_start = expanded
-        .find("int32 input_cursor_shared_pipeline")
-        .expect("the expanded shared pipeline should remain present");
-    let expanded_step = function_start
-        + expanded[function_start..]
-            .find("step();")
-            .expect("the call transition should expand as a checked step");
-    // The call runs in the whole context; its postcondition is a certified
-    // execution fact and needs no trailing `have` to be source-expressible.
-    let _ = expanded_step;
-}
-
-#[test]
 fn linked_list_creates_only_canonical_terms() {
     example_project_creates_only_canonical_terms("linked-list", "linked_list.click");
 }

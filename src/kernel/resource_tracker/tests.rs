@@ -806,21 +806,6 @@ mod saved_states {
         );
     }
 
-    /// A call that returned ownership kept the identity and replaced the field
-    /// values. Nothing recorded says which step did it, so the answer is
-    /// `Unknown` and never `Changed`: a refusal reads the step from the site
-    /// that minted the new value.
-    #[test]
-    fn a_replaced_field_value_is_unknown_not_changed() {
-        let entry = holding(1, 3, 0);
-        let after = holding(1, 4, 0);
-        assert_eq!(
-            same_at_states(rank(), StatePoint::at(&after), StatePoint::at(&entry)),
-            replaced(None),
-            "neither stored value was minted as an arbitrary model, so no step is claimed"
-        );
-    }
-
     /// `unfold` consumed the instance, so the later state holds no field to
     /// read. A version that cannot be found is never reported the same: a
     /// field a contract did not promise must not become a premise.

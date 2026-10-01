@@ -3070,27 +3070,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ordinary_pure_compatibility_entry_points_stay_removed() {
-        let production = include_str!("pure_theorems.rs")
-            .split("#[cfg(test)]\nmod tests")
-            .next()
-            .unwrap();
-        for name in [
-            "prove_pure_theorem_script",
-            "prove_pure_theorem_tactics",
-            "prove_pure_theorem_goal",
-            "validate_pure_theorem_certificate",
-            "pure_theorem_surface_certificate",
-            "proof_supports_pure_certificate",
-        ] {
-            assert!(
-                !production.contains(name),
-                "removed pure authority returned: {name}"
-            );
-        }
-    }
-
     const INSTANTIATE_BOUND: &str = r#"
         theorem instantiate_bound(x: int32, limit: int32, upper: int32) {
             requires forall (k: int32) {

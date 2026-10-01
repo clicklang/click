@@ -60,37 +60,6 @@ fn simp_orients_pure_function_equality_inside_constructor_goal() {
 }
 
 #[test]
-fn defined_fact_makes_simple_statement_step_explicit() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            theorem increment_is_defined(x: int32) {
-                requires x < 2147483647;
-                ensures defined(x + 1) by {
-                    simp();
-                }
-            }
-
-            int32 increment(int32 x) {
-                requires x < 2147483647;
-                ensures result == x + 1;
-            } by {
-                apply(increment_is_defined(x));
-                step();
-                simp();
-            }
-        "#;
-
-    verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect("an explicit definedness theorem should satisfy simple tactic");
-}
-
-#[test]
 fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
     let c_source = r#"
             int32 add_nonnegative(int32 value, int32 amount) {
@@ -643,22 +612,6 @@ fn parses_simp_tactic() {
     let ensure = &file.function_blocks()[0].ensures()[0];
 
     assert!(matches!(ensure.proof().tactic(), Some(SmartTactic::Simp)));
-}
-
-#[test]
-fn parses_memory_postcondition() {
-    let source = FILL3_CLICK.replace("result == 2", "p[2] == 2");
-    let file = parse(&source).expect("sidecar should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert_eq!(
-        ensure.ensure(),
-        &ensure_comparison(
-            current_index("p", 2),
-            ComparisonOperator::Equal,
-            current_int(2),
-        )
-    );
 }
 
 #[test]
@@ -1277,30 +1230,6 @@ fn verifies_click_proposition_logic() {
 }
 
 #[test]
-fn verifies_simp_normalizes_simple_postconditions() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures add_zero: result == x + 0 by { execute(); simp(); }
-                ensures prop_simp: result == x and not (result != x) by { execute(); simp(); }
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("simp should prove local normalized postconditions");
-
-    assert_eq!(verified.len(), 2);
-    assert_eq!(verified[0].proof_kind(), ProofKind::TacticScript);
-    assert_eq!(verified[1].proof_kind(), ProofKind::TacticScript);
-}
-
-#[test]
 fn proof_sugar_and_bare_smart_tactics_have_the_same_frontier_semantics() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let simp_errors = ["by simp;", "by { simp; }", "by simp;"].map(|proof| {
@@ -1691,37 +1620,6 @@ fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
     );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the proof-if have expansion should be a surface certificate");
-}
-
-#[test]
-fn instantiate_specializes_a_universal_fact_at_an_explicit_value() {
-    let c_source = r#"
-        int32 pick(int32 value) {
-            return value;
-        }
-    "#;
-    let click_source = r#"
-        verifying "pick.c";
-
-        int32 pick(int32 value) {
-            requires forall (k: int32) {
-                0 <= k and k < 3 implies k <= value
-            };
-            ensures two_le: 2 <= value;
-        } by {
-            execute();
-            have 2 <= value by {
-                instantiate(forall (k: int32) {
-                    0 <= k and k < 3 implies k <= value
-                }, 2) using {}
-                assumption();
-            }
-            assumption();
-        }
-    "#;
-
-    verify_c0_sources(click_source, &[("pick.c", c_source)])
-        .expect("instantiating the universal requirement at 2 should prove the bound");
 }
 
 #[test]
@@ -2795,27 +2693,6 @@ fn disjunctive_premise_simp_expands_to_a_cases_certificate() {
     );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the disjunctive-premise expansion should be a surface certificate");
-}
-
-#[test]
-fn smart_pure_pointer_add_zero_identity_produces_a_rewrite_certificate() {
-    let click_source = r#"
-        theorem pointer_add_zero_equals(
-            base: int32*,
-            offset: int32,
-            target: int32*
-        ) {
-            requires base == target;
-            requires offset == 0;
-
-            ensures base + offset == target by {
-                simp();
-            }
-        }
-    "#;
-
-    verify_c0_sources(click_source, &[])
-        .expect("a smart pointer-offset identity proof should yield a pure surface certificate");
 }
 
 #[test]

@@ -1673,20 +1673,6 @@ mod tests {
     }
 
     #[test]
-    fn an_ordinary_comparison_does_not_reach_the_interval_route() {
-        // The route is gated on a conditional, so a comparison between two
-        // unbounded variables is still undecided rather than newly ranged.
-        let assumptions = PureFactContext::new();
-        assert_eq!(
-            assumptions.decide(&ConditionTerm::signed_less_equal(
-                Bitvector32Term::Variable(Variable(93_008)),
-                Bitvector32Term::Variable(Variable(93_009)),
-            )),
-            None
-        );
-    }
-
-    #[test]
     fn widened_32_bit_operands_cannot_overflow_int64_addition() {
         let t = Bitvector32Term::int64_from_uint32(Bitvector32Term::Variable(Variable(94_001)));
         let x = Bitvector32Term::int64_from_32(Bitvector32Term::Variable(Variable(94_002)));

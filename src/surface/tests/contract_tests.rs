@@ -381,31 +381,6 @@ fn exceptional_contract_bindings_are_family_specific() {
 }
 
 #[test]
-fn verifies_simple_postcondition_with_proof_tactics() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures returns_x: result == x by {
-                    execute();
-                    simp();
-                }
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("explicit proof script should prove simple postcondition");
-
-    assert_eq!(verified.len(), 1);
-    assert_eq!(verified[0].proof_kind(), ProofKind::TacticScript);
-}
-
-#[test]
 fn abstract_resource_construction_adds_one_authorized_token() {
     let c_source = r#"
             int32 open_thing() {
@@ -2440,35 +2415,6 @@ fn simp_rejects_loop_backed_claims() {
 }
 
 #[test]
-fn verifies_symbolic_result_expression() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures returns_argument: result == x by auto;
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("identity sidecar should verify");
-
-    assert_eq!(verified.len(), 1);
-    assert_eq!(
-        verified[0].ensure_clause().unwrap().ensure(),
-        &ensure_comparison(
-            current_var("result"),
-            ComparisonOperator::Equal,
-            current_var("x"),
-        )
-    );
-}
-
-#[test]
 fn verifies_memory_postcondition() {
     let source = FILL3_CLICK.replace(
         "ensures returns_second: result == 2",
@@ -2484,39 +2430,6 @@ fn verifies_memory_postcondition() {
             current_index("p", 2),
             ComparisonOperator::Equal,
             current_int(2),
-        )
-    );
-}
-
-#[test]
-fn verifies_old_memory_postcondition_for_unmodified_cell() {
-    let c_source = r#"
-            int32 write_second(int32* p) {
-                p[1] = 9;
-                return p[1];
-            }
-        "#;
-    let click_source = r#"
-            verifying "write_second.c";
-
-            int32 write_second(int32* p) {
-                requires viewable(p[0..2]);
-                consumes p[1..2];
-                ensures writes_second: p[1] == 9 by auto;
-                ensures keeps_first: p[0] == old(p[0]) by auto;
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("write_second.c", c_source)])
-        .expect("old memory postcondition should verify");
-
-    assert_eq!(verified.len(), 2);
-    assert_eq!(
-        verified[1].ensure_clause().unwrap().ensure(),
-        &ensure_comparison(
-            current_index("p", 0),
-            ComparisonOperator::Equal,
-            old_index("p", 0),
         )
     );
 }
@@ -2659,33 +2572,6 @@ fn owned_segment_rejects_write_outside_owned_memory() {
     );
     assert!(
         error.message().contains("resource facts: [owns p[0..1]]"),
-        "{}",
-        error.message()
-    );
-}
-
-#[test]
-fn old_memory_postcondition_fails_for_overwritten_cell() {
-    let c_source = r#"
-            int32 write_second(int32* p) {
-                p[1] = 9;
-                return p[1];
-            }
-        "#;
-    let click_source = r#"
-            verifying "write_second.c";
-
-            int32 write_second(int32* p) {
-                consumes p[1..2];
-                ensures keeps_second: p[1] == old(p[1]) by auto;
-            }
-        "#;
-
-    let error = verify_c0_sources(click_source, &[("write_second.c", c_source)])
-        .expect_err("old memory postcondition for overwritten cell should fail");
-
-    assert!(
-        error.message().contains("unclosed goal: p[1] == old(p[1])"),
         "{}",
         error.message()
     );

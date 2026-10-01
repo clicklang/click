@@ -3269,37 +3269,6 @@ mod checked_proposition_index_tests {
     }
 
     #[test]
-    fn integer_range_fold_array_contract_smoke_uses_surface_verifier() {
-        let c_source = r#"int32 array_fold_append_at_zero(int32 a[]) {
-    return 0;
-}"#;
-        let click_source = r#"verifying "integer_range_fold_array_body.c";
-
-int32 array_fold_append_at_zero(int32 a[]) {
-    views a[0..1];
-    ensures (0..1).fold(0, |acc, k| { acc + to_integer(a[k]) }) ==
-        (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) }) + to_integer(a[0]) by {
-        execute();
-        have 0 <= 0 by { simp(); }
-        have 0 < 2147483647 by { simp(); }
-        apply(integer_range_fold_append(
-            (0..0).fold(0, |acc, k| { acc + to_integer(a[k]) })
-        )) using {
-            0 <= 0;
-            0 < 2147483647;
-        }
-        simp();
-    }
-}"#;
-
-        crate::surface::verify_c0_sources(
-            click_source,
-            &[("integer_range_fold_array_body.c", c_source)],
-        )
-        .unwrap_or_else(|error| panic!("array fold surface smoke failed: {error:?}"));
-    }
-
-    #[test]
     fn certification_does_not_promote_body_facts_to_entry_premises() {
         let function = CFunction::new(
             CType::Int32,

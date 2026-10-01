@@ -71,15 +71,11 @@ opaque calls.
 ## Pure theorems
 
 - `mdtests/pure_theorem.md`: theorem-only `.click` file with no C source.
-- `mdtests/pure_theorem_unfold.md`: pure theorem proof script with predicate
-  unfolding.
 - `mdtests/pure_theorem_apply.md`: pure theorem proof script applying an
   earlier theorem.
 - `mdtests/condition_search_explicit_decomposition.md`: an explicit
   `simp() using` proof constrains smart condition search to named premises and
   expands to explicit rewrites.
-- `mdtests/pure_theorem_rejects_execution_tactic.md`: theorem proofs reject C
-  execution tactics.
 - `mdtests/pure_theorem_rejects_observe_tactic.md`: theorem proofs reject
   resource fact-observation tactics.
 - `mdtests/theorem_apply_in_function_proof.md`: execution proof applying a pure
@@ -278,13 +274,9 @@ opaque calls.
 ## Effects and frames
 
 - `mdtests/immutable_stack_locals.md`: stack-local writes with nothing owned.
-- `mdtests/count_to_three_loop_immutable.md`: a loop that owns no caller memory.
-- `mdtests/fill_n_mutable_segment.md`: a symbolic owned function segment.
 - `mdtests/fill_n_loop_mutable_segment.md`: a loop over an owned segment.
 - `mdtests/loop_frame_segment_shapes.md`: shifted, growing, and multi-segment
   loop effects.
-- `mdtests/shifted_loop_effect_subset.md`: loop effect composes into function
-  effect.
 - `mdtests/shifted_loop_effect_preserves_prefix.md`: effect summary preserves
   prefix.
 - `mdtests/resource_context_write.md`: first owned-memory resource-context
@@ -309,8 +301,6 @@ opaque calls.
   one `uint8[]` element does not cover another.
 - `mdtests/resource_summary_requires_returned_write.md`: helper call consumes a
   write resource unless its summary returns it.
-- `mdtests/resource_summary_read_does_not_consume_write.md`: helper read
-  requirement does not consume caller write permission.
 - `mdtests/resource_summary_splits_write_range.md`: helper call receives a
   subrange while the caller keeps and rejoins the residue.
 - `mdtests/resource_summary_splits_symbolic_write_range.md`: helper call
@@ -333,8 +323,6 @@ sequence:
   write permission when it does not return it.
 - `mdtests/permission_call_returns_write.md`: a helper returns write permission
   to its caller.
-- `mdtests/permission_call_split_rejoin.md`: a caller splits a write range for
-  a helper call and rejoins it afterward.
 - `mdtests/token_resource_borrow_return.md`: exact-match token
   resource can be borrowed and returned.
 - `mdtests/token_resource_consumed_by_call.md`: exact-match token

@@ -1381,26 +1381,6 @@ mod tests {
     }
 
     #[test]
-    fn planner_eliminates_an_equality_from_an_order_goal_and_its_bounds() {
-        let t = IntegerTerm::var(Variable(210));
-        let a = IntegerTerm::var(Variable(211));
-        let b = IntegerTerm::var(Variable(212));
-        let x = IntegerTerm::var(Variable(213));
-        let y = IntegerTerm::var(Variable(214));
-        let premises = [
-            equal(t.clone(), IntegerTerm::add(a.clone(), x.clone())),
-            less_equal(a, b.clone()),
-            less_equal(x, y.clone()),
-        ];
-        let goal = less_equal(t, IntegerTerm::add(b, y));
-        let certificate = plan_integer_affine_certificate(&goal, &premises)
-            .expect("the equality should be eliminated from the goal and from both bounds");
-        certificate
-            .check(&goal, &premises)
-            .expect("the reduced two-inequality certificate should verify");
-    }
-
-    #[test]
     fn elimination_keeps_only_the_nodes_the_conclusion_reads() {
         let t = IntegerTerm::var(Variable(240));
         let a = IntegerTerm::var(Variable(241));

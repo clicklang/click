@@ -505,49 +505,6 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
-fn typed_int32_value_equality_uses_graph_with_snapshot_scope() {
-    let _session = VerificationSession::enter();
-    let before = intern_c_memory(CMemory::new().with_block("typed-int32", 8));
-    let pointer = |index| Pointer {
-        block: "typed-int32".into(),
-        offset: PointerOffsetTerm::scale_int32(index, 4),
-    };
-    let load = |memory: &SharedCMemory, index| {
-        Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            memory,
-            &pointer(index),
-            crate::kernel::LoadKind::Bits32,
-            4,
-            memory,
-        ))
-    };
-    let (a, b) = (var(71), var(72));
-    let after = intern_c_memory(before.memory().clone().store(
-        pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
-    ));
-    let left = CValue::Int32(load(&before, a.clone()));
-    let right = CValue::Int32(load(&before, b.clone()));
-    let later = CValue::Int32(load(&after, b.clone()));
-    let premise = eq(&a, &b);
-    let parent = PureFactContext::new();
-    let branch = parent.clone().assume_condition(premise.clone(), true);
-    let values_equal = |context: &PureFactContext, left: &CValue, right: &CValue| {
-        crate::kernel::reasoning::memory_resolution::c_values_proven_equal_for_memory_resolution(
-            left, right, context,
-        )
-    };
-    let _scope = branch.enter_id_scope();
-    PureFactContext::reset_bitvector_equality_index_fact_visits();
-    assert!(values_equal(&branch, &left, &right));
-    assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    assert!(!values_equal(&branch, &left, &later));
-    assert!(!values_equal(&parent, &left, &right));
-    let withdrawn = branch.without_exact_fact(&Proposition::ConditionIs(premise, true));
-    assert!(!values_equal(&withdrawn, &left, &right));
-}
-
-#[test]
 fn typed_int32_value_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();

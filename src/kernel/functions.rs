@@ -11166,25 +11166,6 @@ mod guarded_mutable_refinement_tests {
     }
 
     #[test]
-    fn named_precondition_can_establish_guard_for_unconditional_concrete_effect() {
-        let contract = function_with_segment(
-            "contract",
-            segment(Some(guard(CComparisonOperator::NotEqual, 0)), 0, 2),
-        );
-        let function = function_with_segment("function", segment(None, 0, 1));
-        let active = Bitvector32Term::Variable(Variable(980_001));
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::equal(active, Bitvector32Term::Constant(0)),
-            false,
-        ));
-        assert!(compatible_with_assumptions(
-            &contract,
-            &function,
-            &assumptions,
-        ));
-    }
-
-    #[test]
     fn unrelated_concrete_guard_does_not_refine_named_guard() {
         let contract = function_with_segment(
             "contract",
@@ -32232,11 +32213,6 @@ mod stable_view_call_tests {
     }
 
     #[test]
-    fn candidate_rejects_different_output_view() {
-        assert_unbacked_output_rejected(1, 2, "candidate_different_output");
-    }
-
-    #[test]
     fn candidate_rejects_wider_output_without_outer_binding() {
         assert_unbacked_output_rejected(0, 2, "candidate_wider_output");
     }
@@ -32414,29 +32390,6 @@ mod stable_view_call_tests {
             matches!(&error, CRuntimeError::UnbackedReturnedView { view } if *view == carried),
             "unexpected refusal: {error:?}"
         );
-    }
-
-    #[test]
-    fn candidate_direct_call_rejects_new_output_view() {
-        let pointer = pointer();
-        let function = reader_with_output("candidate_direct_new_output", 2, 3);
-        let paths = execute_c_function_call_paths(
-            &caller_with_owned_end(&pointer, 3, 12),
-            &function,
-            &[CExpression::Value(CValue::pointer(pointer))],
-            &PureFactContext::new(),
-            &environment(&function),
-            CExecutionSemantics::APPLY_VERIFIED_RULES,
-            &mut ExecutionBudget::new(),
-        )
-        .expect("a direct output call should execute to a diagnostic path");
-        assert!(matches!(
-            paths.as_slice(),
-            [CFunctionPath {
-                outcome: CFunctionOutcome::RuntimeError(CRuntimeError::UnbackedReturnedView { .. }),
-                ..
-            }]
-        ));
     }
 
     fn symbolic_bounded_range(

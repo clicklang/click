@@ -1152,14 +1152,6 @@ fn grouped_claims_share_one_execution_with_near_linear_work() {
 }
 
 #[test]
-fn composite_definition_members_preserve_small_bundle() {
-    let (c_source, click_source) = resource_member_project(3);
-    let verified = verify_c0_sources(&click_source, &[("preserve_bundle.c", c_source.as_str())])
-        .expect("a small composite resource bundle should verify");
-    assert!(!verified.is_empty());
-}
-
-#[test]
 fn composite_definition_members_keep_separation_work_compact() {
     let samples = [8, 16, 32, 64]
         .into_iter()

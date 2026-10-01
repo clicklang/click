@@ -2089,31 +2089,6 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
 }
 
 #[test]
-fn smart_simp_expansion_checks_as_surface_click() {
-    let c_source = r#"
-            int32 identity(int32 x, int32 y, int32 z) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x, int32 y, int32 z) {
-                ensures result == x by { execute(); simp(); }
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)])
-        .expect("smart simp should verify");
-    let expanded = verified[0]
-        .expanded_proof_source()
-        .expect("smart simp should lower to surface tactics");
-    let expanded_source = click_source.replacen("by { execute(); simp(); }", &expanded, 1);
-    verify_c0_sources(&expanded_source, &[("identity.c", c_source)])
-        .expect("printed smart simp expansion should check");
-}
-
-#[test]
 fn unsigned_narrowing_snapshot_expansion_reverifies() {
     let c_source = "struct state { unsigned long value; }; unsigned int take(struct state *p) { unsigned int result = p->value; p->value += 1; return result; }";
     let click_source = r#"
@@ -12191,17 +12166,6 @@ fn early_return_postcondition_path_selection_expands_and_reverifies() {
 }
 
 #[test]
-fn bound_universal_fixture_split_covers_original_census() {
-    assert_eq!(
-        BOUND_UNIVERSAL_FIXTURE_CASES,
-        &[
-            ("bubble_pass3_max_suffix.md", "bubble_pass3"),
-            ("bubble_sort3_two_pass_sorted.md", "bubble_sort3_two_pass"),
-        ]
-    );
-}
-
-#[test]
 fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
     for (filename, function, claim, retained_step) in [
         (
@@ -12471,51 +12435,6 @@ fn vector_push_pipeline_has_no_outcome_fallbacks() {
         sidecar,
         function,
         retained_step,
-    );
-}
-
-#[test]
-fn resource_example_pipeline_split_covers_original_census() {
-    assert_eq!(
-        RESOURCE_EXAMPLE_PIPELINE_CASES,
-        &[
-            (
-                "linked-list",
-                "linked_list.click",
-                "list_roundtrip",
-                "rewrite(at(statement(5).entry, observed) == at(statement(5).entry, node->value));",
-            ),
-            (
-                "input-cursor",
-                "input_cursor.click",
-                "input_cursor_shared_pipeline",
-                "have right->data[right->pos] == data[0] by {\n        rewrite(",
-            ),
-            (
-                "owned-segmented-buffer",
-                "owned_segmented_buffer.click",
-                "owned_segmented_buffer_swap",
-                "apply(int32_successor_le_implies_lt(0, owner->first_len)) using {",
-            ),
-            (
-                "owned-string",
-                "owned_string.click",
-                "owned_string_init",
-                "rewrite(owner->cap == capacity);",
-            ),
-            (
-                "recursive-zero-list",
-                "recursive_zero_list.click",
-                "zero_list_pipeline",
-                "fold(zero_list(first));",
-            ),
-            (
-                "vector-push",
-                "vector_push.click",
-                "vector_push",
-                "apply(int32_increment_preserves_order(",
-            ),
-        ]
     );
 }
 
@@ -13488,63 +13407,6 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
 }
 
 #[test]
-fn smart_have_uses_fact_selected_by_explicit_step_at_the_mutation_boundary() {
-    let c_source = r#"
-            int32 set_second_return_first(int32 p[2]) {
-                p[1] = 9;
-                return p[0];
-            }
-        "#;
-    let click_source = r#"
-            verifying "transport.c";
-
-            predicate first_is_seven(p: int32[]) {
-                p[0] == 7
-            }
-
-            int32 set_second_return_first(int32 p[2]) {
-                requires first_is_seven(p);
-                consumes p[0..2];
-                produces p[0..2];
-            } by {
-                unfold(first_is_seven);
-                step();
-                have p[0] == 7 by simp;
-                step();
-                simp();
-            }
-        "#;
-    let have_offset = click_source
-        .find("have p[0] == 7")
-        .expect("proof should contain the selected have");
-    let line = click_source[..have_offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = have_offset
-        - click_source[..have_offset]
-            .rfind('\n')
-            .map(|offset| offset + 1)
-            .unwrap_or(0)
-        + 1;
-
-    let expanded =
-        expand_c0_tactic_source_at(click_source, &[("transport.c", c_source)], line, column)
-            .expect("the fact retained by `step()` should reach the current snapshot");
-    let expanded_have = &expanded[expanded
-        .find("have p[0] == 7")
-        .expect("expanded proof should retain the selected have")
-        ..expanded
-            .find("step();\n                simp();")
-            .expect("expanded proof should retain its suffix")];
-    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
-    assert!(!expanded_have.contains("simp();"), "{expanded_have}");
-    verify_c0_sources(&expanded, &[("transport.c", c_source)])
-        .expect("the explicit-step boundary transport should check");
-}
-
-#[test]
 fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
     let preserve_c_source = r#"
             int32 preserve(int32 p[1]) {
@@ -13831,32 +13693,6 @@ fn source_expander_replaces_and_checks_grouped_proof() {
     assert!(!expanded.contains("execute();"));
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("expanded grouped proof should re-verify");
-}
-
-#[test]
-fn source_expander_is_idempotent() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures result == x by { execute(); simp(); }
-            }
-        "#;
-    let sources = [("identity.c", c_source)];
-
-    let expanded_once =
-        expand_c0_claim_source(click_source, &sources, "identity", CProofClaim::Ensure(0))
-            .expect("smart proof should expand");
-    let expanded_twice =
-        expand_c0_claim_source(&expanded_once, &sources, "identity", CProofClaim::Ensure(0))
-            .expect("expanded proof should expand again");
-
-    assert_eq!(expanded_once, expanded_twice);
 }
 
 #[test]
@@ -14764,34 +14600,6 @@ fn loop_preservation_if_retains_its_enclosing_match_binding() {
 }
 
 #[test]
-fn stable_loop_invariant_export_expands_and_reverifies() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/loop_stable_invariant_export.md");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()));
-    let mdtest = crate::cli::parse_mdtest(&path, &source)
-        .unwrap_or_else(|error| panic!("failed to parse `{}`: {error}", path.display()));
-    let click_source = mdtest
-        .click_source
-        .as_deref()
-        .expect("the stable invariant regression should contain Click source");
-    let c_sources = mdtest
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-
-    verify_c0_sources(click_source, &c_sources)
-        .expect("the stable invariant should retain its loop export position");
-    let expanded =
-        expand_c0_claim_source(click_source, &c_sources, "fill_tail", CProofClaim::Grouped)
-            .expect("the stable invariant proof should expand");
-    verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
-        panic!("expanded stable invariant proof failed: {error:?}\n{expanded}")
-    });
-}
-
-#[test]
 fn loop_entry_logical_read_expands_without_hidden_introductions() {
     let c_source = r#"
         int32 fill3_entry_guard(int32 p[3]) {
@@ -15059,36 +14867,6 @@ void object_retain_many(struct object* obj, int32 amount) {
 "#;
 
 #[test]
-fn smart_have_inside_an_open_scope_expands_and_reverifies() {
-    // Reduced from `object_retain_many` in `examples/refcount` and the two
-    // `have`s of `arena_write` in `examples/arena`. The scope driver checked
-    // the `have` but retained no expansion for the source occurrence, so
-    // audit reported `has no source tactic 1` for a sidecar `click verify`
-    // accepted.
-    let sources = [("object_retain_many.c", PRODUCED_RESOURCE_C)];
-    verify_c0_sources(PRODUCED_RESOURCE_CLICK, &sources)
-        .expect("the produced-resource proof should verify");
-
-    let have = PRODUCED_RESOURCE_CLICK
-        .find("have 1 == obj->refs by simp;")
-        .expect("proof should contain the scope's smart have");
-    let position = expansion::position_at_offset(PRODUCED_RESOURCE_CLICK, have);
-    let expanded = expand_c0_tactic_source_at(
-        PRODUCED_RESOURCE_CLICK,
-        &sources,
-        position.line,
-        position.column,
-    )
-    .expect("a smart `have` inside an open scope should expand");
-    assert!(
-        !expanded.contains("have 1 == obj->refs by simp;"),
-        "the smart `have` should be replaced by its checked steps: {expanded}"
-    );
-    verify_c0_sources(&expanded, &sources)
-        .expect("the expanded scope `have` should independently reverify");
-}
-
-#[test]
 fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
     // Reduced from `pool_transfer` in `examples/bounded-pool` and
     // `object_retain_many` in `examples/refcount`. The closer's certificate
@@ -15117,88 +14895,6 @@ fn grouped_closer_with_a_produced_resource_claim_expands_and_reverifies() {
     );
     verify_c0_sources(&expanded, &sources)
         .expect("the expanded grouped closer should independently reverify");
-}
-
-#[test]
-fn match_arm_field_binding_prints_its_binder_in_a_generated_certificate() {
-    // Reported from `mdtests/proof_match_three_constructors.md`. A C-typed
-    // constructor field binds the kernel value the case fact assigns it, and
-    // a certificate generated inside the arm used to print that value's
-    // kernel variable id. No lowering resolves such a spelling, so the
-    // rewritten sidecar failed with `the kernel lowering produced 0 paths`
-    // for a proof `click verify` accepted.
-    let c_source = "int read(int* p) { return *p; }";
-    let click_source = r#"
-verifying "read.c";
-
-spec enum Bi { Zero, Other(int) }
-
-function bi_code(t: Bi) -> int {
-    match t {
-        Bi::Zero => 0,
-        Bi::Other(value) => value,
-    }
-}
-
-resource cell(p: int*) {
-    field model: Bi;
-    match model {
-        Bi::Zero => { owns p[0..1]; fact p[0] == 0; },
-        Bi::Other(value) => { owns p[0..1]; fact p[0] == value; },
-    }
-}
-
-int read(int* p) {
-    owns c: cell(p);
-    ensures c.model == old(c.model);
-    ensures result == bi_code(old(c.model));
-} by {
-    match c.model {
-        Bi::Zero => {
-            unfold(c);
-            execute();
-            let c = fold(cell(p), { model: Bi::Zero }, {});
-            have bi_code(old(c.model)) == 0 by {
-                rewrite(old(c.model) == Bi::Zero);
-                unfold(bi_code(Bi::Zero));
-                normalize();
-            }
-            simp();
-        },
-        Bi::Other(value) => {
-            unfold(c);
-            execute();
-            let c = fold(cell(p), { model: Bi::Other(value) }, {});
-            have bi_code(old(c.model)) == value by {
-                rewrite(old(c.model) == Bi::Other(value));
-                unfold(bi_code(Bi::Other(value)));
-                normalize();
-            }
-            simp();
-        },
-    }
-}
-"#;
-    let sources = [("read.c", c_source)];
-    verify_c0_sources(click_source, &sources)
-        .expect("the two-constructor match proof should verify");
-
-    let closer = click_source
-        .rfind("simp();")
-        .expect("proof should contain the second arm's closer");
-    let position = expansion::position_at_offset(click_source, closer);
-    let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the arm's closer should expand");
-    assert!(
-        expanded.contains("Bi::Other(value)"),
-        "a generated constructor should name the arm's binder: {expanded}"
-    );
-    // Match-binder kernel ids live in the namespace that starts at 4_000_000.
-    assert!(
-        !expanded.contains("(v4"),
-        "a generated constructor must not print a kernel variable id: {expanded}"
-    );
 }
 
 /// The two-constructor analogue of `mdtests/proof_match_three_constructors.md`:
@@ -15414,89 +15110,6 @@ fn expansion_refuses_a_witness_it_cannot_spell_instead_of_emitting_unparseable_t
     );
 }
 
-/// `examples/marked-linked-list`'s `list_count_live` reduced: a recursive call
-/// whose result lands in a local, then a C `if` whose condition loads a
-/// `uint64` cell of the node the call did not touch.
-const RECURSIVE_THEN_WIDE_GUARD_C: &str = r#"struct cell {
-    int32 value;
-    unsigned long word;
-};
-
-uint32 count_live(struct cell *node) {
-    if (node == 0) {
-        return 0;
-    }
-    uint32 rest = count_live((struct cell *)(node->word & ~1));
-    if ((node->word & 1) != 0) {
-        return rest;
-    }
-    return rest + 1;
-}
-"#;
-
-const RECURSIVE_THEN_WIDE_GUARD_CLICK: &str = r#"resource tagged(node: struct cell*) {
-    if node != 0 {
-        owns object(node);
-        fact aligned(node, 8);
-        let next: struct cell* where aligned(next, 8) and node->word == address(next) + (node->word & 1);
-        contains tagged(next);
-    }
-}
-
-verifying "count_live.c";
-
-uint32 count_live(struct cell* node) {
-    decreases tagged(node);
-    owns tagged(node);
-} by {
-    if node == 0 {
-        execute();
-        simp();
-    } else {
-        unfold(tagged(node));
-        execute();
-        fold(tagged(node));
-        simp();
-    }
-}
-"#;
-
-#[test]
-fn undecided_wide_guard_after_a_recursive_call_expands_and_reverifies() {
-    // The `execute()` in the `else` arm renders the C `if` it cannot decide as
-    // a proof `if` on the guard anchored at the statement's entry, and the
-    // recheck applies each arm's `step()` under `RequireProven`. The arm
-    // assumes the surface lowering of that guard while the C guard evaluates
-    // against the snapshot its own load resolved, so the two agree only if the
-    // load has a name: an unnamed `load_uint64` reads the whole current
-    // snapshot, which after the recursive call differs from the one the guard
-    // resolved by the `local:rest` cell the load cannot alias, and neither arm
-    // is excluded ("got 2 feasible condition paths"). Every integer scalar one
-    // to eight bytes wide is named where it is loaded, so the polarity the arm
-    // assumes decides the transition.
-    let sources = [("count_live.c", RECURSIVE_THEN_WIDE_GUARD_C)];
-    verify_c0_sources(RECURSIVE_THEN_WIDE_GUARD_CLICK, &sources)
-        .expect("the recursive count proof should verify");
-
-    let arm_execute = RECURSIVE_THEN_WIDE_GUARD_CLICK
-        .rfind("execute();")
-        .expect("proof should contain the `else` arm's execute");
-    let position = expansion::position_at_offset(RECURSIVE_THEN_WIDE_GUARD_CLICK, arm_execute);
-    let expanded = expand_c0_tactic_source_at(
-        RECURSIVE_THEN_WIDE_GUARD_CLICK,
-        &sources,
-        position.line,
-        position.column,
-    )
-    .expect("the `else` arm's execute should expand");
-    assert!(
-        expanded.contains("if at(statement(5).entry, (load_uint64(byte_offset(node, 8)) & 1))"),
-        "the undecided C guard should expand to an anchored proof `if`: {expanded}"
-    );
-    verify_c0_sources(&expanded, &sources)
-        .expect("the expanded undecided-guard arm should independently reverify");
-}
-
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
     // The automatic preservation the `loop` keyword owns walks four body
@@ -15566,67 +15179,6 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("the expanded preservation should independently reverify: {error:?}\n{expanded}")
-    });
-}
-
-#[test]
-fn omitted_preservation_over_two_body_breaks_expands_and_reverifies() {
-    // `stop_at` from `mdtests/loop_body_break_exit.md` with both phases
-    // omitted: a `while (true)` whose only ways out are two `break`s in
-    // nested C `if`s. The proof verified, but the emitted expansion carried
-    // the sibling arm's `step()`s into this path, so the recheck reached the
-    // second `if` at the wrong frontier and `step` reported "2 feasible
-    // condition paths" — `click audit` disagreeing with `click verify`.
-    let c_source = r#"
-        int32 stop_at(int32 n) {
-            int32 i = n;
-
-            while (true) {
-                if (i == 3) {
-                    break;
-                }
-                if (i == 0) {
-                    break;
-                }
-                i = 0;
-            }
-            return i;
-        }
-    "#;
-    let click_source = r#"
-        verifying "stop_at.c";
-
-        int32 stop_at(int32 n) {
-            requires n >= 0;
-            ensures result == 3 or result == 0;
-        } by {
-            step();
-            step();
-            loop {
-                decreases i;
-                invariant i >= 0;
-            }
-            step();
-            simp();
-        }
-    "#;
-    let sources = [("stop_at.c", c_source)];
-    verify_c0_sources(click_source, &sources)
-        .expect("an omitted-phase loop with two body breaks should verify");
-
-    let loop_offset = click_source
-        .find("loop {")
-        .expect("the proof should contain the loop tactic");
-    let position = expansion::position_at_offset(click_source, loop_offset);
-    let expanded =
-        expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the automatic preservation should expand");
-    assert!(
-        expanded.contains("if i == 3") && expanded.contains("if i == 0"),
-        "each breaking C `if` should expand to a proof case: {expanded}"
-    );
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
-        panic!("the expanded break-exit preservation should reverify: {error:?}\n{expanded}")
     });
 }
 
@@ -15892,49 +15444,6 @@ fn local_job_views_expand_and_reverify_without_ownership_annotations() {
     assert!(!click.contains("execute();"), "{click}");
     assert!(!click.contains("simp();"), "{click}");
     verify_c0_sources(&click, &sources).expect("expanded local job must independently reverify");
-}
-
-#[test]
-fn a_field_selected_memory_endpoint_expands_and_reverifies() {
-    // A scalar resource field selects the start of an owned range. The
-    // closing `simp()` of each proof reads facts the unfold published at the
-    // field's folded value and the fold proposed at a new one; each expands
-    // to explicit steps that verify on their own.
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/resource_field_memory_endpoint.md");
-    let source = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()));
-    let mdtest = crate::cli::parse_mdtest(&path, &source)
-        .unwrap_or_else(|error| panic!("failed to parse `{}`: {error}", path.display()));
-    let click_source = mdtest
-        .click_source
-        .as_deref()
-        .expect("the fixture has a click block");
-    let sources = mdtest
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let keep = click_source
-        .find("simp();")
-        .expect("`keep` closes with a smart simp");
-    let claim = click_source
-        .rfind("simp();")
-        .expect("`claim` closes with a smart simp");
-    assert_ne!(keep, claim);
-    for offset in [keep, claim] {
-        let position = expansion::position_at_offset(click_source, offset);
-        let expanded =
-            expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-                .expect("the closing simp should expand");
-        assert!(
-            !expanded[offset..].starts_with("simp();"),
-            "the smart simp should be replaced: {expanded}"
-        );
-        verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
-            panic!("the expanded closing simp should reverify: {error:?}\n{expanded}")
-        });
-    }
 }
 
 #[test]

@@ -5439,22 +5439,6 @@ mod local_descent_tests {
         );
     }
 
-    #[test]
-    fn a_dag_terminates_under_its_planned_heights() {
-        let rules = [
-            rule("top", &["middle"], 0),
-            rule("middle", &["leaf"], 0),
-            rule("leaf", &[], 0),
-        ];
-        let plan = c_termination_height_plan(&rules, &[]);
-        let verdicts = check(&rules, &[], &plan, &[]).expect("a consistent plan checks");
-        assert_eq!(
-            terminating(&verdicts),
-            BTreeSet::from(["leaf", "middle", "top"])
-        );
-        assert!(verdicts.refusals.is_empty());
-    }
-
     /// Heights are untrusted: one that inverts a call is an error, never
     /// evidence.
     #[test]

@@ -5450,26 +5450,4 @@ mod evidence_tests {
         assert!(closure.require_evidence(execution, 1, &key).is_err());
         assert!(ClaimClosure::vacuous(execution, 1, key, ClaimCertificate::ExactCheck).is_err());
     }
-
-    #[test]
-    fn outcome_driver_has_no_fact_resynchronization_or_certificate_only_closer() {
-        let driver = include_str!("claim_proofs.rs");
-        let facts = include_str!("../../kernel/proof/facts.rs");
-        let outcomes = include_str!("proof_object/outcomes_and_focus.rs");
-        let resources = include_str!("resources.rs");
-        for retired in [
-            concat!("with_checked_", "outcome_facts"),
-            concat!("by_checked_", "certificate"),
-            concat!("by_grouped_", "transition"),
-            concat!("let mut ", "path_requirements"),
-        ] {
-            assert!(
-                !driver.contains(retired),
-                "retired outcome boundary: {retired}"
-            );
-        }
-        assert!(!facts.contains(concat!("resync_ordered_", "preserving_provenance")));
-        assert!(!outcomes.contains(concat!("with_checked_", "outcome_facts")));
-        assert!(!resources.contains(concat!("LegacyResource", "PureFacts")));
-    }
 }

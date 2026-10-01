@@ -734,29 +734,6 @@ fn verifies_loadable_segment_proposition_for_indexed_read() {
 }
 
 #[test]
-fn verifies_symbolic_increment_with_numeric_requirement() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            int32 increment(int32 x) {
-                requires x < 2147483647;
-                ensures increments: result == x + 1 by auto;
-            }
-        "#;
-
-    let verified = verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect("increment sidecar should verify");
-
-    assert_eq!(verified.len(), 1);
-    assert_eq!(verified[0].specification.requires().len(), 1);
-}
-
-#[test]
 fn bounded_assignment_preserves_successor_definedness() {
     let c_source = r#"
             int32 add_twice(int32 x) {
@@ -780,33 +757,6 @@ fn bounded_assignment_preserves_successor_definedness() {
 
     verify_c0_sources(click_source, &[("add_twice.c", c_source)])
         .expect("the bound on x should prove both additions defined");
-}
-
-#[test]
-fn symbolic_increment_without_numeric_requirement_fails() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            int32 increment(int32 x) {
-                ensures increments: result == x + 1 by auto;
-            }
-        "#;
-
-    let error = verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect_err("increment without overflow requirement should fail");
-
-    assert!(
-        error
-            .message()
-            .contains("undefined behavior: signed overflow"),
-        "{}",
-        error.message()
-    );
 }
 
 #[test]

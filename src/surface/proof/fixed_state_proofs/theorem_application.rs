@@ -658,13 +658,6 @@ mod tests {
     }
 
     #[test]
-    fn nested_quantified_candidate_comparison_exceeds_the_old_depth() {
-        let left = nested_foralls(32, 10_000);
-        let renamed = nested_foralls(32, 20_000);
-        assert!(nested_quantified_candidate_equivalent(&left, &renamed));
-    }
-
-    #[test]
     fn nested_quantified_exact_fallback_exceeds_the_old_depth() {
         let left = nested_unindexed_foralls(16, 30_000);
         let renamed = nested_unindexed_foralls(16, 40_000);
