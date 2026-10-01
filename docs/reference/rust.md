@@ -113,10 +113,61 @@ uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
 
 The length bound reflects the current signed-word memory-range model; it does
 not truncate Rust slice metadata. `.len()` alone needs no byte resource and
-preserves larger 64-bit lengths. Slice returns, subslices, fixed arrays,
+preserves larger 64-bit lengths. Slice returns, subslices,
 indexed compound assignment, other slice element types, and slices in owned-value
 MIR functions remain unsupported. Normal numeric contract casts now include
 `(int32)`, `(uint32)`, and `(uint64)`.
+
+## Fixed arrays, copies, and checked indexing
+
+Shared `&[T; N]` and mutable `&mut [T; N]` parameters support `u8`, `u32`,
+and `i32` elements with concrete, compiler-evaluated lengths. A fixed-array
+reference lowers to a typed pointer without a separate length parameter:
+`&[u32; 3]` becomes `const uint32*`. The length remains in the prepared
+execution and every indexed read, write, or element borrow checks
+`index < N` at the full 64-bit `usize` width before forming an address.
+Typed pointer arithmetic preserves element widths; word indices do not become
+byte offsets. Array storage must fit the current signed-word memory model
+(`N * sizeof(T) <= INT32_MAX`).
+
+Builtin `.len()`, local reference aliases and reborrows, and direct fixed-array
+reference calls are supported. `.len()` requires no memory authority, including
+for zero-length arrays. Reading any element of a zero-length array cannot pass
+the checked panic obligation. Reads require `views` or `owns`, and writes
+require `owns`; Rust reference types do not supply these resources implicitly.
+The compiler checks conflicting borrows, while Click rejects false functional
+claims and contracts that fail to establish bounds or memory authority.
+
+The synthetic [fixed-array example](https://github.com/clicklang/click/blob/master/examples/rust-arrays/arrays.click)
+covers all three element types, a checked element reborrow, a direct helper
+call, parent reuse, and preservation of an untouched word. Its helper owns
+only the indexed word, allowing the caller to retain the remaining storage.
+
+```sh
+scripts/build-rust-exporter.sh
+cargo run --bin click -- import lock examples/rust-arrays/arrays.click
+cargo run --bin click -- verify examples/rust-arrays/arrays.click
+cargo run --bin click -- audit examples/rust-arrays/arrays.click
+```
+
+Initialized local arrays support literals (`[3u32, 5]`), repeats (`[value; 4]`),
+and whole-array copies (`let copied = original`, `words = replacement`,
+`*target = *source`). Each local has independent automatic storage. Constructor
+operands are evaluated in source order before writing the destination; a repeat
+operand is evaluated once, even when its length is zero. Copies capture all
+source elements before writing and require read authority over the entire
+source and write authority over the entire destination. Local arrays can be
+borrowed, indexed, and passed to fixed-array reference parameters.
+
+The synthetic [array-values example](https://github.com/clicklang/click/blob/master/examples/rust-array-values/arrays.click)
+checks independent copies, replacing an array from its own elements, copies
+through references, empty arrays, and constructor calls with observable effects.
+
+By-value array parameters or returns, nested arrays, array fields, and
+array-to-slice coercions remain unsupported. Indexed compound assignment and arrays
+in owned-value MIR remain outside the supported subset. The builtin length
+operation's compiler-generated unsizing is accepted only to recover the fixed
+length; it does not enable general coercions or library methods.
 
 Modules, imports, macros, semantic attributes, dependencies, unsafe code,
 general traits, type/const generics, loops, heap allocation, aggregate parameters and returns, reference

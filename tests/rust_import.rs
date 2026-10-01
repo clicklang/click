@@ -764,3 +764,184 @@ fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
         assert!(result.unwrap_err().contains(message), "{source}");
     }
 }
+
+#[test]
+fn rust_fixed_array_references_indexing_and_reborrows_verify() {
+    let p = Project::new(include_str!("../examples/rust-arrays/arrays.rs"));
+    let sidecar =
+        include_str!("../examples/rust-arrays/arrays.click").replace("arrays.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "read.contract",
+        "write.contract",
+        "signed.contract",
+        "first.contract",
+        "update.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures words[1] == 7u32", "ensures words[1] == 8u32"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_fixed_array_indices_reject_panics_before_narrowing() {
+    for (length, index) in [(4, 4u64), (4, 4294967296), (0, 0), (4, u64::MAX)] {
+        let p = Project::new(&format!(
+            "pub fn read(bytes: &[u8; {length}], index: usize) -> u8 {{ bytes[index] }}"
+        ));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint8 read(const uint8* bytes, uint64 index) {{ requires index == {index}u64; views bytes[0..{length}]; }} by {{ execute(); simp(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("array index must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            error.message().contains("Rust array index panic check"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn rust_fixed_array_access_requires_memory_authority() {
+    for (source, signature, resources) in [
+        (
+            "pub fn read(bytes: &[u8; 4]) -> u8 { bytes[0] }",
+            "uint8 read(const uint8* bytes)",
+            "",
+        ),
+        (
+            "pub fn write(words: &mut [u32; 3]) { words[1] = 7; }",
+            "void write(uint32* words)",
+            "views words[0..3];",
+        ),
+    ] {
+        let p = Project::new(source);
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; {signature} {{ {resources} ensures 1 == 1; }} by {{ execute(); simp(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("array access requires authority");
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{}",
+            error.message()
+        );
+        assert!(
+            error.message().contains(if resources.is_empty() {
+                "views"
+            } else {
+                "owns"
+            }),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
+    for (source, message) in [
+        (
+            "pub fn bad(bytes: &[u64; 4]) -> u64 { bytes[0] }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(words: &[u32; 536870912]) -> usize { words.len() }",
+            "storage exceeds",
+        ),
+        (
+            "pub fn bad(bytes: [u8; 4]) -> u8 { bytes[0] }",
+            "by-value Rust arrays",
+        ),
+        (
+            "pub fn bad(bytes: &mut [u8; 4]) { bytes[0] += 1; }",
+            "indexed compound assignments",
+        ),
+        (
+            "pub fn bad(bytes: &[u8; 4]) -> &[u8] { bytes }",
+            "implicit adjustment",
+        ),
+        (
+            "pub fn bad(bytes: &mut [u8; 4]) { let child = &mut bytes[0]; bytes[0] = 1; *child = 2; }",
+            "cannot assign",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(message), "expected {message}: {error}");
+        assert!(!p.root.join("borrow.rs.click-rust.json").exists());
+    }
+}
+
+#[test]
+fn rust_local_array_construction_and_whole_value_copies_verify() {
+    let p = Project::new(include_str!("../examples/rust-array-values/arrays.rs"));
+    let sidecar = include_str!("../examples/rust-array-values/arrays.click")
+        .replace("arrays.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "literal.contract",
+        "independent.contract",
+        "replace.contract",
+        "copy_into.contract",
+        "repeat_call.contract",
+        "zero_repeat_call.contract",
+        "argument_order.contract",
+        "assignment_order.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures result == 8;", "ensures result == 16;"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_whole_array_copies_require_authority_for_every_element() {
+    let p = Project::new(include_str!("../examples/rust-array-values/arrays.rs"));
+    let sidecar = include_str!("../examples/rust-array-values/arrays.click")
+        .replace("arrays.rs", "borrow.rs");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    for unsupported in [
+        sidecar.replace("views source[0..2];", "views source[0..1];"),
+        sidecar.replace("owns target[0..2];", "views target[0..2];"),
+        sidecar.replace("owns target[0..2];", "owns target[0..1];"),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(&unsupported, &prepared).is_err(),
+            "unexpectedly verified: {unsupported}"
+        );
+    }
+}

@@ -348,21 +348,17 @@ pub(in crate::surface) fn initial_call_state(
         // by its caller. Import only the explicitly declared ownership, with
         // no exact total or C creation right; the call site later checks the actual
         // authority and member transfer against its concrete ledger.
-        // Index only this entry's concrete member inputs once. Selecting one
-        // wildcard family must not repeatedly scan unrelated input facts.
+        // Index this entry's member inputs by their complete authority scope,
+        // not just family: another pool's member is an ordinary frame, not
+        // evidence for this pool's population. Include unsupported quantities
+        // so they fail checked import instead of becoming authority-only input.
         let mut wildcard_members =
             BTreeMap::<crate::kernel::ResourceDescription, Vec<CResourceFact>>::new();
-        let mut wildcard_member_families = BTreeSet::new();
         for fact in state.resources().facts() {
-            let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact
-            else {
+            let CResourceFact::Own(CResource::Composite { name, arguments }, _) = fact else {
                 continue;
             };
             if arguments.len() < 2 {
-                continue;
-            }
-            wildcard_member_families.insert(name.clone());
-            if quantity.as_const() != Some(1) {
                 continue;
             }
             let scope = crate::kernel::ResourceDescription::new(
@@ -391,16 +387,10 @@ pub(in crate::surface) fn initial_call_state(
             };
             if description.population_arity().is_some() {
                 let Some(members) = wildcard_members.get(description) else {
-                    if !wildcard_member_families.contains(description.family()) {
-                        state = state
-                            .import_opaque_wildcard_authority(&authority)
-                            .map_err(ClickError::new)?;
-                        continue;
-                    }
-                    return Err(ClickError::new(format!(
-                        "Requires owns {}(anchor, member) for the declared wildcard authority",
-                        description.family(),
-                    )));
+                    state = state
+                        .import_opaque_wildcard_authority(&authority)
+                        .map_err(ClickError::new)?;
+                    continue;
                 };
                 if members.len() != 1 {
                     return Err(ClickError::new(

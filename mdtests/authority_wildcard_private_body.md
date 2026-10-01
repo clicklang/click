@@ -1,0 +1,45 @@
+# Each wildcard member owns a disjoint private memory body
+
+Two slots occupy different cells of one backing allocation. Updating the first
+preserves membership and the second cell's value.
+
+```c filename=wildcard_private_body.c
+int32 lifecycle() {
+    int32 pool = 0;
+    int32* p = malloc(8);
+    if (p == 0) return 0;
+    p[0] = 1;
+    p[1] = 2;
+    p[0] = 7;
+    int32 result = p[0] + p[1];
+    free(p);
+    return result;
+}
+```
+
+```click resource_semantics=authority
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+verifying "wildcard_private_body.c";
+int32 lifecycle() { ensures result == 0 or result == 9; } by {
+    step(); step(); step(); step();
+    branch { then { execute(); simp(); } else {} }
+    step(); step();
+    fold(authority(slot(&pool, _)));
+    fold(slot(&pool, p));
+    fold(slot(&pool, p + 1));
+    have count(slot(&pool, _)) == 2 by simp;
+    open(slot(&pool, p)) { step(); }
+    have count(slot(&pool, _)) == 2 by simp;
+    open(slot(&pool, p)) {
+        open(slot(&pool, p + 1)) { step(); step(); }
+    }
+    unfold(slot(&pool, p));
+    unfold(slot(&pool, p + 1));
+    unfold(authority(slot(&pool, _)));
+    execute(); simp();
+}
+```
+
+```expect
+pass
+```

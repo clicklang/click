@@ -1862,7 +1862,11 @@ fn collect_execution_environment_variables_uncached(
     // not be handed out on top of one, exactly as for a loop head's measure.
     if let Some(anchor) = environment.recursion_anchor() {
         match anchor.measure() {
-            CRankingMeasureValue::Machine(term) => collect_bitvector_variables(term, variables),
+            CRankingMeasureValue::Machine(term)
+            | CRankingMeasureValue::Unsigned32(term)
+            | CRankingMeasureValue::Unsigned64(term) => {
+                collect_bitvector_variables(term, variables)
+            }
             // An Integer measure's reserved names are the C carriers it reads
             // plus its own Integer binders; both are named by later call steps.
             CRankingMeasureValue::Integer(term) => {

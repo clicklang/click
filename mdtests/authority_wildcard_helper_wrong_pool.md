@@ -1,4 +1,4 @@
-# An authority cannot import a member of another pool
+# An unrelated member may be framed beside a pool authority
 
 ```c filename=wildcard_helper_wrong_pool.c
 void inspect(int32* pool, int32* other, int32* member) {}
@@ -14,5 +14,5 @@ void inspect(int32* pool, int32* other, int32* member) {
 ```
 
 ```expect
-fail: Requires owns slot
+pass
 ```

@@ -1714,24 +1714,11 @@ impl CheckedResourceRewrite {
             {
                 return Err("authority-mode body access contains a nonprivate resource".into());
             }
-            // A standalone helper receives an existing member through its
-            // declared contract. Its external-argument pointer has no concrete
-            // C allocation in this proof, but the exact imported member
-            // carries its private body. Concrete callers still prove live
-            // storage bounds when creating that member.
-            let imported_member = before_state
-                .population_effects
-                .creation
-                .as_ref()
-                .is_some_and(|events| {
-                    events.owns_imported_population_member(
-                        &crate::kernel::ResourceDescription::new(
-                            name.clone(),
-                            arguments.clone(),
-                            crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty schema"),
-                        ),
-                    )
-                });
+            // The exact owned member checked above carries its private body,
+            // including at an abstract helper entry. Body access does not
+            // change membership and requires no population authority import.
+            // Concrete bodies still need live bounds; a caller can only fold
+            // a member by transferring those owned memory ranges into it.
             for child in children {
                 let range = child.memory_own_range().expect("body shape checked above");
                 let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
@@ -1748,8 +1735,7 @@ impl CheckedResourceRewrite {
                     .base()
                     .offset_by_elements(range.start().clone(), range.element_width());
                 if !before_state.memory().access_in_bounds(&base, bytes)
-                    && !(imported_member
-                        && base.block == crate::kernel::PointerBlock::ExternalArgument)
+                    && base.block != crate::kernel::PointerBlock::ExternalArgument
                 {
                     return Err("authority-mode private body exceeds live storage".into());
                 }
@@ -3040,6 +3026,12 @@ fn resource_composition_is_supported_by(
     let Proposition::CResourceComposition(required) = proposition else {
         return false;
     };
+    // Observing the exact checked context needs no resource consumption.
+    // In particular, a retained view and its owner can coexist in that
+    // context even though consuming both in sequence would fail.
+    if available.shares_storage_with(required) {
+        return true;
+    }
     available
         .clone()
         .without_facts(required.facts(), assumptions)
@@ -12200,6 +12192,38 @@ mod automatic_lifetime_tests {
 mod population_authority_rewrite_tests {
     use super::*;
     use crate::kernel::{CType, c_function};
+
+    #[test]
+    fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownership() {
+        let (state, _) = source_state();
+        let pointer = state.locals.slot("anchor").unwrap().clone();
+        let range = CMemoryRange::new(pointer, 0.into(), 1.into());
+        let context = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::own_memory(range.clone()),
+            CResourceFact::view_memory(range),
+        ]);
+        let assumptions = PureFactContext::default();
+        assert!(resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(context.clone()),
+            &context,
+            &assumptions,
+        ));
+        let foreign = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new(
+                Pointer {
+                    block: "local:foreign".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                },
+                0.into(),
+                1.into(),
+            ),
+        ));
+        assert!(!resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(foreign),
+            &context,
+            &assumptions,
+        ));
+    }
 
     fn source_state() -> (CState, CResourceFact) {
         let mut state = CState::new()

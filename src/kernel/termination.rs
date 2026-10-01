@@ -1943,10 +1943,10 @@ pub(super) fn c_ranking_measure_term(
         // state.
         CRankingComponent::CExpression(expression) => {
             c_ranking_measure_term_unfolded(expression, state, reader)
-                .map(|term| CRankingMeasureValue::Machine(canonical_ranking_term(&term)))
+                .map(RankingMachineTerm::folded_measure_value)
         }
         CRankingComponent::Pure { expression, .. } => {
-            pure_ranking_measure_term(expression, state, reader).map(CRankingMeasureValue::Machine)
+            pure_ranking_measure_term(expression, state, reader)
         }
         CRankingComponent::PureInteger { expression, .. } => {
             pure_integer_ranking_measure_term(expression, state, reader)
@@ -1956,11 +1956,18 @@ pub(super) fn c_ranking_measure_term(
 }
 
 /// `0 <= m` for one reading of a component, in that component's carrier.
+///
+/// An unsigned reading is a natural number by construction, so its member is
+/// the constant `true`: it keeps the bundle's one-member-per-component shape
+/// without asking a proof for anything.
 pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> Proposition {
     Proposition::ConditionIs(
         match value {
             CRankingMeasureValue::Machine(term) => {
                 ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone())
+            }
+            CRankingMeasureValue::Unsigned32(_) | CRankingMeasureValue::Unsigned64(_) => {
+                ConditionTerm::Constant(true)
             }
             CRankingMeasureValue::Integer(term) => {
                 ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), term.clone())
@@ -1987,6 +1994,16 @@ pub(super) fn ranking_decrease_proposition(
             (CRankingMeasureValue::Machine(post), CRankingMeasureValue::Machine(pre)) => {
                 ConditionTerm::signed_less_than(post.clone(), pre.clone())
             }
+            // Unsigned descent compares the two wrapped values C computes.
+            // Strict `<` on the naturals below 2^32 (or 2^64) is well founded,
+            // so a measure that wraps is still ranked soundly: a back edge
+            // whose wrapped value grows simply fails this member.
+            (CRankingMeasureValue::Unsigned32(post), CRankingMeasureValue::Unsigned32(pre)) => {
+                ConditionTerm::unsigned_less_than(post.clone(), pre.clone())
+            }
+            (CRankingMeasureValue::Unsigned64(post), CRankingMeasureValue::Unsigned64(pre)) => {
+                ConditionTerm::uint64_less_than(post.clone(), pre.clone())
+            }
             (CRankingMeasureValue::Integer(post), CRankingMeasureValue::Integer(pre)) => {
                 ConditionTerm::integer_less_than(post.clone(), pre.clone())
             }
@@ -2004,8 +2021,12 @@ pub(super) fn ranking_tie_proposition(
 ) -> Result<Proposition, String> {
     Ok(Proposition::ConditionIs(
         match (post, pre) {
-            (CRankingMeasureValue::Machine(post), CRankingMeasureValue::Machine(pre)) => {
+            (CRankingMeasureValue::Machine(post), CRankingMeasureValue::Machine(pre))
+            | (CRankingMeasureValue::Unsigned32(post), CRankingMeasureValue::Unsigned32(pre)) => {
                 ConditionTerm::equal(post.clone(), pre.clone())
+            }
+            (CRankingMeasureValue::Unsigned64(post), CRankingMeasureValue::Unsigned64(pre)) => {
+                ConditionTerm::uint64_equal(post.clone(), pre.clone())
             }
             (CRankingMeasureValue::Integer(post), CRankingMeasureValue::Integer(pre)) => {
                 ConditionTerm::integer_equal(post.clone(), pre.clone())
@@ -2020,9 +2041,9 @@ pub(super) fn ranking_tie_proposition(
 /// for a display string only on the refusal path.
 fn mixed_ranking_carrier_message(component: &CRankingComponent) -> String {
     format!(
-        "the `decreases` component `{}` read as a machine int32 at one of the two states \
-         and as a mathematical Integer at the other, so its two values cannot be ranked against \
-         each other",
+        "the `decreases` component `{}` read in different carriers at the two states (a machine \
+         int32, uint32, or uint64, or a mathematical Integer), so its two values cannot be ranked \
+         against each other",
         c_ranking_measure_display(component)
     )
 }
@@ -2073,13 +2094,14 @@ fn pure_integer_ranking_measure_term(
 /// A component that reads memory publishes the evaluator's facts and keeps
 /// its unfulfilled obligations, which are the reads' loadability, exactly as
 /// the C-expression reader does. A component whose value is not a single
-/// int32 at this state -- because the state splits it into several paths, or
-/// because a view it reads is gone -- is refused rather than guessed.
+/// int32 or unsigned integer at this state -- because the state splits it
+/// into several paths, or because a view it reads is gone -- is refused
+/// rather than guessed.
 fn pure_ranking_measure_term(
     expression: &SpecExpression,
     state: &CState,
     reader: &mut CRankingMeasureReader<'_>,
-) -> Result<Bitvector32Term, String> {
+) -> Result<CRankingMeasureValue, String> {
     let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_loop_entry(
         state,
         expression,
@@ -2099,12 +2121,101 @@ fn pure_ranking_measure_term(
             paths.len()
         ));
     };
-    let (CValue::Int32(value) | CValue::UInt8(value)) = &path.value else {
-        return Err("termination measures must be int32 expressions".into());
+    let Some(value) = RankingMachineTerm::from_value(&path.value) else {
+        return Err(RANKING_MEASURE_TYPE_MESSAGE.into());
     };
     reader.reads.obligations.extend(path.obligations.clone());
     reader.reads.facts.extend(path.facts.clone());
-    Ok(canonical_ranking_term(value))
+    Ok(value.folded_measure_value())
+}
+
+/// What a machine `decreases` component must be, for every refusal of an
+/// operand whose type is outside the ranked carriers.
+const RANKING_MEASURE_TYPE_MESSAGE: &str = "termination measures must be int32 or unsigned \
+     integer (uint8, uint16, uint32, uint64) expressions";
+
+/// The machine type C gives a measure subexpression after the integer
+/// promotions: every type narrower than `int` -- `_Bool`, `int8`, `int16`,
+/// `uint8`, `uint16` -- is an `int32`. `int64` is not a ranked carrier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RankingMachineType {
+    Int32,
+    UInt32,
+    UInt64,
+}
+
+/// One measure subexpression's value and its promoted C type.
+///
+/// The fold computes what C computes: operands meet at the type C's usual
+/// arithmetic conversions give them, so `4 - x` over a `uint32 x` is the
+/// wrapped uint32 difference, and division, remainder, right shift, and
+/// comparison take the signedness of that common type.
+struct RankingMachineTerm {
+    machine_type: RankingMachineType,
+    term: Bitvector32Term,
+}
+
+impl RankingMachineTerm {
+    fn from_value(value: &CValue) -> Option<Self> {
+        let (machine_type, term) = match value {
+            CValue::Bool(term)
+            | CValue::Int8(term)
+            | CValue::Int16(term)
+            | CValue::Int32(term)
+            | CValue::UInt8(term)
+            | CValue::UInt16(term) => (RankingMachineType::Int32, term),
+            CValue::UInt32(term) => (RankingMachineType::UInt32, term),
+            CValue::UInt64(term) => (RankingMachineType::UInt64, term),
+            CValue::Void
+            | CValue::Int64(_)
+            | CValue::Float32(_)
+            | CValue::Float64(_)
+            | CValue::Pointer(_) => return None,
+        };
+        Some(Self {
+            machine_type,
+            term: term.clone(),
+        })
+    }
+
+    /// This value converted to `target`, as C converts an integer.
+    fn convert(self, target: RankingMachineType) -> Bitvector32Term {
+        use RankingMachineType::*;
+        match (self.machine_type, target) {
+            (Int32 | UInt32, Int32 | UInt32) | (UInt64, UInt64) => self.term,
+            (Int32, UInt64) => Bitvector32Term::uint64_from_int32(self.term),
+            (UInt32, UInt64) => Bitvector32Term::uint64_from_32(self.term),
+            (UInt64, Int32 | UInt32) => Bitvector32Term::uint32_from_64(self.term),
+        }
+    }
+
+    /// The common type C's usual arithmetic conversions give two promoted
+    /// operands of the ranked types.
+    fn common_type(left: &Self, right: &Self) -> RankingMachineType {
+        use RankingMachineType::*;
+        match (left.machine_type, right.machine_type) {
+            (UInt64, _) | (_, UInt64) => UInt64,
+            (UInt32, _) | (_, UInt32) => UInt32,
+            (Int32, Int32) => Int32,
+        }
+    }
+
+    /// The carrier this value ranks in. A 32-bit value is read as one affine
+    /// form, so the member is a stable function of the declaration rather
+    /// than of the assignment order that produced the state; the two 32-bit
+    /// carriers share that form because they share wrapping arithmetic
+    /// modulo 2^32.
+    fn folded_measure_value(self) -> CRankingMeasureValue {
+        match self.machine_type {
+            RankingMachineType::Int32 => {
+                CRankingMeasureValue::Machine(canonical_ranking_term(&self.term))
+            }
+            RankingMachineType::UInt32 => {
+                CRankingMeasureValue::Unsigned32(canonical_ranking_term(&self.term))
+            }
+            RankingMachineType::UInt64 => CRankingMeasureValue::Unsigned64(self.term),
+        }
+    }
 }
 
 /// The value of one memory read inside a measure, at `state`.
@@ -2112,7 +2223,7 @@ fn c_ranking_measure_read(
     expression: &CExpression,
     state: &CState,
     reader: &mut CRankingMeasureReader<'_>,
-) -> Result<Bitvector32Term, String> {
+) -> Result<RankingMachineTerm, String> {
     if matches!(expression, CExpression::TypedLoad { volatile: true, .. }) {
         return Err("a termination measure may not read a volatile object".into());
     }
@@ -2128,100 +2239,272 @@ fn c_ranking_measure_read(
             "a termination measure's read must have exactly one value at this state".into(),
         );
     };
-    let (CExpressionOutcome::Value(CValue::Int32(value))
-    | CExpressionOutcome::Value(CValue::UInt8(value))) = &path.outcome
-    else {
-        return Err("termination measures must be int32 expressions".into());
+    let CExpressionOutcome::Value(value) = &path.outcome else {
+        return Err(RANKING_MEASURE_TYPE_MESSAGE.into());
+    };
+    let Some(value) = RankingMachineTerm::from_value(value) else {
+        return Err(RANKING_MEASURE_TYPE_MESSAGE.into());
     };
     reader.reads.facts.extend(path.facts.iter().cloned());
     reader
         .reads
         .obligations
         .extend(path.obligations.iter().cloned());
-    Ok(value.clone())
+    Ok(value)
 }
 
 fn c_ranking_measure_term_unfolded(
     expression: &CExpression,
     state: &CState,
     reader: &mut CRankingMeasureReader<'_>,
-) -> Result<Bitvector32Term, String> {
+) -> Result<RankingMachineTerm, String> {
     use CExpression::*;
+    use RankingMachineType::*;
+    type Operation = fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term;
+    /// One arithmetic operator, as C applies it at each common type.
     fn binary(
         left: &CExpression,
         right: &CExpression,
         state: &CState,
         reader: &mut CRankingMeasureReader<'_>,
-        operation: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
-    ) -> Result<Bitvector32Term, String> {
-        Ok(operation(
-            c_ranking_measure_term_unfolded(left, state, reader)?,
-            c_ranking_measure_term_unfolded(right, state, reader)?,
-        ))
+        operations: (Operation, Operation, Operation),
+    ) -> Result<RankingMachineTerm, String> {
+        let left = c_ranking_measure_term_unfolded(left, state, reader)?;
+        let right = c_ranking_measure_term_unfolded(right, state, reader)?;
+        let machine_type = RankingMachineTerm::common_type(&left, &right);
+        let operation = match machine_type {
+            Int32 => operations.0,
+            UInt32 => operations.1,
+            UInt64 => operations.2,
+        };
+        Ok(RankingMachineTerm {
+            machine_type,
+            term: operation(left.convert(machine_type), right.convert(machine_type)),
+        })
+    }
+    /// A shift has its promoted left operand's type; the count is read as a
+    /// 32-bit quantity whatever its own type.
+    fn shift(
+        left: &CExpression,
+        right: &CExpression,
+        state: &CState,
+        reader: &mut CRankingMeasureReader<'_>,
+        operations: (Operation, Operation),
+    ) -> Result<RankingMachineTerm, String> {
+        let left = c_ranking_measure_term_unfolded(left, state, reader)?;
+        let right = c_ranking_measure_term_unfolded(right, state, reader)?;
+        let operation = match left.machine_type {
+            Int32 => operations.0,
+            UInt32 => operations.1,
+            UInt64 => return Err("termination measures may not shift a uint64 value".into()),
+        };
+        let machine_type = left.machine_type;
+        Ok(RankingMachineTerm {
+            machine_type,
+            term: operation(left.term, right.convert(UInt32)),
+        })
     }
     match expression {
-        Value(CValue::Int32(value)) | Value(CValue::UInt8(value)) => Ok(value.clone()),
-        Value(_) => Err("termination measures must be int32 expressions".into()),
+        Value(value) => {
+            RankingMachineTerm::from_value(value).ok_or_else(|| RANKING_MEASURE_TYPE_MESSAGE.into())
+        }
         Variable(name) => match state.locals().get(name) {
-            Some(CValue::Int32(value)) | Some(CValue::UInt8(value)) => Ok(value.clone()),
-            Some(_) => Err(format!(
-                "termination measure variable `{name}` does not hold an int32 value"
-            )),
+            Some(value) => RankingMachineTerm::from_value(value).ok_or_else(|| {
+                format!(
+                    "termination measure variable `{name}` does not hold an int32 or unsigned \
+                     integer value"
+                )
+            }),
             None => Err(format!(
                 "termination measure references unknown variable `{name}`"
             )),
         },
+        // A cast to a type narrower than `int` keeps today's reading: the
+        // operand's own value, as an int32.
         Cast {
             expression,
             target_type: CType::Int32 | CType::UInt8,
             ..
-        } => c_ranking_measure_term_unfolded(expression, state, reader),
+        } => {
+            let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
+            Ok(RankingMachineTerm {
+                machine_type: Int32,
+                term: value.convert(Int32),
+            })
+        }
+        Cast {
+            expression,
+            target_type: target @ (CType::UInt32 | CType::UInt64),
+            ..
+        } => {
+            let machine_type = if *target == CType::UInt32 {
+                UInt32
+            } else {
+                UInt64
+            };
+            let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
+            Ok(RankingMachineTerm {
+                machine_type,
+                term: value.convert(machine_type),
+            })
+        }
         Conditional {
             condition,
             then_branch,
             else_branch,
         } => {
             let (condition, value) = c_ranking_measure_condition_term(condition, state, reader)?;
-            let then_term = c_ranking_measure_term_unfolded(then_branch, state, reader)?;
-            let else_term = c_ranking_measure_term_unfolded(else_branch, state, reader)?;
+            let then_value = c_ranking_measure_term_unfolded(then_branch, state, reader)?;
+            let else_value = c_ranking_measure_term_unfolded(else_branch, state, reader)?;
+            let machine_type = RankingMachineTerm::common_type(&then_value, &else_value);
+            if machine_type == UInt64 {
+                return Err(
+                    "termination measures may not choose between uint64 values with `?:`".into(),
+                );
+            }
             let (then_term, else_term) = if value {
-                (then_term, else_term)
+                (
+                    then_value.convert(machine_type),
+                    else_value.convert(machine_type),
+                )
             } else {
-                (else_term, then_term)
+                (
+                    else_value.convert(machine_type),
+                    then_value.convert(machine_type),
+                )
             };
-            Ok(Bitvector32Term::If {
-                condition: Box::new(condition),
-                then_term: Box::new(then_term),
-                else_term: Box::new(else_term),
+            Ok(RankingMachineTerm {
+                machine_type,
+                term: Bitvector32Term::If {
+                    condition: Box::new(condition),
+                    then_term: Box::new(then_term),
+                    else_term: Box::new(else_term),
+                },
             })
         }
-        Add(left, right) => binary(left, right, state, reader, Bitvector32Term::add),
-        Subtract(left, right) => binary(left, right, state, reader, Bitvector32Term::subtract),
-        Multiply(left, right) => binary(left, right, state, reader, Bitvector32Term::multiply),
-        Divide(left, right) => binary(left, right, state, reader, Bitvector32Term::divide),
-        Remainder(left, right) => binary(left, right, state, reader, Bitvector32Term::remainder),
-        ShiftLeft(left, right) => binary(left, right, state, reader, Bitvector32Term::shift_left),
-        ShiftRight(left, right) => binary(
+        Add(left, right) => binary(
             left,
             right,
             state,
             reader,
-            Bitvector32Term::arithmetic_shift_right,
+            (
+                Bitvector32Term::add,
+                Bitvector32Term::add,
+                Bitvector32Term::uint64_add,
+            ),
         ),
-        BitwiseAnd(left, right) => binary(left, right, state, reader, Bitvector32Term::bitwise_and),
-        BitwiseOr(left, right) => binary(left, right, state, reader, Bitvector32Term::bitwise_or),
-        BitwiseXor(left, right) => binary(left, right, state, reader, Bitvector32Term::bitwise_xor),
-        BitwiseNot(value) => Ok(Bitvector32Term::bitwise_not(
-            c_ranking_measure_term_unfolded(value, state, reader)?,
-        )),
+        Subtract(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::subtract,
+                Bitvector32Term::subtract,
+                Bitvector32Term::uint64_subtract,
+            ),
+        ),
+        Multiply(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::multiply,
+                Bitvector32Term::multiply,
+                Bitvector32Term::uint64_multiply,
+            ),
+        ),
+        Divide(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::divide,
+                Bitvector32Term::unsigned_divide,
+                Bitvector32Term::uint64_divide,
+            ),
+        ),
+        Remainder(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::remainder,
+                Bitvector32Term::unsigned_remainder,
+                Bitvector32Term::uint64_remainder,
+            ),
+        ),
+        ShiftLeft(left, right) => shift(
+            left,
+            right,
+            state,
+            reader,
+            (Bitvector32Term::shift_left, Bitvector32Term::shift_left),
+        ),
+        ShiftRight(left, right) => shift(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::arithmetic_shift_right,
+                Bitvector32Term::logical_shift_right,
+            ),
+        ),
+        BitwiseAnd(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::bitwise_and,
+                Bitvector32Term::bitwise_and,
+                Bitvector32Term::uint64_bitwise_and,
+            ),
+        ),
+        BitwiseOr(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::bitwise_or,
+                Bitvector32Term::bitwise_or,
+                Bitvector32Term::uint64_bitwise_or,
+            ),
+        ),
+        BitwiseXor(left, right) => binary(
+            left,
+            right,
+            state,
+            reader,
+            (
+                Bitvector32Term::bitwise_xor,
+                Bitvector32Term::bitwise_xor,
+                Bitvector32Term::uint64_bitwise_xor,
+            ),
+        ),
+        BitwiseNot(value) => {
+            let value = c_ranking_measure_term_unfolded(value, state, reader)?;
+            let machine_type = value.machine_type;
+            let term = if machine_type == UInt64 {
+                Bitvector32Term::uint64_bitwise_not(value.term)
+            } else {
+                Bitvector32Term::bitwise_not(value.term)
+            };
+            Ok(RankingMachineTerm { machine_type, term })
+        }
         Cast { .. }
         | FloatNegate(_)
         | FloatClassification { .. }
         | FunctionAddress(_)
         | AddressOf(_)
-        | PointerOffsetBytes { .. } => {
-            Err("termination measures may only use scalar int32 expressions".into())
-        }
+        | PointerOffsetBytes { .. } => Err(
+            "termination measures may only use scalar int32 or unsigned integer expressions".into(),
+        ),
         Load(_) | TypedLoad { .. } | Index(_, _) => {
             c_ranking_measure_read(expression, state, reader)
         }
@@ -2233,7 +2516,9 @@ fn c_ranking_measure_term_unfolded(
         | NotEqual(_, _)
         | Not(_)
         | And(_, _)
-        | Or(_, _) => Err("termination measures must have an int32 value".into()),
+        | Or(_, _) => {
+            Err("termination measures must have an integer value, not a truth value".into())
+        }
     }
 }
 
@@ -2243,47 +2528,61 @@ fn c_ranking_measure_condition_term(
     reader: &mut CRankingMeasureReader<'_>,
 ) -> Result<(ConditionTerm, bool), String> {
     use CExpression::*;
-    fn binary(
+    use RankingMachineType::*;
+    /// The relation `left < right` (or `<=`, or `==`) at the operands' common
+    /// type, so an unsigned pair compares as C compares it.
+    #[derive(Clone, Copy)]
+    enum Relation {
+        Less,
+        LessEqual,
+        Greater,
+        GreaterEqual,
+        Equal,
+    }
+    fn compare(
         left: &CExpression,
         right: &CExpression,
         state: &CState,
         reader: &mut CRankingMeasureReader<'_>,
-        operation: fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm,
-    ) -> Result<(ConditionTerm, bool), String> {
-        Ok((
-            operation(
-                c_ranking_measure_term_unfolded(left, state, reader)?,
-                c_ranking_measure_term_unfolded(right, state, reader)?,
-            ),
-            true,
-        ))
+        relation: Relation,
+    ) -> Result<ConditionTerm, String> {
+        let left = c_ranking_measure_term_unfolded(left, state, reader)?;
+        let right = c_ranking_measure_term_unfolded(right, state, reader)?;
+        let machine_type = RankingMachineTerm::common_type(&left, &right);
+        let (left, right) = (left.convert(machine_type), right.convert(machine_type));
+        Ok(match (machine_type, relation) {
+            (Int32, Relation::Less) => ConditionTerm::signed_less_than(left, right),
+            (Int32, Relation::LessEqual) => ConditionTerm::signed_less_equal(left, right),
+            (Int32, Relation::Greater) => ConditionTerm::signed_greater_than(left, right),
+            (Int32, Relation::GreaterEqual) => ConditionTerm::signed_greater_equal(left, right),
+            (UInt32, Relation::Less) => ConditionTerm::unsigned_less_than(left, right),
+            (UInt32, Relation::LessEqual) => ConditionTerm::unsigned_less_equal(left, right),
+            (UInt32, Relation::Greater) => ConditionTerm::unsigned_less_than(right, left),
+            (UInt32, Relation::GreaterEqual) => ConditionTerm::unsigned_less_equal(right, left),
+            (Int32 | UInt32, Relation::Equal) => ConditionTerm::equal(left, right),
+            (UInt64, Relation::Less) => ConditionTerm::uint64_less_than(left, right),
+            (UInt64, Relation::LessEqual) => ConditionTerm::uint64_less_equal(left, right),
+            (UInt64, Relation::Greater) => ConditionTerm::uint64_less_than(right, left),
+            (UInt64, Relation::GreaterEqual) => ConditionTerm::uint64_less_equal(right, left),
+            (UInt64, Relation::Equal) => ConditionTerm::uint64_equal(left, right),
+        })
     }
     match expression {
-        LessThan(left, right) => {
-            binary(left, right, state, reader, ConditionTerm::signed_less_than)
-        }
-        LessEqual(left, right) => {
-            binary(left, right, state, reader, ConditionTerm::signed_less_equal)
-        }
-        GreaterThan(left, right) => binary(
-            left,
-            right,
-            state,
-            reader,
-            ConditionTerm::signed_greater_than,
-        ),
-        GreaterEqual(left, right) => binary(
-            left,
-            right,
-            state,
-            reader,
-            ConditionTerm::signed_greater_equal,
-        ),
-        Equal(left, right) => binary(left, right, state, reader, ConditionTerm::equal),
-        NotEqual(left, right) => {
-            let (condition, _) = binary(left, right, state, reader, ConditionTerm::equal)?;
-            Ok((condition, false))
-        }
+        LessThan(left, right) => Ok((compare(left, right, state, reader, Relation::Less)?, true)),
+        LessEqual(left, right) => Ok((
+            compare(left, right, state, reader, Relation::LessEqual)?,
+            true,
+        )),
+        GreaterThan(left, right) => Ok((
+            compare(left, right, state, reader, Relation::Greater)?,
+            true,
+        )),
+        GreaterEqual(left, right) => Ok((
+            compare(left, right, state, reader, Relation::GreaterEqual)?,
+            true,
+        )),
+        Equal(left, right) => Ok((compare(left, right, state, reader, Relation::Equal)?, true)),
+        NotEqual(left, right) => Ok((compare(left, right, state, reader, Relation::Equal)?, false)),
         Not(inner) => {
             let (condition, value) = c_ranking_measure_condition_term(inner, state, reader)?;
             Ok((condition, !value))
@@ -2291,13 +2590,17 @@ fn c_ranking_measure_condition_term(
         And(_, _) | Or(_, _) => {
             Err("compound boolean conditions are not atomic ranking measure conditions".into())
         }
-        _ => Ok((
-            ConditionTerm::equal(
-                c_ranking_measure_term_unfolded(expression, state, reader)?,
-                Bitvector32Term::Constant(0),
-            ),
-            false,
-        )),
+        _ => {
+            let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
+            Ok((
+                if value.machine_type == UInt64 {
+                    ConditionTerm::uint64_equal(value.term, Bitvector32Term::UInt64Constant(0))
+                } else {
+                    ConditionTerm::equal(value.term, Bitvector32Term::Constant(0))
+                },
+                false,
+            ))
+        }
     }
 }
 
@@ -4808,6 +5111,195 @@ mod ranking_member_tests {
             2,
             "nonnegativity and strict decrease remain required"
         );
+    }
+
+    fn typed_state(name: &str, value: CValue, c_type: CType) -> CState {
+        let mut state = CState::new();
+        state.locals.set_typed(name.to_string(), value, c_type);
+        state
+    }
+
+    fn ranking_members(
+        back_edge: &CState,
+        entry: &CState,
+        measure: CExpression,
+    ) -> Result<Vec<Proposition>, String> {
+        collect_loop_ranking_obligations(
+            back_edge,
+            entry,
+            &[CRankingComponent::CExpression(measure)],
+            &PureFactContext::default(),
+            &mut ExecutionBudget::default(),
+        )
+        .map(|obligations| {
+            obligations
+                .iter()
+                .map(|obligation| obligation.proposition().clone())
+                .collect()
+        })
+    }
+
+    fn uint32_state(value: Bitvector32Term) -> CState {
+        typed_state("x", CValue::UInt32(value), CType::UInt32)
+    }
+
+    fn four_minus_x() -> CExpression {
+        CExpression::Subtract(
+            Box::new(CExpression::Value(CValue::Int32(
+                Bitvector32Term::Constant(4),
+            ))),
+            Box::new(CExpression::Variable("x".to_string())),
+        )
+    }
+
+    /// `4 - x` over a `uint32 x` is a uint32 expression under C's usual
+    /// arithmetic conversions, so it ranks by unsigned order: its
+    /// nonnegativity member is `true` and its decrease member is the unsigned
+    /// comparison of the two wrapped differences.
+    #[test]
+    fn an_unsigned_component_ranks_by_unsigned_order() {
+        let value = Bitvector32Term::Variable(Variable(21));
+        let entry = uint32_state(value.clone());
+        let back_edge = uint32_state(Bitvector32Term::add(
+            value.clone(),
+            Bitvector32Term::Constant(1),
+        ));
+        let members = ranking_members(&back_edge, &entry, four_minus_x())
+            .expect("a uint32 measure reads at both ends");
+        assert_eq!(
+            members,
+            vec![
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::ConditionIs(
+                    ConditionTerm::unsigned_less_than(
+                        canonical_ranking_term(&Bitvector32Term::subtract(
+                            Bitvector32Term::Constant(3),
+                            value.clone(),
+                        )),
+                        canonical_ranking_term(&Bitvector32Term::subtract(
+                            Bitvector32Term::Constant(4),
+                            value,
+                        )),
+                    ),
+                    true,
+                ),
+            ]
+        );
+    }
+
+    /// The decrease member compares the values C computes, wraparound
+    /// included. At concrete states it is decided outright: `x` from 0 to 1
+    /// moves `4 - x` from 4 to 3, a descent, while `x` from 4 to 5 moves it
+    /// from 0 to 2^32 - 1, which wraps upward and is refused even though the
+    /// mathematical difference fell.
+    #[test]
+    fn an_unsigned_component_that_wraps_upward_does_not_descend() {
+        let decrease = |before: u32, after: u32| {
+            ranking_members(
+                &uint32_state(Bitvector32Term::Constant(after)),
+                &uint32_state(Bitvector32Term::Constant(before)),
+                four_minus_x(),
+            )
+            .expect("a uint32 measure reads at both ends")
+            .pop()
+            .expect("a decrease member")
+        };
+        assert_eq!(
+            decrease(0, 1),
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        );
+        assert_eq!(
+            decrease(4, 5),
+            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+        );
+    }
+
+    /// A uint64 measure ranks by unsigned sixty-four-bit order, and its
+    /// wraparound below zero is a growth, not a descent.
+    #[test]
+    fn a_uint64_component_ranks_by_unsigned_order() {
+        let state = |value: u64| {
+            typed_state(
+                "x",
+                CValue::UInt64(Bitvector32Term::UInt64Constant(value)),
+                CType::UInt64,
+            )
+        };
+        let x = || CExpression::Variable("x".to_string());
+        let down = ranking_members(&state(4), &state(5), x()).expect("uint64 measure");
+        assert_eq!(
+            down,
+            vec![
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            ]
+        );
+        let wrapped = ranking_members(&state(u64::MAX), &state(0), x()).expect("uint64 measure");
+        assert_eq!(
+            wrapped[1],
+            Proposition::ConditionIs(ConditionTerm::Constant(false), true)
+        );
+    }
+
+    /// A `uint8` operand is promoted to `int`, as C promotes it, so a measure
+    /// over a `uint8` counter is an int32 measure and owes the signed members.
+    #[test]
+    fn a_narrow_unsigned_component_is_promoted_to_int32() {
+        let value = Bitvector32Term::Variable(Variable(22));
+        let state = typed_state("x", CValue::UInt8(value.clone()), CType::UInt8);
+        let members = ranking_members(&state, &state, CExpression::Variable("x".to_string()))
+            .expect("a uint8 measure reads at both ends");
+        assert_eq!(
+            members[0],
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value),
+                true,
+            )
+        );
+    }
+
+    /// A pure component whose value is a `uint32` takes the unsigned carrier
+    /// too, so a measure the spec evaluator reads ranks exactly as the same
+    /// value read from a C expression does.
+    #[test]
+    fn a_pure_uint32_component_ranks_by_unsigned_order() {
+        let value = Bitvector32Term::Variable(Variable(23));
+        let state = CState::new();
+        let obligations = collect_loop_ranking_obligations(
+            &state,
+            &state,
+            &[CRankingComponent::Pure {
+                source: "x".to_string(),
+                expression: SpecExpression::Value(CValue::UInt32(value.clone())),
+            }],
+            &PureFactContext::default(),
+            &mut ExecutionBudget::default(),
+        )
+        .expect("a pure uint32 value reads at both ends");
+        assert_eq!(
+            obligations[0].proposition(),
+            &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+        );
+        assert_eq!(
+            obligations[1].proposition(),
+            &Proposition::ConditionIs(
+                ConditionTerm::unsigned_less_than(value.clone(), value),
+                true
+            )
+        );
+    }
+
+    /// `int64` is not a ranked carrier, and the refusal names what is.
+    #[test]
+    fn an_int64_component_is_refused() {
+        let state = typed_state(
+            "x",
+            CValue::Int64(Bitvector32Term::Int64Constant(3)),
+            CType::Int64,
+        );
+        let error = ranking_members(&state, &state, CExpression::Variable("x".to_string()))
+            .expect_err("int64 is not a ranked carrier");
+        assert!(error.contains("int32 or unsigned integer"), "{error}");
     }
 
     /// The structural-path helper has no proof site to emit an undischarged
