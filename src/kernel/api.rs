@@ -5645,8 +5645,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     } else {
         environment
     };
-    // Certification derives the anchor itself rather than trusting the one
-    // the caller stepped with. An artifact whose environment carries no
+    // Certification computes the anchor a second time here; the proof
+    // stepped with its own. An artifact whose environment carries no
     // anchor, or a different one, then fails `matches_execution_metadata`
     // below and is not reused: a body stepped without the anchor emitted no
     // descent obligation at its self-calls, and certifying a contract from it

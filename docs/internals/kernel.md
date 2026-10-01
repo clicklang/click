@@ -155,9 +155,10 @@ Opaque function rules have a narrower boundary:
 - the rule is bound to the complete `CFunction`, including its lowered body,
   contract, exact claim targets, resource definitions, and execution metadata;
 - `CFunctionContractExecution` can only be created by the kernel from the
-  exact function's entry state and contract-derived assumptions. Proposed
-  elaboration facts are admitted only when the kernel re-derives them from
-  that canonical entry, so callers cannot inject hypotheses;
+  exact function's entry state and contract-derived assumptions. The entry
+  facts a proof ran under are built by the proof side; certification builds
+  the entry assumptions again from the contract and admits each of those
+  facts only when it can establish it from them, which repeats that work;
 - contract execution mode is explicit. `VerifyLoops` checks annotated loop
   rules, while `ExecuteLoops` independently repeats a bounded concrete
   execution trace;
