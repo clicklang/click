@@ -686,8 +686,17 @@ construction now owns attachment: an empty input captures the closed graph
 before insertion, and composition advances a prepared lineage. Normalization
 already visits its full input and publishes even when no representation changes. These boundaries also
 cover temporary contexts built during resource-clause evaluation, independent
-of the surface execution-step wrapper. Normalization refreshes existing
-attachments when it replaces occurrences.
+of the surface execution-step wrapper. The temporary context for checked
+composite/loan projection evidence also uses checked construction. It starts
+with only the selected composite head; removing that head and adding dependent
+children retains the graph attachment, so a prior child's whole-cell payload
+can be selected through transitive address equality. This is part of the
+trusted kernel and changes candidate selection only: checked expansion and the
+loan ledger still establish the exact parent, children, and authority. Logical
+contract loads can bypass permission lookup, so regressions inspect the actual
+projection input's attachment in addition to checking expansion and loan
+controls. Branch isolation, read width, and unrelated-fact scaling are covered.
+Normalization refreshes existing attachments when it replaces occurrences.
 
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its
