@@ -571,8 +571,48 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
             .as_ref()
             .unwrap()
             .observe_symbolic(&description)
-            .is_none()
+            .is_some()
     );
+}
+
+#[test]
+fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let source = CreationEvents::new();
+    let entry = source
+        .import_observable_contract_population(&description, 1)
+        .unwrap();
+    let count = entry.observe_symbolic(&description).unwrap();
+    assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+    assert_eq!(count.entry_owned_members, 1);
+    assert_eq!(
+        entry
+            .import_observable_contract_population(&description, 1)
+            .unwrap(),
+        entry
+    );
+    let repeated = source
+        .import_observable_contract_population(&description, 1)
+        .unwrap();
+    assert_eq!(
+        repeated.observe_symbolic(&description).unwrap().entry_count,
+        count.entry_count
+    );
+    let helper = entry.enter_call();
+    let held = entry
+        .transfer_call_fact(&entry, &helper, &description, true)
+        .unwrap();
+    assert!(held.observe_symbolic(&description).is_none());
+    let held = held
+        .transfer_call_fact(&entry, &helper, &description, false)
+        .unwrap()
+        .return_to(&helper);
+    let (spent, _) = held
+        .checked_member_exchange(&PointerBlock::ExternalArgument, &description, false)
+        .unwrap();
+    let after = spent.observe_symbolic(&description).unwrap();
+    assert_eq!(after.entry_count, count.entry_count);
+    assert_eq!(after.delta, -1);
 }
 
 #[test]

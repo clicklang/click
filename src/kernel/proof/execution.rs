@@ -12539,6 +12539,93 @@ mod population_authority_rewrite_tests {
     }
 
     #[test]
+    fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
+        let (state, authority) = source_state();
+        let external = crate::kernel::Pointer {
+            block: crate::kernel::PointerBlock::ExternalArgument,
+            offset: crate::kernel::PointerOffsetTerm::Constant(16),
+        };
+        let CResource::PopulationAuthority(description) = authority.resource() else {
+            unreachable!()
+        };
+        let member = CResourceFact::own(CResource::Composite {
+            name: "reference".into(),
+            arguments: description.arguments().to_vec().into(),
+        });
+        let definition = CCompositeResourceDefinition::new(
+            "reference",
+            vec![crate::kernel::c_parameter("p", CType::Int32Pointer)],
+            None,
+            false,
+            vec![CResourceSpec::owned_memory(
+                crate::kernel::CMemorySegment::new(
+                    CExpression::Value(CValue::pointer(external.clone())),
+                    crate::kernel::c_int32_literal(0),
+                    crate::kernel::c_int32_literal(1),
+                ),
+            )],
+            vec![],
+        );
+        let function = c_function(CType::Void, "member", vec![], CStatement::Skip)
+            .with_composite_resource_definitions(vec![definition.clone()]);
+        let (empty, _) = state
+            .checked_population_authority_exchange(&authority, true, &PureFactContext::new())
+            .unwrap();
+        let owned =
+            empty
+                .clone()
+                .with_resource_context(empty.resources().clone().unchecked_with_fact(
+                    CResourceFact::own_memory(CMemoryRange::new(
+                        external.clone(),
+                        0.into(),
+                        1.into(),
+                    )),
+                ));
+        assert!(
+            owned
+                .checked_population_member_exchange(
+                    &member,
+                    true,
+                    &definition,
+                    &PureFactContext::new()
+                )
+                .is_err()
+        );
+        let extent = |bytes| Proposition::CMemoryLoadable {
+            memory: owned.memory().clone(),
+            base: external.clone(),
+            bytes: Bitvector32Term::Constant(bytes),
+        };
+        let small = ProofFacts::default().with_fact(extent(1));
+        assert!(
+            owned
+                .checked_population_member_exchange(&member, true, &definition, small.assumptions())
+                .is_err()
+        );
+        let facts = ProofFacts::default().with_fact(extent(4));
+        assert!(
+            empty
+                .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+                .is_err()
+        );
+        let (one, witness) = owned
+            .checked_population_member_exchange(&member, true, &definition, facts.assumptions())
+            .unwrap();
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &owned, &facts, &member, true, &witness, &one, &facts
+            )
+            .is_ok()
+        );
+        assert!(
+            CheckedPopulationMemberRewrite::check(
+                &function, &owned, &small, &member, true, &witness, &one, &small
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn checked_member_exchange_transfers_exact_contained_resource() {
         let (state, authority) = source_state();
         let facts = ProofFacts::default();

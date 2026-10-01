@@ -618,6 +618,43 @@ source membership cannot be reused. This transfer admits one unit consumption
 and one unit production with the same family and trailing arguments, changing
 only the pool anchor; it does not enable arbitrary batches of updates.
 
+A helper can also exchange one member between two different families at the
+same anchor. This is the checkout pattern: consume an available capacity unit,
+then package supplied object ownership into a checked-out member.
+
+<!-- verified-example: mdtests/authority_family_exchange.md -->
+```click
+void checkout(int32* pool, struct payload* p) {
+    owns authority(capacity(pool));
+    owns authority(item(pool, _));
+    consumes capacity(pool);
+    consumes object(p);
+    requires defined(count(item(pool, _)) + 1);
+    produces item(pool, p);
+    ensures p->value == old(p->value);
+    ensures count(capacity(pool)) == old(count(capacity(pool))) - 1;
+    ensures count(item(pool, _)) == old(count(item(pool, _))) + 1;
+}
+```
+
+Both authorities are borrowed and returned. A direct unary authority exposes
+an arbitrary entry count, just like a wildcard authority: the one capacity
+unit supplied to this helper proves a lower bound, not the entire total.
+The proof consumes that unit and creates the item through the ordinary
+`unfold` and `fold` operations. Each family's ledger checks its own change;
+ordinary resource ownership separately checks the item's private body.
+Nested helpers follow the same rule, and caller-retained members stay owned.
+This initial exchange supports one unit consumption and one unit production
+under explicitly borrowed authorities, with different families at the same
+anchor. It does not admit arbitrary batches or authority replacement.
+
+Private external memory can use its checked `viewable(...)` facts together with
+owned body resources. A local struct's implicit storage access currently does
+not supply transferable `owns object(...)`; the preserved
+`authority_family_exchange_stack_object_unavailable` regression records that
+separate limitation. The positive caller fixture receives explicit object
+ownership on entry.
+
 A wildcard authority also permits an exact member count. `count(slot(pool, p))`
 counts every existing unit with those arguments; `count(slot(pool, _))` counts
 the whole family. Equal empty members can have a count greater than one. Owning
@@ -651,7 +688,8 @@ in symbolic batches remain separate work.
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
 authority, consume the entry member, or create one from authority and its required
-private memory, or move one unit member between two wildcard authorities. Fixed
+private memory, move one unit member between two wildcard authorities, or exchange
+one unit between two different families at one anchor. Fixed
 trailing arguments in authority patterns, partially fixed subset observations,
 and field-bearing members remain future work.
 
