@@ -992,6 +992,21 @@ fn evaluate_c_memory_load_case(
     }
 
     if memory.is_loadable_concretely(&pointer, value_type.byte_width()) {
+        if let Some(value) = cell_value_recorded_on_path(
+            &memory,
+            &pointer,
+            value_type,
+            &mut facts,
+            assumptions,
+            source,
+            purpose,
+        ) {
+            return vec![CExpressionPath {
+                outcome: CExpressionOutcome::Value(value),
+                facts,
+                obligations,
+            }];
+        }
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
             &memory,
             &pointer,
@@ -1068,6 +1083,22 @@ fn evaluate_c_memory_load_case(
         }
     }
 
+    if let Some(value) = cell_value_recorded_on_path(
+        &memory,
+        &pointer,
+        value_type,
+        &mut facts,
+        assumptions,
+        source,
+        purpose,
+    ) {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::Value(value),
+            facts,
+            obligations,
+        }];
+    }
+
     let Some(value) = canonicalized_symbolic_load_value_with_identity(
         &memory,
         &pointer,
@@ -1094,6 +1125,51 @@ fn evaluate_c_memory_load_case(
         facts,
         obligations,
     }]
+}
+
+/// The value a C read finds for its cell in the recorded history on this
+/// path, when no cached cell of `memory` answers it.
+///
+/// This is the cached-cell read above, asked one snapshot further back: a
+/// store at an address the facts could not place when it ran drops the cells
+/// it may write, and a path that later learns the store missed this cell
+/// (`u != 0` for `buf[u] = 7` and a read of `buf[0]`) reads the value the
+/// cell held before it. The answer depends on the path's facts exactly as the
+/// distinct-cell reduction above does, and like it is spent only on this
+/// path's value; nothing is named by it. Only a program read asks: a
+/// specification read denotes the named snapshot's value, and a volatile one
+/// may observe a write no recorded step made.
+#[allow(clippy::too_many_arguments)]
+fn cell_value_recorded_on_path(
+    memory: &CMemory,
+    pointer: &Pointer,
+    value_type: CType,
+    facts: &mut Vec<ExecutionPureFact>,
+    assumptions: &PureFactContext,
+    source: Option<&LoadSourceId>,
+    purpose: LoadPurpose,
+) -> Option<CValue> {
+    if purpose != LoadPurpose::Program {
+        return None;
+    }
+    let value = crate::kernel::resource_tracker::cell_value_on_path(
+        &crate::kernel::intern_c_memory_ref(memory),
+        pointer,
+        value_type.byte_width(),
+        assumptions,
+    )?;
+    if let Some(value) = canonicalized_pointer_value_from_int_cell(
+        pointer,
+        &value,
+        value_type,
+        facts,
+        assumptions,
+        source,
+        purpose,
+    ) {
+        return Some(value);
+    }
+    value_type.accepts(&value).then_some(value)
 }
 
 /// Reinterprets an int cell's loaded value as a pointer without letting the

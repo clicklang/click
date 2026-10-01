@@ -14,6 +14,10 @@
 //!   resource, and if not, was it **changed** (a step wrote it) or is it
 //!   merely **unknown** (a step could not be shown separate from it).
 //!
+//! A C read whose cell no cached value answers also asks
+//! [`cell_value_on_path`], the one question answered under one path's facts;
+//! it names nothing, so its answer never enters a term shared across paths.
+//!
 //! Everything else is built on those. Naming a term that reads memory embeds
 //! the oldest point its resource is the same as, so equal names mean equal
 //! terms; that is [`last_same_point`], and it is the only form on the hot
@@ -1097,6 +1101,61 @@ fn cell_source_for_naming(
     with_extended_dag_bridging(|| {
         memory_dag_cell_source(memory, pointer, bytes, &PureFactContext::new(), false)
     })
+}
+
+/// The value one cell holds at `at` on the querying path, when its recorded
+/// history pins one down: the cached value at the point the cell was last the
+/// same, where the steps the naming walk could not cross are crossed with the
+/// path's own facts.
+///
+/// A store at a symbolic address — `buf[u] = 7` — drops the cached cells it
+/// may write, so a later `buf[0]` finds no cell even on a path that knows
+/// `u != 0`. The naming walk is assumption-free (its answer is embedded in a
+/// name shared by every path), so it stops at that store. This walk does not
+/// name anything: it answers for this path only, so where the naming walk
+/// stops it asks [`step_effect::affects`] about the stopping step under
+/// `assumptions`, and on a separate answer resumes the memoized naming walk
+/// from the step's base. The value it returns is the cell the snapshot it
+/// lands on caches at exactly `pointer`; the walk proves every step in
+/// between separate from the cell, so that value is the cell's value at `at`
+/// wherever `assumptions` hold.
+///
+/// Work is one memoized naming lookup per step the naming walk cannot cross
+/// plus the separation check of that step; every other step is the naming
+/// walk's, already paid for. The chain is finite because a derivation's base
+/// is strictly older than the snapshot it derives.
+pub(crate) fn cell_value_on_path(
+    at: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> Option<CValue> {
+    let evidence = step_effect::Evidence {
+        assumptions,
+        cross_loop_havoc: false,
+    };
+    let mut current = at.clone();
+    loop {
+        crate::instrumentation::record_deterministic_work(1);
+        let point = cell_last_same_point(&current, pointer, bytes)?;
+        if let Some(value) = point.known_value(pointer) {
+            return Some(value);
+        }
+        let derivation = point.derivation()?;
+        match step_effect::affects(
+            derivation.as_ref(),
+            &point,
+            Resource::Cell { pointer, bytes },
+            &evidence,
+        ) {
+            step_effect::StepEffect::Separate(step_effect::Separation::Cell(_)) => {
+                current = derivation.base().clone();
+            }
+            step_effect::StepEffect::Affected
+            | step_effect::StepEffect::NotShownSeparate(_)
+            | step_effect::StepEffect::Separate(_) => return None,
+        }
+    }
 }
 
 thread_local! {
