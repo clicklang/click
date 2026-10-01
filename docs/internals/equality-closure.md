@@ -699,9 +699,14 @@ controls. The owned one-level frontier used to adapt a composite view to loan
 backing uses the same checked construction. Its temporary context contains only
 the selected owned head, and dependent child deltas retain the attachment. This
 does not authorize a lend: the adapter still checks the caller's owned coverage,
-definition facts, and recovery recipe. Branch isolation, read width, and scaling
-against unrelated facts and caller resources are covered. Normalization refreshes
-existing attachments when it replaces occurrences.
+definition facts, and recovery recipe. The coverage context reconstructed from
+that owner's checked children also uses checked construction before consuming
+the requested frontier. It retains graph candidate selection while ordinary
+resource consumption checks quantity, ownership, and sufficient coverage;
+partial consumption leaves only the residual authority in a proof-local fork.
+Branch isolation, read width, double consumption, partial coverage, snapshot
+isolation, and scaling against unrelated facts and caller resources are covered.
+Normalization refreshes existing attachments when it replaces occurrences.
 
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its
