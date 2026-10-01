@@ -2177,3 +2177,51 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         ContractExpression::CFragment(CExpression::Variable("arena".to_string()))
     );
 }
+
+/// A 32-bit unsigned comparison reaches the kernel as a signed comparison of
+/// sign-flipped operands. Its spelling is the unsigned comparison over the
+/// `uint32` local, never the bias `(-2147483648 ^ x) < -2147483644`, and it
+/// lowers back to the condition it was spelled from. An operand no `uint32`
+/// local names keeps the literal spelling.
+#[test]
+fn unsigned_comparison_is_spelled_without_its_sign_bias() {
+    let x = Bitvector32Term::Variable(Variable(300_000));
+    let state = CState::new().with_local("x", CValue::UInt32(x.clone()));
+    for (condition, spelling) in [
+        (
+            ConditionTerm::unsigned_less_than(x.clone(), Bitvector32Term::Constant(4)),
+            "x < 4",
+        ),
+        (
+            ConditionTerm::unsigned_greater_equal(x.clone(), Bitvector32Term::Constant(4)),
+            "x >= 4",
+        ),
+    ] {
+        for value in [true, false] {
+            let fact = Proposition::ConditionIs(condition.clone(), value);
+            let synthesized = synthesize_surface_proposition(&fact, &[], &[], &state)
+                .expect("an unsigned comparison over a uint32 local is spellable");
+            let written = crate::surface::diagnostics::describe_click_proposition(&synthesized);
+            assert!(
+                written.contains(spelling) && !written.contains('^'),
+                "{written}"
+            );
+            assert_eq!(
+                relower_written_proposition(&synthesized, &state),
+                Ok(fact.clone()),
+                "{written}"
+            );
+        }
+    }
+    let signed = CState::new().with_local("y", CValue::Int32(x.clone()));
+    let fact = Proposition::ConditionIs(
+        ConditionTerm::unsigned_less_than(x, Bitvector32Term::Constant(4)),
+        true,
+    );
+    let synthesized = synthesize_surface_proposition(&fact, &[], &[], &signed)
+        .expect("the literal spelling remains");
+    assert!(
+        crate::surface::diagnostics::describe_click_proposition(&synthesized).contains('^'),
+        "a signed local's name would make the comparison signed"
+    );
+}

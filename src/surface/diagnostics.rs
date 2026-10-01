@@ -3080,7 +3080,7 @@ fn bitvector_is_source_spelled(
 
 /// The whole object a block names, spelled as the source declares it: a
 /// parameter whose argument points into it, or a file-scope declaration.
-fn describe_memory_block(
+pub(super) fn describe_memory_block(
     block: &PointerBlock,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],

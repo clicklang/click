@@ -224,6 +224,9 @@ pub(in crate::surface::proof) struct LoopProofCertificates {
 pub(in crate::surface::proof) struct FrontierLoopProofSource {
     pub(in crate::surface::proof) proof_site: Option<ProofSite>,
     pub(in crate::surface::proof) claim_label: String,
+    /// The `loop` tactic's position among its proof's tactics, as the
+    /// claim's refusals number them.
+    pub(in crate::surface::proof) loop_tactic_index: usize,
     pub(in crate::surface::proof) loop_source_index: usize,
     pub(in crate::surface::proof) initialize_source_index: Option<usize>,
     pub(in crate::surface::proof) preserve_source_index: Option<usize>,
@@ -234,6 +237,7 @@ impl FrontierLoopProofSource {
         clause: &StructuralClause,
         proof_site: Option<ProofSite>,
         claim_label: &str,
+        loop_tactic_index: usize,
         loop_source_index: usize,
     ) -> Self {
         let mut next_source_index = loop_source_index + 1;
@@ -252,11 +256,63 @@ impl FrontierLoopProofSource {
         Self {
             proof_site,
             claim_label: claim_label.to_string(),
+            loop_tactic_index,
             loop_source_index,
             initialize_source_index,
             preserve_source_index,
         }
     }
+
+    /// Restates a refusal from one of this loop's phase proofs at the place
+    /// the user wrote. A phase proof is its own `Proof` whose tactics count
+    /// from zero, so its refusals name `` `claim` tactic 0 ``, which reads as
+    /// the claim's first top-level tactic. The place is the `loop` tactic,
+    /// then the phase: the written phase script's own tactic, or, for the
+    /// steps Click plans itself, what those steps were doing.
+    pub(in crate::surface::proof) fn locate_phase_error(
+        &self,
+        error: ClickError,
+        phase: LoopPhasePlace,
+    ) -> ClickError {
+        let head = format!("`{}` tactic ", self.claim_label);
+        let loop_place = format!("{head}{} (`loop`)", self.loop_tactic_index);
+        error.with_rewritten_place(|message| {
+            let rest = message.strip_prefix(&head)?;
+            let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+            if digits == 0 {
+                return None;
+            }
+            let (inner, rest) = rest.split_at(digits);
+            if !(rest.starts_with(": ") || rest.starts_with(" (")) {
+                return None;
+            }
+            Some(match phase {
+                // A planned step has no written position, so a loop nested
+                // in the body is named by what it is rather than by the
+                // planner's own tactic count.
+                LoopPhasePlace::PlannedPreservation => match rest.strip_prefix(" (`loop`)") {
+                    Some(nested) => format!(
+                        "{loop_place}, preserving the invariants through the loop body, at the nested `loop`{nested}"
+                    ),
+                    None => format!(
+                        "{loop_place}, preserving the invariants through the loop body{rest}"
+                    ),
+                },
+                LoopPhasePlace::Script(name) => {
+                    format!("{loop_place}, `{name}` tactic {inner}{rest}")
+                }
+            })
+        })
+    }
+}
+
+/// Which part of a `loop` tactic a phase proof is.
+#[derive(Clone, Copy)]
+pub(in crate::surface::proof) enum LoopPhasePlace {
+    /// The body steps Click plans for a loop without a written `preserve`.
+    PlannedPreservation,
+    /// A written `initialize` or `preserve` script.
+    Script(&'static str),
 }
 
 #[derive(Clone)]
