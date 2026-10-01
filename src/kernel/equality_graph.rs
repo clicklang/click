@@ -156,6 +156,15 @@ impl AffineOffset {
         self.terms.is_empty()
     }
 
+    /// Candidate key for addresses that differ only in their constant part.
+    /// Hash collisions are not equality evidence; callers check occurrences.
+    pub(in crate::kernel) fn origin_fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.terms.hash(&mut hasher);
+        hasher.finish()
+    }
+
     /// Keep addresses with the same symbolic origin adjacent in span indexes.
     pub(in crate::kernel) fn address_order(&self, other: &Self) -> std::cmp::Ordering {
         self.terms

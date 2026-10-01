@@ -81,7 +81,7 @@ fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
     assert!(ResourceCompositionQueryGuard::enter(first).is_some());
 }
 
-fn insert_resource_index_entry<K: Ord>(
+pub(super) fn insert_resource_index_entry<K: Ord>(
     index: &PersistentMap<K, ResourceEntryIds>,
     key: K,
     entry: ResourceEntryId,
@@ -362,7 +362,7 @@ fn signed_range_endpoints(range: &CMemoryRange) -> (Option<i64>, Option<i64>) {
     )
 }
 
-fn remove_resource_index_entry<K: Ord + Clone>(
+pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
     index: &PersistentMap<K, ResourceEntryIds>,
     key: &K,
     entry: ResourceEntryId,
@@ -500,6 +500,7 @@ impl ResourceContextIndex {
                 insert_resource_index_entry(&result.memory_by_block, block.clone(), entry);
             result.memory_by_base =
                 insert_resource_index_entry(&result.memory_by_base, range.base().clone(), entry);
+            result.structural_memory.update(range.base(), entry, true);
             result
                 .memory_addresses
                 .update(range, fact.is_own(), entry, true, fact);
@@ -693,6 +694,7 @@ impl ResourceContextIndex {
                 remove_resource_index_entry(&result.memory_by_block, &block, entry);
             result.memory_by_base =
                 remove_resource_index_entry(&result.memory_by_base, range.base(), entry);
+            result.structural_memory.update(range.base(), entry, false);
             result
                 .memory_addresses
                 .update(range, fact.is_own(), entry, false, fact);
@@ -4925,8 +4927,14 @@ impl ResourceContext {
         let Some(required) = fact.memory_range() else {
             return false;
         };
-        self.memory_block_facts(&required.base().block)
-            .any(|available| {
+        let bytes =
+            memory_equality_index::read_extent(fact).and_then(|bytes| u32::try_from(bytes).ok());
+        let start = required
+            .base()
+            .offset_by_elements(required.start().clone(), required.element_width());
+        self.structural_memory_entries(required.base(), &start, bytes)
+            .any(|entry| {
+                let available = self.fact(entry);
                 let available = if fact.is_own() {
                     available.memory_own_range().cloned()
                 } else {
@@ -5029,7 +5037,9 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        for resource in self.memory_block_facts(&pointer.block) {
+        let bytes = crate::kernel::assumptions::read_candidate_byte_width(byte_width);
+        for entry in self.structural_memory_entries(pointer, pointer, Some(bytes)) {
+            let resource = self.fact(entry);
             let Some(range) = resource_fact_read_core_range(resource) else {
                 continue;
             };
