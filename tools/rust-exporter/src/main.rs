@@ -9,7 +9,7 @@ extern crate rustc_span;
 use rustc_driver::{Callbacks, Compilation};
 use rustc_hir::{self as hir, def::Res};
 use rustc_middle::ty::{self, TyCtxt};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 #[path = "../../../src/languages/rust/schema.rs"]
 mod schema;
 use schema::*;
@@ -23,8 +23,15 @@ struct Exporter {
 // before expansion. This first slice is exactly one ordinary source file.
 struct SourceBoundary {
     invalid: bool,
+    for_loop: bool,
 }
 impl<'a> rustc_ast::visit::Visitor<'a> for SourceBoundary {
+    fn visit_expr(&mut self, expression: &'a rustc_ast::Expr) {
+        if matches!(expression.kind, rustc_ast::ExprKind::ForLoop { .. }) {
+            self.for_loop = true;
+        }
+        rustc_ast::visit::walk_expr(self, expression);
+    }
     fn visit_item(&mut self, item: &'a rustc_ast::Item) {
         if !matches!(
             item.kind,
@@ -65,10 +72,16 @@ impl Callbacks for Exporter {
         krate: &mut rustc_ast::Crate,
     ) -> Compilation {
         use rustc_ast::visit::Visitor;
-        let mut boundary = SourceBoundary { invalid: false };
+        let mut boundary = SourceBoundary {
+            invalid: false,
+            for_loop: false,
+        };
         boundary.visit_crate(krate);
         if boundary.invalid {
             self.result = Some(Err("Rust source boundary supports one file containing functions and structs; modules, macros, imports and attributes are unsupported".into()));
+            Compilation::Stop
+        } else if boundary.for_loop {
+            self.result = Some(Err("Rust for loops are not yet supported".into()));
             Compilation::Stop
         } else {
             Compilation::Continue
@@ -157,6 +170,7 @@ struct BodyExporter<'tcx> {
     tcx: TyCtxt<'tcx>,
     typeck: &'tcx ty::TypeckResults<'tcx>,
     locals: BTreeMap<u32, String>,
+    names: BTreeSet<String>,
 }
 fn indexed_type(t: &Type) -> bool {
     matches!(t, Type::ByteSlice { .. } | Type::Array { .. })
@@ -172,11 +186,15 @@ impl<'tcx> BodyExporter<'tcx> {
             if mode.0 != hir::ByRef::No {
                 return Err("ref patterns outside Rust slice".into());
             }
-            let name = if parameter {
-                ident.to_string()
+            let source_name = ident.to_string();
+            let name = if parameter
+                || (!source_name.starts_with("__rust_") && !self.names.contains(&source_name))
+            {
+                source_name
             } else {
                 format!("__rust_{}_{}", ident, id.local_id.as_u32())
             };
+            self.names.insert(name.clone());
             self.locals.insert(id.local_id.as_u32(), name.clone());
             Ok(name)
         } else {
@@ -216,6 +234,7 @@ impl<'tcx> BodyExporter<'tcx> {
         }
         let t = self.typeck.expr_ty(e);
         let expression = match e.kind {
+            hir::ExprKind::DropTemps(value) => self.expr(value),
             hir::ExprKind::Array(elements) => Ok(Expression::Array {
                 elements: elements
                     .iter()
@@ -462,6 +481,31 @@ impl<'tcx> BodyExporter<'tcx> {
     ) -> Result<Vec<Statement>, String> {
         match e.kind {
             hir::ExprKind::Block(b, None) => self.block(b, tail_return),
+            hir::ExprKind::Match(_, _, hir::MatchSource::ForLoopDesugar) => {
+                Err(self.error(e, "Rust for loops are not yet supported"))
+            }
+            hir::ExprKind::Loop(block, None, hir::LoopSource::While, _) => {
+                let Some(guard) = block.expr else {
+                    return Err(self.error(e, "unexpected rustc while shape"));
+                };
+                let hir::ExprKind::If(condition, body, Some(_)) = guard.kind else {
+                    return Err(self.error(e, "unexpected rustc while guard"));
+                };
+                let mut statements = vec![Statement::While {
+                    condition: self.expr(condition)?,
+                    body: self.statement(body, false)?,
+                }];
+                if tail_return {
+                    statements.push(Statement::Return { value: None });
+                }
+                Ok(statements)
+            }
+            hir::ExprKind::Loop(..) => {
+                Err(self.error(e, "only unlabeled Rust while loops are supported"))
+            }
+            hir::ExprKind::Break(..) | hir::ExprKind::Continue(..) => {
+                Err(self.error(e, "Rust break and continue are not yet supported"))
+            }
             hir::ExprKind::If(c, t, f) => Ok(vec![Statement::If {
                 condition: self.expr(c)?,
                 then_body: self.statement(t, tail_return)?,
@@ -590,6 +634,7 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
             tcx,
             typeck,
             locals: BTreeMap::new(),
+            names: BTreeSet::new(),
         };
         let parameters = body
             .params

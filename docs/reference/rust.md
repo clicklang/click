@@ -75,7 +75,7 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 It does not establish checksum-library support;
-loops and crate extraction remain outstanding.
+iterator loops and crate extraction remain outstanding.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
@@ -185,10 +185,40 @@ operation also supports non-byte fixed arrays by recovering their fixed
 length; this does not enable non-byte slices or general library methods.
 
 Modules, imports, macros, semantic attributes, dependencies, unsafe code,
-general traits, type/const generics, loops, heap allocation, aggregate parameters and returns, reference
+general traits, type/const generics, heap allocation, aggregate parameters and returns, reference
 returns, and other integer widths are outside this slice. Unsupported syntax
 fails during extraction or direct lowering. This is not general Cargo-project
 support.
+
+## While loops and invariants
+
+Unlabeled `while` loops, including nested loops, use the shared checked loop
+rules. Sidecars can declare `invariant`, memory/resource clauses, and numeric
+`decreases` measures. Entry and preservation are separate obligations;
+arithmetic and indexing in the body retain Rust's panic-freedom checks.
+A decreasing measure proves termination through the existing loop checker.
+Unshadowed HIR locals use their Rust names in sidecars. Shadowed locals and
+names starting with `__rust_` retain distinct compiler-generated identities.
+Owned-value MIR loops remain outside this increment.
+
+Conditions currently support scalar comparisons, boolean combinations,
+negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
+condition require repeated preparation of checked operands and are rejected.
+`for`, `loop`, labels, `break`, and `continue` remain unsupported.
+
+[`examples/rust-loops/loops.rs`](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.rs)
+and its [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.click)
+verify a scalar counter, checked accumulation, and a byte-slice walk with a
+full-width `usize` counter. The walk uses `invariant i <= bytes_len` and
+`decreases bytes_len - i`; slice access still requires the signed-word length
+bound and `views` authority. The accumulator contract fixes the added value
+to one. These are synthetic loop regressions, not a checksum-library proof.
+Verification, profiling, auditing, and proof expansion use the shared engine.
+
+```sh
+cargo run --bin click -- import lock examples/rust-loops/loops.click
+cargo run --bin click -- verify examples/rust-loops/loops.click
+```
 
 ## Moves and drops
 
