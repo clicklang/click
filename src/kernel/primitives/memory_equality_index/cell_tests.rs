@@ -10,6 +10,171 @@ fn view(base: &Pointer, start: u32, end: u32) -> CResourceFact {
 }
 
 #[test]
+fn checked_context_construction_attaches_address_candidates() {
+    let at = |id: u64| Pointer::symbolic(Variable(860_000 + id));
+    let empty = PureFactContext::new();
+    let facts = empty
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(at(0), at(1)), true)
+        .assume_condition(ConditionTerm::pointer_equal(at(1), at(2)), true);
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        at(0),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    for mode in 0..5 {
+        let resources = match mode {
+            0 => ResourceContext::new().try_compose_with_fact(owner.clone(), &facts),
+            1 => ResourceContext::new()
+                .try_compose_with_facts_delaying_normalization([owner.clone()], &facts),
+            2 => ResourceContext::new()
+                .try_compose_into_valid_context_delaying_normalization([owner.clone()], &facts),
+            3 => ResourceContext::new()
+                .try_compose_certified_group_into_valid_context_delaying_normalization(
+                    [owner.clone()],
+                    &facts,
+                ),
+            _ => Ok(ResourceContext::new()
+                .unchecked_with_fact(owner.clone())
+                .normalized(&facts)),
+        }
+        .unwrap();
+        assert!(
+            resources
+                .concrete_read_entries(&at(2), 4, &facts)
+                .is_some_and(|entries| entries.exact()),
+            "unattached checked context: mode={mode}"
+        );
+        assert!(
+            resources
+                .concrete_write_entries(&at(2), 4, &facts)
+                .is_some_and(|entries| entries.exact())
+        );
+        assert!(resources.permits_memory_read(&at(2), 4, &facts));
+        assert!(resources.memory_write_range(&at(2), 4, &facts).is_some());
+        assert!(!resources.permits_memory_read(&at(2), 4, &empty));
+        assert!(!resources.permits_memory_read(&at(2), 8, &facts));
+    }
+}
+
+#[test]
+fn checked_attachment_is_flat_beside_unrelated_equality_history() {
+    for raw_input in [false, true] {
+        let mut samples = Vec::new();
+        let (base, alias) = (
+            Pointer::symbolic(Variable(867_000)),
+            Pointer::symbolic(Variable(867_001)),
+        );
+        for size in [16u64, 64, 256, 1024] {
+            let initial = PureFactContext::new();
+            let mut facts = initial.clone();
+            for i in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(868_000 + i)),
+                        Bitvector32Term::Variable(Variable(868_001 + i)),
+                    ),
+                    true,
+                );
+            }
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+                true,
+            );
+            let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                0u32.into(),
+                4u32.into(),
+                1,
+            ));
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let (input, additions) = if raw_input {
+                        (
+                            ResourceContext::new().unchecked_with_fact(owner),
+                            Vec::new(),
+                        )
+                    } else {
+                        (ResourceContext::new(), vec![owner])
+                    };
+                    if raw_input {
+                        // A cold query in an earlier input state must not make
+                        // full-input construction walk the later history.
+                        let _ = input.concrete_read_entries(&alias, 4, &initial);
+                    }
+                    let resources = if raw_input {
+                        input.normalized(&facts)
+                    } else {
+                        input
+                            .try_compose_into_valid_context_delaying_normalization(
+                                additions, &facts,
+                            )
+                            .unwrap()
+                    };
+                    assert!(
+                        resources
+                            .concrete_read_entries(&alias, 4, &facts)
+                            .is_some_and(|entries| entries.exact())
+                    );
+                    assert!(
+                        resources
+                            .concrete_write_entries(&alias, 4, &facts)
+                            .is_some_and(|entries| entries.exact())
+                    );
+                })
+            });
+            samples.push((size, work, map_work));
+        }
+        assert!(
+            samples[3].1 <= samples[0].1 * 2 + 64,
+            "attachment walked equality history: {samples:?}"
+        );
+        assert!(
+            samples[3].2 <= samples[0].2 * 4 + 512,
+            "attachment rebuilt graph state: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn checked_composition_attaches_only_new_resource_occurrences() {
+    let mut samples = Vec::new();
+    let base = Pointer::symbolic(Variable(870_000));
+    for size in [16u32, 64, 256, 1024] {
+        let facts = PureFactContext::new();
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let mut resources = ResourceContext::new();
+                for i in 0..size {
+                    resources = resources
+                        .try_compose_into_valid_context_delaying_normalization(
+                            [view(&base, i * 8, i * 8 + 4)],
+                            &facts,
+                        )
+                        .unwrap();
+                    assert!(
+                        resources
+                            .concrete_read_entries(&base.offset_by_bytes(i * 8), 4, &facts)
+                            .is_some_and(|entries| entries.exact())
+                    );
+                }
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    let ratio = usize::try_from(samples[3].0 / samples[0].0).unwrap();
+    assert!(
+        samples[3].1 <= samples[0].1 * ratio * 3,
+        "composition rescanned old resources: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * ratio * 4,
+        "composition rebuilt old indexes: {samples:?}"
+    );
+}
+
+#[test]
 fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {

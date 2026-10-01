@@ -1931,6 +1931,7 @@ impl ResourceContext {
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_published_resource_entries();
     }
 
     fn remove_entry(&mut self, entry: ResourceEntryId) -> CResourceFact {
@@ -2131,6 +2132,7 @@ impl ResourceContext {
             })),
             materialized: std::sync::OnceLock::new(),
         });
+        self.advance_published_resource_entries();
         if fact.is_own() {
             self.rekey_cached_support_entries(&fact);
         }
@@ -4402,6 +4404,12 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
+        // Construction owns initial attachment. In particular, prepare an
+        // empty input before insertion so it shares the already closed graph;
+        // a later read must not register or scan the resource input.
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
         let mut inserted = Vec::new();
         for fact in facts {
             let entry = self.storage.next_entry_id;
@@ -4412,6 +4420,7 @@ impl ResourceContext {
         if let Some(error) = context.validity_error(assumptions) {
             return Err(error);
         }
+        context.advance_prepared_memory_equalities(assumptions);
         Ok((context, inserted))
     }
 
@@ -4444,6 +4453,9 @@ impl ResourceContext {
         facts: impl IntoIterator<Item = CResourceFact>,
         assumptions: &PureFactContext,
     ) -> Result<Self, ResourceContextValidityError> {
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
         let first_new = self.storage.next_entry_id;
         for fact in facts {
             self.insert_fact(fact);
@@ -4540,6 +4552,7 @@ impl ResourceContext {
                 }
             }
         }
+        self.advance_prepared_memory_equalities(assumptions);
         Ok(self)
     }
 
@@ -4648,6 +4661,9 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Result<(Self, Vec<(CResourceFact, ResourceOccurrenceId)>), ResourceContextValidityError>
     {
+        if self.storage.facts.is_empty() {
+            self.synchronize_memory_equalities(assumptions);
+        }
         let facts = facts.into_iter().collect::<Vec<_>>();
         for fact in &facts {
             self.clone()
@@ -4656,7 +4672,9 @@ impl ResourceContext {
                     assumptions,
                 )?;
         }
-        Ok(self.unchecked_with_facts_and_occurrences(facts))
+        let (context, inserted) = self.unchecked_with_facts_and_occurrences(facts);
+        context.advance_prepared_memory_equalities(assumptions);
+        Ok((context, inserted))
     }
 
     pub fn facts(&self) -> &[CResourceFact] {
@@ -5797,10 +5815,13 @@ impl ResourceContext {
                 i += 1;
             }
         }
-        if changed_facts.is_empty() {
-            return self;
+        if !changed_facts.is_empty() {
+            self.replace_facts(slots.into_iter().flatten(), changed_facts);
         }
-        self.replace_facts(slots.into_iter().flatten(), changed_facts);
+        // Normalization already visits the complete input, so it is an
+        // attachment boundary even when no resource representation changed.
+        // Delta-only composition must never do this for an ambient context.
+        self.synchronize_memory_equalities(assumptions);
         self
     }
 

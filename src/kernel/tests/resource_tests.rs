@@ -4019,6 +4019,7 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
         block: "certified_group".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
+    let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let facts = (0..size)
             .map(|index| {
@@ -4040,15 +4041,19 @@ fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
                 )
         });
         assert!(installed.is_ok());
-        // Inserting each span and recording its normalization touches its
-        // constant base once each, now also filing its affine start in the
-        // paired index. Permit four units per explicit input span, but no
-        // internal pair comparisons (which would grow quadratically).
+        // Installation now also closes each explicit span into the address
+        // graph. Bound that per-input work and its growth; internal pair
+        // comparisons would grow quadratically across these sizes.
         assert!(
-            work <= 4 * size,
+            work <= 64 * size,
             "installing a certified size-{size} group rechecked its internal pairs: {work}"
         );
+        samples.push(work);
     }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 5),
+        "certified installation grew superlinearly: {samples:?}"
+    );
 }
 
 #[test]
