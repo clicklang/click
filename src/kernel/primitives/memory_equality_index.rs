@@ -476,6 +476,67 @@ impl ResourceContext {
         self.pair_memory_equalities(assumptions, true, None);
     }
 
+    /// Maintain the two published checkpoints at the resource mutation that
+    /// produces the delta. Other cached forks remain persistent lazy views.
+    /// This never initializes a cold input or enumerates cached branches.
+    pub(super) fn advance_published_resource_entries(&self) {
+        let checkpoints = {
+            let cache = self
+                .memory_equalities
+                .lock()
+                .expect("memory equality index");
+            cache.published.as_ref().and_then(|published| {
+                // Keep a single first memory delta on the empty checkpoint.
+                // Its next attachment can adopt that branch's closed graph
+                // without traversing unrelated admitted inputs. A second
+                // mutation flushes both deltas, so work cannot accumulate.
+                if published.resources.index.memory_by_block.is_empty()
+                    && !self.storage.index.memory_by_block.is_empty()
+                    && Self::history_tail_is(
+                        self.storage
+                            .history
+                            .as_ref()
+                            .and_then(|change| change.parent.as_ref()),
+                        published.resources.history.as_ref(),
+                    )
+                {
+                    return None;
+                }
+                let key = published.graph.input_key();
+                let root = cache
+                    .by_inputs
+                    .get(&key.root())
+                    .expect("published input root");
+                Some((root.graph.clone(), published.graph.clone()))
+            })
+        };
+        let Some((root, published)) = checkpoints else {
+            return;
+        };
+        let same = root.input_key() == published.input_key();
+        self.pair_memory_equalities_in_graph(root, true, None);
+        if !same {
+            self.pair_memory_equalities_in_graph(published, true, None);
+        }
+    }
+
+    /// Delta-only composition must not attach an unrelated ambient input.
+    /// Advance a prepared lineage; first attachment belongs to fresh construction
+    /// or an explicit whole-input validation/publication boundary.
+    pub(super) fn advance_prepared_memory_equalities(&self, assumptions: &PureFactContext) {
+        let root = assumptions.equality_graph.input_key().root();
+        let prepared = self
+            .memory_equalities
+            .lock()
+            .expect("memory equality index")
+            .by_inputs
+            .get(&root)
+            .is_some_and(|index| index.points_initialized);
+        if prepared {
+            self.synchronize_memory_equalities(assumptions);
+        }
+    }
+
     // Pair against admitted inputs, not a foreign graph's query registrations.
     // The index owns its graph checkpoint and term IDs. Advancing a fork applies
     // only its explicit equality delta into that checkpoint, preserving payloads.
@@ -486,7 +547,19 @@ impl ResourceContext {
         register_input: bool,
         query: Option<&Pointer>,
     ) -> std::sync::Arc<PairedMemoryIndex> {
-        let source = assumptions.equality_graph.clone();
+        self.pair_memory_equalities_in_graph(
+            assumptions.equality_graph.clone(),
+            register_input,
+            query,
+        )
+    }
+
+    fn pair_memory_equalities_in_graph(
+        &self,
+        source: EqualityGraph,
+        register_input: bool,
+        query: Option<&Pointer>,
+    ) -> std::sync::Arc<PairedMemoryIndex> {
         let key = source.input_key();
         let mut cache = self
             .memory_equalities
@@ -527,7 +600,13 @@ impl ResourceContext {
                     .cloned()
             })
             .or_else(|| {
-                if cache.by_inputs.is_empty() {
+                if cache.by_inputs.is_empty()
+                    || (require_complete
+                        && !cache
+                            .by_inputs
+                            .get(&key.root())
+                            .is_some_and(|index| index.points_initialized))
+                {
                     return None;
                 }
                 source.input_checkpoints().find_map(|key| {
@@ -634,41 +713,39 @@ impl ResourceContext {
             cache.by_inputs = PersistentMap::default();
             cache.published = None;
         }
-        // Publish before premises so preexisting siblings share registered
-        // payloads. Preparation changes no proof context or equality fact.
-        let paired = if register_input {
-            self.registered_memory_index(source.input_root())
-        } else {
-            let graph = source;
-            if let Some(query) = query {
-                graph.address_class(query);
-            }
-            let mut addresses = self.storage.index.memory_addresses.clone();
-            for merge in graph.pointer_merges() {
-                addresses.merge(merge);
-            }
-            std::sync::Arc::new(PairedMemoryIndex {
-                resources: self.storage.clone(),
-                graph,
-                addresses,
-                points: AddressPoints::default(),
-                points_initialized: false,
-            })
-        };
-        let registered_key = paired.graph.input_key();
-        cache.by_inputs = cache
-            .by_inputs
-            .with_inserted(registered_key, paired.clone());
         if register_input {
+            // Register both input boundaries directly. The current view shares
+            // the source's already closed graph; initial publication must not
+            // walk unrelated admitted inputs to reconstruct that state.
+            let root = self.registered_memory_index(source.input_root());
+            let paired = if root.graph.input_key() == key {
+                root.clone()
+            } else {
+                self.registered_memory_index(source)
+            };
+            cache.by_inputs = cache
+                .by_inputs
+                .with_inserted(key.root(), root)
+                .with_inserted(key, paired.clone());
             cache.published = Some(paired.clone());
-            if registered_key != key {
-                // This initial boundary owns the complete input. Advance its
-                // graph once by the admitted delta; later queries keep both
-                // roots and process only subsequent branch-local additions.
-                drop(cache);
-                return self.pair_memory_equalities(assumptions, true, query);
-            }
+            return paired;
         }
+        let graph = source;
+        if let Some(query) = query {
+            graph.address_class(query);
+        }
+        let mut addresses = self.storage.index.memory_addresses.clone();
+        for merge in graph.pointer_merges() {
+            addresses.merge(merge);
+        }
+        let paired = std::sync::Arc::new(PairedMemoryIndex {
+            resources: self.storage.clone(),
+            graph,
+            addresses,
+            points: AddressPoints::default(),
+            points_initialized: false,
+        });
+        cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
         paired
     }
 
