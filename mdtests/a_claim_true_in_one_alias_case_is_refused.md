@@ -6,7 +6,9 @@ The negative of
 other `u` it reads the entry value. `execute()` splits the load into those two
 cases and continues each, and the claim `result == 8` holds only in the first.
 The refusal is the ordinary unclosed goal of the other case, where the result
-is the entry value of `g[0]` plus one.
+is the entry value of `g[0]` plus one. Its proof context names that case,
+`0 == u is false`, on a line of its own: the condition shares no term with the
+goal, while the unrelated `requires u < 4` stays out.
 
 ```c filename=a_claim_true_in_one_alias_case_is_refused.c
 int32 g[4];
@@ -36,5 +38,8 @@ int32 planned(int32 u) {
 ```
 
 ```expect
-fail: `ensures result == 8` failed for `planned.ensures_1` path 1: unclosed goal: result == 8
+fail: `ensures result == 8` failed for `planned.ensures_1` path 1: unclosed goal: result == 8; left side evaluated to (load(&g) + 1), right side evaluated to 8
+proof context for the goal:
+  case: [0 == u is false]
+  pure facts: [load(&g) < 100]
 ```
