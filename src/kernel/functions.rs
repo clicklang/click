@@ -16986,13 +16986,20 @@ fn candidate_composite_view_adapter(
 /// the caller's memory. This is the same boundary the composite lend and
 /// `project` use, so nothing enters a loan that the definition does not
 /// contain.
-fn checked_one_level_frontier(
+pub(super) fn checked_one_level_frontier(
     head: &CResourceFact,
     definitions: &[CCompositeResourceDefinition],
     caller_state: &CState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<CResourceFact>> {
-    let singleton = ResourceContext::new().unchecked_with_fact(head.clone());
+    // Expand only the selected head. Checked construction attaches the trusted
+    // equality graph before dependent children are added, without importing the
+    // caller's ambient resources or changing the loan's backing judgment.
+    let singleton = ResourceContext::new()
+        .try_compose_with_fact(head.clone(), assumptions)
+        .ok()?;
+    #[cfg(test)]
+    singleton.observe_projection_context();
     let (_, children, _) = expand_composite_resource_fact_with_children(
         &singleton,
         head,
