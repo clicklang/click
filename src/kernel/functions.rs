@@ -14754,17 +14754,25 @@ pub(crate) fn initialize_c_function_globals(state: &CState, function: &CFunction
 /// Constructs a fresh startup state, never an ordinary call transition.
 /// Storage identities coalesce aliases before permissions are issued. No
 /// incoming state is accepted, so this cannot replenish consumed resources.
+///
+/// Startup storage is as large as the program's static objects, so each of
+/// its per-object, per-element, and per-range loops is a cooperative
+/// checkpoint. `None` means a run limit stopped construction; the partial
+/// state is dropped and the caller reports the limit.
 pub(crate) fn initialize_c_program_storage(
     functions: impl IntoIterator<Item = CFunction>,
-) -> CState {
+) -> Option<CState> {
     let mut state = CState::new();
     for function in functions {
         state = initialize_c_function_globals_owned(state, &function, true);
         // Private source spellings are lexical bindings, not program globals.
         state.locals = CLocalEnvironment::default();
+        if crate::instrumentation::deadline_exceeded() {
+            return None;
+        }
     }
-    state.resources = initial_static_resources(&state.memory, || {});
-    state
+    state.resources = initial_static_resources(&state.memory, || {})?;
+    Some(state)
 }
 
 /// The blocks holding an array of structs laid out as the zero runs of
@@ -14780,8 +14788,11 @@ fn periodic_struct_array_blocks(
     memory: &CMemory,
     constant_offset: impl Fn(&Pointer) -> u32,
 ) -> BTreeMap<PointerBlock, (u32, u32)> {
+    // Each run and each concrete cell examined charges a unit. Nothing here
+    // stops early: the caller's next checkpoint, one visit later, does.
     let mut runs_by_block = BTreeMap::<&PointerBlock, Vec<&CellRun>>::new();
     for run in memory.cells.runs() {
+        crate::instrumentation::record_deterministic_work(1);
         runs_by_block
             .entry(&run.base().block)
             .or_default()
@@ -14811,6 +14822,7 @@ fn periodic_struct_array_blocks(
         let written_fields = AliasCandidates::only_block(block)
             .entries(memory.cells.concrete())
             .all(|(pointer, value)| {
+                crate::instrumentation::record_deterministic_work(1);
                 runs.iter().any(|run| {
                     run.slot_index(pointer).is_some() && run.value_width() == value.byte_width()
                 })
@@ -14837,7 +14849,17 @@ fn periodic_struct_array_blocks(
 /// bytes the per-field ranges would, padding included. Partitioned by cell
 /// width it would be a range per field per element, so its permissions
 /// would cost the array's length.
-fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> ResourceContext {
+///
+/// Every visit charges one unit and is a checkpoint; `None` means a run
+/// limit stopped the partition.
+fn initial_static_resources(
+    memory: &CMemory,
+    mut count_visit: impl FnMut(),
+) -> Option<ResourceContext> {
+    let mut visit = || {
+        count_visit();
+        crate::instrumentation::deadline_exceeded()
+    };
     let constant_offset = |pointer: &Pointer| {
         let PointerOffsetTerm::Constant(offset) = pointer.offset else {
             unreachable!("static initializers have constant cell offsets");
@@ -14850,14 +14872,18 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
     // range of struct-sized elements, however many there are.
     let periodic = periodic_struct_array_blocks(memory, constant_offset);
     for (block, &(stride, count)) in &periodic {
-        visit();
+        if visit() {
+            return None;
+        }
         spans_by_block
             .entry(block.clone())
             .or_default()
             .push((0, stride * count, stride));
     }
     for (pointer, value) in memory.cells.concrete().iter() {
-        visit();
+        if visit() {
+            return None;
+        }
         if periodic.contains_key(&pointer.block) {
             continue;
         }
@@ -14874,7 +14900,9 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
         let spans = spans_by_block.entry(run.base().block.clone()).or_default();
         let width = run.value_width();
         for (low, high) in run.holes().gap_intervals(run.count()) {
-            visit();
+            if visit() {
+                return None;
+            }
             if run.element_width() == width {
                 let start = constant_offset(&run.slot_pointer(low));
                 spans.push((start, start + (high - low) * width, width));
@@ -14891,12 +14919,16 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
     }
     let mut resources = ResourceContext::default();
     for (identity, block) in memory.blocks.iter() {
-        visit();
+        if visit() {
+            return None;
+        }
         let size = block.size().as_const().expect("static block size");
         let mut ranges = Vec::<(u32, u32, u32)>::new();
         let mut cursor = 0;
         for &(offset, span_end, width) in spans_by_block.get(identity).into_iter().flatten() {
-            visit();
+            if visit() {
+                return None;
+            }
             assert!(offset >= cursor && span_end <= size);
             if offset > cursor {
                 ranges.push((cursor, offset, 1));
@@ -14915,7 +14947,9 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
             ranges.push((cursor, size, 1));
         }
         for (start, end, width) in ranges {
-            visit();
+            if visit() {
+                return None;
+            }
             let range = CMemoryRange::new_with_element_width(
                 Pointer {
                     block: identity.clone(),
@@ -14932,7 +14966,7 @@ fn initial_static_resources(memory: &CMemory, mut visit: impl FnMut()) -> Resour
             });
         }
     }
-    resources
+    Some(resources)
 }
 
 #[cfg(test)]
@@ -14954,6 +14988,9 @@ fn initialize_c_function_globals_owned(
                     .with_read_only_block(slot.block.clone(), literal.bytes().len() as u32),
             );
             for (offset, byte) in literal.bytes().iter().copied().enumerate() {
+                if crate::instrumentation::deadline_exceeded() {
+                    break;
+                }
                 state.set_memory(state.memory.clone().store(
                     Pointer {
                         block: slot.block.clone(),
@@ -15501,6 +15538,11 @@ fn store_array_contents(
         ) {
             Ok(mut stored) => {
                 for (index, value) in contents.explicit_elements() {
+                    // An explicit initializer list is as long as the source
+                    // spells it; each element is a checkpoint.
+                    if crate::instrumentation::deadline_exceeded() {
+                        break;
+                    }
                     stored = stored.store(element(*index), value.clone());
                 }
                 return stored;
@@ -15509,6 +15551,9 @@ fn store_array_contents(
         }
     }
     for index in 0..contents.length() {
+        if crate::instrumentation::deadline_exceeded() {
+            break;
+        }
         memory = memory.store(element(index), contents.value_at(index).clone());
     }
     memory
@@ -15565,6 +15610,11 @@ fn materialize_symbolic_array(
         }
     }
     for index in 0..length {
+        // A checkpoint per element: a stopped run keeps the partial memory
+        // only until its caller's next checkpoint reports the limit.
+        if crate::instrumentation::deadline_exceeded() {
+            break;
+        }
         let pointer = base.offset_by_bytes(index.saturating_mul(element_type.byte_width()));
         memory = materialize_symbolic_cell(memory, &pointer, element_type);
     }
@@ -15660,6 +15710,11 @@ fn symbolic_aggregate_cells(layout: &CAggregateLayout) -> Option<Vec<(u32, CType
             _ => return None,
         };
         for index in 0..length {
+            // A stopped run takes the element-by-element fallback, whose
+            // own checkpoints report the limit.
+            if crate::instrumentation::deadline_exceeded() {
+                return None;
+            }
             cells.push((
                 field
                     .offset_bytes()
@@ -15721,6 +15776,9 @@ fn materialize_symbolic_aggregate_array(
         }
     }
     for index in 0..length {
+        if crate::instrumentation::deadline_exceeded() {
+            break;
+        }
         let element_base = base.offset_by_bytes(
             index
                 .checked_mul(layout.size_bytes())
@@ -15843,6 +15901,9 @@ fn zero_aggregate_fields(
 ) -> CMemory {
     for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
         for index in 0..element_count {
+            if crate::instrumentation::deadline_exceeded() {
+                break;
+            }
             let offset = field_offset
                 .checked_add(
                     index
@@ -15917,6 +15978,11 @@ fn aggregate_array_zero_runs(layout: &CAggregateLayout, length: u32) -> Option<V
     for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
         if element_count <= length {
             for index in 0..element_count {
+                // As in `symbolic_aggregate_cells`: a stopped run falls back
+                // to the checkpointed element-by-element zeroing.
+                if crate::instrumentation::deadline_exceeded() {
+                    return None;
+                }
                 runs.push(CConstantRun {
                     offset: field_offset.checked_add(index.checked_mul(element_width)?)?,
                     stride,
@@ -15926,6 +15992,9 @@ fn aggregate_array_zero_runs(layout: &CAggregateLayout, length: u32) -> Option<V
             }
         } else {
             for element in 0..length {
+                if crate::instrumentation::deadline_exceeded() {
+                    return None;
+                }
                 runs.push(CConstantRun {
                     offset: element.checked_mul(stride)?.checked_add(field_offset)?,
                     stride: element_width,
@@ -15951,6 +16020,9 @@ fn zero_aggregate_array_fields(
         }
     }
     for index in 0..length {
+        if crate::instrumentation::deadline_exceeded() {
+            break;
+        }
         let element_base = base.offset_by_bytes(
             index
                 .checked_mul(layout.size_bytes())

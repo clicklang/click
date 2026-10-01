@@ -4659,7 +4659,12 @@ impl ResourceContext {
                 ordered.sort_by_key(|(start, end, _, _)| (*start, *end));
                 let mut furthest: Option<(i64, &CResourceFact)> = None;
                 for (_, end, fact, _) in ordered {
-                    crate::instrumentation::record_deterministic_work(1);
+                    // A checkpoint, not only a charge: an exhausted run stops
+                    // here with no proven overlap, as a limited `decide`
+                    // does, and the pending limit fails the run.
+                    if crate::instrumentation::deadline_exceeded() {
+                        return None;
+                    }
                     if let Some((furthest_end, left)) = furthest {
                         if let Some(error) = pair_validity_error_with_separation(
                             left,
@@ -4683,6 +4688,9 @@ impl ResourceContext {
             // pair order of a pairwise scan.
             let mut pairs = BTreeSet::new();
             for (right_entry, right_range) in &owned_entries {
+                if crate::instrumentation::deadline_exceeded_with_work(0) {
+                    return None;
+                }
                 let right_entry = *right_entry;
                 for left_entry in self.owned_validity_candidates(right_range, None, assumptions) {
                     if left_entry >= right_entry {
@@ -4692,7 +4700,9 @@ impl ResourceContext {
                 }
             }
             for (left_entry, right_entry) in pairs {
-                crate::instrumentation::record_deterministic_work(1);
+                if crate::instrumentation::deadline_exceeded() {
+                    return None;
+                }
                 let left = self.fact(left_entry);
                 let right = self.fact(right_entry);
                 if let Some(error) =
@@ -7336,6 +7346,50 @@ fn memory_resource_fact_permits_write(
         )
         | CResourceFact::View(_) => false,
     }
+}
+
+/// The partition check of a block holding many owned ranges at distinct
+/// bases (a program-entry struct array is one range per field of every
+/// element) compares candidate pairs. Each candidate charges a unit; each
+/// range is also a checkpoint, so an exhausted run stops after one range's
+/// candidates instead of finishing every pair past its budget.
+#[cfg(test)]
+#[test]
+fn a_many_range_partition_check_stops_at_an_exhausted_run_budget() {
+    let ranges = 1_000u32;
+    let block = CMemory::global_pointer("pool").block;
+    let mut context = ResourceContext::new();
+    for index in 0..ranges {
+        context = context.unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(
+                Pointer {
+                    block: block.clone(),
+                    offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
+                },
+                0u32.into(),
+                1u32.into(),
+                4,
+            ),
+        ));
+    }
+    let assumptions = PureFactContext::new();
+    let ((), unbounded) = crate::instrumentation::measure_deterministic_work(|| {
+        assert!(context.validity_error(&assumptions).is_none());
+    });
+    let limit = 10_000;
+    assert!(
+        unbounded > 50 * limit,
+        "the check must cost far more than the budget: {unbounded}"
+    );
+    let used = crate::instrumentation::with_run_work_limit(limit, || {
+        assert!(context.validity_error(&assumptions).is_none());
+        assert!(crate::instrumentation::deadline_exceeded());
+        crate::instrumentation::run_work_used().expect("a run budget is installed")
+    });
+    assert!(
+        used <= limit + 4 * ranges as usize,
+        "the check spent {used} units under a {limit}-unit budget (unbounded {unbounded})"
+    );
 }
 
 #[cfg(test)]
