@@ -204,7 +204,7 @@ impl Bitvector32Term {
         match self {
             Self::Constant(value) => Some(*value),
             Self::Variable(_)
-            | Self::MemoryLoad(_, _)
+            | Self::MemoryLoad(_, _, _)
             | Self::PointerAddress(_)
             | Self::IntegerToMachine { .. }
             | Self::PureFunctionApplication { .. }
@@ -3094,7 +3094,7 @@ impl Pointer {
             return None;
         };
         let is_load = match value.as_ref() {
-            Bitvector32Term::MemoryLoad(_, _) => true,
+            Bitvector32Term::MemoryLoad(_, _, _) => true,
             Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
             _ => false,
         };

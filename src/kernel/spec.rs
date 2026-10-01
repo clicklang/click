@@ -2039,7 +2039,7 @@ fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     else {
         return false;
     };
-    let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, pointer)) =
+    let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
         (left.as_ref(), right.as_ref())
     else {
         return false;
@@ -2047,12 +2047,9 @@ fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     if !crate::kernel::is_load_variable(variable) {
         return false;
     }
-    let Some((registered_memory, registered_pointer)) =
-        crate::kernel::eval::registered_load_for_variable(variable)
-    else {
-        return false;
-    };
-    registered_memory == *memory && registered_pointer == *pointer.as_ref()
+    // The descriptor is the registered load exactly, kind included: a
+    // definition that names another kind of read at the address is not one.
+    crate::kernel::eval::registered_load_term_for_variable(variable).as_ref() == Some(load)
 }
 
 /// Removes only kernel-certified load definitions from a conjunction. The
@@ -2284,7 +2281,10 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
         // conservatively without expanding the registry DAG.
         return true;
     }
-    let selected_load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+    let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
+        return true;
+    };
+    let selected_load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind);
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {
@@ -8602,7 +8602,11 @@ mod integer_budget_tests {
                 byte_width: 4,
             },
         };
-        let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let requirement = Proposition::CMemoryLoadable {
             memory: CMemory::new(),
             base: Pointer {
@@ -8665,6 +8669,7 @@ mod integer_budget_tests {
                     byte_width: 4,
                 },
             },
+            crate::kernel::LoadKind::Bits32,
         );
         let outer = crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -8675,6 +8680,7 @@ mod integer_budget_tests {
                     Box::new(PointerOffsetTerm::Variable(inner)),
                 ),
             },
+            crate::kernel::LoadKind::Bits32,
         );
         let requirement = Proposition::CMemoryLoadable {
             memory: CMemory::new(),
@@ -8706,7 +8712,11 @@ mod integer_budget_tests {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let (registered_memory, registered_pointer) =
             crate::kernel::eval::registered_load_for_variable(&load)
                 .expect("the load variable must retain its exact descriptor");
@@ -8716,6 +8726,7 @@ mod integer_budget_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     registered_memory.clone(),
                     Box::new(registered_pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
             ),
             true,
@@ -8746,6 +8757,7 @@ mod integer_budget_tests {
                         offset: PointerOffsetTerm::Constant(4),
                         ..registered_pointer.clone()
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 )),
             ),
             true,
@@ -8765,6 +8777,7 @@ mod integer_budget_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     tampered_memory,
                     Box::new(registered_pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
             ),
             true,
@@ -8787,6 +8800,7 @@ mod integer_budget_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     registered_memory,
                     Box::new(registered_pointer),
+                    crate::kernel::LoadKind::Bits32,
                 )),
             ),
             true,
@@ -8864,7 +8878,12 @@ mod integer_budget_tests {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load = crate::kernel::eval::load_variable_for_exact_cell(&memory, &pointer, 4);
+        let load = crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+        );
         let (registered_memory, registered_pointer) =
             crate::kernel::eval::registered_load_for_variable(&load)
                 .expect("the exact load must have a registry descriptor");
@@ -8872,7 +8891,11 @@ mod integer_budget_tests {
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::MemoryLoad(memory, Box::new(pointer))),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        memory,
+                        Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
+                    )),
                 ),
                 true,
             )
@@ -9013,7 +9036,7 @@ mod integer_budget_tests {
             panic!("empty fold body lost its symbolic load")
         };
         let load_pointer = match machine.value() {
-            Bitvector32Term::MemoryLoad(_, pointer) => pointer.as_ref().clone(),
+            Bitvector32Term::MemoryLoad(_, pointer, _) => pointer.as_ref().clone(),
             Bitvector32Term::Variable(load) => {
                 crate::kernel::eval::registered_load_for_variable(load)
                     .map(|(_, pointer)| pointer)

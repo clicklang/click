@@ -319,8 +319,10 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::Variable(_), Bitvector32Term::MemoryLoad(_, pointer))
-        | (Bitvector32Term::MemoryLoad(_, pointer), Bitvector32Term::Variable(_)) => Some(pointer),
+        (Bitvector32Term::Variable(_), Bitvector32Term::MemoryLoad(_, pointer, _))
+        | (Bitvector32Term::MemoryLoad(_, pointer, _), Bitvector32Term::Variable(_)) => {
+            Some(pointer)
+        }
         _ => None,
     }
 }

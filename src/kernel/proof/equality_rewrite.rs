@@ -357,6 +357,7 @@ fn rewrite_through_load_variable(
     // Without a live origin, keep the variable's defining snapshot.
     let (memory, pointer) = crate::kernel::registered_load_origin_for_variable(variable)
         .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let rewritten = rewrite_pointer(&pointer);
     if rewritten == pointer {
         return None;
@@ -364,6 +365,7 @@ fn rewrite_through_load_variable(
     Some(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
         memory,
         Box::new(rewritten),
+        kind,
     )))
 }
 
@@ -385,6 +387,7 @@ fn rewrite_through_loaded_pointer_block(
     }
     let (memory, address) = crate::kernel::registered_load_origin_for_variable(variable)
         .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let rewritten_address = {
         let direct = rewrite_pointer(&address);
         if direct != address {
@@ -396,10 +399,13 @@ fn rewrite_through_loaded_pointer_block(
     let load = crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
         memory,
         Box::new(rewritten_address),
+        kind,
     ));
     let named = match load {
         Bitvector32Term::Variable(variable) => variable,
-        load @ Bitvector32Term::MemoryLoad(_, _) => crate::kernel::load_variable_for_term(&load)?.0,
+        load @ Bitvector32Term::MemoryLoad(_, _, _) => {
+            crate::kernel::load_variable_for_term(&load)?.0
+        }
         _ => return None,
     };
     Some(Pointer {
@@ -806,9 +812,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             .collect(),
                     }
                 }
-                Bitvector32Term::MemoryLoad(memory, pointer) => {
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(rewrite_pointer(pointer)))
-                }
+                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(rewrite_pointer(pointer)),
+                    *kind,
+                ),
                 Bitvector32Term::PointerAddress(pointer) => {
                     Bitvector32Term::PointerAddress(Box::new(rewrite_pointer(pointer)))
                 }
@@ -1093,9 +1101,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             };
             match term {
-                Bitvector32Term::MemoryLoad(memory, pointer) => {
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(rewrite_pointer(pointer)))
-                }
+                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(rewrite_pointer(pointer)),
+                    *kind,
+                ),
                 Bitvector32Term::Variable(_) => {
                     rewrite_through_load_variable(term, rewrite_pointer)
                         .unwrap_or_else(|| term.clone())
@@ -1472,12 +1482,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             // The memory snapshot is fixed, but its address is an ordinary
             // expression: exact equality substitution is congruent there too.
-            Bitvector32Term::MemoryLoad(memory, pointer) => Bitvector32Term::MemoryLoad(
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: rewrite_offset(&pointer.offset, from, to),
                 }),
+                *kind,
             ),
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(Box::new(Pointer {
@@ -1869,6 +1880,7 @@ mod tests {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         let x = Bitvector32Term::Variable(Variable(931));
@@ -2015,6 +2027,7 @@ mod tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(Pointer::symbolic(address)),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                 ),
                 true,

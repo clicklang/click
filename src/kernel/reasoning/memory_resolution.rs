@@ -1316,6 +1316,7 @@ fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
         Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -1567,11 +1568,8 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     // for the load term, then fall through to the variable-form
     // paths if the load view does not decide.
     let canonical_view = |term: &Bitvector32Term| {
-        if let Bitvector32Term::Variable(variable) = term
-            && let Some((memory, pointer)) =
-                crate::kernel::eval::registered_load_origin_for_variable(variable)
-        {
-            return Some(Bitvector32Term::MemoryLoad(memory, Box::new(pointer)));
+        if let Bitvector32Term::Variable(variable) = term {
+            return crate::kernel::eval::registered_load_origin_term_for_variable(variable);
         }
         None
     };
@@ -1605,7 +1603,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }) {
         return true;
     }
-    if let Bitvector32Term::MemoryLoad(memory, pointer) = left
+    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = left
         && let Some(CValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != left
@@ -1613,7 +1611,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     {
         return true;
     }
-    if let Bitvector32Term::MemoryLoad(memory, pointer) = right
+    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = right
         && let Some(CValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != right
@@ -1656,14 +1654,22 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
                 && bitvector_terms_proven_equal_for_memory_resolution(left_b, right_b, assumptions)
         }
         (
-            Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-            Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+            Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
         ) => {
-            pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
+            // Equal addresses are not enough: two reads there are one value
+            // only when they are one kind of read.
+            left_kind == right_kind
+                && pointers_proven_equal_for_memory_resolution(
+                    left_pointer,
+                    right_pointer,
+                    assumptions,
+                )
                 && !loads_separated_by_recorded_history(
                     left_memory,
                     right_memory,
                     left_pointer,
+                    *left_kind,
                     assumptions,
                 )
                 && memory_snapshots_match_for_resolution(
@@ -1857,16 +1863,17 @@ pub(in crate::kernel) fn memory_load_terms_equal_for_fact_transport(
         return false;
     };
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left_load, &right_load)
     else {
         return false;
     };
-    (pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
-        || left_pointer.block == right_pointer.block
-            && assumptions
-                .has_pointer_offset_snapshot_fact(&left_pointer.offset, &right_pointer.offset))
+    left_kind == right_kind
+        && (pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
+            || left_pointer.block == right_pointer.block
+                && assumptions
+                    .has_pointer_offset_snapshot_fact(&left_pointer.offset, &right_pointer.offset))
         && memory_snapshots_match_for_resolution(
             left_memory,
             right_memory,
@@ -1894,6 +1901,7 @@ pub(in crate::kernel) fn loads_separated_by_recorded_history(
     left: &SharedCMemory,
     right: &SharedCMemory,
     pointer: &Pointer,
+    kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> bool {
     let separated = |left: &SharedCMemory, right: &SharedCMemory| {
@@ -1906,7 +1914,7 @@ pub(in crate::kernel) fn loads_separated_by_recorded_history(
         // view of which stores happened, because then one route would frame a
         // load across a store another route refuses.
         crate::kernel::api::with_extended_dag_bridging(|| {
-            crate::kernel::api::recorded_load_history(left, right, pointer, assumptions)
+            crate::kernel::api::recorded_load_history(left, right, pointer, kind, assumptions)
         }) == crate::kernel::api::LoadHistory::DifferentVersions
     };
     separated(left, right) || {
@@ -1940,26 +1948,30 @@ pub(in crate::kernel) fn load_equality_refuted_by_history(
     assumptions: &PureFactContext,
 ) -> bool {
     let load = |term: &Bitvector32Term| match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
-            Some((memory.clone(), pointer.as_ref().clone()))
-        }
+        Bitvector32Term::MemoryLoad(_, _, _) => Some(term.clone()),
         Bitvector32Term::Variable(variable) => {
-            crate::kernel::eval::registered_load_origin_for_variable(variable)
+            crate::kernel::eval::registered_load_origin_term_for_variable(variable)
         }
         _ => None,
     };
-    let (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) =
-        (load(left), load(right))
+    let (
+        Some(Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind)),
+        Some(Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind)),
+    ) = (load(left), load(right))
     else {
         return false;
     };
+    // Two reads of one address that differ in kind are two values whatever
+    // the history says, so no structural route may call them equal.
     left_pointer == right_pointer
-        && loads_separated_by_recorded_history(
-            &left_memory,
-            &right_memory,
-            &left_pointer,
-            assumptions,
-        )
+        && (left_kind != right_kind
+            || loads_separated_by_recorded_history(
+                &left_memory,
+                &right_memory,
+                &left_pointer,
+                left_kind,
+                assumptions,
+            ))
 }
 
 fn memory_snapshots_match_for_resolution(
@@ -2202,12 +2214,15 @@ fn memory_has_materialized_load_from(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some(CValue::Int32(Bitvector32Term::MemoryLoad(snapshot, load_pointer))) =
+    let Some(CValue::Int32(Bitvector32Term::MemoryLoad(snapshot, load_pointer, LoadKind::Bits32))) =
         materialized.known_value(pointer)
     else {
         return false;
     };
-    pointers_proven_equal_for_memory_resolution(&load_pointer, pointer, assumptions)
+    // The cell holds four bytes of the source; it answers for the read at
+    // this address only when the read is no wider.
+    crate::kernel::load_access_width_at_address_or_widest(pointer) <= 4
+        && pointers_proven_equal_for_memory_resolution(&load_pointer, pointer, assumptions)
         && memory_snapshots_match_for_resolution(source, &snapshot, pointer, assumptions)
 }
 
@@ -2604,6 +2619,7 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
         Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
         )
     };
     assert!(
@@ -2620,6 +2636,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         PureFactContext::new().memory_loads_proven_equal(&load(left), &load(right))
@@ -3385,7 +3402,7 @@ fn run_slots_kept_by_load_projection_set(run: &CellRun, pointer: &Pointer) -> Sl
 /// cell whose width this function guessed too small would be dropped while
 /// the load still reads part of it.
 ///
-/// A `MemoryLoad` term records no width, so the load contributes
+/// The load is named here by its address alone, so it contributes
 /// [`MAX_SCALAR_ACCESS_BYTES`]. That is the only sound reading of an unknown
 /// width here: dropping a cell makes two snapshots compare equal at this
 /// load, so every byte the load might read has to be considered. An
@@ -3740,47 +3757,17 @@ impl StoreByteInterval {
 /// records. Materialization changes which cells are concrete, not what the
 /// load means.
 fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<SharedCMemory> {
-    match value {
-        CValue::Int8(Bitvector32Term::MemoryLoad(source, source_pointer))
-            if source_pointer.as_ref() == cell_pointer =>
-        {
-            Some(source.clone())
-        }
-        CValue::Bool(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::Int16(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::UInt16(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::Int32(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::UInt8(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::Int64(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::UInt64(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::Float32(Bitvector32Term::MemoryLoad(source, source_pointer))
-        | CValue::Float64(Bitvector32Term::MemoryLoad(source, source_pointer))
-            if source_pointer.as_ref() == cell_pointer =>
-        {
-            Some(source.clone())
-        }
-        CValue::Int8(Bitvector32Term::Variable(variable))
-            if crate::kernel::eval::is_load_variable(variable) =>
-        {
-            let (source, source_pointer) =
-                crate::kernel::eval::registered_load_for_variable(variable)?;
-            (&source_pointer == cell_pointer).then_some(source)
-        }
-        CValue::Bool(Bitvector32Term::Variable(variable))
-        | CValue::Int16(Bitvector32Term::Variable(variable))
-        | CValue::UInt16(Bitvector32Term::Variable(variable))
-        | CValue::Int32(Bitvector32Term::Variable(variable))
-        | CValue::UInt8(Bitvector32Term::Variable(variable))
-        | CValue::Int64(Bitvector32Term::Variable(variable))
-        | CValue::UInt64(Bitvector32Term::Variable(variable))
-        | CValue::Float32(Bitvector32Term::Variable(variable))
-        | CValue::Float64(Bitvector32Term::Variable(variable))
-            if crate::kernel::eval::is_load_variable(variable) =>
-        {
-            let (source, source_pointer) =
-                crate::kernel::eval::registered_load_for_variable(variable)?;
-            (&source_pointer == cell_pointer).then_some(source)
-        }
+    let bits = match value {
+        CValue::Int8(bits)
+        | CValue::Bool(bits)
+        | CValue::Int16(bits)
+        | CValue::UInt16(bits)
+        | CValue::Int32(bits)
+        | CValue::UInt8(bits)
+        | CValue::Int64(bits)
+        | CValue::UInt64(bits)
+        | CValue::Float32(bits)
+        | CValue::Float64(bits) => bits,
         // A pointer cell is a materialization when it holds the pointer a
         // typed load of this same cell produces (`symbolic_pointer_load`):
         // the cell's block, offset by the load's variable scaled at the
@@ -3802,29 +3789,28 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
             if value.c_type().pointee_type()?.byte_width() != u32::try_from(*byte_width).ok()? {
                 return None;
             }
-            let Bitvector32Term::Variable(variable) = index.as_ref() else {
-                return None;
-            };
-            if !crate::kernel::eval::is_load_variable(variable) {
+            if !matches!(index.as_ref(), Bitvector32Term::Variable(_)) {
                 return None;
             }
-            let (source, source_pointer) =
-                crate::kernel::eval::registered_load_for_variable(variable)?;
-            (&source_pointer == cell_pointer).then_some(source)
+            index.as_ref()
         }
-        CValue::Int8(_) => None,
-        CValue::Void
-        | CValue::Bool(_)
-        | CValue::Int16(_)
-        | CValue::Int32(_)
-        | CValue::UInt8(_)
-        | CValue::UInt16(_)
-        | CValue::UInt32(_)
-        | CValue::Int64(_)
-        | CValue::UInt64(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
-    }
+        CValue::Void | CValue::UInt32(_) => return None,
+    };
+    let load = match bits {
+        Bitvector32Term::MemoryLoad(_, _, _) => bits.clone(),
+        Bitvector32Term::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+            crate::kernel::eval::registered_load_term_for_variable(variable)?
+        }
+        _ => return None,
+    };
+    let Bitvector32Term::MemoryLoad(source, source_pointer, kind) = load else {
+        return None;
+    };
+    // The cell is the load only when it holds the load of its own kind: a
+    // narrower or differently signed read stored in it is another value
+    // than a read of the cell returns.
+    (source_pointer.as_ref() == cell_pointer && LoadKind::of_value(value) == Some(kind))
+        .then_some(source)
 }
 
 /// The bounded-alias-only form of

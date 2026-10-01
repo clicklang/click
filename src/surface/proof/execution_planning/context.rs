@@ -1242,7 +1242,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 | Bitvector32Term::Int64Constant(_)
                 | Bitvector32Term::UInt64Constant(_),
             ) => {}
-            Work::Bitvector(term @ Bitvector32Term::MemoryLoad(_, _))
+            Work::Bitvector(term @ Bitvector32Term::MemoryLoad(_, _, _))
                 if static_snapshot.is_some_and(|_| {
                     registered_static_memory_load_matches_snapshot(
                         term,
@@ -1455,11 +1455,13 @@ mod tests {
             block: crate::kernel::PointerBlock::Concrete("static:test:values#static0".into()),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         };
-        // The spelled `MemoryLoad` alternative below records no width, so the
-        // named form has to stand in the width that term's naming assumes.
+        // The named form has to be the same read as the spelled `MemoryLoad`
+        // alternative below: its kind, and the width that term's naming
+        // walks with.
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,
+            crate::kernel::LoadKind::Bits32,
             crate::kernel::load_access_width_or_widest(&memory, &pointer),
             &memory,
         );
@@ -1485,6 +1487,7 @@ mod tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone(),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(0)),
             ),
@@ -1507,6 +1510,7 @@ mod tests {
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &dynamic_pointer,
+            crate::kernel::LoadKind::Bits32,
             crate::kernel::load_access_width_or_widest(&memory, &dynamic_pointer),
             &memory,
         );

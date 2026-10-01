@@ -1059,15 +1059,15 @@ fn collect_memory_load_work<'a>(
                     continue;
                 }
                 match term {
-                    Bitvector32Term::MemoryLoad(memory, pointer) => {
-                        // MemoryLoad is shared by every CValue variant. Only
-                        // the checked source snapshot can provide the loaded
-                        // scalar's ABI width; absent evidence is ambiguous.
+                    Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                        // The checked source snapshot's cell gives the loaded
+                        // scalar's ABI width, and the read is never narrower
+                        // than its own kind; absent evidence is ambiguous.
                         let Some(value) = memory.memory().known_value(pointer) else {
                             *uncertain = true;
                             continue;
                         };
-                        let width = value.byte_width();
+                        let width = value.byte_width().max(kind.byte_width());
                         if width == 0 {
                             *uncertain = true;
                             continue;
@@ -6463,6 +6463,7 @@ mod zero_quantity_graph_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 memory,
             ))
@@ -7455,10 +7456,11 @@ fn range_endpoint_terms_equal(
         assumptions: &PureFactContext,
     ) -> bool {
         if let (
-            Bitvector32Term::MemoryLoad(_, left_pointer),
-            Bitvector32Term::MemoryLoad(_, right_pointer),
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
         ) = (left, right)
             && left_pointer == right_pointer
+            && left_kind == right_kind
         {
             return crate::kernel::explicit_atomic_equality_from_memory_derivations(
                 left,
@@ -8703,10 +8705,12 @@ mod support_removal_tests {
         let short_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(short_pointer.clone()),
+            crate::kernel::LoadKind::Int16,
         );
         let wide_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(wide_pointer.clone()),
+            crate::kernel::LoadKind::Float64,
         );
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {
@@ -8744,10 +8748,12 @@ mod support_removal_tests {
         let first_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&first),
             Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
         );
         let second_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&second),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         );
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {
@@ -8775,6 +8781,7 @@ mod support_removal_tests {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         );
         let mut nested = load;
         for _ in 0..(MAX_MEMORY_LOAD_FOOTPRINT_DEPTH + 8) {

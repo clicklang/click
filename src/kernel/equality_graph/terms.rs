@@ -312,9 +312,14 @@ impl TermClasses {
         let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
             return;
         };
+        // Only a four-byte integer read is an int32 load application: a
+        // narrower read named at an address a wider read was recorded at
+        // carries that wider width, and is still another value.
         if !crate::kernel::is_load_variable(variable)
             || self.registered_int32_loads.contains(&id)
             || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
+            || crate::kernel::registered_load_kind_for_variable(variable)
+                != Some(crate::kernel::LoadKind::Bits32)
         {
             return;
         }
@@ -883,7 +888,11 @@ mod tests {
         ));
         let load = |memory: &crate::kernel::SharedCMemory| {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
-                memory, &address, 8, memory,
+                memory,
+                &address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             ))
         };
         let old = scaled(load(&before), 4, false);

@@ -86,6 +86,7 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -156,7 +157,11 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     );
     let load = |memory: &SharedCMemory| {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            memory, &pointer, 4, memory,
+            memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            memory,
         ))
     };
     let old_load = load(&before);
@@ -164,6 +169,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
     let byte_load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
         &byte_memory,
         &pointer,
+        crate::kernel::LoadKind::UInt8,
         1,
         &byte_memory,
     ));
@@ -203,7 +209,11 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
                 .store(pointer.clone(), CValue::Int32(sum(var(0)))),
         );
         let load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            &memory, &pointer, 4, &memory,
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
         ));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -248,8 +258,13 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
             .store(right_pointer.clone(), CValue::UInt8(sum(b.clone()))),
     );
     let load = |memory: &SharedCMemory, pointer: &Pointer, width| {
+        let kind = if width == 1 {
+            crate::kernel::LoadKind::UInt8
+        } else {
+            crate::kernel::LoadKind::Bits32
+        };
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-            memory, pointer, width, memory,
+            memory, pointer, kind, width, memory,
         ))
     };
     let left = load(&before, &left_pointer, 4);
@@ -293,6 +308,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
             Bitvector32Term::Variable(load_variable_for_cell_with_origin(
                 &memory,
                 &pointer(offset),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 &memory,
             ))
@@ -326,6 +342,7 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -401,6 +418,7 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -498,6 +516,7 @@ fn typed_int32_value_equality_uses_graph_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -565,6 +584,7 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -634,6 +654,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
         Bitvector32Term::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
+            crate::kernel::LoadKind::Bits32,
             4,
             memory,
         ))
@@ -776,10 +797,18 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
             .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
     );
     let load = |memory: &SharedCMemory| {
-        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()))
+        Bitvector32Term::MemoryLoad(
+            memory.clone(),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        )
     };
     let named = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
-        &before, &pointer, 4, &before,
+        &before,
+        &pointer,
+        crate::kernel::LoadKind::Bits32,
+        4,
+        &before,
     ));
     let a = var(41);
     let context = PureFactContext::new()
@@ -876,7 +905,11 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
             let memory = intern_c_memory(
                 memory.store(address.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
             );
-            let load = Bitvector32Term::MemoryLoad(memory, Box::new(address));
+            let load = Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(address),
+                crate::kernel::LoadKind::Bits32,
+            );
             crate::instrumentation::measure_deterministic_work(|| {
                 PureFactContext::new()
                     .assume_condition(eq(&load, &Bitvector32Term::Constant(7)), true)

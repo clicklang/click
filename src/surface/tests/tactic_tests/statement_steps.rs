@@ -243,6 +243,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
     let first_value = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(base_memory.clone()),
         Box::new(first.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let before_memory = base_memory
         .clone()
@@ -252,6 +253,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             int32(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(base_memory.clone()),
                 Box::new(second.clone()),
+                crate::kernel::LoadKind::Bits32,
             )),
         );
     let state = CState::new()
@@ -307,6 +309,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(post_state.memory().clone()),
                 Box::new(first),
+                crate::kernel::LoadKind::Bits32,
             )),
             Box::new(Bitvector32Term::Constant(7)),
         ),
@@ -1159,6 +1162,7 @@ fn synthesizes_pointer_offset_equality_as_pointer_comparison() {
                 value: Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(owner.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 byte_width: 4,
             }),

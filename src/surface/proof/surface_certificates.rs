@@ -6557,6 +6557,7 @@ mod selected_premise_tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(CMemory::new().with_block(marker, 0)),
                         Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                     Box::new(Bitvector32Term::Constant(1)),
                 ),

@@ -841,8 +841,8 @@ impl PureFactContext {
                 return true;
             }
             let (
-                Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-                Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+                Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+                Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
             ) = (left, right)
             else {
                 return false;
@@ -866,6 +866,7 @@ impl PureFactContext {
             // `local:x` were therefore the same term here, so an order fact
             // about `q[0]` outlived `x = 1`.
             left_pointer == right_pointer
+                && left_kind == right_kind
                 && memory_snapshots_proven_equal_at_pointer(
                     left_memory,
                     right_memory,

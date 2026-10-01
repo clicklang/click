@@ -131,7 +131,7 @@ impl CertificationTraceState {
 
 fn traced_read(term: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
         }
         Bitvector32Term::Variable(variable) => {
@@ -1095,15 +1095,21 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let Bitvector32Term::Variable(variable) =
-            crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone())
-        else {
+        let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+            memory.clone(),
+            pointer.clone(),
+            crate::kernel::LoadKind::Bits32,
+        ) else {
             panic!("an unresolved external read has a load variable");
         };
         let defining = Proposition::ConditionIs(
             ConditionTerm::Bitvector32Equal(
                 Box::new(Bitvector32Term::Variable(variable)),
-                Box::new(Bitvector32Term::MemoryLoad(memory, Box::new(pointer))),
+                Box::new(Bitvector32Term::MemoryLoad(
+                    memory,
+                    Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
+                )),
             ),
             true,
         );

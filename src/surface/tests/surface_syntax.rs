@@ -2412,6 +2412,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(owner.clone()),
+                crate::kernel::LoadKind::Bits32,
             )),
             Box::new(Bitvector32Term::Constant(0)),
         ),
@@ -2436,6 +2437,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     let data_pointer = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(CMemory::new()),
         Box::new(owner.offset_by_bytes(8)),
+        crate::kernel::LoadKind::Bits32,
     );
     let first_data_cell = Pointer {
         block: "arg-memory".into(),
@@ -2449,6 +2451,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
             Box::new(Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(first_data_cell),
+                crate::kernel::LoadKind::Bits32,
             )),
             Box::new(Bitvector32Term::Constant(0)),
         ),
@@ -2882,6 +2885,7 @@ fn snapshot_blind_surface_selection_scales_by_index_height() {
                 Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(upper)),
             ),
@@ -3093,6 +3097,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
                 Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::UInt64Constant(u64::from(index))),
             ),

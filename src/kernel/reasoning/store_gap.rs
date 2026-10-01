@@ -583,6 +583,7 @@ mod tests {
                     Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(CMemory::new()),
                         Box::new(at(&PointerOffsetTerm::Constant(0))),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                     4,
                 ),

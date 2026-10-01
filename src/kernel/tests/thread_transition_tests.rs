@@ -1068,6 +1068,7 @@ fn thread_guarantees_are_withheld_until_join() {
             Bitvector32Term::MemoryLoad(
                 intern_c_memory_ref(spawned.parent().memory()),
                 Box::new(pointer(0)),
+                crate::kernel::LoadKind::Bits32,
             ),
             Bitvector32Term::Constant(77),
         ),

@@ -1786,6 +1786,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
                 ))),
                 state,
             },
@@ -1856,7 +1857,8 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
             outcome: CStatementOutcome::Return {
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
-                    Box::new(pointer)
+                    Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32
                 ))),
                 state,
             },
@@ -2578,6 +2580,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
                 value: int32(crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(derived),
+                    crate::kernel::LoadKind::Bits32,
                 ))),
                 state,
             },
@@ -3182,6 +3185,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::signed_greater_equal(load.clone(), Bitvector32Term::Constant(2)),
@@ -3207,6 +3211,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     let changed_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(changed),
         Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let other_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
@@ -3214,6 +3219,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
             block: pointer.block,
             offset: PointerOffsetTerm::Constant(4),
         }),
+        crate::kernel::LoadKind::Bits32,
     );
     for unrelated in [changed_load, other_load] {
         assert_ne!(
@@ -3309,6 +3315,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), load.clone()),
@@ -3343,6 +3350,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
         let unrelated = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(snapshot),
             Box::new(address),
+            crate::kernel::LoadKind::Bits32,
         );
         let bad = Proposition::ConditionIs(
             ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::Constant(1)),

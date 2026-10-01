@@ -742,7 +742,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         }
         // Memory snapshots are opaque proof-state values.  Only the selected
         // pointer expression participates in freshness collection.
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
         Bitvector32Term::PointerAddress(pointer) => {
@@ -810,15 +810,14 @@ fn folded_machine_condition(condition: ConditionTerm) -> ConditionTerm {
 /// Three conditions bound it, and each closes a way the cell could be
 /// something other than this load's value.
 ///
-/// *Width.* `Bitvector32Term::MemoryLoad` records no width: `symbolic_int32_load`
-/// and `symbolic_uint8_load` build the same term, so the variable alone cannot
-/// say how many bytes its load reads. Both halves of the width are therefore
-/// checked against the only two places that do record one. The cell must be a
-/// `CValue::Int32`, which is a four-byte value; and every scaled term in the
-/// pointer's own offset must scale by four, which makes the address an element
-/// address of a four-byte array rather than a narrower field inside a wider
-/// element. A one-byte array indexes by `*1` and a narrow struct field adds a
-/// constant to a stride that is the struct's size, so neither reaches here.
+/// *Width.* The variable's load must be a four-byte integer read
+/// (`LoadKind::Bits32`, which its registered term carries), and the cell must
+/// be a `CValue::Int32`, which is a four-byte value: a cell answers only a read
+/// of its own kind. Every scaled term in the pointer's own offset must also
+/// scale by four, which makes the address an element address of a four-byte
+/// array rather than a narrower field inside a wider element. A one-byte array
+/// indexes by `*1` and a narrow struct field adds a constant to a stride that
+/// is the struct's size, so neither reaches here.
 ///
 /// *Union overlays.* A typed union overlay outranks the raw cell for an exact
 /// typed load, so a raw cell read while an overlay is present would be the
@@ -834,7 +833,10 @@ fn folded_machine_condition(condition: ConditionTerm) -> ConditionTerm {
 /// pointer is compared, and no fact set is consulted.
 fn materialized_registered_load_value(variable: Variable) -> Option<Bitvector32Term> {
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
-    if !pointer_addresses_four_byte_elements(&pointer) {
+    if crate::kernel::eval::registered_load_kind_for_variable(&variable)
+        != Some(crate::kernel::LoadKind::Bits32)
+        || !pointer_addresses_four_byte_elements(&pointer)
+    {
         return None;
     }
     let memory = memory.memory();
@@ -1365,9 +1367,14 @@ impl<'a> TermRewrite<'a> {
         let rewritten = if rewritten == pointer {
             variable
         } else {
+            let Some(kind) = crate::kernel::registered_load_kind_for_variable(&variable) else {
+                self.unsupported_integer_scope = true;
+                return None;
+            };
             crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 &rewritten,
+                kind,
                 crate::kernel::registered_load_bytes_for_variable(&variable)
                     .unwrap_or_else(crate::kernel::resource_tracker::widest_scalar_access_bytes),
             )
@@ -3893,8 +3900,8 @@ impl<'a> TermRewrite<'a> {
                     arms: rewritten_arms,
                 }
             }
-            Bitvector32Term::MemoryLoad(memory, pointer) => {
-                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)))
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
             }
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(Box::new(self.pointer(pointer)))
@@ -4370,6 +4377,7 @@ mod tests {
                         byte_width: 4,
                     },
                 },
+                crate::kernel::LoadKind::Bits32,
                 4,
             );
             for _ in 0..depth {
@@ -4388,6 +4396,7 @@ mod tests {
                             }),
                         ),
                     },
+                    crate::kernel::LoadKind::Bits32,
                     4,
                 );
             }
@@ -4585,6 +4594,7 @@ mod tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     memory.into(),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(right),
             )
@@ -5521,7 +5531,11 @@ mod tests {
                 block: PointerBlock::Concrete("checked-fold-opaque".into()),
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let replacement_payload = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+            let replacement_payload = Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            );
             let replacement =
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
@@ -5575,8 +5589,11 @@ mod tests {
             }
             let integer_capture = *integer_accumulators.last().unwrap();
             let c_capture = *c_items.last().unwrap();
-            let mut mixed_c_payload =
-                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()));
+            let mut mixed_c_payload = Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            );
             for _ in 0..depth {
                 mixed_c_payload = Bitvector32Term::Add(
                     Box::new(mixed_c_payload),
@@ -5675,7 +5692,11 @@ mod tests {
             }
             let math_capture = *math_accumulators.last().unwrap();
             let c_item_capture = *mixed_c_items.last().unwrap();
-            let mut c_replacement = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+            let mut c_replacement = Bitvector32Term::MemoryLoad(
+                memory,
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            );
             for _ in 0..depth {
                 c_replacement = Bitvector32Term::Add(
                     Box::new(c_replacement),
@@ -6462,8 +6483,12 @@ mod tests {
                     byte_width: 4,
                 },
             };
-            let mut load =
-                crate::kernel::eval::load_variable_for_exact_cell(&memory, &leaf_pointer, 4);
+            let mut load = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &leaf_pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+            );
             for _ in 0..depth {
                 load = crate::kernel::eval::load_variable_for_exact_cell(
                     &memory,
@@ -6471,6 +6496,7 @@ mod tests {
                         block: PointerBlock::Concrete("array".into()),
                         offset: PointerOffsetTerm::Variable(load),
                     },
+                    crate::kernel::LoadKind::Bits32,
                     4,
                 );
             }

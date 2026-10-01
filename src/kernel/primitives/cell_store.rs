@@ -61,6 +61,7 @@ use super::{
     SnapshotMap, SnapshotMapChange, SnapshotSet,
 };
 use crate::kernel::primitives::Bitvector32Term;
+use crate::kernel::primitives::LoadKind;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::ops::Bound;
@@ -506,8 +507,12 @@ impl CellRun {
         let pointer = self.slot_pointer(index);
         match &self.mode {
             RunValueMode::Load => {
-                let load =
-                    crate::kernel::canonical_form_of_load(self.source.clone(), pointer.clone());
+                let load = crate::kernel::canonical_form_of_load(
+                    self.source.clone(),
+                    pointer.clone(),
+                    LoadKind::of_type(self.element_type)
+                        .expect("memory ranges cannot contain aggregate elements"),
+                );
                 cell_run_value(&pointer, self.element_type, load)
             }
             RunValueMode::SymbolicStorage => crate::kernel::eval::symbolic_storage_cell_value(
@@ -751,9 +756,11 @@ pub(crate) fn cell_run_value(
                 {
                     *variable
                 }
-                Bitvector32Term::MemoryLoad(_, _) => crate::kernel::load_variable_for_term(&load)
-                    .map(|(variable, _)| variable)
-                    .expect("exact function-pointer loads have canonical identities"),
+                Bitvector32Term::MemoryLoad(_, _, _) => {
+                    crate::kernel::load_variable_for_term(&load)
+                        .map(|(variable, _)| variable)
+                        .expect("exact function-pointer loads have canonical identities")
+                }
                 _ => unreachable!(
                     "symbolic function-pointer fields use raw or canonical exact loads"
                 ),

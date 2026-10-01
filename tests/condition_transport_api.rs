@@ -61,9 +61,13 @@ fn context_free_disjoint_store_transport_stays_closed() {
     let old_load = Bitvector32Term::MemoryLoad(
         click::kernel::intern_c_memory(before),
         Box::new(preserved.clone()),
+        LoadKind::Bits32,
     );
-    let new_load =
-        Bitvector32Term::MemoryLoad(click::kernel::intern_c_memory(after), Box::new(preserved));
+    let new_load = Bitvector32Term::MemoryLoad(
+        click::kernel::intern_c_memory(after),
+        Box::new(preserved),
+        LoadKind::Bits32,
+    );
     let source = Proposition::ConditionIs(
         ConditionTerm::Bitvector32Equal(Box::new(old_load.clone()), Box::new(old_load.clone())),
         true,

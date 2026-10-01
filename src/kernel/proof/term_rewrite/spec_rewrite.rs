@@ -1877,7 +1877,11 @@ mod tests {
         // The visible C term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be
         // reserved before a C binder is freshened.
-        let load = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let source = Variable(100);
         let binder = Variable(99);
         let free_integer = Variable(0);

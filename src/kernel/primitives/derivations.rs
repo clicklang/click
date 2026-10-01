@@ -1012,7 +1012,12 @@ impl LoadAddressCongruenceEvidence {
         ) else {
             return false;
         };
+        // Congruent addresses in one snapshot name one value only when the two
+        // reads are one kind of read.
         left_memory == right_memory
+            && crate::kernel::eval::registered_load_kind_for_variable(left).is_some()
+            && crate::kernel::eval::registered_load_kind_for_variable(left)
+                == crate::kernel::eval::registered_load_kind_for_variable(right)
             && left_pointer == self.left_pointer
             && right_pointer == self.right_pointer
             && left_pointer.block == right_pointer.block

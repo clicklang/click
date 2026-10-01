@@ -128,11 +128,11 @@ pub(super) fn facts_for_smart_have_lowering(propositions: &[Proposition]) -> Vec
             let is_atomic_alias = matches!(
                 (left.as_ref(), right.as_ref()),
                 (
-                    Bitvector32Term::MemoryLoad(_, _),
+                    Bitvector32Term::MemoryLoad(_, _, _),
                     Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_)
                 ) | (
                     Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_),
-                    Bitvector32Term::MemoryLoad(_, _)
+                    Bitvector32Term::MemoryLoad(_, _, _)
                 )
             );
             if is_atomic_alias && !facts.contains(proposition) {
@@ -165,11 +165,11 @@ pub(super) fn facts_for_simple_goal_lowering(propositions: &[Proposition]) -> Ve
                     matches!(
                         (left.as_ref(), right.as_ref()),
                         (
-                            Bitvector32Term::MemoryLoad(_, _),
+                            Bitvector32Term::MemoryLoad(_, _, _),
                             Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_)
                         ) | (
                             Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_),
-                            Bitvector32Term::MemoryLoad(_, _)
+                            Bitvector32Term::MemoryLoad(_, _, _)
                         )
                     )
                 }

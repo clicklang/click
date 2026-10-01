@@ -331,7 +331,8 @@ fn equal_by_premise_chain(
     {
         return true;
     }
-    let Bitvector32Term::MemoryLoad(target_memory, target_pointer) = &target_left else {
+    let Bitvector32Term::MemoryLoad(target_memory, target_pointer, target_kind) = &target_left
+    else {
         return false;
     };
     premises.iter().chain(available).any(|premise| {
@@ -339,11 +340,12 @@ fn equal_by_premise_chain(
         else {
             return false;
         };
-        let (Bitvector32Term::MemoryLoad(memory, pointer), value) = (left.as_ref(), right.as_ref())
+        let (Bitvector32Term::MemoryLoad(memory, pointer, kind), value) =
+            (left.as_ref(), right.as_ref())
         else {
             return false;
         };
-        let same_block = target_pointer.block == pointer.block;
+        let same_block = target_pointer.block == pointer.block && target_kind == kind;
         let same_value = terms_linked(&target_right, value);
         let same_offset = pointer_offsets_match_by_term_equivalence(
             &target_pointer.offset,
@@ -354,8 +356,12 @@ fn equal_by_premise_chain(
             && same_value
             && same_offset
             && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &Bitvector32Term::MemoryLoad(target_memory.clone(), target_pointer.clone()),
-                &Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone()),
+                &Bitvector32Term::MemoryLoad(
+                    target_memory.clone(),
+                    target_pointer.clone(),
+                    *target_kind,
+                ),
+                &Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind),
                 &frame_assumptions,
             )
     })
@@ -677,6 +683,7 @@ mod certificate_tests {
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(CMemory::new()),
             Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
         );
 
         assert!(bitvector_term_is_load_free(&Bitvector32Term::Add(
@@ -747,6 +754,7 @@ mod certificate_tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         crate::kernel::intern_c_memory(target_memory.clone()),
                         Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                     Box::new(Bitvector32Term::Variable(Variable(7))),
                 ),
@@ -788,6 +796,7 @@ mod certificate_tests {
                 Box::new(Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(target_memory),
                     Box::new(pointer),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Constant(0)),
             ),

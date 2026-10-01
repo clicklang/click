@@ -686,7 +686,7 @@ pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option
         | Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. }
         | Bitvector32Term::PointerAddress(_)
-        | Bitvector32Term::MemoryLoad(_, _) => None,
+        | Bitvector32Term::MemoryLoad(_, _, _) => None,
         Bitvector32Term::Add(left, right) => {
             Some(simp_bitvector_const(left)?.wrapping_add(simp_bitvector_const(right)?))
         }
@@ -975,8 +975,8 @@ pub(in crate::surface) fn simp_bitvector(term: &Bitvector32Term) -> Bitvector32T
         }
         Bitvector32Term::ClickFunctionApplication { .. }
         | Bitvector32Term::AlgebraicMatch { .. } => term.clone(),
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
-            Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone())
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+            Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
         }
         Bitvector32Term::PointerAddress(pointer) => {
             Bitvector32Term::PointerAddress(pointer.clone())
@@ -1079,8 +1079,13 @@ mod tests {
                         CValue::Int32(Bitvector32Term::Constant(stored)),
                     ),
             );
-            let load =
-                crate::kernel::load_variable_for_cell_with_origin(&identity, &source, 4, &observed);
+            let load = crate::kernel::load_variable_for_cell_with_origin(
+                &identity,
+                &source,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                &observed,
+            );
             let goal = Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::Variable(load)),
@@ -1122,12 +1127,20 @@ mod tests {
         let memory = crate::kernel::intern_c_memory(
             CMemory::new().with_block(PointerBlock::Heap(930_001), 16),
         );
-        let loaded =
-            crate::kernel::load_variable_for_cell_with_origin(&memory, &source, 8, &memory);
-        let (target_loaded, _) = crate::kernel::load_variable_for_term(
-            &Bitvector32Term::MemoryLoad(memory.clone(), Box::new(target.clone())),
-        )
-        .expect("the target read has a name");
+        let loaded = crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &source,
+            crate::kernel::LoadKind::Bits32,
+            8,
+            &memory,
+        );
+        let (target_loaded, _) =
+            crate::kernel::load_variable_for_term(&Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(target.clone()),
+                crate::kernel::LoadKind::Bits32,
+            ))
+            .expect("the target read has a name");
         let read_through = |variable| {
             Bitvector32Term::MemoryLoad(
                 memory.clone(),
@@ -1135,6 +1148,7 @@ mod tests {
                     block: PointerBlock::Symbolic(variable),
                     offset: PointerOffsetTerm::Constant(8),
                 }),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         let goal = Proposition::ConditionIs(
@@ -1184,6 +1198,7 @@ mod tests {
                         PointerOffsetTerm::Constant(displacement),
                     ),
                 }),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         let equality = Proposition::ConditionIs(
@@ -1284,7 +1299,13 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset,
         };
-        let load = |offset| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer(offset)));
+        let load = |offset| {
+            Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(pointer(offset)),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
         let data_offset = PointerOffsetTerm::scale_int32(data.clone(), 4);
         let alias_offset = PointerOffsetTerm::scale_int32(alias.clone(), 4);
         let indexed_offset = PointerOffsetTerm::add(
@@ -1398,7 +1419,8 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
+        let load =
+            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Bits32);
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, load.clone())
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::ConditionIs(
@@ -1428,6 +1450,7 @@ mod tests {
                     block: "fold".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 }),
+                crate::kernel::LoadKind::Bits32,
             ),
         ));
         let fold = IntegerTerm::range_fold(
@@ -1527,8 +1550,16 @@ mod tests {
                 .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
         );
         assert_ne!(first_memory, second_memory);
-        let first_load = Bitvector32Term::MemoryLoad(first_memory, Box::new(pointer.clone()));
-        let second_load = Bitvector32Term::MemoryLoad(second_memory, Box::new(pointer));
+        let first_load = Bitvector32Term::MemoryLoad(
+            first_memory,
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        );
+        let second_load = Bitvector32Term::MemoryLoad(
+            second_memory,
+            Box::new(pointer),
+            crate::kernel::LoadKind::Bits32,
+        );
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, second_load)
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::ConditionIs(

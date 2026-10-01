@@ -5175,7 +5175,7 @@ fn source_load_snapshot_for_proposition(
                     snapshot = Some(identity);
                 }
             }
-            Work::Bitvector(Bitvector32Term::MemoryLoad(memory, _)) => {
+            Work::Bitvector(Bitvector32Term::MemoryLoad(memory, _, _)) => {
                 let identity = CMemorySnapshotIdentity::of(memory.memory());
                 if snapshot.is_some_and(|known| known != identity) {
                     return Ok(None);
@@ -8407,6 +8407,7 @@ mod counted_membership_framing_tests {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(memory),
                     Box::new(shared.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )
             };
             let (old_name, _) =
@@ -8443,10 +8444,12 @@ mod counted_membership_framing_tests {
                     &Bitvector32Term::MemoryLoad(
                         intern_c_memory_ref(&before),
                         Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                     &Bitvector32Term::MemoryLoad(
                         intern_c_memory_ref(&after),
                         Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
                     ),
                     &assumptions,
                 )
@@ -13191,6 +13194,7 @@ mod allocation_continuity_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 memory,
             ))
@@ -15485,6 +15489,7 @@ fn symbolic_pointer_cell_load(memory: &CMemory, pointer: &Pointer, value_type: C
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory.clone()),
         Box::new(pointer.clone()),
+        LoadKind::Bits32,
     );
     let (variable, _) = crate::kernel::eval::load_variable_for_term(&load)
         .expect("symbolic pointer cells must be backed by memory loads");
@@ -16325,18 +16330,22 @@ fn copy_aggregate_fields(
                     CType::Int8 => Some(CValue::Int8(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::Int16 => Some(CValue::Int16(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::Int32 => Some(CValue::Int32(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::UInt8 => Some(CValue::UInt8(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::Int32Pointer
                     | CType::UInt8Pointer
@@ -16346,6 +16355,7 @@ fn copy_aggregate_fields(
                         let load = crate::kernel::canonical_form_of_load(
                             crate::kernel::intern_c_memory(memory.clone()),
                             source_field.clone(),
+                            LoadKind::of_type(element_type)?,
                         );
                         Some(CValue::typed_pointer(
                             Pointer {
@@ -16361,26 +16371,32 @@ fn copy_aggregate_fields(
                     CType::UInt16 => Some(CValue::UInt16(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::UInt32 => Some(CValue::UInt32(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::Int64 => Some(CValue::Int64(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::UInt64 => Some(CValue::UInt64(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::Float32 => Some(CValue::Float32(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     CType::Float64 => Some(CValue::Float64(crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(memory.clone()),
                         source_field,
+                        LoadKind::of_type(element_type)?,
                     ))),
                     _ => None,
                 }
@@ -16438,6 +16454,7 @@ fn copy_aggregate_union_member(
     let load = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_c_memory(memory.clone()),
         source_field.clone(),
+        LoadKind::of_type(element_type)?,
     );
     Some(match element_type {
         CType::Int32 => CValue::Int32(load),

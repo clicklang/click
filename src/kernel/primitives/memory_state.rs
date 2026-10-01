@@ -470,8 +470,8 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         term.hash(&mut hasher);
                         let _ = write!(identity, "click:{:x};", hasher.finish());
                     }
-                    Bitvector32Term::MemoryLoad(_, pointer) => {
-                        identity.push_str("load(");
+                    Bitvector32Term::MemoryLoad(_, pointer, kind) => {
+                        let _ = write!(identity, "load:{kind:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
                     }
@@ -4805,6 +4805,7 @@ impl CMemory {
         int32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits32,
         ))
     }
 
@@ -4812,6 +4813,7 @@ impl CMemory {
         int8(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Int8,
         ))
     }
 
@@ -4819,6 +4821,7 @@ impl CMemory {
         int16(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Int16,
         ))
     }
 
@@ -4826,6 +4829,7 @@ impl CMemory {
         uint8(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::UInt8,
         ))
     }
 
@@ -4833,6 +4837,7 @@ impl CMemory {
         uint16(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::UInt16,
         ))
     }
 
@@ -4840,6 +4845,7 @@ impl CMemory {
         uint32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits32,
         ))
     }
 
@@ -4847,6 +4853,7 @@ impl CMemory {
         CValue::Int64(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits64,
         ))
     }
 
@@ -4854,6 +4861,7 @@ impl CMemory {
         CValue::UInt64(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Bits64,
         ))
     }
 
@@ -4861,6 +4869,7 @@ impl CMemory {
         CValue::Float32(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Float32,
         ))
     }
 
@@ -4868,6 +4877,7 @@ impl CMemory {
         CValue::Float64(Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(self.clone()),
             Box::new(pointer.clone()),
+            LoadKind::Float64,
         ))
     }
 
@@ -4883,6 +4893,7 @@ impl CMemory {
                 Bitvector32Term::MemoryLoad(
                     crate::kernel::intern_c_memory(self.clone()),
                     Box::new(pointer.clone()),
+                    LoadKind::Bits32,
                 ),
                 i64::from(pointee_byte_width),
             ),
@@ -5376,6 +5387,7 @@ impl CState {
             Some(Bitvector32Term::MemoryLoad(
                 intern_c_memory_ref(&self.memory),
                 Box::new(anchor.clone()),
+                LoadKind::Bits32,
             )),
         ))
     }
