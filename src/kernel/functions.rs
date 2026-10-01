@@ -4447,7 +4447,8 @@ fn execute_verified_function_applications_with_suspension(
                 arguments.clone(),
                 ResourceFieldSchema::new(vec![]).expect("empty schema"),
             );
-            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            else {
                 paths.push(resource_call_failure(
                     "population helper needs one pointer anchor",
                 ));

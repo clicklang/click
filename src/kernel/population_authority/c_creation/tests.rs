@@ -2062,6 +2062,121 @@ mod wildcard_scope_tests {
     }
 
     #[test]
+    fn wildcard_helper_birth_checks_bound_identity_and_single_transition() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_authority(&scope)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap();
+        assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+        assert_eq!(count.entry_owned_members, 0);
+        assert!(!entry.owns_imported_population_member(&member));
+        let bounded = PureFactContext::new().assume_condition(
+            crate::kernel::ConditionTerm::signed_add_overflows(
+                count.entry_count.clone(),
+                Bitvector32Term::Constant(1),
+            ),
+            false,
+        );
+        let birth = |events: &CreationEvents,
+                     candidate: &ResourceDescription,
+                     assumptions: &PureFactContext| {
+            events.checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                candidate,
+                true,
+                &Bitvector32Term::Constant(1),
+                assumptions,
+            )
+        };
+        assert!(birth(&entry, &member, &PureFactContext::new()).is_err());
+        let (wrong_scope, wrong_member) = opaque_scope(1);
+        assert!(birth(&entry, &wrong_member, &bounded).is_err());
+        let other = entry
+            .import_opaque_wildcard_authority(&wrong_scope)
+            .unwrap();
+        assert!(birth(&other, &wrong_member, &bounded).is_err());
+        let (issued, certificate) = birth(&entry, &member, &bounded).unwrap();
+        assert!(certificate.matches(&entry, &issued, &member, true));
+        assert!(!certificate.matches(&entry, &issued, &wrong_member, true));
+        assert_eq!(issued.observe_symbolic(&scope).unwrap().delta, 1);
+        assert!(issued.owns_imported_population_member(&member));
+        assert_eq!(
+            issued.imported_member_delta_since_entry(&member),
+            Some((true, Bitvector32Term::Constant(1)))
+        );
+        assert!(
+            issued
+                .imported_member_delta_since_entry(&wrong_member)
+                .is_none()
+        );
+        let mut arguments = member.arguments().to_vec();
+        arguments[1] = int32(8).into();
+        let different =
+            ResourceDescription::new("slot".into(), arguments.into(), member.schema().clone());
+        assert!(
+            issued
+                .imported_member_delta_since_entry(&different)
+                .is_none()
+        );
+        assert!(birth(&issued, &different, &bounded).is_err());
+        assert!(
+            issued
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                .is_err()
+        );
+        assert!(
+            issued
+                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, member) = opaque_scope(0);
+            let mut entry = CreationEvents::new()
+                .import_opaque_wildcard_authority(&scope)
+                .unwrap();
+            for index in 1..=size {
+                entry = entry
+                    .import_opaque_wildcard_authority(&opaque_scope(index).0)
+                    .unwrap();
+            }
+            let bounded = PureFactContext::new().assume_condition(
+                crate::kernel::ConditionTerm::signed_add_overflows(
+                    entry.observe_symbolic(&scope).unwrap().entry_count,
+                    Bitvector32Term::Constant(1),
+                ),
+                false,
+            );
+            let (issued, work) = crate::persistent::measure_persistent_work(|| {
+                entry
+                    .checked_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &member,
+                        true,
+                        &Bitvector32Term::Constant(1),
+                        &bounded,
+                    )
+                    .unwrap()
+                    .0
+            });
+            assert_eq!(issued.observe_symbolic(&scope).unwrap().delta, 1);
+            assert_eq!(
+                issued.observe_symbolic(&opaque_scope(1).0).unwrap().delta,
+                0
+            );
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 32 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
     fn wildcard_scope_checks_signature_and_conserves_aggregate_total() {
         let pool = PointerBlock::Heap(920_001);
         let authority = scope(&pool, 3);
