@@ -1202,7 +1202,7 @@ impl PureFactContext {
 /// Splits both offsets into their addends and removes every addend they
 /// share (one occurrence per match). Offsets are exact i64 sums of their
 /// addends, so `C + L == C + R` holds exactly if and only if `L == R`.
-fn cancel_common_offset_addends(
+pub(in crate::kernel) fn cancel_common_offset_addends(
     left: &crate::kernel::PointerOffsetTerm,
     right: &crate::kernel::PointerOffsetTerm,
 ) -> (

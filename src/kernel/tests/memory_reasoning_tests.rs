@@ -2539,6 +2539,37 @@ fn a_struct_field_offset_at_a_constant_is_decided_by_its_index() {
 }
 
 #[test]
+fn memory_resolution_equates_offsets_that_regroup_their_constants() {
+    // A byte field's element `s + 5` and its one-slot run's base
+    // `(s + 4) + 1` are one address; `(s + 4) + 2` is the next byte.
+    let scaled = PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(96)), 4);
+    let grouped = |last: i64| {
+        PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(scaled.clone()),
+                Box::new(PointerOffsetTerm::Constant(4)),
+            )),
+            Box::new(PointerOffsetTerm::Constant(last)),
+        )
+    };
+    let flat = PointerOffsetTerm::Add(
+        Box::new(scaled.clone()),
+        Box::new(PointerOffsetTerm::Constant(5)),
+    );
+    let assumptions = PureFactContext::new();
+    for (last, equal) in [(1, true), (2, false)] {
+        assert_eq!(
+            crate::kernel::reasoning::memory_resolution::pointer_offsets_equal_for_memory_resolution(
+                &flat,
+                &grouped(last),
+                &assumptions,
+            ),
+            Some(equal),
+        );
+    }
+}
+
+#[test]
 fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
     let before = CMemory::new();
     let after = before.clone().with_block("call-havoc:0", 0);
