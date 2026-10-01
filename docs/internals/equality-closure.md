@@ -675,6 +675,11 @@ Write-resource candidate selection now shares the complete affine interval
 summary. It selects covering occurrences lazily, translates the access into
 each owner's block through checked graph equality, then applies the existing
 write-permission and bounds judgment. Views cannot supply write authority.
+The interval index maintains a separate owned summary, so selecting write
+candidates does not enumerate overlapping views. Both summaries receive the
+same occurrence updates and smaller-payload class merges. A deterministic
+regression measures write lookup beside 16, 64, 256, and 1,024 covering views
+with one owner; lookup work must remain independent of the view count.
 An indexed miss or failed candidate check is decisive for this covered
 fragment; it does not retry spellings or scan the remaining resources.
 Whole-cell writes additionally use a separate footprint payload containing
@@ -779,6 +784,54 @@ Read, write, and fold consumers are integration examples. A lookup must not
 enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
 still require their own checked judgments and complete candidate indexes.
+
+## Bounded symbolic containment support
+
+Symbolic endpoints cannot in general be sorted into an interval tree. The shared
+resource/graph pairing therefore maintains an additional persistent index
+for exact symbolic byte footprints beside the existing exact start-address index.
+A footprint is a typed
+graph application of its start and end address classes. Congruence propagates
+late base, scalar endpoint, and retained same-snapshot load equalities through
+that application. These applications and their occurrence payloads are part of
+the trusted kernel. They establish neither coverage nor permission.
+
+`symbolic_range_read_supported(required, assumptions, supplier)` returns
+`Some(true)` or `Some(false)` only after selecting one supplier and checking its
+ordinary read core with `memory_range_covers`. `None` means supplier selection
+is unknown. The selection rules are:
+
+- An explicitly supplied `ResourceOccurrenceId` must resolve to a live entry in
+  this resource checkpoint. An obsolete occurrence cannot authorize a read.
+- Otherwise, a sole occurrence indexed by the requested symbolic footprint is
+  selected. If that does not identify one, a sole occurrence at the known-equal
+  start address may be selected and its bounds checked arithmetically.
+- An ambiguous bucket is inspected for cardinality only. The checker does not
+  iterate symbolic partitions looking for a successful coverage proof.
+
+The underlying selection service keeps a separate owned-footprint index for writes;
+view evidence is insufficient and the selected owner's quantity must be positive.
+Concrete whole-cell and interval selection remain in their existing indexes.
+Concrete ranges do not register every end address as a new graph dependency:
+that would make merging a cell base visit all differently sized concrete spans.
+Payload updates occur at publication and resource/class deltas, with smaller
+payload merging. Simple queries register only their explicit footprint.
+
+Evidence reaches source verification through existing checked resource
+requirements and footprints, rather than serialized graph class IDs. A
+checked `views p[i..i+1]` requirement supplies a directly indexed range;
+a resource/loan certificate that already selected a supplier can retain its
+opaque occurrence handle. Expansion emits ordinary proof source, and fresh
+verification reconstructs its checked occurrences and graph registrations.
+Borrowed byte and halfword buffers, including nonzero symbolic starts, have an
+expansion/rechecking regression. Kernel regressions cover symbolic index bounds,
+late endpoint equality, snapshots, sibling contexts, retired occurrences,
+read/write authority, and same-base non-supplier scaling at multiple sizes.
+
+The symbolic-byte-extent consumer uses this service for known selections.
+Its old unknown-case search remains for milestone 5. General read/write callers
+and structural satisfaction still require milestones 4 and 6; this interface
+is the common support they will use, not a claim that all scans are gone.
 
 ## Resource producer publication audit
 

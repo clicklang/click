@@ -12,6 +12,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Node {
     Address(u64, u64),
+    Footprint(u64, u64),
     Int32(MachineAtom),
     Int32Add(u64, u64),
     Constant(i64),
@@ -26,6 +27,7 @@ enum Node {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Application {
     Address(u64, u64),
+    Footprint(u64, u64),
     Add(u64, u64),
     Int32Add(u64, u64),
     Int32Scaled(u64, i64),
@@ -37,7 +39,9 @@ enum Application {
 impl Application {
     fn operands(self) -> impl Iterator<Item = u64> {
         match self {
-            Self::Add(left, right) | Self::Int32Add(left, right) => [Some(left), Some(right)],
+            Self::Add(left, right) | Self::Int32Add(left, right) | Self::Footprint(left, right) => {
+                [Some(left), Some(right)]
+            }
             Self::Address(_, value)
             | Self::Int32Scaled(value, _)
             | Self::Int32Load(_, _, value) => [Some(value), None],
@@ -49,6 +53,7 @@ impl Application {
     fn signature(self, classes: &TermClasses) -> Self {
         match self {
             Self::Address(block, offset) => Self::Address(block, classes.root(offset)),
+            Self::Footprint(start, end) => Self::Footprint(classes.root(start), classes.root(end)),
             Self::Add(left, right) => Self::Add(classes.root(left), classes.root(right)),
             Self::Int32Add(left, right) => Self::Int32Add(classes.root(left), classes.root(right)),
             Self::Int32Scaled(value, width) => Self::Int32Scaled(classes.root(value), width),
@@ -183,6 +188,11 @@ impl TermClasses {
             self.address_uses.insert(block, uses);
         }
         (id, new)
+    }
+
+    pub(super) fn footprint(&mut self, start: u64, end: u64) -> u64 {
+        let id = self.intern_node(Node::Footprint(start, end));
+        self.root(id)
     }
 
     pub(super) fn shift_addresses(
@@ -359,6 +369,7 @@ impl TermClasses {
                 self.address_nodes = self.address_nodes.with_value(id);
                 Some(Application::Address(*block, *offset))
             }
+            Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
             Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
             Node::Int32Scaled(value, width) => Some(Application::Int32Scaled(*value, *width)),

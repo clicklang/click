@@ -59,7 +59,7 @@ provenance, initialization, and snapshot transport.
   their own residual lookup paths. Producer publication is complete, but
   containment selection and consumer deletion remain unfinished.
 
-### Seven milestones (milestone 1 complete)
+### Seven milestones (milestones 1–3 complete; milestone 4 in progress)
 
 These are seven reviewable outcomes, **not a promise of seven commits**.
 Split an outcome into small green slices when necessary, and record completion
@@ -102,17 +102,21 @@ this list.
    and measure queries beside growing same-class non-supplier inputs.
    Symbolic coordinates and incomplete read cores remain explicit unknown
    fragments for milestone 3; general checker deletion remains milestone 4.
-3. **Provide bounded symbolic containment support.** Extend the candidate
-   contract to existing symbolic range/read/index cases. Graph equality
-   identifies addresses and endpoints; arithmetic checks an already selected
-   supplier's coverage. Symbolic endpoints are not generally totally ordered,
-   so putting every range of an equality class into a bucket and scanning it
-   is not a solution. Use indexed exact support where available; when selection
-   cannot be bounded, require an explicit checked supplier/footprint witness
-   instead of hidden search. Establish how that evidence reaches ordinary
-   verification and expansion before changing the callers. Preserve existing
-   borrowed-buffer and completed-read regressions. This is the main design
-   milestone, and the number of slices it needs is still uncertain.
+3. **Provide bounded symbolic containment support — complete.** Exact
+   symbolic byte footprints are typed graph applications of their endpoints;
+   occurrence payloads follow graph class merges. The shared service selects
+   a sole exact footprint, a sole known-equal start supplier, or an explicit live
+   occurrence. Ambiguous symbolic partitions return unknown without iteration.
+   Ordinary coverage arithmetic and separate ownership/quantity checks remain
+   authoritative. Concrete endpoints stay in the existing cell/interval indexes
+   so graph merges do not visit all differently sized concrete spans. Evidence
+   uses existing checked source footprints and retained occurrence handles;
+   expansion reconstructs that evidence without serializing graph IDs.
+   Regressions cover symbolic indexes, endpoint equalities, load snapshots,
+   live occurrences, authority modes, borrowed-buffer expansion/rechecking, and
+   queries beside increasing same-base symbolic non-suppliers. The symbolic
+   extent consumer uses known selections; its unknown-case search is deleted
+   in milestone 5, after general read/write migration in milestone 4.
 4. **Delete general read/write permission retries.** Route
    `ResourceContext::permits_memory_read` and `memory_write_range` entirely
    through the shared candidate contract. Remove `pointer_spellings`, the
@@ -120,6 +124,24 @@ this list.
    indexed miss is final; unknown support is a bounded, actionable refusal or
    an explicitly supplied witness, never another lookup strategy. Keep read
    views distinct from write authority and preserve all permission checks.
+
+   **Partial checkpoint:** concrete interval writes now have a separate owned
+   supplier summary. They no longer enumerate overlapping read views to find
+   an owner. A deterministic regression varies covering views from 16 to 1,024
+   while retaining one owner, measuring both checker and persistent-map work.
+   The general permission retries have **not** been removed.
+
+   The attempted wholesale removal exposed two prerequisites: provisional
+   resource lowering sometimes checks reads with a fresh, empty pure context,
+   and symbolic per-access coverage needs more than the whole-range evidence
+   introduced in milestone 3. Examples include lowering `readable_input` after
+   unfolding, and writing into an owned symbolic range with a nonzero lower
+   bound. Publishing the ambient resource input during these queries restores
+   some behavior but violates the no-scan contract; it is not an acceptable fix.
+   The broad prototype was withdrawn. Before deleting retries, reduce these
+   boundaries to independent regressions and pass retained checked context or
+   explicit supplier evidence through the shared interface. Do not grow this
+   into separate fixes for each failing loop, contract, or fold consumer.
 5. **Delete symbolic-range read searches.** Migrate
    `memory_state::resource_context_has_symbolic_range_read`. Remove its
    exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
@@ -151,9 +173,9 @@ this list.
 Milestones 1–3 establish the common interface. Milestones 4–7 migrate and
 remove its remaining consumers; they must not introduce their own alias walks
 or containment indexes. Do not implement several independently evolving
-fallback replacements in parallel. Milestone 1 is complete. The next
-implementation work is milestone 2's shared candidate contract, followed by
-symbolic support in milestone 3 before broad caller deletion.
+fallback replacements in parallel. Continue milestone 4: delete general
+read/write permission retries using shared bounded supplier evidence, after
+reducing the provisional read-context and symbolic per-access gaps above.
 
 ### Meaning of “no scans” and completion
 

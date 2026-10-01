@@ -704,6 +704,32 @@ impl EqualityGraph {
         Some(state.terms.class_root(id))
     }
 
+    /// A typed pair of byte endpoints used only to select retained resource
+    /// occurrences. Congruence follows late endpoint equalities. Equal
+    /// footprints do not establish authority, bounds, or initialization.
+    pub(in crate::kernel) fn footprint_class(
+        &self,
+        range: &crate::kernel::CMemoryRange,
+    ) -> Option<u64> {
+        let start = self.address_class(
+            &range
+                .base()
+                .offset_by_elements(range.start().clone(), range.element_width()),
+        )?;
+        let end = self.address_class(
+            &range
+                .base()
+                .offset_by_elements(range.end().clone(), range.element_width()),
+        )?;
+        Some(
+            self.state
+                .lock()
+                .expect("equality graph")
+                .terms
+                .footprint(start, end),
+        )
+    }
+
     pub(in crate::kernel) fn address_class_root(&self, id: u64) -> u64 {
         self.state
             .lock()
