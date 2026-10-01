@@ -112,7 +112,13 @@ checked panic obligations, casts, bitwise operations, and proof expansion.
 Byte slices now have variable-length read/write contracts, 64-bit `usize`
 metadata and bounds checks, existing `views`/`owns` authority, direct calls,
 and checked expansion. Memory-access contracts currently bound length by
-`INT32_MAX`. Fixed arrays, general `usize` arithmetic, crate extraction, and
+`INT32_MAX`. Fixed-array references now support `u8`, `u32`, and `i32` elements,
+compiler-evaluated lengths, checked indexing and element borrows, `.len()`,
+local aliases/reborrows, and direct calls. Bounds are checked at the full
+target `usize` width before address formation; zero-length and oversized
+indices, false values, missing authority, and conflicting borrows have
+regressions. Local array construction, whole-array copies, array-to-slice
+coercions, general `usize` arithmetic, crate extraction, and
 iterator loops remain outstanding. Neither library is verified
 by this assessment.
 

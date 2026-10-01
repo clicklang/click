@@ -43,6 +43,8 @@ Current projects:
   on normal and early return through a checked destructor contract.
 - `rust-unsigned/` checks Rust byte and word arithmetic, casts, and panic freedom.
 - `rust-slices/` checks byte-slice lengths, indexed reads/writes, and slice calls.
+- `rust-arrays/` checks fixed-array reference lengths, typed indexing, element
+  reborrows, direct calls, and parent reuse.
 - `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
   with the inner destructor's write observed by the outer destructor.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that

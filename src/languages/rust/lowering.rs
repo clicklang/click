@@ -17,8 +17,17 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             Type::I32 | Type::Record { .. } => Ok(C0Type::Int32Pointer),
             Type::U8 => Ok(C0Type::UInt8Pointer),
             Type::U32 => Ok(C0Type::UInt32Pointer),
+            Type::Array { element, .. } => match element.as_ref() {
+                Type::I32 => Ok(C0Type::Int32Pointer),
+                Type::U8 => Ok(C0Type::UInt8Pointer),
+                Type::U32 => Ok(C0Type::UInt32Pointer),
+                _ => Err("fixed arrays require i32, u8 or u32 elements".into()),
+            },
             _ => Err("Rust reference pointee outside scalar/reference lowering".into()),
         },
+        Type::Array { .. } => {
+            Err("by-value Rust arrays and local array construction are not supported".into())
+        }
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
     }
 }
@@ -119,6 +128,7 @@ fn lower_function(
     let mut kernel_parameters = Vec::new();
     let mut locals = BTreeSet::new();
     let mut slices = BTreeMap::new();
+    let mut arrays = BTreeMap::new();
     for p in &f.parameters {
         if !locals.insert(p.name.clone()) {
             return Err("duplicate Rust parameter".into());
@@ -144,6 +154,15 @@ fn lower_function(
             continue;
         }
         let c_type = scalar_type(&p.value_type)?;
+        if let Type::Reference { mutable, pointee } = &p.value_type
+            && let Type::Array { element, length } = pointee.as_ref()
+        {
+            let element = scalar_type(element)?.to_kernel_type();
+            if *length > i32::MAX as u64 / u64::from(element.byte_width()) {
+                return Err("fixed array storage exceeds the signed-word memory model".into());
+            }
+            arrays.insert(p.name.clone(), (*length, element, !mutable));
+        }
         if c_type == C0Type::Void {
             return Err("unit parameters outside Rust slice".into());
         }
@@ -165,6 +184,7 @@ fn lower_function(
     let mut cx = Context {
         owned_locals: BTreeSet::new(),
         slices,
+        arrays,
         source: &export.logical_source,
         function: &f.name,
         fields,
@@ -209,6 +229,7 @@ fn lower_function(
 struct Context<'a> {
     owned_locals: BTreeSet<String>,
     slices: BTreeMap<String, (String, bool)>,
+    arrays: BTreeMap<String, (u64, CType, bool)>,
     source: &'a str,
     function: &'a str,
     fields: &'a BTreeMap<(&'a str, &'a str), (u32, CType)>,
@@ -265,6 +286,34 @@ impl Context<'_> {
                                 ),
                                 c_assign(length, length_value),
                             ),
+                        ),
+                    ));
+                }
+                if let Type::Reference { mutable, pointee } = &place.value_type
+                    && let Type::Array { element, length } = pointee.as_ref()
+                {
+                    let (pointer, source_length, source_element) =
+                        self.indexed_parts(initializer)?;
+                    if source_length != c_uint64_literal(*length)
+                        || source_element != scalar_type(element)?.to_kernel_type()
+                    {
+                        return Err("fixed array local disagrees with initializer".into());
+                    }
+                    let t = scalar_type(&place.value_type)?.to_kernel_type();
+                    self.arrays
+                        .insert(place.name.clone(), (*length, source_element, !mutable));
+                    return Ok(c_seq(
+                        c_declare_with_all_qualifiers(
+                            &place.name,
+                            t,
+                            false,
+                            false,
+                            false,
+                            !mutable,
+                        ),
+                        c_assign(
+                            &place.name,
+                            c_cast_with_pointee_qualifiers(pointer, t, false, !mutable),
                         ),
                     ));
                 }
@@ -354,6 +403,22 @@ impl Context<'_> {
                 c_assign(length, length_value),
             ));
         }
+        if let Some((length, element, constant)) = self.arrays.get(name).copied() {
+            let (pointer, source_length, source_element) = self.indexed_parts(e)?;
+            if source_length != c_uint64_literal(length) || source_element != element {
+                return Err("fixed array assignment disagrees with destination".into());
+            }
+            let pointer_type = match element {
+                CType::Int32 => CType::Int32Pointer,
+                CType::UInt8 => CType::UInt8Pointer,
+                CType::UInt32 => CType::UInt32Pointer,
+                _ => return Err("unsupported fixed array element".into()),
+            };
+            return Ok(c_assign(
+                name,
+                c_cast_with_pointee_qualifiers(pointer, pointer_type, false, constant),
+            ));
+        }
         match e {
             E::Call {
                 function,
@@ -425,7 +490,7 @@ impl Context<'_> {
                     checks,
                     c_typed_load_with_source(
                         pointer,
-                        CType::UInt8,
+                        self.place_type(e)?,
                         Some(LoadSourceId {
                             owner: LoadSourceOwnerId {
                                 source_unit: self.source.into(),
@@ -559,9 +624,23 @@ impl Context<'_> {
             .ok_or("unknown Rust slice reference")?;
         Ok((c_variable(name), c_variable(length)))
     }
+    fn indexed_parts(&self, e: &E) -> Result<(CExpression, CExpression, CType), String> {
+        match e {
+            E::Borrow { place, .. } => self.indexed_parts(place),
+            E::Deref { reference, .. } => self.indexed_parts(reference),
+            E::Local { name } if self.arrays.contains_key(name) => {
+                let (length, element, _) = self.arrays[name];
+                Ok((c_variable(name), c_uint64_literal(length), element))
+            }
+            _ => {
+                let (pointer, length) = self.slice_parts(e)?;
+                Ok((pointer, length, CType::UInt8))
+            }
+        }
+    }
     fn prepared_address(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         if let E::Index { slice, index } = e {
-            let (pointer, length) = self.slice_parts(slice)?;
+            let (pointer, length, _) = self.indexed_parts(slice)?;
             let (checks, value) = self.prepared_expr(index)?;
             let (capture, name) = self.capture_operand(value, &Type::Usize)?;
             let index = c_variable(name);
@@ -572,7 +651,12 @@ impl Context<'_> {
                         capture,
                         c_labeled_assert(
                             c_less_than(index.clone(), length),
-                            "Rust slice index panic check",
+                            if matches!(slice.as_ref(), E::Local { name } if self.slices.contains_key(name))
+                            {
+                                "Rust slice index panic check"
+                            } else {
+                                "Rust array index panic check"
+                            },
                         ),
                     ),
                 ),
@@ -608,7 +692,7 @@ impl Context<'_> {
     }
     fn place_type(&self, e: &E) -> Result<CType, String> {
         match e {
-            E::Index { .. } => Ok(CType::UInt8),
+            E::Index { slice, .. } => Ok(self.indexed_parts(slice)?.2),
             E::Field { record, field, .. } => self
                 .fields
                 .get(&(record.as_str(), field.as_str()))
@@ -622,7 +706,7 @@ impl Context<'_> {
         match e {
             E::Integer { value } => Ok(c_int32_literal(*value as u32)),
             E::UsizeInteger { value } => Ok(c_uint64_literal(*value)),
-            E::SliceLength { slice } => Ok(self.slice_parts(slice)?.1),
+            E::SliceLength { slice } => Ok(self.indexed_parts(slice)?.1),
             E::Index { .. } => Err("indexed Rust places require checked preparation".into()),
             E::UnsignedInteger { value, value_type } => match value_type {
                 Type::U8 => Ok(c_uint8_literal(

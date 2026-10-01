@@ -35,6 +35,7 @@ pub enum Type {
     U32,
     Usize,
     ByteSlice { mutable: bool },
+    Array { element: Box<Type>, length: u64 },
     Bool,
     Unit,
     Reference { mutable: bool, pointee: Box<Type> },
