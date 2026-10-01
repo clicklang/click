@@ -1621,6 +1621,46 @@ fn evaluate_c_cast_paths(
                             &effective_assumptions,
                         ),
                     }
+                } else if target_type == CType::UInt32
+                    && matches!(
+                        value,
+                        CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)
+                    )
+                {
+                    let unsigned_range = match &value {
+                        CValue::UInt8(value) => Some((value.clone(), 255)),
+                        CValue::UInt16(value) => Some((value.clone(), 65535)),
+                        _ => None,
+                    };
+                    let start = facts.len();
+                    let result =
+                        promote_c_uint32_path_value(value, &mut facts, &effective_assumptions)
+                            .map(CValue::UInt32)
+                            .ok_or(CRuntimeError::TypeMismatch);
+                    // A widening stores a wider value whose type no longer
+                    // carries the source range. Retain its signed range
+                    // facts as checked transition outputs for later statements.
+                    // Unsigned sources also retain a directly expressible upper bound.
+                    for fact in &mut facts[start..] {
+                        *fact = ExecutionPureFact::new(fact.proposition().clone());
+                    }
+                    if result.is_ok()
+                        && let Some((value, upper)) = unsigned_range
+                    {
+                        // Incoming path facts may already establish this bound
+                        // internally. Publish the width-derived fact even then:
+                        // a later statement cannot consult those internal facts.
+                        let condition = ConditionTerm::unsigned_less_equal(
+                            value,
+                            Bitvector32Term::Constant(upper),
+                        );
+                        if PureFactContext::decide_intrinsically(&condition) != Some(true) {
+                            facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+                                condition, true,
+                            )));
+                        }
+                    }
+                    result
                 } else {
                     cast_c_value_to_type(
                         value,

@@ -8,14 +8,32 @@ pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>
 fn scalar_type(t: &Type) -> Result<C0Type, String> {
     match t {
         Type::I32 => Ok(C0Type::Int32),
+        Type::U8 => Ok(C0Type::UInt8),
+        Type::U32 => Ok(C0Type::UInt32),
         Type::Bool => Ok(C0Type::Bool),
         Type::Unit => Ok(C0Type::Void),
-        Type::Reference { pointee, .. }
-            if matches!(pointee.as_ref(), Type::I32 | Type::Record { .. }) =>
-        {
-            Ok(C0Type::Int32Pointer)
-        }
+        Type::Reference { pointee, .. } => match pointee.as_ref() {
+            Type::I32 | Type::Record { .. } => Ok(C0Type::Int32Pointer),
+            Type::U8 => Ok(C0Type::UInt8Pointer),
+            Type::U32 => Ok(C0Type::UInt32Pointer),
+            _ => Err("Rust reference pointee outside scalar/reference lowering".into()),
+        },
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
+    }
+}
+// Rust `as u8` truncates, while the shared byte coercion requires a range
+// proof. Mask first and use the existing checked coercion on that byte value.
+fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
+    if target == CType::UInt8 {
+        c_cast(
+            c_cast(
+                c_bitwise_and(c_cast(value, CType::UInt32), c_uint32_literal(255)),
+                CType::Int32,
+            ),
+            CType::UInt8,
+        )
+    } else {
+        c_cast(value, target)
     }
 }
 pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
@@ -30,11 +48,7 @@ pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
                     f.name.clone(),
                     scalar_type(&f.value_type)?,
                     f.offset,
-                    if matches!(f.value_type, Type::Reference { .. }) {
-                        8
-                    } else {
-                        4
-                    },
+                    scalar_type(&f.value_type)?.to_kernel_type().byte_width(),
                 ))
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -93,7 +107,10 @@ fn lower_function(
     records: &BTreeMap<&str, &Record>,
     functions: &BTreeMap<&str, &Function>,
 ) -> Result<C0Function, String> {
-    if !matches!(f.return_type, Type::I32 | Type::Bool | Type::Unit) {
+    if !matches!(
+        f.return_type,
+        Type::I32 | Type::U8 | Type::U32 | Type::Bool | Type::Unit
+    ) {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
     let return_type = scalar_type(&f.return_type)?;
@@ -129,6 +146,7 @@ fn lower_function(
         function: &f.name,
         fields,
         next_load: 0,
+        next_temporary: 0,
         locals,
         return_type,
         layouts,
@@ -171,6 +189,7 @@ struct Context<'a> {
     function: &'a str,
     fields: &'a BTreeMap<(&'a str, &'a str), (u32, CType)>,
     next_load: u32,
+    next_temporary: u32,
     locals: BTreeSet<String>,
     return_type: C0Type,
     layouts: &'a BTreeMap<String, C0StructLayout>,
@@ -203,20 +222,24 @@ impl Context<'_> {
                 target: E::Local { name },
                 value,
             } => self.assign(name, value),
-            S::Assign { target, value } => Ok(c_typed_store(
-                self.address(target)?,
-                self.expr(value)?,
-                self.place_type(target)?,
-            )),
+            S::Assign { target, value } => {
+                let (checks, value) = self.prepared_expr(value)?;
+                Ok(c_seq(
+                    checks,
+                    c_typed_store(self.address(target)?, value, self.place_type(target)?),
+                ))
+            }
             S::If {
                 condition,
                 then_body,
                 else_body,
-            } => Ok(c_if(
-                self.expr(condition)?,
-                self.body(then_body)?,
-                self.body(else_body)?,
-            )),
+            } => {
+                let (checks, condition) = self.prepared_expr(condition)?;
+                Ok(c_seq(
+                    checks,
+                    c_if(condition, self.body(then_body)?, self.body(else_body)?),
+                ))
+            }
             S::Return {
                 value:
                     Some(E::Call {
@@ -229,15 +252,22 @@ impl Context<'_> {
                     name.push('_');
                 }
                 self.locals.insert(name.clone());
+                let (checks, arguments) = self.prepared_arguments(arguments)?;
                 Ok(c_seq(
-                    c_declare(&name, self.return_type.to_kernel_type()),
+                    checks,
                     c_seq(
-                        c_call_assign(&name, function, self.arguments(arguments)?),
-                        c_return(c_variable(name)),
+                        c_declare(&name, self.return_type.to_kernel_type()),
+                        c_seq(
+                            c_call_assign(&name, function, arguments),
+                            c_return(c_variable(name)),
+                        ),
                     ),
                 ))
             }
-            S::Return { value: Some(value) } => Ok(c_return(self.expr(value)?)),
+            S::Return { value: Some(value) } => {
+                let (checks, value) = self.prepared_expr(value)?;
+                Ok(c_seq(checks, c_return(value)))
+            }
             S::Return { value: None } if self.return_type == C0Type::Void => {
                 Ok(c_return(c_void_value()))
             }
@@ -245,7 +275,10 @@ impl Context<'_> {
             S::Call {
                 function,
                 arguments,
-            } => Ok(c_call(function, self.arguments(arguments)?)),
+            } => {
+                let (checks, arguments) = self.prepared_arguments(arguments)?;
+                Ok(c_seq(checks, c_call(function, arguments)))
+            }
         }
     }
     fn assign(&mut self, name: &str, e: &E) -> Result<CStatement, String> {
@@ -256,16 +289,154 @@ impl Context<'_> {
             E::Call {
                 function,
                 arguments,
-            } => Ok(c_call_assign(name, function, self.arguments(arguments)?)),
-            _ => Ok(c_assign(name, self.expr(e)?)),
+            } => {
+                let (checks, arguments) = self.prepared_arguments(arguments)?;
+                Ok(c_seq(checks, c_call_assign(name, function, arguments)))
+            }
+            _ => {
+                let (checks, value) = self.prepared_expr(e)?;
+                Ok(c_seq(checks, c_assign(name, value)))
+            }
         }
     }
-    fn arguments(&mut self, args: &[E]) -> Result<Vec<CExpression>, String> {
-        args.iter().map(|e| self.expr(e)).collect()
+    fn prepared_arguments(&mut self, args: &[E]) -> Result<(CStatement, Vec<CExpression>), String> {
+        let mut checks = c_skip();
+        let mut values = Vec::new();
+        for argument in args {
+            let (prefix, value) = self.prepared_expr(argument)?;
+            checks = c_seq(checks, prefix);
+            values.push(value);
+        }
+        Ok((checks, values))
+    }
+
+    fn capture_operand(
+        &mut self,
+        value: CExpression,
+        value_type: &Type,
+    ) -> Result<(CStatement, String), String> {
+        let name = loop {
+            let name = format!("__rust_checked_{}", self.next_temporary);
+            self.next_temporary = self
+                .next_temporary
+                .checked_add(1)
+                .ok_or("Rust temporary identity exhausted")?;
+            if self.locals.insert(name.clone()) {
+                break name;
+            }
+        };
+        let c_type = scalar_type(value_type)?.to_kernel_type();
+        Ok((
+            c_seq(
+                c_declare(&name, c_type),
+                c_assign(&name, c_cast(value, c_type)),
+            ),
+            name,
+        ))
+    }
+
+    // Capture each operand once, in source order. Guards reference those
+    // small names rather than duplicating arbitrarily large expression trees.
+    // The generated asserts are checked execution obligations, not assumptions.
+    fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
+        match e {
+            E::Binary {
+                operator,
+                left_type,
+                right_type,
+                left,
+                right,
+            } => {
+                let (left_prefix, left_value) = self.prepared_expr(left)?;
+                let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
+                let prefix = c_seq(left_prefix, left_capture);
+                if operator == "and" || operator == "or" {
+                    if *left_type != Type::Bool || *right_type != Type::Bool {
+                        return Err("Rust logical operators require bool operands".into());
+                    }
+                    let (right_prefix, right_value) = self.prepared_expr(right)?;
+                    let condition = if operator == "and" {
+                        c_variable(&left_name)
+                    } else {
+                        c_not(c_variable(&left_name))
+                    };
+                    let update = c_seq(
+                        right_prefix,
+                        c_assign(&left_name, c_cast(right_value, CType::Bool)),
+                    );
+                    return Ok((
+                        c_seq(prefix, c_if(condition, update, c_skip())),
+                        c_variable(left_name),
+                    ));
+                }
+                let (right_prefix, right_value) = self.prepared_expr(right)?;
+                let (right_capture, right_name) = self.capture_operand(right_value, right_type)?;
+                let mut prefix = c_seq(prefix, c_seq(right_prefix, right_capture));
+                if matches!(left_type, Type::U8 | Type::U32) {
+                    let l = c_cast(c_variable(&left_name), CType::UInt32);
+                    let r = c_cast(c_variable(&right_name), CType::UInt32);
+                    let max = c_uint32_literal(if *left_type == Type::U8 {
+                        255
+                    } else {
+                        u32::MAX
+                    });
+                    let obligation = match operator.as_str() {
+                        "add" => Some(c_less_equal(
+                            c_add(c_cast(l, CType::Int64), c_cast(r, CType::Int64)),
+                            c_int64_literal(if *left_type == Type::U8 {
+                                255
+                            } else {
+                                u32::MAX as i64
+                            }),
+                        )),
+                        "sub" => Some(c_greater_equal(l, r)),
+                        "mul" => Some(c_or(
+                            c_equal(r.clone(), c_uint32_literal(0)),
+                            c_less_equal(l, c_divide(max, r)),
+                        )),
+                        "shl" | "shr" => Some(c_less_than(
+                            r,
+                            c_uint32_literal(if *left_type == Type::U8 { 8 } else { 32 }),
+                        )),
+                        _ => None,
+                    };
+                    if let Some(obligation) = obligation {
+                        prefix = c_seq(
+                            prefix,
+                            c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                        );
+                    }
+                }
+                let expression = E::Binary {
+                    operator: operator.clone(),
+                    left_type: left_type.clone(),
+                    right_type: right_type.clone(),
+                    left: Box::new(E::Local { name: left_name }),
+                    right: Box::new(E::Local { name: right_name }),
+                };
+                Ok((prefix, self.expr(&expression)?))
+            }
+            E::Not { value } | E::BitwiseNot { value, .. } | E::Cast { value, .. } => {
+                let (prefix, value) = self.prepared_expr(value)?;
+                let value = match e {
+                    E::Not { .. } => c_not(value),
+                    E::BitwiseNot { value_type, .. } => rust_scalar_cast(
+                        c_bitwise_not(value),
+                        scalar_type(value_type)?.to_kernel_type(),
+                    ),
+                    E::Cast { value_type, .. } => {
+                        rust_scalar_cast(value, scalar_type(value_type)?.to_kernel_type())
+                    }
+                    _ => unreachable!(),
+                };
+                Ok((prefix, value))
+            }
+            _ => Ok((c_skip(), self.expr(e)?)),
+        }
     }
     fn address(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
-            E::Deref { reference } => self.expr(reference),
+            E::Deref { reference, .. } => self.expr(reference),
             E::Field {
                 base,
                 record,
@@ -277,7 +448,7 @@ impl Context<'_> {
                     .ok_or("unknown Rust field")?;
                 // Field bases are either record references or local stack objects.
                 let pointer = match base.as_ref() {
-                    E::Deref { reference } => self.expr(reference)?,
+                    E::Deref { reference, .. } => self.expr(reference)?,
                     _ => self.expr(base)?,
                 };
                 Ok(c_pointer_offset_bytes(pointer, offset))
@@ -295,13 +466,20 @@ impl Context<'_> {
                 .get(&(record.as_str(), field.as_str()))
                 .map(|(_, t)| *t)
                 .ok_or("unknown Rust field type".into()),
-            E::Deref { .. } => Ok(CType::Int32),
+            E::Deref { value_type, .. } => Ok(scalar_type(value_type)?.to_kernel_type()),
             _ => Err("unsupported Rust memory place type".into()),
         }
     }
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
             E::Integer { value } => Ok(c_int32_literal(*value as u32)),
+            E::UnsignedInteger { value, value_type } => match value_type {
+                Type::U8 => Ok(c_uint8_literal(
+                    u8::try_from(*value).map_err(|_| "Rust u8 literal out of range")?,
+                )),
+                Type::U32 => Ok(c_uint32_literal(*value)),
+                _ => Err("unsigned literal needs an unsigned Rust type".into()),
+            },
             E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
             E::Local { name } => {
                 if !self.locals.contains(name) {
@@ -310,7 +488,18 @@ impl Context<'_> {
                 Ok(c_variable(name))
             }
             E::Not { value } => Ok(c_not(self.expr(value)?)),
-            E::Borrow { place } => Ok(c_cast(self.address(place)?, CType::Int32Pointer)),
+            E::Borrow { place, value_type } => Ok(c_cast(
+                self.address(place)?,
+                scalar_type(value_type)?.to_kernel_type(),
+            )),
+            E::Cast { value, value_type } => Ok(rust_scalar_cast(
+                self.expr(value)?,
+                scalar_type(value_type)?.to_kernel_type(),
+            )),
+            E::BitwiseNot { value, value_type } => Ok(rust_scalar_cast(
+                c_bitwise_not(self.expr(value)?),
+                scalar_type(value_type)?.to_kernel_type(),
+            )),
             E::Deref { .. } | E::Field { .. } => {
                 let pointer = self.address(e)?;
                 let occurrence = self.next_load;
@@ -332,15 +521,38 @@ impl Context<'_> {
             }
             E::Binary {
                 operator,
+                left_type,
                 left,
                 right,
+                ..
             } => {
-                let l = self.expr(left)?;
-                let r = self.expr(right)?;
-                Ok(match operator.as_str() {
+                if matches!(operator.as_str(), "shl" | "shr")
+                    && !matches!(left_type, Type::U8 | Type::U32)
+                {
+                    return Err("Rust shifts currently require u8 or u32 operands".into());
+                }
+                let mut l = self.expr(left)?;
+                let mut r = self.expr(right)?;
+                if matches!(operator.as_str(), "shl" | "shr") {
+                    // The checked Rust guard has already excluded negative
+                    // and oversized counts, independently of the RHS width.
+                    r = c_cast(r, CType::UInt32);
+                }
+                if *left_type == Type::U8 {
+                    // Rust does not promote u8 arithmetic to signed int32.
+                    l = c_cast(l, CType::UInt32);
+                }
+                let result = match operator.as_str() {
                     "add" => c_add(l, r),
                     "sub" => c_subtract(l, r),
                     "mul" => c_multiply(l, r),
+                    "div" => c_divide(l, r),
+                    "rem" => c_remainder(l, r),
+                    "shl" => c_shift_left(l, r),
+                    "shr" => c_shift_right(l, r),
+                    "bit_and" => c_bitwise_and(l, r),
+                    "bit_or" => c_bitwise_or(l, r),
+                    "bit_xor" => c_bitwise_xor(l, r),
                     "eq" => c_equal(l, r),
                     "ne" => c_not_equal(l, r),
                     "lt" => c_less_than(l, r),
@@ -350,7 +562,18 @@ impl Context<'_> {
                     "and" => c_and(l, r),
                     "or" => c_or(l, r),
                     _ => return Err("unsupported Rust operator in artifact".into()),
-                })
+                };
+                if matches!(
+                    operator.as_str(),
+                    "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
+                ) {
+                    Ok(result)
+                } else {
+                    Ok(rust_scalar_cast(
+                        result,
+                        scalar_type(left_type)?.to_kernel_type(),
+                    ))
+                }
             }
             E::Call { .. } => Err("nested Rust calls outside statement lowering".into()),
         }

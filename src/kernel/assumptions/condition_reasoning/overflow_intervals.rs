@@ -416,6 +416,132 @@ impl PureFactContext {
     /// under the term or its canonical alias. These are keyed lookups on the
     /// queried term only, never a scan of the context. A term with neither a
     /// width range nor an indexed bound on both sides has no interval.
+    pub(super) fn decide_indexed_greater_equal(&self, condition: &ConditionTerm) -> Option<bool> {
+        let ConditionTerm::Bitvector32SignedGreaterEqual(left, right) = condition else {
+            return None;
+        };
+        let right = right.as_const()? as i32 as i64;
+        let (lower, upper) = self.indexed_constant_interval(left)?;
+        if upper < right {
+            Some(false)
+        } else if lower >= right {
+            Some(true)
+        } else {
+            None
+        }
+    }
+
+    // A clear-sign-bit mask has a local range. Keep comparison terms intact
+    // so arithmetic certificates retain their original proposition shapes.
+    pub(super) fn decide_masked_order(&self, condition: &ConditionTerm) -> Option<bool> {
+        fn range(term: &Bitvector32Term) -> Option<(i64, i64)> {
+            if let Some(value) = term.as_const() {
+                let value = value as i32 as i64;
+                return Some((value, value));
+            }
+            let Bitvector32Term::BitwiseAnd(a, b) = term else {
+                return None;
+            };
+            let mask = a.as_const().or_else(|| b.as_const())?;
+            (mask <= i32::MAX as u32).then_some((0, mask as i64))
+        }
+        let (left, right, strict) = match condition {
+            ConditionTerm::Bitvector32SignedLessThan(a, b) => (a, b, true),
+            ConditionTerm::Bitvector32SignedLessEqual(a, b) => (a, b, false),
+            ConditionTerm::Bitvector32SignedGreaterThan(a, b) => (b, a, true),
+            ConditionTerm::Bitvector32SignedGreaterEqual(a, b) => (b, a, false),
+            _ => return None,
+        };
+        let ((llo, lhi), (rlo, rhi)) = (range(left)?, range(right)?);
+        if if strict { lhi < rlo } else { lhi <= rlo } {
+            Some(true)
+        } else if if strict { llo >= rhi } else { llo > rhi } {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    // Bounds through zero extension preserve unsigned order, including the
+    // upper half of u32. Read only the queried operand's indexed bounds.
+    fn widened_unsigned_interval(&self, term: &Bitvector32Term) -> (i64, i64) {
+        if let Some(value) = term.as_const() {
+            return (value as i64, value as i64);
+        }
+        let mut range = (0, u32::MAX as i64);
+        let biased =
+            Bitvector32Term::bitwise_xor(term.clone(), Bitvector32Term::Constant(0x8000_0000));
+        if let Some((lo, hi)) = self.indexed_constant_interval(&biased) {
+            range.0 = range.0.max(lo + 0x8000_0000);
+            range.1 = range.1.min(hi + 0x8000_0000);
+        }
+        if let Some((lo, hi)) = self.indexed_constant_interval(term)
+            && lo >= 0
+        {
+            range.0 = range.0.max(lo);
+            range.1 = range.1.min(hi);
+        }
+        range
+    }
+
+    pub(crate) fn widened_unsigned_sum_bound_premises(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<Vec<Proposition>> {
+        let ConditionTerm::Bitvector64SignedLessEqual(left, _) = condition else {
+            return None;
+        };
+        let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
+            return None;
+        };
+        let (Bitvector32Term::Int64FromUInt32(a), Bitvector32Term::Int64FromUInt32(b)) =
+            (a.as_ref(), b.as_ref())
+        else {
+            return None;
+        };
+        let mut premises = Vec::new();
+        for operand in [a.as_ref(), b.as_ref()] {
+            let biased = crate::kernel::eval::canonical_term(&Bitvector32Term::bitwise_xor(
+                operand.clone(),
+                Bitvector32Term::Constant(0x8000_0000),
+            ));
+            let unsigned = self.signed_constant_bound_facts(SignedDefinedWidth::Int32, &biased);
+            if unsigned.is_empty() {
+                premises.extend(self.signed_constant_bound_facts(
+                    SignedDefinedWidth::Int32,
+                    &crate::kernel::eval::canonical_term(operand),
+                ));
+            } else {
+                premises.extend(unsigned);
+            }
+        }
+        Some(premises)
+    }
+
+    pub(crate) fn decide_widened_sum_bound(&self, condition: &ConditionTerm) -> Option<bool> {
+        let ConditionTerm::Bitvector64SignedLessEqual(left, right) = condition else {
+            return None;
+        };
+        let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
+            return None;
+        };
+        let (Bitvector32Term::Int64FromUInt32(a), Bitvector32Term::Int64FromUInt32(b)) =
+            (a.as_ref(), b.as_ref())
+        else {
+            return None;
+        };
+        let bound = right.int64_as_const()?;
+        let (a_lo, a_hi) = self.widened_unsigned_interval(a);
+        let (b_lo, b_hi) = self.widened_unsigned_interval(b);
+        if a_hi + b_hi <= bound {
+            Some(true)
+        } else if a_lo + b_lo > bound {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     fn int64_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
         let (mut lower, mut upper) = term.int64_width_interval().unwrap_or((i64::MIN, i64::MAX));
         let canonical = crate::kernel::eval::canonical_term(term);
@@ -902,6 +1028,108 @@ fn signed_order_condition(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
+        let a = Bitvector32Term::Variable(Variable(97001));
+        let b = Bitvector32Term::Variable(Variable(97002));
+        let sum = Bitvector32Term::int64_add(
+            Bitvector32Term::int64_from_uint32(a.clone()),
+            Bitvector32Term::int64_from_uint32(b.clone()),
+        );
+        let goal = ConditionTerm::int64_signed_less_equal(
+            sum.clone(),
+            Bitvector32Term::Int64Constant(u32::MAX as i64),
+        );
+        let too_small = ConditionTerm::int64_signed_less_equal(
+            sum,
+            Bitvector32Term::Int64Constant(u32::MAX as i64 - 1),
+        );
+        let mut works = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut facts = PureFactContext::new();
+            for index in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::unsigned_less_equal(
+                        Bitvector32Term::Variable(Variable(98000 + index)),
+                        Bitvector32Term::Constant(123),
+                    ),
+                    true,
+                );
+            }
+            facts = facts
+                .assume_condition(
+                    ConditionTerm::unsigned_less_equal(
+                        a.clone(),
+                        Bitvector32Term::Constant(u32::MAX - 255),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::Constant(0)),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(b.clone(), Bitvector32Term::Constant(255)),
+                    true,
+                );
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.decide_widened_sum_bound(&goal)
+            });
+            assert_eq!(answer, Some(true));
+            assert_eq!(facts.decide_widened_sum_bound(&too_small), None);
+            let selected = facts.widened_unsigned_sum_bound_premises(&goal).unwrap();
+            let selected_context = selected
+                .iter()
+                .fold(PureFactContext::new(), |context, premise| {
+                    context.assume_proposition(premise.clone())
+                });
+            assert_eq!(selected_context.decide_widened_sum_bound(&goal), Some(true));
+            use crate::kernel::proof::arithmetic_special::{
+                SpecialArithmeticCertificate, SpecialArithmeticNode,
+            };
+            let certificate = SpecialArithmeticCertificate {
+                nodes: vec![SpecialArithmeticNode::UnsignedSumBound {
+                    bounds: (0..selected.len()).collect(),
+                    result: Proposition::ConditionIs(goal.clone(), true),
+                }],
+                conclusion: 0,
+            };
+            certificate
+                .check(&Proposition::ConditionIs(goal.clone(), true), &selected)
+                .unwrap();
+            let forged = SpecialArithmeticCertificate {
+                nodes: vec![SpecialArithmeticNode::UnsignedSumBound {
+                    bounds: (0..selected.len()).collect(),
+                    result: Proposition::ConditionIs(too_small.clone(), true),
+                }],
+                conclusion: 0,
+            };
+            assert!(
+                forged
+                    .check(
+                        &Proposition::ConditionIs(too_small.clone(), true),
+                        &selected
+                    )
+                    .is_err()
+            );
+            let invalid =
+                ConditionTerm::unsigned_greater_equal(b.clone(), Bitvector32Term::Constant(256));
+            // The signed byte facts alone do not index the biased operand.
+            let facts = facts.assume_condition(
+                ConditionTerm::unsigned_less_than(b.clone(), Bitvector32Term::Constant(8)),
+                true,
+            );
+            let (answer, order_work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.decide_indexed_greater_equal(&invalid)
+            });
+            assert_eq!(answer, Some(false));
+            works.push(work + order_work);
+        }
+        assert!(works.iter().all(|work| *work == works[0]), "{works:?}");
+        let unknown = PureFactContext::new();
+        assert_eq!(unknown.decide_widened_sum_bound(&goal), None);
+    }
 
     /// The `int32_defined` / `int64_defined` closer selects each operand's
     /// constant bounds by keyed lookup. Its deterministic work must be flat

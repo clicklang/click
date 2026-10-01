@@ -36,15 +36,20 @@ The import configuration selects one `.rs` file, the exporter executable,
 and an artifact output. Refresh runs the compiler with a bounded process and
 writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
-changes require refresh. The saved lock includes the compiler/exporter identity.
+changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
+exporter, refresh existing imports. Configuration schema 2 is unchanged; the
+typed artifact and lock now use schema 3.
 
 ## Supported semantics
 
-The initial slice supports `i32`, booleans, unit returns, initialized scalar
+The scalar slice supports `i32`, `u8`, `u32`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
-references to `i32` and plain structs with `i32` or reference fields, field
+references to supported integers and plain structs with integer or reference fields, field
 access, and local reborrowing of reference-backed places. Arithmetic supports addition,
-subtraction, and multiplication, comparisons, and boolean operations. Record
+subtraction, multiplication, division, remainder, bitwise operations, comparisons,
+and boolean operations. Unsigned shifts support `u8` and `u32`; signed shifts
+remain unsupported. Integer `as` casts preserve Rust truncation and bit
+interpretation. Record
 size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 
@@ -53,6 +58,29 @@ The fixed profile is Rust 2024, compiler commit
 `x86_64-unknown-linux-gnu`, overflow checks enabled, panic abort, and MIR optimization level zero. Click must
 prove that arithmetic overflow does not occur. Compiler acceptance alone does
 not prove a functional claim or panic freedom.
+
+Unsigned arithmetic has Rust's checked semantics: addition, subtraction, and
+multiplication require overflow freedom, and division/remainder require a
+nonzero divisor. A shift count must be nonnegative and less than the left
+operand's width (8 or 32); shifting away high bits is allowed. Casts to `u8`
+retain the low eight bits. Checks follow operand evaluation order and respect
+`&&`/`||` short circuiting. Compound assignments use the same operations.
+These obligations are checked during execution; C unsigned wrapping alone
+cannot establish Rust panic freedom.
+
+[`examples/rust-unsigned/arithmetic.rs`](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.rs)
+is a synthetic scalar regression covering byte accumulation, multiplication,
+modular reduction, shifts, packing, truncation, and unsigned comparison. Its
+[sidecar](https://github.com/clicklang/click/blob/master/examples/rust-unsigned/arithmetic.click)
+uses ordinary Click contracts and tactics. Expansion can use the shared
+`unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
+It does not establish checksum-library support;
+byte slices, loops, and crate extraction remain outstanding.
+
+```sh
+cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
+cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
+```
 
 Modules, imports, macros, semantic attributes, dependencies, unsafe code,
 general traits, type/const generics, loops, heap allocation, aggregate parameters and returns, reference

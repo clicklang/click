@@ -742,6 +742,14 @@ impl PureFactContext {
         }) {
             return (result, premises_id);
         }
+        if let Proposition::ConditionIs(condition, value) = proposition
+            && self.decide_widened_sum_bound(condition) == Some(*value)
+        {
+            return (
+                Some(AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound),
+                premises_id,
+            );
+        }
         let epoch_before = INCOMPLETE_REASONING_EPOCH.with(Cell::get);
         let memory_evidence = match proposition {
             // Both equality widths reach the history. An `int64` load is a

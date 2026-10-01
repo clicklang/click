@@ -153,12 +153,16 @@ pub(super) fn lower(
                     .functions
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
+                let (prefix, arguments_values) = cx.prepared_arguments(arguments)?;
                 let call = if callee.return_type == Type::Unit {
-                    c_call(function, cx.arguments(arguments)?)
+                    c_call(function, arguments_values)
                 } else {
-                    c_call_assign(destination, function, cx.arguments(arguments)?)
+                    c_call_assign(destination, function, arguments_values)
                 };
-                c_seq(accesses(&arguments.iter().collect::<Vec<_>>(), &live), call)
+                c_seq(
+                    accesses(&arguments.iter().collect::<Vec<_>>(), &live),
+                    c_seq(prefix, call),
+                )
             }
         };
         let mut statements = c_skip();
@@ -374,9 +378,11 @@ fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
                 pending.push(left);
                 pending.push(right);
             }
-            E::Not { value } => pending.push(value),
-            E::Borrow { place } => pending.push(place),
-            E::Deref { reference } => pending.push(reference),
+            E::Not { value } | E::BitwiseNot { value, .. } | E::Cast { value, .. } => {
+                pending.push(value)
+            }
+            E::Borrow { place, .. } => pending.push(place),
+            E::Deref { reference, .. } => pending.push(reference),
             E::Field { base, .. } => pending.push(base),
             E::Call { arguments, .. } => pending.extend(arguments),
             _ => {}
@@ -519,6 +525,7 @@ mod tests {
                 function: "scale",
                 fields: &fields,
                 next_load: 0,
+                next_temporary: 0,
                 locals: BTreeSet::new(),
                 return_type: C0Type::Void,
                 layouts: &layouts,

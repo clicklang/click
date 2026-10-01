@@ -94,7 +94,8 @@ fn config(path: &Path) -> Result<(Config, Vec<u8>, PathBuf), String> {
     let bytes = read(path, 1 << 20)?;
     let c: Config =
         serde_json::from_slice(&bytes).map_err(|e| format!("Rust import config: {e}"))?;
-    if c.schema != SCHEMA || c.language != "rust" || c.target != TARGET {
+    // Configuration version is independent of the typed artifact schema.
+    if c.schema != 2 || c.language != "rust" || c.target != TARGET {
         return Err("unsupported Rust import schema/language/target".into());
     }
     let absolute = fs::canonicalize(path).map_err(|e| e.to_string())?;

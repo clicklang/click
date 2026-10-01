@@ -771,6 +771,12 @@ fn expand_declared_resource_certificate(
                 .into_iter()
                 .map(|node| {
                     Ok(match node {
+                        SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
+                            SpecialArithmeticNode::UnsignedSumBound {
+                                bounds,
+                                result: proposition(result)?,
+                            }
+                        }
                         SpecialArithmeticNode::SignedDefined {
                             width,
                             bounds,

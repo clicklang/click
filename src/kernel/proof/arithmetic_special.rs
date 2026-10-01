@@ -89,7 +89,9 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             | Bitvector32Term::Int64Constant(_)
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::Variable(_) => {}
-            Bitvector32Term::Add(left, right)
+            Bitvector32Term::Int64Add(left, right)
+            | Bitvector32Term::BitwiseXor(left, right)
+            | Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
             | Bitvector32Term::Float32Binary { left, right, .. }
             | Bitvector32Term::Float64Binary { left, right, .. }
@@ -102,9 +104,9 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 pending.push(left);
                 pending.push(right);
             }
-            Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
-                pending.push(value)
-            }
+            Bitvector32Term::Int64FromUInt32(value)
+            | Bitvector32Term::Float32Negate(value)
+            | Bitvector32Term::Float64Negate(value) => pending.push(value),
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
@@ -257,6 +259,9 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
+            (Bitvector32Term::Int64FromUInt32(left), Bitvector32Term::Int64FromUInt32(right)) => {
+                pending.push((left, right));
+            }
             (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
                 if left != right {
                     return false;
@@ -280,6 +285,14 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             (
                 Bitvector32Term::Add(left_first, left_second),
                 Bitvector32Term::Add(right_first, right_second),
+            )
+            | (
+                Bitvector32Term::Int64Add(left_first, left_second),
+                Bitvector32Term::Int64Add(right_first, right_second),
+            )
+            | (
+                Bitvector32Term::BitwiseXor(left_first, left_second),
+                Bitvector32Term::BitwiseXor(right_first, right_second),
             )
             | (
                 Bitvector32Term::Subtract(left_first, left_second),
@@ -419,6 +432,10 @@ fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
             ConditionTerm::Bitvector32SignedLessEqual(right_first, right_second),
         )
         | (
+            ConditionTerm::Bitvector64SignedLessEqual(left_first, left_second),
+            ConditionTerm::Bitvector64SignedLessEqual(right_first, right_second),
+        )
+        | (
             ConditionTerm::Bitvector32SignedGreaterThan(left_first, left_second),
             ConditionTerm::Bitvector32SignedGreaterThan(right_first, right_second),
         )
@@ -516,6 +533,10 @@ fn proposition_identity(left: &Proposition, right: &Proposition) -> bool {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SpecialArithmeticNode {
+    UnsignedSumBound {
+        bounds: Vec<usize>,
+        result: Proposition,
+    },
     /// Translate one exact pointer equality using explicitly listed scalar
     /// bounds.  The relation premise is one of `premises`; every bound index
     /// must name a scalar signed comparison in that same premise slice.
@@ -737,6 +758,35 @@ impl SpecialArithmeticCertificate {
                     .get(*finite)
                     .ok_or(SpecialArithmeticCheckError::InvalidPremise(*finite))?;
                 if !float_reflexive(finite, result) {
+                    return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
+                }
+                Ok(())
+            }
+            SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
+                let Proposition::ConditionIs(condition, value) = result else {
+                    return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
+                };
+                let ConditionTerm::Bitvector64SignedLessEqual(left, right) = condition else {
+                    return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
+                };
+                if !charge_bitvector(left) || !charge_bitvector(right) {
+                    return Err(SpecialArithmeticCheckError::WorkLimitExceeded);
+                }
+                let mut context = crate::kernel::PureFactContext::new();
+                let mut seen = HashSet::new();
+                for bound in bounds {
+                    if !seen.insert(*bound) {
+                        return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
+                    }
+                    let premise = premises
+                        .get(*bound)
+                        .ok_or(SpecialArithmeticCheckError::InvalidPremise(*bound))?;
+                    if !charge_signed_bound(premise) {
+                        return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
+                    }
+                    context = context.assume_proposition(premise.clone());
+                }
+                if context.decide_widened_sum_bound(condition) != Some(*value) {
                     return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
                 }
                 Ok(())
@@ -983,7 +1033,8 @@ fn signed_defined(
 impl SpecialArithmeticNode {
     fn result(&self) -> &Proposition {
         match self {
-            Self::PointerTranslation { result, .. }
+            Self::UnsignedSumBound { result, .. }
+            | Self::PointerTranslation { result, .. }
             | Self::PointerAlignment { result, .. }
             | Self::PointerWordEquality { result, .. }
             | Self::PointerWordFromAlignment { result, .. }

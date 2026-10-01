@@ -816,6 +816,15 @@ fn write_special_arithmetic_certificate(
                 "float_reflexive finite {finite} => {};",
                 source_click_proposition(result)
             ),
+            SpecialArithmeticNode::UnsignedSumBound { bounds, result } => format!(
+                "unsigned_sum_bound bounds [{}] => {};",
+                bounds
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source_click_proposition(result)
+            ),
             SpecialArithmeticNode::SignedDefined {
                 width,
                 bounds,

@@ -6529,6 +6529,14 @@ impl Parser {
                     self.expect(Token::Semicolon)?;
                     nodes.push(SpecialArithmeticNode::FloatReflexive { finite, result });
                 }
+                "unsigned_sum_bound" => {
+                    self.expect_ident_spelling("bounds")?;
+                    let bounds = self.parse_certificate_index_list("unsigned sum bound premise")?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    self.expect(Token::Semicolon)?;
+                    nodes.push(SpecialArithmeticNode::UnsignedSumBound { bounds, result });
+                }
                 "int32_defined" | "int64_defined" => {
                     let width = if keyword == "int32_defined" {
                         crate::kernel::SignedDefinedWidth::Int32

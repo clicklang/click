@@ -5,6 +5,13 @@ impl PureFactContext {
         if let Some(value) = self.exact_condition_value(condition) {
             return Some(value);
         }
+        if let Some(value) = self
+            .decide_indexed_greater_equal(condition)
+            .or_else(|| self.decide_masked_order(condition))
+            .or_else(|| self.decide_widened_sum_bound(condition))
+        {
+            return Some(value);
+        }
         if let Some(value) = self.decide_exact_signed_constant_order(condition) {
             return Some(value);
         }
@@ -219,6 +226,13 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         if let Some(value) = self.exact_condition_value(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self
+            .decide_indexed_greater_equal(condition)
+            .or_else(|| self.decide_masked_order(condition))
+            .or_else(|| self.decide_widened_sum_bound(condition))
+        {
             return Some(value);
         }
         if let Some(value) = self.decide_exact_signed_constant_order(condition) {

@@ -3697,8 +3697,9 @@ impl C0StructLayout {
         let mut previous_end = 0u32;
         for (name, c_type, offset_bytes, byte_width) in fields {
             let (expected_width, expected_alignment) = match c_type {
-                C0Type::Int32 => (4, 4),
-                C0Type::Int32Pointer => (8, 8),
+                C0Type::UInt8 => (1, 1),
+                C0Type::Int32 | C0Type::UInt32 => (4, 4),
+                C0Type::Int32Pointer | C0Type::UInt8Pointer | C0Type::UInt32Pointer => (8, 8),
                 _ => {
                     return Err(format!(
                         "explicit struct field `{name}` has unsupported type"

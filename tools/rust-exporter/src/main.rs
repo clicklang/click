@@ -94,11 +94,16 @@ fn span(tcx: TyCtxt<'_>, s: rustc_span::Span) -> Span {
 fn export_type(tcx: TyCtxt<'_>, t: ty::Ty<'_>) -> Result<Type, String> {
     match t.kind() {
         ty::Int(ty::IntTy::I32) => Ok(Type::I32),
+        ty::Uint(ty::UintTy::U8) => Ok(Type::U8),
+        ty::Uint(ty::UintTy::U32) => Ok(Type::U32),
         ty::Bool => Ok(Type::Bool),
         ty::Tuple(ts) if ts.is_empty() => Ok(Type::Unit),
         ty::Ref(_, p, m) => {
             let pointee = export_type(tcx, *p)?;
-            if !matches!(pointee, Type::I32 | Type::Record { .. }) {
+            if !matches!(
+                pointee,
+                Type::I32 | Type::U8 | Type::U32 | Type::Record { .. }
+            ) {
                 return Err("reference pointee outside Rust slice".into());
             }
             Ok(Type::Reference {
@@ -162,10 +167,18 @@ impl<'tcx> BodyExporter<'tcx> {
         export_type(self.tcx, t).map_err(|m| self.error(e, &m))?;
         match e.kind {
             hir::ExprKind::Lit(lit) => match lit.node {
-                rustc_ast::LitKind::Int(v, _) => Ok(Expression::Integer {
-                    value: i32::try_from(v.get())
-                        .map_err(|_| self.error(e, "integer literal outside i32"))?,
-                }),
+                rustc_ast::LitKind::Int(v, _) => match export_type(self.tcx, t)? {
+                    value_type @ (Type::U8 | Type::U32) => Ok(Expression::UnsignedInteger {
+                        value: u32::try_from(v.get())
+                            .map_err(|_| self.error(e, "unsigned literal outside u32"))?,
+                        value_type,
+                    }),
+                    Type::I32 => Ok(Expression::Integer {
+                        value: i32::try_from(v.get())
+                            .map_err(|_| self.error(e, "integer literal outside i32"))?,
+                    }),
+                    _ => Err(self.error(e, "unsupported integer literal type")),
+                },
                 rustc_ast::LitKind::Bool(value) => Ok(Expression::Boolean { value }),
                 _ => Err(self.error(e, "unsupported Rust literal")),
             },
@@ -187,6 +200,13 @@ impl<'tcx> BodyExporter<'tcx> {
                     hir::BinOpKind::Add => "add",
                     hir::BinOpKind::Sub => "sub",
                     hir::BinOpKind::Mul => "mul",
+                    hir::BinOpKind::Div => "div",
+                    hir::BinOpKind::Rem => "rem",
+                    hir::BinOpKind::Shl => "shl",
+                    hir::BinOpKind::Shr => "shr",
+                    hir::BinOpKind::BitAnd => "bit_and",
+                    hir::BinOpKind::BitOr => "bit_or",
+                    hir::BinOpKind::BitXor => "bit_xor",
                     hir::BinOpKind::Eq => "eq",
                     hir::BinOpKind::Ne => "ne",
                     hir::BinOpKind::Lt => "lt",
@@ -195,10 +215,19 @@ impl<'tcx> BodyExporter<'tcx> {
                     hir::BinOpKind::Ge => "ge",
                     hir::BinOpKind::And => "and",
                     hir::BinOpKind::Or => "or",
-                    _ => return Err(self.error(e, "unsupported Rust binary operator")),
                 };
+                if matches!(operator, "shl" | "shr")
+                    && !matches!(
+                        export_type(self.tcx, self.typeck.expr_ty(l))?,
+                        Type::U8 | Type::U32
+                    )
+                {
+                    return Err(self.error(e, "Rust shifts currently require u8 or u32 operands"));
+                }
                 Ok(Expression::Binary {
                     operator: operator.into(),
+                    left_type: export_type(self.tcx, self.typeck.expr_ty(l))?,
+                    right_type: export_type(self.tcx, self.typeck.expr_ty(r))?,
                     left: Box::new(self.expr(l)?),
                     right: Box::new(self.expr(r)?),
                 })
@@ -206,11 +235,23 @@ impl<'tcx> BodyExporter<'tcx> {
             hir::ExprKind::Unary(hir::UnOp::Not, v) if t.is_bool() => Ok(Expression::Not {
                 value: Box::new(self.expr(v)?),
             }),
+            hir::ExprKind::Unary(hir::UnOp::Not, v) if t.is_integral() => {
+                Ok(Expression::BitwiseNot {
+                    value: Box::new(self.expr(v)?),
+                    value_type: export_type(self.tcx, t)?,
+                })
+            }
+            hir::ExprKind::Cast(value, _) if t.is_integral() => Ok(Expression::Cast {
+                value: Box::new(self.expr(value)?),
+                value_type: export_type(self.tcx, t)?,
+            }),
             hir::ExprKind::Unary(hir::UnOp::Neg, v)
                 if matches!(t.kind(), ty::Int(ty::IntTy::I32)) =>
             {
                 Ok(Expression::Binary {
                     operator: "sub".into(),
+                    left_type: Type::I32,
+                    right_type: Type::I32,
                     left: Box::new(Expression::Integer { value: 0 }),
                     right: Box::new(self.expr(v)?),
                 })
@@ -220,10 +261,12 @@ impl<'tcx> BodyExporter<'tcx> {
             {
                 Ok(Expression::Deref {
                     reference: Box::new(self.expr(v)?),
+                    value_type: export_type(self.tcx, t)?,
                 })
             }
             hir::ExprKind::AddrOf(hir::BorrowKind::Ref, _, v) => Ok(Expression::Borrow {
                 place: Box::new(self.expr(v)?),
+                value_type: export_type(self.tcx, t)?,
             }),
             hir::ExprKind::Field(base, field) => {
                 let base_type = self.typeck.expr_ty(base).peel_refs();
@@ -327,12 +370,23 @@ impl<'tcx> BodyExporter<'tcx> {
                 let operator = match op.node {
                     hir::AssignOpKind::AddAssign => "add",
                     hir::AssignOpKind::SubAssign => "sub",
-                    _ => return Err(self.error(e, "unsupported assignment operator")),
+                    hir::AssignOpKind::MulAssign => "mul",
+                    hir::AssignOpKind::DivAssign => "div",
+                    hir::AssignOpKind::RemAssign => "rem",
+                    hir::AssignOpKind::ShlAssign => "shl",
+                    hir::AssignOpKind::ShrAssign => "shr",
+                    hir::AssignOpKind::BitAndAssign => "bit_and",
+                    hir::AssignOpKind::BitOrAssign => "bit_or",
+                    hir::AssignOpKind::BitXorAssign => "bit_xor",
                 };
+                let left_type = export_type(self.tcx, self.typeck.expr_ty(target))?;
+                let right_type = export_type(self.tcx, self.typeck.expr_ty(value))?;
                 let target = self.expr(target)?;
                 Ok(vec![Statement::Assign {
                     value: Expression::Binary {
                         operator: operator.into(),
+                        left_type,
+                        right_type,
                         left: Box::new(target.clone()),
                         right: Box::new(self.expr(value)?),
                     },
@@ -449,8 +503,11 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
                         f.ty(tcx, ty::GenericArgs::identity_for_item(tcx, def.did()))
                             .skip_norm_wip(),
                     )?;
-                    if !matches!(value_type, Type::I32 | Type::Reference { .. }) {
-                        return Err("struct fields must be i32 or references".into());
+                    if !matches!(
+                        value_type,
+                        Type::I32 | Type::U8 | Type::U32 | Type::Reference { .. }
+                    ) {
+                        return Err("struct fields must be supported integers or references".into());
                     }
                     fields.push(Field {
                         name: f.name.to_string(),

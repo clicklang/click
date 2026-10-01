@@ -107,8 +107,10 @@ algorithm's simplicity means its optimized implementations are already supported
 
 The [pinned checksum assessment](../design/rust-checksum-assessment.md) records
 zlib 1.3.1 and adler2 2.0.1, selected build configurations, reachable constructs,
-and the shared specification. The next checksum-facing increment is unsigned Rust scalar arithmetic; byte
-slices, crate extraction, and iterator loops follow. Neither library is verified
+and the shared specification. Unsigned `u8`/`u32` scalar arithmetic now has a synthetic regression with
+checked panic obligations, casts, bitwise operations, and proof expansion.
+The next checksum-facing increment is byte slices and indexing; crate
+extraction and iterator loops follow. Neither library is verified
 by this assessment.
 
 ## Milestone 1: experimental safe Rust

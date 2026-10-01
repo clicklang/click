@@ -5054,6 +5054,10 @@ pub struct SpecialArithmeticCertificate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SpecialArithmeticNode {
+    UnsignedSumBound {
+        bounds: Vec<usize>,
+        result: ClickProposition,
+    },
     PointerTranslation {
         relation: usize,
         bounds: Vec<usize>,

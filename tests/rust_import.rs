@@ -77,7 +77,7 @@ fn rust_compiler_and_subset_rejections_are_distinct() {
             "pub fn bad(p: &mut i32) { let child = &mut *p; *p = 4; *child = 7; }",
             "cannot assign",
         ),
-        ("pub fn bad(x: u32) -> u32 { x }", "unsupported Rust type"),
+        ("pub fn bad(x: u64) -> u64 { x }", "unsupported Rust type"),
         (
             "pub fn bad(mut x: i32) -> i32 { while x < 5 { x += 1; } x }",
             "supported typed Rust subset",
@@ -495,4 +495,122 @@ fn rust_two_guards_clean_up_in_reverse_construction_order() {
         }
     }
     assert_eq!(drops, constructors.into_iter().rev().collect::<Vec<_>>());
+}
+
+const UNSIGNED_SOURCE: &str = include_str!("../examples/rust-unsigned/arithmetic.rs");
+const UNSIGNED_SIDECAR: &str = include_str!("../examples/rust-unsigned/arithmetic.click");
+
+#[test]
+fn rust_unsigned_arithmetic_and_expansion_verify() {
+    let p = Project::new(UNSIGNED_SOURCE);
+    let sidecar = UNSIGNED_SIDECAR.replace("arithmetic.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_eq!(verified.len(), 9);
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures result == 0;", "ensures result == 1;"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "add_byte.contract",
+        "shifted_byte.contract",
+        "low_byte.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn rust_unsigned_panic_paths_are_rejected() {
+    for (ty, expression, precondition) in [
+        ("u32", "x + 1", "x == 4294967295u32"),
+        ("u8", "x + 1", "x == 255"),
+        ("u32", "x - 1", "x == 0"),
+        ("u8", "x - 1", "x == 0"),
+        ("u32", "x * 2", "x == 4294967295u32"),
+        ("u8", "x * 2", "x == 255"),
+        ("u32", "1 / x", "x == 0"),
+        ("u8", "1 % x", "x == 0"),
+        ("u32", "1 << x", "x == 32"),
+        ("u8", "1 >> x", "x == 8"),
+    ] {
+        let p = Project::new(&format!("pub fn bad(x:{ty})->{ty} {{ {expression} }}"));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let cty = if ty == "u8" { "uint8" } else { "uint32" };
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; {cty} bad({cty} x) {{ requires {precondition}; ensures result == result; }} by {{ execute(); simp(); }}"
+        );
+        assert!(
+            C0VerificationSession::new_program_prepared(&sidecar, &prepared).is_err(),
+            "accepted {expression} at {precondition}"
+        );
+    }
+}
+
+#[test]
+fn rust_unsigned_nested_checks_and_short_circuit_preserve_panics() {
+    for (expression, return_type, valid) in [
+        ("(x + 1) as u8", "uint8", false),
+        ("false && x + 1 > 0", "bool", true),
+        ("true || x + 1 > 0", "bool", true),
+        ("true && x + 1 > 0", "bool", false),
+        ("false || x + 1 > 0", "bool", false),
+    ] {
+        let rust_type = if return_type == "bool" { "bool" } else { "u8" };
+        let p = Project::new(&format!(
+            "pub fn check(x:u32)->{rust_type} {{ {expression} }}"
+        ));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; {return_type} check(uint32 x) {{ requires x == 4294967295u32; ensures result == result; }} by {{ execute(); simp(); }}"
+        );
+        let result = C0VerificationSession::new_program_prepared(&sidecar, &prepared);
+        assert_eq!(result.is_ok(), valid, "{expression}: {:?}", result.err());
+    }
+}
+
+#[test]
+fn rust_unsigned_casts_bitwise_and_assignments_verify() {
+    let p = Project::new(
+        "pub fn bits(mut x:u8)->u8 { x ^= 255; x &= 254; x |= 1; !x } pub fn narrow(x:i32)->u8 { x as u8 } pub fn signed(x:u32)->i32 { x as i32 } pub fn shift(x:u32, n:i32)->u32 { x >> n } pub fn byte_count(x:u32, n:u8)->u32 { x << n }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+uint8 bits(uint8 x) { requires x == 128; ensures result == 128; } by { execute(); simp(); }
+uint8 narrow(int32 x) { requires x == -1; ensures result == 255; } by { execute(); simp(); }
+int32 signed(uint32 x) { requires x == 4294967295u32; ensures result == -1; } by { execute(); simp(); }
+uint32 shift(uint32 x, int32 n) { requires x == 4294967295u32; requires n == 31; ensures result == 1u32; } by { execute(); simp(); }
+uint32 byte_count(uint32 x, uint8 n) { requires n < 32u32; ensures result == (x << (uint32)n); } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("n == 31", "n == -1"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_unsigned_references_and_byte_field_layout_verify() {
+    let p = Project::new(
+        "pub struct Pair { pub byte:u8, pub word:u32 } pub fn write(p:&mut u8, q:&mut u32) { *p = 255; *q = 4294967295; } pub fn field(p:&mut Pair) { p.byte = 7; }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+void write(uint8* p, uint32* q) { owns p[0..1]; owns q[0..1]; ensures p[0] == 255; ensures q[0] == 4294967295u32; } by { execute(); simp(); }
+void field(struct Pair* p) { owns p->byte; owns p->word; ensures p->byte == 7; ensures p->word == old(p->word); } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
