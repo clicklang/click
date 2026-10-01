@@ -514,9 +514,9 @@ establishes that the arbitrary entry total is at least one, so decrementing
 needs no additional bound. Return checks the member's checked consumption;
 merely declaring `consumes` and returning authority does not suffice. The
 caller retains its other members, recovers authority, and observes the total
-decreased by one. The consumed member cannot be used again. This initial
-support admits one consumption of the entry member, without replacement or
-multiple updates inside the helper.
+decreased by one. The consumed member cannot be used again. This single-pool
+form admits one consumption of the entry member. The two-pool move below
+also produces a member under a different authority.
 
 A consumed member can return its private memory through the ordinary output
 contract:
@@ -542,10 +542,37 @@ its remaining memory ownership is available. It cannot reopen the consumed
 member or read the memory after freeing it. Opening and closing the member
 without consuming it cannot satisfy this contract.
 
+A helper can move a unit member between two authorities of the same family:
+
+<!-- verified-example: mdtests/authority_wildcard_transfer_private_body.md -->
+```click
+void move(int32* source, int32* destination, int32* p) {
+    requires source != destination;
+    owns authority(slot(source, _));
+    owns authority(slot(destination, _));
+    consumes slot(source, p);
+    requires defined(count(slot(destination, _)) + 1);
+    produces slot(destination, p);
+    ensures p[0] == old(p[0]);
+    ensures count(slot(source, _)) == old(count(slot(source, _))) - 1;
+    ensures count(slot(destination, _)) == old(count(slot(destination, _))) + 1;
+}
+```
+
+Its proof unfolds the source member, then folds the destination member using
+that same private memory, or calls a checked nested helper. Both authorities
+are borrowed and returned. The destination entry total is arbitrary; owning
+its authority gives no ownership of its existing members. Each population's
+ledger checks its own exchange, while ordinary resource transfer checks the
+private body. Caller-retained members in both pools remain owned. The old
+source membership cannot be reused. This transfer admits one unit consumption
+and one unit production with the same family and trailing arguments, changing
+only the pool anchor; it does not enable arbitrary batches of updates.
+
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
 authority, consume the entry member, or create one from authority and its required
-private memory. Fixed
+private memory, or move one unit member between two wildcard authorities. Fixed
 trailing arguments in authority patterns, exact subset observations, and
 field-bearing members remain future work.
 

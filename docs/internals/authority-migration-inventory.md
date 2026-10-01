@@ -37,6 +37,13 @@ whose body owns that range. The caller retains another member and observes
 the incremented total. Regressions reject missing memory or authority,
 duplicate membership or independent body ownership, and a missing overflow
 bound. Existing checked exchanges support this without verifier changes.
+The `authority_wildcard_transfer_private_body*` fixtures move one unit member
+between two wildcard authorities through direct and nested helpers, retaining
+private memory and caller-owned members in both pools. Both entry totals are
+arbitrary; each ledger checks the exact decrement or increment. Rejections
+cover absent authority or bounds, missing exchange, incorrect totals, aliased
+pools, and reuse of the consumed source membership. An unrelated member may
+be framed beside an authority; it is not imported into that authority's pool.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

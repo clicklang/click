@@ -477,8 +477,15 @@ authority, duplicate membership or independent body ownership, and a missing
 count overflow bound. This capability needed only fixtures and documentation;
 the existing checked member exchange and call transfer already support it.
 
+Direct and nested helpers now move one unit memory-bearing member between
+two wildcard authorities using ordinary `consumes` and `produces`. Per-pool
+entry imports preserve arbitrary totals, and return checks both exact ledger
+changes. Callers retain members in both pools, preserve private memory, and
+retire both populations after cleanup. This remains a narrow same-family,
+same-trailing-arguments transfer, not arbitrary multi-update support.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
-wildcard authority, and a checked transfer between two authorities. Count
+wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count
 individually identified members without erasing fields or treating equal
 parameters as interchangeable instances. Add the private-slot example below.
 
