@@ -1408,3 +1408,57 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }
+
+#[test]
+fn rust_slice_for_sum_verifies_and_expands() {
+    let p = Project::new(include_str!("../examples/rust-iterators/sum.rs"));
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar =
+        include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for invalid in [
+        sidecar.replace(
+            "ensures to_integer(result) == old(prefix",
+            "ensures to_integer(result) + 1 == old(prefix",
+        ),
+        sidecar.replace(
+            "decreases bytes_len - __rust_iter_index_3_5;",
+            "decreases __rust_iter_index_3_5;",
+        ),
+        sidecar.replace(
+            "invariant __rust_iter_index_3_5 <= bytes_len;",
+            "invariant __rust_iter_index_3_5 < bytes_len;",
+        ),
+        sidecar.replace("requires bytes_len <= 1000u64;", ""),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn rust_slice_for_rejects_unsupported_iteration() {
+    for source in [
+        "pub fn bad(bytes: &[u8]) { for byte in bytes {} }",
+        "pub fn bad(bytes: &[u8]) { for &byte in bytes.iter() {} }",
+        "pub fn bad(bytes: &mut [u8]) { for byte in bytes {} }",
+        "pub fn bad(mut bytes: &[u8]) { for &byte in bytes {} }",
+        "pub fn bad(bytes: &[u8]) { 'outer: for &byte in bytes {} }",
+        "pub fn bad(bytes: &[u8]) { for &byte in bytes { break; } }",
+        "pub fn bad(bytes: &[u8]) { for &byte in bytes { continue; } }",
+        "pub fn bad(bytes: &[u8; 2]) { for &byte in bytes {} }",
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(
+            error.contains("Rust for loops") || error.contains("break and continue"),
+            "{error}"
+        );
+        assert!(!error.contains("panicked"), "{error}");
+    }
+}

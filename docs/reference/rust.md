@@ -75,7 +75,7 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 It does not establish checksum-library support;
-iterator loops and crate extraction remain outstanding.
+chunk iterators and crate extraction remain outstanding.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
@@ -204,7 +204,8 @@ Owned-value MIR loops remain outside this increment.
 Conditions currently support scalar comparisons, boolean combinations,
 negation, casts, and builtin `.len()`. Calls, indexing, and arithmetic in a
 condition require repeated preparation of checked operands and are rejected.
-`for`, `loop`, labels, `break`, and `continue` remain unsupported.
+General iterators, `loop`, labels, `break`, and `continue` remain unsupported.
+The copied-byte slice `for` form described below is supported.
 
 [`examples/rust-loops/loops.rs`](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.rs)
 and its [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.click)
@@ -228,6 +229,29 @@ the input at function entry. A prefix fold and the bound
 result and safety of every intermediate addition. Checked full-width bounds
 connect the `usize` counter to the fold's signed-word endpoint. It covers
 empty input and supports profiling, audit, and expanded-proof reverification.
+
+## Slice iterator loops
+
+`for &byte in bytes` supports an immutable binding of type `&[u8]`.
+The pinned compiler resolves `IntoIterator::into_iter` and `Iterator::next`;
+the exporter checks their identities and the compiler's `Option` match before
+lowering the loop. Each yielded shared reference is read once into the copied
+`u8` binding. The original Rust source stays unchanged.
+
+The exported loop uses a native `usize` progress counter named
+`__rust_iter_index_LINE_COLUMN`, where the location identifies the `for`
+expression. Sidecars use that counter in shared loop invariants and a
+`bytes_len - counter` termination measure. Indexing retains full-width bounds,
+view authority, and signed-word memory limits; body arithmetic retains its
+panic checks. An immutable slice binding keeps the iterator's original pointer
+and length stable. Mutable bindings and mutable slices are rejected.
+
+[`examples/rust-iterators/sum.rs`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.rs)
+and its sidecar prove the same exact byte sum as the `while` example for arbitrary
+bytes and lengths `0..=1000`. Verification, profiling, audit, and expanded-proof
+verification have regressions. Reference-valued bindings, array iteration,
+`.iter()`, `.chunks_exact()`, custom iterators, labels, `break`, and `continue`
+remain outside this subset.
 
 ## Moves and drops
 
