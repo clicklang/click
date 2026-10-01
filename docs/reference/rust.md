@@ -2,8 +2,8 @@
 
 Click's first Rust frontend accepts a small safe, monomorphic subset of Rust
 2024. It imports unchanged source through a repository-owned exporter using
-pinned rustc typed HIR after type checking and borrow checking. The exporter
-writes a typed JSON artifact; Click lowers that artifact directly to the shared
+pinned rustc typed HIR and drop-elaborated MIR after type checking and borrow
+checking. The exporter writes a typed JSON artifact; Click lowers that artifact directly to the shared
 kernel execution vocabulary. Verification uses the same sidecars, tactics,
 certificates, and bounded engine as C and C++.
 
@@ -42,23 +42,62 @@ changes require refresh. The saved lock includes the compiler/exporter identity.
 
 The initial slice supports `i32`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
-references to `i32` and plain structs with `i32` fields, field access, and local
-reborrowing of reference-backed places. Arithmetic supports addition,
+references to `i32` and plain structs with `i32` or reference fields, field
+access, and local reborrowing of reference-backed places. Arithmetic supports addition,
 subtraction, and multiplication, comparisons, and boolean operations. Record
 size, alignment, and field offsets come from rustc for the selected target;
 Rust's default field order is not assumed.
 
 The fixed profile is Rust 2024, compiler commit
 `01dfd79246f1b2d5f146616deff08223a840a9ae`, target
-`x86_64-unknown-linux-gnu`, overflow checks enabled, and panic abort. Click must
+`x86_64-unknown-linux-gnu`, overflow checks enabled, panic abort, and MIR optimization level zero. Click must
 prove that arithmetic overflow does not occur. Compiler acceptance alone does
 not prove a functional claim or panic freedom.
 
 Modules, imports, macros, semantic attributes, dependencies, unsafe code,
-traits, generics, loops, heap allocation, aggregate values and returns, reference
+general traits, type/const generics, loops, heap allocation, aggregate parameters and returns, reference
 returns, and other integer widths are outside this slice. Unsupported syntax
 fails during extraction or direct lowering. This is not general Cargo-project
 support.
+
+## Moves and drops
+
+[`examples/rust-move-drop/guard.rs`](https://github.com/clicklang/click/blob/master/examples/rust-move-drop/guard.rs)
+constructs a guard, moves it, changes borrowed storage, and returns through two
+paths. Its checked `Drop` contract restores the original storage value. The
+caller proves the result was captured before cleanup and that the storage was
+restored on both paths.
+
+Local non-Copy structs support whole-value construction and moves, scope and
+early-return cleanup, conditional initialization/moves, and explicit
+`std::mem::drop`. Structs can have lifetime parameters and a local `Drop`
+implementation. The compiler selects drop order and drop flags through its
+structured, acyclic drop-elaborated MIR; Click does not reconstruct cleanup
+from source scopes. Destructor bodies require verified sidecar contracts.
+
+Private checked live flags require a live source and dead destination for a
+move, and consume the source. Reads and drops require a live value. Cleanup
+must consume every destructor-bearing local before return. The flags prevent
+stale struct bytes from justifying duplicate moves, duplicate drops, or omitted
+cleanup. Struct storage uses existing checked stack allocation and typed field
+loads/stores. Calls that return a field borrowed from a local owned struct
+currently expose a shared resource-matching gap: the field fragment cannot
+be reassembled with its parent for the next destructor call. Extraction rejects
+that case pending field-loan recovery. Moving a reference field carries the
+same borrowed address; it does not create allocation or deallocation authority.
+
+This slice excludes source borrows of owned local structs or their fields,
+partial moves, nested owned fields, Copy trait support,
+by-value aggregate calls/returns, cycles or unstructured shared MIR regions,
+heap owners such as `Box`/`Vec`, and panic unwinding. Owned-value MIR currently
+supports scalar/reference assignments and comparisons; arithmetic in these
+functions fails extraction. The scalar/reference HIR slice retains its checked
+arithmetic support.
+
+```sh
+cargo run --bin click -- import lock examples/rust-move-drop/guard.click
+cargo run --bin click -- verify examples/rust-move-drop/guard.click
+```
 
 ## Borrow and proof boundary
 
@@ -72,8 +111,8 @@ This frontend does not infer sidecar authority from a Rust reference. Contracts
 must provide the resources they use. Reborrows of caller storage retain the
 same modeled pointer: writes through the child are observed through its parent.
 The compiler establishes when parent reuse is legal; the kernel establishes
-that each modeled access is justified by the supplied resources. Production
-move/drop rules and explicit resource suspension/recovery remain roadmap work.
+that each modeled access is justified by the supplied resources. Explicit
+resource suspension/recovery remains roadmap work.
 
 The trusted boundary includes the pinned compiler, exporter, semantic artifact,
 and its translator. The lock detects stale or changed inputs; it is not an

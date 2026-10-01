@@ -4,7 +4,7 @@ This tree holds example projects that are larger than a single mdtest snippet.
 Name directories after the domain and proof question, not after whether they are
 "real" or "mini".
 
-Each example project should contain ordinary `.c` or `.cpp` files and one or
+Each example project should contain ordinary `.c`, `.cpp`, or `.rs` files and one or
 more `.click` sidecars. The `tests/examples.rs` integration test verifies every
 sidecar against its source. Compiler-import examples also include an
 `*.click.import.json` configuration; a project-local `prepare.py`, when
@@ -18,7 +18,7 @@ unless there is a concrete reason to add hierarchy.
 
 Examples have three distinct provenance classes:
 
-- **Synthetic** fixtures are C or C++ written for this repository to isolate a
+- **Synthetic** fixtures are C, C++, or Rust written for this repository to isolate a
   language or proof-model question. Their source should still remain fixed while a
   proof is repaired, but they are not evidence that Click accepts unchanged
   third-party source.
@@ -37,6 +37,10 @@ version and version-string bytes under the explicit kernel target.
 
 Current projects:
 
+- `basic-rust/` verifies scalar branches, reference reborrows, parent reuse, and
+  disjoint struct fields through the pinned Rust compiler import.
+- `rust-move-drop/` verifies a moved Rust guard that restores borrowed storage
+  on normal and early return through a checked destructor contract.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that
   restores its referent on both normal and early return, and a modular caller
   that observes the captured result and restored memory, using Clang 19's

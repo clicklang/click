@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 #[path = "../../../src/languages/rust/schema.rs"]
 mod schema;
 use schema::*;
+mod moves;
 
 struct Exporter {
     logical_source: String,
@@ -27,9 +28,24 @@ impl<'a> rustc_ast::visit::Visitor<'a> for SourceBoundary {
     fn visit_item(&mut self, item: &'a rustc_ast::Item) {
         if !matches!(
             item.kind,
-            rustc_ast::ItemKind::Fn(_) | rustc_ast::ItemKind::Struct(..)
+            rustc_ast::ItemKind::Fn(_)
+                | rustc_ast::ItemKind::Struct(..)
+                | rustc_ast::ItemKind::Impl(_)
         ) {
             self.invalid = true;
+        }
+        if let rustc_ast::ItemKind::Impl(implementation) = &item.kind {
+            match &implementation.of_trait {
+                Some(header)
+                    if !matches!(header.safety, rustc_ast::Safety::Unsafe(_))
+                        && header
+                            .trait_ref
+                            .path
+                            .segments
+                            .last()
+                            .is_some_and(|segment| segment.ident.name.as_str() == "Drop") => {}
+                _ => self.invalid = true,
+            }
         }
         rustc_ast::visit::walk_item(self, item);
     }
@@ -90,7 +106,13 @@ fn export_type(tcx: TyCtxt<'_>, t: ty::Ty<'_>) -> Result<Type, String> {
                 pointee: Box::new(pointee),
             })
         }
-        ty::Adt(def, args) if def.is_struct() && args.is_empty() && def.did().is_local() => {
+        ty::Adt(def, args)
+            if def.is_struct()
+                && args
+                    .iter()
+                    .all(|a| matches!(a.kind(), ty::GenericArgKind::Lifetime(_)))
+                && def.did().is_local() =>
+        {
             Ok(Type::Record {
                 name: tcx.item_name(def.did()).to_string(),
             })
@@ -338,11 +360,47 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
     let mut functions = Vec::new();
     let mut records = BTreeMap::new();
     for id in tcx.hir_body_owners() {
-        if tcx.def_kind(id) != hir::def::DefKind::Fn {
-            return Err("only free Rust functions are supported".into());
+        let destructor = if tcx.def_kind(id) == hir::def::DefKind::AssocFn {
+            let implementation = tcx.parent(id.to_def_id());
+            if !matches!(
+                tcx.def_kind(implementation),
+                hir::def::DefKind::Impl { of_trait: true }
+            ) || Some(
+                tcx.impl_trait_ref(implementation)
+                    .instantiate_identity()
+                    .skip_norm_wip()
+                    .def_id,
+            ) != tcx.lang_items().drop_trait()
+            {
+                return Err("only Drop trait methods are supported".into());
+            }
+            let self_type = tcx
+                .type_of(implementation)
+                .instantiate_identity()
+                .skip_norm_wip();
+            Some(format!(
+                "{}_drop",
+                tcx.item_name(
+                    self_type
+                        .ty_adt_def()
+                        .ok_or("Drop self must be a struct")?
+                        .did()
+                )
+            ))
+        } else {
+            None
+        };
+        if tcx.def_kind(id) != hir::def::DefKind::Fn && destructor.is_none() {
+            return Err("only free Rust functions and Drop implementations are supported".into());
         }
         let sig = tcx.fn_sig(id).instantiate_identity().skip_binder();
-        if sig.safety().is_unsafe() || !tcx.generics_of(id).own_params.is_empty() {
+        if sig.safety().is_unsafe()
+            || tcx
+                .generics_of(id)
+                .own_params
+                .iter()
+                .any(|p| !matches!(p.kind, ty::GenericParamDefKind::Lifetime))
+        {
             return Err("unsafe or generic functions outside Rust slice".into());
         }
         let body = tcx.hir_body_owned_by(id);
@@ -364,7 +422,17 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        for t in sig.inputs() {
+        let mir = tcx.mir_drops_elaborated_and_const_checked(id).borrow();
+        let owned = mir
+            .local_decls
+            .iter()
+            .any(|d| matches!(d.ty.kind(), ty::Adt(..)));
+        let types = sig
+            .inputs()
+            .iter()
+            .copied()
+            .chain(mir.local_decls.iter().map(|d| d.ty));
+        for t in types {
             let t = t.peel_refs();
             if let ty::Adt(def, _) = t.kind() {
                 let name = tcx.item_name(def.did()).to_string();
@@ -376,17 +444,17 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
                     .map_err(|e| format!("Rust layout: {e:?}"))?;
                 let mut fields = Vec::new();
                 for (i, f) in def.non_enum_variant().fields.iter_enumerated() {
-                    if !matches!(
-                        export_type(
-                            tcx,
-                            tcx.type_of(f.did).instantiate_identity().skip_norm_wip()
-                        )?,
-                        Type::I32
-                    ) {
-                        return Err("only i32 struct fields are supported".into());
+                    let value_type = export_type(
+                        tcx,
+                        f.ty(tcx, ty::GenericArgs::identity_for_item(tcx, def.did()))
+                            .skip_norm_wip(),
+                    )?;
+                    if !matches!(value_type, Type::I32 | Type::Reference { .. }) {
+                        return Err("struct fields must be i32 or references".into());
                     }
                     fields.push(Field {
                         name: f.name.to_string(),
+                        value_type,
                         offset: u32::try_from(layout.fields.offset(i.index()).bytes())
                             .map_err(|_| "field offset too large")?,
                     });
@@ -394,22 +462,34 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
                 records.insert(
                     name.clone(),
                     Record {
-                        name,
+                        name: name.clone(),
                         size: u32::try_from(layout.size.bytes())
                             .map_err(|_| "record size too large")?,
                         alignment: u32::try_from(layout.align.abi.bytes())
                             .map_err(|_| "alignment too large")?,
                         fields,
+                        destructor: def.destructor(tcx).map(|_| format!("{name}_drop")),
                     },
                 );
             }
         }
-        let statements = cx.statement(body.value, true)?;
+        drop(mir);
+        let mir_body = if owned {
+            Some(moves::body(tcx, id, &parameters)?)
+        } else {
+            None
+        };
+        let statements = if owned {
+            Vec::new()
+        } else {
+            cx.statement(body.value, true)?
+        };
         functions.push(Function {
-            name: tcx.item_name(id.to_def_id()).to_string(),
+            name: destructor.unwrap_or_else(|| tcx.item_name(id.to_def_id()).to_string()),
             return_type: export_type(tcx, sig.output())?,
             parameters,
             body: statements,
+            mir: mir_body,
             span: span(tcx, body.value.span),
         });
     }
@@ -423,6 +503,7 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
         edition: "2024".into(),
         overflow_checks: true,
         panic: "abort".into(),
+        mir_opt_level: 0,
         logical_source: logical.into(),
         records: records.into_values().collect(),
         functions,
@@ -447,6 +528,7 @@ fn main() {
         format!("--target={TARGET}"),
         "-Coverflow-checks=on".into(),
         "-Cpanic=abort".into(),
+        "-Zmir-opt-level=0".into(),
         "--sysroot".into(),
         sysroot,
     ];

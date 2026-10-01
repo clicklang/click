@@ -1,7 +1,7 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
 pub const COMPILER_COMMIT: &str = "01dfd79246f1b2d5f146616deff08223a840a9ae";
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
 
@@ -14,6 +14,7 @@ pub struct RustExport {
     pub edition: String,
     pub overflow_checks: bool,
     pub panic: String,
+    pub mir_opt_level: u32,
     pub logical_source: String,
     pub records: Vec<Record>,
     pub functions: Vec<Function>,
@@ -26,7 +27,7 @@ pub struct Span {
     pub column: usize,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Type {
     I32,
@@ -43,12 +44,14 @@ pub struct Record {
     pub size: u32,
     pub alignment: u32,
     pub fields: Vec<Field>,
+    pub destructor: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Field {
     pub name: String,
     pub offset: u32,
+    pub value_type: Type,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -64,6 +67,7 @@ pub struct Function {
     pub return_type: Type,
     pub parameters: Vec<Place>,
     pub body: Vec<Statement>,
+    pub mir: Option<MirBody>,
     pub span: Span,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -125,4 +129,65 @@ pub enum Statement {
         function: String,
         arguments: Vec<Expression>,
     },
+}
+
+// Drop-elaborated, acyclic MIR. Ownership events remain explicit in the
+// artifact and are checked by live-value assertions in direct lowering.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirBody {
+    pub locals: Vec<Place>,
+    pub blocks: Vec<MirBlock>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MirBlock {
+    pub statements: Vec<MirStatement>,
+    pub terminator: MirTerminator,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MirStatement {
+    Assign {
+        target: Expression,
+        value: Expression,
+    },
+    Initialize {
+        target: String,
+        record: String,
+        fields: Vec<Expression>,
+    },
+    Move {
+        target: String,
+        source: String,
+        record: String,
+    },
+    EndStorage {
+        local: String,
+    },
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MirTerminator {
+    Goto {
+        target: usize,
+    },
+    If {
+        condition: Expression,
+        then_target: usize,
+        else_target: usize,
+    },
+    Drop {
+        local: String,
+        record: String,
+        target: usize,
+    },
+    Call {
+        function: String,
+        arguments: Vec<Expression>,
+        destination: String,
+        target: usize,
+    },
+    Return,
+    Unreachable,
 }
