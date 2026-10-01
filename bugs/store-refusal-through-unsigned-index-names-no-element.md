@@ -16,8 +16,7 @@ mdtests added in PR #54 (`an_unsigned_index_below_an_unbounded_variable_is_refus
 `an_unsigned_index_below_a_wrapped_bound_is_refused.md`) can only pin
 `missing resource fact` because of this. Relatedly, `simp`/`arithmetic`
 refusals print sign-bit-flipped premises as `internal (no exact Click
-spelling) … <bounded opaque operation>`, and a store at index `x - 1u` still
-prints the raw `can-store(...)` text.
+spelling) … <bounded opaque operation>`.
 An open unsigned goal prints the same encoding: an unsigned loop measure's
 decrease member shows as `goal: (-2147483648 ^ x) < (-2147483648 ^
 at(statement(1).entry, x))`, and its "remained open" line hides the entry

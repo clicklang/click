@@ -364,12 +364,12 @@ fn describe_access_bound_prerequisite(
             memory,
             pointer,
             byte_width,
-        } => ("store", "write", memory, pointer, *byte_width),
+        } => ("store to", "write", memory, pointer, *byte_width),
         Proposition::CMemoryLoadable {
             memory,
             base,
             bytes,
-        } => ("read", "read", memory, base, bytes.as_const()?),
+        } => ("read of", "read", memory, base, bytes.as_const()?),
         _ => return None,
     };
     let (parameters, arguments) = crate::surface::diagnostics::local_naming_tables(state);
@@ -380,7 +380,18 @@ fn describe_access_bound_prerequisite(
     )?;
     let bound = crate::kernel::memory_access_element_bound(memory, pointer, byte_width)?;
     let spell = |term: &Bitvector32Term| {
-        crate::surface::diagnostics::describe_bitvector_with_context(term, &parameters, &arguments)
+        let spelled = crate::surface::diagnostics::describe_bitvector_with_context(
+            term,
+            &parameters,
+            &arguments,
+        );
+        match spelled
+            .strip_prefix('(')
+            .and_then(|inner| inner.strip_suffix(')'))
+        {
+            Some(inner) if balanced_parentheses(inner) => inner.to_string(),
+            _ => spelled,
+        }
     };
     let (index, count) = (spell(&bound.index), spell(&bound.count));
     let element = if bound.stride == byte_width {
@@ -407,7 +418,7 @@ fn describe_access_bound_prerequisite(
                 pending.push(second);
                 pending.push(first);
             }
-            CStatement::Store { .. } | CStatement::TypedStore { .. } if access == "store" => {
+            CStatement::Store { .. } | CStatement::TypedStore { .. } if verb == "write" => {
                 operation = next;
                 break;
             }
@@ -424,7 +435,7 @@ fn describe_access_bound_prerequisite(
         )
     };
     Some(format!(
-        "the {access} to {element} may {verb} outside `{object}`: {reason}\n  C operation: {}",
+        "the {access} {element} may {verb} outside `{object}`: {reason}\n  C operation: {}",
         crate::surface::diagnostics::describe_c_statement_head(operation),
     ))
 }

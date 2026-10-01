@@ -64,7 +64,7 @@ Soundness and kernel shape:
 
 - [Authority migration: explicit population authority and removal of guarded_by](authority-migration.md)
 - [Design resource invariants for sequential and concurrent shared heaps](shared-heap-graph-demo.md)
-- [Use kernel equality for rbtree pointer reads and folds](egraph.md)
+- [Finish graph-indexed resource lookup](egraph.md)
 
 Program import and execution:
 
