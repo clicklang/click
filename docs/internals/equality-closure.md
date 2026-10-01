@@ -739,6 +739,75 @@ enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
 still require their own checked judgments and complete candidate indexes.
 
+## Resource producer publication audit
+
+Milestone 1 of the repository's egraph issue is producer publication, not
+containment completeness. Fresh selected-resource assembly now starts with
+`ResourceContext::new_with_equalities(assumptions)`. This kernel service captures
+the current closed graph while the resource input is empty. It costs constant
+work with respect to ambient resources and equality history; subsequent facts
+maintain the paired index through existing resource deltas. It does not check
+validity, create authority, or normalize representations. Selected facts still
+pass their existing resource, loan, expansion, or certificate checks. The graph
+and these indexes are part of the trusted kernel.
+
+The constructor is available inside the crate because surface proof assembly
+also creates temporary inputs to kernel resource queries. It does not expose
+graph mutation outside the kernel. `unchecked_with_fact(s)` retains an existing
+attachment but never publishes an unrelated ambient frame. Use checked
+composition when the facts' validity needs checking; its empty-input path
+already captures the graph. Whole-input normalization is another existing
+publication boundary, including a normalization that changes no representation.
+
+The production audit covers these producer families:
+
+| Producer family | Publication rule |
+|---|---|
+| Function-call single-view satisfaction, conditional-control frontiers, returned composite/population bodies, and access-mode refinement | Fresh assembly captures its actual assumptions before adding selected facts. |
+| Framing and owned-footprint derivation, matched-instance body evaluation, and selected instance load values | Fresh selected heads/ranges start published; expansion deltas preserve attachment. |
+| Contract transfer, returned-clause evaluation, counted transitions, allocation support, and definitional resource consumption | Fresh requirement/supply/frontier contexts capture the assumptions used by their consumers. |
+| Stable-view planning and loan entailment | Fresh callee and single-supplier contexts start published. Binding checks that intentionally exclude ambient facts use one empty proof context for both construction and entailment. |
+| Kernel execution certificates and population initialization/consumption | Checked temporary child, authority, and support contexts start published under the certificate's local facts. |
+| Loop body reset and borrowed contract input installation | Fresh live contexts capture the current assumptions; selected-view/instance deltas retain their parent's publication. |
+| Surface dynamic view dependencies, checked returned-resource receipts, and compact composition propositions | Fresh contexts capture the same assumptions used to check their occurrences or receipts. Existing occurrence and loan provenance is preserved. |
+
+Existing checked constructors in composite projection, owned-frontier expansion,
+frontier coverage, mutex transfer, and object-comparison support remain unchanged.
+Selected normalization buckets in resource consumption publish through
+`normalized` before any equality-sensitive consumption. Those buckets' selection
+and normalization retries still belong to milestone 6.
+
+The retained raw constructors are intentional and have different lifetimes:
+
+| Retained raw input | Why no graph attachment is required there |
+|---|---|
+| Empty join-abstraction shapes and checked-return certificate placeholders | Used for structural comparison or replaced by checked clause contexts; no unchecked memory is inserted for a live query. |
+| The empty residual in reconstructed `CallKeptOwnership` and the empty transfer used when composing loan evidence | They remain empty; actual authority is carried by the recorded ranges or checked loan evidence. |
+| Startup static-resource construction | Builds provisional program data before proof assumptions exist. Its live execution input is published at the explicit proof boundary, not by permission lookup. |
+| Bitvector/pointer substitution of theorem/state resource terms | Rebuilds structural proof payloads without current assumptions. Old graph equalities cannot be inherited after variable substitution. A live instantiated input is published when admitted to execution. |
+| Surface composite-body instantiation and branch-interface collection | Provisional lowering output is explicitly checked/composed before becoming live authority; no permission query attaches it implicitly. |
+| Instance field scope and default empty `CState` fields | Lexical instance interpretation or empty data, rather than a memory-authority context. Live resource assembly uses the rules above. |
+
+A new producer must choose one of these publication boundaries and document any
+raw lifetime. Do not repair a missing attachment by scanning a cold frame from
+a query, and do not call whole-input publication repeatedly for deltas extending
+an ambient frame. Published persistent forks retain their index; only admitted
+class and occurrence changes are propagated.
+
+The framing regression inspects the actual opened context returned by
+`call_kept_ownership`, rather than relying on a successful general permission
+check. Before migration it failed to find the exact graph payload through
+`a = b = c`. Controls cover sibling isolation and retained source authority.
+Additional tests cover late equalities, insertion/consumption deltas, preserved
+parent snapshots, and fresh plus framing construction beside 16, 64, 256, and
+1,024 unrelated resources and equality facts. Both deterministic query work and
+persistent-map work are measured, so deferred publication or a hidden ambient
+scan cannot pass merely because the final lookup is cheap.
+
+Publication now has an explicit producer policy. It does not remove the
+containment index's unknown cases, spelling retries, or supplier scans; those
+remain the separate milestones 2–7.
+
 ## Checked pointer-read sources
 
 Typed pointer-read producers now share `PureFactContext::register_pointer_read`.

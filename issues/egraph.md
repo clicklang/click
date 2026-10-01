@@ -43,11 +43,12 @@ provenance, initialization, and snapshot transport.
 - Equality queries, completed pointer-read admission, concrete interval
   selection, exact whole-cell payloads, late merges, and persistent fork
   pairing are implemented and tested.
-- Checked resource construction and normalization establish graph attachment;
-  ordinary descendants maintain it through deltas. Composite projection,
-  owned one-level frontier, and frontier coverage construction now use these
-  boundaries. Other unchecked temporary producers remain to classify and
-  migrate; adding a new query fast path does not fix their publication.
+- Producer publication is complete for the audited live resource assembly
+  paths: fresh selected inputs capture the graph while empty, checked
+  composition/normalization publish whole explicit inputs, and persistent
+  descendants maintain pairing through deltas. Retained raw constructors are
+  classified as provisional data or structural/empty placeholders in the
+  publication audit. This does not make containment selection complete.
 - The direct memory `satisfies_fact` migration has passed its red regression,
   control tests, deterministic scaling, and full gate. It shares consumption's
   graph-based address alignment. The remaining retry/normalization paths in
@@ -55,17 +56,24 @@ provenance, initialization, and snapshot transport.
   milestone 6.
 - General read/write permission still retries spellings and can search all
   resources. Symbolic whole-range readability and storage ownership have
-  their own residual lookup paths. Thus neither attachment nor containment
-  cleanup is complete.
+  their own residual lookup paths. Producer publication is complete, but
+  containment selection and consumer deletion remain unfinished.
 
-### Seven remaining milestones
+### Seven milestones (milestone 1 complete)
 
 These are seven reviewable outcomes, **not a promise of seven commits**.
 Split an outcome into small green slices when necessary, and record completion
 here when the old path is deleted. Do not add more resource theories to finish
 this list.
 
-1. **Finish resource publication at producers.** Audit production constructors
+1. **Finish resource publication at producers — complete.** The production
+   audit and migrations are recorded in the
+   [publication audit](../docs/internals/equality-closure.md#resource-producer-publication-audit).
+   Fresh trusted assembly now captures the graph while empty; persistent
+   deltas preserve pairing, and retained raw lifetimes are explicitly classified.
+   The actual framing producer has a red-to-green regression, with sibling,
+   snapshot, late-equality, delta, and multi-size work controls. The completed
+   scope was: audit production constructors
    reaching memory permission, satisfaction, support, and consumption queries.
    In `src/kernel/functions.rs`, start with single-view satisfaction contexts,
    conditional-control frontiers, returned composite/population body contexts,
@@ -135,9 +143,9 @@ this list.
 Milestones 1–3 establish the common interface. Milestones 4–7 migrate and
 remove its remaining consumers; they must not introduce their own alias walks
 or containment indexes. Do not implement several independently evolving
-fallback replacements in parallel. The next implementation slice should start
-with a remaining producer from milestone 1, then settle the shared contract
-before broad caller deletion.
+fallback replacements in parallel. Milestone 1 is complete. The next
+implementation work is milestone 2's shared candidate contract, followed by
+symbolic support in milestone 3 before broad caller deletion.
 
 ### Meaning of “no scans” and completion
 
