@@ -68,6 +68,10 @@ impl ExpandedCSource {
 pub struct ExpandedLineMap {
     origins: Vec<Option<Arc<SourceOrigin>>>,
     builtin_pthread_lines: BTreeSet<usize>,
+    /// The line as written, for each emitted line a macro expansion
+    /// rewrote, so a diagnostic can quote the expansion site rather than
+    /// the replacement text. Keyed by one-based emitted line.
+    written_lines: BTreeMap<usize, Arc<str>>,
 }
 
 impl ExpandedLineMap {
@@ -75,11 +79,18 @@ impl ExpandedLineMap {
         Self {
             origins: Vec::new(),
             builtin_pthread_lines: BTreeSet::new(),
+            written_lines: BTreeMap::new(),
         }
     }
 
     fn push(&mut self, origin: Option<Arc<SourceOrigin>>) {
         self.origins.push(origin);
+    }
+
+    /// The text each one-based emitted line a macro expansion rewrote had
+    /// before expansion.
+    pub(crate) fn written_lines(&self) -> &BTreeMap<usize, Arc<str>> {
+        &self.written_lines
     }
 
     pub(crate) fn is_builtin_pthread_line(&self, line: usize) -> bool {
@@ -397,6 +408,11 @@ fn expand_source<'a>(
                 );
                 expanded.push_str(&expanded_line);
                 line_map.push(Some(origin_for(origin_names, source_path, line_number)));
+                if expanded_line != line {
+                    line_map
+                        .written_lines
+                        .insert(line_map.origins.len(), Arc::from(line));
+                }
                 if builtin_pthread {
                     line_map
                         .builtin_pthread_lines

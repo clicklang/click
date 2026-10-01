@@ -10,6 +10,58 @@ const DEBUG_VALUE_BYTE_LIMIT: usize = 2 * 1024;
 const TRUNCATION_SUFFIX: &str =
     "\n… <diagnostic truncated; set CLICK_FULL_DIAGNOSTICS=1 for full internal state>";
 
+thread_local! {
+    /// Where each C statement being stepped was written, innermost last; see
+    /// [`CStatementSiteScope`].
+    static C_STATEMENT_SITES: std::cell::RefCell<
+        Vec<Option<std::sync::Arc<crate::languages::c::syntax::C0StatementSite>>>,
+    > = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// While alive, names the C statement a step is checking, so a refusal that
+/// prints its C operation also names the line it was written on and quotes
+/// it. Diagnostics only: nothing a check decides reads it, and a refusal
+/// built outside any scope (or for a statement with no recorded site) simply
+/// prints no location.
+#[must_use]
+pub(in crate::surface) struct CStatementSiteScope(());
+
+impl CStatementSiteScope {
+    /// Enters the site the source layout records for `statement_index`.
+    pub(in crate::surface) fn enter(
+        layout: &crate::surface::lowering::SourceExecutionLayout,
+        statement_index: usize,
+    ) -> Self {
+        let site = layout.site(statement_index).cloned();
+        C_STATEMENT_SITES.with(|sites| sites.borrow_mut().push(site));
+        Self(())
+    }
+}
+
+impl Drop for CStatementSiteScope {
+    fn drop(&mut self) {
+        C_STATEMENT_SITES.with(|sites| {
+            sites.borrow_mut().pop();
+        });
+    }
+}
+
+/// The line naming where the C statement being stepped was written, as
+/// "\n  C statement at f.c:6:9: `items[i] = 7;`", or nothing when no step
+/// scope records one. It follows a refusal's "C operation" line, which
+/// spells the checked kernel operation; this line is the source a person
+/// edits.
+pub(in crate::surface) fn describe_c_statement_site() -> String {
+    C_STATEMENT_SITES.with(|sites| {
+        sites
+            .borrow()
+            .last()
+            .and_then(Option::as_ref)
+            .map(|site| format!("\n  C statement at {}: `{}`", site.location(), site.text()))
+            .unwrap_or_default()
+    })
+}
+
 pub(super) fn bound_error_message(message: String) -> String {
     bound_error_message_for_mode(message, std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some())
 }

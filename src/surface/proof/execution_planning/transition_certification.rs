@@ -385,15 +385,17 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                     outcome: CConditionOutcome::UndefinedBehavior(kind),
                     ..
                 } => Err(ClickError::new(format!(
-                    "{context_label} produced undefined behavior while evaluating the condition: {}",
-                    kind.description()
+                    "{context_label} produced undefined behavior while evaluating the condition: {}{}",
+                    kind.description(),
+                    crate::surface::diagnostics::describe_c_statement_site()
                 ))),
                 Proposition::CConditionEvaluates {
                     outcome: CConditionOutcome::RuntimeError(error),
                     ..
                 } => Err(ClickError::new(format!(
-                    "{context_label} could not verify the C condition: {}",
+                    "{context_label} could not verify the C condition: {}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(error, state),
+                    crate::surface::diagnostics::describe_c_statement_site(),
                 )).with_kind(crate::surface::diagnostics::runtime_refusal_kind(error))),
                 proposition => Err(ClickError::new(format!(
                     "{context_label} saw unexpected condition theorem `{}`",

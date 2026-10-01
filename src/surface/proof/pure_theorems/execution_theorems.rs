@@ -274,6 +274,7 @@ pub(super) fn verify_execution_theorem(
         syntax::C0Statement::Call {
             function_name: execution.callback.clone(),
             arguments,
+            site: crate::languages::c::syntax::C0Site::NONE,
         }
     } else {
         syntax::C0Statement::Seq(
@@ -281,10 +282,12 @@ pub(super) fn verify_execution_theorem(
                 target: "result".into(),
                 function_name: execution.callback.clone(),
                 arguments,
+                site: crate::languages::c::syntax::C0Site::NONE,
             }),
-            Box::new(syntax::C0Statement::Return(syntax::C0Expression::Variable(
-                "result".into(),
-            ))),
+            Box::new(syntax::C0Statement::Return(
+                syntax::C0Expression::Variable("result".into()),
+                crate::languages::c::syntax::C0Site::NONE,
+            )),
         )
     };
     let parsed = crate::surface::verification::external_c0_function(&block).with_proof_body(body);

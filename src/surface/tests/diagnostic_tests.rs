@@ -1217,3 +1217,148 @@ fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
     assert!(rendered.contains("selected_mutex"), "{rendered}");
     assert!(!rendered.contains("Loan"), "{rendered}");
 }
+
+/// C source whose refusals each name one statement: a struct-field store
+/// past its array, a signed overflow, and a call whose precondition the
+/// caller cannot show. `inc` verifies.
+const SITED_C_SOURCE: &str = "struct item { int32 x; int32 y; };
+
+int32 store() {
+    struct item items[4];
+    int32 i;
+    i = 0;
+    while (i < 5) {
+        items[i].x = 7;   // the field store
+        i = i + 1;
+    }
+    return 0;
+}
+
+int32 add(int32 a, int32 b) {
+    int32 total;
+    total = a + b;
+    return total;
+}
+
+int32 callee(int32 n) {
+    return n;
+}
+
+int32 caller(int32 n) {
+    int32 r;
+    r = callee(n) + 1;
+    return r;
+}
+
+int32 inc(int32 n) {
+    return n + 1;
+}
+";
+
+/// `SITED_C_SOURCE` written elsewhere in its file: three more lines above
+/// it, every line indented, and a comment after each `{`.
+fn shifted_sited_c_source() -> String {
+    let mut shifted = String::from("// moved down\n\n/* and over */\n");
+    for line in SITED_C_SOURCE.lines() {
+        shifted.push_str("  ");
+        shifted.push_str(line);
+        if line.ends_with('{') {
+            shifted.push_str(" // opens");
+        }
+        shifted.push('\n');
+    }
+    shifted
+}
+
+/// `message` without its `C statement at` lines, and those lines.
+fn split_statement_sites(message: &str) -> (String, Vec<String>) {
+    let mut rest = Vec::new();
+    let mut sites = Vec::new();
+    for line in message.split('\n') {
+        if line.starts_with("  C statement at ") {
+            sites.push(line.to_string());
+        } else {
+            rest.push(line);
+        }
+    }
+    (rest.join("\n"), sites)
+}
+
+/// A statement's site is diagnostics only. The same C written at other
+/// lines and columns, with other comments, parses to equal C0 and kernel
+/// functions and verifies with the same work and the same messages, apart
+/// from the `C statement at` line each refusal gains, which names the line
+/// and column the statement moved to and quotes it without its comment.
+#[test]
+fn statement_sites_change_nothing_but_the_location_line() {
+    let shifted = shifted_sited_c_source();
+    let original = crate::languages::c::syntax::parse_functions(SITED_C_SOURCE).unwrap();
+    let moved = crate::languages::c::syntax::parse_functions(&shifted).unwrap();
+    assert_eq!(original, moved);
+    for (original, moved) in original.iter().zip(&moved) {
+        assert_eq!(original.to_kernel_function(), moved.to_kernel_function());
+        assert_eq!(format!("{original:?}"), format!("{moved:?}"));
+    }
+
+    let header = "verifying \"f.c\";\n";
+    let cases = [
+        (
+            "int32 store() {\n    ensures result == 0;\n} by {\n    step(); step(); step();\n    loop { decreases 5 - i; invariant i >= 0; invariant i <= 4; }\n    execute(); simp();\n}\n",
+            Some(("f.c:8:9: `items[i].x = 7;`", "f.c:11:11: `items[i].x = 7;`")),
+        ),
+        (
+            "int32 add(int32 a, int32 b) {\n    ensures result == a + b;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            Some(("f.c:16:5: `total = a + b;`", "f.c:19:7: `total = a + b;`")),
+        ),
+        (
+            "int32 callee(int32 n) {\n    requires n >= 0;\n    ensures result == n;\n}\nint32 caller(int32 n) {\n    ensures result == n + 1;\n} by {\n    step(); step(); step(); simp();\n}\n",
+            Some((
+                "f.c:26:5: `r = callee(n) + 1;`",
+                "f.c:29:7: `r = callee(n) + 1;`",
+            )),
+        ),
+        (
+            "int32 inc(int32 n) {\n    requires n <= 100;\n    ensures result == n + 1;\n} by {\n    step(); simp();\n}\n",
+            None,
+        ),
+    ];
+    for (proof, expected_sites) in cases {
+        let click_source = format!("{header}{proof}");
+        // The first verification in a process also builds shared caches;
+        // both measured runs come after it.
+        let _ = verify_c0_sources(&click_source, &[("f.c", SITED_C_SOURCE)]);
+        let (original, original_work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&click_source, &[("f.c", SITED_C_SOURCE)])
+        });
+        let (moved, moved_work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&click_source, &[("f.c", &shifted)])
+        });
+        assert!(original_work > 0, "{proof}");
+        assert_eq!(original_work, moved_work, "{proof}");
+        match expected_sites {
+            None => {
+                original.unwrap();
+                moved.unwrap();
+            }
+            Some((original_site, moved_site)) => {
+                let original = original.unwrap_err();
+                let moved = moved.unwrap_err();
+                let (original_rest, original_sites) = split_statement_sites(original.message());
+                let (moved_rest, moved_sites) = split_statement_sites(moved.message());
+                assert_eq!(original_rest, moved_rest);
+                assert_eq!(
+                    original_sites,
+                    [format!("  C statement at {original_site}")],
+                    "{}",
+                    original.message()
+                );
+                assert_eq!(
+                    moved_sites,
+                    [format!("  C statement at {moved_site}")],
+                    "{}",
+                    moved.message()
+                );
+            }
+        }
+    }
+}

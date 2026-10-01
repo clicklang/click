@@ -4002,6 +4002,7 @@ fn modeled_pthread_create_workers(function: &syntax::C0Function) -> BTreeSet<Str
             S::Call {
                 function_name,
                 arguments,
+                ..
             }
             | S::CallAssign {
                 function_name,
@@ -4122,7 +4123,7 @@ pub(in crate::surface) fn c0_statement_calls(
             | syntax::C0Statement::IndirectCall { .. }
             | syntax::C0Statement::HeapAllocate { .. }
             | syntax::C0Statement::HeapFree { .. }
-            | syntax::C0Statement::Return(_)
+            | syntax::C0Statement::Return(_, _)
             | syntax::C0Statement::Store { .. }
             | syntax::C0Statement::SequentialStore { .. }
             | syntax::C0Statement::AggregateCopy { .. }
@@ -4269,6 +4270,7 @@ pub(in crate::surface) fn c0_statement_calls(
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
@@ -4276,8 +4278,12 @@ pub(in crate::surface) fn c0_statement_calls(
                 visit(then_branch, calls, function_pointer_names);
                 visit(else_branch, calls, function_pointer_names);
             }
-            syntax::C0Statement::While { condition, body }
-            | syntax::C0Statement::DoWhile { condition, body } => {
+            syntax::C0Statement::While {
+                condition, body, ..
+            }
+            | syntax::C0Statement::DoWhile {
+                condition, body, ..
+            } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
@@ -4288,6 +4294,7 @@ pub(in crate::surface) fn c0_statement_calls(
                 condition,
                 step,
                 body,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
@@ -4296,7 +4303,9 @@ pub(in crate::surface) fn c0_statement_calls(
                 visit(body, calls, function_pointer_names);
                 visit(step, calls, function_pointer_names);
             }
-            syntax::C0Statement::Switch { expression, cases } => {
+            syntax::C0Statement::Switch {
+                expression, cases, ..
+            } => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
@@ -4323,6 +4332,7 @@ pub(in crate::surface) fn c0_statement_calls(
             syntax::C0Statement::Call {
                 function_name,
                 arguments,
+                ..
             } => {
                 let mut dependencies = BTreeSet::new();
                 if !function_pointer_names.contains(function_name)
@@ -4355,8 +4365,9 @@ pub(in crate::surface) fn c0_statement_calls(
             }
             | syntax::C0Statement::HeapFree {
                 pointer: expression,
+                ..
             }
-            | syntax::C0Statement::Return(expression) => {
+            | syntax::C0Statement::Return(expression, _) => {
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
@@ -6577,6 +6588,7 @@ fn validate_modeled_pthread_calls(
         S::Call {
             function_name,
             arguments,
+            ..
         }
         | S::CallAssign {
             function_name,
