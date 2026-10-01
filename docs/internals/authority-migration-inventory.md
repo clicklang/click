@@ -25,6 +25,12 @@ bodies, nested opening and closing without membership changes, and a member-only
 helper while the caller retains authority and another member. They reject
 missing member or memory ownership, overlapping bodies, and count observations
 without authority.
+The `authority_wildcard_consume_private_body*` fixtures combine consumption
+with private memory: direct and nested helpers return the selected member's
+owned range through `produces`, preserve caller-retained members, and decrease
+the arbitrary population total by one. They reject missing authority,
+wrong-member selection, a missing consumption, and reuse after consumption or
+memory reclamation.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

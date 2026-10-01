@@ -462,6 +462,13 @@ Regressions reject missing member or body ownership, overlapping bodies, and
 member-only count observations. Identified proof fields, exact subsets, and
 bounded-pool migration remain separate subsequent changes.
 
+Direct and nested consumption helpers now also return a memory-only member's
+private body through ordinary `produces`. Caller regressions retain another
+member, prove the decremented total, read both ranges, and reclaim the allocation.
+Negative regressions reject missing authority, wrong-member consumption,
+opening without consuming, and reuse of consumed membership or freed memory.
+This adds no syntax and does not extend member facts or proof fields.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and a checked transfer between two authorities. Count
 individually identified members without erasing fields or treating equal

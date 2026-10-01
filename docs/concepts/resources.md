@@ -494,6 +494,30 @@ decreased by one. The consumed member cannot be used again. This initial
 support admits one consumption of the entry member, without replacement or
 multiple updates inside the helper.
 
+A consumed member can return its private memory through the ordinary output
+contract:
+
+<!-- verified-example: mdtests/authority_wildcard_consume_private_body.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+void release(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    consumes slot(pool, p);
+    produces p[0..1];
+    ensures p[0] == 0;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+Here `unfold(slot(pool, p))` consumes the member and exposes its memory for
+the C body to update. `produces p[0..1]` returns that memory to the caller;
+it does not recreate membership. The caller retains its other member and
+recovers authority with the decremented count, including through nested
+helpers. It can use the returned memory and reclaim the allocation once all
+its remaining memory ownership is available. It cannot reopen the consumed
+member or read the memory after freeing it. Opening and closing the member
+without consuming it cannot satisfy this contract.
+
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
 authority, consume the entry member, or create one from an authority-only input. Fixed
