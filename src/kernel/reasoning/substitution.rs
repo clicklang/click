@@ -4388,8 +4388,10 @@ fn substitute_bitvector_variable_in_resource_term(
         },
         CResourceTerm::PopulationAuthority {
             protected,
+            population_arity,
             snapshot,
         } => CResourceTerm::PopulationAuthority {
+            population_arity: *population_arity,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(substitute_bitvector_variable_in_resource_spec(
                     &protected.resource,
@@ -8028,8 +8030,10 @@ fn substitute_pointer_variable_in_resource_term(
         },
         CResourceTerm::PopulationAuthority {
             protected,
+            population_arity,
             snapshot,
         } => CResourceTerm::PopulationAuthority {
+            population_arity: *population_arity,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(substitute_pointer_variable_in_resource_spec(
                     &protected.resource,

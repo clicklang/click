@@ -3215,6 +3215,11 @@ pub(super) fn validate_resource_clause(
                 )));
             }
             for (index, argument) in arguments.iter().enumerate() {
+                // Declaration expansion permits wildcards only in a checked
+                // authority pattern; they are not evaluated value arguments.
+                if matches!(argument, ContractExpression::ResourceWildcard) {
+                    continue;
+                }
                 validate_contract_expression_calls(argument, click_functions, context)?;
                 if let Some(actual) = infer_contract_expression_type(
                     argument,

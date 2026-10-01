@@ -395,6 +395,27 @@ checks that the initializer still produces its first reference.
 Standalone symbolic batch exchange is supported, but symbolic nested transfers
 are not yet supported on this migration path.
 
+For a field-free family with several arguments, one authority can govern all
+members sharing a concrete storage anchor:
+
+<!-- verified-example: mdtests/authority_wildcard_lifecycle.md -->
+```click
+resource slot(pool: int32*, member: int32*) {}
+```
+
+`fold(authority(slot(&pool, _)))` establishes the empty population in the
+environment that created `pool`. Folding `slot(&pool, &first)` or
+`slot(&pool, &second)` requires that authority and increases
+`count(slot(&pool, _))`. Unfolding requires the particular owned member and
+the authority, and decreases the total. Retirement requires zero members.
+Another pool has a separate authority. With more arguments, every argument
+after the anchor is a wildcard, as in `authority(slot(pool, _, _))`.
+
+This initial scope support covers concrete creation environments, field-free
+members, and aggregate wildcard observations. Fixed trailing arguments in
+authority patterns, exact subset observations, field-bearing members, and
+wildcard authority transfer through helper contracts remain future work.
+
 The rest of this section describes the legacy population path, retained while
 its consumers are migrated. The
 [migration inventory](../internals/authority-migration-inventory.md) records

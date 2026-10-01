@@ -6445,6 +6445,7 @@ pub enum CResourceTerm {
     Memory(CMemorySegment),
     PopulationAuthority {
         protected: Box<CResourceTypeSpec>,
+        population_arity: Option<usize>,
         snapshot: CResourceSnapshot,
     },
     MutexGuard {
@@ -7338,6 +7339,7 @@ mod population_authority_spec_tests {
 
     fn authority_type(resource: CResourceSpec) -> CResourceTerm {
         CResourceTerm::PopulationAuthority {
+            population_arity: None,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(resource),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),

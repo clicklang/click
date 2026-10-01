@@ -433,6 +433,15 @@ shared-parent and branch fixtures.
 
 ### 6. Build wildcard and field-bearing member support before pool migration
 
+**First capability:** Concrete creation environments support field-free
+`authority(R(anchor, _, ...))`, with every trailing argument wildcard.
+Dedicated `authority_wildcard_*` fixtures check local member creation and
+consumption, aggregate totals, duplicate authority, wrong-pool updates,
+nonempty retirement, and consumption of an unowned member. Kernel scaling
+covers lookup and exchange beside unrelated pools. This is one independently
+tested capability; identified proof fields, exact subsets, helper transfer,
+and bounded-pool migration remain separate subsequent changes.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and a checked transfer between two authorities. Count
 individually identified members without erasing fields or treating equal

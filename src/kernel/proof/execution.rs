@@ -698,7 +698,8 @@ fn checks_population_member_exchange(
         arguments.clone(),
         crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
     );
-    let [crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments()
+    let Some(crate::kernel::AlgebraicValue::C(CValue::Pointer(pointer))) =
+        description.arguments().first()
     else {
         return Err("population member rewrite requires one pointer anchor".into());
     };
@@ -723,7 +724,20 @@ fn checks_population_member_exchange(
     {
         return Err("population member rewrite requires live base storage".into());
     }
-    let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+    let governing = before
+        .population_effects
+        .creation
+        .as_ref()
+        .and_then(|events| events.governing_authority(&description))
+        .ok_or_else(|| {
+            format!(
+                "Requires owns authority({name}(anchor, {}))",
+                std::iter::repeat_n("_", arguments.len().saturating_sub(1))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })?;
+    let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
     if !before.resources.satisfies_fact(&authority, assumptions) {
         return Err("Requires owns authority(R(p))".into());
     }

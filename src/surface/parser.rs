@@ -6325,7 +6325,7 @@ impl Parser {
             if self.peek() == Some(&Token::RParen) {
                 return Err(self.error("authority expects one declared resource type"));
             }
-            resource_type_arguments.push(self.parse_declared_resource_call()?);
+            resource_type_arguments.push(self.parse_resource_count_pattern()?);
             if self.peek() != Some(&Token::RParen) {
                 return Err(self.error("authority expects exactly one declared resource type"));
             }

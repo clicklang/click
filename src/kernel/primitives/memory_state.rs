@@ -5622,7 +5622,8 @@ impl CState {
             arguments.clone(),
             super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema is valid"),
         );
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+        let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+        else {
             return Err("Requires an exact pointer-anchored resource R(p)".into());
         };
         let anchor = pointer.pointer();
@@ -5649,7 +5650,20 @@ impl CState {
         {
             return Err("Requires live base storage for R(p)".into());
         }
-        let authority = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
+        let governing = self
+            .population_effects
+            .creation
+            .as_ref()
+            .and_then(|events| events.governing_authority(&description))
+            .ok_or_else(|| {
+                format!(
+                    "Requires owns authority({name}(anchor, {}))",
+                    std::iter::repeat_n("_", arguments.len().saturating_sub(1))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })?;
+        let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
