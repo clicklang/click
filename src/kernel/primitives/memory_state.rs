@@ -5371,6 +5371,30 @@ impl CState {
         Ok(next)
     }
 
+    pub(crate) fn import_opaque_wildcard_authority(
+        &self,
+        authority: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+            return Err("Requires owns authority(R(anchor, _))".into());
+        };
+        if quantity.as_const() != Some(1)
+            || !self.resources.contains_exact_representation(authority)
+        {
+            return Err("Requires one declared owned authority".into());
+        }
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("opaque import requires authority mode")?
+            .import_opaque_wildcard_authority(scope)
+            .map_err(|refusal| format!("wildcard authority import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
     /// Contract lowering may name an established real population or the one
     /// opaque population explicitly imported from a standalone proof's entry.
     pub(crate) fn recognizes_population_authority(
@@ -5953,7 +5977,7 @@ impl CState {
                         .join(", ")
                 )
             })?;
-        let authority = CResourceFact::own(CResource::PopulationAuthority(governing));
+        let authority = CResourceFact::own(CResource::PopulationAuthority(governing.clone()));
         if !self.resources.satisfies_fact(&authority, assumptions) {
             return Err(format!("Requires owns authority({name}(p))"));
         }
@@ -6038,7 +6062,15 @@ impl CState {
                 quantity,
                 assumptions,
             )
-            .map_err(|error| format!("member change refused: {error:?}"))?;
+            .map_err(|error| {
+                if produce && governing.population_arity().is_some()
+                    && events.observe_symbolic(&governing).is_some()
+                    && matches!(error, super::super::population_authority::c_creation::CreationRefusal::InvalidQuantity)
+                {
+                    format!("Requires defined(count({name}({}, {})) + 1)", definition.parameters().first().map_or("anchor", |parameter| parameter.name()),
+                        std::iter::repeat_n("_", arguments.len() - 1).collect::<Vec<_>>().join(", "))
+                } else { format!("member change refused: {error:?}") }
+            })?;
         let mut next = self.clone();
         next.resources = resources;
         Arc::make_mut(&mut next.population_effects).creation = Some(history);

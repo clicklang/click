@@ -429,9 +429,31 @@ The call returns the same authority and the same concrete member, preserving
 the caller's total and any members it retained. Nested helper calls use the
 same checked transfer. The helper receives no population creation permission.
 
+An authority-only helper input can also create one field-free member:
+
+<!-- verified-example: mdtests/authority_wildcard_create_helper.md -->
+```click
+void issue(int32* pool, int32* member) {
+    owns authority(slot(pool, _));
+    requires defined(count(slot(pool, _)) + 1);
+    produces slot(pool, member);
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
+}
+```
+
+The proof folds the promised member. This is a checked population birth, not
+authority establishment: entry supplies an existing population with an arbitrary
+total, which may include members held elsewhere. The count bound is required
+before the birth. The returned member keeps its concrete arguments, and the
+caller recovers authority with its total increased by one. Nested creation
+helpers use the same transfer. This initial creation support admits one birth
+from an authority-only input; it does not replace a borrowed member or consume
+one.
+
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
-authority. Creating or consuming wildcard members inside helpers, fixed
+authority or create one from an authority-only input. Consuming wildcard
+members inside helpers, fixed
 trailing arguments in authority patterns, exact subset observations, and
 field-bearing members remain future work.
 

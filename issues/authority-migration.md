@@ -444,8 +444,12 @@ authority together with one concrete member, including nested calls. Their
 entry total is arbitrary and preserves members retained by the caller; helper
 entry grants no creation permission. Dedicated fixtures and kernel checks
 cover custody, exact member identity, unchanged total, intended refusals, and
-indexed transfer beside unrelated imports. Wildcard member creation/consumption
-inside helpers, identified proof fields, exact subsets, and bounded-pool
+indexed transfer beside unrelated imports. Authority-only helper inputs now
+support one field-free concrete member birth using ordinary `produces`, including
+nested helpers. The checked update requires a count overflow bound, records the
+actual created member, and independently checks the promised output identity.
+Caller regressions retain two members while receiving the third. Wildcard member
+consumption inside helpers, identified proof fields, exact subsets, and bounded-pool
 migration remain separate subsequent changes.
 
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a

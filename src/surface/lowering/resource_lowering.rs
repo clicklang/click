@@ -352,12 +352,17 @@ pub(in crate::surface) fn initial_call_state(
         // wildcard family must not repeatedly scan unrelated input facts.
         let mut wildcard_members =
             BTreeMap::<crate::kernel::ResourceDescription, Vec<CResourceFact>>::new();
+        let mut wildcard_member_families = BTreeSet::new();
         for fact in state.resources().facts() {
             let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact
             else {
                 continue;
             };
-            if arguments.len() < 2 || quantity.as_const() != Some(1) {
+            if arguments.len() < 2 {
+                continue;
+            }
+            wildcard_member_families.insert(name.clone());
+            if quantity.as_const() != Some(1) {
                 continue;
             }
             let scope = crate::kernel::ResourceDescription::new(
@@ -386,6 +391,12 @@ pub(in crate::surface) fn initial_call_state(
             };
             if description.population_arity().is_some() {
                 let Some(members) = wildcard_members.get(description) else {
+                    if !wildcard_member_families.contains(description.family()) {
+                        state = state
+                            .import_opaque_wildcard_authority(&authority)
+                            .map_err(ClickError::new)?;
+                        continue;
+                    }
                     return Err(ClickError::new(format!(
                         "Requires owns {}(anchor, member) for the declared wildcard authority",
                         description.family(),

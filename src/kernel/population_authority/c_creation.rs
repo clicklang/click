@@ -284,6 +284,24 @@ impl CreationEvents {
         {
             return Err(CreationRefusal::InvalidMember);
         }
+        self.import_opaque_wildcard_input(description, Some(member.clone()))
+    }
+
+    pub(in crate::kernel) fn import_opaque_wildcard_authority(
+        &self,
+        description: &ResourceDescription,
+    ) -> Result<Self, CreationRefusal> {
+        if description.population_arity().is_none() {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        self.import_opaque_wildcard_input(description, None)
+    }
+
+    fn import_opaque_wildcard_input(
+        &self,
+        description: &ResourceDescription,
+        member: Option<ResourceDescription>,
+    ) -> Result<Self, CreationRefusal> {
         let count = if let Some(import) = self.0.opaque_imports.get(description) {
             import
                 .entry_count
@@ -307,11 +325,11 @@ impl CreationEvents {
         };
         self.import_opaque_contract_population_with_member(
             description,
-            1,
+            u32::from(member.is_some()),
             Some(count),
             None,
             None,
-            Some(member.clone()),
+            member,
         )
     }
 
@@ -395,6 +413,9 @@ impl CreationEvents {
         symbolic_members: Option<Bitvector32Term>,
         control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
     ) -> Result<Self, CreationRefusal> {
+        if description.population_arity().is_some() {
+            return Err(CreationRefusal::InvalidMember);
+        }
         self.import_opaque_contract_population_with_member(
             description,
             owned_members,
@@ -417,7 +438,7 @@ impl CreationEvents {
         let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if description.population_arity().is_some() != wildcard_member.is_some()
+        if (description.population_arity().is_none() && wildcard_member.is_some())
             || pointer.pointer().block != PointerBlock::ExternalArgument
             || !description.schema().is_countable()
             || !description.resource_arguments().is_empty()
@@ -619,8 +640,11 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Option<(bool, Bitvector32Term)> {
-        let import = self.0.opaque_imports.get(description)?;
-        if import.description != *description
+        let scope = self.governing_authority(description)?;
+        let import = self.0.opaque_imports.get(&scope)?;
+        if (scope.population_arity().is_some()
+            && import.wildcard_member.as_ref() != Some(description))
+            || (scope.population_arity().is_none() && import.description != *description)
             || import.retired_authority
             || import.authority_holder != self.0.opaque_actor
         {
@@ -1049,7 +1073,12 @@ impl CreationEvents {
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
         if quantity.as_const() == Some(1) {
-            return self.checked_member_exchange(block, description, produce);
+            return self.checked_member_exchange_with_context(
+                block,
+                description,
+                produce,
+                Some(assumptions),
+            );
         }
         if !crate::kernel::quantity_condition_holds(
             assumptions,
@@ -1242,10 +1271,44 @@ impl CreationEvents {
         description: &ResourceDescription,
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
+        self.checked_member_exchange_with_context(block, description, produce, None)
+    }
+
+    fn checked_member_exchange_with_context(
+        &self,
+        block: &PointerBlock,
+        description: &ResourceDescription,
+        produce: bool,
+        assumptions: Option<&PureFactContext>,
+    ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
         if description.population_arity().is_some() {
             return Err(CreationRefusal::InvalidMember);
         }
-        if let Some(import) = self.0.opaque_imports.get(description) {
+        let scope = self
+            .governing_authority(description)
+            .ok_or(CreationRefusal::InvalidMember)?;
+        if let Some(import) = self.0.opaque_imports.get(&scope) {
+            if scope.population_arity().is_some() {
+                // This checkpoint admits one identified birth from an
+                // authority-only input. Borrowed members cannot be replaced,
+                // consumed, or used to authorize another birth.
+                if !produce || import.wildcard_member.is_some() || import.owned_members != 0 {
+                    return Err(CreationRefusal::InvalidMember);
+                }
+                let total = import
+                    .entry_count
+                    .clone()
+                    .ok_or(CreationRefusal::UnknownTotal)?;
+                let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+                    total,
+                    Bitvector32Term::Constant(1),
+                );
+                if !assumptions.is_some_and(|facts| {
+                    facts.proves_exact(&crate::kernel::Proposition::ConditionIs(no_overflow, false))
+                }) {
+                    return Err(CreationRefusal::InvalidQuantity);
+                }
+            }
             // Numeric transitions retain their exact net cardinality. Mixing a
             // unit transition with an imported symbolic batch would lose one
             // of the deltas from its population count.
@@ -1254,7 +1317,8 @@ impl CreationEvents {
             }
             // Opaque custody follows only checked exact contract transfers;
             // numeric exchanges change the global fragment total separately.
-            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+            let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
+            else {
                 return Err(CreationRefusal::InvalidMember);
             };
             if &pointer.pointer().block != block {
@@ -1309,8 +1373,13 @@ impl CreationEvents {
                 empty_populations: self.0.empty_populations.clone(),
                 scopes: self.0.scopes.clone(),
                 opaque_imports: self.0.opaque_imports.with_inserted(
-                    description.clone(),
+                    scope.clone(),
                     OpaqueImport {
+                        wildcard_member: if scope.population_arity().is_some() {
+                            Some(description.clone())
+                        } else {
+                            import.wildcard_member.clone()
+                        },
                         owned_members,
                         member_holders: if next_held == 0 {
                             import.member_holders.without_key(&self.0.opaque_actor)
