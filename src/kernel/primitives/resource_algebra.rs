@@ -1253,7 +1253,6 @@ impl ResourceContext {
     ///
     /// Proof joins use this constant-time identity check to retain a resource
     /// context that was untouched in every arm without enumerating it.
-    #[cfg(test)]
     pub(crate) fn shares_storage_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.storage, &other.storage)
     }

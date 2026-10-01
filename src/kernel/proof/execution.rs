@@ -3018,6 +3018,12 @@ fn resource_composition_is_supported_by(
     let Proposition::CResourceComposition(required) = proposition else {
         return false;
     };
+    // Observing the exact checked context needs no resource consumption.
+    // In particular, a retained view and its owner can coexist in that
+    // context even though consuming both in sequence would fail.
+    if available.shares_storage_with(required) {
+        return true;
+    }
     available
         .clone()
         .without_facts(required.facts(), assumptions)
@@ -12174,6 +12180,38 @@ mod automatic_lifetime_tests {
 mod population_authority_rewrite_tests {
     use super::*;
     use crate::kernel::{CType, c_function};
+
+    #[test]
+    fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownership() {
+        let (state, _) = source_state();
+        let pointer = state.locals.slot("anchor").unwrap().clone();
+        let range = CMemoryRange::new(pointer, 0.into(), 1.into());
+        let context = ResourceContext::new().unchecked_with_facts([
+            CResourceFact::own_memory(range.clone()),
+            CResourceFact::view_memory(range),
+        ]);
+        let assumptions = PureFactContext::default();
+        assert!(resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(context.clone()),
+            &context,
+            &assumptions,
+        ));
+        let foreign = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new(
+                Pointer {
+                    block: "local:foreign".into(),
+                    offset: crate::kernel::PointerOffsetTerm::Constant(0),
+                },
+                0.into(),
+                1.into(),
+            ),
+        ));
+        assert!(!resource_composition_is_supported_by(
+            &Proposition::CResourceComposition(foreign),
+            &context,
+            &assumptions,
+        ));
+    }
 
     fn source_state() -> (CState, CResourceFact) {
         let mut state = CState::new()

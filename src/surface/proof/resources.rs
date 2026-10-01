@@ -3245,6 +3245,21 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             })
     };
     let already_unfolded = folded_resources.is_none();
+    if already_unfolded
+        && access == ResourceBodyAccess::Open
+        && state.uses_population_authority_semantics()
+    {
+        return Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `open({})` Requires {} {}",
+            describe_resource_clause(resource),
+            if abstract_resource.is_view() {
+                "views"
+            } else {
+                "owns"
+            },
+            describe_resource_clause(resource),
+        )));
+    }
     let resources = if let Some(resources) = folded_resources {
         resources
     } else {

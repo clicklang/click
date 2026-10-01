@@ -462,8 +462,30 @@ Regressions reject missing member or body ownership, overlapping bodies, and
 member-only count observations. Identified proof fields, exact subsets, and
 bounded-pool migration remain separate subsequent changes.
 
+Direct and nested consumption helpers now also return a memory-only member's
+private body through ordinary `produces`. Caller regressions retain another
+member, prove the decremented total, read both ranges, and reclaim the allocation.
+Negative regressions reject missing authority, wrong-member consumption,
+opening without consuming, and reuse of consumed membership or freed memory.
+This adds no syntax and does not extend member facts or proof fields.
+
+The inverse memory-only creation also verifies through direct and nested
+helpers using ordinary `consumes` memory and `produces` member clauses. Caller
+regressions retain another member, prove the incremented total, open both
+bodies, and reclaim the allocation. Rejections cover missing memory or
+authority, duplicate membership or independent body ownership, and a missing
+count overflow bound. This capability needed only fixtures and documentation;
+the existing checked member exchange and call transfer already support it.
+
+Direct and nested helpers now move one unit memory-bearing member between
+two wildcard authorities using ordinary `consumes` and `produces`. Per-pool
+entry imports preserve arbitrary totals, and return checks both exact ledger
+changes. Callers retain members in both pools, preserve private memory, and
+retire both populations after cleanup. This remains a narrow same-family,
+same-trailing-arguments transfer, not arbitrary multi-update support.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
-wildcard authority, and a checked transfer between two authorities. Count
+wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count
 individually identified members without erasing fields or treating equal
 parameters as interchangeable instances. Add the private-slot example below.
 

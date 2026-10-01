@@ -470,8 +470,32 @@ total, which may include members held elsewhere. The count bound is required
 before the birth. The returned member keeps its concrete arguments, and the
 caller recovers authority with its total increased by one. Nested creation
 helpers use the same transfer. This initial creation support admits one birth
-from an authority-only input; it does not replace a borrowed member or consume
-one.
+from an input containing authority and any required private memory; it does
+not replace a borrowed member or consume another population member.
+
+A memory-bearing member is created by transferring its private memory into
+the helper:
+
+<!-- verified-example: mdtests/authority_wildcard_create_private_body.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+void issue(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    consumes p[0..1];
+    requires defined(count(slot(pool, _)) + 1);
+    produces slot(pool, p);
+    ensures p[0] == 7;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
+}
+```
+
+The C body can update the supplied memory before `fold(slot(pool, p))`
+packages it into the new member. The caller recovers authority and that
+member, including through nested helpers, while retaining its other members.
+The helper cannot return independent ownership of the packaged memory as
+well, and authority cannot supply missing memory. The overflow bound remains
+required for the arbitrary entry total. This uses ordinary `consumes` and
+`produces`; no additional resource operation is needed.
 
 The corresponding consumption helper borrows authority and takes one member:
 
@@ -490,13 +514,65 @@ establishes that the arbitrary entry total is at least one, so decrementing
 needs no additional bound. Return checks the member's checked consumption;
 merely declaring `consumes` and returning authority does not suffice. The
 caller retains its other members, recovers authority, and observes the total
-decreased by one. The consumed member cannot be used again. This initial
-support admits one consumption of the entry member, without replacement or
-multiple updates inside the helper.
+decreased by one. The consumed member cannot be used again. This single-pool
+form admits one consumption of the entry member. The two-pool move below
+also produces a member under a different authority.
+
+A consumed member can return its private memory through the ordinary output
+contract:
+
+<!-- verified-example: mdtests/authority_wildcard_consume_private_body.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+void release(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    consumes slot(pool, p);
+    produces p[0..1];
+    ensures p[0] == 0;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+Here `unfold(slot(pool, p))` consumes the member and exposes its memory for
+the C body to update. `produces p[0..1]` returns that memory to the caller;
+it does not recreate membership. The caller retains its other member and
+recovers authority with the decremented count, including through nested
+helpers. It can use the returned memory and reclaim the allocation once all
+its remaining memory ownership is available. It cannot reopen the consumed
+member or read the memory after freeing it. Opening and closing the member
+without consuming it cannot satisfy this contract.
+
+A helper can move a unit member between two authorities of the same family:
+
+<!-- verified-example: mdtests/authority_wildcard_transfer_private_body.md -->
+```click
+void move(int32* source, int32* destination, int32* p) {
+    requires source != destination;
+    owns authority(slot(source, _));
+    owns authority(slot(destination, _));
+    consumes slot(source, p);
+    requires defined(count(slot(destination, _)) + 1);
+    produces slot(destination, p);
+    ensures p[0] == old(p[0]);
+    ensures count(slot(source, _)) == old(count(slot(source, _))) - 1;
+    ensures count(slot(destination, _)) == old(count(slot(destination, _))) + 1;
+}
+```
+
+Its proof unfolds the source member, then folds the destination member using
+that same private memory, or calls a checked nested helper. Both authorities
+are borrowed and returned. The destination entry total is arbitrary; owning
+its authority gives no ownership of its existing members. Each population's
+ledger checks its own exchange, while ordinary resource transfer checks the
+private body. Caller-retained members in both pools remain owned. The old
+source membership cannot be reused. This transfer admits one unit consumption
+and one unit production with the same family and trailing arguments, changing
+only the pool anchor; it does not enable arbitrary batches of updates.
 
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
-authority, consume the entry member, or create one from an authority-only input. Fixed
+authority, consume the entry member, or create one from authority and its required
+private memory, or move one unit member between two wildcard authorities. Fixed
 trailing arguments in authority patterns, exact subset observations, and
 field-bearing members remain future work.
 
