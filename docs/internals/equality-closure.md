@@ -695,8 +695,13 @@ trusted kernel and changes candidate selection only: checked expansion and the
 loan ledger still establish the exact parent, children, and authority. Logical
 contract loads can bypass permission lookup, so regressions inspect the actual
 projection input's attachment in addition to checking expansion and loan
-controls. Branch isolation, read width, and unrelated-fact scaling are covered.
-Normalization refreshes existing attachments when it replaces occurrences.
+controls. The owned one-level frontier used to adapt a composite view to loan
+backing uses the same checked construction. Its temporary context contains only
+the selected owned head, and dependent child deltas retain the attachment. This
+does not authorize a lend: the adapter still checks the caller's owned coverage,
+definition facts, and recovery recipe. Branch isolation, read width, and scaling
+against unrelated facts and caller resources are covered. Normalization refreshes
+existing attachments when it replaces occurrences.
 
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its
