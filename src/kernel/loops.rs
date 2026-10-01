@@ -2082,8 +2082,13 @@ pub(super) fn execute_c_statement_verification_paths(
             CStatement::While {
                 invariant_checks,
                 effect_checks,
+                ranking_measures,
+                structural_measure,
                 ..
-            } if !invariant_checks.is_empty() || !effect_checks.is_empty()
+            } if !invariant_checks.is_empty()
+                || !effect_checks.is_empty()
+                || !ranking_measures.is_empty()
+                || structural_measure.is_some()
         )
     {
         let Some(rule) = environment.applicable_verified_loop_rule(state, statement, assumptions)
