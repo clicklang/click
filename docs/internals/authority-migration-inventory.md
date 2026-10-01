@@ -6,6 +6,10 @@ This is the consumer inventory for `issues/authority-migration.md`, not a specif
 
 The `authority_wildcard_*` fixture group adds concrete, field-free
 `R(anchor, _, ...)` population scopes and aggregate count observations.
+The `authority_wildcard_helper_*` fixtures add ordinary borrow-and-return
+contracts for one concrete member and wildcard authority, including nested
+calls. Helper entry imports an arbitrary total; it cannot establish authority
+or equate that total to its locally owned member quantity.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

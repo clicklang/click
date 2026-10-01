@@ -411,10 +411,29 @@ the authority, and decreases the total. Retirement requires zero members.
 Another pool has a separate authority. With more arguments, every argument
 after the anchor is a wildcard, as in `authority(slot(pool, _, _))`.
 
-This initial scope support covers concrete creation environments, field-free
-members, and aggregate wildcard observations. Fixed trailing arguments in
-authority patterns, exact subset observations, field-bearing members, and
-wildcard authority transfer through helper contracts remain future work.
+An ordinary helper can borrow and return wildcard authority together with one
+concrete member:
+
+<!-- verified-example: mdtests/authority_wildcard_helper_borrow.md -->
+```click
+void inspect(int32* pool, int32* member) {
+    owns authority(slot(pool, _));
+    owns slot(pool, member);
+    ensures count(slot(pool, _)) == old(count(slot(pool, _)));
+}
+```
+
+The helper's entry total is arbitrary, including members owned elsewhere.
+Receiving one member gives a lower bound of one, not an exact total of one.
+The call returns the same authority and the same concrete member, preserving
+the caller's total and any members it retained. Nested helper calls use the
+same checked transfer. The helper receives no population creation permission.
+
+This scope support covers field-free members, aggregate wildcard observations,
+and helper contracts that borrow and return one concrete member with their
+authority. Creating or consuming wildcard members inside helpers, fixed
+trailing arguments in authority patterns, exact subset observations, and
+field-bearing members remain future work.
 
 The rest of this section describes the legacy population path, retained while
 its consumers are migrated. The

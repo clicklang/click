@@ -5082,6 +5082,44 @@ impl CState {
         Ok(next)
     }
 
+    /// Import exactly the authority and identified member declared at a
+    /// wildcard helper entry. Neither input is a population creation event.
+    pub(crate) fn import_opaque_wildcard_population(
+        &self,
+        authority: &CResourceFact,
+        member: &CResourceFact,
+    ) -> Result<Self, String> {
+        let CResourceFact::Own(CResource::PopulationAuthority(scope), quantity) = authority else {
+            return Err("Requires owns authority(R(anchor, _))".into());
+        };
+        let CResourceFact::Own(CResource::Composite { name, arguments }, member_quantity) = member
+        else {
+            return Err("Requires owns R(anchor, member)".into());
+        };
+        if quantity.as_const() != Some(1)
+            || member_quantity.as_const() != Some(1)
+            || !self.resources.contains_exact_representation(authority)
+            || !self.resources.contains_exact_representation(member)
+        {
+            return Err("Requires one owned authority and its declared owned member".into());
+        }
+        let description = super::super::ResourceDescription::new(
+            name.clone(),
+            arguments.clone(),
+            super::super::ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
+        );
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("opaque import requires authority mode")?
+            .import_opaque_wildcard_population(scope, &description)
+            .map_err(|refusal| format!("wildcard population import refused: {refusal:?}"))?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
     /// Contract lowering may name an established real population or the one
     /// opaque population explicitly imported from a standalone proof's entry.
     pub(crate) fn recognizes_population_authority(
