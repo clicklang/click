@@ -5473,8 +5473,7 @@ impl ResourceOccurrenceId {
 #[derive(Default)]
 pub struct ResourceContext {
     /// Derived trusted-kernel index. It never supplies ownership evidence.
-    memory_equalities:
-        std::sync::Mutex<Option<std::sync::Arc<memory_equality_index::PairedMemoryIndex>>>,
+    memory_equalities: std::sync::Mutex<memory_equality_index::MemoryPairings>,
     pub(super) storage: std::sync::Arc<ResourceContextStorage>,
     /// Checked dependency bundles for resource occurrences that are views of
     /// an active stable loan.  This is deliberately separate from the
@@ -5714,6 +5713,8 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Raw address anchors maintained during resource publication, for queries
+    /// before a proof boundary has paired the input with an equality graph.
     /// Structural candidates maintained at resource publication, independent
     /// of proof-graph registration. Keys never establish access authority.
     structural_memory: memory_equality_index::structural::StructuralMemory,

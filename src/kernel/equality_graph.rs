@@ -48,6 +48,7 @@
 
 use super::prelude::*;
 
+mod inputs;
 #[cfg(test)]
 mod int32_addition_tests;
 #[cfg(test)]
@@ -56,6 +57,7 @@ mod int32_load_tests;
 mod int32_tests;
 #[cfg(test)]
 mod scaled_int32_tests;
+pub(in crate::kernel) use inputs::InputKey;
 mod terms;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
@@ -334,10 +336,6 @@ pub(in crate::kernel) struct CanonicalPointer {
 /// never shared mutably. Only unconditional term definitions share the session
 /// interner. The locks preserve `PureFactContext`'s Send/Sync contract.
 pub(in crate::kernel) struct EqualityGraph {
-    // Query registrations are branch-local memo state. Consumers use this
-    // instance token to avoid replacing a published checkpoint with a scratch
-    // graph's node IDs; it carries no equality or proof authority.
-    registration_identity: std::sync::Arc<()>,
     state: std::sync::Mutex<EqualityGraphState>,
     // Definitional term annotations, supplied by typed logical-load producers
     // or retained from certified reads after checked expression evaluation.
@@ -371,7 +369,6 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 impl Default for EqualityGraph {
     fn default() -> Self {
         Self {
-            registration_identity: Default::default(),
             state: Default::default(),
             logical_reads: LOGICAL_POINTER_READS.with(|reads| reads.borrow().clone()),
         }
@@ -381,7 +378,6 @@ impl Default for EqualityGraph {
 impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
-            registration_identity: std::sync::Arc::new(()),
             logical_reads: self.logical_reads.clone(),
             state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
@@ -425,6 +421,7 @@ enum OffsetPart {
 #[derive(Clone, Default)]
 struct EqualityGraphState {
     terms: terms::TermClasses,
+    input_history: Option<std::sync::Arc<inputs::History>>,
     logical_values: crate::persistent::PersistentSet<Pointer>,
     checked_read_generation: u64,
     /// The exact class-merge delta stream. A consumer with a persistent
@@ -516,6 +513,7 @@ impl EqualityGraph {
         self.register_logical_read_values(&mut state, [left, right]);
         state.register_blocks([left.block.clone(), right.block.clone()]);
         if state.close(vec![(left.clone(), right.clone())]) {
+            state.remember_input(inputs::Input::CheckedRead(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -598,10 +596,6 @@ impl EqualityGraph {
         }
         merges.reverse();
         Some(merges)
-    }
-
-    pub(in crate::kernel) fn registration_identity(&self) -> std::sync::Arc<()> {
-        self.registration_identity.clone()
     }
 
     /// Typed address applications share the graph's offset closure. This is
@@ -856,11 +850,12 @@ impl EqualityGraph {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.state
-            .get_mut()
-            .expect("equality graph")
-            .terms
-            .add_int32_equality(left, right)
+        let state = self.state.get_mut().expect("equality graph");
+        let changed = state.terms.add_int32_equality(left, right);
+        if changed {
+            state.remember_input(inputs::Input::Int32(left.clone(), right.clone()));
+        }
+        changed
     }
 
     /// Admit an already established offset equality in this proof context.
@@ -869,11 +864,12 @@ impl EqualityGraph {
         left: &PointerOffsetTerm,
         right: &PointerOffsetTerm,
     ) -> bool {
-        self.state
-            .get_mut()
-            .expect("equality graph")
-            .terms
-            .add_equality(left, right)
+        let state = self.state.get_mut().expect("equality graph");
+        let changed = state.terms.add_equality(left, right);
+        if changed {
+            state.remember_input(inputs::Input::Offset(left.clone(), right.clone()));
+        }
+        changed
     }
 
     /// Admit an equality already established in this proof context and
@@ -911,7 +907,11 @@ impl EqualityGraph {
         let offset_changed =
             left.block == right.block && state.terms.add_equality(&left.offset, &right.offset);
         let pointer_changed = state.close(vec![(left.clone(), right.clone())]);
-        address_changed || offset_changed || pointer_changed
+        let changed = address_changed || offset_changed || pointer_changed;
+        if changed {
+            state.remember_input(inputs::Input::Pointer(left.clone(), right.clone()));
+        }
+        changed
     }
 }
 

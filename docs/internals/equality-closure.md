@@ -572,12 +572,40 @@ fragment. The same address payload supplies fold candidates, whose coverage
 and consumption checks remain authoritative. Cold lookups cannot trigger full
 input registration; they retain the existing affine/general paths until a
 proof boundary establishes complete coverage. Branches inherit registered
-persistent roots. Divergent registration prefixes cannot reuse branch-local
-node IDs. Queries on temporary contexts fork the index roots so they cannot
-replace the source graph's published input checkpoint. Queries on that source
-advance the memo checkpoint, avoiding repeated accumulated deltas. Full
-normalization defers its published registration delta to the source graph
-rather than altering a private graph checkpoint.
+persistent roots. Pairing now keys cached views by the persistent history of
+admitted pointer, offset, int32, and checked-read equalities, independently of
+query registrations. The initial boundary registers a premise-free resource
+checkpoint for that lineage, then advances a fork by its admitted inputs.
+A pure branch created before publication, or a sibling with different inputs,
+therefore shares the registered resource payload without importing another
+graph's local node IDs. This preparation changes no proof-context fact.
+
+Each derived view owns a graph checkpoint. Later inputs apply only the delta
+from its cached ancestor; ordinary queries register only the requested address
+and new resource occurrences. Pointer/address merges move affected payloads.
+Read and write candidates retain that checkpoint for address translation, and
+fold selection uses it for both endpoints. Switching between parent and sibling
+views preserves their persistent roots instead of discarding the complete
+payload and falling back to a resource search. Full normalization already
+visits its input: it refreshes the registered root and published view against
+new live occurrences there, discarding other cached views with obsolete IDs.
+It retains their graph states, scans no equality history, and leaves no full
+registration pass for a later lookup. A cold view made before publication
+cannot shadow a completed registered ancestor.
+
+An index with no memory occurrences has no class-keyed IDs to translate. It
+captures the already-closed source graph in constant work. The first memory
+occurrence can therefore use that snapshot, including in a preexisting
+sibling, without walking unrelated scalar equality inputs. Empty-input
+capture and subsequent attachment have deterministic scaling regressions.
+
+These admitted-input records are trusted internal index plumbing, not an
+`explain` API, generated proof steps, or a second equality theory. They apply
+existing admission rules and never scan the proof context for premises.
+Regressions cover forks before publication, publication under one sibling's
+facts, repeated switches between views, read/write/fold selection, completed
+reads, branch isolation, real normalization replacements, and deterministic
+work over growing resource inputs.
 
 Symbolic containment, partial-range reads with non-affine offset aliases, and
 snapshot-based matching still need complete indexed coverage before the
@@ -647,10 +675,14 @@ partial ranges, consumption, branch isolation, and read width.
 This retires the two structural block scans, not all general permission
 lookup. General read/write checks still have spelling and resource-search
 paths for addresses outside the complete indexed fragments. Removing them
-also requires complete resource/graph pairing across forked assumption
-contexts and indexed selection for retained load-origin forms. An attempted
-replacement by address anchors alone rejected existing completed-read and
-borrowed-buffer proofs; it is not part of the implementation. Stored-value
+still requires publication at temporary resource-context construction
+boundaries and complete indexed selection for symbolic containment and
+retained load-origin forms. Forks of an already published input now retain
+their pairing; independently constructed or unpublished inputs are a separate
+boundary. An attempted replacement by address anchors alone rejected existing
+completed-read and borrowed-buffer proofs whose temporary contexts had no
+complete attachment, even when the graph knew their base equality; it is not
+part of the implementation. Stored-value
 and initialization-evidence spelling lookups remain separate migrations.
 
 Read, write, and fold consumers are integration examples. A lookup must not
