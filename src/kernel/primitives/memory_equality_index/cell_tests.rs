@@ -1325,3 +1325,41 @@ fn unpublished_loaded_intervals_do_not_claim_complete_supplier_coverage() {
     assert!(resources.concrete_read_entries(&query, 4, &facts).is_some());
     assert!(resources.permits_memory_read(&query, 4, &facts));
 }
+#[test]
+fn write_permission_does_not_enumerate_covering_views() {
+    let base = Pointer::symbolic(Variable(960_200));
+    let facts = PureFactContext::new();
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(view(&base, 0, 8 + i));
+        }
+        resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 4u32.into(), 1),
+        ));
+        resources.synchronize_memory_equalities(&facts);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    resources
+                        .memory_write_range(&base.offset_by_bytes(1), 1, &facts)
+                        .is_some()
+                );
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(_, work, _)| *work <= samples[0].1 * 2 + 32),
+        "write candidate selection enumerated read authority: {samples:?}"
+    );
+    assert!(
+        samples
+            .iter()
+            .all(|(_, _, work)| *work <= samples[0].2 * 3 + 128),
+        "write candidate selection visited covering views: {samples:?}"
+    );
+}
