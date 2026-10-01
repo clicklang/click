@@ -69,7 +69,10 @@ impl<'a> Proof<'a> {
     pub(super) fn try_linear_execute_descendant(
         &self,
     ) -> Result<Option<(Self, Vec<Proposition>)>, ClickError> {
-        let mut proof = self.clone();
+        // The statement steps below run on behalf of `execute()`, and a
+        // refusal names it; the returned descendant carries this proof's own
+        // context again, so checkpoints taken before it still apply.
+        let mut proof = self.with_execution_step_tactic_name("execute()");
         let mut introduced_facts = Vec::new();
         let mut advanced = false;
         // Retrying a refused statement is bounded by the owning smart
@@ -105,7 +108,7 @@ impl<'a> Proof<'a> {
         if !advanced {
             return Ok(None);
         }
-        Ok(Some((proof, introduced_facts)))
+        Ok(Some((proof.with_context_of(self), introduced_facts)))
     }
 
     /// Returns the already-checked function-exit descendant selected by the

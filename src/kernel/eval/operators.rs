@@ -1731,11 +1731,62 @@ fn pointer_index_term(
             false,
             false,
         )),
+        // An unsigned word whose sign bit the path has cleared (`x < 4u`
+        // leaves `0 <= x` beside it) names the same element index read as
+        // signed: zero- and sign-extension agree on it. Indexing by the
+        // signed word gives the address the shape a signed index has, so
+        // the formation guard and the element and footprint rules read its
+        // range from the same order facts. Otherwise the index is the exact
+        // zero-extended word.
+        CValue::UInt32(value)
+            if decide_with_facts(
+                assumptions,
+                facts,
+                &ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value.clone()),
+            ) == Some(true) =>
+        {
+            Some((value, false, false))
+        }
         CValue::UInt32(value) => Some((Bitvector32Term::uint64_from_32(value), true, true)),
         CValue::Int64(value) => Some((value, false, true)),
+        // The same for a sixty-four-bit unsigned index an unsigned order
+        // fact bounds below `2^31`: it is its own low word, read as a
+        // nonnegative signed one, and the fact filed that word's range. An
+        // index pinned by an equality keeps its exact form, which the
+        // element rules read through the constant.
+        CValue::UInt64(value) if uint64_index_has_signed_word_range(&value, facts, assumptions) => {
+            Some((Bitvector32Term::uint32_from_64(value), false, false))
+        }
         CValue::UInt64(value) => Some((value, true, true)),
         CValue::Void | CValue::Pointer(_) | CValue::Float32(_) | CValue::Float64(_) => None,
     }
+}
+
+/// Whether an unsigned order fact bounds the `uint64` index `value` below
+/// `2^31`, so a context holding it files the signed range of its low word:
+/// the sign-bit bound `value <=u INT_MAX` that filing records, held by key,
+/// or a path fact of that shape on `value` itself. Keyed lookups and one
+/// constant-size match per path fact.
+fn uint64_index_has_signed_word_range(
+    value: &Bitvector32Term,
+    facts: &[ExecutionPureFact],
+    assumptions: &PureFactContext,
+) -> bool {
+    let sign_bit_clear = Proposition::ConditionIs(
+        ConditionTerm::uint64_less_equal(
+            value.clone(),
+            Bitvector32Term::UInt64Constant(i32::MAX as u64),
+        ),
+        true,
+    );
+    assumptions.proves_exact(&sign_bit_clear)
+        || facts.iter().any(|fact| match fact.proposition() {
+            Proposition::ConditionIs(condition, held) => {
+                crate::kernel::assumptions::uint64_upper_bound_below_sign_bit(condition, *held)
+                    .is_some_and(|(term, _, _)| term == value)
+            }
+            _ => false,
+        })
 }
 
 fn pointer_offset_by_elements_paths(

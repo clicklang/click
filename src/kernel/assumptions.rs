@@ -21,6 +21,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
+pub(in crate::kernel) use condition_reasoning::uint64_upper_bound_below_sign_bit;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;
 mod constant_classes;
@@ -4780,6 +4781,41 @@ impl PureFactContext {
                 value,
             );
         }
+        // An unsigned upper bound below the sign bit, `x <u c` with
+        // `c <= 2^31`, is spelled as the biased signed order
+        // `(x ^ 2^31) < (c ^ 2^31)`. It holds exactly when the signed pair
+        // `0 <= x` and `x < c` does, so the pair is filed beside it, with the
+        // source's strictness: every reader of signed order facts on `x`
+        // (interval, index range, and element-membership rules) then sees
+        // the range the unsigned test established, through the same indexes
+        // it reads for a signed test. Two facts per bound, both on the
+        // bounded term itself.
+        //
+        // A sixty-four-bit `x <u c` with `c <= 2^31` files the same pair on
+        // the low word `(uint32)x`, which is `x` itself, and the sign-bit
+        // bound `x <=u INT_MAX` an index conversion asks for by key
+        // (`pointer_index_term`).
+        if let Some((term, bound, strict)) =
+            condition_reasoning::unsigned_upper_bound_below_sign_bit(&condition, value)
+        {
+            self = self.assume_unsigned_word_range(term.clone(), bound, strict);
+        } else if let Some((term, bound, strict)) =
+            condition_reasoning::uint64_upper_bound_below_sign_bit(&condition, value)
+        {
+            let term = term.clone();
+            let sign_bit_clear = ConditionTerm::uint64_less_equal(
+                term.clone(),
+                Bitvector32Term::UInt64Constant(i32::MAX as u64),
+            );
+            if sign_bit_clear != condition {
+                self = self.assume_condition_uncharged(sign_bit_clear, true);
+            }
+            self = self.assume_unsigned_word_range(
+                Bitvector32Term::uint32_from_64(term),
+                bound,
+                strict,
+            );
+        }
         let old = self.condition_facts.get(&condition).copied();
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
         self.memory_load_condition_facts = std::sync::Arc::new(std::sync::OnceLock::new());
@@ -4827,6 +4863,35 @@ impl PureFactContext {
         }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
         self
+    }
+
+    /// Files the signed range of a word an unsigned upper bound below the sign
+    /// bit established: `0 <= term`, and `term < bound + 1` (strict source)
+    /// or `term <= bound`.
+    fn assume_unsigned_word_range(
+        mut self,
+        term: Bitvector32Term,
+        bound: u32,
+        strict: bool,
+    ) -> Self {
+        self = self.assume_condition_uncharged(
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone()),
+            true,
+        );
+        // A bound of `INT_MAX` says nothing every signed word does not.
+        if bound == i32::MAX as u32 {
+            self
+        } else if strict {
+            self.assume_condition_uncharged(
+                ConditionTerm::signed_less_than(term, Bitvector32Term::Constant(bound + 1)),
+                true,
+            )
+        } else {
+            self.assume_condition_uncharged(
+                ConditionTerm::signed_less_equal(term, Bitvector32Term::Constant(bound)),
+                true,
+            )
+        }
     }
 
     /// This context extended by `proposition`, charged one unit of

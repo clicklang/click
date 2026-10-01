@@ -1963,7 +1963,9 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("smart `execute` requires an execution-frontier proof"));
         };
-        let tactic_context = context.with_tactic_index(tactic_index);
+        let tactic_context = context
+            .with_tactic_index(tactic_index)
+            .with_step_tactic_name("execute()");
         let claim_label = context.claim_label;
         self.require_execution_frontier("`execute`")?;
         let execution = self
