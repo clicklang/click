@@ -694,7 +694,7 @@ impl PropositionDerivation {
 impl PointerOffsetCongruenceEvidence {
     fn equality_paths(&self) -> Vec<&[BitvectorEqualityDerivationStep]> {
         match self {
-            Self::Exact | Self::ExactPremise(_) => Vec::new(),
+            Self::Exact | Self::ExactPremise(_) | Self::WideScaledConstant { .. } => Vec::new(),
             Self::Add { first, second, .. } => {
                 let mut paths = first.equality_paths();
                 paths.extend(second.equality_paths());
@@ -715,6 +715,14 @@ impl PointerOffsetCongruenceEvidence {
     ) -> bool {
         match self {
             Self::Exact => left == right,
+            Self::WideScaledConstant { value } => {
+                crate::kernel::assumptions::exact_wide_scaled_offset_constant(left, assumptions)
+                    == Some(*value)
+                    && crate::kernel::assumptions::exact_wide_scaled_offset_constant(
+                        right,
+                        assumptions,
+                    ) == Some(*value)
+            }
             Self::ExactPremise(premise) => {
                 let Proposition::ConditionIs(
                     ConditionTerm::PointerOffsetEqual(premise_left, premise_right),

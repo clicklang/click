@@ -21,11 +21,11 @@ fn checked_signed_remainder_const(left: u32, right: u32) -> Option<u32> {
 }
 
 fn checked_unsigned_divide_const(left: u32, right: u32) -> Option<u32> {
-    (right != 0).then_some(left / right)
+    (right != 0).then(|| left / right)
 }
 
 fn checked_unsigned_remainder_const(left: u32, right: u32) -> Option<u32> {
-    (right != 0).then_some(left % right)
+    (right != 0).then(|| left % right)
 }
 
 fn checked_shift_count_const(count: u32) -> Option<u32> {
@@ -797,11 +797,11 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         }
         Bitvector32Term::UInt64Divide(left, right) => {
             let right = uint64_constant(right)?;
-            (right != 0).then_some(uint64_constant(left)? / right)
+            uint64_constant(left)?.checked_div(right)
         }
         Bitvector32Term::UInt64Remainder(left, right) => {
             let right = uint64_constant(right)?;
-            (right != 0).then_some(uint64_constant(left)? % right)
+            uint64_constant(left)?.checked_rem(right)
         }
         Bitvector32Term::UInt64ShiftLeft(left, right) => {
             let count = int64_shift_count_constant(right)?;
@@ -809,7 +809,11 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         }
         Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
             let count = int64_shift_count_constant(right)?;
-            (count < 64).then_some(uint64_constant(left)? >> count)
+            if count >= 64 {
+                None
+            } else {
+                Some(uint64_constant(left)? >> count)
+            }
         }
         Bitvector32Term::UInt64BitwiseAnd(left, right) => {
             Some(uint64_constant(left)? & uint64_constant(right)?)
@@ -1602,7 +1606,7 @@ impl Bitvector32Term {
         Self::uint64_binary(
             left,
             right,
-            |left, right| (right != 0).then_some(left / right),
+            |left, right| (right != 0).then(|| left / right),
             Self::UInt64Divide,
         )
     }
@@ -1611,7 +1615,7 @@ impl Bitvector32Term {
         Self::uint64_binary(
             left,
             right,
-            |left, right| (right != 0).then_some(left % right),
+            |left, right| (right != 0).then(|| left % right),
             Self::UInt64Remainder,
         )
     }

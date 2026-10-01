@@ -1115,10 +1115,13 @@ impl PureFactContext {
         fn evaluate(
             context: &PureFactContext,
             term: &Bitvector32Term,
-            active: &mut BTreeSet<Bitvector32Term>,
-            memo: &mut BTreeMap<Bitvector32Term, Option<u64>>,
+            active: &mut BTreeSet<usize>,
+            memo: &mut BTreeMap<usize, Option<u64>>,
         ) -> Option<u64> {
-            if let Some(value) = memo.get(term) {
+            // Identities live only for this query. No deep term clone or
+            // structural comparison is needed for the traversal memo.
+            let identity = term as *const Bitvector32Term as usize;
+            if let Some(value) = memo.get(&identity) {
                 return *value;
             }
             // Equality cycles and deeply nested arithmetic are search, not
@@ -1126,7 +1129,7 @@ impl PureFactContext {
             if active.len() >= 128 {
                 return None;
             }
-            if !active.insert(term.clone()) {
+            if !active.insert(identity) {
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
@@ -1146,20 +1149,87 @@ impl PureFactContext {
                         .zip(evaluate(context, right, active, memo))
                         .map(|(a, b)| a.wrapping_mul(b))
                 }
+                Bitvector32Term::UInt64Divide(left, right)
+                | Bitvector32Term::UInt64Remainder(left, right) => {
+                    evaluate(context, left, active, memo)
+                        .zip(evaluate(context, right, active, memo))
+                        .and_then(|(a, b)| {
+                            if b == 0 {
+                                return None;
+                            }
+                            Some(if matches!(term, Bitvector32Term::UInt64Divide(..)) {
+                                a / b
+                            } else {
+                                a % b
+                            })
+                        })
+                }
+                Bitvector32Term::UInt64BitwiseAnd(left, right)
+                | Bitvector32Term::UInt64BitwiseOr(left, right)
+                | Bitvector32Term::UInt64BitwiseXor(left, right) => {
+                    evaluate(context, left, active, memo)
+                        .zip(evaluate(context, right, active, memo))
+                        .map(|(a, b)| match term {
+                            Bitvector32Term::UInt64BitwiseAnd(..) => a & b,
+                            Bitvector32Term::UInt64BitwiseOr(..) => a | b,
+                            _ => a ^ b,
+                        })
+                }
+                Bitvector32Term::UInt64BitwiseNot(inner) => {
+                    evaluate(context, inner, active, memo).map(|a| !a)
+                }
+                Bitvector32Term::UInt64ShiftLeft(left, right)
+                | Bitvector32Term::UInt64LogicalShiftRight(left, right) => {
+                    let count = context
+                        .known_signed_constant_after_normalization(right)
+                        .map(|a| u64::from(a as u32))
+                        .or_else(|| evaluate(context, right, active, memo));
+                    evaluate(context, left, active, memo)
+                        .zip(count)
+                        .and_then(|(a, b)| {
+                            if b >= 64 {
+                                return None;
+                            }
+                            Some(if matches!(term, Bitvector32Term::UInt64ShiftLeft(..)) {
+                                a.wrapping_shl(b as u32)
+                            } else {
+                                a >> b
+                            })
+                        })
+                }
+                Bitvector32Term::UInt64From32(inner) | Bitvector32Term::UInt64FromInt32(inner) => {
+                    context
+                        .known_signed_constant_after_normalization(inner)
+                        .map(|a| {
+                            if matches!(term, Bitvector32Term::UInt64FromInt32(..)) {
+                                a as i32 as i64 as u64
+                            } else {
+                                u64::from(a as u32)
+                            }
+                        })
+                }
+                Bitvector32Term::UInt64FromInt64(inner) => evaluate(context, inner, active, memo),
+                Bitvector32Term::UInt32From64(inner) => {
+                    evaluate(context, inner, active, memo).map(|a| u64::from(a as u32))
+                }
                 _ => None,
             };
             if value.is_none()
                 && let Some(neighbors) = context.bitvector64_equality_facts.get(term)
             {
-                for (equal, _) in neighbors.iter() {
+                for (equal, fact) in neighbors.iter() {
                     value = evaluate(context, equal, active, memo);
                     if value.is_some() {
+                        record_implicit_reasoning_provenance(
+                            context,
+                            &Proposition::ConditionIs(fact.clone(), true),
+                        );
                         break;
                     }
                 }
             }
-            active.remove(term);
-            memo.insert(term.clone(), value);
+            active.remove(&identity);
+            memo.insert(identity, value);
             value
         }
         evaluate(self, term, &mut BTreeSet::new(), &mut BTreeMap::new())
@@ -1292,6 +1362,13 @@ impl PureFactContext {
             return Some(PointerOffsetCongruenceEvidence::ExactPremise(Box::new(
                 mirrored_premise,
             )));
+        }
+        if let (Some(left), Some(right)) = (
+            super::super::exact_wide_scaled_offset_constant(left, self),
+            super::super::exact_wide_scaled_offset_constant(right, self),
+        ) && left == right
+        {
+            return Some(PointerOffsetCongruenceEvidence::WideScaledConstant { value: left });
         }
         if let Some(evidence) = self.pointer_offset_element_index_evidence(left, right) {
             return Some(evidence);

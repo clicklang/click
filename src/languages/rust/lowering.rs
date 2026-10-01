@@ -43,6 +43,9 @@ fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
             ),
             CType::UInt8,
         )
+    } else if target == CType::Int32 {
+        // Rust narrowing retains the low word, then reinterprets its sign.
+        c_cast(c_cast(value, CType::UInt32), CType::Int32)
     } else {
         c_cast(value, target)
     }
@@ -605,11 +608,6 @@ impl Context<'_> {
                 left,
                 right,
             } => {
-                if *left_type == Type::Usize
-                    && !matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge")
-                {
-                    return Err("usize arithmetic outside Rust slice support".into());
-                }
                 let (left_prefix, left_value) = self.prepared_expr(left)?;
                 let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
                 let prefix = c_seq(left_prefix, left_capture);
@@ -635,6 +633,31 @@ impl Context<'_> {
                 let (right_prefix, right_value) = self.prepared_expr(right)?;
                 let (right_capture, right_name) = self.capture_operand(right_value, right_type)?;
                 let mut prefix = c_seq(prefix, c_seq(right_prefix, right_capture));
+                if *left_type == Type::Usize {
+                    let l = c_variable(&left_name);
+                    let r = c_variable(&right_name);
+                    let max = c_uint64_literal(u64::MAX);
+                    // Stay unsigned at the full target width. Widening to
+                    // signed i64 would lose half of the usize value range.
+                    let obligation = match operator.as_str() {
+                        "add" => Some(c_less_equal(l, c_subtract(max, r))),
+                        "sub" => Some(c_greater_equal(l, r)),
+                        "mul" => Some(c_or(
+                            c_equal(r.clone(), c_uint64_literal(0)),
+                            c_less_equal(l, c_divide(max, r)),
+                        )),
+                        "shl" | "shr" => {
+                            Some(c_less_than(c_cast(r, CType::UInt64), c_uint64_literal(64)))
+                        }
+                        _ => None,
+                    };
+                    if let Some(obligation) = obligation {
+                        prefix = c_seq(
+                            prefix,
+                            c_labeled_assert(obligation, format!("Rust {operator} panic check")),
+                        );
+                    }
+                }
                 if matches!(left_type, Type::U8 | Type::U32) {
                     let l = c_cast(c_variable(&left_name), CType::UInt32);
                     let r = c_cast(c_variable(&right_name), CType::UInt32);
@@ -900,9 +923,9 @@ impl Context<'_> {
                 ..
             } => {
                 if matches!(operator.as_str(), "shl" | "shr")
-                    && !matches!(left_type, Type::U8 | Type::U32)
+                    && !matches!(left_type, Type::U8 | Type::U32 | Type::Usize)
                 {
-                    return Err("Rust shifts currently require u8 or u32 operands".into());
+                    return Err("Rust shifts currently require u8, u32 or usize operands".into());
                 }
                 let mut l = self.expr(left)?;
                 let mut r = self.expr(right)?;

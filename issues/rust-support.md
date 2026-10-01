@@ -124,8 +124,12 @@ array borrows. Constructor evaluation order, one evaluation for repeats
 have regressions. Fixed byte arrays now coerce to shared/mutable byte slices
 in local initialization, slice reassignment, and direct calls, preserving
 length and storage authority. Empty arrays and parent reuse have regressions.
-By-value array parameters/returns, non-byte slices,
-general `usize` arithmetic, crate extraction, and
+General `usize` scalar arithmetic now includes checked addition/subtraction/
+multiplication, division/remainder, shifts, bitwise operations, compound
+assignments, and integer casts at the full 64-bit target width. Computed slice
+indices and length increments, full-width boundary values, panic rejection,
+and proof expansion have regressions.
+By-value array parameters/returns, non-byte slices, crate extraction, and
 iterator loops remain outstanding. Neither library is verified
 by this assessment.
 
