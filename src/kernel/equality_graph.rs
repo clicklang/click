@@ -521,7 +521,11 @@ impl EqualityGraph {
         }
     }
 
-    fn register_logical_read_values(&self, state: &mut EqualityGraphState, values: [&Pointer; 2]) {
+    fn register_logical_read_values<const N: usize>(
+        &self,
+        state: &mut EqualityGraphState,
+        values: [&Pointer; N],
+    ) {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
@@ -605,6 +609,10 @@ impl EqualityGraph {
     /// representation. Only registered addresses are propagated by merges.
     pub(in crate::kernel) fn address_class(&self, pointer: &Pointer) -> Option<u64> {
         let mut state = self.state.lock().expect("equality graph");
+        // Class lookup and equality must see the same producer definitions.
+        // Register only this term's retained dependencies; never recover them
+        // by scanning premises, resources, or other logical reads.
+        self.register_logical_read_values(&mut state, [pointer]);
         state.register_blocks([pointer.block.clone()]);
         let (block, delta) = state.find(&pointer.block);
         let offset = if delta == AffineOffset::default() {
