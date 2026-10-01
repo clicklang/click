@@ -708,6 +708,20 @@ Branch isolation, read width, double consumption, partial coverage, snapshot
 isolation, and scaling against unrelated facts and caller resources are covered.
 Normalization refreshes existing attachments when it replaces occurrences.
 
+The non-consuming `ResourceContext::satisfies_fact` query also selects memory
+occurrences through the graph's address index. It shares consumption's helper
+for expressing a requirement in the selected occurrence's block; the helper
+preserves bounds, element width, and access mode. Ordinary resource entailment
+then checks the available authority and byte coverage. For example, after
+consuming `a[0..1]` from `a[0..3]`, a context with `a = b = c` recognizes
+its residual `a[1..3]` as satisfying `c[1..3]`, without restoring the consumed
+prefix or changing either retained representation. This graph and its index
+are part of the trusted kernel. Regressions cover sibling-context isolation,
+view refusal, insufficient coverage, preserved snapshots, and multi-size
+scaling beside unrelated resources and equalities. General multi-occurrence
+normalization and unsupported memory matching remain separate paths; this
+slice migrates direct satisfaction from a selected occurrence.
+
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its
 unrelated resources; use a whole-input normalization/publication boundary when
