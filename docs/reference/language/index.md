@@ -140,8 +140,8 @@ there is a real cycle that Click does not already rank: a loop the proof
 summarizes, or a recursive call. A `decreases` clause is always one expression, and what it names
 decides which measure it is: an `int32` parameter, a resource application such
 as `list(node)`, a contract or loop resource binder such as `t`, or, on a
-self-recursive function, any pure `int32` or mathematical `Integer`
-expression. Functions
+self-recursive function, any pure `int32`, unsigned, or mathematical
+`Integer` expression. Functions
 and resources share one namespace, so that classification happens after name
 resolution rather than from a keyword; there is no `decreases resource`
 spelling. A function-level measure ranks recursive calls:
@@ -292,7 +292,8 @@ value.
 
 The numeric proof shape is deliberately small but a loop measure is one
 component, or a nonempty lexicographic tuple of components, and each component
-is any pure `int32` or mathematical `Integer` expression: a C fragment, a
+is any pure `int32`, unsigned, or mathematical `Integer` expression: a C
+fragment, a
 memory read, an application of
 a pure Click function, a resource model field. Click evaluates the one
 declared component at the iteration's entry state and again at the back-edge
@@ -339,6 +340,46 @@ member permanently open. See
 no leniency about the descent itself: a measure the body does not move leaves
 the ranking member open exactly as a C one does, as in
 `mdtests/loop_decreases_pure_expression_must_decrease.md`.
+
+A machine component's type is the one C gives the expression. Operands
+narrower than `int` (`_Bool`, `int8`, `int16`, `uint8`, `uint16`) are
+promoted to `int32` first, so a measure over a `uint8` counter is an int32
+measure and owes the signed `0 <= m` member:
+
+<!-- verified-example: mdtests/a_uint8_loop_counter_ranks_as_a_promoted_int32.md -->
+```click
+loop {
+    decreases 4 - x;
+    invariant x <= 4;
+}
+```
+
+A component whose type, after C's usual arithmetic conversions, is `uint32`
+or `uint64` ranks the loop by unsigned order. That includes a mixed
+expression such as `4 - x` over a `uint32 x`, whose `int32` operand converts
+to `uint32` exactly as C converts it. The measure is the value C computes,
+wraparound included. Its nonnegativity member is the constant `true`, since
+every unsigned value is a natural number, and its decrease member is
+`post < pre` as an unsigned comparison of the two wrapped values. Wrapped
+values are what keep the ranking sound: a back edge on which the measure
+wraps upward, as `3 - x` does when `x` goes from 3 to 4, fails the decrease
+member (`mdtests/an_unsigned_measure_that_wraps_upward_is_refused.md`), and a
+measure the body moves up fails it too
+(`mdtests/an_unsigned_measure_that_grows_is_refused.md`). Division,
+remainder, right shift, and comparisons inside a component use the
+signedness of their operands' common type. Click refuses an `int64`
+component, a shift of a `uint64` value, and a `?:` that chooses between
+`uint64` values, and names the refusal. A pure component and a self-recursive
+function's expression measure take the same carriers.
+
+Closing an unsigned member currently needs unsigned order arithmetic, which
+the closer does not yet do: it reads an unsigned comparison as a signed order
+between sign-bit-flipped values and does not relate `x - 1` to `x` through
+the flip. A true descent such as `while (x > 0u) x--;` under `decreases x` is
+therefore still refused at its decrease member
+(`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`,
+`mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`,
+`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`).
 
 A component whose type is `Integer` ranks the loop in that carrier:
 

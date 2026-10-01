@@ -372,8 +372,9 @@ equality a C component gets, because the whole-function plan is built before
 specification lowering has an environment. The weaker match is not soundness
 relevant. Termination evidence is the certified loop's own back-edge bundle,
 which discharged `0 <= m` and `m_post < m_pre` for the component the kernel
-holds on that rule's loop head; a loop with a nonnegative int32 quantity that
-strictly descends on every back edge terminates whichever quantity it was.
+holds on that rule's loop head; a loop with a nonnegative int32 quantity, or
+an unsigned machine quantity under unsigned order, that strictly descends on
+every back edge terminates whichever quantity it was.
 The plan only says which loop to point at, and a rule is bound to its source
 loop by index and executable shape, a comparison that ignores the measure.
 Matching the measures on top of that turns a plan describing one measure and a

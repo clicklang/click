@@ -48,7 +48,8 @@ constant-true service loop writes `loop diverges { ... }` and can still have a
 useful invariant even though it has no exit state.
 
 The `decreases` clause is one expression, and what it names decides
-which measure it is: a nonempty int32 ranking expression, a lexicographic
+which measure it is: a nonempty int32, unsigned, or `Integer` ranking
+expression, a lexicographic
 tuple of them, or one of the loop's own resource binders. The same uniform
 rule applies to a C function's own `decreases`; there is no `decreases
 resource` spelling anywhere.
