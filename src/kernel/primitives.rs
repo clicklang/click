@@ -41,7 +41,8 @@ mod cell_store;
 pub(crate) use cell_store::CHECKED_RUN_SLOTS;
 pub use cell_store::CellRun;
 pub(crate) use cell_store::{
-    CellStore, IndexIntervals, RuleAnswer, RunValueMode, SlotSet, offset_stem_and_constant,
+    CellStore, DroppedRunSlots, IndexIntervals, RuleAnswer, RunValueMode, SlotSet,
+    offset_stem_and_constant,
 };
 mod counted_populations;
 mod derivations;
@@ -4423,6 +4424,12 @@ pub(super) struct CPendingReallocation {
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
     pub(super) zeroed_prefix: Option<Bitvector32Term>,
     pub(super) copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+    /// The runs of constant byte offsets of the old block that were
+    /// initialized and lie in the new allocation, cut at its size: a
+    /// successful resize preserves them whether or not a cached cell still
+    /// names their value, and the bytes the new block grows by stay
+    /// uninitialized.
+    pub(super) initialized_prefix: Vec<(i64, u32)>,
 }
 
 /// Every field is a snapshot collection, so the derived `Hash` is O(1).

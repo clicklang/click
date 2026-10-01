@@ -935,6 +935,15 @@ impl CellRun {
     }
 }
 
+/// The slots of one run that a whole-run retain dropped: the run (its new
+/// holes included) and the elements, live before the retain, that it made
+/// holes. A dropped slot's value is forgotten; what its bytes held is for
+/// the caller to keep or not ([`CellStore::retain_by`]).
+pub(crate) struct DroppedRunSlots {
+    pub(crate) run: CellRun,
+    pub(crate) elements: IndexIntervals,
+}
+
 /// A snapshot's cells: the concrete map and the seeded runs, in canonical
 /// form, the runs indexed by [`RunKey`] (see the module comment).
 #[derive(Clone, Default)]
@@ -1709,15 +1718,15 @@ impl CellStore {
     }
 
     /// [`Self::retain`] with a whole-run answer from `run_rule`, as for
-    /// [`Self::retain_only_candidates_by`].
+    /// [`Self::retain_only_candidates_by`]. Returns the run slots it dropped.
     pub(crate) fn retain_by(
         &mut self,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) {
+    ) -> Vec<DroppedRunSlots> {
         self.reset();
         self.concrete.retain(&mut keep);
-        self.retain_runs_by(None, keep, &mut run_rule);
+        self.retain_runs_by(None, keep, &mut run_rule)
     }
 
     /// [`Self::retain_candidates`] with a whole-run answer from `run_rule`,
@@ -1725,16 +1734,17 @@ impl CellStore {
     /// caller has shown accepts every concrete cell inside the key ranges
     /// `kept`: those cells are kept without being visited
     /// ([`AliasCandidates::retain_map_outside`]). Runs are asked as before.
+    /// Returns the run slots it dropped.
     pub(crate) fn retain_candidates_outside_by(
         &mut self,
         candidates: &AliasCandidates,
         kept: &[(Pointer, Pointer)],
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         mut run_rule: impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) {
+    ) -> Vec<DroppedRunSlots> {
         self.reset();
         candidates.retain_map_outside(&mut self.concrete, kept, &mut keep);
-        self.retain_runs_by(Some(candidates), keep, &mut run_rule);
+        self.retain_runs_by(Some(candidates), keep, &mut run_rule)
     }
 
     /// The runs a retain visits: those `candidates` admits, or every run.
@@ -1757,12 +1767,13 @@ impl CellStore {
         candidates: Option<&AliasCandidates>,
         mut keep: impl FnMut(&Pointer, &CValue) -> bool,
         run_rule: &mut impl FnMut(&CellRun) -> (SlotSet, RuleAnswer),
-    ) {
+    ) -> Vec<DroppedRunSlots> {
         if self.runs.is_empty() {
-            return;
+            return Vec::new();
         }
         let mut visited = 0usize;
         let mut updates = Vec::new();
+        let mut dropped = Vec::new();
         for (key, mut run) in self.visited_runs(candidates) {
             visited += 1;
             let (decision, answer) = run_rule(&run);
@@ -1776,11 +1787,18 @@ impl CellStore {
             let before = run.holes.clone();
             run.keep_only(decision, &mut keep, &mut visited);
             if run.holes != before {
+                // Linear in the two hole interval counts, which the walk
+                // above already paid to build.
+                dropped.push(DroppedRunSlots {
+                    elements: run.holes.difference(&before),
+                    run: run.clone(),
+                });
                 updates.push((key, run));
             }
         }
         crate::instrumentation::record_deterministic_work(visited);
         self.apply_run_updates(updates);
+        dropped
     }
 
     /// Keeps only the cells `keep` accepts among the candidates; every other

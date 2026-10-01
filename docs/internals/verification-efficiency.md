@@ -197,7 +197,11 @@ charged to visible semantic output rather than hidden ambient state:
   a store only adds to it, merging constant-offset bytes into one run per
   block with a predecessor lookup, and a forgotten cell's bytes are recorded
   at the cost of the forgetting itself
-  (`an_unplaced_store_records_a_local_array_as_one_run`).
+  (`an_unplaced_store_records_a_local_array_as_one_run`). A run of cells a
+  havoc or store drops as a whole is recorded per dropped interval, not per
+  slot: a declaration's initializer records its whole object, so dropping
+  the runs it seeded is one covering query each, whatever their length
+  (`a_declared_object_makes_dropping_its_runs_one_query`).
 - Every fact a context is built from is charged one unit of deterministic
   work (`PureFactContext::assume_proposition` and `assume_condition`), so a
   context rebuilt from a growing list at each step shows as quadratic work

@@ -95,6 +95,16 @@ impl InitializedBytes {
             .is_some_and(|(_, run_end)| run_end >= end)
     }
 
+    /// The constant-offset runs of `block`, ascending, as start and length.
+    pub(crate) fn constant_runs_in_block(&self, block: &PointerBlock) -> Vec<(i64, u32)> {
+        let runs = AliasCandidates::only_block(block)
+            .entries(&self.entries)
+            .filter_map(|(start, length)| Some((start.offset.as_const()?, *length)))
+            .collect::<Vec<_>>();
+        crate::instrumentation::record_deterministic_work(runs.len() + 1);
+        runs
+    }
+
     /// Records that the `byte_width` bytes at `pointer` are initialized.
     /// Returns whether the record changed: recording bytes it already covers
     /// leaves it (and so the snapshot's content) exactly as it was.

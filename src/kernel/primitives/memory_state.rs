@@ -2470,6 +2470,7 @@ impl CMemory {
         old_bytes: Bitvector32Term,
         zeroed_prefix: Option<Bitvector32Term>,
         copied_cells: Vec<(PointerOffsetTerm, CValue)>,
+        initialized_prefix: Vec<(i64, u32)>,
     ) -> Self {
         std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -2480,9 +2481,20 @@ impl CMemory {
                     old_bytes,
                     zeroed_prefix,
                     copied_cells,
+                    initialized_prefix,
                 },
             );
         self
+    }
+
+    /// The runs of constant byte offsets of `block` the initialization
+    /// record holds, ascending, as start and length. Costs the entries of
+    /// the one block.
+    pub(in crate::kernel) fn initialized_runs_in_block(
+        &self,
+        block: &PointerBlock,
+    ) -> Vec<(i64, u32)> {
+        self.heap.initialized.constant_runs_in_block(block)
     }
 
     /// Whether execution still owns the unresolved success/failure choice of
@@ -2610,6 +2622,17 @@ impl CMemory {
                     value.clone(),
                 );
             }
+            // Bytes the old block had initialized keep that, in the new
+            // block, where no cached cell carried their value across.
+            for (start, length) in &pending.initialized_prefix {
+                memory = memory.with_initialized_object(
+                    &Pointer {
+                        block: resolved_base.block.clone(),
+                        offset: PointerOffsetTerm::Constant(*start),
+                    },
+                    *length,
+                );
+            }
         }
         Some((memory, bytes, resolved_base, pending))
     }
@@ -2637,7 +2660,7 @@ impl CMemory {
         // The body can only initialize more: every automatic cell whose value
         // goes stays initialized at the head and after the loop.
         let mut dropped_initialized = Vec::new();
-        std::sync::Arc::make_mut(&mut self.cells).retain_by(
+        let dropped_run_slots = std::sync::Arc::make_mut(&mut self.cells).retain_by(
             |pointer, value| {
                 let kept = loan_preserving_havoc_keeps_cell(
                     pointer,
@@ -2657,6 +2680,8 @@ impl CMemory {
             |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
         );
         self.record_dropped_local_cells(&dropped_initialized);
+        // A run's slots are cells too, dropped here as a whole run.
+        self.record_dropped_local_run_slots(&dropped_run_slots);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("havoc:{}", variable.0).into(),
             CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
@@ -3925,6 +3950,73 @@ impl CMemory {
         }
     }
 
+    /// [`Self::record_dropped_local_cells`] for run slots dropped as a whole
+    /// run. A dropped interval whose bytes the record already holds costs
+    /// one covering query: the usual case, as a declaration's initializer,
+    /// which is what makes a run of automatic storage, records its whole
+    /// object ([`Self::with_initialized_object`]). Otherwise contiguous
+    /// slots are one run of bytes, and only slots strided apart or at a
+    /// symbolic offset are recorded one by one, each as a dropped cell.
+    fn record_dropped_local_run_slots(&mut self, dropped: &[DroppedRunSlots]) {
+        if dropped.is_empty() {
+            return;
+        }
+        let mut record = self.heap.initialized.clone();
+        let mut changed = false;
+        for DroppedRunSlots { run, elements } in dropped {
+            if !run.base().block.starts_with("local:") {
+                continue;
+            }
+            let width = run.value_width();
+            for (low, high) in elements.intervals() {
+                if low >= high {
+                    continue;
+                }
+                let first = run.slot_pointer(low);
+                let span = first.offset.as_const().zip(
+                    run.slot_pointer(high - 1)
+                        .offset
+                        .as_const()
+                        .map(|last| last + i64::from(width)),
+                );
+                if let Some((start, end)) = span {
+                    if record.covers_interval(&first.block, start, end) {
+                        continue;
+                    }
+                    if run.element_width() == width
+                        && let Ok(bytes) = u32::try_from(end - start)
+                    {
+                        changed |= record.record(&first, bytes);
+                        continue;
+                    }
+                }
+                for index in low..high {
+                    changed |= record.record(&run.slot_pointer(index), width);
+                }
+            }
+        }
+        if changed {
+            std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
+    }
+
+    /// Records the `bytes` bytes of the object at `pointer` as initialized:
+    /// a declaration whose initializer writes every byte of its object
+    /// (C11 6.7.9p21 zero-initializes whatever it does not name). The cells
+    /// it leaves are the values; this is what outlives them.
+    pub(in crate::kernel) fn with_initialized_object(
+        mut self,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> Self {
+        if !self.heap.initialized.covers(pointer, bytes) {
+            std::sync::Arc::make_mut(&mut self.heap)
+                .initialized
+                .record(pointer, bytes);
+        }
+        self
+    }
+
     /// Forgets the initialization of the `byte_width` bytes at `pointer`
     /// (see [`InitializedBytes::forget`]), leaving the heap shared when the
     /// record holds none of them.
@@ -4123,12 +4215,8 @@ impl CMemory {
                 );
             });
         }
-        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates_outside_by(
-            &candidates,
-            &gap_kept,
-            &mut keep_cell,
-            run_rule,
-        );
+        let dropped_run_slots = std::sync::Arc::make_mut(&mut memory.cells)
+            .retain_candidates_outside_by(&candidates, &gap_kept, &mut keep_cell, run_rule);
         forgot_live_knowledge |= run_forgot;
         candidates.retain_map(
             std::sync::Arc::make_mut(&mut memory.union_cells),
@@ -4206,6 +4294,7 @@ impl CMemory {
         // A store never de-initializes: the heap marks of the cells it may
         // alias stay as they are, and the automatic cells it forgot join them.
         memory.record_dropped_local_cells(&dropped_initialized);
+        memory.record_dropped_local_run_slots(&dropped_run_slots);
         if let Some(base) = base {
             // The mark goes on before interning, because it is what the
             // result is interned *as*. Without it the emptied cell map can
@@ -6481,6 +6570,66 @@ mod initialization_record_tests {
             .expect("the interface join should run");
         assert!(joined.has_initialized_bytes_at(&element(block, 0), 4));
         assert!(!joined.has_initialized_bytes_at(&element(block, 1), 4));
+    }
+
+    /// A fresh local block of `count` two-field structs (`stride` 8) or
+    /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
+    /// with no initialization recorded, so only the runs say it was written.
+    fn zero_runs(block: &str, count: u32, stride: u32) -> CMemory {
+        let zero = CValue::Int32(Bitvector32Term::Constant(0));
+        let runs = (0..stride / 4)
+            .map(|field| CConstantRun {
+                offset: 4 * field,
+                stride,
+                count,
+                value: zero.clone(),
+            })
+            .collect::<Vec<_>>();
+        CMemory::new()
+            .with_block(block, count * stride)
+            .with_constant_runs(&element(block, 0), &runs)
+            .expect("a fresh local block takes constant runs")
+    }
+
+    fn loop_havoc(memory: CMemory, variable: u64) -> CMemory {
+        memory.with_loop_memory_havoc_preserving_loans(
+            Variable(variable),
+            &BTreeSet::new(),
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn loop_havoc_keeps_a_dropped_run_initialized() {
+        for (block, stride) in [("local:record-run", 4), ("local:record-strided-run", 8)] {
+            let memory = zero_runs(block, 4, stride);
+            assert!(!memory.has_initialized_bytes_at(&element(block, 0), 4));
+            let havoc = loop_havoc(memory, 924_005);
+            assert!(!havoc.has_known_cell_at(&element(block, 3)));
+            assert!(havoc.has_initialized_bytes_at(&element(block, 0), 4 * stride));
+            assert!(!havoc.has_initialized_bytes_at(&element(block, 0), 4 * stride + 1));
+        }
+    }
+
+    #[test]
+    fn a_declared_object_makes_dropping_its_runs_one_query() {
+        // With the declaration's object recorded, a havoc dropping its runs
+        // costs the runs, not their slots, whatever the struct count.
+        let mut works = Vec::new();
+        for count in [1_000u32, 10_000, 100_000] {
+            let block = format!("local:record-declared-{count}");
+            let memory =
+                zero_runs(&block, count, 8).with_initialized_object(&element(&block, 0), count * 8);
+            let (havoc, work) =
+                crate::instrumentation::measure_deterministic_work(|| loop_havoc(memory, 924_006));
+            assert!(havoc.has_initialized_bytes_at(&element(&block, 0), count * 8));
+            works.push(work);
+        }
+        assert!(
+            works.windows(2).all(|pair| pair[0] == pair[1]),
+            "dropping declared runs cost {works:?} work units"
+        );
     }
 
     #[test]
