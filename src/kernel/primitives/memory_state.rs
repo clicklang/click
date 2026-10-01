@@ -7151,30 +7151,19 @@ mod hunt_investigation_join_tests {
 }
 
 #[cfg(test)]
-mod hunt_investigation_join_dspelling_tests {
+mod join_allocation_spelling_tests {
     use super::*;
 
-    /// Investigation repro (bug hunt phase 2b): `with_interface_memory_havoc_preserving_loans`
-    /// unions `live_allocations` keyed by pointer spelling, so one
-    /// allocation recorded live by arm A under spelling P and by arm B
-    /// through its proven-equal spelling Q joins as TWO live entries with
-    /// no record of their equality. A free through each spelling then both
-    /// succeed without any structure about their equal bases.
-    #[test]
-    fn hunt_investigation_join_carries_two_live_spellings_of_one_allocation() {
-        let p = Pointer {
-            block: PointerBlock::Heap(924_001),
+    fn heap_base(identity: u64) -> Pointer {
+        Pointer {
+            block: PointerBlock::Heap(identity),
             offset: PointerOffsetTerm::Constant(0),
-        };
-        let q = Pointer {
-            block: PointerBlock::Heap(924_005),
-            offset: PointerOffsetTerm::Constant(0),
-        };
-        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::pointer_equal(p.clone(), q.clone()),
-            true,
-        ));
-        // Arm A holds the allocation live under spelling p; arm B under q.
+        }
+    }
+
+    /// Each arm holds its allocation live under its own spelling, so the
+    /// join unions two live entries.
+    fn joined(p: &Pointer, q: &Pointer) -> CMemory {
         let arm_a = CMemory::new()
             .with_block(p.block.clone(), 8)
             .with_heap_allocation_claim(p.clone(), 8)
@@ -7193,16 +7182,73 @@ mod hunt_investigation_join_dspelling_tests {
                 None,
             )
             .expect("the join runs");
-        assert!(joined.heap.live_allocations.contains_key(&p));
-        assert!(joined.heap.live_allocations.contains_key(&q));
-        // A free through each equal spelling is accepted as a plain C free.
-        let once = joined
-            .free_heap_block(&p, &assumptions)
-            .expect("the first free is a real free");
-        assert!(
-            once.free_heap_block(&q, &assumptions).is_ok(),
-            "BUG: freeing the same allocation through its second joined spelling succeeds"
+        assert!(joined.heap.live_allocations.contains_key(p));
+        assert!(joined.heap.live_allocations.contains_key(q));
+        joined
+    }
+
+    /// `with_interface_memory_havoc_preserving_loans` keys `live_allocations`
+    /// by pointer spelling, so one allocation the arms spell `p` and `q`
+    /// joins as two live entries. Where `p == q` is known, a free through
+    /// either spelling retires both, and the other spelling cannot be freed
+    /// or reported live afterwards.
+    #[test]
+    fn join_of_two_spellings_of_one_allocation_frees_once() {
+        let p = heap_base(924_001);
+        let q = Pointer {
+            block: PointerBlock::Symbolic(Variable(924_005)),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            true,
+        ));
+        assert!(!assumptions.is_inconsistent());
+        for (first, second) in [(&p, &q), (&q, &p)] {
+            let once = joined(&p, &q)
+                .free_heap_block(first, &assumptions)
+                .expect("the first free is a real free");
+            assert!(!once.heap.live_allocations.contains_key(second));
+            assert!(!once.is_live_heap_address(second, &assumptions));
+            assert!(once.is_deallocated_heap_address(second, &assumptions));
+            assert!(once.free_heap_block(second, &assumptions).is_err());
+        }
+    }
+
+    /// Two fresh heap identities are never one allocation: their equality
+    /// is not an alias fact but a contradiction, under which the path the
+    /// frees are on does not exist.
+    #[test]
+    fn equal_fresh_heap_identities_are_a_contradiction() {
+        let p = heap_base(924_021);
+        let q = heap_base(924_025);
+        assert_eq!(
+            ConditionTerm::pointer_equal(p.clone(), q.clone()),
+            ConditionTerm::Constant(false)
         );
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(p, q),
+            true,
+        ));
+        assert!(assumptions.is_inconsistent());
+    }
+
+    #[test]
+    fn join_of_two_different_allocations_frees_each_once() {
+        let p = heap_base(924_011);
+        let q = heap_base(924_015);
+        let assumptions = PureFactContext::new();
+        let once = joined(&p, &q)
+            .free_heap_block(&p, &assumptions)
+            .expect("the first allocation frees");
+        assert!(once.heap.live_allocations.contains_key(&q));
+        let twice = once
+            .free_heap_block(&q, &assumptions)
+            .expect("the second allocation frees");
+        assert!(matches!(
+            twice.free_heap_block(&q, &assumptions),
+            Err(CInvalidFree::DoubleFree)
+        ));
     }
 }
 
