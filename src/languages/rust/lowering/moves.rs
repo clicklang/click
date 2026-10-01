@@ -521,6 +521,7 @@ mod tests {
             let functions = BTreeMap::new();
             let mut cx = Context {
                 owned_locals: BTreeSet::new(),
+                slices: BTreeMap::new(),
                 source: "scale.rs",
                 function: "scale",
                 fields: &fields,

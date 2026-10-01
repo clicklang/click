@@ -1476,33 +1476,34 @@ pub(super) fn lower_surface_atomic_derivation(
         ));
     }
     if derivation.is_widened_unsigned_sum_bound()
-        && let Some(plan) = crate::surface::checking::plan_special_arithmetic_certificate(
-            &lowered_conclusion,
-            &premise_pairs
-                .iter()
-                .map(|(kernel, _)| kernel.clone())
-                .collect::<Vec<_>>(),
-        )
-        && matches!(
-            plan.nodes.first(),
-            Some(
-                crate::kernel::proof::arithmetic_special::SpecialArithmeticNode::UnsignedSumBound { .. }
-            )
-        )
+        && let Proposition::ConditionIs(condition, _) = &lowered_conclusion
     {
-        return Ok((
-            conclusion.clone(),
-            SourceProof::Script(vec![ProofTactic::ArithmeticCertificate(
-                crate::surface::checking::special_plan_to_surface_certificate(
-                    &plan,
-                    &premise_pairs
-                        .iter()
-                        .map(|(_, surface)| surface.clone())
-                        .collect::<Vec<_>>(),
-                    &conclusion,
-                ),
-            )]),
-        ));
+        let context = premise_pairs.iter().fold(
+            crate::kernel::PureFactContext::new(),
+            |context, (premise, _)| context.assume_proposition(premise.clone()),
+        );
+        let selected = context
+            .widened_unsigned_sum_bound_premises(condition)
+            .and_then(|premises| {
+                premises
+                    .into_iter()
+                    .map(|premise| {
+                        premise_pairs
+                            .iter()
+                            .find(|(kernel, _)| *kernel == premise)
+                            .cloned()
+                    })
+                    .collect::<Option<Vec<_>>>()
+            });
+        if let Some(selected) = selected
+            && let Some(plan) = crate::surface::checking::plan_special_arithmetic_certificate(
+                &lowered_conclusion, &selected.iter().map(|(kernel, _)| kernel.clone()).collect::<Vec<_>>())
+            && matches!(plan.nodes.first(), Some(crate::kernel::proof::arithmetic_special::SpecialArithmeticNode::UnsignedSumBound { .. }))
+        {
+            return Ok((conclusion.clone(), SourceProof::Script(vec![ProofTactic::ArithmeticCertificate(
+                crate::surface::checking::special_plan_to_surface_certificate(&plan,
+                    &selected.iter().map(|(_, surface)| surface.clone()).collect::<Vec<_>>(), &conclusion))])));
+        }
     }
     // A `rewrite` step substitutes the exact terms of its equality, so its
     // premise is usable only when the surface form lowers at view to

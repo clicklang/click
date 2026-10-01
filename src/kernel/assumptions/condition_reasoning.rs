@@ -7,7 +7,8 @@ mod order_paths;
 #[cfg(test)]
 pub(in crate::kernel) use order_paths::with_order_walk_full_scan;
 pub(in crate::kernel) use order_paths::{
-    uint64_upper_bound_below_sign_bit, unsigned_upper_bound_below_sign_bit,
+    condition_as_uint64_order_fact, uint64_upper_bound_below_sign_bit,
+    unsigned_upper_bound_below_sign_bit,
 };
 mod overflow_intervals;
 mod simp;

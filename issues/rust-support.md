@@ -109,8 +109,11 @@ The [pinned checksum assessment](../design/rust-checksum-assessment.md) records
 zlib 1.3.1 and adler2 2.0.1, selected build configurations, reachable constructs,
 and the shared specification. Unsigned `u8`/`u32` scalar arithmetic now has a synthetic regression with
 checked panic obligations, casts, bitwise operations, and proof expansion.
-The next checksum-facing increment is byte slices and indexing; crate
-extraction and iterator loops follow. Neither library is verified
+Byte slices now have variable-length read/write contracts, 64-bit `usize`
+metadata and bounds checks, existing `views`/`owns` authority, direct calls,
+and checked expansion. Memory-access contracts currently bound length by
+`INT32_MAX`. Fixed arrays, general `usize` arithmetic, crate extraction, and
+iterator loops remain outstanding. Neither library is verified
 by this assessment.
 
 ## Milestone 1: experimental safe Rust

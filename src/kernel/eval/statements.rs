@@ -2643,6 +2643,70 @@ pub(in crate::kernel) fn execute_c_statement_paths(
     execution_semantics: CExecutionSemantics,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<CStatementExecutionPath>> {
+    // Keep a source block's sequence spine out of the large leaf-operation
+    // frame. Adding a fact index must not multiply stack use per statement.
+    if let CStatement::Seq(first, second) = statement {
+        let mut paths = Vec::new();
+        for first_path in execute_c_statement_paths(
+            state,
+            first,
+            assumptions,
+            environment,
+            execution_semantics,
+            budget,
+        )? {
+            match first_path.outcome {
+                CStatementOutcome::Normal(state) => {
+                    paths.extend(execute_c_statement_paths_with_prefix(
+                        &state,
+                        second,
+                        assumptions,
+                        environment,
+                        execution_semantics,
+                        &first_path.facts,
+                        &first_path.obligations,
+                        &first_path.loan_evidence,
+                        budget,
+                    )?);
+                }
+                outcome @ (CStatementOutcome::Break(_)
+                | CStatementOutcome::Continue(_)
+                | CStatementOutcome::Jump { .. }
+                | CStatementOutcome::Return { .. }
+                | CStatementOutcome::Throw { .. }
+                | CStatementOutcome::VerificationDiverges
+                | CStatementOutcome::UndefinedBehavior(_)
+                | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
+                    outcome,
+                    facts: first_path.facts,
+                    obligations: first_path.obligations,
+
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                }),
+            }
+        }
+        budget.check_path_width(paths.len())?;
+        return Ok(paths);
+    }
+    execute_c_statement_leaf_paths(
+        state,
+        statement,
+        assumptions,
+        environment,
+        execution_semantics,
+        budget,
+    )
+}
+
+fn execute_c_statement_leaf_paths(
+    state: &CState,
+    statement: &CStatement,
+    assumptions: &PureFactContext,
+    environment: &CExecutionEnvironment,
+    execution_semantics: CExecutionSemantics,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CStatementExecutionPath>> {
     budget.install_c_byte_order(environment.byte_order());
     if let Some(pending) = &state.pending_thread_create {
         if let Some(resolved) = pending.resolve(state, assumptions) {
@@ -2958,49 +3022,7 @@ pub(in crate::kernel) fn execute_c_statement_paths(
         CStatement::Assert { condition, label } => {
             execute_c_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
         }
-        CStatement::Seq(first, second) => {
-            let mut paths = Vec::new();
-            for first_path in execute_c_statement_paths(
-                state,
-                first,
-                assumptions,
-                environment,
-                execution_semantics,
-                budget,
-            )? {
-                match first_path.outcome {
-                    CStatementOutcome::Normal(state) => {
-                        paths.extend(execute_c_statement_paths_with_prefix(
-                            &state,
-                            second,
-                            assumptions,
-                            environment,
-                            execution_semantics,
-                            &first_path.facts,
-                            &first_path.obligations,
-                            &first_path.loan_evidence,
-                            budget,
-                        )?);
-                    }
-                    outcome @ (CStatementOutcome::Break(_)
-                    | CStatementOutcome::Continue(_)
-                    | CStatementOutcome::Jump { .. }
-                    | CStatementOutcome::Return { .. }
-                    | CStatementOutcome::Throw { .. }
-                    | CStatementOutcome::VerificationDiverges
-                    | CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
-                        loop_invariant_correspondence: Default::default(),
-                        outcome,
-                        facts: first_path.facts,
-                        obligations: first_path.obligations,
-
-                        loan_evidence: empty_checked_loan_evidence_sequence(),
-                    }),
-                }
-            }
-            paths
-        }
+        CStatement::Seq(_, _) => unreachable!("sequences dispatch before leaf execution"),
         CStatement::Return(CExpression::Value(CValue::Void)) => {
             let outcome = if let Some(refusal) = return_authority_refusal(state) {
                 refusal

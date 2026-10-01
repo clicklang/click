@@ -8636,6 +8636,12 @@ pub struct PureFactContext {
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
     >,
+    /// Unsigned 64-bit order facts indexed by either endpoint. This keeps
+    /// slice-index range transport proportional to the queried order chain.
+    pub(super) uint64_order_bounds: crate::persistent::PersistentMap<
+        Bitvector32Term,
+        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
+    >,
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks

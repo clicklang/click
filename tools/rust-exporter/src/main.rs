@@ -96,9 +96,16 @@ fn export_type(tcx: TyCtxt<'_>, t: ty::Ty<'_>) -> Result<Type, String> {
         ty::Int(ty::IntTy::I32) => Ok(Type::I32),
         ty::Uint(ty::UintTy::U8) => Ok(Type::U8),
         ty::Uint(ty::UintTy::U32) => Ok(Type::U32),
+        ty::Uint(ty::UintTy::Usize) => Ok(Type::Usize),
         ty::Bool => Ok(Type::Bool),
         ty::Tuple(ts) if ts.is_empty() => Ok(Type::Unit),
         ty::Ref(_, p, m) => {
+            if matches!(p.kind(), ty::Slice(element) if matches!(element.kind(), ty::Uint(ty::UintTy::U8)))
+            {
+                return Ok(Type::ByteSlice {
+                    mutable: m.is_mut(),
+                });
+            }
             let pointee = export_type(tcx, *p)?;
             if !matches!(
                 pointee,
@@ -173,6 +180,10 @@ impl<'tcx> BodyExporter<'tcx> {
                             .map_err(|_| self.error(e, "unsigned literal outside u32"))?,
                         value_type,
                     }),
+                    Type::Usize => Ok(Expression::UsizeInteger {
+                        value: u64::try_from(v.get())
+                            .map_err(|_| self.error(e, "usize literal outside target width"))?,
+                    }),
                     Type::I32 => Ok(Expression::Integer {
                         value: i32::try_from(v.get())
                             .map_err(|_| self.error(e, "integer literal outside i32"))?,
@@ -192,9 +203,57 @@ impl<'tcx> BodyExporter<'tcx> {
                 }),
                 _ => Err(self.error(e, "only resolved local values are supported")),
             },
+            hir::ExprKind::MethodCall(_, receiver, args, _) => {
+                if self.typeck.type_dependent_def_id(e.hir_id)
+                    != self.tcx.lang_items().slice_len_fn()
+                    || !args.is_empty()
+                    || !matches!(
+                        export_type(self.tcx, self.typeck.expr_ty(receiver))?,
+                        Type::ByteSlice { .. }
+                    )
+                {
+                    return Err(self.error(e, "only builtin byte-slice len is supported"));
+                }
+                Ok(Expression::SliceLength {
+                    slice: Box::new(self.expr(receiver)?),
+                })
+            }
+            hir::ExprKind::Index(base, index, _) => {
+                if self.typeck.type_dependent_def_id(e.hir_id).is_some()
+                    || !matches!(
+                        export_type(self.tcx, self.typeck.expr_ty(base))?,
+                        Type::ByteSlice { .. }
+                    )
+                    || !matches!(
+                        self.typeck.expr_ty(index).kind(),
+                        ty::Uint(ty::UintTy::Usize)
+                    )
+                {
+                    return Err(
+                        self.error(e, "only builtin byte-slice usize indexing is supported")
+                    );
+                }
+                Ok(Expression::Index {
+                    slice: Box::new(self.expr(base)?),
+                    index: Box::new(self.expr(index)?),
+                })
+            }
             hir::ExprKind::Binary(op, l, r) => {
                 if self.typeck.type_dependent_def_id(e.hir_id).is_some() {
                     return Err(self.error(e, "overloaded operators outside Rust slice"));
+                }
+                if self.typeck.expr_ty(l).is_usize()
+                    && !matches!(
+                        op.node,
+                        hir::BinOpKind::Eq
+                            | hir::BinOpKind::Ne
+                            | hir::BinOpKind::Lt
+                            | hir::BinOpKind::Le
+                            | hir::BinOpKind::Gt
+                            | hir::BinOpKind::Ge
+                    )
+                {
+                    return Err(self.error(e, "usize arithmetic outside Rust slice support"));
                 }
                 let operator = match op.node {
                     hir::BinOpKind::Add => "add",
@@ -263,6 +322,15 @@ impl<'tcx> BodyExporter<'tcx> {
                     reference: Box::new(self.expr(v)?),
                     value_type: export_type(self.tcx, t)?,
                 })
+            }
+            hir::ExprKind::AddrOf(hir::BorrowKind::Ref, _, v)
+                if matches!(export_type(self.tcx, t)?, Type::ByteSlice { .. }) =>
+            {
+                if let hir::ExprKind::Unary(hir::UnOp::Deref, reference) = v.kind {
+                    self.expr(reference)
+                } else {
+                    Err(self.error(e, "slice reborrow requires a slice reference"))
+                }
             }
             hir::ExprKind::AddrOf(hir::BorrowKind::Ref, _, v) => Ok(Expression::Borrow {
                 place: Box::new(self.expr(v)?),
@@ -380,6 +448,14 @@ impl<'tcx> BodyExporter<'tcx> {
                     hir::AssignOpKind::BitXorAssign => "bit_xor",
                 };
                 let left_type = export_type(self.tcx, self.typeck.expr_ty(target))?;
+                if left_type == Type::Usize {
+                    return Err(self.error(e, "usize arithmetic outside Rust slice support"));
+                }
+                if matches!(target.kind, hir::ExprKind::Index(..)) {
+                    return Err(
+                        self.error(e, "indexed compound assignments outside Rust slice support")
+                    );
+                }
                 let right_type = export_type(self.tcx, self.typeck.expr_ty(value))?;
                 let target = self.expr(target)?;
                 Ok(vec![Statement::Assign {
@@ -531,6 +607,13 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
             }
         }
         drop(mir);
+        if owned
+            && parameters
+                .iter()
+                .any(|p| matches!(p.value_type, Type::ByteSlice { .. }))
+        {
+            return Err("byte slices in owned-value MIR functions are unsupported".into());
+        }
         let mir_body = if owned {
             Some(moves::body(tcx, id, &parameters)?)
         } else {

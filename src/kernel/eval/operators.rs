@@ -1779,7 +1779,12 @@ fn uint64_index_has_signed_word_range(
         ),
         true,
     );
+    // Exact constant indices retain their wide form: memory resolution reads
+    // their equality directly, including across an unrelated store.
+    let range_from_order_chain = assumptions.wide_constant_from_equalities(value).is_none()
+        && matches!(&sign_bit_clear, Proposition::ConditionIs(condition, true) if assumptions.decide(condition) == Some(true));
     assumptions.proves_exact(&sign_bit_clear)
+        || range_from_order_chain
         || facts.iter().any(|fact| match fact.proposition() {
             Proposition::ConditionIs(condition, held) => {
                 crate::kernel::assumptions::uint64_upper_bound_below_sign_bit(condition, *held)

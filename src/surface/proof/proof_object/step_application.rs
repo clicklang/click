@@ -1349,7 +1349,10 @@ impl<'a> Proof<'a> {
                 }
                 PropositionCloseError::SpecialArithmeticPremiseUnavailable(index) => self
                     .step_error(format!(
-                        "special arithmetic premise {index} is not exactly available"
+                        "special arithmetic premise {index} is not exactly available: {}",
+                        crate::surface::proof_diagnostics::render::render_proposition(
+                            &premises[index]
+                        )
                     )),
                 PropositionCloseError::SpecialArithmetic(
                     SpecialArithmeticCheckError::SignedDefinedRangeExceeded {

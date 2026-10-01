@@ -288,6 +288,9 @@ impl PureFactContext {
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
         }
+        if let Some(value) = self.decide_small_uint64_index_order(condition) {
+            return Some(value);
+        }
         if let Some(value) = self.decide_indexed_greater_equal(condition) {
             return Some(value);
         }
@@ -311,23 +314,57 @@ impl PureFactContext {
             ConditionTerm::Bitvector64Equal(a, b) => Some((a, b, 8)),
             _ => None,
         };
-        if let Some((left, right, operator)) = wide_comparison
-            && let (Some(left), Some(right)) = (
-                self.wide_constant_from_equalities(left),
-                self.wide_constant_from_equalities(right),
-            )
-        {
-            return Some(match operator {
-                0 => (left as i64) < (right as i64),
-                1 => (left as i64) <= (right as i64),
-                2 => (left as i64) > (right as i64),
-                3 => (left as i64) >= (right as i64),
-                4 => left < right,
-                5 => left <= right,
-                6 => left > right,
-                7 => left >= right,
-                _ => left == right,
-            });
+        if let Some((left, right, operator)) = wide_comparison {
+            let left_constant = self.wide_constant_from_equalities(left);
+            let right_constant = self.wide_constant_from_equalities(right);
+            if let (Some(left), Some(right)) = (left_constant, right_constant) {
+                return Some(match operator {
+                    0 => (left as i64) < (right as i64),
+                    1 => (left as i64) <= (right as i64),
+                    2 => (left as i64) > (right as i64),
+                    3 => (left as i64) >= (right as i64),
+                    4 => left < right,
+                    5 => left <= right,
+                    6 => left > right,
+                    7 => left >= right,
+                    _ => left == right,
+                });
+            }
+            // A single constant endpoint also transports an indexed order
+            // fact through an equality (e.g. i < 4, len == 4 => i < len).
+            // Consult only the two equality components, and recurse only if
+            // replacing a nonconstant endpoint makes the goal smaller.
+            let replacement = |term: &Bitvector32Term, value: Option<u64>| {
+                if term.uint64_as_const().is_some() || term.int64_as_const().is_some() {
+                    term.clone()
+                } else if let Some(value) = value {
+                    if operator < 4 {
+                        Bitvector32Term::Int64Constant(value as i64)
+                    } else {
+                        Bitvector32Term::UInt64Constant(value)
+                    }
+                } else {
+                    term.clone()
+                }
+            };
+            let a = replacement(left, left_constant);
+            let b = replacement(right, right_constant);
+            if &a != left.as_ref() || &b != right.as_ref() {
+                let rewritten = match operator {
+                    0 => ConditionTerm::int64_signed_less_than(a, b),
+                    1 => ConditionTerm::int64_signed_less_equal(a, b),
+                    2 => ConditionTerm::int64_signed_greater_than(a, b),
+                    3 => ConditionTerm::int64_signed_greater_equal(a, b),
+                    4 => ConditionTerm::uint64_less_than(a, b),
+                    5 => ConditionTerm::uint64_less_equal(a, b),
+                    6 => ConditionTerm::uint64_greater_than(a, b),
+                    7 => ConditionTerm::uint64_greater_equal(a, b),
+                    _ => ConditionTerm::uint64_equal(a, b),
+                };
+                if let Some(value) = self.decide(&rewritten) {
+                    return Some(value);
+                }
+            }
         }
         match condition {
             ConditionTerm::AlgebraicEqual(left, right) => {
@@ -1071,7 +1108,10 @@ impl PureFactContext {
         None
     }
 
-    pub(super) fn wide_constant_from_equalities(&self, term: &Bitvector32Term) -> Option<u64> {
+    pub(in crate::kernel) fn wide_constant_from_equalities(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<u64> {
         fn evaluate(
             context: &PureFactContext,
             term: &Bitvector32Term,

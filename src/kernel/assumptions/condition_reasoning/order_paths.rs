@@ -2086,3 +2086,212 @@ fn order_walk_full_scan_forced() -> bool {
 fn order_walk_full_scan_forced() -> bool {
     false
 }
+
+pub(in crate::kernel) fn condition_as_uint64_order_fact(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+    let (left, right, lower_first, strict) = match condition {
+        ConditionTerm::Bitvector64UnsignedLessThan(a, b) => (a, b, true, true),
+        ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => (a, b, true, false),
+        ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => (a, b, false, true),
+        ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => (a, b, false, false),
+        _ => return None,
+    };
+    let (lower, upper) = if lower_first {
+        (left.as_ref().clone(), right.as_ref().clone())
+    } else {
+        (right.as_ref().clone(), left.as_ref().clone())
+    };
+    Some(if value {
+        (lower, upper, strict)
+    } else {
+        (upper, lower, !strict)
+    })
+}
+
+impl PureFactContext {
+    /// Follow only upper edges in the operand's indexed uint64 order graph.
+    /// Each node is visited once; unrelated facts are never read.
+    fn uint64_small_upper_bound(&self, term: &Bitvector32Term) -> Option<u64> {
+        let mut stack = vec![crate::kernel::eval::canonical_term(term)];
+        let mut seen = BTreeSet::new();
+        let mut best = None;
+        while let Some(term) = stack.pop() {
+            if !seen.insert(term.clone()) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(value) = self.wide_constant_from_equalities(&term) {
+                best = Some(best.map_or(value, |old: u64| old.min(value)));
+                continue;
+            }
+            if let Some(edges) = self.uint64_order_bounds.get(&term) {
+                for (_, upper, strict, forward) in edges.keys() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if !forward {
+                        continue;
+                    }
+                    if let Some(value) = self.wide_constant_from_equalities(upper) {
+                        if let Some(value) = if *strict {
+                            value.checked_sub(1)
+                        } else {
+                            Some(value)
+                        } {
+                            best = Some(best.map_or(value, |old: u64| old.min(value)));
+                        }
+                    } else {
+                        stack.push(crate::kernel::eval::canonical_term(upper));
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    /// Within the signed word's nonnegative range, truncation preserves
+    /// uint64 order exactly. The range checks are required on both operands.
+    pub(super) fn decide_small_uint64_index_order(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        if let Some((left, right, strict)) = condition_as_uint64_order_fact(condition, true) {
+            let left = crate::kernel::eval::canonical_term(&left);
+            let right = crate::kernel::eval::canonical_term(&right);
+            if let Some(bounds) = self.uint64_order_bounds.get(&left) {
+                for (_, other, held_strict, forward) in bounds.keys() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if crate::kernel::eval::canonical_term(other) != right {
+                        continue;
+                    }
+                    if *forward && (!strict || *held_strict) {
+                        return Some(true);
+                    }
+                    if !*forward && (strict || *held_strict) {
+                        return Some(false);
+                    }
+                }
+            }
+        }
+        if let ConditionTerm::Bitvector64UnsignedLessEqual(left, right) = condition {
+            let limit = right.uint64_as_const()?;
+            if self.uint64_small_upper_bound(left)? <= limit {
+                return Some(true);
+            }
+            return None;
+        }
+        let (left, right, strict) = condition_as_order_fact(condition, true)?;
+        let wide = |term: &Bitvector32Term| match term {
+            Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
+            Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => {
+                Some(Bitvector32Term::UInt64Constant(*value as u64))
+            }
+            _ => None,
+        };
+        let a = wide(&left)?;
+        let b = wide(&right)?;
+        if !matches!(left, Bitvector32Term::UInt32From64(_))
+            && !matches!(right, Bitvector32Term::UInt32From64(_))
+        {
+            return None;
+        }
+        if self.uint64_small_upper_bound(&a)? > i32::MAX as u64
+            || self.uint64_small_upper_bound(&b)? > i32::MAX as u64
+        {
+            return None;
+        }
+        if a.uint64_as_const() == Some(0) && !strict {
+            return Some(true);
+        }
+        let comparison = if strict {
+            ConditionTerm::uint64_less_than(a, b)
+        } else {
+            ConditionTerm::uint64_less_equal(a, b)
+        };
+        self.decide(&comparison)
+    }
+}
+
+#[cfg(test)]
+mod slice_index_tests {
+    use super::*;
+
+    #[test]
+    fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
+        let index = Bitvector32Term::Variable(Variable(991001));
+        let length = Bitvector32Term::Variable(Variable(991002));
+        let index_word = Bitvector32Term::uint32_from_64(index.clone());
+        let length_word = Bitvector32Term::uint32_from_64(length.clone());
+        let goal = ConditionTerm::signed_less_than(index_word.clone(), length_word);
+        let mut work = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut context = PureFactContext::new();
+            for n in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::uint64_less_equal(
+                        Bitvector32Term::Variable(Variable(992000 + n)),
+                        Bitvector32Term::UInt64Constant(100),
+                    ),
+                    true,
+                );
+            }
+            context = context
+                .assume_condition(
+                    ConditionTerm::uint64_less_than(index.clone(), length.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::uint64_less_equal(
+                        length.clone(),
+                        Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                    ),
+                    true,
+                );
+            let (_, used) = crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(context.decide_small_uint64_index_order(&goal), Some(true));
+                assert_eq!(
+                    context.decide_small_uint64_index_order(&ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Constant(0),
+                        index_word.clone()
+                    )),
+                    Some(true)
+                );
+            });
+            work.push(used);
+        }
+        assert!(work.iter().all(|used| *used == work[0]), "{work:?}");
+        let unbounded = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_less_than(index.clone(), length.clone()),
+            true,
+        );
+        assert_eq!(unbounded.decide_small_uint64_index_order(&goal), None);
+        let high = unbounded.assume_condition(
+            ConditionTerm::uint64_less_equal(length, Bitvector32Term::UInt64Constant(4294967296)),
+            true,
+        );
+        assert_eq!(high.decide_small_uint64_index_order(&goal), None);
+        let reversed = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    index.clone(),
+                    Bitvector32Term::UInt64Constant(10),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    Bitvector32Term::Variable(Variable(991002)),
+                    Bitvector32Term::UInt64Constant(10),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_greater_equal(
+                    index,
+                    Bitvector32Term::Variable(Variable(991002)),
+                ),
+                true,
+            );
+        assert_eq!(reversed.decide_small_uint64_index_order(&goal), Some(false));
+    }
+}

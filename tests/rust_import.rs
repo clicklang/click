@@ -614,3 +614,153 @@ void write(uint8* p, uint32* q) { owns p[0..1]; owns q[0..1]; ensures p[0] == 25
 void field(struct Pair* p) { owns p->byte; owns p->word; ensures p->byte == 7; ensures p->word == old(p->word); } by { execute(); simp(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
+
+const SLICES_SOURCE: &str = include_str!("../examples/rust-slices/bytes.rs");
+const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click");
+
+#[test]
+fn rust_byte_slices_indexing_calls_and_expansion_verify() {
+    let p = Project::new(SLICES_SOURCE);
+    let sidecar = SLICES_SIDECAR.replace("bytes.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_cli(&p, &["audit"]);
+    for claim in ["read.contract", "write.contract", "length.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn rust_byte_slices_variable_length_indexing_verify() {
+    let p = Project::new("pub fn read(bytes:&[u8], index:usize)->u8 { bytes[index] }");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
+    requires bytes_len <= 2147483647u64;
+    requires index < bytes_len;
+    views bytes[0..(int32)bytes_len];
+    ensures result == bytes[(int32)index];
+} by { execute(); simp(); }";
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "read.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn rust_byte_slices_reject_panics_and_missing_write_authority() {
+    for (source, signature, resource, index) in [
+        (
+            "pub fn bad(bytes:&[u8], index:usize)->u8 { bytes[index] }",
+            "uint8 bad(const uint8* bytes, uint64 bytes_len, uint64 index)",
+            "views",
+            0u64,
+        ),
+        (
+            "pub fn bad(bytes:&[u8], index:usize)->u8 { bytes[index] }",
+            "uint8 bad(const uint8* bytes, uint64 bytes_len, uint64 index)",
+            "views",
+            4,
+        ),
+        (
+            "pub fn bad(bytes:&[u8], index:usize)->u8 { bytes[index] }",
+            "uint8 bad(const uint8* bytes, uint64 bytes_len, uint64 index)",
+            "views",
+            4294967296,
+        ),
+        (
+            "pub fn bad(bytes:&mut [u8], index:usize) { bytes[index] = 7; }",
+            "void bad(uint8* bytes, uint64 bytes_len, uint64 index)",
+            "views",
+            1,
+        ),
+    ] {
+        let p = Project::new(source);
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let length = if index == 0 { 0 } else { 4 };
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; {signature} {{ requires bytes_len == {length}u64; requires index == {index}u64; {resource} bytes[0..{length}]; }} by {{ execute(); simp(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("unsafe slice contract must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        if resource == "views" && signature.starts_with("void") {
+            assert!(error.message().contains("owns"), "{}", error.message());
+        } else {
+            assert!(
+                error.message().contains("Rust slice index panic check"),
+                "{}",
+                error.message()
+            );
+        }
+    }
+}
+
+#[test]
+fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
+    let p = Project::new(
+        "pub fn length(bytes:&[u8])->usize { bytes.len() } pub fn replace(bytes:&mut [u8], index:usize) { let child = &mut bytes[index]; *child = 9; } pub fn shift(x:u32, n:usize)->u32 { x << n }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+uint64 length(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 4294967296u64; ensures result == 4294967296u64; } by { execute(); simp(); }
+void replace(uint8* bytes, uint64 bytes_len, uint64 index) { requires bytes_len == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[(int32)index] == 9; } by { execute(); simp(); }
+uint32 shift(uint32 x, uint64 n) { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { execute(); rewrite(n == 31u64); rewrite(x == 1u32); normalize(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    let error = C0VerificationSession::new_program_prepared(
+        &sidecar.replace("n == 31u64", "n == 4294967296u64"),
+        &prepared,
+    )
+    .err()
+    .expect("oversized usize shift must fail before truncation");
+    assert!(
+        error.message().contains("Rust shl panic check"),
+        "{}",
+        error.message()
+    );
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures result == 4294967296u64", "ensures result == 0u64"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_byte_slice_unsupported_shapes_and_borrow_errors_are_refused() {
+    for (source, message) in [
+        (
+            "pub fn bad(bytes:&[u8])->usize { bytes.len() + 1 }",
+            "usize arithmetic",
+        ),
+        (
+            "pub fn bad(bytes:&mut [u8], index:usize) { bytes[index] += 1; }",
+            "indexed compound assignments",
+        ),
+        (
+            "pub fn bad(bytes:&[u8])->&[u8] { bytes }",
+            "returns are not supported",
+        ),
+        (
+            "pub fn bad(bytes:&[u32])->usize { bytes.len() }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(bytes:&mut [u8]) { let child = &mut *bytes; bytes[0] = 1; child[0] = 2; }",
+            "cannot",
+        ),
+    ] {
+        let p = Project::new(source);
+        let result = refresh_import(&p.config());
+        assert!(result.unwrap_err().contains(message), "{source}");
+    }
+}
