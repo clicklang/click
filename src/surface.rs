@@ -7276,6 +7276,29 @@ impl ClickError {
         self
     }
 
+    /// Restates where a refusal happened: `rewrite` maps the leading place of
+    /// the cause text (`` `claim` tactic N ``) to the place a reader wrote,
+    /// in the summary and in the attached diagnostic alike. A message whose
+    /// place `rewrite` does not recognize is kept as it is.
+    pub(in crate::surface) fn with_rewritten_place(
+        mut self,
+        rewrite: impl Fn(&str) -> Option<String>,
+    ) -> Self {
+        if let Some(message) = rewrite(&self.message) {
+            self.message = message;
+            self.rendered = std::sync::OnceLock::new();
+        }
+        if let Some(diagnostic) = &self.diagnostic
+            && let Some(reason) = rewrite(&diagnostic.reason)
+        {
+            let mut diagnostic = diagnostic.as_ref().clone();
+            diagnostic.reason = reason;
+            self.diagnostic = Some(std::sync::Arc::new(diagnostic));
+            self.rendered = std::sync::OnceLock::new();
+        }
+        self
+    }
+
     pub(crate) fn with_context(self, prefix: impl AsRef<str>) -> Self {
         self.with_prefix(format!("{}: ", prefix.as_ref()))
     }

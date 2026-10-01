@@ -1883,6 +1883,13 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
+    if let Some(comparison) = synthesize_unsigned_comparison(condition, state) {
+        return Some(if *value {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
+        });
+    }
     let (left, operator, right) = match condition {
         ConditionTerm::Bitvector32SignedLessThan(left, right)
         | ConditionTerm::Bitvector64SignedLessThan(left, right)
@@ -1931,6 +1938,81 @@ fn synthesize_surface_atomic_proposition(
     } else {
         Some(ClickProposition::Not(Box::new(comparison)))
     }
+}
+
+/// A 32-bit unsigned comparison spelled as the comparison it means.
+///
+/// The kernel states `x < 4` over a `uint32` as the signed comparison of
+/// both operands with their sign bit flipped
+/// (`ConditionTerm::unsigned_less_than`), a constant operand arriving already
+/// flipped; spelled operand by operand that reads `(-2147483648 ^ x) <
+/// -2147483644`. Every operand must be a constant or the value of a `uint32`
+/// local, so the written comparison is unsigned in C's own terms and lowers
+/// back to the flipped form. Any other operand keeps the literal spelling,
+/// which also lowers back exactly.
+fn synthesize_unsigned_comparison(
+    condition: &ConditionTerm,
+    state: &CState,
+) -> Option<ClickProposition> {
+    const SIGN_BIT: u32 = 0x8000_0000;
+    let (left, operator, right) = match condition {
+        ConditionTerm::Bitvector32SignedLessThan(left, right) => {
+            (left, ComparisonOperator::LessThan, right)
+        }
+        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+            (left, ComparisonOperator::LessEqual, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+            (left, ComparisonOperator::GreaterThan, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+            (left, ComparisonOperator::GreaterEqual, right)
+        }
+        _ => return None,
+    };
+    let flipped = |term: &Bitvector32Term| match term {
+        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
+            if sign.as_const() == Some(SIGN_BIT) =>
+        {
+            Some(value.as_ref().clone())
+        }
+        _ => None,
+    };
+    let unflipped = |term: &Bitvector32Term| {
+        flipped(term).or_else(|| {
+            term.as_const()
+                .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
+        })
+    };
+    // At least one side carries the flip itself; two bare constants are an
+    // ordinary signed comparison.
+    let (left, right) = match (flipped(left), flipped(right)) {
+        (Some(left), Some(right)) => (left, right),
+        (Some(left), None) => (left, unflipped(right)?),
+        (None, Some(right)) => (unflipped(left)?, right),
+        (None, None) => return None,
+    };
+    // The `uint32` local holding the operand, named directly: a signed local
+    // can hold the same bits, and its name would make the comparison signed.
+    let operand = |term: &Bitvector32Term| match term.as_const() {
+        Some(_) => Some(ContractExpression::CFragment(CExpression::Value(
+            CValue::UInt32(term.clone()),
+        ))),
+        None => state
+            .locals()
+            .object_values()
+            .find(|(name, value)| {
+                *name != "result" && matches!(value, CValue::UInt32(value) if value == term)
+            })
+            .map(|(name, _)| {
+                ContractExpression::CFragment(CExpression::Variable(name.to_string()))
+            }),
+    };
+    Some(ClickProposition::Comparison {
+        left: operand(&left)?,
+        operator,
+        right: operand(&right)?,
+    })
 }
 
 fn synthesize_surface_resource_subject(

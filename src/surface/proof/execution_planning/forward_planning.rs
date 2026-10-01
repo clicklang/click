@@ -165,7 +165,14 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         context,
                         invariant_checks,
                         environment,
-                    )?;
+                    )
+                    .map_err(|error| {
+                        locate_loop_phase_error(
+                            environment,
+                            error,
+                            LoopPhasePlace::Script("initialize"),
+                        )
+                    })?;
                     initialization_path_certificates.push(PathCertificate {
                         case_path: context.case_path.clone(),
                         case_offsets: None,
@@ -232,7 +239,14 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                                     &pure_facts,
                                     body,
                                     environment,
-                                )?;
+                                )
+                                .map_err(|error| {
+                                    locate_loop_phase_error(
+                                        environment,
+                                        error,
+                                        LoopPhasePlace::PlannedPreservation,
+                                    )
+                                })?;
                                 let mut tactics = clause
                                     .preserve_proof()
                                     .and_then(SourceProof::tactics)
@@ -262,7 +276,18 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             body,
                             *do_while,
                             environment,
-                        )?;
+                        )
+                        .map_err(|error| {
+                            locate_loop_phase_error(
+                                environment,
+                                error,
+                                if explicit_tactics.is_some() {
+                                    LoopPhasePlace::Script("preserve")
+                                } else {
+                                    LoopPhasePlace::PlannedPreservation
+                                },
+                            )
+                        })?;
                         verified_loop_rules.extend(result.nested_loop_rules);
                         final_exit_candidates.extend(result.final_exit_candidates);
                         break_exits.extend(result.break_exits);
@@ -808,4 +833,17 @@ fn advance_execution_proof_statement(
         }
     }
     Ok(advanced)
+}
+
+/// A refusal from a loop phase proof, restated at the `loop` tactic that owns
+/// it when the loop was written as a frontier-local tactic.
+fn locate_loop_phase_error(
+    environment: &ExecutionProofEnvironment<'_>,
+    error: ClickError,
+    phase: LoopPhasePlace,
+) -> ClickError {
+    match environment.frontier_loop_source {
+        Some(source) => source.locate_phase_error(error, phase),
+        None => error,
+    }
 }

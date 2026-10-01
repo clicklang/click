@@ -186,6 +186,61 @@ mod tests {
         }
     }
 
+    /// A store Click steps over itself while preserving a loop's invariants
+    /// is refused at the `loop` tactic that owns that phase, not at the
+    /// claim's first tactic (the phase proof's own tactics count from zero),
+    /// and the missing `can-store` is stated as the index bound over the
+    /// source local with the facts consulted, never in kernel spelling.
+    #[test]
+    fn verify_names_the_loop_phase_and_index_bound_of_a_refused_loop_body_store() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-loop-body-store-bound-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 f() {\n    int32 items[4];\n    int32 i;\n    i = 0;\n    while (i < 5) {\n        items[i] = 7;\n        i = i + 1;\n    }\n    return 0;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        let write_proof = |preserve: &str| {
+            fs::write(
+                &sidecar,
+                format!(
+                    "verifying \"f.c\";\nint32 f() {{\n    ensures result == 0;\n}} by {{\n    step(); step(); step();\n    loop {{ decreases 5 - i; invariant i >= 0; invariant i <= 4;{preserve} }}\n    execute(); simp();\n}}\n"
+                ),
+            )
+            .unwrap();
+        };
+        let bound = "  `step()` is missing prerequisite\n  the store to `items[i]` may write outside `items`\n  could not show `0 <= i && i < 4` from the facts `i <= 4`, `i >= 0`\n  C operation\n  *(items + i) = 7;";
+
+        write_proof("");
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.starts_with(&format!(
+                "proof error:\n  `f.contract` tactic 3 (`loop`), preserving the invariants through the loop body\n{bound}"
+            )),
+            "{error}"
+        );
+
+        write_proof(" preserve by { step(); step(); simp(); }");
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.starts_with(&format!(
+                "proof error:\n  `f.contract` tactic 3 (`loop`), `preserve` tactic 0\n{bound}"
+            )),
+            "{error}"
+        );
+        for kernel_spelling in ["can-store(", "snapshot#", "local:items", "value A"] {
+            assert!(!error.contains(kernel_spelling), "{error}");
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     /// `click verify` takes an mdtest as `profile`, `expand`, and `audit` do:
     /// it verifies the fenced Click and C blocks, and every location it reads
     /// or reports is a line of the markdown file.

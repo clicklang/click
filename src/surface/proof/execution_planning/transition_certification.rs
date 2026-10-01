@@ -502,6 +502,7 @@ pub(in crate::surface) fn certified_statement_transitions(
     let (mut transitions, loop_rule) = certified_transitions_from_execution(
         execution,
         state,
+        statement,
         loop_rule,
         pure_facts,
         function_environment,
@@ -624,6 +625,7 @@ pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_pha
     certified_transitions_from_execution(
         execution,
         state,
+        statement,
         loop_rule,
         pure_facts,
         function_environment,
@@ -711,6 +713,7 @@ pub(in crate::surface::proof) fn is_internal_snapshot_frame_witness(fact: &Propo
 fn certified_transitions_from_execution(
     execution: SymbolicCExecution,
     state: &CState,
+    statement: &CStatement,
     loop_rule: Option<CVerifiedLoopRule>,
     pure_facts: &PureFactList,
     environment: &CExecutionEnvironment,
@@ -994,10 +997,12 @@ fn certified_transitions_from_execution(
                                             .context()
                                             .map(|context| format!(" ({context})"))
                                             .unwrap_or_default(),
-                                        describe_derivation_failure(
+                                        describe_statement_prerequisite_failure(
                                 proposition,
                                 pure_facts,
+                                &statement_facts,
                                 state,
+                                statement,
                                 environment,
                                 predicate_environment,
                             ),
@@ -1012,10 +1017,12 @@ fn certified_transitions_from_execution(
                                         .context()
                                         .map(|context| format!(" ({context})"))
                                         .unwrap_or_default(),
-                                    describe_derivation_failure(
+                                    describe_statement_prerequisite_failure(
                                 proposition,
                                 pure_facts,
+                                &statement_facts,
                                 state,
+                                statement,
                                 environment,
                                 predicate_environment,
                             ),
@@ -1030,9 +1037,14 @@ fn certified_transitions_from_execution(
                         // Over a proof context `pure_facts` is only the
                         // statement-local delta, and the context itself
                         // (the contract's requirements, earlier path facts)
-                        // is what was searched.
+                        // is what was searched beside it; list both, so a
+                        // loop guard held in the delta is not left out.
                         let consulted_facts = || match context {
-                            Some(_) => prerequisite_assumptions.pure_facts(),
+                            Some(_) => {
+                                let mut facts = prerequisite_assumptions.pure_facts();
+                                facts.extend(pure_facts.iter().cloned());
+                                facts
+                            }
                             None => pure_facts.to_vec(),
                         };
                         // A retained checked derivation over the context, or
@@ -1072,10 +1084,12 @@ fn certified_transitions_from_execution(
                                         .context()
                                         .map(|context| format!(" ({context})"))
                                         .unwrap_or_default(),
-                                    describe_derivation_failure(
+                                    describe_statement_prerequisite_failure(
                                         proposition,
                                         &consulted_facts(),
+                                        &statement_facts,
                                         state,
+                                        statement,
                                         environment,
                                         predicate_environment,
                                     ),
@@ -1121,10 +1135,12 @@ fn certified_transitions_from_execution(
                                         .context()
                                         .map(|context| format!(" ({context})"))
                                         .unwrap_or_default(),
-                                    describe_derivation_failure(
+                                    describe_statement_prerequisite_failure(
                                 proposition,
                                 &consulted_facts(),
+                                &statement_facts,
                                 state,
+                                statement,
                                 environment,
                                 predicate_environment,
                             ),
@@ -1145,10 +1161,12 @@ fn certified_transitions_from_execution(
                                         .context()
                                         .map(|context| format!(" ({context})"))
                                         .unwrap_or_default(),
-                                    describe_derivation_failure(
+                                    describe_statement_prerequisite_failure(
                                         proposition,
                                         pure_facts,
+                                        &statement_facts,
                                         state,
+                                        statement,
                                         environment,
                                         predicate_environment,
                                     ),
@@ -1174,10 +1192,12 @@ fn certified_transitions_from_execution(
                                                 .context()
                                                 .map(|context| format!(" ({context})"))
                                                 .unwrap_or_default(),
-                                            describe_derivation_failure(
+                                            describe_statement_prerequisite_failure(
                                                 proposition,
                                                 &derivation_facts,
+                                                &statement_facts,
                                                 state,
+                                                statement,
                                                 environment,
                                                 predicate_environment,
                                             ),

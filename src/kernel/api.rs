@@ -34,6 +34,56 @@ thread_local! {
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
+/// The element question a memory access in a named object asks, for a
+/// refusal to state: the access lands in element `index` of an object of
+/// `count` elements, each `stride` bytes wide.
+///
+/// This reads the address the way the element rules do (the widest scaled
+/// summand of the offset, at least as wide as the access, is the element
+/// index; the object's size divided by its stride is the count). It decides
+/// nothing; a refusal uses it to say which bound it could not show.
+#[derive(Clone, Debug)]
+pub(crate) struct MemoryAccessElementBound {
+    pub(crate) index: Bitvector32Term,
+    pub(crate) count: Bitvector32Term,
+    pub(crate) stride: u32,
+}
+
+pub(crate) fn memory_access_element_bound(
+    memory: &CMemory,
+    pointer: &Pointer,
+    byte_width: u32,
+) -> Option<MemoryAccessElementBound> {
+    let size = memory.block_size(&pointer.block)?;
+    let mut pending = vec![&pointer.offset];
+    let mut widest: Option<(&Bitvector32Term, u32)> = None;
+    while let Some(term) = pending.pop() {
+        match term {
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(right);
+                pending.push(left);
+            }
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                let stride = u32::try_from(*byte_width).ok()?;
+                if widest.is_none_or(|(_, widest)| stride > widest) {
+                    widest = Some((value, stride));
+                }
+            }
+            PointerOffsetTerm::Constant(_) => {}
+            PointerOffsetTerm::Variable(_) | PointerOffsetTerm::Int64Scaled { .. } => return None,
+        }
+    }
+    let (index, stride) = widest?;
+    if stride < byte_width {
+        return None;
+    }
+    Some(MemoryAccessElementBound {
+        index: index.clone(),
+        count: crate::kernel::reasoning::element_count_from_bytes(size, stride)?,
+        stride,
+    })
+}
+
 pub(crate) fn clear_borrowed_input_root_memo() {
     BORROWED_INPUT_ROOTS.with(|roots| roots.borrow_mut().clear());
 }

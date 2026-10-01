@@ -16076,7 +16076,9 @@ impl Parser {
                 );
                 prefix.push(C0Statement::Assert {
                     condition: C0Expression::And(Box::new(lower), Box::new(upper)),
-                    label: format!("array subobject index must be in [0, {length})"),
+                    label: format!(
+                        "array subobject index must be at least 0 and less than {length}"
+                    ),
                 });
                 Ok((prefix, index))
             }

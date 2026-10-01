@@ -133,6 +133,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
         loop_template,
         proof_context.constants.proof_site.clone(),
         claim_label,
+        tactic_index,
         source_index,
     );
     // `old(...)` in this loop's clauses is the function entry, not the point
