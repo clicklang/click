@@ -1283,7 +1283,8 @@ impl CheckedResourceRewrite {
                 parameter.c_type(),
             );
         }
-        let child_context = ResourceContext::new().unchecked_with_facts(children.clone());
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_facts(children.clone());
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         for child in &children {
             if let Some(owned) = child.owned_resource() {
@@ -1294,7 +1295,7 @@ impl CheckedResourceRewrite {
             }
         }
         allowed.push(Proposition::CResourceComposition(
-            ResourceContext::new().unchecked_with_facts(children),
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children),
         ));
         let evaluation_assumptions = if let Some(imported) = imported_count {
             let bound = Proposition::ConditionIs(
@@ -1375,7 +1376,7 @@ impl CheckedResourceRewrite {
                 && !allowed_assumptions.proves_exact(fact)
                 && !resource_composition_is_supported_by(
                     fact,
-                    &ResourceContext::new()
+                    &ResourceContext::new_with_equalities(assumptions)
                         .unchecked_with_facts(expected_resources.facts().iter().cloned()),
                     assumptions,
                 )
@@ -1458,7 +1459,8 @@ impl CheckedResourceRewrite {
             return Err("an authority member cannot use an ordinary wrapper rewrite".into());
         }
         let assumptions = before_facts.assumptions();
-        let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
         let expanded = crate::kernel::functions::expand_composite_resource_fact(
             &singleton,
             selected,
@@ -1564,8 +1566,8 @@ impl CheckedResourceRewrite {
         let introduced = after_facts
             .introduced_since(before_facts)
             .ok_or("transfer wrapper facts do not descend from their input")?;
-        let child_context =
-            ResourceContext::new().unchecked_with_facts(expanded.facts().iter().cloned());
+        let child_context = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_facts(expanded.facts().iter().cloned());
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         for child in expanded.facts() {
             if let Some(owned) = child.owned_resource() {
@@ -1729,7 +1731,8 @@ impl CheckedResourceRewrite {
             ) {
                 return Err("authority-mode body access changed another open scope".into());
             }
-            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(selected.clone());
             let expanded = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 selected,
@@ -1779,8 +1782,8 @@ impl CheckedResourceRewrite {
                         .map_err(|_| "authority-mode private body has an active borrow")?;
                 }
             }
-            let child_context =
-                ResourceContext::new().unchecked_with_facts(children.iter().cloned());
+            let child_context = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(children.iter().cloned());
             let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
             allowed.push(Proposition::CResourceComposition(child_context.clone()));
             if let Some(propositions) =
@@ -2186,7 +2189,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             if before_state.population_body_is_open(name, arguments, assumptions) {
                 return Err("close the open population body before cleanup".into());
             }
-            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(selected.clone());
             let body = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 selected,
@@ -2307,7 +2311,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             else {
                 return false;
             };
-            let singleton = ResourceContext::new().unchecked_with_fact(authority.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(authority.clone());
             let Some(body) = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 authority,
@@ -2346,7 +2351,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
         let introduced = after_facts.introduced_since(before_facts).ok_or_else(|| {
             "resource rewrite facts do not descend from the input facts".to_string()
         })?;
-        let temporary = ResourceContext::new().unchecked_with_fact(selected.clone());
+        let temporary =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
         let expanded = crate::kernel::functions::expand_composite_resource_fact(
             &temporary,
             selected,
@@ -2361,7 +2367,8 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             .filter(|fact| *fact != selected)
             .cloned()
             .collect::<Vec<_>>();
-        let child_context = ResourceContext::new().unchecked_with_facts(children);
+        let child_context =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         // Opening a closed population exposes its invariant at the tracked
         // current total, which can now differ from its entry observation after
@@ -2906,8 +2913,8 @@ impl CheckedResourceObservation {
             (Vec::new(), Vec::new())
         } else {
             let definition_authority = CResourceFact::own(observed.resource().clone());
-            let temporary =
-                ResourceContext::new().unchecked_with_fact(definition_authority.clone());
+            let temporary = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(definition_authority.clone());
             let (_, children, raw_children) =
                 crate::kernel::functions::expand_composite_resource_fact_with_children(
                     &temporary,
@@ -2967,7 +2974,8 @@ impl CheckedResourceObservation {
         let introduced = after_facts
             .introduced_since(before_facts)
             .ok_or("resource observation facts do not descend from the input facts")?;
-        let child_context = ResourceContext::new().unchecked_with_facts(children);
+        let child_context =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(children);
         let mut allowed = child_context.observable_facts_assuming_valid(assumptions);
         allowed.push(Proposition::CResourceComposition(child_context.clone()));
         let relation_authority = CResourceFact::own(observed.resource().clone());
@@ -3800,11 +3808,12 @@ impl CheckedExecutionBranch {
                 .iter()
                 .all(|facts| checked_branch_fact_is_available(facts, fact));
             let interface_fact = interface_propositions.contains(fact);
-            let interface_resource_fact = ResourceContext::new()
-                .unchecked_with_facts(successor_interface_resources.clone())
-                .observable_facts_assuming_valid(successor_facts.assumptions())
-                .contains(fact)
-                || successor_interface_resource_facts.contains(fact);
+            let interface_resource_fact =
+                ResourceContext::new_with_equalities(successor_facts.assumptions())
+                    .unchecked_with_facts(successor_interface_resources.clone())
+                    .observable_facts_assuming_valid(successor_facts.assumptions())
+                    .contains(fact)
+                    || successor_interface_resource_facts.contains(fact);
             if !common_arm_fact && !interface_fact && !interface_resource_fact {
                 return Err("the interface successor contains an unchecked new fact");
             }
@@ -4291,7 +4300,8 @@ fn interface_resources_guard_heap_frees(
                 return false;
             }
             crate::kernel::functions::expand_composite_resource_fact(
-                &ResourceContext::new().unchecked_with_fact(resource.clone()),
+                &ResourceContext::new_with_equalities(arm_facts[arm_index].assumptions())
+                    .unchecked_with_fact(resource.clone()),
                 resource,
                 function.composite_resource_definitions(),
                 arm_states[arm_index].memory(),
@@ -8601,6 +8611,8 @@ impl ExecutionProofCore {
             checked_resource_transitions: vec![false; path_count],
             deferred_contract_exits,
             deferred_contract_exit_errors,
+            // Empty conclusion placeholders; checked resource clauses replace
+            // them before any live resource query.
             checked_returned_resources: vec![crate::kernel::ResourceContext::new(); path_count],
             entry_representation_origin: has_checked_entry
                 .then_some(self.function_entry.as_ref())

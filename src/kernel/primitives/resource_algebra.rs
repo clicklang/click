@@ -1245,8 +1245,21 @@ impl ResourceContext {
         (quantity.as_const() == Some(1)).then_some(instance)
     }
 
+    /// A structural/unpublished context. Use `new_with_equalities` for a
+    /// fresh kernel proof context that will receive selected resource facts.
+    /// Do not attach an ambient context from a read-only lookup.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Begin a fresh resource lineage in the current trusted equality graph.
+    /// Capturing the empty input is constant work; later inserts maintain its
+    /// paired indexes through deltas. This establishes publication only, not
+    /// resource validity or authority: callers still check their selected facts.
+    pub(crate) fn new_with_equalities(assumptions: &PureFactContext) -> Self {
+        let context = Self::new();
+        context.synchronize_memory_equalities(assumptions);
+        context
     }
 
     /// Whether two resource snapshots are the exact same persistent value.
@@ -4008,8 +4021,10 @@ impl ResourceContext {
     /// Adds a resource fact without checking validity or normalizing the
     /// context.
     ///
-    /// Prefer `try_compose_with_fact` when proposition assumptions are
-    /// available.
+    /// Prefer `try_compose_with_fact` when validity must be checked. A trusted
+    /// producer assembling already selected facts should start with
+    /// `new_with_equalities` so these deltas retain graph publication. This
+    /// method never publishes an unrelated ambient input.
     pub fn unchecked_with_fact(mut self, fact: CResourceFact) -> Self {
         self.insert_fact(fact);
         self
@@ -4018,8 +4033,10 @@ impl ResourceContext {
     /// Adds resource facts without checking validity or normalizing the
     /// context.
     ///
-    /// Prefer `try_compose_with_facts` when proposition assumptions are
-    /// available.
+    /// Prefer `try_compose_with_facts` when validity must be checked. These
+    /// deltas preserve an existing graph attachment; they do not publish an
+    /// unrelated ambient input. Start a fresh trusted assembly with
+    /// `new_with_equalities`.
     pub fn unchecked_with_facts(mut self, facts: impl IntoIterator<Item = CResourceFact>) -> Self {
         for fact in facts {
             self.insert_fact(fact);

@@ -193,8 +193,9 @@ impl DynamicViewDependencyIndex {
     fn new(
         bound_views: &[(CResourceFact, crate::kernel::LoanViewBinding)],
         unbound_views: &[CResourceFact],
+        assumptions: &PureFactContext,
     ) -> Self {
-        let (bound, inserted) = ResourceContext::new()
+        let (bound, inserted) = ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_facts_and_occurrences(bound_views.iter().map(|(view, _)| view.clone()));
         let bound_dependencies = inserted
             .into_iter()
@@ -204,7 +205,8 @@ impl DynamicViewDependencyIndex {
         Self {
             bound,
             bound_dependencies,
-            unbound: ResourceContext::new().unchecked_with_facts(unbound_views.iter().cloned()),
+            unbound: ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(unbound_views.iter().cloned()),
         }
     }
 }
@@ -1799,7 +1801,8 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         })
         .unwrap_or_default();
     let mut dynamic_dependency = None;
-    let temporary_view_index = DynamicViewDependencyIndex::new(&temporary_views, &[]);
+    let temporary_view_index =
+        DynamicViewDependencyIndex::new(&temporary_views, &[], available_pure_facts.assumptions());
     if let Some(instantiated) = &instantiated {
         for (_, lowered) in &instantiated.declared {
             if let Some(binding) = dynamic_body_fact_dependency(
@@ -2536,13 +2539,14 @@ fn append_composite_resource_relation_facts_with_store<F: ResourcePureFacts>(
         // Keep ownership-derived separation lazy. The compact carrier is
         // checked by the kernel when a particular member pair is requested;
         // publishing every pair here makes one composite unfold quadratic.
-        let owned_context = ResourceContext::new().unchecked_with_facts(
-            contained_resources
-                .facts()
-                .iter()
-                .filter(|fact| fact.is_own())
-                .cloned(),
-        );
+        let owned_context = ResourceContext::new_with_equalities(propositions.assumptions())
+            .unchecked_with_facts(
+                contained_resources
+                    .facts()
+                    .iter()
+                    .filter(|fact| fact.is_own())
+                    .cloned(),
+            );
         propositions.insert(Proposition::CResourceComposition(owned_context));
     }
 }
@@ -3478,8 +3482,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         } else {
             Vec::new()
         };
-        let temporary_view_index =
-            DynamicViewDependencyIndex::new(&temporary_views, &temporary_unbound_views);
+        let temporary_view_index = DynamicViewDependencyIndex::new(
+            &temporary_views,
+            &temporary_unbound_views,
+            available_pure_facts.assumptions(),
+        );
         if let Some(binding) = dynamic_body_fact_dependency(
             &lowered_fact,
             &fact_state,
@@ -3687,7 +3694,9 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
     }
 
-    let unfolded_resources = ResourceContext::new().unchecked_with_facts(unfolded_facts);
+    let unfolded_resources =
+        ResourceContext::new_with_equalities(available_pure_facts.assumptions())
+            .unchecked_with_facts(unfolded_facts);
     append_composite_resource_relation_facts_with_store(
         abstract_resource.resource(),
         &unfolded_resources,
@@ -4020,7 +4029,11 @@ fn fold_composite_resources_on_outcome_with_facts(
                 temporary_unbound_views.push(lowered);
             }
         }
-        let temporary_view_index = DynamicViewDependencyIndex::new(&[], &temporary_unbound_views);
+        let temporary_view_index = DynamicViewDependencyIndex::new(
+            &[],
+            &temporary_unbound_views,
+            pure_facts.assumptions(),
+        );
         for fact in body_facts {
             let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
                     ClickError::new(format!(
@@ -5297,7 +5310,7 @@ void child_release(struct child* obj) {
             pointer: range.base().offset_by_bytes(4),
             value_type: CType::Int32,
         };
-        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[]);
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], assumptions);
         assert!(
             dynamic_body_fact_dependency(&fact, &observed, assumptions, &no_temporary_views,)
                 .is_err(),
@@ -5438,7 +5451,7 @@ void child_release(struct child* obj) {
             )
             .with_loan_ledger(Some(ledger.clone()))
             .with_loan_participant(Some(lender));
-        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[]);
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
         let dependency = dynamic_body_fact_dependency(
             &proposition,
             &bound_state,

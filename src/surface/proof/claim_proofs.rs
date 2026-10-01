@@ -4444,7 +4444,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                         .and_then(ClosedClaim::checked_resource_claim_resources)
                                         .is_some()
                             });
-                        let mut checked_returned_resources = crate::kernel::ResourceContext::new();
+                        let mut checked_returned_resources =
+                            crate::kernel::ResourceContext::new_with_equalities(
+                                lifetime_assumptions,
+                            );
                         if all_resource_claims_checked {
                             for closure in &closures {
                                 if let Some(resources) = closure
@@ -4663,7 +4666,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .and_then(ClosedClaim::checked_resource_claim_resources)
                                     .is_some()
                             });
-                    let mut checked_returned_resources = crate::kernel::ResourceContext::new();
+                    let receipt_assumptions = assumptions_from_propositions(&path_requirements);
+                    let mut checked_returned_resources =
+                        crate::kernel::ResourceContext::new_with_equalities(&receipt_assumptions);
                     if all_resource_claims_checked {
                         for closure in &closures {
                             if let Some(resources) = closure
@@ -4697,7 +4702,8 @@ pub(super) fn finish_ordered_proof<'a>(
                     // relying on the presentation certificate's spelling.
                     // Borrowed outputs participate too: one surviving unit
                     // cannot discharge both a borrow and a produced unit.
-                    let mut checked_resource_receipts = crate::kernel::ResourceContext::new();
+                    let mut checked_resource_receipts =
+                        crate::kernel::ResourceContext::new_with_equalities(&receipt_assumptions);
                     if all_resource_claims_checked {
                         for closure in &closures {
                             if let Some(resources) = closure
@@ -4710,11 +4716,11 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                     let returned_resources_are_jointly_available = matches!(outcome, CFunctionOutcome::Return { ref state, .. } if {
-                        let assumptions = assumptions_from_propositions(&path_requirements);
+                        let assumptions = &receipt_assumptions;
                         if authority_mode {
-                            resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, &assumptions)
+                            resource_receipts_jointly_available(state.resources(), &checked_resource_receipts, assumptions)
                         } else {
-                            state.resources().clone().without_facts(checked_returned_resources.facts(), &assumptions).is_some()
+                            state.resources().clone().without_facts(checked_returned_resources.facts(), assumptions).is_some()
                         }
                     });
                     checked_resource_transitions_by_path[path_index] = !deferred_resource_transition

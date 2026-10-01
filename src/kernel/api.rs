@@ -1303,6 +1303,8 @@ fn abstract_c_state_for_join_across_with_policy(
     // untouched: the arms' authority survives the abstraction, only the
     // per-occurrence bookkeeping of the discarded context goes away.
     Ok(CStateJoinAbstraction {
+        // Structural empty join shape; live successor resources are supplied
+        // separately by the checked interface, not inserted into this placeholder.
         state: abstract_state.with_resource_context(ResourceContext::new()),
         next_kernel_variable: budget.next_kernel_variable(),
     })
@@ -2971,7 +2973,8 @@ fn install_borrowed_contract_inputs(
     for (occurrence, viewed) in selected {
         let (backing, backing_pieces) = if matches!(viewed.resource(), CResource::Composite { .. })
         {
-            let singleton = ResourceContext::new().unchecked_with_fact(viewed.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(viewed.clone());
             let pieces = expand_composite_resource_fact_with_children(
                 &singleton,
                 &viewed,
@@ -4444,6 +4447,8 @@ pub fn prove_checked_c_function_execution_with_environment(
         checked_resource_transitions: vec![false; path_count],
         deferred_contract_exits: vec![false; path_count],
         deferred_contract_exit_errors: vec![None; path_count],
+        // Empty certificate placeholders, replaced by checked clause contexts;
+        // they never receive unchecked memory deltas or answer permission queries.
         checked_returned_resources: vec![ResourceContext::new(); path_count],
         entry_representation_origin: None,
         boundary_transfer: None,

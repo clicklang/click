@@ -88,7 +88,7 @@ pub(super) fn check(
     }
     let mut budget = ExecutionBudget::beside_live_state();
     let mut expected = before.resources().clone();
-    let mut body = ResourceContext::new();
+    let mut body = ResourceContext::new_with_equalities(assumptions);
     for spec in definition.contains() {
         let child = crate::kernel::functions::evaluate_function_resource_spec(
             &evaluation,
@@ -156,7 +156,8 @@ pub(super) fn check(
         );
     }
 
-    let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+    let singleton =
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected.clone());
     evaluation.resources = body.clone();
     let obligations = crate::kernel::functions::evaluate_resource_population_fact_propositions(
         &singleton,

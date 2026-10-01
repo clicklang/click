@@ -1980,6 +1980,11 @@ impl CallKeptRanges {
 }
 
 impl CallKeptOwnership {
+    #[cfg(test)]
+    pub(in crate::kernel) fn opened_resources_for_test(&self) -> &ResourceContext {
+        &self.opened.ranges
+    }
+
     pub(in crate::kernel) fn new(
         residual: ResourceContext,
         opened: CallKeptRanges,
@@ -2003,6 +2008,8 @@ impl CallKeptOwnership {
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         let kept = CallKeptRanges::recorded_on(after)?;
+        // This residual is permanently empty: recorded authority is carried
+        // only by `kept`, not by facts inserted into this placeholder.
         Some(Self::new(ResourceContext::new(), kept, assumptions))
     }
 
@@ -6048,7 +6055,8 @@ impl CState {
         let body = if definition.contains().is_empty() {
             Vec::new()
         } else {
-            let singleton = ResourceContext::new().unchecked_with_fact(selected.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(selected.clone());
             let expanded = crate::kernel::functions::expand_composite_resource_fact(
                 &singleton,
                 selected,
