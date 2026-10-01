@@ -618,12 +618,42 @@ source membership cannot be reused. This transfer admits one unit consumption
 and one unit production with the same family and trailing arguments, changing
 only the pool anchor; it does not enable arbitrary batches of updates.
 
+A wildcard authority also permits an exact member count. `count(slot(pool, p))`
+counts every existing unit with those arguments; `count(slot(pool, _))` counts
+the whole family. Equal empty members can have a count greater than one. Owning
+one member establishes a lower bound, not equality to one.
+
+<!-- verified-example: mdtests/authority_wildcard_exact_count.md -->
+```click
+void release(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    requires count(slot(pool, p)) == 1;
+    consumes slot(pool, p);
+    produces p[0..1];
+    ensures p[0] == 0;
+    ensures count(slot(pool, p)) == 0;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+The helper's exact entry count is arbitrary unless its contract constrains it.
+Consuming the member subtracts one from that exact count as well as the total.
+Creation similarly adds one; a helper promising an exact result of one can
+require an exact entry count of zero. Other concrete members keep their counts.
+Neither observation gives permission to open their private bodies.
+
+This initial exact-count support covers concrete pointer/`int32` indices and a
+helper's selected concrete member. It rejects unresolved indices rather than
+reporting an unproved zero, and does not yet observe another potentially aliased
+member inside that helper. Partially fixed wildcard patterns and exact counts
+in symbolic batches remain separate work.
+
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
 authority, consume the entry member, or create one from authority and its required
 private memory, or move one unit member between two wildcard authorities. Fixed
-trailing arguments in authority patterns, exact subset observations, and
-field-bearing members remain future work.
+trailing arguments in authority patterns, partially fixed subset observations,
+and field-bearing members remain future work.
 
 The rest of this section describes the legacy population path, retained while
 its consumers are migrated. The

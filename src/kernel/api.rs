@@ -2325,6 +2325,10 @@ fn describe_spec_lowering_limit(what: &str, limit: ExecutionLimit) -> String {
         ExecutionLimit::AuthorityCountNeedsExactPointer => {
             "authority-mode count(...) needs one exact base pointer".to_string()
         }
+        ExecutionLimit::AuthorityCountNeedsResolvedMember => {
+            "count(...) requires resolved member indices or the helper's selected member"
+                .to_string()
+        }
         ExecutionLimit::AuthorityCountNeedsOwnership => {
             "count(...) requires owning authority for that population".to_string()
         }
