@@ -86,9 +86,15 @@ a disjoint write. Verification, profiling, auditing,
 and expansion share the existing engine. See `docs/reference/rust.md` for the
 exact subset and trust boundary.
 
-This is a first increment toward milestone 1, not its completion: production
-move/drop semantics, explicit authority suspension/recovery, disjoint mutable
-borrow regressions, and wider source coverage remain outstanding.
+This is an increment toward milestone 1, not its completion. The supported
+subset includes whole-value moves and checked drops. Explicit authority
+suspension/recovery and wider source coverage remain outstanding. The owned
+field-borrow prototype in [PR #29](https://github.com/clicklang/click/pull/29)
+is a draft with failing verification checks; nested owned field borrows must
+not yet be listed as supported. Its unchanged child-borrow/parent-drop
+regression must prove the child's value 42 and reject the stale value 1,
+while preserving existing C++ destructor proofs. Shared call-memory and
+pointer-read evidence repair takes priority over further frontend features.
 
 ## Initial assessment
 
@@ -103,6 +109,13 @@ In parallel, inspect and pin the proposed library sources. Record their
 reachable functions, Rust constructs, C compiler configuration, and proof
 obligations. Use that concrete inventory to plan coverage; do not assume an
 algorithm's simplicity means its optimized implementations are already supported.
+
+The [pinned checksum assessment](../design/rust-checksum-assessment.md) records
+zlib 1.3.1 and adler2 2.0.1, selected build configurations, reachable constructs,
+and the shared specification. After the shared checker blocker above is fixed,
+the next checksum-facing increment is unsigned Rust scalar arithmetic; byte
+slices, crate extraction, and iterator loops follow. Neither library is verified
+by this assessment.
 
 ## Milestone 1: experimental safe Rust
 

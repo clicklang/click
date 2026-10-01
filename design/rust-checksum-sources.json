@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "name": "zlib",
+      "revision": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "files": [
+        {
+          "path": "adler32.c",
+          "sha256": "9cd1443a24ff2a3053961695bd432035c58347386a420d3388232376ebabe211"
+        },
+        {
+          "path": "zutil.h",
+          "sha256": "dddb2dc7a1dc339ecf2c8e089b366f08bb731c0839c7110240d17ce731bb4fea"
+        },
+        {
+          "path": "zlib.h",
+          "sha256": "8a5579af72ea4f427ff00a4150f0ccb3fc5c1e4379f726e101133b1ab9fc600c"
+        },
+        {
+          "path": "zconf.h",
+          "sha256": "f5134250a67d57459234b63858f0d9d3ef8dcc48e9e1028d3f4fdcf6eae677ae"
+        }
+      ],
+      "repository": "https://github.com/madler/zlib",
+      "release": "1.3.1",
+      "roots": [
+        "adler32_z",
+        "adler32"
+      ],
+      "configuration": {
+        "no_divide": false,
+        "z_solo": false,
+        "abi": "LP64"
+      }
+    },
+    {
+      "name": "adler2",
+      "revision": "89a031a0f42eeff31c70dc598b398cbf31f1680f",
+      "files": [
+        {
+          "path": "src/lib.rs",
+          "sha256": "4acd41668fe30daffa37084e7e223f268957b816afc1864ffb3f5d6d7adf0890"
+        },
+        {
+          "path": "src/algo.rs",
+          "sha256": "932c2bc591d13fe4470185125617b5aaa660a3898f23b553acc85df0bf49dded"
+        }
+      ],
+      "repository": "https://github.com/oyvindln/adler2",
+      "release": "2.0.1",
+      "roots": [
+        "adler32_slice",
+        "Adler32::from_checksum",
+        "Adler32::write_slice",
+        "Adler32::checksum"
+      ],
+      "configuration": {
+        "edition": 2021,
+        "features": [
+          "std"
+        ],
+        "rustc_dep_of_std": false,
+        "compiler": "nightly-2026-06-16",
+        "overflow_checks": true,
+        "panic": "abort",
+        "mir_opt_level": 0
+      }
+    }
+  ],
+  "purpose": "Source assessment only; neither checksum is yet verified by Click.",
+  "verification_target": "x86_64-unknown-linux-gnu"
+}
