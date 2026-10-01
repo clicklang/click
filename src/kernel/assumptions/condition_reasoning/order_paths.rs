@@ -60,7 +60,69 @@ impl PureFactContext {
         {
             return Some(true);
         }
-        None
+        self.signed_bound_from_unsigned_order(&lower, &upper, strict)
+            .then_some(true)
+    }
+
+    /// Whether a signed bound between a plain variable `t` and a constant
+    /// follows from an unsigned order chain on `t`, read in the biased
+    /// encoding [`ConditionTerm::unsigned_less_than`] writes unsigned order
+    /// in: `t <u n` is `(t ^ 2^31) <s (n ^ 2^31)`, so an unsigned chain
+    /// `t <u n`, `n <=u 4` is the signed chain `t ^ 2^31 < n ^ 2^31 <=
+    /// 4 ^ 2^31`, which the order walk composes as it does any signed chain.
+    ///
+    /// * `c <= t` for `c <= 0` (or `c < t` for `c < 0`) holds when
+    ///   `t <=u INT_MAX`: the sign bit of `t` is clear, so `0 <= t`.
+    /// * `t <= c` for `c >= 0` (or `t < c` for `c > 0`) holds when
+    ///   `t <=u c` (or `t <u c`): `t` lies in `0..=c` (or `0..c`), where the
+    ///   unsigned and signed readings agree.
+    ///
+    /// Only the flipped spelling `t ^ 2^31` is walked, and the walk matches
+    /// endpoints by spelling, so a signed fact on `t` itself is a different
+    /// endpoint: a chain mixing `t <u n` with a signed `n < 4` does not
+    /// compose here. A wrapped bound (`t <u n - 1u` with `n` possibly zero)
+    /// is the flipped atom `(n - 1) ^ 2^31`, which no rule relates to
+    /// `n ^ 2^31`. One indexed walk from `t ^ 2^31`
+    /// ([`Self::has_order_path_for_memory_resolution`]); the flipped atom of
+    /// a plain variable is filed like the variable (`order_walk_atom`).
+    fn signed_bound_from_unsigned_order(
+        &self,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+        strict: bool,
+    ) -> bool {
+        const SIGN_BIT: u32 = 0x8000_0000;
+        let (term, target, walk_strict) = match (
+            signed_bitvector_constant(lower),
+            signed_bitvector_constant(upper),
+        ) {
+            (Some(bound), None) if (if strict { bound < 0 } else { bound <= 0 }) => {
+                (upper, i32::MAX as u32, false)
+            }
+            (None, Some(bound)) if (if strict { bound > 0 } else { bound >= 0 }) => {
+                (lower, bound as u32, strict)
+            }
+            _ => return false,
+        };
+        if !order_walk_plain_variable(term) {
+            return false;
+        }
+        let flipped =
+            Bitvector32Term::bitwise_xor(term.clone(), Bitvector32Term::Constant(SIGN_BIT));
+        // A walk needs an edge out of the flipped atom: an unsigned upper
+        // bound on `t`. Asked by key first, so a signed question about a
+        // variable no unsigned bound names costs one lookup, not the filing
+        // of the fact set the walk reads.
+        let has_unsigned_bound = self
+            .signed_order_bounds
+            .get(&crate::kernel::eval::canonical_term(&flipped))
+            .is_some_and(|bounds| bounds.iter().any(|((_, _, _, below), _)| *below));
+        has_unsigned_bound
+            && self.has_order_path_for_memory_resolution(
+                &flipped,
+                &Bitvector32Term::Constant(target ^ SIGN_BIT),
+                walk_strict,
+            )
     }
 
     fn decide_from_order_rules(&self, condition: &ConditionTerm) -> Option<bool> {
@@ -763,8 +825,9 @@ impl PureFactContext {
     /// The walk's edge test is
     /// `bitvector_terms_proven_equal_for_memory_resolution(current, lower)`
     /// or, for two written constants, `current <= lower`. When `current` and
-    /// `lower` are each a constant or a variable that cannot name a load,
-    /// that comparison has exactly these routes: structural identity, two
+    /// `lower` are each a constant or an [`order_walk_atom`] (a variable that
+    /// cannot name a load, or its sign-bit flip), that comparison has exactly
+    /// these routes: structural identity, two
     /// exact constants (which then decide it outright, true or false), the
     /// trusted graph (`int32_values_known_equal`), and an exact
     /// offset-equality fact over the two scaled terms. Every other route
@@ -783,7 +846,7 @@ impl PureFactContext {
     ///   offset equality scales — a scaled constant is a constant offset,
     ///   which such a fact can equate with a scaled variable.
     ///
-    /// A variable an offset equality scales itself is declined: that route
+    /// An atom an offset equality scales itself is declined: that route
     /// could reach any endpoint the fact names.
     fn order_walk_filed_edges(
         &self,
@@ -792,8 +855,7 @@ impl PureFactContext {
     ) -> Option<Vec<usize>> {
         let written = signed_bitvector_constant(current);
         if written.is_none()
-            && (!order_walk_plain_variable(current)
-                || index.offset_equality_atoms.contains(current))
+            && (!order_walk_atom(current) || index.offset_equality_atoms.contains(current))
         {
             return None;
         }
@@ -1973,10 +2035,30 @@ fn order_reach_memory_free(term: &Bitvector32Term) -> bool {
     true
 }
 
-/// A lower endpoint the walk files by its own spelling: a constant, or a
-/// variable the kernel never gives a load view.
+/// A variable the kernel never gives a load view, or its sign-bit flip
+/// `v ^ 2^31`: the operand spelling of a 32-bit unsigned order
+/// (`ConditionTerm::unsigned_less_than`). The walk's edge test between two
+/// such terms, or one and a constant, has the routes it has for two plain
+/// variables -- structural identity, exact constants, the trusted equality
+/// graph, an exact offset equality -- since a flip is neither a load nor a
+/// sum, so a flipped node reads its filed edges as a plain variable does.
+fn order_walk_atom(term: &Bitvector32Term) -> bool {
+    if let Bitvector32Term::BitwiseXor(left, right) = term {
+        return match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::Constant(0x8000_0000), operand)
+            | (operand, Bitvector32Term::Constant(0x8000_0000)) => {
+                order_walk_plain_variable(operand)
+            }
+            _ => false,
+        };
+    }
+    order_walk_plain_variable(term)
+}
+
+/// A lower endpoint the walk files by its own spelling: a constant, or an
+/// [`order_walk_atom`].
 fn order_walk_keyable(term: &Bitvector32Term) -> bool {
-    matches!(term, Bitvector32Term::Constant(_)) || order_walk_plain_variable(term)
+    matches!(term, Bitvector32Term::Constant(_)) || order_walk_atom(term)
 }
 
 #[cfg(test)]

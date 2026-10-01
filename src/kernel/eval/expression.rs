@@ -535,6 +535,15 @@ pub(in crate::kernel) fn add_uint16_range_execution_pure_facts(
     add_c_integer_range_execution_pure_facts(facts, assumptions, value, 0, i32::from(u16::MAX))
 }
 
+/// Files the type range `lower <= value <= upper` of a promoted narrow
+/// integer as public path facts. The range holds of every value of the
+/// narrow type, and it is what bounds the promoted word: a `uint8` index's
+/// `0 <= x` is the lower half of an element bound. Filed publicly, it is a
+/// premise of the step's theorem and reaches every check that reads path
+/// facts -- a prerequisite left to the proof, the owned-footprint check of
+/// a store -- the same way the source's own tests do, instead of only the
+/// kernel's in-place checks. A range the context already decides is not
+/// refiled.
 fn add_c_integer_range_execution_pure_facts(
     facts: &mut Vec<ExecutionPureFact>,
     assumptions: &PureFactContext,
@@ -542,13 +551,13 @@ fn add_c_integer_range_execution_pure_facts(
     lower: i32,
     upper: i32,
 ) -> Option<()> {
-    add_internal_condition_path_fact(
+    add_condition_path_fact(
         facts,
         assumptions,
         ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(lower as u32)),
         true,
     )?;
-    add_internal_condition_path_fact(
+    add_condition_path_fact(
         facts,
         assumptions,
         ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(upper as u32)),

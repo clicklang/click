@@ -459,7 +459,11 @@ In `src/kernel/`:
 The current integer conversion slice is deliberately small. `eval.rs` promotes
 `int8`, `int16`, `uint8`, and `uint16` rvalues to `int32` terms for arithmetic, ordered
 comparisons, shifts, and bitwise operators, assignments, and returns, adding
-internal range facts for the promoted term when an expression needs them.
+the promoted term's type range (`0 <= x` and `x <= 255` for `uint8`) as path
+facts when an expression needs them. They are public path facts, so a
+prerequisite a step leaves to the proof (a file-scope subscript check, the
+owned-footprint check of a store) reads the range beside the source's own
+tests, as the kernel's in-place access checks do.
 Scalar `uint32`
 addition, subtraction, and multiplication use the same 32-bit term
 representation without signed overflow obligations. Unsigned division and

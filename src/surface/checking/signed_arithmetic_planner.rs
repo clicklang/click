@@ -95,7 +95,7 @@ fn plan_signed_arithmetic_certificate_in_pass(
         }
     }
     if comparison_terms(goal).is_some_and(|(left, right, _)| {
-        !contains_machine_operation(left) && !contains_machine_operation(right)
+        is_affine_planning_atom(left) && is_affine_planning_atom(right)
     }) && let Some(plan) = plan_affine_from_selected_claims(
         premises,
         &claims,
@@ -581,6 +581,27 @@ fn affine_operation_terms(
     let right_operation = is_affine_operation(right).then_some(right);
     (left_operation.is_some() || right_operation.is_some())
         .then_some((left_operation, right_operation))
+}
+
+/// A goal side the affine planner may combine premises over as one opaque
+/// atom: a term with no machine operation, or the sign-bit flip
+/// `v ^ 2^31` of one. The flip is how a 32-bit unsigned order is spelled
+/// (`ConditionTerm::unsigned_less_than` states `x <u n` as
+/// `(x ^ 2^31) <s (n ^ 2^31)`), and it is total: no operand makes it
+/// undefined. So an unsigned chain `x <u n`, `n <=u 4` sums over the flipped
+/// atoms exactly as the signed chain over `x` and `n` sums over theirs. A
+/// flipped atom is a different atom from its operand, so an unsigned bound
+/// never composes with a signed one on the same variable.
+fn is_affine_planning_atom(term: &Bitvector32Term) -> bool {
+    if let Bitvector32Term::BitwiseXor(left, right) = term {
+        let operand = match (left.as_ref(), right.as_ref()) {
+            (Bitvector32Term::Constant(0x8000_0000), operand)
+            | (operand, Bitvector32Term::Constant(0x8000_0000)) => operand,
+            _ => return false,
+        };
+        return !contains_machine_operation(operand);
+    }
+    !contains_machine_operation(term)
 }
 
 fn contains_machine_operation(root: &Bitvector32Term) -> bool {

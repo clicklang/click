@@ -1400,6 +1400,83 @@ fn memory_resolution_order_walk_ignores_shared_bounds_of_other_indices() {
     );
 }
 
+/// The unsigned counterpart of
+/// [`memory_resolution_order_walk_ignores_shared_bounds_of_other_indices`]:
+/// `N` loop counters each tested `i <u n` against one `n <=u 4`. Deciding
+/// the signed range `0 <= x`, `x < 4` an index needs walks the biased chain
+/// from `x ^ 2^31`, and a sign-bit flip of a plain variable is filed like the
+/// variable, so the walk reads the edges filed under its own nodes and costs
+/// the same at every size. The full scan beside it reads every unsigned bound
+/// at each node and has to grow.
+#[test]
+fn unsigned_order_walk_ignores_unsigned_bounds_of_other_indices() {
+    let variable = |id: u64| Bitvector32Term::Variable(Variable(97_100 + id));
+    let (x, n) = (variable(0), variable(1));
+    let four = Bitvector32Term::Constant(4);
+    let bounded = |facts: PureFactContext, index: &Bitvector32Term| {
+        facts.assume_condition(
+            ConditionTerm::unsigned_less_than(index.clone(), n.clone()),
+            true,
+        )
+    };
+    let mut filed = Vec::new();
+    let mut scanned = Vec::new();
+    for size in [64u64, 128, 256, 512] {
+        let facts = (0..size).fold(
+            bounded(
+                PureFactContext::new().assume_condition(
+                    ConditionTerm::unsigned_less_equal(n.clone(), four.clone()),
+                    true,
+                ),
+                &x,
+            ),
+            |facts, index| bounded(facts, &variable(10 + index)),
+        );
+        let flipped =
+            Bitvector32Term::bitwise_xor(x.clone(), Bitvector32Term::Constant(0x8000_0000));
+        // `0 <= x` asks `x <=u INT_MAX`; `x < 4` asks `x <u 4`.
+        let questions = [
+            (
+                Bitvector32Term::Constant(i32::MAX as u32 ^ 0x8000_0000),
+                false,
+            ),
+            (Bitvector32Term::Constant(4 ^ 0x8000_0000), true),
+        ];
+        // File the fact set once; the filing is not what is measured.
+        assert_eq!(
+            facts.decide(&ConditionTerm::signed_less_equal(
+                Bitvector32Term::Constant(0),
+                x.clone()
+            )),
+            Some(true)
+        );
+        let walk = || {
+            questions.iter().all(|(target, strict)| {
+                facts.has_order_path_for_memory_resolution(&flipped, target, *strict)
+            })
+        };
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(walk);
+        assert!(answer, "the unsigned chain at {size}");
+        filed.push((size, work));
+        let (answer, scan_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::assumptions::with_order_walk_full_scan(walk)
+        });
+        assert!(answer, "the full-scan unsigned chain at {size}");
+        scanned.push((size, scan_work));
+    }
+    eprintln!(
+        "unsigned order walk beside N bounded counters (N, work): filed {filed:?}, full scan {scanned:?}"
+    );
+    assert!(
+        filed.iter().all(|(_, work)| *work == filed[0].1),
+        "the filed unsigned order walk visited unrelated bounds: {filed:?}"
+    );
+    assert!(
+        scanned[3].1 >= 4 * scanned[0].1,
+        "the full-scan reference no longer grows with the bounds, so this test measures nothing: {scanned:?}"
+    );
+}
+
 /// A store the facts cannot place forgets every element of a fully written
 /// automatic array, and records their bytes initialized as it goes: one run
 /// for the whole array, built in work N·log N in the array, and a later
