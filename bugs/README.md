@@ -14,7 +14,6 @@ coverage, and documentation land.
 - [A refused store through a widened unsigned index doesn't name the element](store-refusal-through-unsigned-index-names-no-element.md)
 - [A symbolic read of an initialized array has no usable value](symbolic-array-read-values-are-not-bounded.md)
 - [A struct-field read inside an `&&` branch fails `execute()`](struct-field-read-in-conjunctive-branch-fails-execute.md)
-- [A proof `if` nested in a branch arm reports "not implemented"](nested-proof-if-in-a-branch-arm-is-not-implemented.md)
 - [Whole-path refusals don't name a C statement](whole-path-refusals-lack-a-statement-location.md)
 - [`simp` and `arithmetic()` treat sign-bit-flipped unsigned values as opaque](unsigned-order-arithmetic-in-closers.md)
 - [A ranked loop whose body branches loses its decrease member](branching-loop-body-ranking-member-not-certified.md)

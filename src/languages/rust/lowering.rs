@@ -27,7 +27,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             _ => Err("Rust reference pointee outside scalar/reference lowering".into()),
         },
         Type::Array { .. } => {
-            Err("by-value Rust arrays and local array construction are not supported".into())
+            Err("by-value Rust arrays as parameters or returns are not supported".into())
         }
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
     }
@@ -430,7 +430,7 @@ impl Context<'_> {
         }
         if self.local_arrays.contains(name) {
             let (length, element, _) = self.arrays[name];
-            return self.assign_array(c_variable(name), element, length, e);
+            return self.assign_array(self.array_pointer(name)?, element, length, e);
         }
         if let Some((length, constant)) = self.slices.get(name).cloned() {
             let (pointer, length_value) = self.slice_parts(e)?;
@@ -705,6 +705,17 @@ impl Context<'_> {
         }
     }
     fn slice_parts(&self, e: &E) -> Result<(CExpression, CExpression), String> {
+        if let E::ArrayToSlice { array, mutable } = e {
+            let (pointer, length, element) = self.indexed_parts(array)?;
+            if element != CType::UInt8 {
+                return Err("array coercion requires u8 elements".into());
+            }
+            let constant = self.array_source_is_constant(array)?;
+            if *mutable && constant {
+                return Err("mutable array coercion requires a mutable source".into());
+            }
+            return Ok((pointer, length));
+        }
         let E::Local { name } = e else {
             return Err("slice values must be local slice references".into());
         };
@@ -714,19 +725,49 @@ impl Context<'_> {
             .ok_or("unknown Rust slice reference")?;
         Ok((c_variable(name), c_variable(length)))
     }
+    fn array_source_is_constant(&self, e: &E) -> Result<bool, String> {
+        match e {
+            E::Local { name } => self
+                .arrays
+                .get(name)
+                .map(|a| a.2)
+                .ok_or("unknown array source".into()),
+            E::Deref { reference, .. } => self.array_source_is_constant(reference),
+            E::Borrow {
+                value_type: Type::Reference { mutable, .. },
+                ..
+            } => Ok(!mutable),
+            _ => Err("array coercion requires a fixed array place".into()),
+        }
+    }
     fn indexed_parts(&self, e: &E) -> Result<(CExpression, CExpression, CType), String> {
         match e {
             E::Borrow { place, .. } => self.indexed_parts(place),
             E::Deref { reference, .. } => self.indexed_parts(reference),
             E::Local { name } if self.arrays.contains_key(name) => {
                 let (length, element, _) = self.arrays[name];
-                Ok((c_variable(name), c_uint64_literal(length), element))
+                Ok((self.array_pointer(name)?, c_uint64_literal(length), element))
             }
             _ => {
                 let (pointer, length) = self.slice_parts(e)?;
                 Ok((pointer, length, CType::UInt8))
             }
         }
+    }
+    fn array_pointer(&self, name: &str) -> Result<CExpression, String> {
+        let (_, element, constant) = self.arrays.get(name).ok_or("unknown fixed array")?;
+        let pointer_type = match element {
+            CType::UInt8 => CType::UInt8Pointer,
+            CType::UInt32 => CType::UInt32Pointer,
+            CType::Int32 => CType::Int32Pointer,
+            _ => return Err("unsupported fixed array element".into()),
+        };
+        Ok(c_cast_with_pointee_qualifiers(
+            c_variable(name),
+            pointer_type,
+            false,
+            *constant,
+        ))
     }
     fn prepared_address(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         if let E::Index { slice, index } = e {
@@ -757,7 +798,7 @@ impl Context<'_> {
     }
     fn address(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
-            E::Local { name } if self.local_arrays.contains(name) => Ok(c_variable(name)),
+            E::Local { name } if self.local_arrays.contains(name) => self.array_pointer(name),
             E::Deref { reference, .. } => self.expr(reference),
             E::Field {
                 base,
@@ -795,6 +836,9 @@ impl Context<'_> {
     }
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
+            E::ArrayToSlice { .. } => {
+                Err("Rust slices require pointer-plus-length preparation".into())
+            }
             E::Array { .. } | E::Repeat { .. } => {
                 Err("array values require whole-array assignment".into())
             }

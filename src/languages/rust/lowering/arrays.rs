@@ -2,20 +2,23 @@
 //! copies. Constructor operands are captured before any destination write.
 use super::*;
 
-fn array_type(element: CType, length: u64) -> Result<CType, String> {
+fn array_length(element: CType, length: u64) -> Result<u32, String> {
     if !matches!(element, CType::UInt8 | CType::UInt32 | CType::Int32) {
         return Err("fixed arrays require i32, u8 or u32 elements".into());
     }
     if length > i32::MAX as u64 / u64::from(element.byte_width()) {
         return Err("fixed array storage exceeds the signed-word memory model".into());
     }
-    let length = u32::try_from(length).map_err(|_| "array length exceeds modeled storage")?;
-    match element {
-        CType::UInt8 => Ok(CType::UInt8Array(length)),
-        CType::UInt32 => Ok(CType::UInt32Array(length)),
-        CType::Int32 => Ok(CType::Int32Array(length)),
-        _ => Err("fixed arrays require i32, u8 or u32 elements".into()),
-    }
+    u32::try_from(length).map_err(|_| "array length exceeds modeled storage".into())
+}
+
+fn array_layout(element: CType, length: u64) -> Result<CAggregateLayout, String> {
+    let length = array_length(element, length)?;
+    let width = element.byte_width();
+    let fields = (0..length)
+        .map(|i| CAggregateField::new(i.to_string(), i * width, element))
+        .collect();
+    Ok(CAggregateLayout::new(length * width, width, fields))
 }
 
 impl Context<'_> {
@@ -27,12 +30,13 @@ impl Context<'_> {
         initializer: &E,
     ) -> Result<CStatement, String> {
         let element = scalar_type(element)?.to_kernel_type();
-        let array_type = array_type(element, length)?;
+        let layout = array_layout(element, length)?;
         self.local_arrays.insert(name.into());
         self.arrays.insert(name.into(), (length, element, false));
         Ok(c_seq(
-            c_declare(name, array_type),
-            self.assign_array(c_variable(name), element, length, initializer)?,
+            // Fresh storage supplies transferable authority for helper calls.
+            c_begin_aggregate_construction(name, layout),
+            self.assign_array(self.array_pointer(name)?, element, length, initializer)?,
         ))
     }
 
@@ -43,7 +47,7 @@ impl Context<'_> {
         length: u64,
         value: &E,
     ) -> Result<CStatement, String> {
-        array_type(element, length)?;
+        array_length(element, length)?;
         let source_type = match element {
             CType::UInt8 => Type::U8,
             CType::UInt32 => Type::U32,
@@ -85,14 +89,10 @@ impl Context<'_> {
                 if length == 0 {
                     return Ok(c_skip());
                 }
-                let width = element.byte_width();
-                let fields = (0..length as u32)
-                    .map(|i| CAggregateField::new(i.to_string(), i * width, element))
-                    .collect();
                 return Ok(c_copy_aggregate(
                     target,
                     source,
-                    CAggregateLayout::new(length as u32 * width, width, fields),
+                    array_layout(element, length)?,
                 ));
             }
         }

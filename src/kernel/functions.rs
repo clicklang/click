@@ -13181,9 +13181,6 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
     let entry_contract_state = opened_entry_state.as_ref().unwrap_or(entry_contract_state);
     let mut ensure_assumptions =
         assumptions_with_path_context(effective_assumptions, facts, obligations);
-    let mut facts_have_memory_effect_summary = facts
-        .iter()
-        .any(|fact| matches!(fact.proposition(), Proposition::CMemoryEffectSummary { .. }));
     for ensure in ensures {
         let published_before = facts.len();
         // A verified callee certifies that its ensures, including the memory
@@ -13316,7 +13313,6 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
             }
             add_normalized_verified_ensure_facts(
                 facts,
-                facts_have_memory_effect_summary,
                 &ensure_path.proposition,
                 &ensure_assumptions,
                 &ensure_path.facts,
@@ -13347,8 +13343,6 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
         let published = &facts[published_before..];
         crate::instrumentation::record_deterministic_work(published.len());
         for fact in published {
-            facts_have_memory_effect_summary |=
-                matches!(fact.proposition(), Proposition::CMemoryEffectSummary { .. });
             ensure_assumptions = ensure_assumptions.assume_proposition(fact.proposition().clone());
         }
     }
@@ -13362,17 +13356,16 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// the original ensure is sound but can leave the surface certificate with an
 /// arithmetic chain it cannot express as an exact assumption. These derived
 /// equalities preserve the callee's post-state transition without retaining a
-/// pre-havoc cell.
+/// pre-havoc cell. Read-only calls also publish these consequences: a named
+/// load of a known input cell must remain usable by later arithmetic checks.
 fn add_normalized_verified_ensure_facts(
     facts: &mut Vec<ExecutionPureFact>,
-    facts_have_memory_effect_summary: bool,
     ensure: &Proposition,
     ensure_assumptions: &PureFactContext,
     ensure_facts: &[ExecutionPureFact],
     ensure_obligations: &[ProofObligation],
 ) {
     if !ensure_obligations.is_empty()
-        || !facts_have_memory_effect_summary
         || !crate::kernel::eval::proposition_mentions_registered_load_variable(ensure)
     {
         return;
@@ -13383,16 +13376,37 @@ fn add_normalized_verified_ensure_facts(
     };
     let assumptions = assumptions_with_path_context(ensure_assumptions, ensure_facts, &[])
         .assume_proposition(ensure.clone());
-    let Some(left_value) = assumptions.known_signed_constant_after_normalization(left) else {
-        return;
+    let constant_value = |term: &Bitvector32Term| {
+        assumptions
+            .known_signed_constant_after_normalization(term)
+            .or_else(|| {
+                let Bitvector32Term::Variable(variable) = term else {
+                    return None;
+                };
+                let Bitvector32Term::MemoryLoad(origin, pointer, kind) =
+                    crate::kernel::eval::registered_load_origin_term_for_variable(variable)?
+                else {
+                    return None;
+                };
+                let value = super::memory_provenance::resolve_load_along_memory_derivations(
+                    &origin,
+                    &pointer,
+                    kind,
+                    &assumptions,
+                )?;
+                assumptions.known_signed_constant_after_normalization(&value)
+            })
     };
-    let Some(right_value) = assumptions.known_signed_constant_after_normalization(right) else {
-        return;
+    let left_value = constant_value(left);
+    let right_value = constant_value(right);
+    // The verified ensure is an equality: resolving either side establishes
+    // the value of both. Preserve each load's defining snapshot and type.
+    let value = match (left_value, right_value) {
+        (Some(left), Some(right)) if left == right => left,
+        (Some(value), None) | (None, Some(value)) => value,
+        _ => return,
     };
-    if left_value != right_value {
-        return;
-    }
-    let constant = Bitvector32Term::Constant(left_value as i32 as u32);
+    let constant = Bitvector32Term::Constant(value as i32 as u32);
     for term in [left.as_ref(), right.as_ref()] {
         if signed_bitvector_constant(term).is_some() {
             continue;
@@ -13405,12 +13419,9 @@ fn add_normalized_verified_ensure_facts(
             ensure_facts,
             &[],
         );
-        // The duplicate test reads the published list, so it is charged by
-        // that list's length.
-        crate::instrumentation::record_deterministic_work(facts.len());
-        if !facts.iter().any(|fact| fact.proposition() == &normalized) {
-            facts.push(ExecutionPureFact::certified(normalized));
-        }
+        // At most two consequences per ensure. Publishing an equal pure fact
+        // twice is harmless; scanning all earlier outputs here was quadratic.
+        facts.push(ExecutionPureFact::certified(normalized));
     }
 }
 
@@ -33305,3 +33316,57 @@ mod retained_aggregate_resource_values_tests {
 
 #[cfg(test)]
 mod resource_reference_tests;
+
+#[cfg(test)]
+mod verified_read_normalization_tests {
+    use super::*;
+
+    #[test]
+    fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
+        let pointer = Pointer {
+            block: "local:verified-read".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_block(pointer.block.clone(), 4)
+            .store(pointer.clone(), CValue::UInt8(3u32.into()));
+        let after = before
+            .clone()
+            .store(pointer.clone(), CValue::UInt8(9u32.into()));
+        let unknown = CMemory::new().with_block(pointer.block.clone(), 4);
+        for (memory, kind, expected) in [
+            (&before, LoadKind::UInt8, Some(3)),
+            (&after, LoadKind::UInt8, Some(9)),
+            (&before, LoadKind::Bits32, None),
+            (&unknown, LoadKind::UInt8, None),
+            (&before, LoadKind::UInt8, Some(3)),
+        ] {
+            let load =
+                Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                    &intern_c_memory_ref(memory),
+                    &pointer,
+                    kind,
+                    kind.byte_width(),
+                ));
+            let result = Bitvector32Term::Variable(Variable(930_401));
+            let ensure = Proposition::ConditionIs(ConditionTerm::equal(result.clone(), load), true);
+            let mut facts = Vec::new();
+            add_normalized_verified_ensure_facts(
+                &mut facts,
+                &ensure,
+                &PureFactContext::new(),
+                &[],
+                &[],
+            );
+            if let Some(value) = expected {
+                let expected = Proposition::ConditionIs(
+                    ConditionTerm::equal(result, Bitvector32Term::Constant(value)),
+                    true,
+                );
+                assert!(facts.iter().any(|fact| fact.proposition() == &expected));
+            } else {
+                assert!(facts.is_empty());
+            }
+        }
+    }
+}

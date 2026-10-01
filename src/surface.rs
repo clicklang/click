@@ -5717,7 +5717,7 @@ pub enum ProofKind {
 #[derive(Debug)]
 pub struct ClickError {
     message: String,
-    rendered: std::sync::OnceLock<String>,
+    rendered: std::sync::OnceLock<Box<str>>,
     kind: ClickErrorKind,
     failed_tactic: Option<&'static str>,
     diagnostic: Option<std::sync::Arc<proof_diagnostics::ProofFailureDiagnostic>>,
@@ -5727,7 +5727,9 @@ pub struct ClickError {
     /// The refused statement or condition has several checked successors
     /// that are cases told apart by their path facts. A simple tactic does
     /// not split on them; a planner that can split may take over.
-    path_case_split: bool,
+    /// Inside, the source condition a proof-level case split separates
+    /// those cases on first, when one has a Click spelling.
+    path_case_split: Option<std::sync::Arc<Option<ClickProposition>>>,
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
@@ -6944,7 +6946,7 @@ impl ClickError {
             search_failures: None,
             unresolved_requirement: None,
             missing_tactic_requirement: None,
-            path_case_split: false,
+            path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
     }
@@ -6970,7 +6972,7 @@ impl ClickError {
             search_failures: None,
             unresolved_requirement: None,
             missing_tactic_requirement: None,
-            path_case_split: false,
+            path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
     }
@@ -6988,21 +6990,20 @@ impl ClickError {
 
     pub fn message(&self) -> &str {
         if let Some(diagnostic) = &self.diagnostic {
-            self.rendered
-                .get_or_init(|| {
-                    proof_diagnostics::render_terminal_message(
-                        &self.message,
-                        diagnostic,
-                        self.search_failures
-                            .as_deref()
-                            .map_or(&[][..], Vec::as_slice),
-                    )
-                })
-                .as_str()
+            self.rendered.get_or_init(|| {
+                proof_diagnostics::render_terminal_message(
+                    &self.message,
+                    diagnostic,
+                    self.search_failures
+                        .as_deref()
+                        .map_or(&[][..], Vec::as_slice),
+                )
+                .into_boxed_str()
+            })
         } else if let Some(failures) = &self.search_failures {
-            self.rendered
-                .get_or_init(|| proof_diagnostics::render_search_failures(&self.message, failures))
-                .as_str()
+            self.rendered.get_or_init(|| {
+                proof_diagnostics::render_search_failures(&self.message, failures).into_boxed_str()
+            })
         } else {
             &self.message
         }
@@ -7301,13 +7302,26 @@ impl ClickError {
     /// Marks a refusal whose statement or condition has path cases that a
     /// case split on their facts would separate.
     pub(crate) fn with_path_case_split(mut self) -> Self {
-        self.path_case_split = true;
+        self.path_case_split = Some(std::sync::Arc::new(None));
         self
     }
 
     /// Whether this refusal is a simple tactic declining to split path cases.
     pub(crate) fn is_path_case_split(&self) -> bool {
-        self.path_case_split
+        self.path_case_split.is_some()
+    }
+
+    /// Records the condition a proof-level case split separates this
+    /// refusal's path cases on first.
+    pub(crate) fn with_path_case_condition(mut self, condition: ClickProposition) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(Some(condition)));
+        self
+    }
+
+    /// The condition a proof-level case split separates this refusal's path
+    /// cases on first, when one has a Click spelling.
+    pub(crate) fn path_case_condition(&self) -> Option<&ClickProposition> {
+        self.path_case_split.as_deref().and_then(Option::as_ref)
     }
 
     /// The bounded cause text, without rendering proof state or premises.
@@ -7419,7 +7433,7 @@ impl Clone for ClickError {
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
             missing_tactic_requirement: self.missing_tactic_requirement.clone(),
-            path_case_split: self.path_case_split,
+            path_case_split: self.path_case_split.clone(),
             timing_tactic: self.timing_tactic.clone(),
         }
     }
