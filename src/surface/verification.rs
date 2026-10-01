@@ -133,6 +133,9 @@ pub(in crate::surface) struct CSourceContext<'a> {
     resource_semantics_mode: ResourceSemanticsMode,
     prepared_duplicates: bool,
     parsed_units: RefCell<BTreeMap<String, Arc<syntax::C0TranslationUnit>>>,
+    /// Bundle sources extracted from a larger file, from the Click project.
+    /// Their locations are reported as lines of that file.
+    c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
     #[cfg(test)]
     prepared_parse_count: Cell<usize>,
 }
@@ -174,6 +177,7 @@ impl<'a> CSourceContext<'a> {
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
+            c_source_containers: BTreeMap::new(),
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         }
@@ -238,6 +242,7 @@ impl<'a> CSourceContext<'a> {
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: duplicate_logical_source,
             parsed_units: RefCell::new(BTreeMap::new()),
+            c_source_containers: BTreeMap::new(),
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         }
@@ -275,6 +280,7 @@ impl<'a> CSourceContext<'a> {
             resource_semantics_mode: ResourceSemanticsMode::Legacy,
             prepared_duplicates: false,
             parsed_units: RefCell::new(BTreeMap::new()),
+            c_source_containers: BTreeMap::new(),
             #[cfg(test)]
             prepared_parse_count: Cell::new(0),
         })
@@ -343,6 +349,7 @@ impl<'a> CSourceContext<'a> {
 
     pub(in crate::surface) fn with_click_project(mut self, project: &ClickProject) -> Self {
         self.resource_semantics_mode = project.resource_semantics_mode();
+        self.c_source_containers = project.c_source_containers().clone();
         let mut modules = project.modules().iter().collect::<Vec<_>>();
         modules.sort_by_key(|module| module.identity());
         let mut hasher = Sha256::new();
@@ -4968,20 +4975,22 @@ fn parse_c_source_unit(
                     "failed to resolve includes for C header `{header_path}`: {error}"
                 ))
             })?;
-            syntax::validate_header(header.source(), header.line_map()).map_err(|error| {
+            let header_line_map = header
+                .line_map()
+                .in_containers(&c_sources.c_source_containers);
+            syntax::validate_header(header.source(), &header_line_map).map_err(|error| {
                 ClickError::new(format!("failed to parse C header `{header_path}`: {error}"))
                     .with_kind(ClickErrorKind::Syntax)
             })?;
         }
-        syntax::parse_translation_unit_for_source(
-            expanded.source(),
-            source_path,
-            expanded.line_map(),
-        )
-        .map_err(|error| {
-            ClickError::new(format!("failed to parse C source `{source_path}`: {error}"))
-                .with_kind(ClickErrorKind::Syntax)
-        })?
+        let line_map = expanded
+            .line_map()
+            .in_containers(&c_sources.c_source_containers);
+        syntax::parse_translation_unit_for_source(expanded.source(), source_path, &line_map)
+            .map_err(|error| {
+                ClickError::new(format!("failed to parse C source `{source_path}`: {error}"))
+                    .with_kind(ClickErrorKind::Syntax)
+            })?
     } else {
         #[cfg(test)]
         c_sources
@@ -5570,6 +5579,7 @@ pub(in crate::surface) fn parse_verified_sources(
         resource_semantics_mode: ResourceSemanticsMode::Legacy,
         prepared_duplicates: false,
         parsed_units: RefCell::new(BTreeMap::new()),
+        c_source_containers: BTreeMap::new(),
         #[cfg(test)]
         prepared_parse_count: Cell::new(0),
     };

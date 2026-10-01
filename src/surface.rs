@@ -108,6 +108,7 @@ pub(crate) mod pure_fact_list;
 mod validation;
 mod verification;
 
+pub use crate::source::SourceContainer;
 use checking::*;
 pub use expansion::{
     CProofClaim, ClickImportSite, SmartTacticCandidate, SmartTacticSelectionError,
@@ -500,6 +501,10 @@ pub struct ClickModuleSource {
     identity: String,
     source: String,
     imports: Vec<String>,
+    /// Lines of the module's file that precede `source`: zero for a sidecar,
+    /// and the lines before the ```click block body for an mdtest.
+    /// Diagnostics add it so they name the line a person edits.
+    line_offset: usize,
 }
 
 impl ClickModuleSource {
@@ -512,11 +517,23 @@ impl ClickModuleSource {
             identity: identity.into(),
             source: source.into(),
             imports: imports.into_iter().collect(),
+            line_offset: 0,
         }
+    }
+
+    /// Places `source` after `line_offset` lines of its file, as a fenced
+    /// block of a larger container.
+    pub fn with_line_offset(mut self, line_offset: usize) -> Self {
+        self.line_offset = line_offset;
+        self
     }
 
     pub fn identity(&self) -> &str {
         &self.identity
+    }
+
+    pub fn line_offset(&self) -> usize {
+        self.line_offset
     }
 
     pub fn source(&self) -> &str {
@@ -534,6 +551,9 @@ pub struct ClickProject {
     entry: String,
     modules: Vec<ClickModuleSource>,
     c_profile: Option<CProjectProfile>,
+    /// C bundle sources extracted from a larger file, by bundle path, so
+    /// their diagnostics name that file and line. Empty for C files on disk.
+    c_source_containers: BTreeMap<String, crate::source::SourceContainer>,
 }
 
 /// One project-wide C implementation selection. Files loaded without a
@@ -572,7 +592,24 @@ impl ClickProject {
             entry: entry.into(),
             modules: modules.into_iter().collect(),
             c_profile: None,
+            c_source_containers: BTreeMap::new(),
         }
+    }
+
+    /// Records that the C bundle source `path` is a block of a larger file,
+    /// such as a ```c fence of an mdtest. Locations in that source are then
+    /// reported as lines of the container. This changes diagnostics only.
+    pub fn with_c_source_container(
+        mut self,
+        path: impl Into<String>,
+        container: crate::source::SourceContainer,
+    ) -> Self {
+        self.c_source_containers.insert(path.into(), container);
+        self
+    }
+
+    pub fn c_source_containers(&self) -> &BTreeMap<String, crate::source::SourceContainer> {
+        &self.c_source_containers
     }
 
     pub fn with_c_profile(mut self, profile: CProjectProfile) -> Self {
@@ -605,6 +642,19 @@ impl ClickProject {
             .iter()
             .find(|module| module.identity == self.entry)
             .map(|module| module.source.as_str())
+    }
+
+    /// Places the entry module after `line_offset` lines of its file, as the
+    /// ```click block of an mdtest. This changes diagnostics only.
+    pub fn with_entry_line_offset(mut self, line_offset: usize) -> Self {
+        if let Some(entry) = self
+            .modules
+            .iter_mut()
+            .find(|module| module.identity == self.entry)
+        {
+            entry.line_offset = line_offset;
+        }
+        self
     }
 
     /// Returns the same loaded graph with only the entry module text replaced.

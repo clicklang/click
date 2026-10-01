@@ -97,6 +97,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         let mut local = parser::parse_file_items_for_module(
             module.source(),
             identity,
+            module.line_offset(),
             &imported_algebraic_types,
             struct_layouts.clone(),
             union_layouts.clone(),
