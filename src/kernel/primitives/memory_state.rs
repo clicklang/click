@@ -5478,7 +5478,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+    ) -> Result<(ResourceContext, Vec<Bitvector32Term>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
     }
 
@@ -5489,7 +5489,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+    ) -> Result<(ResourceContext, Vec<Bitvector32Term>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
     }
 
@@ -5499,7 +5499,7 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(ResourceContext, Bitvector32Term), String> {
+    ) -> Result<(ResourceContext, Vec<Bitvector32Term>), String> {
         let (children, count) =
             self.authority_wrapper_body(selected, definition, assumptions, require_folded)?;
         // Retire the head before composing its body. Its ownership observations
@@ -5527,7 +5527,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<CResourceFact>, Bitvector32Term), String> {
+    ) -> Result<(Vec<CResourceFact>, Vec<Bitvector32Term>), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
@@ -5539,7 +5539,7 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<Bitvector32Term, String> {
+    ) -> Result<Vec<Bitvector32Term>, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
         Ok(count)
     }
@@ -5550,57 +5550,61 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, Bitvector32Term), String> {
-        let (children, description) =
+    ) -> Result<(Vec<CResourceFact>, Vec<Bitvector32Term>), String> {
+        let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
-        let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
-            return Err("control authority needs one pointer anchor".into());
-        };
-        let anchor = pointer.pointer();
-        let events = self
-            .population_effects
-            .creation
-            .as_ref()
-            .ok_or("control resource requires authority mode")?;
-        if !events.owns_population_authority(&description) {
-            return Err("Requires owns authority(R(p))".into());
-        }
-        let count = if anchor.block != PointerBlock::ExternalArgument
-            && anchor.offset == PointerOffsetTerm::Constant(0)
-        {
-            events
-                .observe_term(&anchor.block, description.family())
-                .map_err(|_| "Requires a current authority count")?
-        } else {
-            let imported = events
-                .observe_symbolic(&description)
-                .ok_or("Requires a current authority count")?;
-            if let Some((produce, quantity)) = imported.symbolic_delta {
-                if produce {
-                    Bitvector32Term::add(imported.entry_count, quantity)
-                } else {
-                    Bitvector32Term::subtract(imported.entry_count, quantity)
-                }
-            } else {
-                match imported.delta.cmp(&0) {
-                    std::cmp::Ordering::Equal => imported.entry_count,
-                    std::cmp::Ordering::Greater => Bitvector32Term::add(
-                        imported.entry_count,
-                        Bitvector32Term::Constant(imported.delta.unsigned_abs()),
-                    ),
-                    std::cmp::Ordering::Less => Bitvector32Term::subtract(
-                        imported.entry_count,
-                        Bitvector32Term::Constant(imported.delta.unsigned_abs()),
-                    ),
-                }
+        let mut counts = Vec::with_capacity(descriptions.len());
+        for description in descriptions {
+            let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
+                return Err("control authority needs one pointer anchor".into());
+            };
+            let anchor = pointer.pointer();
+            let events = self
+                .population_effects
+                .creation
+                .as_ref()
+                .ok_or("control resource requires authority mode")?;
+            if !events.owns_population_authority(&description) {
+                return Err("Requires owns authority(R(p))".into());
             }
-        };
-        Ok((children, count))
+            let count = if anchor.block != PointerBlock::ExternalArgument
+                && anchor.offset == PointerOffsetTerm::Constant(0)
+            {
+                events
+                    .observe_term(&anchor.block, description.family())
+                    .map_err(|_| "Requires a current authority count")?
+            } else {
+                let imported = events
+                    .observe_symbolic(&description)
+                    .ok_or("Requires a current authority count")?;
+                if let Some((produce, quantity)) = imported.symbolic_delta {
+                    if produce {
+                        Bitvector32Term::add(imported.entry_count, quantity)
+                    } else {
+                        Bitvector32Term::subtract(imported.entry_count, quantity)
+                    }
+                } else {
+                    match imported.delta.cmp(&0) {
+                        std::cmp::Ordering::Equal => imported.entry_count,
+                        std::cmp::Ordering::Greater => Bitvector32Term::add(
+                            imported.entry_count,
+                            Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                        ),
+                        std::cmp::Ordering::Less => Bitvector32Term::subtract(
+                            imported.entry_count,
+                            Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                        ),
+                    }
+                }
+            };
+            counts.push(count);
+        }
+        Ok((children, counts))
     }
 
     /// A standalone helper assumes a folded control from its caller. Only the
-    /// checked body of that exact owned wrapper may seed one opaque population
-    /// input; no direct authority or creator right is manufactured here.
+    /// checked body of that exact owned wrapper may seed its opaque population
+    /// inputs; no direct authority or creator right is manufactured here.
     pub(crate) fn import_opaque_control_wrapper(
         &self,
         selected: &CResourceFact,
@@ -5626,97 +5630,104 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceDescription, Option<Bitvector32Term>), String> {
+    ) -> Result<Vec<(ResourceDescription, Option<Bitvector32Term>)>, String> {
         if !self.resources.contains_exact_representation(selected) {
             return Err("Requires the declared owned control resource".into());
         }
-        let (children, description) =
+        let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, true)?;
-        let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
-            return Err("control authority needs one pointer anchor".into());
-        };
-        let anchor = anchor_value.pointer().clone();
-        let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
-            return Err("Requires owns control resource".into());
-        };
-        if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
-            return Err("control and authority need the same pointer argument".into());
-        }
-        let parameter = definition.parameters()[0].name();
-        let memory_cells = children
-            .iter()
-            .filter_map(CResourceFact::memory_own_range)
-            .collect::<Vec<_>>();
-        let allocations = children
-            .iter()
-            .filter_map(CResourceFact::allocation)
-            .collect::<Vec<_>>();
-        let owns_counter = memory_cells.iter().any(|range| {
-            range.base() == &anchor
-                && range.start().as_const() == Some(0)
-                && range.end().as_const().is_some_and(|end| {
-                    end.checked_mul(range.element_width())
-                        .is_some_and(|bytes| bytes >= 4)
-                })
-        });
-        if children.len() != 1 + memory_cells.len() + allocations.len()
-            || allocations.len() > 1
-            || allocations.iter().any(|(base, _)| *base != &anchor)
-        {
-            return Err("control must own exact memory, allocation, and authority".into());
-        }
-        let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
-        let is_counter_load = |expression: &SpecExpression| {
-            let SpecExpression::MemoryLoad {
-                memory: SpecMemory::Current,
-                pointer,
-                value_type: CType::Int32,
-            } = expression
-            else {
-                return false;
+        let mut components = Vec::with_capacity(descriptions.len());
+        for description in &descriptions {
+            let [AlgebraicValue::C(CValue::Pointer(anchor_value))] = description.arguments() else {
+                return Err("control authority needs one pointer anchor".into());
             };
-            match pointer.as_ref() {
-                // The first int32 field of a struct (for example `obj->refs`)
-                // lowers to a load at the struct base, not an array offset.
-                direct if is_parameter(direct) => true,
-                SpecExpression::PointerOffset {
-                    pointer,
-                    elements,
-                    byte_width: 4,
-                } => {
-                    is_parameter(pointer)
-                        && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
-                }
-                _ => false,
+            let anchor = anchor_value.pointer().clone();
+            let CResourceFact::Own(CResource::Composite { arguments, .. }, _) = selected else {
+                return Err("Requires owns control resource".into());
+            };
+            if arguments.as_ref() != description.arguments() || definition.parameters().len() != 1 {
+                return Err("control and authority need the same pointer argument".into());
             }
-        };
-        let is_population_count = |expression: &SpecExpression| {
-            matches!(expression, SpecExpression::CountedResourceCount { name, arguments }
+            let parameter = definition.parameters()[0].name();
+            let memory_cells = children
+                .iter()
+                .filter_map(CResourceFact::memory_own_range)
+                .collect::<Vec<_>>();
+            let allocations = children
+                .iter()
+                .filter_map(CResourceFact::allocation)
+                .collect::<Vec<_>>();
+            let owns_counter = memory_cells.iter().any(|range| {
+                range.base() == &anchor
+                    && range.start().as_const() == Some(0)
+                    && range.end().as_const().is_some_and(|end| {
+                        end.checked_mul(range.element_width())
+                            .is_some_and(|bytes| bytes >= 4)
+                    })
+            });
+            if children.len() != descriptions.len() + memory_cells.len() + allocations.len()
+                || allocations.len() > 1
+                || allocations.iter().any(|(base, _)| *base != &anchor)
+            {
+                return Err("control must own exact memory, allocation, and authority".into());
+            }
+            let is_parameter = |expression: &SpecExpression| matches!(expression, SpecExpression::CExpression(CExpression::Variable(name)) if name == parameter);
+            let is_counter_load = |expression: &SpecExpression| {
+                let SpecExpression::MemoryLoad {
+                    memory: SpecMemory::Current,
+                    pointer,
+                    value_type: CType::Int32,
+                } = expression
+                else {
+                    return false;
+                };
+                match pointer.as_ref() {
+                    // The first int32 field of a struct (for example `obj->refs`)
+                    // lowers to a load at the struct base, not an array offset.
+                    direct if is_parameter(direct) => true,
+                    SpecExpression::PointerOffset {
+                        pointer,
+                        elements,
+                        byte_width: 4,
+                    } => {
+                        is_parameter(pointer)
+                            && matches!(elements.as_ref(), SpecExpression::Value(CValue::Int32(zero)) if zero.as_const() == Some(0))
+                    }
+                    _ => false,
+                }
+            };
+            let is_population_count = |expression: &SpecExpression| {
+                matches!(expression, SpecExpression::CountedResourceCount { name, arguments }
                 if name == description.family()
-                    && matches!(arguments.as_slice(), [Some(argument)] if is_parameter(argument)))
-        };
-        let exact_count_fact = definition.facts().iter().any(|fact| {
-            matches!(fact, SpecProposition::Comparison {
+                    && arguments.len() == description.population_arity().unwrap_or(1)
+                    && arguments.first().is_some_and(|arg| arg.as_ref().is_some_and(is_parameter))
+                    && arguments[1..].iter().all(Option::is_none))
+            };
+            let exact_count_fact = definition.facts().iter().any(|fact| {
+                matches!(fact, SpecProposition::Comparison {
             left,
             operator: CComparisonOperator::Equal,
             right,
         } if (is_counter_load(left) && is_population_count(right))
             || (is_population_count(left) && is_counter_load(right)))
-        });
-        if !exact_count_fact {
-            return Ok((description, None));
+            });
+            if !exact_count_fact {
+                components.push((description.clone(), None));
+                continue;
+            }
+            if !owns_counter {
+                return Err("coupled control must own its exact counter cell".into());
+            }
+            components.push((
+                description.clone(),
+                Some(Bitvector32Term::MemoryLoad(
+                    intern_c_memory_ref(&self.memory),
+                    Box::new(anchor.clone()),
+                    LoadKind::Bits32,
+                )),
+            ));
         }
-        if !owns_counter {
-            return Err("coupled control must own its exact counter cell".into());
-        }
-        Ok((
-            description,
-            Some(Bitvector32Term::MemoryLoad(
-                intern_c_memory_ref(&self.memory),
-                Box::new(anchor.clone()),
-                LoadKind::Bits32,
-            )),
-        ))
+        Ok(components)
     }
 
     fn authority_wrapper_candidates(
@@ -5725,7 +5736,7 @@ impl CState {
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<CResourceFact>, ResourceDescription), String> {
+    ) -> Result<(Vec<CResourceFact>, Vec<ResourceDescription>), String> {
         let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = selected
         else {
             return Err("Requires owns control resource".into());
@@ -5763,7 +5774,8 @@ impl CState {
             );
         }
         let mut children = Vec::with_capacity(definition.contains().len());
-        let mut authority = None;
+        let mut authorities = Vec::new();
+        let mut seen_authorities = std::collections::BTreeSet::new();
         let mut budget = ExecutionBudget::beside_live_state();
         for spec in definition.contains() {
             if spec.access() != super::super::CResourceAccessMode::Own
@@ -5775,8 +5787,10 @@ impl CState {
             }
             let child = match spec.term() {
                 super::super::CResourceTerm::PopulationAuthority { .. } => {
-                    if authority.is_some() {
-                        return Err("control body requires one authority".into());
+                    if authorities.len() == 2 {
+                        return Err(
+                            "control body currently supports at most two authorities".into()
+                        );
                     }
                     super::super::functions::evaluate_population_authority_candidate(
                         &evaluation,
@@ -5812,12 +5826,23 @@ impl CState {
                 }
                 _ => {
                     return Err(
-                        "control body supports owned memory, allocation, and one authority".into(),
+                        "control body supports owned memory, allocation, and authorities".into(),
                     );
                 }
             };
             if let CResource::PopulationAuthority(description) = child.resource() {
-                authority = Some(description.clone());
+                if !seen_authorities.insert(description.clone()) {
+                    return Err("control body repeats a population authority".into());
+                }
+                if authorities
+                    .first()
+                    .is_some_and(|first: &ResourceDescription| {
+                        first.arguments() != description.arguments()
+                    })
+                {
+                    return Err("control authorities need the same pointer anchor".into());
+                }
+                authorities.push(description.clone());
             }
             children.push(child);
         }
@@ -5846,10 +5871,10 @@ impl CState {
                 None => format!("Requires the owned authority control body: missing {kind}"),
             });
         }
-        Ok((
-            children,
-            authority.ok_or("control body requires one authority")?,
-        ))
+        if authorities.is_empty() {
+            return Err("control body requires population authority".into());
+        }
+        Ok((children, authorities))
     }
 
     #[cfg(test)]

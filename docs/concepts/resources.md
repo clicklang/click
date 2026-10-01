@@ -655,6 +655,41 @@ not supply transferable `owns object(...)`; the preserved
 separate limitation. The positive caller fixture receives explicit object
 ownership on entry.
 
+An ordinary control resource can own both authorities and the C fields that
+record their totals. A checkout helper borrows that control as one resource:
+
+<!-- verified-example: mdtests/authority_pool_control_checkout.md -->
+```click
+resource control(pool: struct pool*) {
+    owns object(pool);
+    owns authority(slot(pool));
+    owns authority(item(pool, _));
+    fact 0 <= pool->checked_out;
+    fact pool->checked_out == count(item(pool, _));
+    fact pool->capacity == pool->checked_out + count(slot(pool));
+}
+```
+
+The helper contract uses `owns control(pool)`, `consumes slot(pool)`,
+`consumes object(p)`, and `produces item(pool, p)`. Its proof opens the control,
+consumes the slot, increments the C counter, creates the item, and closes the
+control. Closing checks both relationships against the updated ledgers;
+retaining the authority alone cannot restore a false invariant. Nested helpers
+transfer the same control, and callers can retain additional slots.
+
+The fixture requires `pool->checked_out < 2147483647` to establish that the C
+increment is defined. It uses the existing unit-transfer sum theorem to restore
+the capacity equation. Certificate checking verifies that the original sum,
+increment, and predecessor are all defined before cancelling the two unit
+changes; wrapping arithmetic cannot justify the new sum's domain.
+
+This checkpoint supports one or two distinct authority scopes at the same
+pointer anchor in a field-free control with owned memory and at most one
+allocation. Every contained authority is authenticated and transferred
+separately. An imported control assumes an existing population, never an empty
+one or a new creation right. General control bodies and more than two
+authorities remain separate work.
+
 A wildcard authority also permits an exact member count. `count(slot(pool, p))`
 counts every existing unit with those arguments; `count(slot(pool, _))` counts
 the whole family. Equal empty members can have a count greater than one. Owning

@@ -80,6 +80,17 @@ admission and checked external body extents. The unchanged stack-object case
 is preserved as a separate expected rejection: implicit local access is not
 currently transferable object ownership.
 
+The `authority_pool_control*` fixtures package both population authorities and
+C pool fields in one ordinary control. Direct and nested checkout helpers
+restore the checked-out count and capacity equations. A caller retains another
+slot while passing the control and consuming one slot. Negative fixtures
+reject missing effects/authority, duplicate authority, and a wrong C increment.
+Kernel regressions check both imported custodies, arbitrary totals without
+creation rights, and the three required domains for balanced unit arithmetic.
+Indexed domain-query scaling is checked beside unrelated facts. Support is
+limited to one/two authorities at the same anchor with a field-free control;
+the bounded-pool sidecar and general wrapper/batch support remain separate.
+
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
 ```sh

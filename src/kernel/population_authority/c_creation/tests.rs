@@ -810,6 +810,143 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
 }
 
 #[test]
+fn two_authority_control_import_checks_each_custody_and_scope() {
+    let pointer = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(940_112)),
+    };
+    let selected = CResourceFact::own(CResource::Composite {
+        name: "control".into(),
+        arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+    });
+    let reference = CResourceSpec::composite(
+        CResourceAccessMode::Own,
+        "reference".into(),
+        vec![c_variable("p")],
+        vec![CType::Int32Pointer],
+    );
+    let authority = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            population_arity: None,
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(reference),
+                schema: ResourceFieldSchema::new(vec![]).unwrap(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Consume,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    let cell = SpecExpression::MemoryLoad {
+        memory: SpecMemory::Current,
+        pointer: Box::new(SpecExpression::PointerOffset {
+            pointer: Box::new(SpecExpression::CExpression(c_variable("p"))),
+            elements: Box::new(SpecExpression::Value(int32(0))),
+            byte_width: 4,
+        }),
+        value_type: CType::Int32,
+    };
+    let count = SpecExpression::CountedResourceCount {
+        name: "reference".into(),
+        arguments: vec![Some(SpecExpression::CExpression(c_variable("p")))],
+    };
+    let mut definition = CCompositeResourceDefinition::new(
+        "control",
+        vec![c_parameter("p", CType::Int32Pointer)],
+        None,
+        false,
+        vec![
+            CResourceSpec::owned_memory(CMemorySegment::new(
+                c_variable("p"),
+                c_int32_literal(0),
+                c_int32_literal(1),
+            )),
+            authority,
+        ],
+        vec![SpecProposition::Comparison {
+            left: cell,
+            operator: CComparisonOperator::Equal,
+            right: count,
+        }],
+    );
+    let state = CState::new()
+        .with_population_creation_tracking()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(selected.clone()));
+    let entry = state.population_effects.creation.as_ref().unwrap();
+    let wildcard = CResourceSpec::new(
+        CResourceTerm::PopulationAuthority {
+            population_arity: Some(2),
+            protected: Box::new(CResourceTypeSpec {
+                resource: Box::new(CResourceSpec::composite(
+                    CResourceAccessMode::Own,
+                    "item".into(),
+                    vec![c_variable("p")],
+                    vec![CType::Int32Pointer],
+                )),
+                schema: ResourceFieldSchema::new(vec![]).unwrap(),
+            }),
+            snapshot: CResourceSnapshot::Current,
+        },
+        CResourceAccessMode::Own,
+        CResourceQuantity::One,
+        CResourceTransferRole::Consume,
+        CResourceSnapshot::Current,
+    )
+    .unwrap();
+    definition.contains.push(wildcard);
+    let imported = entry
+        .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
+        .unwrap();
+    let components = state
+        .checked_authority_wrapper_import_components(
+            &selected,
+            &definition,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(components.len(), 2);
+    assert!(components[0].1.is_some());
+    assert!(components[1].1.is_none());
+    for (description, _) in &components {
+        assert!(imported.owns_population_authority(description));
+        assert!(imported.observe_symbolic(description).is_some());
+        assert!(!imported.checked_empty_population(description));
+        assert!(
+            imported
+                .checked_establish(&PointerBlock::ExternalArgument, description)
+                .is_err()
+        );
+    }
+    let mut current = state.clone();
+    Arc::make_mut(&mut current.population_effects).creation = Some(imported.clone());
+    assert!(
+        current
+            .checked_authority_wrapper_body(&selected, &definition, &PureFactContext::new())
+            .is_ok()
+    );
+    let callee = imported.enter_call();
+    let handed_off = imported
+        .transfer_call_fact(&imported, &callee, &components[0].0, true)
+        .unwrap();
+    let mut partial = state.clone();
+    Arc::make_mut(&mut partial.population_effects).creation = Some(handed_off);
+    assert!(
+        partial
+            .checked_authority_wrapper_body(&selected, &definition, &PureFactContext::new())
+            .is_err()
+    );
+    definition.contains[2] = definition.contains[1].clone();
+    assert!(
+        entry
+            .import_checked_control_wrapper(&state, &selected, &definition, &PureFactContext::new())
+            .is_err()
+    );
+}
+
+#[test]
 fn checked_control_import_observes_only_its_exact_entry_population() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,

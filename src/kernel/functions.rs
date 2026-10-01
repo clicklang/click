@@ -702,22 +702,24 @@ fn transfer_population_call_facts<'a>(
                 .filter_map(CResourceFact::allocation)
                 .collect::<Vec<_>>();
             if memory_count == 0
-                || authorities.len() != 1
+                || authorities.is_empty()
                 || allocations.len() > 1
-                || children.len() != 1 + memory_count + allocations.len()
+                || children.len() != authorities.len() + memory_count + allocations.len()
             {
                 return Err(CRuntimeError::FunctionContract(
-                    "population call control requires owned memory, one authority, and at most one allocation".into(),
+                    "population call control requires owned memory, authorities, and at most one allocation".into(),
                 ));
             }
+            for description in &authorities {
+                events = events
+                    .transfer_call_fact(from_events, to_events, description, true)
+                    .map_err(|refusal| {
+                        CRuntimeError::FunctionContract(format!(
+                            "population call control transfer refused: {refusal:?}"
+                        ))
+                    })?;
+            }
             let description = authorities[0];
-            events = events
-                .transfer_call_fact(from_events, to_events, description, true)
-                .map_err(|refusal| {
-                    CRuntimeError::FunctionContract(format!(
-                        "population call control transfer refused: {refusal:?}"
-                    ))
-                })?;
             if let Some((base, _)) = allocations.first() {
                 let [AlgebraicValue::C(CValue::Pointer(pointer))] = description.arguments() else {
                     return Err(CRuntimeError::FunctionContract(
@@ -2394,23 +2396,32 @@ fn authority_mode_exchange_effects(
     }
     for (family, arguments) in [(left, a), (right, b)] {
         if !interface.resource_requires().iter().any(|spec| {
-            let CResourceTerm::PopulationAuthority {
-                protected,
-                population_arity,
-                ..
-            } = spec.term()
-            else {
-                return false;
+            if spec.role() != CResourceTransferRole::Borrow
+                || spec.access() != CResourceAccessMode::Own
+                || spec.quantity() != &CResourceQuantity::One
+                || spec.guard().is_some()
+            { return false; }
+            let matches = |term: &CResourceTerm| {
+                matches!(term, CResourceTerm::PopulationAuthority { protected, population_arity, .. }
+                    if population_arity.map_or(arguments.len() == 1, |arity| arity == arguments.len())
+                    && matches!(protected.resource.term(), CResourceTerm::Composite { name, arguments: anchor, .. }
+                        if name == family && anchor.first() == arguments.first()))
             };
-            spec.role() == CResourceTransferRole::Borrow
-                && spec.access() == CResourceAccessMode::Own
-                && population_arity.map_or(arguments.len() == 1, |arity| arity == arguments.len())
-                && matches!(protected.resource.term(), CResourceTerm::Composite {
-                    name, arguments: anchor, ..
-                } if name == family && anchor.first() == arguments.first())
-        }) {
-            return None;
-        }
+            if matches(spec.term()) { return true; }
+            let CResourceTerm::Composite { name, arguments: wrapper_args, .. } = spec.term() else { return false; };
+            let Some(definition) = interface.composite_resource_definition(name) else { return false; };
+            // Initially admit the ordinary one-argument control at this anchor.
+            if wrapper_args.len() != 1 || definition.parameters().len() != 1 || wrapper_args[0] != arguments[0] { return false; }
+            definition.contains().iter().any(|child| {
+                child.access() == CResourceAccessMode::Own
+                    && child.quantity() == &CResourceQuantity::One
+                    && child.guard().is_none()
+                    && matches!(child.term(), CResourceTerm::PopulationAuthority { protected, population_arity, .. }
+                        if population_arity.map_or(arguments.len() == 1, |arity| arity == arguments.len())
+                        && matches!(protected.resource.term(), CResourceTerm::Composite { name, arguments: anchor, .. }
+                            if name == family && matches!(anchor.as_slice(), [CExpression::Variable(parameter)] if parameter == definition.parameters()[0].name())))
+            })
+        }) { return None; }
     }
     Some([(false, input), (true, output)])
 }
@@ -2695,7 +2706,7 @@ pub(super) fn check_wildcard_consumption_at_return(
     // This checkpoint covers direct authority inputs. Do not read
     // unrelated unary control fields just to discover that they are outside
     // this rule; their entry custody is checked by the existing boundary.
-    if !interface.resource_requires().iter().any(|input| {
+    if !paired && !interface.resource_requires().iter().any(|input| {
         matches!(input.term(), CResourceTerm::PopulationAuthority {
             protected, population_arity, ..
         } if (paired || population_arity.is_some()) && matches!(protected.resource.term(), CResourceTerm::Composite { name, .. } if name == member_name))
