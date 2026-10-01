@@ -1801,18 +1801,6 @@ impl CellStore {
         dropped
     }
 
-    /// Keeps only the cells `keep` accepts among the candidates; every other
-    /// cell is kept. See [`AliasCandidates::retain_map`].
-    pub(crate) fn retain_candidates(
-        &mut self,
-        candidates: &AliasCandidates,
-        mut keep: impl FnMut(&Pointer, &CValue) -> bool,
-    ) {
-        self.reset();
-        candidates.retain_map(&mut self.concrete, &mut keep);
-        self.retain_run_slots(true, Some(candidates), keep);
-    }
-
     /// Keeps only the candidate cells `keep` accepts, and no cell outside the
     /// candidates, with a whole-run answer: `run_rule`
     /// says which of a candidate run's live slots to keep, and only a run it
@@ -2515,7 +2503,9 @@ mod tests {
                     _ => {
                         let only = AliasCandidates::only_block(&global);
                         let keep = |pointer: &Pointer, _: &CValue| !matches!(pointer.offset, PointerOffsetTerm::Constant(offset) if offset % 8 == 4);
-                        store.retain_candidates(&only, keep);
+                        store.retain_candidates_outside_by(&only, &[], keep, |_| {
+                            (SlotSet::PerSlot, RuleAnswer::Exact)
+                        });
                         model.retain(|pointer, value| {
                             pointer.block != global || keep(pointer, value)
                         });
