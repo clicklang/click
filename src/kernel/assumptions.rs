@@ -6138,8 +6138,8 @@ fn exact_equality_constant(candidate: &Bitvector32Term) -> Option<i64> {
 /// `-1`, and is equally `4294967295`, and is equally `2^32 + 4294967295`.
 /// `exact_signed_constant` accepts one, which is right for the thirty-two-bit
 /// quantities it was written for and wrong for this one. Only a sixty-four-bit
-/// constant term, or a recorded exact sixty-four-bit equality, pins a value
-/// here.
+/// constant term, or arithmetic established through recorded exact
+/// sixty-four-bit equalities, pins a value here.
 ///
 /// `unsigned` says how the scaling reads it, and the two readings are
 /// different numbers: `size_t` `4294967295` displaces forwards by that many
@@ -6161,24 +6161,32 @@ pub(in crate::kernel) fn exact_sixty_four_bit_constant(
     if let Some(value) = constant(term) {
         return Some(value);
     }
-    assumptions
-        .condition_facts
-        .iter()
-        .find_map(|(condition, value)| {
-            if !*value {
-                return None;
-            }
-            let ConditionTerm::Bitvector64Equal(left, right) = condition else {
-                return None;
-            };
-            if left.as_ref() == term {
-                constant(right)
-            } else if right.as_ref() == term {
-                constant(left)
-            } else {
-                None
-            }
-        })
+    // Follow the selected term's indexed 64-bit equality component and
+    // evaluate only its bounded arithmetic. A low-word equality is not
+    // evidence about the full address displacement.
+    let bits = assumptions.wide_constant_from_equalities(term)?;
+    if unsigned {
+        i64::try_from(bits).ok()
+    } else {
+        Some(bits as i64)
+    }
+}
+
+/// Exact constants for the two offset forms admitted by wide constant
+/// congruence. Scaling must fit the offset's signed 64-bit representation.
+pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
+    offset: &PointerOffsetTerm,
+    assumptions: &PureFactContext,
+) -> Option<i64> {
+    match offset {
+        PointerOffsetTerm::Constant(value) => Some(*value),
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned,
+        } => exact_sixty_four_bit_constant(value, *unsigned, assumptions)?.checked_mul(*byte_width),
+        _ => None,
+    }
 }
 
 fn bitvector_index_in_range_shallow(

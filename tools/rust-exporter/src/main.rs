@@ -297,19 +297,6 @@ impl<'tcx> BodyExporter<'tcx> {
                 if self.typeck.type_dependent_def_id(e.hir_id).is_some() {
                     return Err(self.error(e, "overloaded operators outside Rust slice"));
                 }
-                if self.typeck.expr_ty(l).is_usize()
-                    && !matches!(
-                        op.node,
-                        hir::BinOpKind::Eq
-                            | hir::BinOpKind::Ne
-                            | hir::BinOpKind::Lt
-                            | hir::BinOpKind::Le
-                            | hir::BinOpKind::Gt
-                            | hir::BinOpKind::Ge
-                    )
-                {
-                    return Err(self.error(e, "usize arithmetic outside Rust slice support"));
-                }
                 let operator = match op.node {
                     hir::BinOpKind::Add => "add",
                     hir::BinOpKind::Sub => "sub",
@@ -333,10 +320,10 @@ impl<'tcx> BodyExporter<'tcx> {
                 if matches!(operator, "shl" | "shr")
                     && !matches!(
                         export_type(self.tcx, self.typeck.expr_ty(l))?,
-                        Type::U8 | Type::U32
+                        Type::U8 | Type::U32 | Type::Usize
                     )
                 {
-                    return Err(self.error(e, "Rust shifts currently require u8 or u32 operands"));
+                    return Err(self.error(e, "Rust shifts require u8, u32 or usize operands"));
                 }
                 Ok(Expression::Binary {
                     operator: operator.into(),
@@ -510,9 +497,6 @@ impl<'tcx> BodyExporter<'tcx> {
                     hir::AssignOpKind::BitXorAssign => "bit_xor",
                 };
                 let left_type = export_type(self.tcx, self.typeck.expr_ty(target))?;
-                if left_type == Type::Usize {
-                    return Err(self.error(e, "usize arithmetic outside Rust slice support"));
-                }
                 if matches!(target.kind, hir::ExprKind::Index(..)) {
                     return Err(
                         self.error(e, "indexed compound assignments outside Rust slice support")

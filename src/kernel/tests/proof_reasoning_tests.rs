@@ -8631,3 +8631,204 @@ fn memory_resolution_order_walk_memo_agrees_with_the_full_scan() {
         "the generated questions should mix answers: {proved} of {compared} proved"
     );
 }
+
+#[test]
+fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
+    let x = Bitvector32Term::Variable(Variable(990_000));
+    let y = Bitvector32Term::Variable(Variable(990_001));
+    let low_word_only = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::Bitvector32Equal(
+            Box::new(x.clone()),
+            Box::new(Bitvector32Term::Constant(1)),
+        ),
+        true,
+    ));
+    assert_eq!(
+        crate::kernel::assumptions::exact_sixty_four_bit_constant(&x, true, &low_word_only),
+        None
+    );
+    let mut prior = None;
+    for size in [4, 16, 64] {
+        let mut facts = PureFactContext::new()
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(x.clone(), Bitvector32Term::UInt64Constant(u64::MAX)),
+                true,
+            ))
+            .assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(y.clone(), Bitvector32Term::UInt64Constant(2)),
+                true,
+            ));
+        for index in 0..size {
+            facts = facts.assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::uint64_equal(
+                    Bitvector32Term::Variable(Variable(991_000 + index)),
+                    Bitvector32Term::UInt64Constant(index),
+                ),
+                true,
+            ));
+        }
+        let cases = [
+            (
+                Bitvector32Term::uint64_divide(x.clone(), y.clone()),
+                Some(u64::MAX / 2),
+            ),
+            (
+                Bitvector32Term::uint64_remainder(x.clone(), y.clone()),
+                Some(1),
+            ),
+            (
+                Bitvector32Term::uint64_bitwise_and(x.clone(), y.clone()),
+                Some(2),
+            ),
+            (
+                Bitvector32Term::uint64_bitwise_or(x.clone(), y.clone()),
+                Some(u64::MAX),
+            ),
+            (
+                Bitvector32Term::uint64_bitwise_xor(x.clone(), y.clone()),
+                Some(u64::MAX - 2),
+            ),
+            (Bitvector32Term::uint64_bitwise_not(x.clone()), Some(0)),
+            (
+                Bitvector32Term::uint64_shift_left(x.clone(), Bitvector32Term::Constant(63)),
+                Some(1 << 63),
+            ),
+            (
+                Bitvector32Term::uint64_logical_shift_right(
+                    x.clone(),
+                    Bitvector32Term::Constant(63),
+                ),
+                Some(1),
+            ),
+            (
+                Bitvector32Term::uint64_divide(x.clone(), Bitvector32Term::UInt64Constant(0)),
+                None,
+            ),
+            (
+                Bitvector32Term::uint64_remainder(x.clone(), Bitvector32Term::UInt64Constant(0)),
+                None,
+            ),
+            (
+                Bitvector32Term::uint64_logical_shift_right(
+                    x.clone(),
+                    Bitvector32Term::Constant(64),
+                ),
+                None,
+            ),
+        ];
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (term, expected) in cases {
+                assert_eq!(facts.wide_constant_from_equalities(&term), expected);
+                assert_eq!(
+                    crate::kernel::assumptions::exact_sixty_four_bit_constant(&term, true, &facts,),
+                    expected.and_then(|bits| i64::try_from(bits).ok())
+                );
+            }
+        });
+        assert!(work > 0);
+        if let Some(old) = prior {
+            assert_eq!(work, old);
+        }
+        prior = Some(work);
+    }
+}
+
+#[test]
+fn invalid_unsigned_constant_operations_do_not_panic() {
+    for term in [
+        Bitvector32Term::uint64_divide(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::UInt64Constant(0),
+        ),
+        Bitvector32Term::uint64_remainder(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::UInt64Constant(0),
+        ),
+        Bitvector32Term::uint64_logical_shift_right(
+            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::Constant(64),
+        ),
+    ] {
+        assert_eq!(term.uint64_as_const(), None);
+    }
+    assert_eq!(
+        Bitvector32Term::unsigned_divide(
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::Constant(0)
+        )
+        .as_const(),
+        None
+    );
+    assert_eq!(
+        Bitvector32Term::unsigned_remainder(
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::Constant(0)
+        )
+        .as_const(),
+        None
+    );
+}
+
+#[test]
+fn wide_scaled_offset_congruence_checks_full_width_and_scale() {
+    let index = Bitvector32Term::Variable(Variable(992_000));
+    let sum = Bitvector32Term::uint64_add(index.clone(), Bitvector32Term::UInt64Constant(1));
+    let offset = PointerOffsetTerm::scale_int64(sum, 4, true);
+    let zero = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(index.clone(), Bitvector32Term::UInt64Constant(0)),
+        true,
+    ));
+    let four = PointerOffsetTerm::Constant(4);
+    let evidence = zero
+        .pointer_offset_congruence_evidence(&offset, &four)
+        .unwrap();
+    assert!(evidence.checks(&offset, &four, &zero));
+    assert!(!evidence.checks(&offset, &PointerOffsetTerm::Constant(0), &zero));
+    assert!(!evidence.checks(&offset, &four, &PureFactContext::new()));
+    let high = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(index.clone(), Bitvector32Term::UInt64Constant(4294967296)),
+        true,
+    ));
+    assert!(!evidence.checks(&offset, &four, &high));
+    let low_word_only = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::equal(index, Bitvector32Term::Constant(0)),
+        true,
+    ));
+    assert!(!evidence.checks(&offset, &four, &low_word_only));
+    let overflowing = PointerOffsetTerm::Int64Scaled {
+        value: Box::new(Bitvector32Term::UInt64Constant(i64::MAX as u64)),
+        byte_width: 2,
+        unsigned: true,
+    };
+    assert!(
+        zero.pointer_offset_congruence_evidence(&overflowing, &PointerOffsetTerm::Constant(-2))
+            .is_none()
+    );
+}
+
+#[test]
+fn wide_constant_arithmetic_work_scales_with_selected_expression() {
+    let variable = Bitvector32Term::Variable(Variable(993_000));
+    let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(variable.clone(), Bitvector32Term::UInt64Constant(9)),
+        true,
+    ));
+    let mut prior = None;
+    for size in [4, 16, 64] {
+        let mut expression = variable.clone();
+        for _ in 0..size {
+            expression = Bitvector32Term::UInt64Divide(
+                Box::new(expression),
+                Box::new(Bitvector32Term::UInt64Constant(1)),
+            );
+        }
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.wide_constant_from_equalities(&expression)
+        });
+        assert_eq!(value, Some(9));
+        if let Some(old) = prior {
+            assert!(work <= old * 5, "work grew from {old} to {work}");
+        }
+        prior = Some(work);
+    }
+}
