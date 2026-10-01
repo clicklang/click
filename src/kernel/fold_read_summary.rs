@@ -11,7 +11,8 @@
 //! 1. **Definition checking** ([`CheckedFoldReadSummary::check`]). The body of
 //!    one declared function, lowered once per verification in the kernel's
 //!    specification vocabulary, is walked against an explicit whitelist. It is
-//!    accepted only when it is a top-level `int32`-indexed range fold whose
+//!    accepted only when it is a top-level `int32`-indexed range fold over
+//!    an `int32[]` or `uint8[]` whose
 //!    every memory read is exactly the one array parameter at the fold's own
 //!    item binder. Anything else -- another index, a nested fold, a call, an
 //!    address escape, a read in an endpoint or the initial accumulator --
@@ -29,7 +30,7 @@
 //! **Why this is sound.** The value of `f(array-ref(m, p), args)` is the fold
 //! body evaluated with its reads at `m` (an `unfold` states it at a state whose
 //! block epoch is `m`). Definition checking guarantees the body reads memory
-//! only as the typed `int32` cell `p + 4*k` for the fold item `k`, and the fold
+//! only as its typed cell `p + width*k` for the fold item `k`, and the fold
 //! visits exactly `start <= k < end`, so the value is a function of the
 //! arguments and of those cells' contents alone (finite fold induction: equal
 //! initial values, and each iteration sees the same accumulator, index and
@@ -192,6 +193,7 @@ enum Scope {
 struct BodyChecker<'a> {
     parameters: &'a [(String, CType)],
     array_name: &'a str,
+    element_type: CType,
     accumulator: Variable,
     item: Variable,
 }
@@ -206,7 +208,7 @@ impl CheckedFoldReadSummary {
         for (index, (name, c_type)) in parameters.iter().enumerate() {
             crate::instrumentation::record_deterministic_work(1);
             match c_type {
-                CType::Int32Pointer => {
+                CType::Int32Pointer | CType::UInt8Pointer => {
                     if array_parameter.replace(index).is_some() {
                         return Err(FoldReadDecline::UnsupportedParameters(format!(
                             "a second array parameter `{name}`"
@@ -223,7 +225,7 @@ impl CheckedFoldReadSummary {
         }
         let Some(array_parameter) = array_parameter else {
             return Err(FoldReadDecline::UnsupportedParameters(
-                "no `int32[]` parameter".into(),
+                "no supported array parameter".into(),
             ));
         };
         let SpecIntegerExpression::RangeFold {
@@ -246,6 +248,11 @@ impl CheckedFoldReadSummary {
             array_name: &parameters[array_parameter].0,
             accumulator: *accumulator,
             item: *item,
+            element_type: if parameters[array_parameter].1 == CType::UInt8Pointer {
+                CType::UInt8
+            } else {
+                CType::Int32
+            },
         };
         let start = checker.endpoint(start)?;
         let end = checker.endpoint(end)?;
@@ -266,7 +273,7 @@ impl CheckedFoldReadSummary {
             fingerprint: definition.fingerprint(),
             parameter_types: parameters.iter().map(|(_, c_type)| *c_type).collect(),
             array_parameter,
-            element_width: 4,
+            element_width: checker.element_type.byte_width(),
             start,
             end,
             accumulator: *accumulator,
@@ -281,7 +288,7 @@ impl CheckedFoldReadSummary {
     /// The support of one application of this function, or `None` when the
     /// application is not one this summary describes: another name, another
     /// arity, an argument of the wrong sort, or an array argument that is not
-    /// an `int32` array reference.
+    /// an array reference with the declared element type.
     ///
     /// The endpoints are the application's own already-evaluated scalar
     /// arguments (or the literal the body writes); a historical endpoint keeps
@@ -306,7 +313,8 @@ impl CheckedFoldReadSummary {
                     ..
                 } => {
                     position == self.array_parameter
-                        && *element_type == CType::Int32
+                        && element_type.byte_width() == self.element_width
+                        && self.parameter_types[position].pointee_type() == Some(*element_type)
                         && matches!(pointer, CValue::Pointer(_))
                 }
                 PureFunctionArgument::Value(CValue::Int32(_)) => {
@@ -444,24 +452,27 @@ impl BodyChecker<'_> {
     }
 
     /// Whether `pointer` is exactly the array parameter at the fold's item:
-    /// `v + 4 * k`, matched by the item's identity rather than its spelling.
+    /// `v + element_width * k`, matched by the item's identity rather than
+    /// its spelling.
     fn is_exact_array_cell(&self, pointer: &SpecExpression) -> bool {
         let SpecExpression::PointerOffset {
             pointer,
             elements,
-            byte_width: 4,
+            byte_width,
         } = pointer
         else {
             return false;
         };
-        matches!(
-            pointer.as_ref(),
-            SpecExpression::CExpression(CExpression::Variable(name)) if name == self.array_name
-        ) && matches!(
-            elements.as_ref(),
-            SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)))
-                if *variable == self.item
-        )
+        *byte_width == self.element_type.byte_width()
+            && matches!(
+                pointer.as_ref(),
+                SpecExpression::CExpression(CExpression::Variable(name)) if name == self.array_name
+            )
+            && matches!(
+                elements.as_ref(),
+                SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)))
+                    if *variable == self.item
+            )
     }
 
     fn machine(&self, expression: &SpecExpression, scope: Scope) -> Result<(), FoldReadDecline> {
@@ -492,10 +503,13 @@ impl BodyChecker<'_> {
                 if *memory != SpecMemory::Current {
                     return Err(Self::unsupported("a read at another program point"));
                 }
-                if *value_type != CType::Int32 || !self.is_exact_array_cell(pointer) {
+                if *value_type != self.element_type || !self.is_exact_array_cell(pointer) {
                     return Err(FoldReadDecline::ReadOutsideFoldIndex);
                 }
                 Ok(())
+            }
+            SpecExpression::Cast(inner, CType::Int32) if self.element_type == CType::UInt8 => {
+                self.machine(inner, scope)
             }
             SpecExpression::Add(left, right)
             | SpecExpression::Subtract(left, right)

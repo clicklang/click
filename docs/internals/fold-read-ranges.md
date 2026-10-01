@@ -1,6 +1,6 @@
 # Fold read ranges
 
-An `Integer`-valued range-fold function over an `int32[]` argument is an
+An `Integer`-valued range-fold function over an `int32[]` or `uint8[]` argument is an
 opaque application, and its array argument names a whole-block snapshot. A
 fact about `unmarked(visited, 0, i)` would therefore die at `visited[i] = 1`,
 even though the fold reads only the cells below `i`. Click bridges such a
@@ -62,7 +62,7 @@ allocation liveness (`mdtests/fold_read_transport_grants_no_c_read.md`).
 The accepted shape is an `Integer`-valued, `int32`-indexed top-level range
 fold:
 
-- One `int32[]` parameter is read, and every read is exactly that parameter
+- One `int32[]` or `uint8[]` parameter is read, and every read is exactly that parameter
   at the fold's own item binder (binder identity, not spelling); repeated
   reads, including in both arms of a conditional, are allowed.
 - The endpoints are `int32` scalar parameters or literals, and the initial
@@ -148,3 +148,12 @@ Work follows [Verification efficiency](verification-efficiency.md): summary
 checking is linear in the selected body, instantiation is proportional to its
 small template, indexed lookup ignores unrelated facts, and work is
 independent of the numeric interval length.
+
+## Byte-array folds
+
+The same checked summary accepts a single `uint8[]` parameter. Its body must
+read a `uint8` cell at exactly the fold index with stride one; scalar widening
+to `int32` keeps that read support. Instantiation checks the declared element
+type, and framing uses one-byte intervals. A four-byte read or stride under a
+byte-array declaration is refused. This supports the Rust byte-sum fixture
+without changing snapshot, separation, or access-authority rules.

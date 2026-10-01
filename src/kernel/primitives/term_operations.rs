@@ -1391,14 +1391,27 @@ impl Bitvector32Term {
     pub(crate) fn uint32_from_64(value: Self) -> Self {
         // Children are already constructed bottom-up. Only inspect the root:
         // rescanning the operand here makes repeated conversions quadratic.
+        fn root(value: Bitvector32Term) -> Bitvector32Term {
+            match value {
+                Bitvector32Term::UInt64Constant(bits) => Bitvector32Term::Constant(bits as u32),
+                Bitvector32Term::Int64Constant(bits) => Bitvector32Term::Constant(bits as u32),
+                Bitvector32Term::UInt64From32(value)
+                | Bitvector32Term::Int64From32(value)
+                | Bitvector32Term::Int64FromUInt32(value)
+                | Bitvector32Term::UInt64FromInt32(value) => *value,
+                value => Bitvector32Term::UInt32From64(Box::new(value)),
+            }
+        }
         match value {
-            Self::UInt64Constant(bits) => Self::Constant(bits as u32),
-            Self::Int64Constant(bits) => Self::Constant(bits as u32),
-            Self::UInt64From32(value)
-            | Self::Int64From32(value)
-            | Self::Int64FromUInt32(value)
-            | Self::UInt64FromInt32(value) => *value,
-            value => Self::UInt32From64(Box::new(value)),
+            Self::UInt64Add(a, b) if b.uint64_as_const().is_some() => Self::add(
+                root(*a),
+                Self::Constant(b.uint64_as_const().unwrap() as u32),
+            ),
+            Self::UInt64Add(a, b) if a.uint64_as_const().is_some() => Self::add(
+                Self::Constant(a.uint64_as_const().unwrap() as u32),
+                root(*b),
+            ),
+            value => root(value),
         }
     }
 
@@ -1999,6 +2012,63 @@ impl ConditionTerm {
             (Some(left), Some(right)) => Self::Constant(left >= right),
             _ => Self::Bitvector64SignedGreaterEqual(Box::new(left), Box::new(right)),
         }
+    }
+
+    /// Checked full-width guards for truncated index bounds and order.
+    /// Order requires the upper endpoint to fit in the signed word range;
+    /// low-word equality follows from exact full-width equality.
+    pub(crate) fn uint64_index_order_guards(&self) -> Option<[Self; 2]> {
+        fn wide(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+            match term {
+                Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
+                Bitvector32Term::Add(left, right) if right.as_const().is_some() => {
+                    let Bitvector32Term::UInt32From64(value) = left.as_ref() else {
+                        return None;
+                    };
+                    Some(Bitvector32Term::uint64_add(
+                        value.as_ref().clone(),
+                        Bitvector32Term::UInt64Constant(right.as_const()? as u64),
+                    ))
+                }
+                _ => None,
+            }
+        }
+        if let Self::Bitvector32Equal(a, b) = self {
+            return Some([Self::int64_equal(wide(a)?, wide(b)?), Self::Constant(true)]);
+        }
+        let (a, b, strict) = match self {
+            Self::Bitvector32SignedLessThan(a, b) => (a, b, true),
+            Self::Bitvector32SignedGreaterThan(a, b) => (b, a, true),
+            Self::Bitvector32SignedLessEqual(a, b) => (a, b, false),
+            Self::Bitvector32SignedGreaterEqual(a, b) => (b, a, false),
+            _ => return None,
+        };
+        if !strict && a.as_const() == Some(0) {
+            let b = wide(b)?;
+            return Some([
+                Self::uint64_less_equal(b, Bitvector32Term::UInt64Constant(i32::MAX as u64)),
+                Self::Constant(true),
+            ]);
+        }
+        let a = wide(a)?;
+        if !strict
+            && let Some(limit) = b.as_const()
+            && limit <= i32::MAX as u32
+        {
+            return Some([
+                Self::uint64_less_equal(a.clone(), Bitvector32Term::UInt64Constant(limit as u64)),
+                Self::Constant(true),
+            ]);
+        }
+        let b = wide(b)?;
+        Some([
+            if strict {
+                Self::uint64_less_than(a.clone(), b.clone())
+            } else {
+                Self::uint64_less_equal(a.clone(), b.clone())
+            },
+            Self::uint64_less_equal(b.clone(), Bitvector32Term::UInt64Constant(i32::MAX as u64)),
+        ])
     }
 
     /// A sufficient guard for two non-wrapping unsigned successor rules.

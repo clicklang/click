@@ -133,7 +133,13 @@ shared invariants, resource clauses, and decreasing measures, with scalar
 accumulation, full-width byte-slice iteration, nested loops, panic rejection,
 and checked expansion regressions. Guards currently exclude calls, indexing,
 and arithmetic; iterator/control-flow coverage and owned-value MIR loops
-remain outstanding.
+remain outstanding. The [byte-sum fixture](../examples/rust-byte-sum/README.md)
+now proves an unchanged loop summing arbitrary bytes in slices of length
+`0..=1000`, using an exact mathematical prefix fold, a full-width `usize`
+counter, intermediate overflow bounds, and a decreasing measure. False sums,
+incorrect invariants, missing bounds, and expanded proofs have regressions.
+This is synthetic functional accumulation; the pinned checksum libraries
+remain unverified.
 By-value array parameters/returns, non-byte slices, crate extraction, and
 iterator loops remain outstanding. Neither library is verified
 by this assessment.
