@@ -429,6 +429,29 @@ The call returns the same authority and the same concrete member, preserving
 the caller's total and any members it retained. Nested helper calls use the
 same checked transfer. The helper receives no population creation permission.
 
+A member can own a private memory body independently of population authority:
+
+<!-- verified-example: mdtests/authority_wildcard_private_body_helper.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+int32 update(int32* pool, int32* p) {
+    owns slot(pool, p);
+    ensures result == 7;
+    ensures p[0] == 7;
+}
+```
+
+`open(slot(pool, p)) { ... }` exposes that member's memory and requires the
+same body to be restored on close. Neither step changes membership. The
+helper needs the member, while its caller can retain authority and other
+members. Two members can own disjoint cells of the same allocation, and
+nested opens keep their ownership separate. Owning one member grants no
+access to another member's cells and no population count observation.
+Creating or consuming a member still requires authority and transfers its
+private memory into or out of the member. Merely having a scalar local does
+not supply separable memory ownership to package into a member.
+This checkpoint covers owned memory ranges without member facts or proof fields.
+
 An authority-only helper input can also create one field-free member:
 
 <!-- verified-example: mdtests/authority_wildcard_create_helper.md -->

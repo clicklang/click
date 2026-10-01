@@ -453,8 +453,14 @@ consume their one exact entry member using ordinary `consumes` and `unfold`,
 including nested calls. Their arbitrary total falls by one while caller-retained
 members remain owned. Return certification requires the actual checked decrement,
 and regressions reject missing consumption, wrong identity or pool, missing
-authority, and reuse after the call. Identified proof fields, exact subsets, and bounded-pool
-migration remain separate subsequent changes.
+authority, and reuse after the call.
+Private memory bodies also support nested opens and member-only helpers: two
+slots can own disjoint cells in one allocation, and changing one preserves
+the other's value and the population total. Opening and closing require the
+member, not authority; creation and consumption still require authority.
+Regressions reject missing member or body ownership, overlapping bodies, and
+member-only count observations. Identified proof fields, exact subsets, and
+bounded-pool migration remain separate subsequent changes.
 
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and a checked transfer between two authorities. Count
