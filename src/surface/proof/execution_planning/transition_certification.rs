@@ -753,17 +753,23 @@ fn certified_transitions_from_execution(
             }
         )
     });
+    let feasible = |path: &&crate::kernel::SymbolicCExecutionPath| {
+        !path.facts().iter().any(|path_fact| {
+            pure_facts
+                .iter()
+                .any(|available| exact_facts_directly_conflict(available, path_fact.proposition()))
+        })
+    };
+    // Several feasible paths are the cases of one statement. Each case's own
+    // path facts are what select it: a split on them supplies them to the
+    // case, so a theorem premise that is one of them is that case's
+    // assumption, never something the ambient facts must derive.
+    let paths_are_cases = execution.paths().iter().filter(feasible).count() > 1;
     let transitions = execution
         .paths()
         .iter()
         .enumerate()
-        .filter(|(_, path)| {
-            !path.facts().iter().any(|path_fact| {
-                pure_facts.iter().any(|available| {
-                    exact_facts_directly_conflict(available, path_fact.proposition())
-                })
-            })
-        })
+        .filter(|(_, path)| feasible(path))
         .map(|(path_index, path)| {
             let mut loop_invariant_correspondence = loop_rule.as_ref()
                 .map(|rule| rule.loop_invariant_correspondence(path_index).to_vec())
@@ -823,6 +829,17 @@ fn certified_transitions_from_execution(
                 let mut seen_prerequisites = BTreeSet::new();
                 let mut theorem_context = pure_facts.to_vec();
                 for premise in theorem_implication_premises(path.theorem()) {
+                    if paths_are_cases
+                        && path
+                            .facts()
+                            .iter()
+                            .any(|fact| fact.proposition() == &premise)
+                    {
+                        if !theorem_context.contains(&premise) {
+                            theorem_context.push(premise);
+                        }
+                        continue;
+                    }
                     // An ambient condition the theorem merely carried along is
                     // already checkable as itself; recording an identity
                     // derivation for it would advertise it as something the

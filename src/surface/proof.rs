@@ -152,9 +152,11 @@ pub(in crate::surface::proof) enum ConstructionEvidence {
     CertifiedPathAssumption {
         occurrence: usize,
         condition: ClickProposition,
+        /// The spelling to use when `condition` does not lower to one of
+        /// `facts` at the recorded point.
+        fallback_condition: Option<ClickProposition>,
         value: bool,
         facts: Vec<Proposition>,
-        theorem: Theorem,
     },
 }
 
