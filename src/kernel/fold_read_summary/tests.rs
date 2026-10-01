@@ -1073,3 +1073,102 @@ fn an_offset_pointer_is_read_by_its_exact_byte_offset() {
     let new = application(&after, &v, bv(LO), bv(HI));
     assert!(is_store_refusal(&frame(&old, &new, &[le(bv(LO), index)])));
 }
+
+#[test]
+fn byte_fold_summary_checks_the_read_type_and_stride() {
+    let mut parameters = parameters();
+    parameters[0].1 = CType::UInt8Pointer;
+    let read = |width, value_type| SpecExpression::MemoryLoad {
+        memory: SpecMemory::Current,
+        pointer: Box::new(SpecExpression::PointerOffset {
+            pointer: Box::new(name("v")),
+            elements: Box::new(item()),
+            byte_width: width,
+        }),
+        value_type,
+    };
+    for (width, value_type, accepted) in [
+        (1, CType::UInt8, true),
+        (4, CType::UInt8, false),
+        (1, CType::Int32, false),
+    ] {
+        let body = fold(
+            name("lo"),
+            name("hi"),
+            zero(),
+            SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Cast(
+                Box::new(read(width, value_type)),
+                CType::Int32,
+            ))),
+        );
+        let result = CheckedFoldReadSummary::check(&CFoldReadDefinition::new(
+            "byte_sum",
+            parameters.clone(),
+            body,
+        ));
+        assert_eq!(result.is_ok(), accepted);
+        if let Ok(summary) = result {
+            assert_eq!(summary.element_width, 1);
+        }
+    }
+}
+
+#[test]
+fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
+    let _session = VerificationSession::enter();
+    let mut parameters = parameters();
+    parameters[0].1 = CType::UInt8Pointer;
+    let read = SpecExpression::MemoryLoad {
+        memory: SpecMemory::Current,
+        pointer: Box::new(SpecExpression::PointerOffset {
+            pointer: Box::new(name("v")),
+            elements: Box::new(item()),
+            byte_width: 1,
+        }),
+        value_type: CType::UInt8,
+    };
+    register_fold_read_definition(CFoldReadDefinition::new(
+        "byte_sum",
+        parameters,
+        fold(
+            name("lo"),
+            name("hi"),
+            zero(),
+            SpecIntegerExpression::FromMachine(Box::new(read)),
+        ),
+    ));
+    let base = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(bv(V), 1),
+    };
+    let at = |memory: &CMemory, element_type| {
+        SharedIntegerApplication::intern(
+            "byte_sum".into(),
+            vec![
+                PureFunctionArgument::ArrayRef {
+                    memory: memory.clone(),
+                    pointer: CValue::typed_pointer(base.clone(), CType::UInt8Pointer),
+                    element_type,
+                },
+                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Constant(2))),
+            ],
+        )
+    };
+    let before = CMemory::new();
+    let old = at(&before, CType::UInt8);
+    let summary = registered_fold_read_summary("byte_sum").unwrap();
+    assert!(summary.instantiate(&at(&before, CType::Int32)).is_none());
+    for (offset, outside) in [(0, false), (1, false), (2, true)] {
+        let after = before.clone().store(
+            byte_offset(&base, offset),
+            CValue::UInt8(Bitvector32Term::Constant(7)),
+        );
+        let result = frame(&old, &at(&after, CType::UInt8), &[]);
+        if outside {
+            assert_eq!(result, Ok(1));
+        } else {
+            assert!(is_store_refusal(&result));
+        }
+    }
+}

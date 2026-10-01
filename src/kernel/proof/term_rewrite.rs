@@ -3555,6 +3555,18 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
+        if let Some(guards) = result.uint64_index_order_guards() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if let Some(guard) = result.uint64_successor_guard() {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.push(guard.clone());
@@ -3753,9 +3765,7 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::UInt64From32(v) => {
                 Bitvector32Term::UInt64From32(Box::new(self.bits(v)))
             }
-            Bitvector32Term::UInt32From64(v) => {
-                Bitvector32Term::UInt32From64(Box::new(self.bits(v)))
-            }
+            Bitvector32Term::UInt32From64(v) => Bitvector32Term::uint32_from_64(self.bits(v)),
             Bitvector32Term::Int64FromUInt32(v) => {
                 Bitvector32Term::Int64FromUInt32(Box::new(self.bits(v)))
             }

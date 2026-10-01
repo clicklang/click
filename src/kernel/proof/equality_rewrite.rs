@@ -1590,8 +1590,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     // A mathematical observation of a machine value is still congruent under
     // a checked equality for that machine value.  Keep this bridge narrow:
-    // only the root machine observation and Int32 range-fold endpoints are
-    // exposed, so arbitrary Integer arithmetic does not acquire a new
+    // only root machine observations, scalar application arguments, and
+    // Int32 range-fold endpoints are exposed, so Integer arithmetic has no new
     // rewrite/search path. Re-interning through `from_machine` also folds a
     // rewritten constant to the ordinary mathematical constant while
     // retaining the carrier when it remains symbolic.
@@ -1611,6 +1611,37 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(machine.ty(), value))
                     })
                     .into()
+            }
+            IntegerTerm::PureFunctionApplication(application) => {
+                // Rewrite scalar arguments, preserving captured array memory
+                // and its element type. No snapshot contents are traversed.
+                let arguments = application
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        let value = match argument {
+                            PureFunctionArgument::Value(CValue::Int32(value)) => {
+                                CValue::Int32(rewrite_term(value, from, to))
+                            }
+                            PureFunctionArgument::Value(CValue::UInt32(value)) => {
+                                CValue::UInt32(rewrite_term(value, from, to))
+                            }
+                            PureFunctionArgument::Value(CValue::Int64(value)) => {
+                                CValue::Int64(rewrite_term(value, from, to))
+                            }
+                            PureFunctionArgument::Value(CValue::UInt64(value)) => {
+                                CValue::UInt64(rewrite_term(value, from, to))
+                            }
+                            _ => return argument.clone(),
+                        };
+                        PureFunctionArgument::Value(value)
+                    })
+                    .collect();
+                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                    application.name().to_string(),
+                    arguments,
+                ))
+                .into()
             }
             IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Int32 { start, end },
@@ -2143,5 +2174,67 @@ mod tests {
             costs.push(work);
         }
         assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+    }
+    #[test]
+    fn rewrite_integer_application_endpoint_keeps_byte_snapshot_and_ignores_its_contents() {
+        let index = Bitvector32Term::Variable(Variable(47));
+        let replacement = Bitvector32Term::Constant(9);
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::equal(index.clone(), replacement.clone()),
+            true,
+        );
+        let mut costs = Vec::new();
+        for size in [16u64, 64, 256, 1024] {
+            let mut memory = CMemory::new();
+            for i in 0..size {
+                memory = memory.store(
+                    Pointer::symbolic(Variable(300000 + i)),
+                    CValue::Int32(Bitvector32Term::Constant(i as u32)),
+                );
+            }
+            let array = PureFunctionArgument::ArrayRef {
+                memory,
+                pointer: CValue::typed_pointer(
+                    Pointer::symbolic(Variable(48)),
+                    CType::UInt8Pointer,
+                ),
+                element_type: CType::UInt8,
+            };
+            let application = |endpoint| {
+                IntegerTerm::PureFunctionApplication(SharedIntegerApplication::intern(
+                    "prefix".into(),
+                    vec![
+                        array.clone(),
+                        PureFunctionArgument::Value(CValue::Int32(endpoint)),
+                    ],
+                ))
+            };
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    application(index.clone()),
+                    application(replacement.clone()),
+                ),
+                true,
+            );
+            let expected = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(
+                    application(replacement.clone()),
+                    application(replacement.clone()),
+                ),
+                true,
+            );
+            let facts = ProofFacts::from_ordered(std::slice::from_ref(&equality));
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts
+                    .check_equality_rewrite(&goal, &equality)
+                    .map(|checked| checked.proposition().clone())
+            });
+            assert_eq!(result.unwrap(), expected);
+            costs.push(work);
+        }
+        assert!(
+            costs[0] > 0 && costs.iter().all(|work| *work == costs[0]),
+            "{costs:?}"
+        );
     }
 }

@@ -258,6 +258,21 @@ pub(crate) fn normalize_using_conditions(
         &facts.assumptions().equality_graph,
     )
     .proposition(goal);
+    // Check constant uint64 upper bounds from the cited order edges only.
+    // Construct this index once for this atomic query; no ambient scan or
+    // per-expression reconstruction is involved.
+    if let Some((condition, true)) = crate::kernel::spec::proposition_as_single_condition(&reduced)
+        && matches!(&condition, ConditionTerm::Bitvector64UnsignedLessEqual(_, right) if right.uint64_as_const().is_some())
+    {
+        let mut selected = PureFactContext::new();
+        for (condition, value) in &conditions {
+            crate::instrumentation::record_deterministic_work(1);
+            selected = selected.assume_condition(condition.clone(), *value);
+        }
+        if selected.decide(&condition) == Some(true) {
+            return Ok(());
+        }
+    }
     normalizes_context_free_leaf(&reduced)
         .then_some(())
         .ok_or(ConditionalNormalizationError::DoesNotNormalize)
@@ -2688,6 +2703,93 @@ mod uint64_loop_tests {
             normalize_using_conditions(&successor, &[guard], &missing),
             Err(ConditionalNormalizationError::UnavailablePremise(0))
         ));
+    }
+
+    #[test]
+    fn uint64_truncation_certificates_require_full_width_bounds() {
+        let i = Bitvector32Term::Variable(Variable(981011));
+        let n = Bitvector32Term::Variable(Variable(981012));
+        let low_i = Bitvector32Term::uint32_from_64(i.clone());
+        let low_n = Bitvector32Term::uint32_from_64(n.clone());
+        let guard =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(
+                n.clone(),
+                Bitvector32Term::UInt64Constant(i32::MAX as u64),
+            ),
+            true,
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(low_i.clone(), low_n.clone()),
+            true,
+        );
+        let mut samples = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut available = vec![guard.clone(), bound.clone()];
+            available.extend((0..size).map(|k| {
+                Proposition::ConditionIs(
+                    ConditionTerm::uint64_less_equal(
+                        Bitvector32Term::Variable(Variable(982000 + k)),
+                        Bitvector32Term::UInt64Constant(1000),
+                    ),
+                    true,
+                )
+            }));
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&available);
+            let premises = [guard.clone(), bound.clone()];
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &premises, &facts)
+            });
+            result.unwrap();
+            samples.push(work);
+            assert!(normalize_using_conditions(&goal, &premises[..1], &facts).is_err());
+            assert!(normalize_using_conditions(&goal, &premises[1..], &facts).is_err());
+        }
+        assert!(
+            samples[0] > 0 && samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+        let too_wide = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(
+                n.clone(),
+                Bitvector32Term::UInt64Constant(1u64 << 32),
+            ),
+            true,
+        );
+        let facts =
+            crate::kernel::proof::ProofFacts::from_ordered(&[guard.clone(), too_wide.clone()]);
+        assert!(normalize_using_conditions(&goal, &[guard, too_wide], &facts).is_err());
+
+        let full_equal = Proposition::ConditionIs(ConditionTerm::int64_equal(i.clone(), n), true);
+        let low_equal = Proposition::ConditionIs(ConditionTerm::equal(low_i.clone(), low_n), true);
+        let facts =
+            crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&full_equal));
+        normalize_using_conditions(&low_equal, &[full_equal], &facts).unwrap();
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::uint64_less_equal(i.clone(), Bitvector32Term::UInt64Constant(1000)),
+            true,
+        );
+        let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&bound));
+        for goal in [
+            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), low_i.clone()),
+            ConditionTerm::signed_less_equal(low_i, Bitvector32Term::Constant(1000)),
+        ] {
+            // Lower-bound certificates need the explicit signed-range guard.
+            let signed_bound = Proposition::ConditionIs(
+                ConditionTerm::uint64_less_equal(
+                    i.clone(),
+                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                ),
+                true,
+            );
+            normalize_using_conditions(&signed_bound, std::slice::from_ref(&bound), &facts)
+                .unwrap();
+            let premises = [bound.clone(), signed_bound];
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+            normalize_using_conditions(&Proposition::ConditionIs(goal, true), &premises, &facts)
+                .unwrap();
+        }
     }
 
     #[test]
