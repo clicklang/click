@@ -850,6 +850,104 @@ mod call_havoc_union_view_tests {
 }
 
 #[cfg(test)]
+mod forget_cached_values_tests {
+    use super::*;
+
+    fn int32_view(pointer: &Pointer, value: u32) -> (Pointer, CType, CValue) {
+        (
+            pointer.clone(),
+            CType::Int32,
+            CValue::Int32(Bitvector32Term::Constant(value)),
+        )
+    }
+
+    fn zeroed_heap_with_cell() -> (CMemory, Pointer) {
+        let base = Pointer {
+            block: PointerBlock::Heap(944_100),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new().with_block(base.block.clone(), 8);
+        let heap = std::sync::Arc::make_mut(&mut memory.heap);
+        heap.live_allocations
+            .insert(base.clone(), Bitvector32Term::Constant(8));
+        heap.zeroed_allocations.insert(base.clone());
+        let memory = memory.store(base.clone(), int32(9));
+        (memory, base)
+    }
+
+    /// The loop head forgets a typed union view exactly as it forgets a
+    /// cell, unless the view's storage is preserved.
+    #[test]
+    fn loop_havoc_drops_union_views_outside_preserved_blocks() {
+        let written = Pointer {
+            block: "global:loop-union".into(),
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        let preserved = Pointer {
+            block: "local:loop-union-kept".into(),
+            offset: PointerOffsetTerm::Constant(4),
+        };
+        let before = CMemory::new()
+            .with_block(written.block.clone(), 12)
+            .with_block(preserved.block.clone(), 12)
+            .store_union_views(written.clone(), 8, vec![int32_view(&written, 3)])
+            .store_union_views(preserved.clone(), 8, vec![int32_view(&preserved, 5)]);
+        let after = before.with_loop_memory_havoc_preserving_loans(
+            Variable(944_101),
+            &BTreeSet::from([preserved.block.clone()]),
+            None,
+            None,
+        );
+        assert_eq!(after.known_union_value(&written, CType::Int32), None);
+        assert_eq!(
+            after.known_union_value(&preserved, CType::Int32),
+            Some(CValue::Int32(Bitvector32Term::Constant(5)))
+        );
+    }
+
+    /// A zero reading answers for the bytes no cell covers, so the loop
+    /// head that forgets a cell written over the zeros forgets the reading
+    /// too: otherwise the load after the loop reads zero, not the value.
+    #[test]
+    fn loop_havoc_drops_the_zero_reading_under_a_forgotten_cell() {
+        let (before, base) = zeroed_heap_with_cell();
+        assert!(before.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        let after = before.with_loop_memory_havoc_preserving_loans(
+            Variable(944_102),
+            &BTreeSet::new(),
+            None,
+            None,
+        );
+        assert_eq!(after.known_value(&base), None);
+        assert!(!after.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+    }
+
+    /// An interface join whose arms agree on a zero reading still drops it
+    /// when one arm caches a value written over the zeros, and both arms'
+    /// abstractions agree on that.
+    #[test]
+    fn interface_join_drops_a_zero_reading_one_arm_wrote_over() {
+        let (wrote, base) = zeroed_heap_with_cell();
+        let mut untouched = CMemory::new().with_block(base.block.clone(), 8);
+        let heap = std::sync::Arc::make_mut(&mut untouched.heap);
+        heap.live_allocations
+            .insert(base.clone(), Bitvector32Term::Constant(8));
+        heap.zeroed_allocations.insert(base.clone());
+        let arms = [&wrote, &untouched];
+        let from_wrote = wrote
+            .clone()
+            .with_interface_memory_havoc(Variable(944_103), &BTreeSet::new(), &arms)
+            .expect("joinable arms");
+        let from_untouched = untouched
+            .clone()
+            .with_interface_memory_havoc(Variable(944_103), &BTreeSet::new(), &arms)
+            .expect("joinable arms");
+        assert!(!from_wrote.is_zeroed_heap_address(&base, 4, &PureFactContext::new()));
+        assert_eq!(from_wrote.heap, from_untouched.heap);
+    }
+}
+
+#[cfg(test)]
 mod havoc_identity_tests {
     use super::*;
 
@@ -1828,14 +1926,10 @@ fn call_write_set_marker(
 /// proved (`docs/internals/stable-views.md`).
 fn loan_preserving_havoc_keeps_cell(
     pointer: &Pointer,
-    value: &CValue,
-    union_widths: &BTreeMap<Pointer, u32>,
+    byte_width: u32,
     preserved_blocks: &BTreeSet<PointerBlock>,
     ledger: Option<&crate::kernel::loans::LoanLedger>,
 ) -> bool {
-    let byte_width = value
-        .byte_width()
-        .max(union_widths.get(pointer).copied().unwrap_or(0));
     preserved_blocks.contains(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
@@ -2048,10 +2142,9 @@ impl CMemory {
         // Only the retired block's own cells go: one key range each, and a
         // run of the block (a zero-filled automatic array) as a whole.
         let own = AliasCandidates::only_block(block);
-        std::sync::Arc::make_mut(&mut memory.cells).retain_candidates_outside_by(
-            &own,
-            &[],
-            |_, _| false,
+        memory.forget_cached_values(
+            ForgetScope::candidates(&own),
+            |_, _| CachedValueFate::Retired,
             |_| {
                 (
                     SlotSet::Nothing,
@@ -2059,9 +2152,6 @@ impl CMemory {
                 )
             },
         );
-        own.retain_map(std::sync::Arc::make_mut(&mut memory.union_cells), |_, _| {
-            false
-        });
         std::sync::Arc::make_mut(&mut memory.forgotten)
             .ended_local_blocks
             .insert(block.clone());
@@ -2152,9 +2242,19 @@ impl CMemory {
         });
         heap.initialized
             .retain_candidates(&candidates, |cell, _| !freed_within(cell));
-        std::sync::Arc::make_mut(&mut self.cells).retain_candidates(&candidates, |cell, _| {
-            !aliased_blocks.contains(&cell.block) && !freed_within(cell)
-        });
+        // Cached values go with the storage, union views as well as cells:
+        // nothing may answer a load of freed bytes, under any spelling.
+        self.forget_cached_values(
+            ForgetScope::candidates(&candidates),
+            |cell, _| {
+                if aliased_blocks.contains(&cell.block) || freed_within(cell) {
+                    CachedValueFate::Retired
+                } else {
+                    CachedValueFate::Kept
+                }
+            },
+            ask_every_slot,
+        );
         if let Some(base) = base {
             record_c_memory_derivation(
                 &mut self,
@@ -2405,11 +2505,16 @@ impl CMemory {
         });
         heap.initialized
             .retain_candidates(&candidates, |candidate, _| !retired_cell(candidate));
-        std::sync::Arc::make_mut(&mut self.cells)
-            .retain_candidates(&candidates, |candidate, _| !retired_cell(candidate));
-        candidates.retain_map(
-            std::sync::Arc::make_mut(&mut self.union_cells),
-            |(candidate, _), _| !retired_cell(candidate),
+        self.forget_cached_values(
+            ForgetScope::candidates(&candidates),
+            |candidate, _| {
+                if retired_cell(candidate) {
+                    CachedValueFate::Retired
+                } else {
+                    CachedValueFate::Kept
+                }
+            },
+            ask_every_slot,
         );
         for block in &retired_blocks {
             if *block != PointerBlock::ExternalArgument {
@@ -2645,43 +2750,24 @@ impl CMemory {
         ledger: Option<&crate::kernel::loans::LoanLedger>,
     ) -> Self {
         // A loop body that may write memory can clobber, through some
-        // pointer, any cell it can reach. Drop concrete cells outside the
-        // preserved (scalar stack local) blocks so loop-head and post-loop
-        // reads do not observe stale pre-loop values. A checked footprint is
-        // retained on the derivation edge for disjoint-load transport; the
-        // marker block still distinguishes this havoc from ordinary memory.
+        // pointer, any value it can reach. Drop cached values (cells and
+        // typed union views alike) outside the preserved (scalar stack local)
+        // blocks so loop-head and post-loop reads do not observe stale
+        // pre-loop values. A checked footprint is retained on the derivation
+        // edge for disjoint-load transport; the marker block still
+        // distinguishes this havoc from ordinary memory. The body can only
+        // initialize more, so every automatic value that goes stays
+        // initialized at the head and after the loop.
         let base = Some(intern_derivation_base(&mut self));
-        // Whole-map by design, unlike the per-access rules that visit only
-        // `AliasCandidates`: the body may write through any pointer it can
-        // reach, so every cell is a candidate. The work is the cells dropped
-        // plus the ones something else keeps (declared locals and
-        // loan-protected bytes), charged by `retain`.
-        let union_widths = union_overlay_widths(&self);
-        // The body can only initialize more: every automatic cell whose value
-        // goes stays initialized at the head and after the loop.
-        let mut dropped_initialized = Vec::new();
-        let dropped_run_slots = std::sync::Arc::make_mut(&mut self.cells).retain_by(
-            |pointer, value| {
-                let kept = loan_preserving_havoc_keeps_cell(
-                    pointer,
-                    value,
-                    &union_widths,
-                    preserved_blocks,
-                    ledger,
-                );
-                if !kept {
-                    push_dropped_initialized(
-                        &mut dropped_initialized,
-                        (pointer.clone(), value.byte_width()),
-                    );
-                }
-                kept
-            },
-            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
-        );
-        self.record_dropped_local_cells(&dropped_initialized);
-        // A run's slots are cells too, dropped here as a whole run.
-        self.record_dropped_local_run_slots(&dropped_run_slots);
+        self.forget_loan_unprotected_values(preserved_blocks, ledger);
+        // The body may also have written bytes no value was cached for, and
+        // a zero reading answers for exactly those.
+        match mutable_ranges {
+            Some(ranges) => {
+                self.forget_zero_readings_under(ranges.iter().map(|range| &range.base().block))
+            }
+            None => self.forget_every_zero_reading(),
+        }
         std::sync::Arc::make_mut(&mut self.blocks).insert(
             format!("havoc:{}", variable.0).into(),
             CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
@@ -2697,6 +2783,55 @@ impl CMemory {
             );
         }
         self
+    }
+
+    /// Forgets every cached value nothing protects from a write through an
+    /// arbitrary reachable pointer: the one rule of the loop head and of the
+    /// interface join ([`loan_preserving_havoc_keeps_cell`]), asked of cells
+    /// and typed union views alike. Whole-map by design, unlike the
+    /// per-access rules that visit only `AliasCandidates`: the work is the
+    /// values dropped plus the ones something keeps.
+    fn forget_loan_unprotected_values(
+        &mut self,
+        preserved_blocks: &BTreeSet<PointerBlock>,
+        ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ) {
+        let union_widths = union_overlay_widths(self);
+        self.forget_cached_values(
+            ForgetScope::Everywhere,
+            |pointer, value| {
+                // A view is asked by its own width; a cell by the widest
+                // overlay at its address as well, so the loan question
+                // covers every byte it can be read as.
+                let width = match value {
+                    CachedValue::Cell(_) => union_widths.get(pointer).copied().unwrap_or(0),
+                    CachedValue::UnionView(..) => 0,
+                };
+                if loan_preserving_havoc_keeps_cell(
+                    pointer,
+                    value.byte_width().max(width),
+                    preserved_blocks,
+                    ledger,
+                ) {
+                    CachedValueFate::Kept
+                } else {
+                    CachedValueFate::Forgotten
+                }
+            },
+            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
+        );
+    }
+
+    /// Drops every zero reading, for a transition that may have written any
+    /// allocation.
+    fn forget_every_zero_reading(&mut self) {
+        if self.heap.zeroed_allocations.len() == 0 && self.heap.zeroed_prefix_allocations.is_empty()
+        {
+            return;
+        }
+        let heap = std::sync::Arc::make_mut(&mut self.heap);
+        heap.zeroed_allocations = SnapshotSet::new();
+        heap.zeroed_prefix_allocations = SnapshotMap::new();
     }
 
     /// Forgets branch-local cell values and constructs the conservative heap
@@ -2881,21 +3016,54 @@ impl CMemory {
         }
 
         // Whole-memory by design: a join merges every sibling's blocks and
-        // heap collections above, and forgets every cell nothing preserves,
-        // exactly as the loop havoc does.
-        let union_widths = union_overlay_widths(&self);
-        std::sync::Arc::make_mut(&mut self.cells).retain_by(
-            |pointer, value| {
-                loan_preserving_havoc_keeps_cell(
+        // heap collections above, and forgets every cached value nothing
+        // preserves, cells and union views alike, exactly as the loop havoc
+        // does. The heap it records along the way is replaced below by the
+        // arms' join, which is the one that decides initialization.
+        self.forget_loan_unprotected_values(preserved_blocks, ledger);
+        // A zero reading is kept only where every arm has it, but an arm can
+        // have it beside a value it wrote over the zeros, and that value is
+        // forgotten here. So a reading goes wherever *any* arm caches a value
+        // the join forgets, which is also what keeps every arm's abstraction
+        // the same one.
+        let forgotten_value_blocks = |memory: &CMemory| {
+            if zeroed_allocations.len() == 0 && zeroed_prefix_allocations.is_empty() {
+                return BTreeSet::new();
+            }
+            let mut blocks = BTreeSet::new();
+            let mut visited = 0usize;
+            let union_widths = union_overlay_widths(memory);
+            for (pointer, value) in memory.cells.logical().iter() {
+                visited += 1;
+                if !loan_preserving_havoc_keeps_cell(
                     pointer,
-                    value,
-                    &union_widths,
+                    value
+                        .byte_width()
+                        .max(union_widths.get(pointer).copied().unwrap_or(0)),
                     preserved_blocks,
                     ledger,
-                )
-            },
-            |run| loan_preserving_havoc_keeps_run(run, preserved_blocks, ledger),
-        );
+                ) {
+                    blocks.insert(pointer.block.clone());
+                }
+            }
+            for ((pointer, c_type), _) in memory.union_cells.iter() {
+                visited += 1;
+                if !loan_preserving_havoc_keeps_cell(
+                    pointer,
+                    c_type.byte_width(),
+                    preserved_blocks,
+                    ledger,
+                ) {
+                    blocks.insert(pointer.block.clone());
+                }
+            }
+            crate::instrumentation::record_deterministic_work(visited);
+            blocks
+        };
+        let forgotten_blocks = sibling_memories
+            .iter()
+            .flat_map(|memory| forgotten_value_blocks(memory))
+            .collect::<BTreeSet<_>>();
         blocks.insert(format!("havoc:{}", variable.0).into(), CBlock::new(0));
         self.blocks = std::sync::Arc::new(blocks);
         std::sync::Arc::make_mut(&mut self.forgotten).ended_local_blocks = ended_local_blocks;
@@ -2910,6 +3078,7 @@ impl CMemory {
             zeroed_pending_allocations,
             pending_reallocations,
         });
+        self.forget_zero_readings_under(forgotten_blocks.iter());
         Ok(self)
     }
 
@@ -2946,62 +3115,34 @@ impl CMemory {
         let base = Some(intern_derivation_base(&mut self));
         let mut flat_hits = Vec::new();
         let candidates = call_havoc_candidates(mutable_ranges);
-        // A callee can only initialize more: the automatic cells whose values
-        // it may overwrite stay initialized.
-        let mut dropped_initialized = Vec::new();
-        std::sync::Arc::make_mut(&mut self.cells).retain_candidates(
-            &candidates,
+        // Cells and typed union views by one rule: a view is the
+        // authoritative answer to an exact typed load, so one the callee may
+        // have overwritten goes exactly as a cell does
+        // (`mdtests/call_havoc_drops_a_union_member_view.md`). A callee can
+        // only initialize more, so the automatic values that go stay
+        // initialized.
+        self.forget_cached_values(
+            ForgetScope::candidates(&candidates),
             |pointer, value| match call_havoc_keeps_cell(
                 pointer,
-                value,
+                value.value(),
                 mutable_ranges,
                 assumptions,
                 kept,
                 preserve_local_slots,
             ) {
-                CallHavocCellRule::Separate => true,
+                CallHavocCellRule::Separate => CachedValueFate::Kept,
                 // The cached value is dropped as before; the edge records
                 // the member that holds it, and a load after the call is
                 // named across the edge at its pre-call value.
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
-                    dropped_initialized.push((pointer.clone(), value.byte_width()));
-                    false
+                    CachedValueFate::Forgotten
                 }
-                CallHavocCellRule::Dropped => {
-                    dropped_initialized.push((pointer.clone(), value.byte_width()));
-                    false
-                }
+                CallHavocCellRule::Dropped => CachedValueFate::Forgotten,
             },
+            ask_every_slot,
         );
-        // A typed union view is a cached value like any other, and it is the
-        // authoritative answer to an exact typed load, so one the callee may
-        // have overwritten must go by the same rule. Keeping it let a load
-        // after the call read the pre-call member
-        // (`mdtests/call_havoc_drops_a_union_member_view.md`).
-        candidates.retain_map(
-            std::sync::Arc::make_mut(&mut self.union_cells),
-            |(pointer, _), value| match call_havoc_keeps_cell(
-                pointer,
-                value,
-                mutable_ranges,
-                assumptions,
-                kept,
-                preserve_local_slots,
-            ) {
-                CallHavocCellRule::Separate => true,
-                CallHavocCellRule::KeptByCaller(range) => {
-                    flat_hits.push(range);
-                    dropped_initialized.push((pointer.clone(), value.byte_width()));
-                    false
-                }
-                CallHavocCellRule::Dropped => {
-                    dropped_initialized.push((pointer.clone(), value.byte_width()));
-                    false
-                }
-            },
-        );
-        self.record_dropped_local_cells(&dropped_initialized);
         let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);
         self.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         std::sync::Arc::make_mut(&mut self.blocks).insert(
@@ -3104,20 +3245,27 @@ impl CMemory {
                 CallHavocCellRule::Separate => {}
                 CallHavocCellRule::KeptByCaller(range) => {
                     flat_hits.push(range);
-                    dropped_initialized.push((key.0.clone(), value.byte_width()));
+                    dropped_initialized.push((key.0.clone(), key.1.byte_width()));
                     dropped_union_cells.push(key);
                 }
                 CallHavocCellRule::Dropped => {
-                    dropped_initialized.push((key.0.clone(), value.byte_width()));
+                    dropped_initialized.push((key.0.clone(), key.1.byte_width()));
                     dropped_union_cells.push(key);
                 }
             }
         }
         crate::instrumentation::record_deterministic_work(visited);
-        // The producer's heap: `before`'s, with the automatic cells it
-        // dropped recorded initialized.
+        // The producer's heap: `before`'s, with the automatic values it
+        // dropped recorded initialized, and without the zero readings under
+        // a dropped value or the write set ([`CMemory::forget_cached_values`]).
         let mut expected = before.clone();
         expected.record_dropped_local_cells(&dropped_initialized);
+        expected.forget_zero_readings_under(
+            dropped_initialized
+                .iter()
+                .map(|(pointer, _)| &pointer.block),
+        );
+        expected.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
         if self.heap != expected.heap {
             return false;
         }
@@ -3887,12 +4035,21 @@ impl CMemory {
         };
         // `overlaps` holds only in the base's own block.
         let own = AliasCandidates::only_block(&base.block);
-        std::sync::Arc::make_mut(&mut memory.cells)
-            .retain_candidates(&own, |pointer, _| !overlaps(pointer));
-        own.retain_map(
-            std::sync::Arc::make_mut(&mut memory.union_cells),
-            |(pointer, _), _| !overlaps(pointer),
+        memory.forget_cached_values(
+            ForgetScope::candidates(&own),
+            |pointer, _| {
+                if overlaps(pointer) {
+                    CachedValueFate::Forgotten
+                } else {
+                    CachedValueFate::Kept
+                }
+            },
+            ask_every_slot,
         );
+        // The field's bytes now hold something the copy cannot name, whether
+        // or not a value was cached for them, so no zero reading answers for
+        // them either.
+        memory.forget_zero_readings_under(std::iter::once(&base.block));
         // The copy wrote the field with no value it can name, from a source
         // whose field it could not check, so its bytes are not known
         // initialized either.
@@ -3947,6 +4104,136 @@ impl CMemory {
         }
         if changed {
             std::sync::Arc::make_mut(&mut self.heap).initialized = record;
+        }
+    }
+
+    /// The one way a memory transition drops cached contents.
+    ///
+    /// A snapshot records what an address holds in more than one place: a
+    /// cell (or one slot of a run), a typed union view keyed by the member
+    /// type it records, and, for `calloc` storage, the zero reading that
+    /// answers for every byte no cached value covers. Each of them is an
+    /// authoritative answer to some load, so a transition that forgets bytes
+    /// has to forget every one of them, or the survivor answers for bytes the
+    /// transition no longer knows. Loop havoc used to drop cells alone: a
+    /// union view written inside the loop survived it, and so did the zero
+    /// reading of an allocation the loop wrote, and both read back the
+    /// pre-loop value (`mdtests/a_loop_that_writes_a_union_member_forgets_its_view.md`,
+    /// `mdtests/a_loop_that_writes_calloc_storage_forgets_its_zero_reading.md`).
+    ///
+    /// So every forgetting transition goes through here. `fate` decides each
+    /// cell and each union view by the same rule; `run_rule` answers for a
+    /// run as a whole, as [`CellStore::retain_candidates_outside_by`] asks.
+    /// What is [`CachedValueFate::Forgotten`] then also loses its zero
+    /// reading, and, in automatic storage, stays recorded initialized (a
+    /// write only ever initializes). A new representation of cached bytes
+    /// belongs in this function, so no transition can miss it.
+    ///
+    /// The slots `run_rule` drops as a whole run are recorded initialized
+    /// where they are automatic ([`Self::record_dropped_local_run_slots`]),
+    /// whatever `fate` would say of them: a dropped slot was written, and a
+    /// caller that retires the storage forgets its record afterwards. A run
+    /// carries no zero reading to lose: it is never seeded where a live
+    /// allocation may lie ([`Self::with_seeded_cells`] and its siblings
+    /// refuse one).
+    ///
+    /// The work is the candidates `scope` admits, which every caller already
+    /// pays for its cells; the union views are asked only when the snapshot
+    /// holds some, and the zero readings only when it holds some. Returns
+    /// whether any value was [`CachedValueFate::Forgotten`].
+    pub(super) fn forget_cached_values(
+        &mut self,
+        scope: ForgetScope<'_>,
+        mut fate: impl FnMut(&Pointer, CachedValue<'_>) -> CachedValueFate,
+        run_rule: impl FnMut(&CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswer),
+    ) -> bool {
+        let mut forgotten_cells = Vec::new();
+        let dropped_run_slots;
+        {
+            let mut keep_cell =
+                |pointer: &Pointer, value: &CValue| match fate(pointer, CachedValue::Cell(value)) {
+                    CachedValueFate::Kept => true,
+                    CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                    CachedValueFate::Forgotten => {
+                        push_dropped_initialized(
+                            &mut forgotten_cells,
+                            (pointer.clone(), value.byte_width()),
+                        );
+                        false
+                    }
+                };
+            let cells = std::sync::Arc::make_mut(&mut self.cells);
+            dropped_run_slots = match scope {
+                ForgetScope::Everywhere => cells.retain_by(&mut keep_cell, run_rule),
+                ForgetScope::Candidates {
+                    candidates,
+                    cells_kept,
+                } => cells.retain_candidates_outside_by(
+                    candidates,
+                    cells_kept,
+                    &mut keep_cell,
+                    run_rule,
+                ),
+            };
+        }
+        if !self.union_cells.is_empty() {
+            let mut keep_view = |(pointer, c_type): &(Pointer, CType), value: &CValue| match fate(
+                pointer,
+                CachedValue::UnionView(*c_type, value),
+            ) {
+                CachedValueFate::Kept => true,
+                CachedValueFate::Overwritten | CachedValueFate::Retired => false,
+                CachedValueFate::Forgotten => {
+                    push_dropped_initialized(
+                        &mut forgotten_cells,
+                        (pointer.clone(), c_type.byte_width()),
+                    );
+                    false
+                }
+            };
+            let union_cells = std::sync::Arc::make_mut(&mut self.union_cells);
+            match scope {
+                ForgetScope::Everywhere => union_cells.retain(&mut keep_view),
+                // A union view is never skipped by `cells_kept`: those ranges
+                // are what the caller showed its *cell* rule keeps, and a
+                // view is asked by its own width.
+                ForgetScope::Candidates { candidates, .. } => {
+                    candidates.retain_map(union_cells, &mut keep_view)
+                }
+            }
+        }
+        self.record_dropped_local_cells(&forgotten_cells);
+        // A run's slots are cells too, dropped by `run_rule` as a whole run
+        // without `fate` being asked; automatic ones stay initialized.
+        self.record_dropped_local_run_slots(&dropped_run_slots);
+        self.forget_zero_readings_under(forgotten_cells.iter().map(|(pointer, _)| &pointer.block));
+        !forgotten_cells.is_empty()
+    }
+
+    /// Drops the zero reading of every allocation that may hold a byte of
+    /// `blocks`: every one in a block not proven distinct from one of them.
+    /// A zero reading answers for the bytes no cached value covers, so once a
+    /// cached value under it is forgotten, the reading would answer zero for
+    /// bytes that held something else. The allocation goes as a whole, as a
+    /// call's write set takes it ([`Self::forget_zeroed_allocations_written_by`]).
+    /// Costs nothing when no allocation reads as zero, and otherwise the
+    /// distinct blocks plus the readings dropped.
+    fn forget_zero_readings_under<'a>(&mut self, blocks: impl Iterator<Item = &'a PointerBlock>) {
+        if self.heap.zeroed_allocations.len() == 0 && self.heap.zeroed_prefix_allocations.is_empty()
+        {
+            return;
+        }
+        let blocks = blocks.collect::<BTreeSet<_>>();
+        for block in blocks {
+            let candidates = AliasCandidates::of_block(block);
+            if !candidates.any_element(&self.heap.zeroed_allocations, |_| true)
+                && !candidates.any_entry(&self.heap.zeroed_prefix_allocations, |_, _| true)
+            {
+                continue;
+            }
+            let heap = std::sync::Arc::make_mut(&mut self.heap);
+            candidates.retain_set(&mut heap.zeroed_allocations, |_| false);
+            candidates.retain_map(&mut heap.zeroed_prefix_allocations, |_, _| false);
         }
     }
 
@@ -4075,19 +4362,13 @@ impl CMemory {
         let written = crate::kernel::reasoning::StoreByteInterval::of(&normalized_pointer, bytes);
         let mut memory = self.clone();
         let base = Some(intern_derivation_base(&mut memory));
-        // Whether any cell went for the *aliasing* reason rather than because
-        // this store overwrites every one of its bytes. An overwritten cell
-        // is stale, not forgotten: the store about to run replaces exactly
-        // what was dropped, so the result still says everything about the
-        // state it describes. A possibly aliasing cell is knowledge the
-        // result no longer has, and that is what has to show in the content.
-        let mut forgot_live_knowledge = false;
-        // Cells of automatic storage whose values go but whose bytes the
-        // store does not rewrite: they stay initialized (see
-        // `record_dropped_local_cells`). A completely overwritten cell is
-        // left out, as it is stale rather than forgotten: the store writes a
-        // cell there again.
-        let mut dropped_initialized = Vec::<(Pointer, u32)>::new();
+        // An overwritten value is stale, not forgotten: the store about to
+        // run replaces exactly what was dropped, so the result still says
+        // everything about the state it describes. A possibly aliasing value,
+        // or one the store writes only part of, is knowledge the result no
+        // longer has: it is `Forgotten`, which is what has to show in the
+        // content, keeps automatic bytes initialized (see
+        // `record_dropped_local_cells`), and ends a zero reading under it.
         // Every cell in a block proven distinct from the written one is kept
         // by each ladder below (its bytes are `Separate` and its address is
         // proven distinct on the first rung), so only the candidates are
@@ -4121,7 +4402,7 @@ impl CMemory {
             bytes,
             assumptions,
         );
-        let mut keep_cell = |cell_pointer: &Pointer, cell_value: &CValue| {
+        let cell_fate = |cell_pointer: &Pointer, cell_value: &CValue| {
             let normalized_cell_pointer = Pointer {
                 block: cell_pointer.block.clone(),
                 offset: normalize_exact_memory_loads_in_pointer_offset(
@@ -4137,14 +4418,13 @@ impl CMemory {
                 // Only a cell the store writes *completely* is stale. One it
                 // writes part of leaves the untouched bytes unrecorded, so the
                 // result knows strictly less than its source and has to say so.
-                let partly = !written.as_ref().is_some_and(|written| {
+                return if written.as_ref().is_some_and(|written| {
                     written.overwrites_completely(&normalized_cell_pointer, cell_value)
-                });
-                forgot_live_knowledge |= partly;
-                if partly {
-                    dropped_initialized.push((cell_pointer.clone(), cell_value.byte_width()));
-                }
-                return false;
+                }) {
+                    CachedValueFate::Overwritten
+                } else {
+                    CachedValueFate::Forgotten
+                };
             }
             if assumptions.access_owned_apart_from_store(
                 &owned_footprint,
@@ -4152,7 +4432,7 @@ impl CMemory {
                 &normalized_cell_pointer,
                 crate::kernel::reasoning::cell_access_byte_width(cell_value),
             ) {
-                return true;
+                return CachedValueFate::Kept;
             }
             let address_inequality_separates_bytes = crate::kernel::reasoning::access_byte_overlap(
                 &normalized_cell_pointer,
@@ -4198,69 +4478,52 @@ impl CMemory {
                     assumptions,
                 )
                 .is_some();
-            forgot_live_knowledge |= !kept;
-            if !kept {
-                dropped_initialized.push((cell_pointer.clone(), cell_value.byte_width()));
+            if kept {
+                CachedValueFate::Kept
+            } else {
+                CachedValueFate::Forgotten
             }
-            kept
         };
-        #[cfg(debug_assertions)]
-        if !gap_kept.is_empty() {
-            crate::instrumentation::uncharged_debug_check(|| {
-                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
-                    &memory.cells,
-                    &gap_kept,
-                    &normalized_pointer,
-                    &mut keep_cell,
-                );
-            });
-        }
-        let dropped_run_slots = std::sync::Arc::make_mut(&mut memory.cells)
-            .retain_candidates_outside_by(&candidates, &gap_kept, &mut keep_cell, run_rule);
-        forgot_live_knowledge |= run_forgot;
-        candidates.retain_map(
-            std::sync::Arc::make_mut(&mut memory.union_cells),
-            |(cell_pointer, cell_type), _| {
-                let normalized_cell_pointer = Pointer {
-                    block: cell_pointer.block.clone(),
-                    offset: normalize_exact_memory_loads_in_pointer_offset(
-                        &cell_pointer.offset,
-                        assumptions,
-                    ),
+        let view_fate = |cell_pointer: &Pointer, cell_type: CType| {
+            let normalized_cell_pointer = Pointer {
+                block: cell_pointer.block.clone(),
+                offset: normalize_exact_memory_loads_in_pointer_offset(
+                    &cell_pointer.offset,
+                    assumptions,
+                ),
+            };
+            if normalized_cell_pointer.block == normalized_pointer.block
+                && written.as_ref().is_some_and(|written| {
+                    written.overwrites_typed(&normalized_cell_pointer, cell_type)
+                })
+            {
+                return if written.as_ref().is_some_and(|written| {
+                    written.overwrites_typed_completely(&normalized_cell_pointer, cell_type)
+                }) {
+                    CachedValueFate::Overwritten
+                } else {
+                    CachedValueFate::Forgotten
                 };
-                if normalized_cell_pointer.block == normalized_pointer.block
-                    && written.as_ref().is_some_and(|written| {
-                        written.overwrites_typed(&normalized_cell_pointer, *cell_type)
-                    })
-                {
-                    let partly = !written.as_ref().is_some_and(|written| {
-                        written.overwrites_typed_completely(&normalized_cell_pointer, *cell_type)
-                    });
-                    forgot_live_knowledge |= partly;
-                    if partly {
-                        dropped_initialized.push((cell_pointer.clone(), cell_type.byte_width()));
-                    }
-                    return false;
-                }
-                if assumptions.access_owned_apart_from_store(
-                    &owned_footprint,
-                    &normalized_pointer,
-                    &normalized_cell_pointer,
-                    cell_type.byte_width().max(1),
-                ) {
-                    return true;
-                }
-                // A union view has no value to read a width from, so it stands in
-                // the width of the type it is keyed by — the access it records.
-                let address_inequality_separates_bytes =
-                    crate::kernel::reasoning::access_byte_overlap(
-                        &normalized_cell_pointer,
-                        cell_type.byte_width().max(1),
-                        &normalized_pointer,
-                        bytes,
-                        assumptions,
-                    ) == crate::kernel::reasoning::AccessByteOverlap::Separate;
-                let kept = address_inequality_separates_bytes
+            }
+            if assumptions.access_owned_apart_from_store(
+                &owned_footprint,
+                &normalized_pointer,
+                &normalized_cell_pointer,
+                cell_type.byte_width().max(1),
+            ) {
+                return CachedValueFate::Kept;
+            }
+            // A union view has no value to read a width from, so it stands in
+            // the width of the type it is keyed by — the access it records.
+            let address_inequality_separates_bytes = crate::kernel::reasoning::access_byte_overlap(
+                &normalized_cell_pointer,
+                cell_type.byte_width().max(1),
+                &normalized_pointer,
+                bytes,
+                assumptions,
+            )
+                == crate::kernel::reasoning::AccessByteOverlap::Separate;
+            let kept = address_inequality_separates_bytes
                 && pointers_proven_distinct_for_memory_resolution(
                     &normalized_cell_pointer,
                     &normalized_pointer,
@@ -4276,13 +4539,37 @@ impl CMemory {
                     assumptions,
                 )
                 .is_some();
-                forgot_live_knowledge |= !kept;
-                if !kept {
-                    dropped_initialized.push((cell_pointer.clone(), cell_type.byte_width()));
-                }
-                kept
+            if kept {
+                CachedValueFate::Kept
+            } else {
+                CachedValueFate::Forgotten
+            }
+        };
+        #[cfg(debug_assertions)]
+        if !gap_kept.is_empty() {
+            crate::instrumentation::uncharged_debug_check(|| {
+                crate::kernel::reasoning::store_gap::check_gap_kept_cells(
+                    &memory.cells,
+                    &gap_kept,
+                    &normalized_pointer,
+                    &mut |pointer: &Pointer, value: &CValue| {
+                        cell_fate(pointer, value) == CachedValueFate::Kept
+                    },
+                );
+            });
+        }
+        let forgot_values = memory.forget_cached_values(
+            ForgetScope::Candidates {
+                candidates: &candidates,
+                cells_kept: &gap_kept,
             },
+            |pointer, value| match value {
+                CachedValue::Cell(value) => cell_fate(pointer, value),
+                CachedValue::UnionView(c_type, _) => view_fate(pointer, c_type),
+            },
+            run_rule,
         );
+        let forgot_live_knowledge = forgot_values || run_forgot;
         // Forgetting nothing is not a transition: the memory is the same
         // snapshot, so a later load keeps resolving through it unchanged
         // instead of stopping at an edge that records no write.
@@ -4292,9 +4579,8 @@ impl CMemory {
             return self.clone();
         }
         // A store never de-initializes: the heap marks of the cells it may
-        // alias stay as they are, and the automatic cells it forgot join them.
-        memory.record_dropped_local_cells(&dropped_initialized);
-        memory.record_dropped_local_run_slots(&dropped_run_slots);
+        // alias stay as they are, and `forget_cached_values` recorded the
+        // automatic cells it forgot beside them.
         if let Some(base) = base {
             // The mark goes on before interning, because it is what the
             // result is interned *as*. Without it the emptied cell map can
@@ -6461,6 +6747,79 @@ mod hunt_investigation_join_dspelling_tests {
             "BUG: freeing the same allocation through its second joined spelling succeeds"
         );
     }
+}
+
+/// One cached value a forgetting transition is asked about
+/// ([`CMemory::forget_cached_values`]).
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CachedValue<'a> {
+    /// A cell, or one slot of a run.
+    Cell(&'a CValue),
+    /// A typed view of union storage, keyed by the member type it records.
+    UnionView(CType, &'a CValue),
+}
+
+impl<'a> CachedValue<'a> {
+    pub(super) fn value(self) -> &'a CValue {
+        match self {
+            Self::Cell(value) | Self::UnionView(_, value) => value,
+        }
+    }
+
+    /// The width of the access this value answers. A union view has no
+    /// value width of its own to trust, so it stands in its key type's.
+    pub(super) fn byte_width(self) -> u32 {
+        match self {
+            Self::Cell(value) => value.byte_width(),
+            Self::UnionView(c_type, _) => c_type.byte_width(),
+        }
+    }
+}
+
+/// What a forgetting transition does with one cached value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CachedValueFate {
+    /// The value is still what the memory holds there.
+    Kept,
+    /// The value goes because the write about to run replaces every one of
+    /// its bytes: it is stale, and nothing about the memory is lost.
+    Overwritten,
+    /// The value goes with its storage, whose retirement the caller records.
+    Retired,
+    /// The value goes and its bytes are no longer known.
+    Forgotten,
+}
+
+/// Which cached values a forgetting transition asks about; every other one
+/// is kept unasked.
+#[derive(Clone, Copy)]
+pub(super) enum ForgetScope<'a> {
+    /// Every cached value, for a transition that may have written anywhere.
+    Everywhere,
+    /// The values in `candidates`' blocks, except the cells inside the key
+    /// ranges `cells_kept`, which the caller has shown its rule keeps
+    /// ([`CellStore::retain_candidates_outside_by`]).
+    Candidates {
+        candidates: &'a AliasCandidates,
+        cells_kept: &'a [(Pointer, Pointer)],
+    },
+}
+
+impl<'a> ForgetScope<'a> {
+    fn candidates(candidates: &'a AliasCandidates) -> Self {
+        Self::Candidates {
+            candidates,
+            cells_kept: &[],
+        }
+    }
+}
+
+/// The whole-run answer of a rule that has no cheaper one: ask every slot.
+fn ask_every_slot(_: &CellRun) -> (SlotSet, crate::kernel::primitives::RuleAnswer) {
+    (
+        SlotSet::PerSlot,
+        crate::kernel::primitives::RuleAnswer::Exact,
+    )
 }
 
 /// Collects one dropped cell for [`CMemory::record_dropped_local_cells`],
