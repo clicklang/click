@@ -121,7 +121,10 @@ regressions. Local scalar arrays now support literal and repeat construction,
 independent whole-array copies and assignment through references, and local
 array borrows. Constructor evaluation order, one evaluation for repeats
 (including empty arrays), self-copy, and full source/destination authority
-have regressions. Array-to-slice coercions, by-value array parameters/returns,
+have regressions. Fixed byte arrays now coerce to shared/mutable byte slices
+in local initialization, slice reassignment, and direct calls, preserving
+length and storage authority. Empty arrays and parent reuse have regressions.
+By-value array parameters/returns, non-byte slices,
 general `usize` arithmetic, crate extraction, and
 iterator loops remain outstanding. Neither library is verified
 by this assessment.
