@@ -23,15 +23,8 @@ struct Exporter {
 // before expansion. This first slice is exactly one ordinary source file.
 struct SourceBoundary {
     invalid: bool,
-    for_loop: bool,
 }
 impl<'a> rustc_ast::visit::Visitor<'a> for SourceBoundary {
-    fn visit_expr(&mut self, expression: &'a rustc_ast::Expr) {
-        if matches!(expression.kind, rustc_ast::ExprKind::ForLoop { .. }) {
-            self.for_loop = true;
-        }
-        rustc_ast::visit::walk_expr(self, expression);
-    }
     fn visit_item(&mut self, item: &'a rustc_ast::Item) {
         if !matches!(
             item.kind,
@@ -72,16 +65,10 @@ impl Callbacks for Exporter {
         krate: &mut rustc_ast::Crate,
     ) -> Compilation {
         use rustc_ast::visit::Visitor;
-        let mut boundary = SourceBoundary {
-            invalid: false,
-            for_loop: false,
-        };
+        let mut boundary = SourceBoundary { invalid: false };
         boundary.visit_crate(krate);
         if boundary.invalid {
             self.result = Some(Err("Rust source boundary supports one file containing functions and structs; modules, macros, imports and attributes are unsupported".into()));
-            Compilation::Stop
-        } else if boundary.for_loop {
-            self.result = Some(Err("Rust for loops are not yet supported".into()));
             Compilation::Stop
         } else {
             Compilation::Continue
@@ -171,6 +158,7 @@ struct BodyExporter<'tcx> {
     typeck: &'tcx ty::TypeckResults<'tcx>,
     locals: BTreeMap<u32, String>,
     names: BTreeSet<String>,
+    immutable: BTreeSet<u32>,
 }
 fn indexed_type(t: &Type) -> bool {
     matches!(t, Type::ByteSlice { .. } | Type::Array { .. })
@@ -196,6 +184,9 @@ impl<'tcx> BodyExporter<'tcx> {
             };
             self.names.insert(name.clone());
             self.locals.insert(id.local_id.as_u32(), name.clone());
+            if mode.1 == hir::Mutability::Not {
+                self.immutable.insert(id.local_id.as_u32());
+            }
             Ok(name)
         } else {
             Err("only plain Rust binding patterns are supported".into())
@@ -474,6 +465,156 @@ impl<'tcx> BodyExporter<'tcx> {
         }
         Ok(out)
     }
+    // Recognize the pinned compiler's for desugaring, never user call names.
+    // Only copied byte bindings from an immutable shared slice are supported.
+    fn slice_for(
+        &mut self,
+        e: &hir::Expr<'tcx>,
+        tail_return: bool,
+    ) -> Result<Vec<Statement>, String> {
+        let bad = || {
+            self.error(e, "Rust for loops currently require `for &byte in slice` with an immutable shared byte-slice binding")
+        };
+        let hir::ExprKind::Match(input, [outer], hir::MatchSource::ForLoopDesugar) = e.kind else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Call(callee, [slice]) = input.kind else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = callee.kind else {
+            return Err(bad());
+        };
+        if !matches!(path.res, Res::Def(_, id) if Some(id) == self.tcx.lang_items().into_iter_fn())
+        {
+            return Err(bad());
+        }
+        let hir::ExprKind::Path(hir::QPath::Resolved(_, source)) = slice.kind else {
+            return Err(bad());
+        };
+        if !matches!(source.res, Res::Local(id) if self.immutable.contains(&id.local_id.as_u32()))
+            || export_type(self.tcx, self.typeck.expr_ty(slice))?
+                != (Type::ByteSlice { mutable: false })
+        {
+            return Err(bad());
+        }
+        let hir::PatKind::Binding(_, iterator_id, _, None) = outer.pat.kind else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Loop(block, None, hir::LoopSource::ForLoop, _) = outer.body.kind else {
+            return Err(bad());
+        };
+        let [statement] = block.stmts else {
+            return Err(bad());
+        };
+        let hir::StmtKind::Expr(next_match) = statement.kind else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Match(next, [none, some], hir::MatchSource::ForLoopDesugar) =
+            next_match.kind
+        else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Call(next_callee, [borrow]) = next.kind else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Path(hir::QPath::Resolved(_, next_path)) = next_callee.kind else {
+            return Err(bad());
+        };
+        let hir::ExprKind::AddrOf(hir::BorrowKind::Ref, hir::Mutability::Mut, iter) = borrow.kind
+        else {
+            return Err(bad());
+        };
+        let hir::ExprKind::Path(hir::QPath::Resolved(_, iter_path)) = iter.kind else {
+            return Err(bad());
+        };
+        if !matches!(next_path.res, Res::Def(_, id) if Some(id) == self.tcx.lang_items().next_fn())
+            || iter_path.res != Res::Local(iterator_id)
+        {
+            return Err(bad());
+        }
+        let hir::PatKind::Struct(hir::QPath::Resolved(_, none_path), [], _) = none.pat.kind else {
+            return Err(bad());
+        };
+        let hir::PatKind::Struct(hir::QPath::Resolved(_, some_path), [field], _) = some.pat.kind
+        else {
+            return Err(bad());
+        };
+        if !matches!(none_path.res, Res::Def(_, id) if Some(id) == self.tcx.lang_items().option_none_variant())
+            || !matches!(some_path.res, Res::Def(_, id) if Some(id) == self.tcx.lang_items().option_some_variant())
+            || !matches!(none.body.kind, hir::ExprKind::Break(destination, None) if destination.target_id == Ok(outer.body.hir_id))
+            || outer.guard.is_some()
+            || none.guard.is_some()
+            || some.guard.is_some()
+            || block.expr.is_some()
+        {
+            return Err(bad());
+        }
+        let hir::PatKind::Ref(binding, hir::Pinnedness::Not, hir::Mutability::Not) = field.pat.kind
+        else {
+            return Err(bad());
+        };
+        if export_type(self.tcx, self.typeck.pat_ty(binding))? != Type::U8 {
+            return Err(bad());
+        }
+        let slice = self.expr(slice)?;
+        let location = span(self.tcx, e.span);
+        let index = format!("__rust_iter_index_{}_{}", location.line, location.column);
+        if !self.names.insert(index.clone()) {
+            return Err("duplicate Rust iterator identity".into());
+        }
+        let byte = self.bind(binding, false)?;
+        let local = Expression::Local {
+            name: index.clone(),
+        };
+        let mut body = vec![Statement::Declare {
+            place: Place {
+                name: byte,
+                value_type: Type::U8,
+                span: span(self.tcx, binding.span),
+            },
+            initializer: Expression::Index {
+                slice: Box::new(slice.clone()),
+                index: Box::new(local.clone()),
+            },
+        }];
+        body.extend(self.statement(some.body, false)?);
+        body.push(Statement::Assign {
+            target: local.clone(),
+            value: Expression::Binary {
+                operator: "add".into(),
+                left_type: Type::Usize,
+                right_type: Type::Usize,
+                left: Box::new(local.clone()),
+                right: Box::new(Expression::UsizeInteger { value: 1 }),
+            },
+        });
+        let mut statements = vec![
+            Statement::Declare {
+                place: Place {
+                    name: index,
+                    value_type: Type::Usize,
+                    span: location,
+                },
+                initializer: Expression::UsizeInteger { value: 0 },
+            },
+            Statement::While {
+                condition: Expression::Binary {
+                    operator: "lt".into(),
+                    left_type: Type::Usize,
+                    right_type: Type::Usize,
+                    left: Box::new(local),
+                    right: Box::new(Expression::SliceLength {
+                        slice: Box::new(slice),
+                    }),
+                },
+                body,
+            },
+        ];
+        if tail_return {
+            statements.push(Statement::Return { value: None });
+        }
+        Ok(statements)
+    }
     fn statement(
         &mut self,
         e: &hir::Expr<'tcx>,
@@ -482,7 +623,7 @@ impl<'tcx> BodyExporter<'tcx> {
         match e.kind {
             hir::ExprKind::Block(b, None) => self.block(b, tail_return),
             hir::ExprKind::Match(_, _, hir::MatchSource::ForLoopDesugar) => {
-                Err(self.error(e, "Rust for loops are not yet supported"))
+                self.slice_for(e, tail_return)
             }
             hir::ExprKind::Loop(block, None, hir::LoopSource::While, _) => {
                 let Some(guard) = block.expr else {
@@ -635,6 +776,7 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
             typeck,
             locals: BTreeMap::new(),
             names: BTreeSet::new(),
+            immutable: BTreeSet::new(),
         };
         let parameters = body
             .params
@@ -649,10 +791,13 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
             })
             .collect::<Result<Vec<_>, String>>()?;
         let mir = tcx.mir_drops_elaborated_and_const_checked(id).borrow();
+        // Standard iterator and Option temporaries belong to the checked HIR
+        // desugaring, not the local-record ownership frontend. Unsupported
+        // external values still fail typed HIR expression/type export.
         let owned = mir
             .local_decls
             .iter()
-            .any(|d| matches!(d.ty.kind(), ty::Adt(..)));
+            .any(|d| matches!(d.ty.kind(), ty::Adt(def, _) if def.did().is_local()));
         let types = sig
             .inputs()
             .iter()
@@ -661,6 +806,9 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
         for t in types {
             let t = t.peel_refs();
             if let ty::Adt(def, _) = t.kind() {
+                if !def.did().is_local() {
+                    continue;
+                }
                 let name = tcx.item_name(def.did()).to_string();
                 if records.contains_key(&name) {
                     continue;
