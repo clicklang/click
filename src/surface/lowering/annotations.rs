@@ -4492,13 +4492,14 @@ impl AnnotationLowerer<'_> {
                                 .to_string(),
                         );
                     }
-                    if arguments.len() != 1
-                        || arguments.iter().any(|argument| {
-                            matches!(argument, ContractExpression::ResourceWildcard)
+                    if arguments.is_empty()
+                        || matches!(arguments[0], ContractExpression::ResourceWildcard)
+                        || arguments.iter().skip(1).any(|argument| {
+                            !matches!(argument, ContractExpression::ResourceWildcard)
                         })
                     {
                         return Err(
-                            "authority-mode `count(R(p))` needs one exact pointer argument"
+                            "authority-mode count requires R(anchor) or R(anchor, _, ...)"
                                 .to_string(),
                         );
                     }

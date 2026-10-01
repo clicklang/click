@@ -7676,8 +7676,26 @@ fn resource_clause_to_resource_spec_with_metadata(
                         "authority requires a checked resource type",
                     ));
                 };
+                let mut anchor_clause = protected.clone();
+                let population_arity = if let ResourceClause::Declared {
+                    arguments,
+                    parameter_types,
+                    ..
+                } = &mut anchor_clause
+                {
+                    if arguments.len() > 1 {
+                        let arity = arguments.len();
+                        arguments.truncate(1);
+                        parameter_types.truncate(1);
+                        Some(arity)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let protected_spec = resource_clause_to_resource_spec_with_metadata(
-                    protected,
+                    &anchor_clause,
                     parameters,
                     result_type,
                     role,
@@ -7686,11 +7704,13 @@ fn resource_clause_to_resource_spec_with_metadata(
                 .with_source_arguments(
                     protected_arguments
                         .iter()
+                        .take(1)
                         .map(crate::surface::diagnostics::describe_contract_expression)
                         .collect(),
                 );
                 return CResourceSpec::new(
                     crate::kernel::CResourceTerm::PopulationAuthority {
+                        population_arity,
                         protected: Box::new(crate::kernel::CResourceTypeSpec {
                             resource: Box::new(protected_spec),
                             schema: schema.clone(),

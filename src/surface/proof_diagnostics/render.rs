@@ -1194,6 +1194,11 @@ impl Renderer<'_> {
                     }
                     self.algebraic_value(argument);
                 }
+                if let Some(arity) = description.population_arity() {
+                    for _ in 1..arity {
+                        self.push(", _");
+                    }
+                }
                 self.push("))");
             }
             CResource::Memory(range) => {
@@ -1250,6 +1255,11 @@ impl Renderer<'_> {
                         self.push(", ");
                     }
                     self.algebraic_value(argument);
+                }
+                if let Some(arity) = description.population_arity() {
+                    for _ in 1..arity {
+                        self.push(", _");
+                    }
                 }
                 self.push("))");
             }

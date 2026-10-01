@@ -4,6 +4,11 @@ This is the consumer inventory for `issues/authority-migration.md`, not a specif
 
 ## Discovery boundary
 
+The `authority_wildcard_*` fixture group adds concrete, field-free
+`R(anchor, _, ...)` population scopes and aggregate count observations.
+The bounded-pool sidecar remains on its existing path; this group supplies
+one prerequisite without migrating it.
+
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
 ```sh

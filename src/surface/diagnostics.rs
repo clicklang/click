@@ -1356,12 +1356,7 @@ pub(super) fn describe_resource_fact(
         | CResourceFact::View(CResource::PopulationAuthority(description)) => format!(
             "{} authority({})",
             if resource.is_own() { "owns" } else { "views" },
-            format_declared_resource(
-                description.family(),
-                description.arguments(),
-                parameters,
-                arguments,
-            )
+            format_population_description(description, parameters, arguments)
         ),
         CResourceFact::Own(CResource::Instance(instance), _)
         | CResourceFact::View(CResource::Instance(instance)) => format!(
@@ -1513,12 +1508,7 @@ fn describe_c_resource(
         CResource::MutexUse(identity) => format_mutex_use(identity, parameters, arguments),
         CResource::PopulationAuthority(description) => format!(
             "authority({})",
-            format_declared_resource(
-                description.family(),
-                description.arguments(),
-                parameters,
-                arguments,
-            )
+            format_population_description(description, parameters, arguments)
         ),
         CResource::Iterated(iterated) => describe_iterated_memory(iterated, parameters, arguments),
     }
@@ -5167,4 +5157,25 @@ fn describe_float_condition(condition: &CFloatCondition) -> String {
             value,
         } => format!("is{classification:?}({})", describe_bitvector(value)),
     }
+}
+
+fn format_population_description(
+    description: &crate::kernel::ResourceDescription,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[crate::kernel::CExpression],
+) -> String {
+    let mut result = format_declared_resource(
+        description.family(),
+        description.arguments(),
+        parameters,
+        arguments,
+    );
+    if let Some(arity) = description.population_arity() {
+        result.pop();
+        for _ in 1..arity {
+            result.push_str(", _");
+        }
+        result.push(')');
+    }
+    result
 }

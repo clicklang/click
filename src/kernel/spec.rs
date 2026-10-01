@@ -6037,14 +6037,24 @@ fn evaluate_resource_count_paths(
         .map(|(arguments, mut facts, mut obligations)| {
             let path_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             if authority_mode {
-                let [Some(AlgebraicValue::C(CValue::Pointer(_)))] = arguments.as_slice() else {
+                let Some(Some(AlgebraicValue::C(CValue::Pointer(_)))) = arguments.first() else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
+                if arguments.iter().skip(1).any(Option::is_some) {
+                    return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
+                }
                 let description = ResourceDescription::new(
                     name.to_owned(),
-                    arguments.iter().flatten().cloned().collect(),
+                    vec![arguments[0].clone().expect("checked anchor")].into(),
                     ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
                 );
+                let description = if arguments.len() > 1 {
+                    description
+                        .with_population_arity(arguments.len())
+                        .map_err(|_| ExecutionLimit::AuthorityCountNeedsExactPointer)?
+                } else {
+                    description
+                };
                 let creation = state
                     .population_effects
                     .creation
@@ -6083,11 +6093,8 @@ fn evaluate_resource_count_paths(
                             crate::instrumentation::record_deterministic_work(1);
                             let mut value = pointer.clone();
                             value.replace_pointer(alias);
-                            let candidate = ResourceDescription::new(
-                                description.family().to_owned(),
-                                vec![AlgebraicValue::C(CValue::Pointer(value))].into(),
-                                description.schema().clone(),
-                            );
+                            let candidate = description
+                                .map_values(|_| AlgebraicValue::C(CValue::Pointer(value.clone())));
                             owned_description(&candidate)
                         })
                 });
@@ -6199,6 +6206,9 @@ fn evaluate_resource_count_paths(
                 }
                 if anchor.offset != PointerOffsetTerm::Constant(0) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
+                }
+                if creation.governing_authority(&description).as_ref() != Some(&description) {
+                    return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
                 }
                 let count = creation
                     .observe_term(&anchor.block, name)

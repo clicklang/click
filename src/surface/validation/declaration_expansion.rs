@@ -1636,13 +1636,14 @@ fn expand_resource_type_arguments(
             return Err(ClickError::new("protected resource types currently require ordinary value arguments"));
         }
         let info = declared_resource_info_with_fields(&name, arguments.len(), definitions, true)?;
-        if is_authority && (arguments.len() != 1
+        if is_authority && (arguments.is_empty()
             || !info.parameter_types[0].is_pointer()
             || info.has_fields
             || access != ResourceAccessMode::Own
-            || arguments.iter().any(|argument| matches!(argument, ContractExpression::ResourceWildcard)))
+            || matches!(arguments[0], ContractExpression::ResourceWildcard)
+            || arguments.iter().skip(1).any(|argument| !matches!(argument, ContractExpression::ResourceWildcard)))
         {
-            return Err(ClickError::new("authority requires an exact unary field-free resource type with one pointer argument"));
+            return Err(ClickError::new("authority requires a field-free R(anchor) or R(anchor, _, ...) resource type with a pointer anchor"));
         }
         let mut fields = info.fields.iter().map(|(name, (index, ty))| {
             let ty = match ty {

@@ -2653,6 +2653,7 @@ mod authority_helper_admission_tests {
         );
         let authority = CResourceSpec::new(
             CResourceTerm::PopulationAuthority {
+                population_arity: None,
                 protected: Box::new(CResourceTypeSpec {
                     resource: Box::new(member.clone()),
                     schema: ResourceFieldSchema::new(vec![]).unwrap(),
@@ -26954,7 +26955,12 @@ pub(crate) fn evaluate_population_authority_candidate(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<CResourceFact, CRuntimeError>> {
-    let CResourceTerm::PopulationAuthority { protected, .. } = resource.term() else {
+    let CResourceTerm::PopulationAuthority {
+        protected,
+        population_arity,
+        ..
+    } = resource.term()
+    else {
         return Ok(Err(CRuntimeError::FunctionContract(
             "expected a population authority resource".into(),
         )));
@@ -26964,6 +26970,13 @@ pub(crate) fn evaluate_population_authority_candidate(
             Ok(description) => description,
             Err(error) => return Ok(Err(error)),
         };
+    let description = match population_arity {
+        Some(arity) => match description.with_population_arity(*arity) {
+            Ok(description) => description,
+            Err(message) => return Ok(Err(CRuntimeError::FunctionContract(message.into()))),
+        },
+        None => description,
+    };
     Ok(Ok(CResourceFact::own(CResource::PopulationAuthority(
         description,
     ))))
@@ -27152,7 +27165,11 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
         )));
     }
     match resource.term() {
-        CResourceTerm::PopulationAuthority { protected, .. } => {
+        CResourceTerm::PopulationAuthority {
+            protected,
+            population_arity,
+            ..
+        } => {
             let description = match evaluate_resource_type(
                 entry_state,
                 state,
@@ -27163,6 +27180,15 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
             )? {
                 Ok(description) => description,
                 Err(error) => return Ok(Err(error)),
+            };
+            let description = match population_arity {
+                Some(arity) => match description.with_population_arity(*arity) {
+                    Ok(description) => description,
+                    Err(message) => {
+                        return Ok(Err(CRuntimeError::FunctionContract(message.into())));
+                    }
+                },
+                None => description,
             };
             let owned = CResourceFact::own(CResource::PopulationAuthority(description.clone()));
             if resource.role() == CResourceTransferRole::Borrow

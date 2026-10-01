@@ -787,6 +787,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     );
     let authority = CResourceSpec::new(
         CResourceTerm::PopulationAuthority {
+            population_arity: None,
             protected: Box::new(CResourceTypeSpec {
                 resource: Box::new(reference),
                 schema: ResourceFieldSchema::new(vec![]).unwrap(),
@@ -1899,4 +1900,107 @@ fn allocation_companion_cannot_free_storage_with_live_population() {
         held.transfer_call_anchor(&unrelated, &caller, &block)
             .is_err()
     );
+}
+
+mod wildcard_scope_tests {
+    use super::*;
+
+    fn description(block: &PointerBlock, keys: &[u32]) -> ResourceDescription {
+        let mut arguments = vec![
+            CValue::pointer(Pointer {
+                block: block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            })
+            .into(),
+        ];
+        arguments.extend(keys.iter().map(|key| AlgebraicValue::C(int32(*key))));
+        ResourceDescription::new(
+            "slot".into(),
+            arguments.into(),
+            ResourceFieldSchema::new(vec![]).unwrap(),
+        )
+    }
+    fn scope(block: &PointerBlock, arity: usize) -> ResourceDescription {
+        description(block, &[])
+            .with_population_arity(arity)
+            .unwrap()
+    }
+
+    #[test]
+    fn wildcard_scope_checks_signature_and_conserves_aggregate_total() {
+        let pool = PointerBlock::Heap(920_001);
+        let authority = scope(&pool, 3);
+        let entry = CreationEvents::new().created(pool.clone());
+        let (empty, _) = entry.checked_establish(&pool, &authority).unwrap();
+        let first = description(&pool, &[1, 10]);
+        let second = description(&pool, &[2, 20]);
+        let (one, witness) = empty.checked_member_exchange(&pool, &first, true).unwrap();
+        assert!(witness.matches(&empty, &one, &first, true));
+        assert!(!witness.matches(&empty, &one, &second, true));
+        let (two, _) = one.checked_member_exchange(&pool, &second, true).unwrap();
+        assert_eq!(
+            two.observe_term(&pool, "slot").unwrap(),
+            Bitvector32Term::Constant(2)
+        );
+        assert_eq!(two.governing_authority(&first), Some(authority.clone()));
+        assert!(two.checked_establish(&pool, &authority).is_err());
+        assert!(two.checked_retire(&pool, &authority).is_err());
+        assert!(
+            two.checked_member_exchange(&pool, &description(&pool, &[1]), true)
+                .is_err()
+        );
+        assert!(
+            two.checked_member_exchange(&pool, &authority, true)
+                .is_err()
+        );
+        let foreign = PointerBlock::Heap(920_002);
+        assert!(
+            two.checked_member_exchange(&foreign, &description(&foreign, &[1, 10]), true)
+                .is_err()
+        );
+        let (one, _) = two.checked_member_exchange(&pool, &second, false).unwrap();
+        let (zero, _) = one.checked_member_exchange(&pool, &first, false).unwrap();
+        let (retired, _) = zero.checked_retire(&pool, &authority).unwrap();
+        assert!(retired.checked_empty_population(&authority));
+        assert!(!retired.checked_empty_population(&description(&pool, &[])));
+        assert!(!retired.checked_empty_population(&scope(&pool, 2)));
+        assert!(retired.checked_establish(&pool, &authority).is_err());
+    }
+
+    #[test]
+    fn wildcard_scope_lookup_and_exchange_ignore_unrelated_pools() {
+        let samples = [16_u64, 64, 256, 1024].map(|size| {
+            let pool = PointerBlock::Heap(930_000);
+            let mut events = CreationEvents::new().created(pool.clone());
+            events = events.checked_establish(&pool, &scope(&pool, 2)).unwrap().0;
+            for index in 1..=size {
+                let other = PointerBlock::Heap(930_000 + index);
+                events = events
+                    .created(other.clone())
+                    .checked_establish(&other, &scope(&other, 2))
+                    .unwrap()
+                    .0;
+            }
+            let member = description(&pool, &[1]);
+            let ((next, _), work) = crate::instrumentation::measure_deterministic_work(|| {
+                events
+                    .checked_member_exchange(&pool, &member, true)
+                    .unwrap()
+            });
+            assert_eq!(
+                next.observe_term(&pool, "slot").unwrap(),
+                Bitvector32Term::Constant(1)
+            );
+            assert_eq!(
+                next.observe_term(&PointerBlock::Heap(930_001), "slot")
+                    .unwrap(),
+                Bitvector32Term::Constant(0)
+            );
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 8 * index, "{samples:?}");
+        }
+    }
 }

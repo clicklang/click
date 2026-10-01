@@ -1690,8 +1690,26 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         "authority requires a checked resource type",
                     ));
                 };
+                let mut anchor_clause = protected.clone();
+                let population_arity = if let ResourceClause::Declared {
+                    arguments,
+                    parameter_types,
+                    ..
+                } = &mut anchor_clause
+                {
+                    if arguments.len() > 1 {
+                        let arity = arguments.len();
+                        arguments.truncate(1);
+                        parameter_types.truncate(1);
+                        Some(arity)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let protected_fact = lower_resource_clause_with_values_mode_at_entry(
-                    protected,
+                    &anchor_clause,
                     parameters,
                     values,
                     entry_state,
@@ -1709,12 +1727,19 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         ));
                     }
                 };
+                let description = crate::kernel::ResourceDescription::new(
+                    family.clone(),
+                    arguments.clone(),
+                    schema.clone(),
+                );
+                let description = match population_arity {
+                    Some(arity) => description
+                        .with_population_arity(arity)
+                        .map_err(ClickError::new)?,
+                    None => description,
+                };
                 return Ok(CResourceFact::own(CResource::PopulationAuthority(
-                    crate::kernel::ResourceDescription::new(
-                        family.clone(),
-                        arguments.clone(),
-                        schema.clone(),
-                    ),
+                    description,
                 )));
             }
             if name == "mutex_live" {
