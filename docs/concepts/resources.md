@@ -470,8 +470,32 @@ total, which may include members held elsewhere. The count bound is required
 before the birth. The returned member keeps its concrete arguments, and the
 caller recovers authority with its total increased by one. Nested creation
 helpers use the same transfer. This initial creation support admits one birth
-from an authority-only input; it does not replace a borrowed member or consume
-one.
+from an input containing authority and any required private memory; it does
+not replace a borrowed member or consume another population member.
+
+A memory-bearing member is created by transferring its private memory into
+the helper:
+
+<!-- verified-example: mdtests/authority_wildcard_create_private_body.md -->
+```click
+resource slot(pool: int32*, p: int32*) { owns p[0..1]; }
+void issue(int32* pool, int32* p) {
+    owns authority(slot(pool, _));
+    consumes p[0..1];
+    requires defined(count(slot(pool, _)) + 1);
+    produces slot(pool, p);
+    ensures p[0] == 7;
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) + 1;
+}
+```
+
+The C body can update the supplied memory before `fold(slot(pool, p))`
+packages it into the new member. The caller recovers authority and that
+member, including through nested helpers, while retaining its other members.
+The helper cannot return independent ownership of the packaged memory as
+well, and authority cannot supply missing memory. The overflow bound remains
+required for the arbitrary entry total. This uses ordinary `consumes` and
+`produces`; no additional resource operation is needed.
 
 The corresponding consumption helper borrows authority and takes one member:
 
@@ -520,7 +544,8 @@ without consuming it cannot satisfy this contract.
 
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
-authority, consume the entry member, or create one from an authority-only input. Fixed
+authority, consume the entry member, or create one from authority and its required
+private memory. Fixed
 trailing arguments in authority patterns, exact subset observations, and
 field-bearing members remain future work.
 

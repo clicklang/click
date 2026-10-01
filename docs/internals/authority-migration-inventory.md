@@ -31,6 +31,12 @@ owned range through `produces`, preserve caller-retained members, and decrease
 the arbitrary population total by one. They reject missing authority,
 wrong-member selection, a missing consumption, and reuse after consumption or
 memory reclamation.
+The `authority_wildcard_create_private_body*` fixtures cover the inverse:
+direct and nested helpers consume an owned range and produce a new member
+whose body owns that range. The caller retains another member and observes
+the incremented total. Regressions reject missing memory or authority,
+duplicate membership or independent body ownership, and a missing overflow
+bound. Existing checked exchanges support this without verifier changes.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

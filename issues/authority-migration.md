@@ -469,6 +469,14 @@ Negative regressions reject missing authority, wrong-member consumption,
 opening without consuming, and reuse of consumed membership or freed memory.
 This adds no syntax and does not extend member facts or proof fields.
 
+The inverse memory-only creation also verifies through direct and nested
+helpers using ordinary `consumes` memory and `produces` member clauses. Caller
+regressions retain another member, prove the incremented total, open both
+bodies, and reclaim the allocation. Rejections cover missing memory or
+authority, duplicate membership or independent body ownership, and a missing
+count overflow bound. This capability needed only fixtures and documentation;
+the existing checked member exchange and call transfer already support it.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and a checked transfer between two authorities. Count
 individually identified members without erasing fields or treating equal
