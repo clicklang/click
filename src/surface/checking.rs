@@ -276,7 +276,7 @@ pub(super) fn prove_ensure_resource<'e>(
             execution: checked_execution,
             path_index,
             key: claim_key,
-            returned_resources: crate::kernel::ResourceContext::new()
+            returned_resources: crate::kernel::ResourceContext::new_with_equalities(&assumptions)
                 .unchecked_with_facts(expected.iter().cloned()),
             borrowed,
             deferred_guard: false,

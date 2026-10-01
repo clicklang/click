@@ -3995,6 +3995,10 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_context(
     from: Variable,
     to: &Bitvector32Term,
 ) -> ResourceContext {
+    // Structural theorem/state substitution has no current proof assumptions.
+    // Do not inherit the old graph: its equalities name the pre-substitution
+    // variables. A resulting live proof input is published at its admission
+    // boundary before execution; this helper performs no resource lookup.
     ResourceContext::new().unchecked_with_facts(
         resources
             .facts()
@@ -6752,6 +6756,10 @@ fn substitute_pointer_variable_in_resource_context(
     from: Variable,
     to: &Pointer,
 ) -> ResourceContext {
+    // Structural theorem/state substitution has no current proof assumptions.
+    // Do not inherit the old graph: its equalities name the pre-substitution
+    // variables. A resulting live proof input is published at its admission
+    // boundary before execution; this helper performs no resource lookup.
     ResourceContext::new().unchecked_with_facts(
         resources
             .facts()

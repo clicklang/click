@@ -5594,7 +5594,8 @@ pub(super) fn prepare_loop_top_state(
         budget,
     )?;
     if ordinary_specs.is_empty() && !direct_carriers.is_empty() {
-        body_state = body_state.with_resource_context(ResourceContext::new());
+        body_state =
+            body_state.with_resource_context(ResourceContext::new_with_equalities(assumptions));
     }
     if !direct_carriers.is_empty() {
         let missing = direct_carriers

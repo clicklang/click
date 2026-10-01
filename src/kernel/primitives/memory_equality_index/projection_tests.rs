@@ -543,3 +543,125 @@ fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
         "resource satisfaction rebuilt unrelated state: {samples:?}"
     );
 }
+
+#[test]
+fn framing_producer_publishes_opened_ownership_before_alias_lookup() {
+    let (head, definition, memory, facts, sibling) = fixture();
+    let head = CResourceFact::own(head.resource().clone());
+    let residual = ResourceContext::new()
+        .try_compose_with_fact(head, &facts)
+        .unwrap();
+    let state = CState::new()
+        .with_memory(memory)
+        .with_resource_context(residual.clone());
+    let kept = crate::kernel::functions::call_kept_ownership(
+        &residual,
+        std::slice::from_ref(&definition),
+        &state,
+        &facts,
+    );
+    let opened = kept.opened_resources_for_test();
+    let alias = Pointer::symbolic(Variable(881_002));
+    assert!(
+        opened
+            .concrete_write_entries(&alias, 4, &facts)
+            .is_some_and(|entries| entries.exact()),
+        "the framing producer did not publish its selected owned ranges"
+    );
+    assert!(opened.satisfies_fact(&coverage_piece(881_002, 0, 1), &facts));
+    assert!(!opened.satisfies_fact(&coverage_piece(881_002, 0, 1), &sibling));
+    assert_eq!(residual.facts().len(), 1);
+}
+
+#[test]
+fn fresh_resource_publication_tracks_late_equalities_and_persistent_deltas() {
+    let (_, _, _, branch, sibling) = fixture();
+    let original = ResourceContext::new_with_equalities(&sibling)
+        .unchecked_with_fact(coverage_piece(881_000, 0, 1));
+    let alias = Pointer::symbolic(Variable(881_002));
+    assert!(!original.satisfies_fact(&coverage_piece(881_002, 0, 1), &sibling));
+    assert!(
+        original
+            .concrete_write_entries(&alias, 4, &branch)
+            .is_some_and(|entries| entries.exact())
+    );
+    let descendant = original
+        .clone()
+        .unchecked_with_fact(coverage_piece(881_003, 0, 1));
+    let consumed = descendant
+        .without_fact_incrementally(&coverage_piece(881_002, 0, 1), &branch)
+        .unwrap();
+    assert!(!consumed.satisfies_fact(&coverage_piece(881_002, 0, 1), &branch));
+    assert!(consumed.satisfies_fact(&coverage_piece(881_003, 0, 1), &branch));
+    assert_eq!(original.facts(), &[coverage_piece(881_000, 0, 1)]);
+    assert!(!original.satisfies_fact(&coverage_piece(881_002, 0, 1), &sibling));
+}
+
+#[test]
+fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let (head, definition, memory, mut facts, _) = fixture();
+        for i in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(899_000 + i * 2)),
+                    Bitvector32Term::Variable(Variable(899_001 + i * 2)),
+                ),
+                true,
+            );
+        }
+        let head = CResourceFact::own(head.resource().clone());
+        let residual = ResourceContext::new()
+            .try_compose_with_fact(head.clone(), &facts)
+            .unwrap();
+        let ambient = residual
+            .clone()
+            .try_compose_with_facts((0..size).map(|i| coverage_piece(895_000 + i, 0, 1)), &facts)
+            .unwrap();
+        let state = CState::new()
+            .with_memory(memory)
+            .with_resource_context(ambient);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let fresh = ResourceContext::new_with_equalities(&facts)
+                    .unchecked_with_fact(coverage_piece(881_000, 0, 1));
+                let alias = Pointer::symbolic(Variable(881_002));
+                assert!(
+                    fresh
+                        .concrete_write_entries(&alias, 4, &facts)
+                        .unwrap()
+                        .exact()
+                );
+                let kept = crate::kernel::functions::call_kept_ownership(
+                    &residual,
+                    std::slice::from_ref(&definition),
+                    &state,
+                    &facts,
+                );
+                let opened = kept.opened_resources_for_test();
+                assert!(
+                    opened
+                        .concrete_write_entries(&alias, 4, &facts)
+                        .unwrap()
+                        .exact()
+                );
+                assert_eq!(
+                    opened.facts().len(),
+                    2,
+                    "ambient authority must not enter the frontier"
+                );
+                assert!(!opened.satisfies_fact(&coverage_piece(895_000, 0, 1), &facts));
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "publication scanned unrelated graph/resource input: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "publication rebuilt unrelated state: {samples:?}"
+    );
+}

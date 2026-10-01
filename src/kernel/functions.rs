@@ -1010,7 +1010,7 @@ fn recover_candidate_stable_view_resources(
                         ledger
                             .validate_view_binding(binding.clone(), participant)
                             .is_ok()
-                            && ResourceContext::new()
+                            && ResourceContext::new_with_equalities(assumptions)
                                 .unchecked_with_fact(binding.viewed.clone())
                                 .satisfies_fact(fact, assumptions)
                     })
@@ -2612,7 +2612,7 @@ fn authority_mode_release_retires_control(
             Err(error) => return Ok(Err(error)),
         }
     };
-    let frontier = ResourceContext::new().unchecked_with_fact(selected);
+    let frontier = ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(selected);
     let read_entry = match checked_contract_control_read_state(
         &argument_entry,
         &frontier,
@@ -4699,13 +4699,14 @@ fn execute_verified_function_applications_with_suspension(
         if post_contract_state.uses_population_authority_semantics() {
             let body_assumptions =
                 assumptions_with_path_context(&effective_assumptions, &facts, &obligations);
-            let composite_outputs = ResourceContext::new().unchecked_with_facts(
-                output_resources
-                    .facts()
-                    .iter()
-                    .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
-                    .cloned(),
-            );
+            let composite_outputs = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_facts(
+                    output_resources
+                        .facts()
+                        .iter()
+                        .filter(|fact| matches!(fact.resource(), CResource::Composite { .. }))
+                        .cloned(),
+                );
             let Some((_, body_facts)) =
                 expand_all_composite_resource_facts_and_propositions_at_state(
                     &composite_outputs,
@@ -5745,7 +5746,7 @@ fn prepare_verified_function_call<'a>(
     // particular a call from inside an open update must restore the body
     // before another contract can observe it. Ordinary folded heads still
     // own their bodies internally and require no separate population check.
-    let population_inputs = ResourceContext::new().unchecked_with_facts(
+    let population_inputs = ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
         transfer
             .borrowed_inputs
             .iter()
@@ -8106,7 +8107,8 @@ pub(super) fn call_kept_ownership(
             }
             CResource::Composite { .. } => {
                 let Some(expanded) = expand_composites_for_frame(
-                    &ResourceContext::new().unchecked_with_fact(fact.clone()),
+                    &ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_fact(fact.clone()),
                     definitions,
                     state.memory(),
                     assumptions,
@@ -8121,7 +8123,7 @@ pub(super) fn call_kept_ownership(
     CallKeptOwnership::new(
         residual.clone(),
         CallKeptRanges::new(
-            ResourceContext::new()
+            ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_facts(ranges.into_iter().map(CResourceFact::own_memory)),
             premises,
         ),
@@ -8637,9 +8639,9 @@ fn matched_instance_body_ownership(
     };
     // The callee entry contains transferred inputs, while this exact head is
     // in the checked caller residual. Read its body in that retained frontier.
-    let mut read_state = state
-        .clone()
-        .with_resource_context(ResourceContext::new().unchecked_with_fact(fact.clone()));
+    let mut read_state = state.clone().with_resource_context(
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(fact.clone()),
+    );
     read_state.resource_bindings = None;
     let (clauses, projection) = matched_resource_instance_case_read_projection(
         &read_state,
@@ -9256,7 +9258,7 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         let mut evaluation = self.state.clone();
-        evaluation.resources = ResourceContext::new();
+        evaluation.resources = ResourceContext::new_with_equalities(self.assumptions);
         if self.mutex_storage_bytes.is_some() {
             evaluation.locals = CLocalEnvironment::default();
         }
@@ -9990,7 +9992,7 @@ fn checked_access_mode_refinement_adapter(
     let satisfied_by_mode = |required: &CResourceFact, view: bool| {
         contract_resources.facts().iter().any(|available| {
             available.is_view() == view
-                && ResourceContext::new()
+                && ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(available.clone())
                     .satisfies_fact(required, assumptions)
         })
@@ -15016,6 +15018,8 @@ fn initial_static_resources(
     for spans in spans_by_block.values_mut() {
         spans.sort_unstable();
     }
+    // Startup data is built before a proof context exists. This structural
+    // input is published at proof admission, not by a permission query.
     let mut resources = ResourceContext::default();
     for (identity, block) in memory.blocks.iter() {
         if visit() {
@@ -16721,7 +16725,7 @@ fn evaluate_resource_population_body_resources(
     budget: &mut ExecutionBudget,
     include_ordinary: bool,
 ) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
-    let mut body_resources = ResourceContext::new();
+    let mut body_resources = ResourceContext::new_with_equalities(assumptions);
     let evaluation_assumptions = assumptions
         .clone()
         .allow_symbolic_contract_loads()
@@ -17326,7 +17330,7 @@ fn prepare_contract_resource_transfer(
             borrowed_inputs: Vec::new(),
             consumed_inputs: Vec::new(),
             canonical_borrowed_owners: Vec::new(),
-            callee_resources: ResourceContext::new(),
+            callee_resources: ResourceContext::new_with_equalities(assumptions),
             caller_resources_after_requirements: caller_state.resources().clone(),
             memory_effects: Vec::new(),
             post_outputs: None,
@@ -17593,7 +17597,8 @@ fn prepare_contract_resource_transfer(
                 requirement.fact.is_view()
                     && matches!(requirement.fact.resource(), CResource::Composite { .. })
                     && expand_all_composite_resource_facts(
-                        &ResourceContext::new().unchecked_with_fact(requirement.fact.clone()),
+                        &ResourceContext::new_with_equalities(assumptions)
+                            .unchecked_with_fact(requirement.fact.clone()),
                         interface.composite_resource_definitions(),
                         callee_state.memory(),
                         assumptions,
@@ -17657,7 +17662,8 @@ fn prepare_contract_resource_transfer(
                 requirement.fact.is_own()
                     && matches!(requirement.fact.resource(), CResource::Composite { .. })
                     && expand_all_composite_resource_facts(
-                        &ResourceContext::new().unchecked_with_fact(requirement.fact.clone()),
+                        &ResourceContext::new_with_equalities(assumptions)
+                            .unchecked_with_fact(requirement.fact.clone()),
                         interface.composite_resource_definitions(),
                         callee_state.memory(),
                         assumptions,
@@ -17769,7 +17775,8 @@ fn prepare_contract_resource_transfer(
                 // descriptions that projection can open later. The head's
                 // escrow protects everything under it, so nothing deeper
                 // needs enumerating.
-                let singleton = ResourceContext::new().unchecked_with_fact(owned.clone());
+                let singleton = ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(owned.clone());
                 let Some((_, expanded_children, _)) = expand_composite_resource_fact_with_children(
                     &singleton,
                     owned,
@@ -17980,7 +17987,8 @@ fn prepare_contract_resource_transfer(
     // as a direct owned transfer of those bytes would be.
     if let Some(plan) = &stable_view_plan {
         for requirement in &population_quantity_requirements {
-            let singleton = ResourceContext::new().unchecked_with_fact(requirement.fact.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(requirement.fact.clone());
             let body = match evaluate_resource_population_body_resources(
                 &singleton,
                 callee_state,
@@ -18098,7 +18106,8 @@ fn prepare_contract_resource_transfer(
         // receive exactly what the canonical boundary would have handed it:
         // the requirement expanded through its definition, the same way
         // `canonical_resources` expands every other required resource.
-        let singleton = ResourceContext::new().unchecked_with_fact(requirement.fact.clone());
+        let singleton = ResourceContext::new_with_equalities(assumptions)
+            .unchecked_with_fact(requirement.fact.clone());
         let expanded = expand_all_composite_resource_facts(
             &singleton,
             interface.composite_resource_definitions(),
@@ -18180,7 +18189,8 @@ fn prepare_contract_resource_transfer(
             .cloned()
             .collect::<Vec<_>>();
         for composite in viewed_composites {
-            let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(composite.clone());
             if let Some(expanded) = expand_composite_resource_fact(
                 &singleton,
                 &composite,
@@ -18252,7 +18262,8 @@ fn prepare_contract_resource_transfer(
                     )
                 })
         {
-            let singleton = ResourceContext::new().unchecked_with_fact(resource.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(resource.clone());
             let body = match evaluate_resource_population_body_resources(
                 &singleton,
                 callee_state,
@@ -18488,7 +18499,7 @@ fn evaluate_contract_return_resource_context(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
-    let mut context = ResourceContext::new();
+    let mut context = ResourceContext::new_with_equalities(assumptions);
     // `owns` requirements that are returned as entry-snapshot borrows carry
     // caller identity in the checked transition. Re-evaluating an address
     // such as `self->pointer` in the callee entry state can replace that
@@ -18674,24 +18685,26 @@ fn evaluate_contract_return_resource_context(
     // its source spelling against only those authenticated input controls;
     // alias equality does not create a new ledger identity.
     let consumed_control_frontier = if entry_state.uses_population_authority_semantics() {
-        ResourceContext::new().unchecked_with_facts(entry_clauses.iter().filter_map(|checked| {
-            if checked.role != CResourceTransferRole::Consume {
-                return None;
-            }
-            let CResource::Composite { name, .. } = checked.fact.resource() else {
-                return None;
-            };
-            interface
-                .composite_resource_definition(name)
-                .filter(|definition| {
-                    definition.contains().iter().any(|child| {
-                        matches!(child.term(), CResourceTerm::PopulationAuthority { .. })
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(
+            entry_clauses.iter().filter_map(|checked| {
+                if checked.role != CResourceTransferRole::Consume {
+                    return None;
+                }
+                let CResource::Composite { name, .. } = checked.fact.resource() else {
+                    return None;
+                };
+                interface
+                    .composite_resource_definition(name)
+                    .filter(|definition| {
+                        definition.contains().iter().any(|child| {
+                            matches!(child.term(), CResourceTerm::PopulationAuthority { .. })
+                        })
                     })
-                })
-                .map(|_| checked.fact.clone())
-        }))
+                    .map(|_| checked.fact.clone())
+            }),
+        )
     } else {
-        ResourceContext::new()
+        ResourceContext::new_with_equalities(assumptions)
     };
     // Evaluates one returned clause that has no checked entry borrow against
     // the cells the contract makes readable, including the unmatched bodies
@@ -19059,7 +19072,8 @@ fn evaluate_contract_return_resources(
                         .get(*source_rank)
                         .copied()?;
                     *source_rank += 1;
-                    let singleton = ResourceContext::new().unchecked_with_fact(support.clone());
+                    let singleton = ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_fact(support.clone());
                     let expanded = if post_state.uses_population_authority_semantics() {
                         let projection_state =
                             post_state.clone().with_resource_context(singleton.clone());
@@ -19160,7 +19174,8 @@ fn evaluate_contract_return_resources(
         if let Some((_, children, _)) = (!is_population)
             .then(|| {
                 expand_composite_resource_fact_with_children(
-                    &ResourceContext::new().unchecked_with_fact(support.clone()),
+                    &ResourceContext::new_with_equalities(assumptions)
+                        .unchecked_with_fact(support.clone()),
                     &support,
                     interface.composite_resource_definitions(),
                     post_state.memory(),
@@ -19258,7 +19273,8 @@ fn produced_composite_frontier_conflict(
         {
             continue;
         }
-        let singleton = ResourceContext::new().unchecked_with_fact(produced.clone());
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(produced.clone());
         // An opaque head — no definition, an instance schema, a matched arm,
         // or a guard this path has not decided — exposes no frontier to
         // compare, and expansion is the only thing that could name one.
@@ -19970,9 +19986,10 @@ fn apply_counted_population_transitions_with_interface(
                     .counted_population(&name, &arguments)
                     .is_some_and(|count| !population_quantity_is_zero(count, assumptions))
             {
-                let singleton = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-                    CResource::Composite { name, arguments },
-                ));
+                let singleton =
+                    ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(
+                        CResourceFact::own(CResource::Composite { name, arguments }),
+                    );
                 let retained = match evaluate_resource_population_body_resources(
                     &singleton,
                     &entry_state,
@@ -20131,12 +20148,11 @@ fn apply_counted_population_transitions_with_interface(
             if population_body_definition.is_some()
                 && !caller_state.uses_population_authority_semantics()
             {
-                let singleton = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-                    CResource::Composite {
+                let singleton = ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(CResourceFact::own(CResource::Composite {
                         name: name.clone(),
                         arguments: arguments.clone(),
-                    },
-                ));
+                    }));
                 let finalized = match evaluate_resource_population_body_resources(
                     &singleton,
                     &entry_state,
@@ -20161,12 +20177,11 @@ fn apply_counted_population_transitions_with_interface(
             if population_body_definition.is_some()
                 && !caller_state.uses_population_authority_semantics()
             {
-                let singleton = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
-                    CResource::Composite {
+                let singleton = ResourceContext::new_with_equalities(assumptions)
+                    .unchecked_with_fact(CResourceFact::own(CResource::Composite {
                         name: name.clone(),
                         arguments: arguments.clone(),
-                    },
-                ));
+                    }));
                 let retained = match evaluate_resource_population_body_resources(
                     &singleton,
                     &entry_state,
@@ -20328,7 +20343,8 @@ fn apply_counted_population_transitions_with_interface(
             arguments: population.arguments.clone(),
         }));
     }
-    let active_populations = ResourceContext::new().unchecked_with_facts(active_populations);
+    let active_populations =
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(active_populations);
     let Some(population_facts) = (if caller_state.uses_population_authority_semantics() {
         // Authority-mode invariants belong to owned controls and are checked
         // by their resource exchanges. Legacy population membership cannot
@@ -21883,7 +21899,8 @@ fn checked_returned_instance_body_facts(
         let Some(definition) = interface.composite_resource_definition(instance.name()) else {
             continue;
         };
-        let singleton = ResourceContext::new().unchecked_with_fact(fact.clone());
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(fact.clone());
         let publication = publish_instance_arms(
             &singleton,
             std::slice::from_ref(definition),
@@ -22074,7 +22091,7 @@ fn selected_instance_resource_load_values(
             }
         }
         let mut budget = ExecutionBudget::beside_live_state();
-        let mut owned_memory = ResourceContext::new();
+        let mut owned_memory = ResourceContext::new_with_equalities(assumptions);
         for resource in &arm.contains {
             let Ok(Ok(fact @ CResourceFact::Own(CResource::Memory(_), _))) =
                 evaluate_function_resource_spec(&evaluation, resource, assumptions, &mut budget)
@@ -22949,7 +22966,8 @@ fn resource_context_contains_exact_owned_fact(
             })
             .cloned()
             .collect::<Vec<_>>();
-        let exact_parts = ResourceContext::new().unchecked_with_facts(exact_parts);
+        let exact_parts =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_facts(exact_parts);
         return exact_parts.validity_error(assumptions).is_none()
             && exact_parts.satisfies_fact(required, assumptions);
     }
@@ -22957,7 +22975,7 @@ fn resource_context_contains_exact_owned_fact(
         if !available.is_own() || available.family() != required.family() {
             return false;
         }
-        ResourceContext::new()
+        ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_fact(available.clone())
             .without_fact_delaying_normalization(required, assumptions)
             .is_some_and(|remaining| remaining.is_empty())
@@ -24470,7 +24488,8 @@ fn jointly_consume_returned_resource_units(
             return None;
         }
         let result = (|| {
-            let singleton = ResourceContext::new().unchecked_with_fact(required.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(required.clone());
             let expanded = expand_composite_resource_fact(
                 &singleton,
                 required,
@@ -24577,7 +24596,8 @@ pub(super) fn resource_context_satisfies_definitional_fact(
     else {
         return false;
     };
-    let required_context = ResourceContext::new().unchecked_with_fact(required.clone());
+    let required_context =
+        ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
     let Some(required) =
         expand_all_composite_resource_facts(&required_context, definitions, memory, assumptions)
     else {
@@ -24669,7 +24689,8 @@ fn consume_resource_fact_definitionally(
             return Some(remaining);
         }
 
-        let required_context = ResourceContext::new().unchecked_with_fact(required.clone());
+        let required_context =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(required.clone());
         if let Some(expanded_required) = crate::instrumentation::measure_operation(
             "kernel",
             "resource containment",
@@ -24853,7 +24874,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
         Ok(evaluated) => evaluated,
         Err(error) => return Ok(Err(error)),
     };
-    let mut context = ResourceContext::new();
+    let mut context = ResourceContext::new_with_equalities(assumptions);
     let checked = evaluated;
     for resource in &checked {
         // Instance rewrites retain the declared memory pieces so folding does
@@ -25063,7 +25084,7 @@ fn evaluate_resource_clauses_against_whole_section(
     let mut section_supply = if any_clause_waits {
         resource_clause_section_supply(state, &supplied, definitions, assumptions)
     } else {
-        ResourceContext::new()
+        ResourceContext::new_with_equalities(assumptions)
     };
     let mut pending = VecDeque::new();
     let mut queued = vec![false; resources.len()];
@@ -28215,7 +28236,8 @@ fn resource_fact_containing_allocation(
                 )
         })
         .find_map(|candidate| {
-            let singleton = ResourceContext::new().unchecked_with_fact(candidate.clone());
+            let singleton = ResourceContext::new_with_equalities(assumptions)
+                .unchecked_with_fact(candidate.clone());
             let mut budget = ExecutionBudget::beside_live_state();
             let Ok(Ok(body)) = evaluate_resource_population_body_resources(
                 &singleton,
@@ -28268,7 +28290,8 @@ fn active_counted_population_supports_allocation(
             name: population.name.clone(),
             arguments: population.arguments.clone(),
         });
-        let singleton = ResourceContext::new().unchecked_with_fact(resource);
+        let singleton =
+            ResourceContext::new_with_equalities(assumptions).unchecked_with_fact(resource);
         let mut budget = ExecutionBudget::beside_live_state();
         let Ok(Ok(body)) = evaluate_resource_population_body_resources(
             &singleton,

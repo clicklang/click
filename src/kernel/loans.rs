@@ -1530,11 +1530,13 @@ impl CompositeProjectionEvidence {
     }
 
     fn contains_child(&self, child: &CResourceFact) -> bool {
+        // Evidence-local structural entailment has no ambient premises.
+        let assumptions = &PureFactContext::default();
         self.children.iter().any(|piece| {
             piece == child
-                || ResourceContext::new()
+                || ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(piece.clone())
-                    .satisfies_fact(child, &PureFactContext::default())
+                    .satisfies_fact(child, assumptions)
         })
     }
 }
@@ -1656,7 +1658,7 @@ impl LocalViewBacking {
             bytes,
             1,
         );
-        if !ResourceContext::new()
+        if !ResourceContext::new_with_equalities(assumptions)
             .unchecked_with_fact(CResourceFact::own_memory(entire))
             .satisfies_fact(viewed, assumptions)
         {
@@ -2601,7 +2603,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     LAST_OWNED_RESERVATION_MISS.with(|miss| *miss.borrow_mut() = None);
     let mut residual = caller_resources.clone();
     let mut parent_view_bindings = parent_view_bindings.clone();
-    let mut callee_resources = ResourceContext::new();
+    let mut callee_resources = ResourceContext::new_with_equalities(assumptions);
     let mut transferred_ownership = Vec::new();
     let mut transferred_holds = Vec::new();
     let mut rebound_parents = BTreeMap::new();
@@ -2830,7 +2832,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             _ => false,
         };
         let canonical_caller_fact = (same_memory_extent
-            || ResourceContext::new()
+            || ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(requirement.fact.clone())
                 .satisfies_fact(caller_fact, assumptions))
         .then(|| caller_fact.clone());
@@ -2906,7 +2908,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         if let Some((parent_occurrence, binding)) = bound_occurrence {
             ledger.validate_view_binding(binding.clone(), caller)?;
-            if !ResourceContext::new()
+            if !ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(binding.viewed.clone())
                 .satisfies_fact(&requirement.fact, assumptions)
             {
@@ -3223,7 +3225,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                                 origin_support,
                                 assumptions,
                             )
-                            && ResourceContext::new()
+                            && ResourceContext::new_with_equalities(assumptions)
                                 .unchecked_with_fact(origin.clone())
                                 .satisfies_fact(&owned, assumptions)
                     });
@@ -3408,7 +3410,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         }
         let mut child_occurrence = None;
         for (index, requirement) in group {
-            if !ResourceContext::new()
+            if !ResourceContext::new_with_equalities(assumptions)
                 .unchecked_with_fact(binding.viewed.clone())
                 .satisfies_fact(&requirement.fact, assumptions)
             {
@@ -4786,12 +4788,14 @@ impl LoanLedger {
         if !scope.active || record.recovered {
             return Err(LoanRefusal::ScopeEnded);
         }
+        // Binding identity is checked without importing ambient equality facts.
+        let assumptions = &PureFactContext::default();
         if !parent.is_view()
             || !matches!(parent.resource(), CResource::Composite { .. })
             || !record.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
-                    .satisfies_fact(parent, &PureFactContext::default())
+                    .satisfies_fact(parent, assumptions)
             })
         {
             return Err(LoanRefusal::MissingLoanBinding);
@@ -5022,11 +5026,13 @@ impl LoanLedger {
         holder: LoanParticipantId,
     ) -> Result<(), LoanRefusal> {
         let loan = self.validate_authority_binding(binding.authority(), holder)?;
+        // Binding identity is checked without importing ambient equality facts.
+        let assumptions = &PureFactContext::default();
         if !binding.viewed.is_view()
             || !loan.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
-                    .satisfies_fact(&binding.viewed, &PureFactContext::default())
+                    .satisfies_fact(&binding.viewed, assumptions)
             })
         {
             return Err(LoanRefusal::MissingLoanBinding);
@@ -5267,7 +5273,7 @@ impl LoanLedger {
         .is_ok()
             && description.viewed.is_view()
             && loan.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
                     .satisfies_fact(&description.viewed, assumptions)
             })
@@ -5323,7 +5329,7 @@ impl LoanLedger {
         }
         if !viewed.is_view()
             || !record.permitted.iter().any(|permitted| {
-                ResourceContext::new()
+                ResourceContext::new_with_equalities(assumptions)
                     .unchecked_with_fact(permitted.clone())
                     .satisfies_fact(&viewed, assumptions)
             })
