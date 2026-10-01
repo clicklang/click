@@ -122,7 +122,13 @@ occupied stay initialized, so a later read of them is an initialized value the
 facts may leave unknown rather than a read of uninitialized storage. A join
 keeps a byte initialized only when every incoming path initialized it, and a
 read at an element index the facts bound (`0 <= i < n`) is initialized when
-every element the index may name is.
+every element the index may name is. A declaration with an initializer
+(`int32 a[4] = {1};`) initializes every byte of its object. Whole-struct
+assignment copies a member whose value was forgotten but whose bytes are
+initialized as an unknown value, so the destination member is initialized
+too; a member nothing wrote is still a read of uninitialized storage. A
+successful `realloc` keeps the old block's initialized bytes initialized up
+to the new size, and the bytes it grows by start uninitialized.
 
 Heap arrays of structs are byte-backed allocations whose indexed member
 addresses add `i * sizeof(struct T)` before applying the field offset. This

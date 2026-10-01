@@ -1754,6 +1754,39 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     break;
                 }
             }
+            // The old block's initialized bytes the new allocation holds,
+            // whether or not a cell above carries their value: each run cut
+            // at the new size where that is a constant, and kept whole where
+            // the facts place its end inside the new size. A run the facts
+            // cannot place is left out, which can only refuse a later read.
+            let mut initialized_prefix = Vec::new();
+            for (start, length) in state.memory.initialized_runs_in_block(&old_pointer.block) {
+                let end = start + i64::from(length);
+                let Ok(end_constant) = u32::try_from(end) else {
+                    continue;
+                };
+                let fits_condition = if new_bytes.unsigned {
+                    ConditionTerm::unsigned_less_equal(
+                        Bitvector32Term::Constant(end_constant),
+                        new_bytes.term.clone(),
+                    )
+                } else {
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Constant(end_constant),
+                        new_bytes.term.clone(),
+                    )
+                };
+                if effective_assumptions.decide(&fits_condition) == Some(true) {
+                    initialized_prefix.push((start, length));
+                } else if let Some(new_size) = new_bytes.term.as_const()
+                    && i64::from(new_size) > start
+                    && start >= 0
+                {
+                    let kept = u32::try_from(i64::from(new_size) - start)
+                        .map_or(length, |kept| kept.min(length));
+                    initialized_prefix.push((start, kept));
+                }
+            }
             if copy_is_unsupported {
                 paths.push(CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
@@ -1791,6 +1824,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                             (PointerOffsetTerm::Constant(i64::from(offset)), value)
                         })
                         .collect(),
+                    initialized_prefix,
                 );
             let pending_state = state.clone().with_memory(pending_memory);
             let assigned = execute_c_lvalue_assignment_paths(
@@ -3978,7 +4012,11 @@ fn zero_fill_declared_array(
             memory
         }
     };
-    state.set_memory(memory);
+    // The initializer writes every byte of the object, so they stay
+    // initialized once the zero cells' values are forgotten: a run dropped
+    // as a whole by a loop havoc or a store the facts cannot place then
+    // costs one covering query, not its slots.
+    state.set_memory(memory.with_initialized_object(&slot, object_bytes));
     Ok(state)
 }
 

@@ -16077,6 +16077,9 @@ fn aggregate_copy_reads_uninitialized(
                 || memory
                     .known_value(&source_field)
                     .is_some_and(|value| field.c_type().accepts(&value))
+                // A member whose cached view was forgotten but whose bytes
+                // the initialization record holds was written all the same.
+                || memory.has_initialized_bytes_at(&source_field, field.c_type().byte_width())
         });
         if union_initialized {
             continue;
@@ -16091,8 +16094,9 @@ fn aggregate_copy_reads_uninitialized(
     false
 }
 
-/// Mirrors the silent skip in `copy_aggregate_fields`: no source cell and not
-/// a zeroed heap address. Reading such a cell is a read of uninitialized
+/// Mirrors the silent skip in `copy_aggregate_fields`: no source cell, bytes
+/// the initialization record does not hold, and not a zeroed heap address.
+/// Reading such a cell is a read of uninitialized
 /// storage when the address is a live local or an uninitialized heap cell;
 /// anything else (external or symbolic memory) reads back as an unconstrained
 /// symbolic load rather than stale storage.
@@ -16101,7 +16105,9 @@ fn uninitialized_aggregate_copy_source_cell(
     source_field: &Pointer,
     element_type: CType,
 ) -> bool {
-    if memory.known_value(source_field).is_some() {
+    if memory.known_value(source_field).is_some()
+        || memory.has_initialized_bytes_at(source_field, element_type.byte_width())
+    {
         return false;
     }
     if memory.is_zeroed_heap_address(
@@ -16117,6 +16123,30 @@ fn uninitialized_aggregate_copy_source_cell(
         &PureFactContext::new(),
     ) || (source_field.block.starts_with("local:")
         && memory.access_in_bounds(source_field, element_type.byte_width()))
+}
+
+/// Whether a copy's source field is storage of this memory that holds no
+/// value the copy can carry: a block it allocates (not symbolic or temporary
+/// storage), in bounds, with no cached value or zero guarantee (the callers
+/// ask those first) and with bytes the initialization record does not hold.
+/// The copy skips such a field, and `aggregate_copy_reads_uninitialized`
+/// has already refused it where it is uninitialized. A field whose cached
+/// value was forgotten (by a store the facts could not place, or a loop,
+/// call or join havoc) but whose bytes the record holds was written all the
+/// same: the copy carries its unknown value as the typed load of the source,
+/// as for external storage, so the destination is initialized too.
+fn aggregate_copy_source_holds_nothing(
+    memory: &CMemory,
+    source_field: &Pointer,
+    element_type: CType,
+) -> bool {
+    memory.has_block(&source_field.block)
+        && !matches!(
+            source_field.block,
+            PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
+        )
+        && memory.access_in_bounds(source_field, element_type.byte_width())
+        && !memory.has_initialized_bytes_at(source_field, element_type.byte_width())
 }
 
 /// Every aggregate-copy path goes through this wrapper so a copy from
@@ -16215,13 +16245,7 @@ fn copy_aggregate_fields(
                         _ => None,
                     };
                 }
-                if memory.has_block(&source_field.block)
-                    && !matches!(
-                        source_field.block,
-                        PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
-                    )
-                    && memory.access_in_bounds(&source_field, element_type.byte_width())
-                {
+                if aggregate_copy_source_holds_nothing(&memory, &source_field, element_type) {
                     return None;
                 }
                 match element_type {
@@ -16335,13 +16359,7 @@ fn copy_aggregate_union_member(
     ) {
         return zero_union_member_value(element_type);
     }
-    if memory.has_block(&source_field.block)
-        && !matches!(
-            source_field.block,
-            PointerBlock::Symbolic(_) | PointerBlock::Temporary(_)
-        )
-        && memory.access_in_bounds(source_field, element_type.byte_width())
-    {
+    if aggregate_copy_source_holds_nothing(memory, source_field, element_type) {
         return None;
     }
     let load = crate::kernel::canonical_form_of_load(
@@ -16429,6 +16447,85 @@ mod aggregate_union_copy_tests {
             Some(CValue::UInt8(Bitvector32Term::Constant(0xAA))),
         );
         assert_eq!(copied.known_union_value(&destination, CType::Int32), None);
+    }
+
+    /// A local `{ int32 tag; union { int32 number; uint8 byte; } }` whose
+    /// cached values an unplaced store into the block forgot, the union's
+    /// written only when `union_written`.
+    fn forgotten_local_packet(
+        union_written: bool,
+    ) -> (CMemory, Pointer, Pointer, CAggregateLayout) {
+        let source = Pointer {
+            block: "local:forgotten-packet-source".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let destination = Pointer {
+            block: "local:forgotten-packet-destination".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let layout = CAggregateLayout::with_unions(
+            8,
+            4,
+            vec![CAggregateField::new("tag", 0, CType::Int32)],
+            vec![CAggregateUnion::new(
+                "u",
+                4,
+                4,
+                vec![
+                    CAggregateUnionField::new("number", 0, CType::Int32),
+                    CAggregateUnionField::new("byte", 0, CType::UInt8),
+                ],
+            )],
+        );
+        let mut memory = CMemory::new()
+            .with_block(source.block.clone(), 8)
+            .with_block(destination.block.clone(), 8)
+            .store(source.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+        if union_written {
+            memory = memory.store_union(
+                source.offset_by_bytes(4),
+                CType::Int32,
+                CValue::Int32(Bitvector32Term::Constant(2)),
+            );
+        }
+        // `source[u] = …` for an index the facts do not place: every cell
+        // and view of the block may be the one it writes.
+        let unplaced = Pointer {
+            block: source.block.clone(),
+            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(925_001)), 4),
+        };
+        let memory = memory.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new());
+        assert!(memory.known_value(&source).is_none());
+        assert!(
+            memory
+                .known_union_value(&source.offset_by_bytes(4), CType::Int32)
+                .is_none()
+        );
+        (memory, source, destination, layout)
+    }
+
+    #[test]
+    fn copying_forgotten_initialized_fields_carries_unknown_values() {
+        let (memory, source, destination, layout) = forgotten_local_packet(true);
+        let copied = copy_aggregate_fields_checked(memory, &source, &destination, &layout)
+            .expect("forgotten but initialized fields are not an uninitialized read");
+        // The destination holds a value for every member, so it is
+        // initialized: each is the typed load of the forgotten source.
+        assert!(copied.known_value(&destination).is_some());
+        assert!(
+            copied
+                .known_union_value(&destination.offset_by_bytes(4), CType::Int32)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn copying_a_never_written_union_member_stays_an_uninitialized_read() {
+        let (memory, source, destination, layout) = forgotten_local_packet(false);
+        assert_eq!(
+            copy_aggregate_fields_checked(memory, &source, &destination, &layout).err(),
+            Some(CUndefinedBehavior::UninitializedRead),
+        );
     }
 }
 
