@@ -1107,3 +1107,45 @@ mod footprints {
         assert!(!matches!(effect(&after, None), StepEffect::Separate(_)));
     }
 }
+
+/// A store at an index the path's facts place off a cell is crossed when the
+/// cell's value is read on that path, and only there. The store dropped the
+/// cached cell, so the snapshot after it answers nothing by itself, and the
+/// assumption-free naming walk stops at the store. Under `u != 0` the value
+/// is the earlier `3`; under `u == 0`, or with no fact about `u`, there is
+/// none — never the `3`.
+#[test]
+fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
+    let cell = at(block("global:g"), 0);
+    let index = Bitvector32Term::Variable(Variable(0));
+    let written = Pointer {
+        block: block("global:g"),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(index.clone()),
+            byte_width: 4,
+        },
+    };
+    let three = CValue::Int32(Bitvector32Term::Constant(3));
+    let no_facts = PureFactContext::new();
+    let after = entry_memory()
+        .store(cell.clone(), three.clone())
+        .without_possible_aliasing_cells(&written, 4, &no_facts)
+        .store(written, CValue::Int32(Bitvector32Term::Constant(7)));
+    assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
+    let after = intern_c_memory(after);
+    let index_is_zero = |value| {
+        PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(0)),
+            value,
+        ))
+    };
+    assert_eq!(
+        cell_value_on_path(&after, &cell, 4, &index_is_zero(false)),
+        Some(three)
+    );
+    assert_eq!(
+        cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
+        None
+    );
+    assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
+}

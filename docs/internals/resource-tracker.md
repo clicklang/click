@@ -38,6 +38,7 @@ same(resource, left: &ProgramPoint, right: &ProgramPoint) -> Sameness
 explain(resource, here, there) -> Explanation
 explain_last_same(resource, here) -> Explanation
 last_same_point(resource, at) -> Option<ProgramPoint>        // the naming path
+cell_value_on_path(at, pointer, bytes, facts) -> Option<CValue> // a C read, on one path
 ```
 
 `Sameness` is `Same`, `Changed { at, by }` or `Unknown { at, why }`. `Stop`
@@ -153,6 +154,21 @@ the same as, and an array argument carries the oldest snapshot that still
 agrees about its block, so equal names mean equal terms. The stop information
 is *computed from the point the walk stopped at* rather than recorded along the
 way, which is why naming pays nothing for it.
+
+`cell_value_on_path` is the one question asked under a path's facts, and it
+names nothing. A store at an address the facts could not place when it ran —
+`buf[u] = 7` — drops the cached cells it may write, so a later C read of
+`buf[0]` finds no cell even on a path that has since learned `u != 0`, and the
+naming walk, being assumption-free, stops at that store. The C load asks this
+before it mints a load term: where the naming walk stops, `affects` is asked
+about the stopping step under the path's facts, and on a separate answer the
+memoized naming walk resumes from the step's base. The answer is the value the
+snapshot it lands on caches at exactly the read's pointer; with no fact that
+places the store, or one that puts it on the cell, there is none. The work is
+one memoized naming lookup and one separation check per step the naming walk
+cannot cross. A file-scope array used to get the same answer by accident: its
+reduced memory re-interned as the snapshot before the store, which a heap
+store's initialization record prevents.
 
 ## What it is not
 
