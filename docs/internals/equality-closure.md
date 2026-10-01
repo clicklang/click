@@ -615,6 +615,16 @@ unknown equality is not disequality. The existing logical pointer-cell width
 rule is preserved for both access judgments. Input registration remains a
 proof-boundary operation, not a scan performed by a cold lookup.
 
+Address-class queries register the same retained logical-pointer definitions
+as pointer-equality queries. Registration visits only the requested term and
+its recorded producer dependencies, then closes them against the current
+branch's equalities. A resource lookup therefore needs no preliminary equality
+query to recognize `load(a)` and `load(b)` after proving `a = b`. It registers
+no unrelated reads or resources and introduces no premise or access authority.
+The regression asks the read and write indexes directly before any equality
+warm-up, rejects sibling, displacement, width, and snapshot mismatches, and
+checks cold address registration at multiple unrelated-definition counts.
+
 Structural read checks and structural "already held" range checks no longer
 scan a pointer block's resources. They share a publication-maintained index
 of base shapes and affine origins, plus the raw interval summary for complete

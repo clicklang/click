@@ -56,7 +56,8 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     let connected = facts
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
-    assert!(connected.equality_graph.are_equal(&x, &y));
+    // Resource lookup must register retained read definitions itself. A prior
+    // pointer-equality query must not be needed to warm the graph.
     assert!(
         resources
             .concrete_read_entries(&y, 4, &connected)
@@ -584,4 +585,62 @@ fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
         samples[3].2 <= samples[0].2 * 3 + 128,
         "merge/query rebuilt the larger footprint payload: {samples:?}"
     );
+}
+
+#[test]
+fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let logical_pointer_read = |memory: &CMemory, address: &Pointer, context: &PureFactContext| {
+        let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+            memory,
+            address.clone(),
+            CType::Int64Pointer,
+            Vec::new(),
+            Vec::new(),
+            context,
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one logical read")
+        };
+        assert!(path.facts.is_empty());
+        assert!(path.obligations.is_empty());
+        let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+            panic!("pointer read")
+        };
+        value.pointer().clone()
+    };
+    let memory = CMemory::new();
+    let a = Pointer::symbolic(Variable(92_250));
+    let b = Pointer::symbolic(Variable(92_251));
+    let before = PureFactContext::new();
+    let x = logical_pointer_read(&memory, &a, &before);
+    let y = logical_pointer_read(&memory, &b, &before);
+    let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+        CMemoryRange::new_with_element_width(x, 0u32.into(), 4u32.into(), 1),
+    ));
+    owner.synchronize_memory_equalities(&before);
+    let sibling = before.clone();
+    let branch = before
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+    // Ask the resource index first, without warming pointer equality or
+    // invoking a spelling fallback. Producer definitions are term metadata.
+    assert!(
+        owner
+            .concrete_read_entries(&y, 4, &branch)
+            .is_some_and(|entries| entries.exact())
+    );
+    assert!(
+        owner
+            .concrete_write_entries(&y, 4, &branch)
+            .is_some_and(|entries| entries.exact())
+    );
+    assert!(owner.permits_memory_read(&y, 4, &branch));
+    assert!(owner.memory_write_range(&y, 4, &branch).is_some());
+    assert!(!owner.permits_memory_read(&y, 4, &sibling));
+    assert!(!owner.permits_memory_read(&y.offset_by_bytes(4), 4, &branch));
+    assert!(owner.memory_write_range(&y, 5, &branch).is_none());
+    let later = memory.store(a, CValue::typed_pointer(b, CType::Int64Pointer));
+    let z = logical_pointer_read(&later, &Pointer::symbolic(Variable(92_251)), &branch);
+    assert!(!owner.permits_memory_read(&z, 4, &branch));
 }

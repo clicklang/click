@@ -4380,6 +4380,23 @@ mod tests {
             });
             assert!(equal);
             assert!(work < 40, "size={size}, work={work}");
+            // Cold class lookup must resolve one newly produced term without
+            // scanning the session's unrelated retained definitions.
+            let address = Pointer::symbolic(Variable(94_000 + size));
+            let value = logical_pointer_read(&memory, &address, &branch);
+            let application = Pointer::loaded_value(&intern_c_memory_ref(&memory), &address);
+            let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let class = branch.equality_graph.address_class(&value).unwrap();
+                    let other = branch.equality_graph.address_class(&application).unwrap();
+                    assert_eq!(branch.equality_graph.address_class_root(class), other);
+                })
+            });
+            assert!(work < 100, "size={size}, work={work}");
+            assert!(
+                map_work < 512 * (size.ilog2() as usize + 1),
+                "size={size}, map work={map_work}"
+            );
         }
     }
 
