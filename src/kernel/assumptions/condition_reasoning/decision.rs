@@ -1108,7 +1108,10 @@ impl PureFactContext {
         None
     }
 
-    pub(super) fn wide_constant_from_equalities(&self, term: &Bitvector32Term) -> Option<u64> {
+    pub(in crate::kernel) fn wide_constant_from_equalities(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<u64> {
         fn evaluate(
             context: &PureFactContext,
             term: &Bitvector32Term,
