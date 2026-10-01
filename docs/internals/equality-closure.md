@@ -615,6 +615,34 @@ unknown equality is not disequality. The existing logical pointer-cell width
 rule is preserved for both access judgments. Input registration remains a
 proof-boundary operation, not a scan performed by a cold lookup.
 
+Structural read checks and structural "already held" range checks no longer
+scan a pointer block's resources. They share a publication-maintained index
+of base shapes and affine origins, plus the raw interval summary for complete
+concrete coverage at a plain origin with constant displacement. A structural
+read can also name its base as either explicit operand of offset addition;
+those subterms select occurrences directly. Cold queries do not register the
+resource input in a graph. Updates and consumption maintain persistent roots,
+and branch copies share them.
+
+These structural indexes are part of the trusted kernel. Shape fingerprints
+ignore snapshots only to select candidates for the existing structural
+judgment; a hash match or collision never proves pointer equality, range
+containment, initialization, or permission. Each selected occurrence still
+passes the original check, including element width, exact signed displacement,
+ownership mode, and the logical pointer-cell read convention. Proved graph
+aliases do not become structural matches. Multi-size regressions cover cold
+hits and misses beside unrelated pointer parameters, and controls cover
+partial ranges, consumption, branch isolation, and read width.
+
+This retires the two structural block scans, not all general permission
+lookup. General read/write checks still have spelling and resource-search
+paths for addresses outside the complete indexed fragments. Removing them
+also requires complete resource/graph pairing across forked assumption
+contexts and indexed selection for retained load-origin forms. An attempted
+replacement by address anchors alone rejected existing completed-read and
+borrowed-buffer proofs; it is not part of the implementation. Stored-value
+and initialization-evidence spelling lookups remain separate migrations.
+
 Read, write, and fold consumers are integration examples. A lookup must not
 enumerate every spelling in a class. Equality indexing narrows candidates;
 permission quantities, range containment, ownership reservation, and ordering
