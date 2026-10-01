@@ -4963,30 +4963,20 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> bool {
         if let Some(mut entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
-            let exact = entries.exact();
-            return entries.any(|entry| {
+            while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
                 let Some(range) = resource_fact_read_core_range(resource) else {
-                    return false;
+                    continue;
                 };
-                let address = if exact {
-                    // The typed address class justifies using this occurrence's
-                    // own start. Coverage and authority remain checked below.
-                    range
-                        .base()
-                        .offset_by_elements(range.start().clone(), range.element_width())
-                } else {
-                    let Some(address) = assumptions
-                        .equality_graph
-                        .pointer_in_block(pointer, &range.base().block)
-                    else {
-                        return false;
-                    };
-                    address
+                let Some(address) = entries.address(pointer, &range) else {
+                    continue;
                 };
-                memory_resource_fact_permits_read(resource, &address, byte_width, assumptions)
-            });
+                if memory_resource_fact_permits_read(resource, &address, byte_width, assumptions) {
+                    return true;
+                }
+            }
+            return false;
         }
         // A contract expression can reload a pointer-valued field after an
         // opaque call. Match that kernel-minted name to the resource's
@@ -5128,28 +5118,20 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
         if let Some(mut entries) = self.concrete_write_entries(pointer, byte_width, assumptions) {
-            let exact = entries.exact();
-            return entries.find_map(|entry| {
+            while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
-                let range = resource.memory_own_range()?;
-                // Translate the access into the owner's coordinates using
-                // checked graph equality. Candidate selection supplies no
-                // authority; the existing write and bounds judgment decides.
-                let address = if exact {
-                    // The paired address class proves equality to this live
-                    // occurrence's start, including loaded/non-affine terms.
-                    range
-                        .base()
-                        .offset_by_elements(range.start().clone(), range.element_width())
-                } else {
-                    assumptions
-                        .equality_graph
-                        .pointer_in_block(pointer, &range.base().block)?
+                let Some(range) = resource.memory_own_range() else {
+                    continue;
                 };
-                memory_resource_fact_permits_write(resource, &address, byte_width, assumptions)
-                    .then_some(range)
-            });
+                let Some(address) = entries.address(pointer, range) else {
+                    continue;
+                };
+                if memory_resource_fact_permits_write(resource, &address, byte_width, assumptions) {
+                    return Some(range);
+                }
+            }
+            return None;
         }
         // A kernel-minted address resolves to its load term first, so it
         // matches owned ranges still written through loads; a proved

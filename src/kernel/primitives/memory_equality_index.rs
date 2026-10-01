@@ -291,11 +291,18 @@ impl MemoryAddresses {
 pub(super) struct PairedMemoryIndex {
     resources: std::sync::Arc<ResourceContextStorage>,
     graph: EqualityGraph,
-    source_identity: std::sync::Arc<()>,
     addresses: MemoryAddresses,
     points: AddressPoints,
-    pending_points: PersistentMap<ResourceEntryId, CResourceFact>,
     points_initialized: bool,
+}
+
+/// Disposable derived views keyed by admitted equality inputs. Term registrations
+/// may differ across forks; they are never used as proof-context identities.
+#[derive(Clone, Default)]
+pub(super) struct MemoryPairings {
+    by_inputs:
+        PersistentMap<crate::kernel::equality_graph::InputKey, std::sync::Arc<PairedMemoryIndex>>,
+    published: Option<std::sync::Arc<PairedMemoryIndex>>,
 }
 
 /// A payload attached to typed address classes in the trusted graph. It has
@@ -428,32 +435,114 @@ impl MemoryAccessEntries {
     }
 }
 
-impl ResourceContext {
-    /// Pair at proof boundaries, then apply only resource and class deltas.
-    /// A restricted or sibling context starts from raw persistent roots;
-    /// derived equalities never escape the graph that established them.
-    pub(crate) fn synchronize_memory_equalities(&self, assumptions: &PureFactContext) {
-        self.pair_memory_equalities(assumptions, true);
+/// Candidates and their address evidence retain the same private graph
+/// checkpoint. Class IDs and representative coordinates never cross forks.
+pub(super) struct MemoryAccessCandidates {
+    entries: MemoryAccessEntries,
+    index: std::sync::Arc<PairedMemoryIndex>,
+}
+impl Iterator for MemoryAccessCandidates {
+    type Item = ResourceEntryId;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.entries.next()
+    }
+}
+impl MemoryAccessCandidates {
+    #[cfg(test)]
+    fn exact(&self) -> bool {
+        self.entries.exact()
     }
 
-    // A lookup cannot turn a previously unpaired frame into a full-input
-    // registration pass. Input registration belongs to the execution proof
-    // boundary above; cold kernel queries retain the affine index/general
-    // checker until that boundary has published complete address coverage.
-    fn pair_memory_equalities(&self, assumptions: &PureFactContext, register_input: bool) {
+    pub(super) fn address(&self, pointer: &Pointer, range: &CMemoryRange) -> Option<Pointer> {
+        if self.entries.exact() {
+            Some(
+                range
+                    .base()
+                    .offset_by_elements(range.start().clone(), range.element_width()),
+            )
+        } else {
+            self.index
+                .graph
+                .pointer_in_block(pointer, &range.base().block)
+        }
+    }
+}
+
+impl ResourceContext {
+    /// Pair at proof boundaries, then apply only resource and class deltas.
+    /// Forks share the registered input and apply only their admitted delta.
+    /// Independent lineages start from raw roots; no sibling premise leaks.
+    pub(crate) fn synchronize_memory_equalities(&self, assumptions: &PureFactContext) {
+        self.pair_memory_equalities(assumptions, true, None);
+    }
+
+    // Pair against admitted inputs, not a foreign graph's query registrations.
+    // The index owns its graph checkpoint and term IDs. Advancing a fork applies
+    // only its explicit equality delta into that checkpoint, preserving payloads.
+    // Complete resource registration remains a proof-boundary operation.
+    fn pair_memory_equalities(
+        &self,
+        assumptions: &PureFactContext,
+        register_input: bool,
+        query: Option<&Pointer>,
+    ) -> std::sync::Arc<PairedMemoryIndex> {
+        let source = assumptions.equality_graph.clone();
+        let key = source.input_key();
         let mut cache = self
             .memory_equalities
             .lock()
             .expect("memory equality index");
-        let graph = &assumptions.equality_graph;
-        if let Some(index) = cache.as_mut()
-            && (!register_input || index.points_initialized)
-            && graph.pointer_merges_since(&index.graph).is_some()
-            && graph.address_merges_since(&index.graph).is_some()
-            && std::sync::Arc::ptr_eq(&self.storage.origin, &index.resources.origin)
+        if self.storage.index.memory_by_block.is_empty() {
+            // No memory occurrences means no class-keyed IDs to rebase.
+            // Capture the already closed source in constant work. Older views
+            // need no payload preservation after the last occurrence is gone.
+            let root = self.empty_memory_index(source.input_root());
+            let paired = self.empty_memory_index(source);
+            cache.by_inputs = PersistentMap::default()
+                .with_inserted(key.root(), root)
+                .with_inserted(key, paired.clone());
+            // Empty memory input is trivially complete, even on a cold query.
+            cache.published = Some(paired.clone());
+            return paired;
+        }
+        // A cold view made before publication cannot shadow the completed
+        // registered root. Prefer complete ancestors once this lineage has one.
+        let require_complete = register_input
+            || cache
+                .by_inputs
+                .get(&key.root())
+                .is_some_and(|index| index.points_initialized);
+        let ancestor = cache
+            .by_inputs
+            .get(&key)
+            .filter(|index| !require_complete || index.points_initialized)
+            .cloned()
+            .or_else(|| {
+                cache
+                    .by_inputs
+                    .get(&key.root())
+                    .filter(|index| {
+                        index.points_initialized && index.resources.index.memory_by_block.is_empty()
+                    })
+                    .cloned()
+            })
+            .or_else(|| {
+                if cache.by_inputs.is_empty() {
+                    return None;
+                }
+                source.input_checkpoints().find_map(|key| {
+                    cache
+                        .by_inputs
+                        .get(&key)
+                        .filter(|index| !require_complete || index.points_initialized)
+                        .cloned()
+                })
+            });
+        let incompatible_checkpoint = ancestor.is_some();
+        if let Some(mut paired) = ancestor
+            && std::sync::Arc::ptr_eq(&self.storage.origin, &paired.resources.origin)
         {
-            let index = std::sync::Arc::make_mut(index);
-            let expected = index.resources.history.as_ref();
+            let expected = paired.resources.history.as_ref();
             let mut cursor = self.storage.history.as_ref();
             let mut changed = Vec::new();
             let mut descendant = true;
@@ -469,17 +558,22 @@ impl ResourceContext {
                 cursor = change.parent.as_ref();
             }
             if descendant {
-                for (_, fact) in index.pending_points.iter() {
-                    if let Some(range) = fact.memory_range() {
-                        graph.address_class(
-                            &range
-                                .base()
-                                .offset_by_elements(range.start().clone(), range.element_width()),
-                        );
-                    }
+                let index = std::sync::Arc::make_mut(&mut paired);
+                // An empty payload has no namespace coupling. Adopt the
+                // source's closed state, including on a preexisting sibling,
+                // instead of walking or reapplying unrelated input history.
+                let adopt_source = index.resources.index.memory_by_block.is_empty();
+                let mut graph = if adopt_source {
+                    source.clone()
+                } else {
+                    index.graph.clone()
+                };
+                if !adopt_source {
+                    assert!(graph.append_inputs_from(&source), "input checkpoint prefix");
                 }
-                // Registration may itself close congruent loaded addresses.
-                // Finish it before reading either stream of graph deltas.
+                if let Some(query) = query {
+                    graph.address_class(query);
+                }
                 for (_, insert, fact) in changed.iter().rev() {
                     if index.points_initialized
                         && *insert
@@ -492,22 +586,22 @@ impl ResourceContext {
                         );
                     }
                 }
-                let merges = graph
-                    .pointer_merges_since(&index.graph)
-                    .expect("pointer prefix");
-                for merge in graph
-                    .address_merges_since(&index.graph)
-                    .expect("address prefix")
-                {
-                    index.points.merge(merge.moved, merge.kept);
-                }
-                for (entry, fact) in index.pending_points.iter() {
-                    index.points.update(*entry, true, fact, graph);
-                }
-                index.pending_points = PersistentMap::default();
+                let merges = if adopt_source {
+                    Vec::new()
+                } else {
+                    for merge in graph
+                        .address_merges_since(&index.graph)
+                        .expect("address prefix")
+                    {
+                        index.points.merge(merge.moved, merge.kept);
+                    }
+                    graph
+                        .pointer_merges_since(&index.graph)
+                        .expect("pointer prefix")
+                };
                 for (entry, insert, fact) in changed.into_iter().rev() {
                     if index.points_initialized {
-                        index.points.update(entry, insert, &fact, graph);
+                        index.points.update(entry, insert, &fact, &graph);
                     }
                     let Some(range) = fact.memory_range() else {
                         continue;
@@ -517,7 +611,7 @@ impl ResourceContext {
                         fact.is_own(),
                         entry,
                         insert,
-                        &index.graph,
+                        if adopt_source { &graph } else { &index.graph },
                         &fact,
                     );
                 }
@@ -525,93 +619,130 @@ impl ResourceContext {
                     index.addresses.merge(merge);
                 }
                 index.resources = self.storage.clone();
-                index.graph = graph.clone();
-                index.source_identity = graph.registration_identity();
-                return;
+                index.graph = graph;
+                cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
+                if register_input {
+                    cache.published = Some(paired.clone());
+                }
+                return paired;
+            }
+        }
+        if incompatible_checkpoint {
+            // A cached view of another resource lineage or a non-ancestor
+            // frame cannot be reused. Drop this memo; never register the input
+            // on a read-only lookup or carry obsolete occurrence IDs forward.
+            cache.by_inputs = PersistentMap::default();
+            cache.published = None;
+        }
+        // Publish before premises so preexisting siblings share registered
+        // payloads. Preparation changes no proof context or equality fact.
+        let paired = if register_input {
+            self.registered_memory_index(source.input_root())
+        } else {
+            let graph = source;
+            if let Some(query) = query {
+                graph.address_class(query);
+            }
+            let mut addresses = self.storage.index.memory_addresses.clone();
+            for merge in graph.pointer_merges() {
+                addresses.merge(merge);
+            }
+            std::sync::Arc::new(PairedMemoryIndex {
+                resources: self.storage.clone(),
+                graph,
+                addresses,
+                points: AddressPoints::default(),
+                points_initialized: false,
+            })
+        };
+        let registered_key = paired.graph.input_key();
+        cache.by_inputs = cache
+            .by_inputs
+            .with_inserted(registered_key, paired.clone());
+        if register_input {
+            cache.published = Some(paired.clone());
+            if registered_key != key {
+                // This initial boundary owns the complete input. Advance its
+                // graph once by the admitted delta; later queries keep both
+                // roots and process only subsequent branch-local additions.
+                drop(cache);
+                return self.pair_memory_equalities(assumptions, true, query);
+            }
+        }
+        paired
+    }
+
+    fn empty_memory_index(&self, graph: EqualityGraph) -> std::sync::Arc<PairedMemoryIndex> {
+        std::sync::Arc::new(PairedMemoryIndex {
+            resources: self.storage.clone(),
+            graph,
+            addresses: MemoryAddresses::default(),
+            points: AddressPoints::default(),
+            points_initialized: true,
+        })
+    }
+
+    /// Full input registration belongs to publication or normalization, never
+    /// a simple lookup. Finish registration before assigning class payloads.
+    fn registered_memory_index(&self, graph: EqualityGraph) -> std::sync::Arc<PairedMemoryIndex> {
+        for (_, fact) in self.storage.facts.iter() {
+            if let Some(range) = fact.memory_range() {
+                graph.address_class(
+                    &range
+                        .base()
+                        .offset_by_elements(range.start().clone(), range.element_width()),
+                );
             }
         }
         let mut points = AddressPoints::default();
-        // Establish the pairing once at the input boundary. Ordinary proof
-        // steps inherit these persistent roots and apply only entry deltas.
-        // Register the entire input before assigning any class-keyed payload.
-        if register_input {
-            for (_, fact) in self.storage.facts.iter() {
-                if let Some(range) = fact.memory_range() {
-                    graph.address_class(
-                        &range
-                            .base()
-                            .offset_by_elements(range.start().clone(), range.element_width()),
-                    );
-                }
-            }
-            for (entry, fact) in self.storage.facts.iter() {
-                points.update(*entry, true, fact, graph);
+        let mut addresses = MemoryAddresses::default();
+        for (entry, fact) in self.storage.facts.iter() {
+            points.update(*entry, true, fact, &graph);
+            if let Some(range) = fact.memory_range() {
+                addresses.update_in_graph(range, fact.is_own(), *entry, true, &graph, fact);
             }
         }
-        let mut addresses = self.storage.index.memory_addresses.clone();
-        for merge in graph.pointer_merges() {
-            addresses.merge(merge);
-        }
-        *cache = Some(std::sync::Arc::new(PairedMemoryIndex {
+        std::sync::Arc::new(PairedMemoryIndex {
             resources: self.storage.clone(),
-            graph: graph.clone(),
-            source_identity: graph.registration_identity(),
+            graph,
             addresses,
             points,
-            pending_points: PersistentMap::default(),
-            points_initialized: register_input,
-        }));
+            points_initialized: true,
+        })
     }
 
-    /// Full resource normalization already visits its complete input. Rebuild
-    /// the derived payload there, using the retained graph checkpoint rather
-    /// than processing unrelated equality history at the next simple tactic.
+    /// Normalization already visits its full resource input. Refresh the
+    /// registered root and the published view here, using their existing graph
+    /// states. Do not rescan equality history or defer registration to a query.
     pub(super) fn rebuild_paired_memory_entries(&self) {
         let mut cache = self
             .memory_equalities
             .lock()
             .expect("memory equality index");
-        let Some(index) = cache.as_mut() else { return };
-        let index = std::sync::Arc::make_mut(index);
-        let mut addresses = MemoryAddresses::default();
-        for (entry, fact) in self.storage.facts.iter() {
-            let Some(range) = fact.memory_range() else {
-                continue;
-            };
-            addresses.update_in_graph(range, fact.is_own(), *entry, true, &index.graph, fact);
-        }
-        // Normalization may renumber occurrences. Retain its published root
-        // as an explicit pairing delta, and register it on the source graph at
-        // the next boundary rather than mutating the private checkpoint clone.
-        index.points = AddressPoints::default();
-        index.pending_points = if index.points_initialized {
-            self.storage.facts.clone()
-        } else {
-            PersistentMap::default()
+        let Some(published) = cache.published.clone() else {
+            // Even raw interval views can contain IDs renumbered by this
+            // replacement. A future cold lookup starts from the new raw index.
+            cache.by_inputs = PersistentMap::default();
+            return;
         };
-        index.addresses = addresses;
-        index.resources = self.storage.clone();
-    }
-
-    fn pair_for_query(&self, assumptions: &PureFactContext) -> Option<Self> {
-        let source = assumptions.equality_graph.registration_identity();
-        let scratch = self
-            .memory_equalities
-            .lock()
-            .expect("memory equality index")
-            .as_ref()
-            .is_some_and(|index| !std::sync::Arc::ptr_eq(&index.source_identity, &source));
-        if scratch {
-            // Fork only persistent roots. A transient query cannot replace the
-            // published input checkpoint; queries on its owning graph still
-            // advance that checkpoint, avoiding repeated accumulated deltas.
-            let local = self.clone();
-            local.pair_memory_equalities(assumptions, false);
-            Some(local)
+        let key = published.graph.input_key();
+        let root = cache
+            .by_inputs
+            .get(&key.root())
+            .cloned()
+            .expect("published input root");
+        // Other views carry obsolete occurrence IDs. Refresh at most these two
+        // graph states, rather than every cached branch times the whole input.
+        let root = self.registered_memory_index(root.graph.clone());
+        let published = if key == key.root() {
+            root.clone()
         } else {
-            self.pair_memory_equalities(assumptions, false);
-            None
-        }
+            self.registered_memory_index(published.graph.clone())
+        };
+        cache.by_inputs = PersistentMap::default()
+            .with_inserted(key.root(), root)
+            .with_inserted(key, published.clone());
+        cache.published = Some(published);
     }
 
     /// Concrete interval coverage supports decisive hits and misses. Exact
@@ -625,7 +756,7 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<MemoryAccessEntries> {
+    ) -> Option<MemoryAccessCandidates> {
         self.concrete_access_entries(pointer, bytes, assumptions, false)
     }
 
@@ -637,7 +768,7 @@ impl ResourceContext {
         pointer: &Pointer,
         bytes: u32,
         assumptions: &PureFactContext,
-    ) -> Option<MemoryAccessEntries> {
+    ) -> Option<MemoryAccessCandidates> {
         self.concrete_access_entries(pointer, bytes, assumptions, true)
     }
 
@@ -647,16 +778,20 @@ impl ResourceContext {
         bytes: u32,
         assumptions: &PureFactContext,
         owned: bool,
+    ) -> Option<MemoryAccessCandidates> {
+        let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
+        let entries = Self::indexed_access_entries(&index, pointer, bytes, owned)?;
+        Some(MemoryAccessCandidates { entries, index })
+    }
+
+    fn indexed_access_entries(
+        index: &PairedMemoryIndex,
+        pointer: &Pointer,
+        bytes: u32,
+        owned: bool,
     ) -> Option<MemoryAccessEntries> {
-        let graph = &assumptions.equality_graph;
+        let graph = &index.graph;
         let class = graph.address_class(pointer)?;
-        let local = self.pair_for_query(assumptions);
-        let paired = local.as_ref().unwrap_or(self);
-        let cache = paired
-            .memory_equalities
-            .lock()
-            .expect("memory equality index");
-        let index = cache.as_ref()?;
         if index.points_initialized {
             let class = graph.address_class_root(class);
             let entries = index
@@ -710,17 +845,12 @@ impl ResourceContext {
         let start = range
             .base()
             .offset_by_elements(range.start().clone(), range.element_width());
-        let point_class = assumptions.equality_graph.address_class(&start);
-        let local = self.pair_for_query(assumptions);
-        let paired = local.as_ref().unwrap_or(self);
-        let cache = paired
-            .memory_equalities
-            .lock()
-            .expect("memory equality index");
-        let index = cache.as_ref().expect("paired memory index");
+        let index = self.pair_memory_equalities(assumptions, false, Some(&start));
+        let graph = &index.graph;
+        let point_class = graph.address_class(&start);
         let mut result = BTreeSet::new();
         if let Some(class) = point_class {
-            let class = assumptions.equality_graph.address_class_root(class);
+            let class = graph.address_class_root(class);
             if let Some(bucket) = index.points.classes.get(&class) {
                 result.extend(bucket.entries.iter().copied());
             }
@@ -746,7 +876,7 @@ impl ResourceContext {
             addresses.push((AddressKind::OwnedStart, start));
         }
         for (kind, address) in addresses {
-            let Some(pointer) = assumptions.equality_graph.canonical_pointer(&address) else {
+            let Some(pointer) = graph.canonical_pointer(&address) else {
                 continue;
             };
             let Some(bucket) = index.addresses.classes.get(&pointer.representative) else {
@@ -773,7 +903,7 @@ impl ResourceContext {
             {
                 result.extend(entries.iter().copied());
             }
-            let Some(end) = assumptions.equality_graph.canonical_pointer(&end) else {
+            let Some(end) = graph.canonical_pointer(&end) else {
                 continue;
             };
             let Some(end_offset) = end.offset.checked_add(&bucket.origin) else {

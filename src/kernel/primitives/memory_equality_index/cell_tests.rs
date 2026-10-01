@@ -10,6 +10,266 @@ fn view(base: &Pointer, start: u32, end: u32) -> CResourceFact {
 }
 
 #[test]
+fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let at = |id| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(859_000 + id)),
+        };
+        let empty = PureFactContext::new();
+        // Both forks precede resource publication. Their term registrations
+        // cannot be assumed to extend the published graph's local node IDs.
+        let branch = empty.clone().assume_condition(
+            ConditionTerm::pointer_offset_equal(at(0).offset, at(size).offset),
+            true,
+        );
+        let sibling = empty.clone();
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(at(i), 0u32.into(), 4u32.into(), 1),
+            ));
+        }
+        // This cold view must be superseded by the completed publication.
+        assert!(
+            resources
+                .concrete_read_entries(&at(size), 4, &branch)
+                .is_none()
+        );
+        resources.synchronize_memory_equalities(&empty);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert!(
+                        resources
+                            .concrete_read_entries(&at(size), 4, &branch)
+                            .is_some_and(|entries| entries.exact())
+                    );
+                    assert!(
+                        resources
+                            .concrete_write_entries(&at(size), 4, &branch)
+                            .is_some_and(|entries| entries.exact())
+                    );
+                    // Unsupported containment stays with its existing
+                    // authority checker. This measurement covers pairing and
+                    // supported graph candidates, not that separate search.
+                    assert!(
+                        resources
+                            .concrete_read_entries(&at(size), 4, &sibling)
+                            .is_none()
+                    );
+                    assert!(
+                        resources
+                            .concrete_read_entries(&at(0), 4, &empty)
+                            .is_some_and(|entries| entries.exact())
+                    );
+                }
+            })
+        });
+        assert!(!resources.permits_memory_read(&at(size), 4, &sibling));
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "fork query scanned the input: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "fork query rebuilt the input: {samples:?}"
+    );
+}
+
+#[test]
+fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let at = |id: u64| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(859_200 + id)),
+        };
+        let parent = PureFactContext::new();
+        let first = parent.clone().assume_condition(
+            ConditionTerm::pointer_offset_equal(at(0).offset, at(size).offset),
+            true,
+        );
+        let sibling = parent.clone().assume_condition(
+            ConditionTerm::pointer_offset_equal(at(0).offset, at(size + 1).offset),
+            true,
+        );
+        // Removing a zero owner forces a real normalization replacement and
+        // renumbers the remaining entries; a no-op normalize is insufficient.
+        let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::Own(
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                at(size + 2),
+                0u32.into(),
+                4u32.into(),
+                1,
+            )),
+            Box::new(Bitvector32Term::Constant(0)),
+        ));
+        for i in (0..size).rev() {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(at(i), 0u32.into(), 4u32.into(), 1),
+            ));
+        }
+        resources.synchronize_memory_equalities(&first);
+        assert!(
+            resources
+                .concrete_read_entries(&at(size + 1), 4, &sibling)
+                .is_some_and(|entries| entries.exact())
+        );
+        let resources = resources.normalized(&parent);
+        assert_eq!(resources.storage.facts.len(), size as usize);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    for (facts, alias) in [
+                        (&sibling, at(size + 1)),
+                        (&first, at(size)),
+                        (&parent, at(0)),
+                    ] {
+                        assert!(
+                            resources
+                                .concrete_read_entries(&alias, 4, facts)
+                                .is_some_and(|entries| entries.exact())
+                        );
+                        assert!(
+                            resources
+                                .concrete_write_entries(&alias, 4, facts)
+                                .is_some_and(|entries| entries.exact())
+                        );
+                        let cell = CMemoryRange::new_with_element_width(
+                            alias,
+                            0u32.into(),
+                            4u32.into(),
+                            1,
+                        );
+                        assert_eq!(resources.equal_address_entries(&cell, true, facts).len(), 1);
+                    }
+                }
+            })
+        });
+        assert!(!resources.permits_memory_read(&at(size), 4, &sibling));
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "normalization deferred an input scan: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "normalization lost registered roots: {samples:?}"
+    );
+}
+
+#[test]
+fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let at = |id: u64| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Variable(Variable(864_000 + id)),
+        };
+        let initial = PureFactContext::new();
+        let mut parent = initial.clone();
+        let mut sibling = initial;
+        for i in 0..size {
+            for (context, prefix) in [(&mut parent, 865_000), (&mut sibling, 866_000)] {
+                *context = context.clone().assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(prefix + i)),
+                        Bitvector32Term::Variable(Variable(prefix + i + 1)),
+                    ),
+                    true,
+                );
+            }
+        }
+        sibling = sibling.assume_condition(
+            ConditionTerm::pointer_offset_equal(at(0).offset, at(1).offset),
+            true,
+        );
+        let resources = ResourceContext::new();
+        resources.synchronize_memory_equalities(&parent);
+        let resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(at(0), 0u32.into(), 4u32.into(), 1),
+        ));
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    resources
+                        .concrete_read_entries(&at(1), 4, &sibling)
+                        .is_some_and(|entries| entries.exact())
+                );
+                assert!(resources.memory_write_range(&at(1), 4, &sibling).is_some());
+                assert!(resources.permits_memory_read(&at(1), 4, &sibling));
+            })
+        });
+        assert!(!resources.permits_memory_read(&at(1), 4, &parent));
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "first occurrence scanned unrelated equality inputs: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "first occurrence rebuilt equality state: {samples:?}"
+    );
+}
+
+#[test]
+fn publication_in_one_branch_keeps_sibling_input_pairing() {
+    for scaled in [false, true] {
+        let scalar = |id: u64| Bitvector32Term::Variable(Variable(859_100 + id));
+        let at = |id: u64| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: if scaled {
+                PointerOffsetTerm::scale_int32(scalar(id), 4)
+            } else {
+                PointerOffsetTerm::Variable(Variable(859_100 + id))
+            },
+        };
+        let equality = |left: u64, right: u64| {
+            if scaled {
+                ConditionTerm::equal(scalar(left), scalar(right))
+            } else {
+                ConditionTerm::pointer_offset_equal(at(left).offset, at(right).offset)
+            }
+        };
+        let parent = PureFactContext::new();
+        let first = parent.clone().assume_condition(equality(0, 1), true);
+        let sibling = parent.clone().assume_condition(equality(0, 2), true);
+        let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(at(0), 0u32.into(), 4u32.into(), 1),
+        ));
+        resources.synchronize_memory_equalities(&first);
+        for (facts, alias) in [
+            (&sibling, at(2)),
+            (&first, at(1)),
+            (&parent, at(0)),
+            (&sibling, at(2)),
+        ] {
+            assert!(
+                resources
+                    .concrete_read_entries(&alias, 4, facts)
+                    .is_some_and(|entries| entries.exact())
+            );
+            assert!(
+                resources
+                    .concrete_write_entries(&alias, 4, facts)
+                    .is_some_and(|entries| entries.exact())
+            );
+            let cell = CMemoryRange::new_with_element_width(alias, 0u32.into(), 4u32.into(), 1);
+            assert_eq!(resources.equal_address_entries(&cell, true, facts).len(), 1);
+        }
+        assert!(!resources.permits_memory_read(&at(1), 4, &sibling));
+        assert!(!resources.permits_memory_read(&at(2), 4, &first));
+        assert!(!resources.permits_memory_read(&at(1), 4, &parent));
+    }
+}
+
+#[test]
 fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = CMemory::new();
@@ -51,11 +311,12 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
         1,
     ));
     let resources = ResourceContext::new().unchecked_with_fact(cell.clone());
-    resources.synchronize_memory_equalities(&facts);
+    // The pure branch and resource sibling both fork before publication.
     let sibling = resources.clone();
     let connected = facts
         .clone()
         .assume_condition(ConditionTerm::pointer_equal(a.clone(), b.clone()), true);
+    resources.synchronize_memory_equalities(&facts);
     // Resource lookup must register retained read definitions itself. A prior
     // pointer-equality query must not be needed to warm the graph.
     assert!(
