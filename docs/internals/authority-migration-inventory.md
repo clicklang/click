@@ -20,7 +20,11 @@ retains other members, observes the checked decrement, and cannot reuse the
 consumed member. Return certification rejects a declared consumption without
 an actual transition. Kernel regressions cover identity, authority and member
 custody, repeated transitions, and scaling beside unrelated imports.
-Private-body extensions remain separate work.
+The `authority_wildcard_private_body*` fixtures cover disjoint private memory
+bodies, nested opening and closing without membership changes, and a member-only
+helper while the caller retains authority and another member. They reject
+missing member or memory ownership, overlapping bodies, and count observations
+without authority.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

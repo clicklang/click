@@ -3561,10 +3561,13 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 .collect::<Vec<_>>();
             state = state.with_resource_context_and_loan_dependencies(resources, dependencies);
         } else {
-            // Population cleanup is certified as the exact exchange of its
-            // units for its body. Do not normalize unrelated framed memory
-            // (for example adjacent mutex storage) during that exchange.
-            let resources = if tracks_population_in_body {
+            // Population cleanup and authority-mode private body opening
+            // are certified as exact exchanges. Preserve adjacent framed
+            // ranges so nested opens have the same delta as the kernel law.
+            let resources = if tracks_population_in_body
+                || (access == ResourceBodyAccess::Open
+                    && state.uses_population_authority_semantics())
+            {
                 state
                     .resources()
                     .clone()

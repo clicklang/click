@@ -1711,24 +1711,11 @@ impl CheckedResourceRewrite {
             {
                 return Err("authority-mode body access contains a nonprivate resource".into());
             }
-            // A standalone helper receives an existing member through its
-            // declared contract. Its external-argument pointer has no concrete
-            // C allocation in this proof, but the exact imported member
-            // carries its private body. Concrete callers still prove live
-            // storage bounds when creating that member.
-            let imported_member = before_state
-                .population_effects
-                .creation
-                .as_ref()
-                .is_some_and(|events| {
-                    events.owns_imported_population_member(
-                        &crate::kernel::ResourceDescription::new(
-                            name.clone(),
-                            arguments.clone(),
-                            crate::kernel::ResourceFieldSchema::new(vec![]).expect("empty schema"),
-                        ),
-                    )
-                });
+            // The exact owned member checked above carries its private body,
+            // including at an abstract helper entry. Body access does not
+            // change membership and requires no population authority import.
+            // Concrete bodies still need live bounds; a caller can only fold
+            // a member by transferring those owned memory ranges into it.
             for child in children {
                 let range = child.memory_own_range().expect("body shape checked above");
                 let (Some(start), Some(end)) = (range.start().as_const(), range.end().as_const())
@@ -1745,8 +1732,7 @@ impl CheckedResourceRewrite {
                     .base()
                     .offset_by_elements(range.start().clone(), range.element_width());
                 if !before_state.memory().access_in_bounds(&base, bytes)
-                    && !(imported_member
-                        && base.block == crate::kernel::PointerBlock::ExternalArgument)
+                    && base.block != crate::kernel::PointerBlock::ExternalArgument
                 {
                     return Err("authority-mode private body exceeds live storage".into());
                 }
