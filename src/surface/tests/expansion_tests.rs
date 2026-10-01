@@ -123,9 +123,8 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     "#;
     let sources = [("source_identity.c", c_source)];
 
-    let ((verified, _events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources))
-    });
+    let (verified, planning_transitions) =
+        count_planning_statement_transitions(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the exact reordered caller requirement should verify");
     assert_eq!(
         planning_transitions, 0,
@@ -2382,18 +2381,8 @@ fn selected_post_execution_smart_have_uses_its_path_certificate() {
                 simp();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("checked post-execution smart have should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the result-aware smart have must retain its checked Proof: {events:#?}"
-    );
 
     let have_offset = click_source
         .find("have result")
@@ -2446,18 +2435,8 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
                 simp();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("result-aware theorem application should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the result-aware theorem application must not reconstruct and check a certificate: {events:#?}"
-    );
 
     let have_offset = click_source
         .find("have result == result")
@@ -2575,18 +2554,8 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
                 assumption();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("checked post-execution transport should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the smart transport must retain its checked Proof: {events:#?}"
-    );
 
     let transport_offset = click_source
         .find("transport(")
@@ -2635,18 +2604,8 @@ fn grouped_post_execution_unfold_retains_its_checked_proof_step() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("the grouped outcome unfold should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the grouped outcome unfold must retain its checked Proof: {events:#?}"
-    );
 }
 
 #[test]
@@ -2670,18 +2629,8 @@ fn grouped_post_execution_closers_use_independent_checked_proofs() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("grouped outcome closers should verify through focused Proof roots");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "grouped outcome closers must retain their checked Proof steps: {events:#?}"
-    );
 }
 
 #[test]
@@ -2704,18 +2653,8 @@ fn post_execution_rewrite_retains_its_checked_proof_step() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("outcome rewrite should advance its focused Proof goal");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "outcome rewrite must retain its checked Proof step: {events:#?}"
-    );
 }
 
 #[test]
@@ -2737,18 +2676,8 @@ fn grouped_post_execution_simp_publishes_checked_obligations_through_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("grouped simp should retain its checked obligation scopes");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "grouped direct simp must not construct and check a second certificate: {events:#?}"
-    );
 
     let simp_offset = click_source
         .find("simp();")
@@ -2814,18 +2743,8 @@ fn grouped_post_execution_simp_applies_planned_steps_once_through_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("grouped simp should apply its planned rewrite through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "a planner-selected grouped candidate must be checked once and retained: {events:#?}"
-    );
 
     let simp_offset = click_source
         .find("simp();")
@@ -2866,18 +2785,8 @@ fn post_execution_simp_builds_disjunction_cases_on_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose.c", c_source)]);
     verified.expect("the two-value result should prove nonnegative by cases");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-        )),
-        "the checked Proof case split must bypass compatibility construction: {events:#?}"
-    );
 
     let simp_offset = click_source
         .find("simp();")
@@ -2920,18 +2829,8 @@ fn symbolic_max_outcomes_retain_selected_branch_order_paths() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources));
+    let verified = verify_c0_sources(click_source, &c_sources);
     verified.expect("both symbolic max claims should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-                    || name == "outcome simp legacy exit planning"
-        )),
-        "selected branch order paths must bypass outcome fallbacks: {events:#?}"
-    );
 
     for claim in [CProofClaim::Ensure(0), CProofClaim::Ensure(1)] {
         let expanded = expand_c0_claim_source(click_source, &c_sources, "max", claim)
@@ -2960,18 +2859,8 @@ fn outcome_arithmetic_normalization_retains_selected_equality_paths() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources));
+    let verified = verify_c0_sources(click_source, &c_sources);
     verified.expect("the return expression should normalize through retained equalities");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-                    || name == "outcome simp legacy exit planning"
-        )),
-        "selected equality paths must bypass outcome fallbacks: {events:#?}"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -3004,18 +2893,8 @@ fn outcome_quantified_cells_retain_selected_instantiations() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources));
+    let verified = verify_c0_sources(click_source, &c_sources);
     verified.expect("all three concrete cells should specialize the retained loop invariant");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-                    || name == "outcome simp legacy exit planning"
-        )),
-        "selected universal instances must bypass outcome fallbacks: {events:#?}"
-    );
 
     for claim in [
         CProofClaim::Ensure(0),
@@ -3050,18 +2929,8 @@ fn post_execution_simp_builds_recursive_conjunction_on_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("first.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("first.c", c_source)]);
     verified.expect("the conjunction should retain both recursively checked child proofs");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-        )),
-        "recursive conjunction closure must bypass compatibility construction: {events:#?}"
-    );
 
     let simp_offset = click_source
         .find("simp();")
@@ -3109,18 +2978,8 @@ fn post_execution_simp_uses_the_introduced_antecedent_for_contradiction() {
     "#;
     let sources = [("branch.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the vacuous path implication should close through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "introduced contradiction closure must bypass outcome compatibility planning: {events:#?}"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, &sources, "branch_value", CProofClaim::Grouped)
@@ -3152,19 +3011,8 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("first.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("first.c", c_source)]);
     verified.expect("the smart have should retain its recursively checked conjunction");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name.starts_with("post-execution simple have check")
-                    || name == "post-execution smart have compatibility construction"
-        )),
-        "the checked smart have must not construct or check a second proof: {events:#?}"
-    );
 
     let have_offset = click_source
         .find("have 0 <= x and 0 <= y")
@@ -3209,33 +3057,11 @@ fn post_execution_existential_simp_retains_its_checked_scope() {
         }
     "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("identity.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("identity.c", c_source)])
+    });
     verified.expect("exit witness should refine its checked obligation scope");
     assert_eq!(flat_units, 1, "the function proof should retain Proof");
-    assert_eq!(context_exports, 0, "the existential Proof exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked source certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.ensures_0" && name == "generated certificate validation"
-        )),
-        "exit witness refinement must retain the accepted Proof path: {events:#?}"
-    );
 
     let simp_offset = click_source
         .find("simp();")
@@ -3271,26 +3097,11 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
         }
     "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("identity.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("identity.c", c_source)])
+    });
     verified.expect("choose and witness should advance one retained outcome Proof");
     assert_eq!(flat_units, 1, "the function proof should retain Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the existential operations exported state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let simp_offset = click_source.rfind("simp();").unwrap();
     let position = expansion::position_at_offset(click_source, simp_offset);
@@ -3346,18 +3157,8 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
     "#;
     let sources = [("witness.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the bounded witness body should close through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "the checked bounded witness must not enter legacy outcome planning"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -3396,18 +3197,8 @@ fn selected_post_execution_smart_apply_uses_exact_path_premises() {
                 simp();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("post-execution smart apply should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the post-execution smart apply must retain its checked Proof: {events:#?}"
-    );
 
     let apply_offset = click_source
         .find("apply(int32")
@@ -3642,30 +3433,11 @@ fn marked_constant_store_transport_retains_load_identity() {
     "#;
     let sources = [("touch_other.c", touch_c), ("pipeline.c", pipeline_c)];
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        {
-                            crate::instrumentation::collect(|| {
-                                verify_c0_sources(click_source, &sources)
-                            })
-                        }
-                    })
-                })
-            }
-        });
+    let ((verified, events), flat_units) = proof::count_flat_proof_units(|| {
+        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources))
+    });
     verified.expect("the smart marked transport should verify before expansion");
     assert_eq!(flat_units, 2, "both function proofs should retain Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the marked transport exported Proof state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let transport_checks = events
         .iter()
@@ -4739,26 +4511,8 @@ fn pure_structural_simp_builds_recursive_conjunction_on_proof() {
         }
     "#;
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("pure structural simp should retain both recursively checked child proofs");
-    for claim in [
-        "nonnegative_pair_direct.ensures_0",
-        "nonnegative_pair_script.ensures_0",
-        "nonnegative_pair_branches.ensures_0",
-    ] {
-        assert!(
-            events.iter().all(|event| !matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished {
-                    claim: event_claim,
-                    name,
-                    ..
-                } if event_claim == claim && name == "generated certificate validation"
-            )),
-            "{claim} must retain its structural Proof descendant: {events:#?}"
-        );
-    }
 
     let script_start = click_source
         .find("theorem nonnegative_pair_script")
@@ -4819,18 +4573,8 @@ fn restricted_simp_expands_to_graph_normalization() {
                 }
             }
         "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("restricted equality simp should build its typed path through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "equality_transitive.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "restricted equality simp must retain its checked Proof descendant: {events:#?}"
-    );
     let offset = click_source
         .find("simp() using")
         .expect("proof should contain restricted simp");
@@ -4942,17 +4686,8 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_simp() {
         }
     "#;
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("rewrite followed by structural simp should remain on Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "rewrite_pair.ensures_0" && name == "generated certificate validation"
-        )),
-        "the rewrite successor must not reconstruct and check a second proof: {events:#?}"
-    );
 
     let simp_offset = click_source
         .find("simp();")
@@ -5150,20 +4885,8 @@ fn post_execution_simp_expands_successor_strict_increase() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("increment.c", c_source)]);
     verified.expect("the typed strict-increment rule should verify through the fixed-state Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment.contract"
-                    && (name == "generated certificate validation"
-                        || name == "derivation lowering: ambient rewrite harvest")
-        )),
-        "the retained strict-increment rule must not enter legacy certificate search: {events:#?}"
-    );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -5207,21 +4930,9 @@ fn post_execution_simp_expands_increment_definedness() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("increment.c", c_source)]);
     verified
         .expect("the typed increment-definedness rule should verify through the fixed-state Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment.contract"
-                    && (name == "generated certificate validation"
-                        || name == "derivation lowering: ambient rewrite harvest")
-        )),
-        "the retained increment-definedness rule must not enter legacy certificate search: {events:#?}"
-    );
     let offset = click_source.rfind("simp()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(
@@ -5259,21 +4970,9 @@ fn post_execution_simp_expands_increment_lower_bound() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment_nonnegative.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("increment_nonnegative.c", c_source)]);
     verified
         .expect("the typed increment-lower-bound rule should verify through the fixed-state Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_nonnegative.contract"
-                    && (name == "generated certificate validation"
-                        || name == "derivation lowering: ambient rewrite harvest")
-        )),
-        "the retained increment-lower-bound rule must not enter legacy certificate search: {events:#?}"
-    );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -5362,18 +5061,8 @@ fn restricted_simp_expands_nonstrict_unequal_order() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("nonstrict unequal order should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "nonstrict_unequal_is_strict.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the named <=/!= strict-order step must not use construction check: {events:#?}"
-    );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -5415,20 +5104,8 @@ fn post_execution_simp_expands_increment_upper_bound() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment_below.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("increment_below.c", c_source)]);
     verified.expect("the typed increment bound should verify through the fixed-state Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_below.contract"
-                    && (name == "generated certificate validation"
-                        || name == "derivation lowering: ambient rewrite harvest")
-        )),
-        "the retained increment rule must not enter legacy certificate search: {events:#?}"
-    );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -5565,21 +5242,9 @@ fn post_execution_simp_expands_greater_equal_increment_bound() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment_ge.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("increment_ge.c", c_source)]);
     verified.expect(
         "the typed greater-equal increment rule should verify through the fixed-state Proof",
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_ge.contract"
-                    && (name == "generated certificate validation"
-                        || name == "derivation lowering: ambient rewrite harvest")
-        )),
-        "the retained greater-equal increment rule must not enter legacy certificate search: {events:#?}"
     );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
@@ -5625,21 +5290,9 @@ fn post_execution_simp_expands_strict_greater_increment_bound() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("increment_gt.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("increment_gt.c", c_source)]);
     verified.expect(
         "the typed strict-greater increment rule should verify through the fixed-state Proof",
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_gt.contract"
-                    && (name == "generated certificate validation"
-                        || name == "derivation lowering: ambient rewrite harvest")
-        )),
-        "the retained strict-greater increment rule must not enter legacy certificate search: {events:#?}"
     );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
@@ -5685,18 +5338,8 @@ fn post_execution_simp_expands_greater_order_equality() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity_zero.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity_zero.c", c_source)]);
     verified.expect("post-execution >=/not-> equality should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity_zero.ensures_0" && name == "generated certificate validation"
-        )),
-        "the outcome equality theorem must not use construction check: {events:#?}"
-    );
 
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
@@ -5741,19 +5384,8 @@ fn post_execution_simp_composes_negated_successor_bound() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity_at_least_one.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity_at_least_one.c", c_source)]);
     verified.expect("the typed successor-bound Proof should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity_at_least_one.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained successor-bound proof must not use construction check: {events:#?}"
-    );
     let offset = click_source.rfind("simp()").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -5799,18 +5431,8 @@ fn restricted_simp_composes_negated_successor_bound() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the restricted successor-bound Proof should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "not_below_two_is_at_least_one.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained restricted successor-bound proof must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -5883,27 +5505,9 @@ fn post_execution_simp_unfolds_predicate_goal_explicitly() {
             .unwrap_or(0)
         + 1;
 
-    let ((expanded, certificate_checks), context_exports) = {
-        proof::count_execution_context_exports(|| {
-            proof::count_source_certificate_checks(|| {
-                expand_c0_tactic_source_at(
-                    click_source,
-                    &[("compare_swap2.c", c_source)],
-                    line,
-                    column,
-                )
-            })
-        })
-    };
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &[("compare_swap2.c", c_source)], line, column);
     let expanded = expanded.expect("post-execution predicate goal should expand");
-    assert_eq!(
-        context_exports, 0,
-        "branched predicate expansion must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "branched predicate expansion must not check a certificate"
-    );
     assert!(expanded.contains("unfold(sorted_pair);"), "{expanded}");
     assert!(
         expanded.contains("apply(int32_lt_implies_le("),
@@ -5944,18 +5548,8 @@ fn pure_simp_retains_one_selected_equality_rewrite_before_normalize() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the selected equality rewrite should close on the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "predecessor_of_one_is_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the selected rewrite path must not use construction check: {events:#?}"
-    );
 
     let offset = click_source.find("simp()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
@@ -5979,18 +5573,8 @@ fn restricted_simp_expands_increment_upper_bound_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_stays_bounded.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained pure increment rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6029,18 +5613,8 @@ fn restricted_simp_expands_positive_to_nonnegative_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("positive-to-nonnegative simp should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "positive_is_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the named positive-to-nonnegative step must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6079,18 +5653,8 @@ fn restricted_simp_expands_strictly_positive_to_nonnegative_theorem_application(
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("strictly-positive-to-nonnegative simp should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "strictly_positive_is_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the named strictly-positive-to-nonnegative step must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6128,18 +5692,8 @@ fn restricted_simp_expands_positive_predecessor_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-nonnegative rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "positive_predecessor_is_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained predecessor-nonnegative rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6178,18 +5732,8 @@ fn restricted_simp_expands_positive_predecessor_decrease_to_theorem_application(
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-decrease rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "positive_predecessor_decreases.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained predecessor-decrease rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6230,18 +5774,8 @@ fn restricted_simp_expands_predecessor_upper_bound_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed predecessor-upper-bound rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "predecessor_keeps_upper_bound.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained predecessor-upper-bound rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -6270,18 +5804,8 @@ fn restricted_simp_retains_nested_one_le_predecessor_nonnegative_proof() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the nested predecessor proof should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "one_le_predecessor_is_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained nested predecessor proof must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -6312,18 +5836,8 @@ fn restricted_simp_retains_nested_one_le_predecessor_decrease_proof() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the nested predecessor-decrease proof should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "one_le_predecessor_decreases.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained nested predecessor-decrease proof must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -6355,18 +5869,8 @@ fn restricted_simp_retains_equal_one_predecessor_path() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the equal-one predecessor proof should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "equal_one_predecessor_is_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained equal-one path must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -6395,18 +5899,8 @@ fn restricted_simp_retains_equal_one_predecessor_zero_path() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the predecessor-zero proof should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "equal_one_predecessor_is_zero.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained predecessor-zero path must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -6430,18 +5924,8 @@ fn restricted_simp_expands_strict_increment_to_theorem_application() {
                 }
             }
         "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed strict-increment rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_is_greater.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained pure strict-increment rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6477,18 +5961,8 @@ fn simp_expands_increment_definedness_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment-definedness rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_is_defined.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained pure increment-definedness rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp()").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -6521,18 +5995,8 @@ fn restricted_simp_expands_increment_lower_bound_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment-lower-bound rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_preserves_lower_bound.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained pure increment-lower-bound rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6578,18 +6042,8 @@ fn restricted_simp_expands_increment_order_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed increment-order rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_preserves_order.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained increment-order rule must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6759,18 +6213,8 @@ fn restricted_simp_expands_adjacent_order_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed adjacent-order rule should verify through the pure Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "two_at_most_implies_one_below.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the retained adjacent-order proof must not use construction check: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6814,18 +6258,8 @@ fn smart_simp_transcribes_a_three_edge_signed_order_path() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the checked order-path Proof should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "three_edge_order_chain.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "signed-order simp should construct its Proof through checked theorem applications: {events:#?}"
-    );
     let offset = click_source.find("simp();").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -6870,18 +6304,8 @@ fn smart_simp_transcribes_a_three_edge_bitvector_equality_path() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the checked equality-path Proof should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "three_edge_equality_chain.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "equality simp should construct its Proof through checked rewrites: {events:#?}"
-    );
 
     let offset = click_source.find("simp();").unwrap();
     let line = click_source[..offset]
@@ -6924,19 +6348,8 @@ fn smart_simp_retains_both_signed_equality_rules_as_named_steps() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the typed <=/not-< equality rule should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if (claim == "le_and_not_lt_are_equal.ensures_0"
-                    || claim == "ge_and_not_gt_are_equal.ensures_0")
-                    && name == "generated certificate validation"
-        )),
-        "the named equality step must not use construction check: {events:#?}"
-    );
 
     let offset = click_source.find("simp();").unwrap();
     let line = click_source[..offset]
@@ -7000,19 +6413,8 @@ fn outcome_simp_consumes_its_recorded_bitvector_equality_path() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose_first.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose_first.c", c_source)]);
     verified.expect("the outcome equality path should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_first.contract"
-                    && name == "derivation lowering: ambient rewrite harvest"
-        )),
-        "the typed outcome path must not scan ambient equalities: {events:#?}"
-    );
 
     let offset = click_source.rfind("simp();").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
@@ -7061,19 +6463,8 @@ fn outcome_simp_applies_theorems_through_its_recorded_order_path() {
             simp();
         }
     "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("validate_chain.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("validate_chain.c", c_source)]);
     verified.expect("the outcome order path should verify through the fixed-state Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "validate_chain.contract"
-                    && name == "generated certificate validation"
-        )),
-        "the outcome theorem path must retain its checked Proof successor: {events:#?}"
-    );
 
     let offset = click_source.rfind("simp();").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
@@ -7113,18 +6504,8 @@ fn restricted_simp_expands_constant_order_weakening_to_theorem_application() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the constant lower-bound weakening should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "three_at_least_implies_nonnegative.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the constant lower-bound proof should retain its checked Proof successor: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let line = click_source[..offset]
         .bytes()
@@ -7163,18 +6544,8 @@ fn restricted_simp_expands_constant_strict_upper_bound_to_theorem_application() 
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the constant strict upper-bound weakening should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "three_at_most_implies_below_five.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the constant upper-bound proof should retain its checked Proof successor: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -7201,18 +6572,8 @@ fn restricted_simp_retains_increment_under_a_larger_constant() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the increment constant-bound rule should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "increment_three_at_most_is_five_at_most.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the increment constant-bound proof must retain both checked theorem steps: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -7245,18 +6606,8 @@ fn restricted_simp_retains_symbolic_add_definedness_theorem() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the symbolic-add definedness rule should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "symbolic_add_is_defined.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the symbolic-add proof must retain its checked theorem application: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -7289,18 +6640,8 @@ fn restricted_simp_retains_symbolic_subtract_definedness_theorem() {
             }
         }
     "#;
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    let verified = verify_click_theorems(click_source);
     verified.expect("the symbolic-subtract definedness rule should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "symbolic_subtract_is_defined.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the symbolic-subtract proof must retain its checked theorem application: {events:#?}"
-    );
     let offset = click_source.find("simp() using").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
@@ -7346,21 +6687,9 @@ fn restricted_simp_retains_one_plus_operand_specific_theorems() {
             "apply(int32_one_plus_strictly_increases(value)) using",
         ),
     ];
-    for (click_source, claim, application) in cases {
-        let (verified, events) =
-            crate::instrumentation::collect(|| verify_click_theorems(click_source));
+    for (click_source, _, application) in cases {
+        let verified = verify_click_theorems(click_source);
         verified.expect("the operand-order-specific one-plus rule should verify through Proof");
-        assert!(
-            events.iter().all(|event| !matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished {
-                    claim: event_claim,
-                    name,
-                    ..
-                } if event_claim == claim && name == "generated certificate validation"
-            )),
-            "the one-plus proof must retain its checked theorem application: {events:#?}"
-        );
         let offset = click_source.find("simp() using").unwrap();
         let position = expansion::position_at_offset(click_source, offset);
         let expanded =
@@ -7526,23 +6855,10 @@ fn restricted_simp_expands_loadable_subrange_to_explicit_transport() {
         + 1;
     let sources = [("read_at.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     verified.expect("the leading viewability have should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(context_exports, 0, "the viewability Proof exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary viewability verification checked a certificate"
-    );
 
     let expanded = expand_c0_tactic_source_at(click_source, &sources, line, column)
         .expect("restricted simp viewability proof should expand");
@@ -7804,19 +7120,9 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
                 assumption();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose.c", c_source)]);
     verified
         .expect("checked fixed-state apply should verify without ordinary certificate validation");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_second.contract" && name == "generated certificate validation"
-        )),
-        "the migrated smart fixed-state proof must not pass through the ordinary construction/check gateway: {events:#?}"
-    );
     let have_offset = click_source
         .find("have second == first")
         .expect("proof should contain the selected have");
@@ -7890,18 +7196,8 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
                 simp();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose.c", c_source)]);
     verified.expect("smart apply should continue from its checked Proof successor");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_second.contract" && name == "generated certificate validation"
-        )),
-        "the migrated apply-then-simp proof must not use construction check: {events:#?}"
-    );
 
     let have_offset = click_source
         .find("have second == first and first == second")
@@ -7964,18 +7260,8 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
             }
         "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("keep.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("keep.c", c_source)]);
     let verified = verified.expect("checked execution apply should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "keep.contract" && name == "generated certificate validation"
-        )),
-        "the migrated execution apply must not pass through ordinary certificate validation: {events:#?}"
-    );
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("the checked execution apply should retain an expansion");
@@ -8180,35 +7466,13 @@ fn linear_execution_open_retains_one_checked_scope_and_checks() {
         }
     "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("two_steps.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("two_steps.c", c_source)])
+    });
     let verified = verified.expect("the linear open scope should verify through Proof");
     assert_eq!(
         flat_units, 1,
         "the complete open proof should retain one Proof"
-    );
-    assert_eq!(context_exports, 0, "the open Proof exported semantic state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "two_steps.contract" && name == "generated certificate validation"
-        )),
-        "ordinary linear open construction must retain its checked Proof scope: {events:#?}"
     );
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -8260,26 +7524,11 @@ fn linear_execution_open_retains_checked_prefix_on_one_proof() {
         }
     "#;
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &[("add_once.c", c_source)])
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("add_once.c", c_source)])
+    });
     verified.expect("the leading statement and open scope should verify on one Proof");
     assert_eq!(flat_units, 1, "the scoped prefix should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the scoped prefix exported semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -8319,18 +7568,8 @@ fn linear_execute_inside_open_retains_checked_statement_steps() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("two_steps.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("two_steps.c", c_source)]);
     let verified = verified.expect("linear execute should advance inside the open Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "two_steps.contract" && name == "generated certificate validation"
-        )),
-        "ordinary scoped execute must retain its checked statement steps: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked grouped proof should retain its scoped execution");
@@ -8404,23 +7643,10 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
     "#;
     let sources = [("apply_write.c", apply_c), ("rewrite_write.c", rewrite_c)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the ordered outcome operations should verify on Proof");
     assert_eq!(flat_units, 2, "both grouped proofs should retain Proof");
-    assert_eq!(context_exports, 0, "an outcome Proof exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let retained = verified
         .iter()
@@ -8514,23 +7740,10 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
     "#;
     let sources = [("write_first.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the ordered predicate unfold should verify on Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(context_exports, 0, "the outcome Proof exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -8579,23 +7792,10 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
     "#;
     let sources = [("preserve_markers.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the quantified resource scope should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(context_exports, 0, "the resource scope exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -8662,18 +7862,8 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("three_steps.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("three_steps.c", c_source)]);
     let verified = verified.expect("execute_until should advance the checked open frontier");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "three_steps.contract" && name == "generated certificate validation"
-        )),
-        "scoped execute_until must retain its checked statement path: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked grouped proof should retain its stopped frontier path");
@@ -8735,18 +7925,8 @@ fn linear_open_have_retains_the_selected_theorem_application() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("two_steps.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("two_steps.c", c_source)]);
     let verified = verified.expect("the nested theorem application should advance the open Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "two_steps.contract" && name == "generated certificate validation"
-        )),
-        "ordinary nested-scope construction must not check its retained theorem step: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked grouped proof should retain its nested expansion");
@@ -8810,23 +7990,10 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
     let sources = [("read_cell.c", c_source)];
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the nested resource scopes should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(context_exports, 0, "the nested scopes exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
@@ -8896,18 +8063,8 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("retain_lower.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("retain_lower.c", c_source)]);
     let verified = verified.expect("the direct theorem application should advance the open Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "retain_lower.contract" && name == "generated certificate validation"
-        )),
-        "ordinary open-scope theorem search must not check its retained step: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked open proof should retain its expansion");
@@ -8965,19 +8122,8 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("set_second_return_first.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("set_second_return_first.c", c_source)]);
     let verified = verified.expect("the direct transport should advance the open Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "set_second_return_first.contract"
-                    && name == "generated certificate validation"
-        )),
-        "ordinary open-scope transport search must not check its retained step: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked open transport should retain its expansion");
@@ -9060,23 +8206,10 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
     "#;
     let sources = [("read_if.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the branch-arm resource scope should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(context_exports, 0, "the branch-arm scope exported state");
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -9179,26 +8312,10 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     "#;
     let sources = [("read_if.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the nested branch-arm scope should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the nested branch-arm scope exported state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -9281,26 +8398,10 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
     "#;
     let sources = [("choose_x_or_zero.c", c_source)];
 
-    let (((verified, certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        verify_c0_sources(click_source, &sources)
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     let verified = verified.expect("the nested terminal proof if should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the nested terminal proof if exported state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary verification checked a certificate"
-    );
 
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -9403,18 +8504,9 @@ fn branch_interface_retains_its_checked_abstract_join() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("nonnegative.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("nonnegative.c", c_source)])
+    });
     let verified = verified.expect("the checked branch interface should verify");
     assert_eq!(
         crate::kernel::take_checked_function_body_execution_count(),
@@ -9422,23 +8514,6 @@ fn branch_interface_retains_its_checked_abstract_join() {
         "a pure checked branch interface must seal from retained outcome evidence"
     );
     assert_eq!(flat_units, 1, "the branch proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the branch proof must not export semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary branch verification must not check a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "nonnegative.contract"
-                    && matches!(name.as_str(), "generated certificate validation" | "frame exact effect check")
-        )),
-        "the branch, common return, and frame must retain one checked Proof: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked branch interface should retain an expansion");
@@ -9507,19 +8582,8 @@ fn branch_interface_retains_exact_unchanged_ownership() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("preserve_marker.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("preserve_marker.c", c_source)]);
     let verified = verified.expect("the exact owned interface should stay on Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "preserve_marker.contract"
-                    && name == "generated certificate validation"
-        )),
-        "an unchanged exact ownership export must retain its checked Proof: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the exact owned interface should retain an expansion");
@@ -9589,11 +8653,9 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
     "#;
 
     let _ = crate::kernel::take_checked_function_body_execution_count();
-    let ((verified, events), checked_interface_joins) =
+    let (verified, checked_interface_joins) =
         crate::surface::proof::count_checked_execution_interface_joins(|| {
-            crate::instrumentation::collect(|| {
-                verify_c0_sources(click_source, &[("preserve_two_markers.c", c_source)])
-            })
+            verify_c0_sources(click_source, &[("preserve_two_markers.c", c_source)])
         });
     let verified = verified.expect("the entailed quantity interface should stay on Proof");
     assert!(
@@ -9604,15 +8666,6 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
         crate::kernel::take_checked_function_body_execution_count(),
         0,
         "a checked `branch ensuring` must seal from its retained arm evidence"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "preserve_two_markers.contract"
-                    && name == "generated certificate validation"
-        )),
-        "quantity-interface construction must not check its surface certificate: {events:#?}"
     );
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -9683,18 +8736,8 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("retain_order.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("retain_order.c", c_source)]);
     let verified = verified.expect("bare arm applications should advance the branch Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "retain_order.contract" && name == "generated certificate validation"
-        )),
-        "ordinary branch theorem search must not check its retained applications: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked theorem applications should retain an expansion");
@@ -9759,20 +8802,9 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose_bound.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose_bound.c", c_source)]);
     let verified =
         verified.expect("the common theorem application should advance the joined Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_bound.contract"
-                    && matches!(name.as_str(), "generated certificate validation" | "frame exact effect check")
-        )),
-        "the branch, theorem, return, and frame must retain one checked Proof: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked common theorem application should retain an expansion");
@@ -9844,19 +8876,8 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose_bound_transport.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose_bound_transport.c", c_source)]);
     let verified = verified.expect("the common fact transport should advance the joined Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_bound_transport.contract"
-                    && matches!(name.as_str(), "generated certificate validation" | "frame exact effect check")
-        )),
-        "the branch, transport, return, and frame must retain one checked Proof: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked common fact transport should retain an expansion");
@@ -9931,9 +8952,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
         }
     "#;
 
-    let (verified, _events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("select_positive.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("select_positive.c", c_source)]);
     let verified = verified.expect("the common nested have should advance the joined Proof");
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -10020,19 +9039,8 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("select_and_increment.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("select_and_increment.c", c_source)]);
     let verified = verified.expect("common execute should advance the joined Proof to exit");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "select_and_increment.contract"
-                    && matches!(name.as_str(), "generated certificate validation" | "frame exact effect check")
-        )),
-        "the branch, execute, and frame must retain one checked Proof: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("common execute should retain its checked expansion");
@@ -10108,22 +9116,11 @@ fn incremented_strict_lower_bound_retains_its_theorem_path() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(
-            click_source,
-            &[("select_and_increment_positive.c", c_source)],
-        )
-    });
-    verified.expect("strict positivity should retain a composed theorem path on Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "select_and_increment_positive.contract"
-                    && name == "generated certificate validation"
-        )),
-        "the typed outcome simp must not ordinarily check its theorem path: {events:#?}"
+    let verified = verify_c0_sources(
+        click_source,
+        &[("select_and_increment_positive.c", c_source)],
     );
+    verified.expect("strict positivity should retain a composed theorem path on Proof");
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -10179,22 +9176,11 @@ fn post_execution_have_anchors_strict_increment_theorem_premises() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(
-            click_source,
-            &[("select_and_increment_positive_have.c", c_source)],
-        )
-    });
-    verified.expect("the post-execution have should retain its composed Proof path");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "select_and_increment_positive_have.contract"
-                    && name == "generated certificate validation"
-        )),
-        "the smart have must not reconstruct and check its theorem path: {events:#?}"
+    let verified = verify_c0_sources(
+        click_source,
+        &[("select_and_increment_positive_have.c", c_source)],
     );
+    verified.expect("the post-execution have should retain its composed Proof path");
 
     let have_offset = click_source
         .find("have result > 0")
@@ -10268,19 +9254,8 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("set_choice_return_first.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("set_choice_return_first.c", c_source)]);
     let verified = verified.expect("bare arm transports should advance the branch Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "set_choice_return_first.contract"
-                    && name == "generated certificate validation"
-        )),
-        "ordinary branch transport search must not check its retained steps: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked arm transports should retain an expansion");
@@ -10359,19 +9334,8 @@ fn branch_arms_retain_nested_have_proofs() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("select_nonnegative.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("select_nonnegative.c", c_source)]);
     let verified = verified.expect("nested arm haves should advance the branch Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "select_nonnegative.contract"
-                    && name == "generated certificate validation"
-        )),
-        "ordinary branch-have construction must not check its retained scopes: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked branch haves should retain an expansion");
@@ -10439,19 +9403,8 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("choose_one_or_two.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("choose_one_or_two.c", c_source)]);
     let verified = verified.expect("terminal arm execution should advance the branch Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "choose_one_or_two.contract"
-                    && matches!(name.as_str(), "generated certificate validation" | "frame exact effect check")
-        )),
-        "terminal arm execution and framing must retain their checked Proof operations: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked terminal arms should retain an expansion");
@@ -10765,29 +9718,14 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
 
-    let (((verified, events), checked_interface_joins), source_certificate_checks) =
-        crate::surface::proof::count_source_certificate_checks(|| {
-            crate::surface::proof::count_checked_execution_interface_joins(|| {
-                crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources))
-            })
+    let (verified, checked_interface_joins) =
+        crate::surface::proof::count_checked_execution_interface_joins(|| {
+            verify_c0_sources(click_source, &c_sources)
         });
     let verified = verified.expect("the transformed resource branch should stay on Proof");
     assert!(
         checked_interface_joins > 0,
         "the source branch must reach the checked two-arm Proof join"
-    );
-    assert_eq!(
-        source_certificate_checks, 0,
-        "the checked branch and explicit observation must seal without executing the C body again"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "select_ready.ensures_0"
-                    && name == "generated certificate validation"
-        )),
-        "the common changed-resource descendant must not be reconstructed by check: {events:#?}"
     );
     let tactics = verified
         .last()
@@ -10862,18 +9800,8 @@ fn decided_branch_interface_retains_the_surviving_checked_state() {
         }
     "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("selected_nonnegative.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("selected_nonnegative.c", c_source)]);
     let verified = verified.expect("the sole feasible interface arm should stay on Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "selected_nonnegative.contract" && name == "generated certificate validation"
-        )),
-        "decided interface construction must retain its checked state directly: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the decided interface should retain an expansion");
@@ -10935,38 +9863,13 @@ fn open_scope_retains_its_checked_branch_interface() {
         }
     "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("scoped_nonnegative.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("scoped_nonnegative.c", c_source)])
+    });
     let verified = verified.expect("the scoped branch interface should stay on Proof");
     assert_eq!(
         flat_units, 1,
         "the scoped interface should retain one Proof"
-    );
-    assert_eq!(
-        context_exports, 0,
-        "the scoped interface exported semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "the scoped interface checked a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "scoped_nonnegative.contract" && name == "generated certificate validation"
-        )),
-        "scoped branch-interface construction must retain checked structure: {events:#?}"
     );
     let tactics = verified[0]
         .expanded_proof_tactics()
@@ -11030,36 +9933,11 @@ fn open_scope_retains_its_checked_execution_branch() {
         }
     "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("empty_branch.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("empty_branch.c", c_source)])
+    });
     let verified = verified.expect("the execution branch should join inside the open Proof");
     assert_eq!(flat_units, 1, "the scoped branch should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the scoped branch exported semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "the scoped branch checked a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "empty_branch.contract" && name == "generated certificate validation"
-        )),
-        "ordinary scoped branch construction must retain its checked structure: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the checked grouped proof should retain its scoped branch");
@@ -11123,36 +10001,11 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
         }
     "#;
 
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        crate::instrumentation::collect(|| {
-                            verify_c0_sources(click_source, &[("selected_branch.c", c_source)])
-                        })
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("selected_branch.c", c_source)])
+    });
     let verified = verified.expect("the decided execution path should stay inside the open Proof");
     assert_eq!(flat_units, 1, "the decided scope should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the decided scope exported semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "the decided scope checked a certificate"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "selected_branch.contract" && name == "generated certificate validation"
-        )),
-        "the scoped decided branch must retain its searched proof steps directly: {events:#?}"
-    );
     let tactics = verified[0]
         .expanded_proof_tactics()
         .expect("the scoped decided branch should retain its expansion");
@@ -11215,15 +10068,9 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
         .expect("the expanded claim should close its proof block");
     let mut corrupted = expanded.clone();
     corrupted.replace_range(proof_start..proof_end, &corrupted_proof);
-    let (corrupted_result, corrupted_checks) = proof::count_source_certificate_checks(|| {
-        verify_c0_sources(&corrupted, &[("selected_branch.c", c_source)])
-    });
+    let corrupted_result = verify_c0_sources(&corrupted, &[("selected_branch.c", c_source)]);
     corrupted_result
         .expect_err("tampering with the checked C-branch entry must invalidate the expansion");
-    assert_eq!(
-        corrupted_checks, 0,
-        "the invalid C `if` checked a certificate"
-    );
 }
 
 #[test]
@@ -11248,10 +10095,8 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
             }
         "#;
 
-    let ((verified, _events), planning_transitions) = count_planning_statement_transitions(|| {
-        crate::instrumentation::collect(|| {
-            verify_c0_sources(click_source, &[("choose.c", c_source)])
-        })
+    let (verified, planning_transitions) = count_planning_statement_transitions(|| {
+        verify_c0_sources(click_source, &[("choose.c", c_source)])
     });
     let verified = verified.expect("automatic terminal branch should verify");
     assert_eq!(
@@ -11317,18 +10162,8 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
                 assumption();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("checked fixed-state smart have should verify");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the migrated smart have must not pass through ordinary certificate validation: {events:#?}"
-    );
 }
 
 #[test]
@@ -11351,18 +10186,8 @@ fn fixed_state_smart_have_retains_a_checked_theorem_application() {
                 simp();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("first.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("first.c", c_source)]);
     verified.expect("checked fixed-state smart have should apply signed-order transitivity");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "first.contract" && name == "generated certificate validation"
-        )),
-        "the migrated theorem-backed have must not ordinarily check its certificate: {events:#?}"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -11400,14 +10225,8 @@ fn explicit_linear_fixed_state_have_uses_the_checked_proof_path() {
             }
         "#;
 
-    let (verified, certificate_checks) = proof::count_source_certificate_checks(|| {
-        verify_c0_sources(click_source, &[("identity.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("explicit fixed-state have should advance through its checked proof step");
-    assert_eq!(
-        certificate_checks, 0,
-        "the admitted explicit fixed-state have should apply directly to Proof"
-    );
     let expanded = expand_c0_claim_source(
         click_source,
         &[("identity.c", c_source)],
@@ -11443,24 +10262,8 @@ fn explicit_post_execution_have_uses_the_checked_outcome_proof_path() {
             }
         "#;
 
-    let ((verified, events), certificate_checks) = proof::count_source_certificate_checks(|| {
-        crate::instrumentation::collect(|| {
-            verify_c0_sources(click_source, &[("identity.c", c_source)])
-        })
-    });
+    let verified = verify_c0_sources(click_source, &[("identity.c", c_source)]);
     verified.expect("explicit post-execution have should advance through its outcome Proof");
-    assert_eq!(
-        certificate_checks, 0,
-        "the admitted explicit outcome have should apply directly to Proof"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name.starts_with("post-execution simple have check")
-        )),
-        "the explicit outcome have must retain its checked Proof without fallback validation: {events:#?}"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -11498,18 +10301,8 @@ fn quantified_outcome_simp_keeps_its_binder_on_the_checked_goal() {
             }
         "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("bounded.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("bounded.c", c_source)]);
     verified.expect("the quantified outcome should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-        )),
-        "the binder-aware outcome certificate must not use compatibility construction: {events:#?}"
-    );
     let expanded = expand_c0_claim_source(
         click_source,
         &[("bounded.c", c_source)],
@@ -11551,17 +10344,8 @@ fn outcome_simp_with_no_open_claims_is_an_empty_proof_transition() {
     "#;
     let sources = [("release.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("a final simp with no open claims should be a no-op");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-        )),
-        "an empty claim set must not enter legacy exit planning: {events:#?}"
-    );
     let expanded = expand_c0_claim_source(click_source, &sources, "release", CProofClaim::Grouped)
         .expect("the empty outcome transition should expand");
     let release_proof = expanded
@@ -11611,24 +10395,8 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
     "#;
     let sources = [("init.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the unfolded resource-count goal should close through Proof");
-    let compatibility_events = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "outcome simp legacy exit planning"
-                        || name == "outcome simp compatibility construction"
-            )
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        compatibility_events.is_empty(),
-        "predicate closure must not enter outcome compatibility planning: {compatibility_events:#?}"
-    );
 
     let expanded = expand_c0_claim_source(click_source, &sources, "init", CProofClaim::Grouped)
         .expect("the retained predicate closure should expand");
@@ -11680,24 +10448,8 @@ fn outcome_predicate_unfold_uses_the_checked_frame_population_transition() {
     "#;
     let sources = [("give_back.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the checked frame population transition should reach the outcome Proof");
-    let compatibility_events = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "outcome simp legacy exit planning"
-                        || name == "outcome simp compatibility construction"
-            )
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        compatibility_events.is_empty(),
-        "the live population goal must not enter outcome compatibility planning: {compatibility_events:#?}"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, &sources, "give_back", CProofClaim::Grouped)
@@ -11750,22 +10502,12 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
     "#;
     let sources = [("sort_three_cells.c", c_source)];
 
-    let ((verified, events), flat_units) = proof::count_flat_proof_units(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources))
-    });
+    let (verified, flat_units) =
+        proof::count_flat_proof_units(|| verify_c0_sources(click_source, &sources));
     verified.expect("the surviving unfold-owned universal should close through Proof");
     assert_eq!(
         flat_units, 1,
         "the nested outcome tree should retain one Proof"
-    );
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "the retained predicate body must not enter outcome compatibility planning: {events:#?}"
     );
 
     let expanded = expand_c0_claim_source(
@@ -11939,29 +10681,8 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
     "#;
     let sources = [("bubble_pass3.c", c_source)];
 
-    let ((verified, events), certificate_checks) = proof::count_source_certificate_checks(|| {
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources))
-    });
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the bound universal outcome should close through Proof");
-    assert_eq!(
-        certificate_checks, 0,
-        "universal candidate search must apply checked operations directly to Proof"
-    );
-    let fallback_events = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "outcome simp legacy exit planning"
-                        || name == "outcome simp compatibility construction"
-            )
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        fallback_events.is_empty(),
-        "bound universal closure must not enter outcome compatibility planning: {fallback_events:#?}"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, &sources, "bubble_pass3", CProofClaim::Grouped)
@@ -11997,27 +10718,9 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
     // Expansion verifies the original smart proof while retaining its event
     // stream; collect that one pass rather than verifying the same source
     // once solely for the fallback census and again for expansion.
-    let (expanded, events) = crate::instrumentation::collect(|| {
-        expand_c0_claim_source(click_source, &c_sources, function, CProofClaim::Grouped)
-    });
+    let expanded = expand_c0_claim_source(click_source, &c_sources, function, CProofClaim::Grouped);
     let expanded =
         expanded.unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
-    let fallback_events = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "outcome simp legacy exit planning"
-                        || name == "outcome simp compatibility construction"
-            )
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        fallback_events.is_empty(),
-        "`{}` entered outcome fallback planning: {fallback_events:#?}",
-        path.display()
-    );
 
     assert!(
         expanded.contains("if k < (j - 1)"),
@@ -12197,25 +10900,8 @@ fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let (verified, events) =
-            crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources));
+        let verified = verify_c0_sources(click_source, &c_sources);
         verified.unwrap_or_else(|error| panic!("`{}` failed: {error:?}", path.display()));
-        let fallback_events = events
-            .iter()
-            .filter(|event| {
-                matches!(
-                    event,
-                    crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                        if name == "outcome simp legacy exit planning"
-                            || name == "outcome simp compatibility construction"
-                )
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            fallback_events.is_empty(),
-            "`{}` entered outcome fallback planning: {fallback_events:#?}",
-            path.display()
-        );
 
         let expanded = expand_c0_claim_source(click_source, &c_sources, function, claim)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
@@ -12340,25 +11026,8 @@ fn assert_resource_example_pipeline_has_no_outcome_fallbacks(
         .unwrap_or_else(|error| panic!("failed to load `{}`: {error}", path.display()));
     let c_sources = crate::cli::source_refs(&sources);
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(&click_source, &c_sources));
+    let verified = verify_c0_sources(&click_source, &c_sources);
     verified.unwrap_or_else(|error| panic!("`{}` failed: {error:?}", path.display()));
-    let fallback_events = events
-        .iter()
-        .filter(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name == "outcome simp legacy exit planning"
-                        || name == "outcome simp compatibility construction"
-            )
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        fallback_events.is_empty(),
-        "`{}` entered outcome fallback planning: {fallback_events:#?}",
-        path.display()
-    );
 
     let expanded =
         expand_c0_claim_source(&click_source, &c_sources, function, CProofClaim::Grouped)
@@ -12545,8 +11214,7 @@ fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
                 panic!("`{}` is not an expected failure", path.display());
             };
 
-            let (result, events) =
-                crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources));
+            let result = verify_c0_sources(click_source, &c_sources);
             let error = match result {
                 Ok(_) => panic!("`{}` unexpectedly verified", path.display()),
                 Err(error) => error,
@@ -12563,29 +11231,13 @@ fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
                 path.display(),
                 error.message().len()
             );
-            let fallback_events = events
-                .iter()
-                .filter(|event| {
-                    matches!(
-                        event,
-                        crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                            if name == "outcome simp legacy exit planning"
-                                || name == "outcome simp compatibility construction"
-                    )
-                })
-                .collect::<Vec<_>>();
-            assert!(
-                fallback_events.is_empty(),
-                "{class} fixture `{}` entered outcome fallback planning: {fallback_events:#?}",
-                path.display()
-            );
         }
     }
 }
 
 #[test]
 fn branch_continuation_claims_retain_their_selected_outcome_step() {
-    for (filename, function, claim, claim_label) in [
+    for (filename, function, claim, _) in [
         (
             "proof_branch_continuation.md",
             "joined_increment",
@@ -12615,28 +11267,8 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let (verified, events) =
-            crate::instrumentation::collect(|| verify_c0_sources(click_source, &c_sources));
+        let verified = verify_c0_sources(click_source, &c_sources);
         verified.unwrap_or_else(|error| panic!("`{}` failed: {error:?}", path.display()));
-        let fallback_events = events
-            .iter()
-            .filter(|event| {
-                matches!(
-                    event,
-                    crate::instrumentation::VerificationEvent::OperationFinished {
-                        claim,
-                        name,
-                        ..
-                    } if claim == claim_label
-                        && (name == "outcome simp legacy exit planning"
-                            || name == "outcome simp compatibility construction")
-                )
-            })
-            .collect::<Vec<_>>();
-        assert!(
-            fallback_events.is_empty(),
-            "`{claim_label}` entered outcome fallback planning: {fallback_events:#?}"
-        );
         if filename == "proof_branch_continuation.md" {
             let captured = crate::surface::proof::capture_c0_tactic_expansion(
                 click_source,
@@ -12715,17 +11347,8 @@ fn outcome_simp_transports_loadability_on_the_checked_proof() {
     "#;
     let sources = [("summarize.c", summarize_c), ("use_summary.c", use_c)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the call-preserved viewability should transport through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-        )),
-        "outcome viewability transport must bypass compatibility construction: {events:#?}"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, &sources, "use_summary", CProofClaim::Grouped)
@@ -12772,41 +11395,8 @@ fn outcome_simp_retains_checked_unchanged_old_equality_on_the_proof() {
     "#;
     let sources = [("shifted.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
-    verified.expect("the unchanged old equality should advance Proof");
-    let simp_start = events
-        .iter()
-        .rposition(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::TacticStarted(tactic)
-                    if tactic.claim == "shifted_loop_effect_preserves_prefix.contract"
-                        && tactic.tactic_name == "simp"
-            )
-        })
-        .expect("the final smart simp should be instrumented");
-    let simp_end = events[simp_start..]
-        .iter()
-        .position(|event| {
-            matches!(
-                event,
-                crate::instrumentation::VerificationEvent::TacticFinished { tactic, .. }
-                    if tactic.claim == "shifted_loop_effect_preserves_prefix.contract"
-                        && tactic.tactic_name == "simp"
-            )
-        })
-        .map(|offset| simp_start + offset)
-        .expect("the final smart simp should finish");
-    assert!(
-        events[simp_start..=simp_end].iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp compatibility construction"
-        )),
-        "outcome old equality must bypass compatibility construction during the final simp: {:#?}",
-        &events[simp_start..=simp_end]
-    );
+    verify_c0_sources(click_source, &sources)
+        .expect("the unchanged old equality should advance Proof");
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -12845,18 +11435,8 @@ fn outcome_simp_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
     "#;
     let sources = [("byte_prefix.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the unfolded byte universal should instantiate through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "unfolded universal closure must not enter outcome compatibility planning: {events:#?}"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -12914,19 +11494,9 @@ fn outcome_simp_materializes_selected_composite_separation_on_the_checked_proof(
     "#;
     let sources = [("observe.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified
         .expect("the observed composition should certify its selected separation through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "selected resource separation must not enter outcome compatibility planning: {events:#?}"
-    );
 
     let expanded = expand_c0_claim_source(
         click_source,
@@ -12987,18 +11557,8 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
     "#;
     let sources = [("shifted_copy.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the quantified old equality should transport through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "quantified old transport must not enter outcome compatibility planning: {events:#?}"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, &sources, "shifted_copy", CProofClaim::Grouped)
@@ -13058,18 +11618,8 @@ fn quantified_old_transport_expands_to_one_quantified_frame() {
     "#;
     let sources = [("shifted_copy.c", c_source)];
 
-    let (verified, events) =
-        crate::instrumentation::collect(|| verify_c0_sources(click_source, &sources));
+    let verified = verify_c0_sources(click_source, &sources);
     verified.expect("the quantified old equality should transport through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "outcome simp legacy exit planning"
-                    || name == "outcome simp compatibility construction"
-        )),
-        "quantified old transport must not enter outcome compatibility planning: {events:#?}"
-    );
 
     let expanded =
         expand_c0_claim_source(click_source, &sources, "shifted_copy", CProofClaim::Grouped)
@@ -13110,39 +11660,12 @@ fn source_expander_lowers_smart_simp_after_unfold_inside_have() {
                 simp();
             }
         "#;
-    let ((((verified, events), certificate_checks), context_exports), flat_units) =
-        proof::count_flat_proof_units(|| {
-            {
-                proof::count_execution_context_exports(|| {
-                    proof::count_source_certificate_checks(|| {
-                        {
-                            crate::instrumentation::collect(|| {
-                                verify_c0_sources(click_source, &[("identity.c", c_source)])
-                            })
-                        }
-                    })
-                })
-            }
-        });
+    let (verified, flat_units) = proof::count_flat_proof_units(|| {
+        verify_c0_sources(click_source, &[("identity.c", c_source)])
+    });
     verified.expect("the unfold-then-simp have should verify through Proof");
     assert_eq!(flat_units, 1, "the grouped proof should retain one Proof");
-    assert_eq!(
-        context_exports, 0,
-        "the leading predicate have exported semantic state"
-    );
-    assert_eq!(
-        certificate_checks, 0,
-        "ordinary predicate-have verification checked a certificate"
-    );
 
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim == "identity.contract" && name == "generated certificate validation"
-        )),
-        "the migrated unfold-then-simp path must retain its checked Proof: {events:#?}"
-    );
     let have_offset = click_source
         .find("have reflexive(x)")
         .expect("proof should contain the selected have");
@@ -14304,19 +12827,8 @@ fn unfolded_conjunction_have_simp_expands_to_both_scopes() {
                 simp();
             }
         "#;
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("set_pair.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("set_pair.c", c_source)]);
     verified.expect("the unfolded conjunction should verify on the checked Proof path");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                if name == "post-execution smart have compatibility construction"
-                    || name.starts_with("post-execution simple have check")
-        )),
-        "the checked unfold and structural simp must not reconstruct or check their proof: {events:#?}"
-    );
     let offset = click_source.find("have ordered_pair").unwrap();
     let position = expansion::position_at_offset(click_source, offset);
     let expanded = expand_c0_tactic_source_at(

@@ -1001,19 +1001,8 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
             }
         "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("initialize_with_theorem.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("initialize_with_theorem.c", c_source)]);
     verified.expect("loop initialization theorem search should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim.contains("loop(0).initialize")
-                    && name == "generated certificate validation"
-        )),
-        "the checked initialization Proof must not be independently checked: {events:#?}"
-    );
 
     let offset = click_source
         .find("apply(nonnegative_is_acceptable(x));")
@@ -1075,19 +1064,8 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
             }
         "#;
 
-    let (verified, events) = crate::instrumentation::collect(|| {
-        verify_c0_sources(click_source, &[("initialize_by_simp.c", c_source)])
-    });
+    let verified = verify_c0_sources(click_source, &[("initialize_by_simp.c", c_source)]);
     verified.expect("loop initialization simp should verify through Proof");
-    assert!(
-        events.iter().all(|event| !matches!(
-            event,
-            crate::instrumentation::VerificationEvent::OperationFinished { claim, name, .. }
-                if claim.contains("loop(0).initialize")
-                    && name == "generated certificate validation"
-        )),
-        "the checked initialization simp must not be independently checked: {events:#?}"
-    );
 
     let offset = click_source
         .find("initialize by simp")

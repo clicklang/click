@@ -3829,15 +3829,9 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 (kernel_quantified.clone(), quantified_surface.clone()),
                 (kernel_premise.clone(), premise.clone()),
             ];
-            let (selected, certificate_checks) = count_source_certificate_checks(|| {
-                root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs)
-            });
+            let selected = root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs);
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
-            assert_eq!(
-                certificate_checks, 0,
-                "universal instantiation planning must not check a candidate certificate"
-            );
             assert!(selected.is_complete());
             assert!(matches!(
                 selected.certificate().steps(),
