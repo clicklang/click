@@ -40,10 +40,6 @@ fn constant_start(block: &PointerBlock, offset: i64) -> Pointer {
 }
 
 impl InitializedBytes {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
@@ -86,6 +82,15 @@ impl InitializedBytes {
                 .get(pointer)
                 .is_some_and(|length| *length >= byte_width),
         }
+    }
+
+    /// The end of the run of `block` holding the byte at `offset`, if one
+    /// does: one predecessor lookup.
+    pub(crate) fn run_end_holding(&self, block: &PointerBlock, offset: i64) -> Option<i64> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.run_at_or_before(block, offset)
+            .map(|(_, end)| end)
+            .filter(|end| *end > offset)
     }
 
     /// Whether one run of `block` holds every byte in `start..end`.

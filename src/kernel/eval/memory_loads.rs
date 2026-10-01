@@ -293,6 +293,7 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
     let mut distinct_case = None;
     let mut paths = evaluate_c_memory_load_case(
         memory,
+        memory,
         pointer.clone(),
         value_type,
         facts,
@@ -309,6 +310,12 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
     // The fact set a transported case reads under, kept in place while its
     // id scope is entered: the scope registers its address.
     let mut case_assumptions: Option<PureFactContext> = None;
+    // A distinct case's memory is hypothetical: it drops the undecided cell
+    // (and its initialization mark) only to name the load's value over the
+    // state without it. Whether the bytes the load reads were written is a
+    // question about the memory the program holds, which still holds the
+    // cell, so every case asks it of the memory the load was read at.
+    let original_memory = memory;
     while let Some(case) = distinct_case.take() {
         let DistinctLoadCase {
             memory,
@@ -330,6 +337,7 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
         let splits = !crate::kernel::assumptions::reasoning_interrupted();
         paths.extend(evaluate_c_memory_load_case(
             &memory,
+            original_memory,
             pointer.clone(),
             value_type,
             facts,
@@ -360,10 +368,13 @@ struct DistinctLoadCase {
 
 /// One turn of [`evaluate_c_memory_load_paths_with_alias_cache`]: the paths
 /// this memory decides, with the distinct case of an undecided cell left in
-/// `distinct_case` for the caller.
+/// `distinct_case` for the caller. `written` is the memory the load was read
+/// at, which every uninitialized-read check asks: `memory` may be a distinct
+/// case's, without cells the program wrote.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_c_memory_load_case(
     memory: &CMemory,
+    written: &CMemory,
     pointer: Pointer,
     value_type: CType,
     facts: Vec<ExecutionPureFact>,
@@ -649,7 +660,7 @@ fn evaluate_c_memory_load_case(
     // never-written heap cell into an unconstrained initialized value.
     if purpose != LoadPurpose::Logical
         && memory.is_uninitialized_heap_address(&pointer, value_type.byte_width(), assumptions)
-        && !memory.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
+        && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(memory, &pointer, value_type)
     {
         return vec![CExpressionPath {
@@ -1038,15 +1049,17 @@ fn evaluate_c_memory_load_case(
     // does not initialize it. Once all possibly-aliasing stored cells have
     // been considered above, a local load with no matching cell is an
     // uninitialized read rather than an unconstrained value — unless the
-    // memory's initialization record holds its bytes: a store the facts could
-    // not place, a havoc or a join forgot the cell's value, never that it was
-    // written, and the load then reads an unknown initialized value below. A
+    // bytes it may read were written, by the initialization record or the
+    // cells of the memory the load was read at: a store the facts could not
+    // place, a havoc or a join forgot the cell's value, never that it was
+    // written, and a distinct case dropped a written cell only to name the
+    // value; the load then reads an unknown initialized value below. A
     // symbolic offset must not bypass this check: allocation bounds are
     // independent of whether the addressed element has ever been written.
     if purpose != LoadPurpose::Logical
         && pointer.block.starts_with("local:")
         && memory.has_block(&pointer.block)
-        && !memory.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
+        && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
         && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
     {
         return vec![CExpressionPath {

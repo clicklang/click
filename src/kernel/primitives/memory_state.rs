@@ -4117,25 +4117,59 @@ impl CMemory {
         self.heap.initialized.covers(pointer, byte_width)
     }
 
-    /// [`Self::has_initialized_bytes_at`], and also for an element index the
-    /// facts bound: `a[u]` under `0 <= u < n` reads bytes of `a[0..n]`, so a
-    /// run covering all of those covers the read wherever `u` lands. The
-    /// bound is the index's signed interval; the offset must be the block's
-    /// base plus one scaled index and a constant, as an element access is.
+    /// Whether every byte of `block` in `start..end` was written: held by a
+    /// run of the initialization record or by a cached constant-offset cell.
+    /// A cell is evidence its bytes were written, as the record is for the
+    /// bytes whose cached values were forgotten, so a byte either holds is
+    /// initialized. Walks the bytes left to right, one predecessor lookup in
+    /// each map per run or cell crossed: the work is the entries inside the
+    /// interval, not the block or the memory.
+    fn written_interval(&self, block: &PointerBlock, start: i64, end: i64) -> bool {
+        let at = |offset: i64| Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let concrete = self.cells.concrete();
+        let mut cursor = start;
+        while cursor < end {
+            if let Some(run_end) = self.heap.initialized.run_end_holding(block, cursor) {
+                cursor = run_end;
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            let cell_end = concrete
+                .range(at(i64::MIN)..=at(cursor))
+                .next_back()
+                .and_then(|(cell, value)| {
+                    Some(cell.offset.as_const()? + i64::from(value.byte_width()))
+                })
+                .filter(|cell_end| *cell_end > cursor);
+            match cell_end {
+                Some(cell_end) => cursor = cell_end,
+                None => return false,
+            }
+        }
+        true
+    }
+
+    /// Whether the `byte_width` bytes at `pointer` were written, by the
+    /// initialization record or a cached cell (see [`Self::written_interval`]),
+    /// also for an element index the facts bound: `a[u]` under `0 <= u < n`
+    /// reads bytes of `a[0..n]`, so a run or cells covering all of those
+    /// cover the read wherever `u` lands. The bound is the index's signed
+    /// interval; the offset must be the block's base plus one scaled index
+    /// and a constant, as an element access is.
     pub(in crate::kernel) fn has_initialized_bytes_under(
         &self,
         pointer: &Pointer,
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        if self.heap.initialized.is_empty() {
-            return false;
-        }
         if self.has_initialized_bytes_at(pointer, byte_width) {
             return true;
         }
-        if pointer.offset.as_const().is_some() {
-            return false;
+        if let Some(offset) = pointer.offset.as_const() {
+            return self.written_interval(&pointer.block, offset, offset + i64::from(byte_width));
         }
         let (atoms, shift) =
             crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant(&pointer.offset);
@@ -4163,11 +4197,7 @@ impl CMemory {
         ) else {
             return false;
         };
-        start < end
-            && self
-                .heap
-                .initialized
-                .covers_interval(&pointer.block, start, end)
+        start < end && self.written_interval(&pointer.block, start, end)
     }
 
     /// Whether any typed union overlay is recorded at exactly this pointer.
@@ -7362,5 +7392,79 @@ mod initialization_record_tests {
         assert!(forgotten.has_initialized_bytes_under(&read, 4, &bounded(1)));
         assert!(!forgotten.has_initialized_bytes_under(&read, 4, &bounded(2)));
         assert!(!forgotten.has_initialized_bytes_under(&read, 4, &PureFactContext::new()));
+    }
+
+    fn index_between(index: &Bitvector32Term, low: u32, high: u32) -> PureFactContext {
+        PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(low), index.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(index.clone(), Bitvector32Term::Constant(high)),
+                true,
+            )
+    }
+
+    #[test]
+    fn cached_cells_cover_an_element_index_the_facts_bound() {
+        // Stores that still hold their values wrote their bytes: with no
+        // initialization record at all, cells covering every element the
+        // index may name cover the read, and a gap does not.
+        let block = "local:record-cells";
+        let written = written_pair(block);
+        assert!(!written.has_initialized_bytes_at(&element(block, 0), 8));
+        let index = Bitvector32Term::Variable(Variable(924_007));
+        let read = Pointer {
+            block: PointerBlock::from(block),
+            offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+        };
+        assert!(written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 1)));
+        assert!(!written.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
+        let gap = CMemory::new()
+            .with_block(block, 12)
+            .store(
+                element(block, 0),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            )
+            .store(
+                element(block, 2),
+                CValue::Int32(Bitvector32Term::Constant(5)),
+            );
+        assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
+        assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
+    }
+
+    #[test]
+    fn a_covering_query_scales_with_the_cells_it_crosses() {
+        // A read bounded to two elements of an array whose every element is
+        // a cached cell costs those two cells, whatever the array's size.
+        let mut works = Vec::new();
+        for count in [64i64, 512, 4096] {
+            let block = format!("local:record-cells-{count}");
+            let mut memory =
+                CMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
+            for index in 0..count {
+                memory = memory.store(
+                    element(&block, index),
+                    CValue::Int32(Bitvector32Term::Constant(1)),
+                );
+            }
+            let index = Bitvector32Term::Variable(Variable(924_008));
+            let read = Pointer {
+                block: PointerBlock::from(block.as_str()),
+                offset: PointerOffsetTerm::scale_int32(index.clone(), 4),
+            };
+            let assumptions = index_between(&index, 7, 8);
+            let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory.has_initialized_bytes_under(&read, 4, &assumptions)
+            });
+            assert!(covered);
+            works.push(work);
+        }
+        assert!(
+            works.windows(2).all(|pair| pair[0] == pair[1]),
+            "covering queries cost {works:?} work units"
+        );
     }
 }

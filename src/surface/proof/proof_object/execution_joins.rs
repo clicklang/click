@@ -2652,19 +2652,24 @@ impl<'a> Proof<'a> {
         )))
     }
 
-    pub(super) fn apply_focused_expanded_execution_arm(
+    /// Applies one expanded arm of the split `arm_enclosing` ends with,
+    /// inside the bounded arms before it.
+    fn apply_focused_expanded_execution_arm(
         &self,
-        record: &ExecutionSplit<'a>,
+        arm_enclosing: &[&ExecutionSplit<'a>],
         take_then: bool,
         surface_condition: &ClickProposition,
         steps: &[ProofStep],
     ) -> Result<Self, ClickError> {
+        let record = arm_enclosing
+            .last()
+            .expect("an expanded arm runs inside its own split");
         let Some((proof, entry_steps)) =
             self.focus_expanded_execution_arm_entry(record, take_then, surface_condition, steps)?
         else {
             return Err(self.step_error("cannot advance an infeasible expanded execution arm"));
         };
-        proof.apply_execution_steps_in_arm(record, &steps[entry_steps..], true)
+        proof.apply_execution_steps_within(arm_enclosing, &steps[entry_steps..], true)
     }
 
     pub(super) fn planned_execution_step_is_supported(step: &ProofStep) -> bool {
@@ -2709,66 +2714,53 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Applies one bounded arm's step sequence. An execution-advancing step
-    /// at the arm's typed boundary continues privately into the parent
-    /// continuation, once, through the split record — the terminal-arm form
-    /// the container allowed. Logical steps run at the boundary unchanged.
-    fn apply_execution_steps_in_arm(
+    pub(super) fn apply_planned_execution_steps_inner(
         &self,
-        record: &ExecutionSplit<'a>,
+        steps: &[ProofStep],
+    ) -> Result<Self, ClickError> {
+        self.apply_execution_steps_within(&[], steps, false)
+    }
+
+    /// Applies planner (or, with `expanded`, already-expanded) execution
+    /// steps inside the bounded C `if` arms `enclosing` names, innermost
+    /// last. A path runs to function exit, so an execution-advancing step
+    /// that finds the frontier at an arm's typed boundary continues
+    /// privately into that arm's parent continuation through its split
+    /// record, and again through the next record while the parent's own
+    /// region is exhausted: a path escapes exactly as many arms as it is
+    /// nested inside, as [`Self::try_focused_execute_to_exit_within`] does.
+    /// Logical steps run at a boundary unchanged. A case split inside an arm
+    /// (a load or condition with path cases) runs each case under the same
+    /// chain, so a case that finishes the arm continues past it instead of
+    /// failing as running off the arm.
+    fn apply_execution_steps_within(
+        &self,
+        enclosing: &[&ExecutionSplit<'a>],
         steps: &[ProofStep],
         expanded: bool,
     ) -> Result<Self, ClickError> {
         let mut proof = self.clone();
-        let mut escaped = false;
+        let mut enclosing = enclosing.to_vec();
         for step in steps {
-            if !escaped
-                && matches!(step, ProofStep::Step | ProofStep::If { .. })
-                && proof.is_at_region_boundary()
-            {
-                proof = proof.continue_arm_into_parent_frontier(record)?;
-                escaped = true;
+            if matches!(step, ProofStep::Step | ProofStep::If { .. }) {
+                while proof.is_at_region_boundary() {
+                    let Some(record) = enclosing.pop() else {
+                        break;
+                    };
+                    proof = proof.continue_arm_into_parent_frontier(record)?;
+                }
             }
             proof = match step {
                 ProofStep::If {
                     condition,
                     then_proof,
                     else_proof,
-                } if expanded => proof.apply_expanded_execution_if(
+                } => proof.apply_execution_if_within(
+                    &enclosing,
                     condition,
                     then_proof.steps(),
                     else_proof.steps(),
-                )?,
-                ProofStep::If {
-                    condition,
-                    then_proof,
-                    else_proof,
-                } => proof.apply_planned_execution_if(
-                    condition,
-                    then_proof.steps(),
-                    else_proof.steps(),
-                )?,
-                _ => proof.apply_step(step.clone())?,
-            };
-        }
-        Ok(proof)
-    }
-
-    pub(super) fn apply_planned_execution_steps_inner(
-        &self,
-        steps: &[ProofStep],
-    ) -> Result<Self, ClickError> {
-        let mut proof = self.clone();
-        for step in steps {
-            proof = match step {
-                ProofStep::If {
-                    condition,
-                    then_proof,
-                    else_proof,
-                } => proof.apply_planned_execution_if(
-                    condition,
-                    then_proof.steps(),
-                    else_proof.steps(),
+                    expanded,
                 )?,
                 _ => proof.apply_step(step.clone())?,
             };
@@ -2794,11 +2786,16 @@ impl<'a> Proof<'a> {
         Ok(proof.is_at_function_exit().then_some(proof))
     }
 
-    pub(super) fn apply_planned_execution_if(
+    /// Applies one planner (or, with `expanded`, already-expanded) `if`
+    /// inside the bounded arms `enclosing` names (see
+    /// [`Self::apply_execution_steps_within`]).
+    fn apply_execution_if_within(
         &self,
+        enclosing: &[&ExecutionSplit<'a>],
         condition: &ClickProposition,
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
+        expanded: bool,
     ) -> Result<Self, ClickError> {
         // A planner `if` at a C `if` whose condition has one path per truth
         // value enters an actual C `if` arm, including its branch-entry
@@ -2810,13 +2807,60 @@ impl<'a> Proof<'a> {
         // facts before its one successor exists. The planner splits such an
         // operation one condition at a time and re-runs it on each side, so
         // the same question decides every nested planner `if` here as well.
-        if self.execution_frontier_is_switch()? || self.execution_frontier_has_path_cases()? {
-            return self.apply_planned_case_split(condition, then_steps, else_steps);
+        // An expanded `if` is the C branch exactly when it spells the C
+        // condition, as at the top level; otherwise it is a case split.
+        let case_split = if expanded {
+            !self.frontier_is_execution_branch(condition)?
+        } else {
+            self.execution_frontier_is_switch()? || self.execution_frontier_has_path_cases()?
+        };
+        if case_split {
+            return self.clone().apply_execution_if_with(
+                condition.clone(),
+                |proof| proof.apply_execution_steps_within(enclosing, then_steps, expanded),
+                |proof| proof.apply_execution_steps_within(enclosing, else_steps, expanded),
+            );
         }
+        self.apply_execution_branch_within(enclosing, condition, then_steps, else_steps, expanded)
+    }
+
+    /// Splits the C `if` at the frontier and applies each arm's steps inside
+    /// `enclosing` and the new split, then joins.
+    fn apply_execution_branch_within(
+        &self,
+        enclosing: &[&ExecutionSplit<'a>],
+        condition: &ClickProposition,
+        then_steps: &[ProofStep],
+        else_steps: &[ProofStep],
+        expanded: bool,
+    ) -> Result<Self, ClickError> {
         let (split, record) = self.split_focused_execution_branch()?;
+        let mut arm_enclosing: Vec<&ExecutionSplit<'a>> = enclosing.to_vec();
+        arm_enclosing.push(&record);
         let mut advanced = split;
         for (take_then, steps) in [(true, then_steps), (false, else_steps)] {
             if record.arm_id(take_then).is_none() {
+                if expanded && !steps.is_empty() {
+                    return Err(self.step_error(format!(
+                        "expanded execution {} arm is nonempty, but the checked C branch is infeasible",
+                        if take_then { "then" } else { "else" },
+                    )));
+                }
+                continue;
+            }
+            if expanded {
+                if !matches!(steps.last(), Some(ProofStep::Step | ProofStep::If { .. })) {
+                    return Err(self.step_error(format!(
+                        "expanded execution {} arm does not end in a checked C step",
+                        if take_then { "then" } else { "else" },
+                    )));
+                }
+                advanced = advanced.apply_focused_expanded_execution_arm(
+                    &arm_enclosing,
+                    take_then,
+                    condition,
+                    steps,
+                )?;
                 continue;
             }
             let entry_steps = advanced
@@ -2834,23 +2878,9 @@ impl<'a> Proof<'a> {
             }
             advanced = advanced
                 .focus_split_arm(&record, take_then)?
-                .apply_execution_steps_in_arm(&record, &steps[entry_steps..], false)?;
+                .apply_execution_steps_within(&arm_enclosing, &steps[entry_steps..], false)?;
         }
         advanced.join_focused_execution_split(&record, false, None)
-    }
-
-    /// Applies a planner `if` as a proof-level case split.
-    fn apply_planned_case_split(
-        &self,
-        condition: &ClickProposition,
-        then_steps: &[ProofStep],
-        else_steps: &[ProofStep],
-    ) -> Result<Self, ClickError> {
-        self.clone().apply_execution_if_with(
-            condition.clone(),
-            |proof| proof.apply_planned_execution_steps_inner(then_steps),
-            |proof| proof.apply_planned_execution_steps_inner(else_steps),
-        )
     }
 
     /// Whether the next C operation at the focused frontier has path cases a
@@ -2935,28 +2965,7 @@ impl<'a> Proof<'a> {
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
     ) -> Result<Self, ClickError> {
-        let (split, record) = self.split_focused_execution_branch()?;
-        let mut advanced = split;
-        for (take_then, steps) in [(true, then_steps), (false, else_steps)] {
-            if record.arm_id(take_then).is_none() {
-                if !steps.is_empty() {
-                    return Err(self.step_error(format!(
-                        "expanded execution {} arm is nonempty, but the checked C branch is infeasible",
-                        if take_then { "then" } else { "else" },
-                    )));
-                }
-                continue;
-            }
-            if !matches!(steps.last(), Some(ProofStep::Step | ProofStep::If { .. })) {
-                return Err(self.step_error(format!(
-                    "expanded execution {} arm does not end in a checked C step",
-                    if take_then { "then" } else { "else" },
-                )));
-            }
-            advanced = advanced
-                .apply_focused_expanded_execution_arm(&record, take_then, condition, steps)?;
-        }
-        advanced.join_focused_execution_split(&record, false, None)
+        self.apply_execution_branch_within(&[], condition, then_steps, else_steps, true)
     }
 
     /// Restores the parent frontier around a decided arm that rests at its

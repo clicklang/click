@@ -156,7 +156,7 @@ fn closes_loop_invariants(tactic: &ProofTactic) -> bool {
 fn expanded_execution_arm_supported(steps: &[ProofStep]) -> bool {
     steps.is_empty()
         || (matches!(steps.first(), Some(ProofStep::Step))
-            && matches!(steps.last(), Some(ProofStep::Step)))
+            && matches!(steps.last(), Some(ProofStep::Step | ProofStep::If { .. })))
 }
 
 fn linear_execution_tactics(node: &InternalProofNode) -> Option<&[IndexedTactic]> {
@@ -3353,19 +3353,74 @@ fn advance_checked_branch_arms<'a>(
     }))
 }
 
-fn linear_execution_steps(node: &InternalProofNode) -> Option<Vec<ProofStep>> {
-    linear_execution_tactics(node)?
-        .iter()
-        .map(|indexed| arm_proof_step(&indexed.tactic))
-        .collect()
+/// The simple execution steps an expanded arm spells: its simple tactics,
+/// and a nested proof `if` whose arms each spell simple steps that advance
+/// execution (a case split inside the arm, or a nested C branch). Anything
+/// else, including an `if` after the path has exited, is left to the
+/// structural driver.
+fn arm_execution_steps(node: &InternalProofNode, depth: usize) -> Option<Vec<ProofStep>> {
+    if depth >= MAX_CHECKED_EXECUTION_REGION_DEPTH {
+        return None;
+    }
+    let mut steps = Vec::new();
+    let mut node = node;
+    loop {
+        match node {
+            InternalProofNode::Done => return Some(steps),
+            InternalProofNode::Linear {
+                tactics,
+                continuation,
+            } => {
+                for indexed in tactics {
+                    steps.push(arm_proof_step(&indexed.tactic)?);
+                }
+                node = continuation;
+            }
+            InternalProofNode::If {
+                condition,
+                then_branch,
+                else_branch,
+                continuation,
+                ..
+            } => {
+                let then_steps = arm_execution_steps(then_branch, depth + 1)?;
+                let else_steps = arm_execution_steps(else_branch, depth + 1)?;
+                if !steps_advance_execution(&then_steps) || !steps_advance_execution(&else_steps) {
+                    return None;
+                }
+                steps.push(ProofStep::If {
+                    condition: condition.clone(),
+                    then_proof: Box::new(ProofCertificate::from_steps(then_steps).ok()?),
+                    else_proof: Box::new(ProofCertificate::from_steps(else_steps).ok()?),
+                });
+                node = continuation;
+            }
+            _ => return None,
+        }
+    }
+}
+
+fn steps_advance_execution(steps: &[ProofStep]) -> bool {
+    steps.iter().any(|step| match step {
+        ProofStep::Step => true,
+        ProofStep::If {
+            then_proof,
+            else_proof,
+            ..
+        } => {
+            steps_advance_execution(then_proof.steps())
+                && steps_advance_execution(else_proof.steps())
+        }
+        _ => false,
+    })
 }
 
 fn expanded_execution_if_steps(
     then_branch: &InternalProofNode,
     else_branch: &InternalProofNode,
 ) -> Option<(Vec<ProofStep>, Vec<ProofStep>)> {
-    let then_steps = linear_execution_steps(then_branch)?;
-    let else_steps = linear_execution_steps(else_branch)?;
+    let then_steps = arm_execution_steps(then_branch, 0)?;
+    let else_steps = arm_execution_steps(else_branch, 0)?;
     (expanded_execution_arm_supported(&then_steps)
         && expanded_execution_arm_supported(&else_steps)
         && !(then_steps.is_empty() && else_steps.is_empty()))
