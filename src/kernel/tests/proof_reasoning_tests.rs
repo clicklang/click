@@ -4750,6 +4750,82 @@ fn unsigned_extent_bound_below_the_sign_bit_is_decided_by_signed_order() {
     assert_eq!(above.decide(&fits), Some(false));
 }
 
+/// An unsigned chain `x <u n`, `n <=u 4` is the signed chain over the
+/// sign-bit-flipped atoms, so it gives `x <u 4`, and with it the signed range
+/// `0 <= x` and `x < 4` an index needs. It does not compose with a signed
+/// bound on `n` (a negative `n` is a huge unsigned one), with no bound on
+/// `n`, or through a wrapped `n - 1`.
+#[test]
+fn unsigned_order_chain_bounds_its_low_end_in_signed_order() {
+    let x = Bitvector32Term::Variable(Variable(89_300));
+    let n = Bitvector32Term::Variable(Variable(89_301));
+    let four = Bitvector32Term::Constant(4);
+    let zero = Bitvector32Term::Constant(0);
+    let below_n = ConditionTerm::unsigned_less_than(x.clone(), n.clone());
+    let nonnegative = ConditionTerm::signed_less_equal(zero.clone(), x.clone());
+    let below_four = ConditionTerm::signed_less_than(x.clone(), four.clone());
+    let chained = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::unsigned_less_equal(n.clone(), four.clone()),
+            true,
+        )
+        .assume_condition(below_n.clone(), true);
+    assert_eq!(
+        chained.decide(&ConditionTerm::unsigned_less_than(x.clone(), four.clone())),
+        Some(true)
+    );
+    assert_eq!(chained.decide(&nonnegative), Some(true));
+    assert_eq!(chained.decide(&below_four), Some(true));
+    assert_eq!(
+        chained.decide(&ConditionTerm::signed_less_equal(x.clone(), four.clone())),
+        Some(true)
+    );
+    assert_eq!(
+        chained.decide(&ConditionTerm::signed_less_than(
+            x.clone(),
+            Bitvector32Term::Constant(3)
+        )),
+        None,
+        "`x <u 4` admits `x == 3`"
+    );
+
+    let signed_bound = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(n.clone(), four.clone()),
+            true,
+        )
+        .assume_condition(below_n.clone(), true);
+    assert_eq!(
+        signed_bound.decide(&nonnegative),
+        None,
+        "a signed bound on `n` does not bound the unsigned `x <u n`"
+    );
+    assert_eq!(signed_bound.decide(&below_four), None);
+
+    let unbounded = PureFactContext::new().assume_condition(below_n, true);
+    assert_eq!(unbounded.decide(&nonnegative), None);
+    assert_eq!(unbounded.decide(&below_four), None);
+
+    let wrapped = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::unsigned_less_equal(n.clone(), four.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::unsigned_less_than(
+                x.clone(),
+                Bitvector32Term::Subtract(Box::new(n), Box::new(Bitvector32Term::Constant(1))),
+            ),
+            true,
+        );
+    assert_eq!(
+        wrapped.decide(&nonnegative),
+        None,
+        "`n - 1` wraps when `n` is zero"
+    );
+    assert_eq!(wrapped.decide(&below_four), None);
+}
+
 #[test]
 fn assumptions_do_not_split_a_multi_value_context_variable() {
     let j = Bitvector32Term::Variable(Variable(87));
@@ -8427,6 +8503,14 @@ fn memory_resolution_order_walk_agrees_with_the_full_scan_on_generated_facts() {
         Box::new(pool[0].clone()),
         Box::new(Bitvector32Term::Constant(1)),
     ));
+    // Sign-bit flips, the operands of an unsigned order, which the filing
+    // keys as it keys the variables they flip.
+    for id in [0, 1] {
+        pool.push(Bitvector32Term::bitwise_xor(
+            pool[id].clone(),
+            Bitvector32Term::Constant(0x8000_0000),
+        ));
+    }
     let mut state = 0x2545_f491_4f6c_dd1du64;
     let mut next = |bound: usize| {
         state ^= state << 13;

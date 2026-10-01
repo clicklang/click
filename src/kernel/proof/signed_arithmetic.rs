@@ -93,6 +93,20 @@ impl SignedArithmeticAtom {
         }
     }
 
+    /// Whether this atom is a sign-bit flip `v ^ 2^31`, the operand form a
+    /// 32-bit unsigned order is spelled with
+    /// (`ConditionTerm::unsigned_less_than`).
+    pub(crate) fn is_sign_bit_flip(&self) -> bool {
+        const SIGN_BIT: SignedArithmeticAtomToken =
+            SignedArithmeticAtomToken::Constant(0x8000_0000);
+        matches!(
+            self.tokens.first(),
+            Some(SignedArithmeticAtomToken::Binary(
+                SignedArithmeticBinaryOperator::BitwiseXor
+            ))
+        ) && (self.tokens.get(1) == Some(&SIGN_BIT) || self.tokens.last() == Some(&SIGN_BIT))
+    }
+
     fn is_opaque_root(&self) -> bool {
         matches!(
             self.tokens.first(),

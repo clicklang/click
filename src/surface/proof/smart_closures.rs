@@ -991,6 +991,18 @@ impl<'a> Proof<'a> {
                         && result.relation == SignedArithmeticRelation::LessEqual
                     {
                         integer_surface_zero_claim(left_surface, right_surface)
+                    } else if !result.terms.is_empty()
+                        && result.terms.keys().all(|atom| atom.is_sign_bit_flip())
+                        && let Some(chained) =
+                            integer_surface_transitive(left_surface, right_surface)
+                    {
+                        // A sum over sign-bit-flipped atoms is a step of an
+                        // unsigned chain: `x <u n` and `n <=u 4` add to
+                        // `x <u 4`, which is the source comparison of the
+                        // chain's ends. Summing the source operands instead
+                        // would spell a wrapping `uint32` addition, a
+                        // different value from the flipped atoms' sum.
+                        Some(chained)
                     } else {
                         claim_surface(result).or_else(|| {
                             if weakening_source == Some(surfaces.len()) {
