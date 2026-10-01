@@ -2258,6 +2258,221 @@ mod wildcard_scope_tests {
     }
 
     #[test]
+    fn exact_counts_preserve_multiplicity_and_require_current_authority() {
+        let pool = PointerBlock::Heap(950_001);
+        let scope = scope(&pool, 3);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let first = description(&pool, &[1, 10]);
+        let second = description(&pool, &[2, 20]);
+        let assumptions = PureFactContext::new();
+        let count = |events: &CreationEvents, member: &ResourceDescription| {
+            events
+                .observe_exact_member(member, &assumptions)
+                .unwrap()
+                .entry_count
+        };
+        assert_eq!(count(&empty, &first), Bitvector32Term::Constant(0));
+        let (one, _) = empty.checked_member_exchange(&pool, &first, true).unwrap();
+        let (two, _) = one.checked_member_exchange(&pool, &first, true).unwrap();
+        let (three, _) = two.checked_member_exchange(&pool, &second, true).unwrap();
+        assert_eq!(count(&three, &first), Bitvector32Term::Constant(2));
+        assert_eq!(count(&three, &second), Bitvector32Term::Constant(1));
+        let (spent, _) = three.checked_member_exchange(&pool, &first, false).unwrap();
+        assert_eq!(count(&spent, &first), Bitvector32Term::Constant(1));
+        assert_eq!(count(&spent, &second), Bitvector32Term::Constant(1));
+        let helper = spent.enter_call();
+        let transferred = spent
+            .transfer_call_fact(&spent, &helper, &scope, true)
+            .unwrap();
+        assert!(
+            transferred
+                .observe_exact_member(&first, &assumptions)
+                .is_err()
+        );
+        let held = transferred.return_to(&helper);
+        assert_eq!(count(&held, &first), Bitvector32Term::Constant(1));
+    }
+
+    #[test]
+    fn exact_helper_count_is_arbitrary_and_survives_checked_consumption() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let assumptions = PureFactContext::new();
+        let exact = entry.observe_exact_member(&member, &assumptions).unwrap();
+        let total = entry.observe_symbolic(&scope).unwrap();
+        assert!(matches!(exact.entry_count, Bitvector32Term::Variable(_)));
+        assert_ne!(exact.entry_count, total.entry_count);
+        assert_eq!(exact.entry_owned_members, 1);
+        assert_eq!(exact.delta, 0);
+        let (spent, _) = entry
+            .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+            .unwrap();
+        let after = spent.observe_exact_member(&member, &assumptions).unwrap();
+        assert_eq!(after.entry_count, exact.entry_count);
+        assert_eq!(after.delta, -1);
+        assert_eq!(
+            entry
+                .observe_exact_member(&member, &assumptions)
+                .unwrap()
+                .delta,
+            0
+        );
+        let (_, foreign) = opaque_scope(1);
+        assert!(spent.observe_exact_member(&foreign, &assumptions).is_err());
+    }
+
+    #[test]
+    fn exact_counts_do_not_treat_unresolved_indices_as_absent() {
+        let pool = PointerBlock::Heap(950_002);
+        let scope = scope(&pool, 2);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let known = description(&pool, &[7]);
+        let mut arguments = known.arguments().to_vec();
+        arguments[1] = AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+            Variable::allocate_fresh().unwrap(),
+        )));
+        let unknown =
+            ResourceDescription::new("slot".into(), arguments.into(), known.schema().clone());
+        let (one, _) = empty
+            .checked_member_exchange(&pool, &unknown, true)
+            .unwrap();
+        assert!(
+            one.observe_exact_member(&known, &PureFactContext::new())
+                .is_err()
+        );
+        let (zero, _) = one.checked_member_exchange(&pool, &unknown, false).unwrap();
+        assert_eq!(
+            zero.observe_exact_member(&known, &PureFactContext::new())
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+    }
+
+    #[test]
+    fn exact_count_identity_ignores_pointer_casts_and_qualifiers() {
+        let pool = PointerBlock::Heap(950_004);
+        let scope = scope(&pool, 2);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let mut arguments = description(&pool, &[0]).arguments().to_vec();
+        let pointer = CValue::pointer(Pointer {
+            block: PointerBlock::Heap(950_005),
+            offset: PointerOffsetTerm::Constant(4),
+        });
+        arguments[1] = pointer.clone().into();
+        let member = ResourceDescription::new(
+            "slot".into(),
+            arguments.clone().into(),
+            scope.schema().clone(),
+        );
+        let (one, _) = empty.checked_member_exchange(&pool, &member, true).unwrap();
+        let CValue::Pointer(pointer) = pointer else {
+            unreachable!()
+        };
+        arguments[1] = CValue::Pointer(
+            pointer
+                .with_type(CType::VoidPointer)
+                .with_pointee_constant(true),
+        )
+        .into();
+        let cast =
+            ResourceDescription::new("slot".into(), arguments.into(), scope.schema().clone());
+        assert_eq!(
+            one.observe_exact_member(&cast, &PureFactContext::new())
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+        let (zero, _) = one.checked_member_exchange(&pool, &cast, false).unwrap();
+        assert_eq!(
+            zero.observe_exact_member(&member, &PureFactContext::new())
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+    }
+
+    #[test]
+    fn exact_count_never_reports_zero_for_an_unindexed_batch() {
+        let pool = PointerBlock::Heap(950_006);
+        let scope = scope(&pool, 2);
+        let (empty, _) = CreationEvents::new()
+            .created(pool.clone())
+            .checked_establish(&pool, &scope)
+            .unwrap();
+        let member = description(&pool, &[7]);
+        let (batch, _) = empty
+            .checked_member_exchange_quantity(
+                &pool,
+                &member,
+                true,
+                &Bitvector32Term::Constant(2),
+                &PureFactContext::new(),
+            )
+            .unwrap();
+        assert_eq!(
+            batch
+                .observe_exact_member(&member, &PureFactContext::new())
+                .err(),
+            Some(CreationRefusal::UnknownTotal)
+        );
+    }
+
+    #[test]
+    fn exact_count_lookup_and_update_do_not_scan_neighboring_members() {
+        let samples = [16, 64, 256].map(|size| {
+            let pool = PointerBlock::Heap(950_003);
+            let scope = scope(&pool, 2);
+            let (mut events, _) = CreationEvents::new()
+                .created(pool.clone())
+                .checked_establish(&pool, &scope)
+                .unwrap();
+            for index in 0..size {
+                events = events
+                    .checked_member_exchange(&pool, &description(&pool, &[index]), true)
+                    .unwrap()
+                    .0;
+            }
+            let selected = description(&pool, &[0]);
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                assert_eq!(
+                    events
+                        .observe_exact_member(&selected, &PureFactContext::new())
+                        .unwrap()
+                        .entry_count,
+                    Bitvector32Term::Constant(1)
+                );
+                let (spent, _) = events
+                    .checked_member_exchange(&pool, &selected, false)
+                    .unwrap();
+                assert_eq!(
+                    spent
+                        .observe_exact_member(&selected, &PureFactContext::new())
+                        .unwrap()
+                        .entry_count,
+                    Bitvector32Term::Constant(0)
+                );
+            });
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 64 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
     fn wildcard_scope_checks_signature_and_conserves_aggregate_total() {
         let pool = PointerBlock::Heap(920_001);
         let authority = scope(&pool, 3);

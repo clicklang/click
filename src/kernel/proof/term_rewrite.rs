@@ -3543,6 +3543,29 @@ impl<'a> TermRewrite<'a> {
                 }
             }
         };
+        if let ConditionTerm::Bitvector64Equal(a, b) = &result {
+            let le = ConditionTerm::uint64_less_equal(a.as_ref().clone(), b.as_ref().clone());
+            let lt = ConditionTerm::uint64_less_than(a.as_ref().clone(), b.as_ref().clone());
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend([le.clone(), lt.clone()]);
+            }
+            if self.conditions.is_some_and(|conditions| {
+                conditions.get(&le) == Some(&true) && conditions.get(&lt) == Some(&false)
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
+        if let Some(guard) = result.uint64_successor_guard() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.push(guard.clone());
+            }
+            if self
+                .conditions
+                .is_some_and(|conditions| conditions.get(&guard) == Some(&true))
+            {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {

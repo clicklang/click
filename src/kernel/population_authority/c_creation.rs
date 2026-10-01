@@ -57,6 +57,8 @@ struct Root {
     anchors: PersistentMap<PointerBlock, Anchor>,
     authority: AuthorityState,
     scopes: PersistentMap<(PointerBlock, String), ResourceDescription>,
+    /// Exact identities in concrete wildcard populations; totals remain in AuthorityState.
+    exact_members: PersistentMap<ResourceDescription, u32>,
     /// One symbolic member batch per live population, with its owning holder.
     symbolic_batches: PersistentMap<super::Population, SymbolicBatch>,
     symbolic_holders: PersistentMap<Holder, u32>,
@@ -87,6 +89,8 @@ struct OpaqueImport {
     description: ResourceDescription,
     /// A wildcard helper borrows one identified member, not an arbitrary unit.
     wildcard_member: Option<ResourceDescription>,
+    /// Stable arbitrary exact counts shared by all successors of this import.
+    exact_entry_counts: Arc<Mutex<BTreeMap<ResourceDescription, Bitvector32Term>>>,
     /// The checked definition used to open this exact entry control for a
     /// read-only count observation. Current ownership is checked on each read.
     control: Option<(CResourceFact, Arc<CCompositeResourceDefinition>)>,
@@ -469,6 +473,7 @@ impl CreationEvents {
                     .with_inserted(self.0.opaque_actor, owned_members),
                 description: description.clone(),
                 wildcard_member,
+                exact_entry_counts: Arc::new(Mutex::new(BTreeMap::new())),
                 control,
                 entry_owned_members: owned_members,
                 owned_members,
@@ -508,6 +513,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports,
         })))
     }
@@ -883,6 +889,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: imports,
         }));
         Ok(self
@@ -1014,6 +1021,148 @@ impl CreationEvents {
             .authority
             .observe(self.0.invocation, population)
             .map_err(CreationRefusal::from)
+    }
+
+    /// An exact count is global to the family, not the caller's owned quantity.
+    /// Concrete keys need decidable identity; imported keys have arbitrary entry
+    /// counts and change only when the checked selected member changes.
+    pub(in crate::kernel) fn observe_exact_member(
+        &self,
+        description: &ResourceDescription,
+        assumptions: &PureFactContext,
+    ) -> Result<SymbolicPopulationCount, CreationRefusal> {
+        if description.population_arity().is_some() {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        let scope = self
+            .governing_authority(description)
+            .filter(|scope| scope.population_arity().is_some())
+            .ok_or(CreationRefusal::MissingAuthority)?;
+        if !self.owns_population_authority(&scope) {
+            return Err(CreationRefusal::MissingAuthority);
+        }
+        if let Some(import) = self.0.opaque_imports.get(&scope) {
+            let selected = import.wildcard_member.as_ref();
+            let matches = selected.is_some_and(|member| {
+                member
+                    .arguments()
+                    .iter()
+                    .zip(description.arguments())
+                    .all(|(a, b)| crate::kernel::resource_arguments_proven_equal(a, b, assumptions))
+            });
+            // The initial authority-only entry may describe a future birth.
+            // Once a member is selected, do not assume another potentially
+            // aliased index was unaffected by its exchange.
+            if selected.is_some() && !matches {
+                return Err(CreationRefusal::InvalidMember);
+            }
+            let key = Self::exact_count_key(selected.filter(|_| matches).unwrap_or(description));
+            let entry_count = import
+                .exact_entry_counts
+                .lock()
+                .expect("exact entry counts")
+                .entry(key)
+                .or_insert_with(|| {
+                    Bitvector32Term::Variable(
+                        crate::kernel::Variable::allocate_fresh()
+                            .expect("exact count identity exhausted"),
+                    )
+                })
+                .clone();
+            return Ok(SymbolicPopulationCount {
+                entry_count,
+                delta: if matches {
+                    i32::try_from(import.owned_members)
+                        .ok()
+                        .and_then(|n| n.checked_sub(import.entry_owned_members as i32))
+                        .ok_or(CreationRefusal::InvalidQuantity)?
+                } else {
+                    0
+                },
+                entry_owned_members: if matches {
+                    import.entry_owned_members
+                } else {
+                    0
+                },
+                entry_symbolic_members: None,
+                symbolic_delta: None,
+            });
+        }
+        let [AlgebraicValue::C(CValue::Pointer(anchor))] = scope.arguments() else {
+            return Err(CreationRefusal::InvalidMember);
+        };
+        if self
+            .observed_symbolic_batch(&anchor.pointer().block, scope.family())
+            .is_some()
+        {
+            return Err(CreationRefusal::UnknownTotal);
+        }
+        let unresolved = self
+            .0
+            .exact_members
+            .get(&Self::exact_count_key(&scope))
+            .copied()
+            .unwrap_or(0)
+            != 0;
+        let empty = self
+            .observe_term(&anchor.pointer().block, scope.family())?
+            .as_const()
+            == Some(0);
+        if (!Self::has_concrete_indices(description) || unresolved) && !empty {
+            return Err(CreationRefusal::InvalidMember);
+        }
+        Ok(SymbolicPopulationCount {
+            entry_count: Bitvector32Term::Constant(if empty {
+                0
+            } else {
+                self.0
+                    .exact_members
+                    .get(&Self::exact_count_key(description))
+                    .copied()
+                    .unwrap_or(0)
+            }),
+            delta: 0,
+            entry_owned_members: 0,
+            entry_symbolic_members: None,
+            symbolic_delta: None,
+        })
+    }
+
+    fn exact_count_key(description: &ResourceDescription) -> ResourceDescription {
+        // Casts, qualifiers, and equivalent constant expressions preserve
+        // resource index identity. The key never includes C pointee metadata.
+        description.map_values(|value| match value {
+            AlgebraicValue::C(CValue::Pointer(pointer)) => {
+                let mut address = pointer.pointer().clone();
+                if let Some(offset) = address.offset.as_const() {
+                    address.offset = PointerOffsetTerm::Constant(offset);
+                }
+                AlgebraicValue::C(CValue::pointer(address))
+            }
+            AlgebraicValue::C(CValue::Int32(value)) => AlgebraicValue::C(CValue::Int32(
+                value
+                    .as_const()
+                    .map(Bitvector32Term::Constant)
+                    .unwrap_or_else(|| value.clone()),
+            )),
+            other => other.clone(),
+        })
+    }
+
+    fn has_concrete_indices(description: &ResourceDescription) -> bool {
+        description.arguments().iter().all(|value| match value {
+            AlgebraicValue::C(CValue::Pointer(pointer)) => {
+                matches!(pointer.pointer().block, PointerBlock::Heap(_))
+                    || pointer.pointer().block.starts_with("local:")
+            }
+            AlgebraicValue::C(CValue::Int32(value)) => value.as_const().is_some(),
+            _ => false,
+        }) && description.arguments().iter().all(|value| match value {
+            AlgebraicValue::C(CValue::Pointer(pointer)) => {
+                pointer.pointer().offset.as_const().is_some()
+            }
+            _ => true,
+        })
     }
 
     /// Observe the exact concrete-anchor total, including one outstanding
@@ -1186,6 +1335,7 @@ impl CreationEvents {
                 opaque_entry_counts: Mutex::new(BTreeMap::new()),
                 empty_populations: self.0.empty_populations.clone(),
                 scopes: self.0.scopes.clone(),
+                exact_members: self.0.exact_members.clone(),
                 opaque_imports: self.0.opaque_imports.clone(),
             }));
             let evidence = CheckedPopulationMemberExchange {
@@ -1246,6 +1396,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.with_inserted(
                 description.clone(),
                 OpaqueImport {
@@ -1382,6 +1533,7 @@ impl CreationEvents {
                 opaque_entry_counts: Mutex::new(BTreeMap::new()),
                 empty_populations: self.0.empty_populations.clone(),
                 scopes: self.0.scopes.clone(),
+                exact_members: self.0.exact_members.clone(),
                 opaque_imports: self.0.opaque_imports.with_inserted(
                     scope.clone(),
                     OpaqueImport {
@@ -1430,6 +1582,26 @@ impl CreationEvents {
             self.0.authority.consume(self.0.invocation, population, 1)
         }
         .map_err(CreationRefusal::from)?;
+        let mut exact_members = self.0.exact_members.clone();
+        if scope.population_arity().is_some() {
+            let key = Self::exact_count_key(description);
+            let scope_key = Self::exact_count_key(&scope);
+            if !Self::has_concrete_indices(description) {
+                // Preserve existing symbolic-member exchanges. Once identities
+                // are unresolved, exact absence stays unavailable until the
+                // entire population is empty; no unrelated key scan is needed.
+                exact_members.insert(scope_key, 1);
+            } else if exact_members.get(&scope_key).copied().unwrap_or(0) == 0 {
+                let prior = exact_members.get(&key).copied().unwrap_or(0);
+                let next = if produce {
+                    prior.checked_add(1)
+                } else {
+                    prior.checked_sub(1)
+                }
+                .ok_or(CreationRefusal::MissingMembers)?;
+                exact_members.insert(key, next);
+            }
+        }
         let mut tainted = self.0.tainted.clone();
         if produce {
             let families = tainted
@@ -1460,6 +1632,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members,
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         let evidence = CheckedPopulationMemberExchange {
@@ -1493,6 +1666,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: PersistentMap::default(),
             scopes: PersistentMap::default(),
+            exact_members: PersistentMap::default(),
             opaque_imports: PersistentMap::default(),
         }))
     }
@@ -1527,6 +1701,7 @@ impl CreationEvents {
                     opaque_entry_counts: Mutex::new(BTreeMap::new()),
                     empty_populations: self.0.empty_populations.clone(),
                     scopes: self.0.scopes.clone(),
+                    exact_members: self.0.exact_members.clone(),
                     opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
@@ -1561,6 +1736,7 @@ impl CreationEvents {
                     opaque_entry_counts: Mutex::new(BTreeMap::new()),
                     empty_populations: self.0.empty_populations.clone(),
                     scopes: self.0.scopes.clone(),
+                    exact_members: self.0.exact_members.clone(),
                     opaque_imports: self.0.opaque_imports.clone(),
                 }))
             })
@@ -1706,6 +1882,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         Ok(self
@@ -1765,6 +1942,7 @@ impl CreationEvents {
                     opaque_entry_counts: Mutex::new(BTreeMap::new()),
                     empty_populations: self.0.empty_populations.clone(),
                     scopes: self.0.scopes.clone(),
+                    exact_members: self.0.exact_members.clone(),
                     opaque_imports: self.0.opaque_imports.clone(),
                 }))
             },
@@ -1842,6 +2020,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }));
         self.0
@@ -1891,6 +2070,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -1960,6 +2140,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations,
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -2004,6 +2185,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.without_key(&block),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -2069,6 +2251,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         }))
     }
@@ -2130,6 +2313,7 @@ impl CreationEvents {
             opaque_transfers: Mutex::new(BTreeMap::new()),
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
+            exact_members: self.0.exact_members.clone(),
             scopes: match scope {
                 Some(scope) => self
                     .0
@@ -2232,6 +2416,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.with_inserted(
                 description.clone(),
                 OpaqueImport {
@@ -2301,6 +2486,7 @@ impl CreationEvents {
                     .with_value(family.to_owned()),
             ),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }
@@ -2359,6 +2545,7 @@ impl CreationEvents {
             opaque_entry_counts: Mutex::new(BTreeMap::new()),
             empty_populations: self.0.empty_populations.clone(),
             scopes: self.0.scopes.clone(),
+            exact_members: self.0.exact_members.clone(),
             opaque_imports: self.0.opaque_imports.clone(),
         })))
     }

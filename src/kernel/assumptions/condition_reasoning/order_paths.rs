@@ -2173,6 +2173,11 @@ impl PureFactContext {
                 }
             }
         }
+        if let Some(guard) = condition.uint64_successor_guard()
+            && self.decide(&guard) == Some(true)
+        {
+            return Some(true);
+        }
         if let ConditionTerm::Bitvector64UnsignedLessEqual(left, right) = condition {
             let limit = right.uint64_as_const()?;
             if self.uint64_small_upper_bound(left)? <= limit {

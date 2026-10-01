@@ -79,8 +79,8 @@ fn rust_compiler_and_subset_rejections_are_distinct() {
         ),
         ("pub fn bad(x: u64) -> u64 { x }", "unsupported Rust type"),
         (
-            "pub fn bad(mut x: i32) -> i32 { while x < 5 { x += 1; } x }",
-            "supported typed Rust subset",
+            "pub fn bad(mut x: i32) -> i32 { loop { x += 1; } }",
+            "unlabeled Rust while",
         ),
         (
             "mod other; pub fn ok(x:i32)->i32{x}",
@@ -1238,4 +1238,143 @@ fn rust_usize_boundaries_and_nested_checks() {
     let prepared = load_import(&p.config()).unwrap();
     let sidecar = "verifying \"borrow.rs\"; uint64 right(uint64 x, int32 n) { requires n == -1; ensures result == result; } by { execute(); simp(); }";
     assert!(C0VerificationSession::new_program_prepared(sidecar, &prepared).is_err());
+}
+
+#[test]
+fn rust_while_loop_invariants_verify_and_expand() {
+    let p = Project::new(include_str!("../examples/rust-loops/loops.rs"));
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar =
+        include_str!("../examples/rust-loops/loops.click").replace("loops.rs", "borrow.rs");
+    let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_eq!(verified.len(), 3);
+    for false_claim in [
+        sidecar.replace("ensures result == n;", "ensures result == n + 1;"),
+        sidecar.replace("invariant i <= bytes_len;", "invariant i < bytes_len;"),
+        sidecar.replace("decreases bytes_len - i;", "decreases i;"),
+        sidecar.replace("requires value == 1;", "requires value == 2147483647;"),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&false_claim, &prepared).is_err());
+    }
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in ["count.contract", "accumulate.contract", "walk.contract"] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
+    for (source, diagnostic) in [
+        ("pub fn bad() { for _i in 0..2 {} }", "Rust for loops"),
+        (
+            "pub fn bad() { 'outer: while true {} }",
+            "unlabeled Rust while",
+        ),
+        (
+            "pub fn bad() { while true { break; } }",
+            "break and continue",
+        ),
+        (
+            "pub fn bad() { while true { continue; } }",
+            "break and continue",
+        ),
+        (
+            "pub fn bad(mut i:i32, n:i32) { while i + 1 < n { i += 1; } }",
+            "Rust while conditions",
+        ),
+        (
+            "fn guard()->bool { false } pub fn bad() { while guard() {} }",
+            "Rust while conditions",
+        ),
+        (
+            "pub fn bad(bytes:&[u8]) { while bytes[0] != 0 {} }",
+            "Rust while conditions",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "expected {diagnostic}: {error}");
+    }
+}
+
+#[test]
+fn rust_while_loop_panic_paths_are_rejected() {
+    for (source, signature, invariant) in [
+        (
+            "pub fn bad(mut i:i32) { while i >= 0 { i += 1; } }",
+            "void bad(int32 i)",
+            "i >= 0",
+        ),
+        (
+            "pub fn bad(mut i:usize) { while i <= 18446744073709551615usize { i += 1; } }",
+            "void bad(uint64 i)",
+            "i <= 18446744073709551615u64",
+        ),
+        (
+            "pub fn bad(bytes:&[u8]) { let mut i=0usize; while i <= bytes.len() { let _byte=bytes[i]; i += 1; } }",
+            "void bad(const uint8* bytes, uint64 bytes_len)",
+            "i <= bytes_len",
+        ),
+    ] {
+        let p = Project::new(source);
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let prefix = if signature.contains("bytes") {
+            "execute_until(statement(4));"
+        } else {
+            "step();"
+        };
+        let requirements = if signature.contains("bytes") {
+            "requires bytes_len <= 2147483647u64; views bytes[0..(int32)bytes_len];"
+        } else {
+            "step();"
+        };
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; {signature} {{ {requirements} }} by {{ {prefix} loop {{ invariant {invariant}; }} execute(); simp(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("panic path must be rejected");
+        assert!(
+            !error.message().contains("requires the execution frontier"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn rust_nested_while_loop_invariants_keep_preorder_indices() {
+    let p = Project::new(
+        "pub fn nested()->i32 { let mut i=0; while i < 1 { let mut j=0; while j < 1 { j += 1; } i += 1; } i }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\"; int32 nested() { ensures result == 1; } by { execute_until(statement(4)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { execute_until(statement(9)); loop { decreases 1-j; invariant 0<=j and j<=1; } execute_until(statement(24)); step(); close_invariants(); } } execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn rust_readable_local_names_preserve_shadowed_binding_identities() {
+    let p = Project::new(
+        "pub fn run(n:i32)->i32 { let n=2; let n=n+1; let __rust_checked_0=n+1; __rust_checked_0 }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\"; int32 run(int32 n) { ensures result == 4; } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("result == 4", "result == 3"),
+            &prepared
+        )
+        .is_err()
+    );
 }

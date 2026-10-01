@@ -3981,6 +3981,7 @@ pub enum ExecutionLimit {
     ResourceCountPendingWorker,
     /// Authority-mode count names one concrete population anchor.
     AuthorityCountNeedsExactPointer,
+    AuthorityCountNeedsResolvedMember,
     /// Both the visible authority fact and checked ledger custody are needed.
     AuthorityCountNeedsOwnership,
     /// The exact population total cannot be represented as C int32.
@@ -4022,6 +4023,10 @@ impl ExecutionLimit {
             }
             Self::AuthorityCountNeedsExactPointer => {
                 "authority-mode count(...) needs one exact base pointer".to_string()
+            }
+            Self::AuthorityCountNeedsResolvedMember => {
+                "count(...) requires resolved member indices or the helper's selected member"
+                    .to_string()
             }
             Self::AuthorityCountNeedsOwnership => {
                 "count(...) requires owning authority for that population".to_string()
