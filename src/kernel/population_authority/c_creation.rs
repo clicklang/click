@@ -272,6 +272,41 @@ impl CreationEvents {
         self.import_opaque_contract_population_inner(description, owned_members, None, None, None)
     }
 
+    /// A direct unary authority permits observation of an arbitrary existing
+    /// total, just like a wildcard authority. Custody never asserts that total.
+    pub(in crate::kernel) fn import_observable_contract_population(
+        &self,
+        description: &ResourceDescription,
+        owned_members: u32,
+    ) -> Result<Self, CreationRefusal> {
+        let count = if let Some(import) = self.0.opaque_imports.get(description) {
+            import
+                .entry_count
+                .clone()
+                .ok_or(CreationRefusal::UnknownTotal)?
+        } else {
+            self.0
+                .opaque_entry_counts
+                .lock()
+                .expect("opaque entry count cache")
+                .entry(description.clone())
+                .or_insert_with(|| {
+                    Bitvector32Term::Variable(
+                        crate::kernel::Variable::allocate_fresh()
+                            .expect("opaque count identity exhausted"),
+                    )
+                })
+                .clone()
+        };
+        self.import_opaque_contract_population_inner(
+            description,
+            owned_members,
+            Some(count),
+            None,
+            None,
+        )
+    }
+
     /// Borrow an existing wildcard population and one concrete member. Its
     /// total is opaque and may include ownership retained by other callers.
     pub(in crate::kernel) fn import_opaque_wildcard_population(
