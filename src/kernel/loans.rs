@@ -10762,7 +10762,7 @@ mod tests {
             ),
             true,
         );
-        assert!(facts.equality_graph.has_non_affine_term_equivalences());
+        assert!(facts.equality_graph.has_term_equivalences());
         let (ledger, caller, callee) = participants();
         let required = checked(memory(0, 4, true));
         let mut samples = Vec::new();

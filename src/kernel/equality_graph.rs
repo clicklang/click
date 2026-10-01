@@ -347,6 +347,9 @@ pub(in crate::kernel) struct EqualityGraph {
 #[derive(Default)]
 struct LogicalPointerReads {
     definitions: crate::persistent::PersistentMap<Pointer, (Pointer, Pointer)>,
+    // Producer-retained read atoms used inside selected address expressions.
+    // A matching shape without this metadata is never a load definition.
+    offset_definitions: crate::persistent::PersistentMap<(PointerBlock, Variable, i64), Pointer>,
     generation: u64,
 }
 
@@ -507,6 +510,16 @@ impl EqualityGraph {
             );
             return;
         }
+        if let PointerOffsetTerm::Int32Scaled {
+            value: atom,
+            byte_width,
+        } = &value.offset
+            && let Bitvector32Term::Variable(variable) = atom.as_ref()
+        {
+            reads
+                .offset_definitions
+                .insert((value.block.clone(), *variable, *byte_width), value.clone());
+        }
         reads.definitions = reads
             .definitions
             .with_inserted(value.clone(), (application, address.clone()));
@@ -548,6 +561,9 @@ impl EqualityGraph {
         values: [&Pointer; N],
     ) {
         let reads = self.logical_reads.lock().expect("logical pointer reads");
+        if reads.definitions.is_empty() {
+            return;
+        }
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
         while let Some(value) = pending.pop() {
@@ -555,6 +571,46 @@ impl EqualityGraph {
                 continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
+                // Register only producer-retained dependencies of the selected
+                // expression. The lookup identifies an original definition;
+                // it does not assert that arbitrary scaled arithmetic is a
+                // pointer load, nor manufacture a shifted equality premise.
+                if matches!(value.block, PointerBlock::Symbolic(_))
+                    && value.offset != PointerOffsetTerm::Constant(0)
+                {
+                    let base = Pointer {
+                        block: value.block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    };
+                    if reads.definitions.contains_key(&base) {
+                        pending.push(base);
+                    }
+                }
+                let mut offsets = vec![&value.offset];
+                while let Some(offset) = offsets.pop() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    match offset {
+                        PointerOffsetTerm::Add(left, right) => {
+                            offsets.push(right);
+                            offsets.push(left);
+                        }
+                        PointerOffsetTerm::Int32Scaled {
+                            value: atom,
+                            byte_width,
+                        } => {
+                            if let Bitvector32Term::Variable(variable) = atom.as_ref()
+                                && let Some(definition) = reads.offset_definitions.get(&(
+                                    value.block.clone(),
+                                    *variable,
+                                    *byte_width,
+                                ))
+                            {
+                                pending.push(definition.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 continue;
             };
             state.logical_values = state.logical_values.with_value(value.clone());
@@ -723,15 +779,14 @@ impl EqualityGraph {
             .has_equivalences()
     }
 
-    /// Whether closure includes offset/scalar aliases beyond affine spelling.
-    /// The interval resource index understands affine definitions itself;
-    /// typed address unions alone do not invalidate its coverage summary.
-    pub(in crate::kernel) fn has_non_affine_term_equivalences(&self) -> bool {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .has_non_affine_equivalences()
+    /// Whether registered addresses in this affine block class are fully
+    /// described by affine coordinates. A false answer means unknown coverage,
+    /// not disequality. Metadata follows term dependencies and pointer relabels;
+    /// unrelated scalar classes do not disable the query's interval fragment.
+    pub(in crate::kernel) fn affine_addresses_complete(&self, block: &PointerBlock) -> bool {
+        let state = self.state.lock().expect("equality graph");
+        let (block, _) = state.find(block);
+        state.terms.affine_addresses_complete(&block)
     }
 
     /// Query the maintained closure, registering supported load applications

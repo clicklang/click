@@ -441,6 +441,7 @@ impl MemoryAccessEntries {
 /// checkpoint. Class IDs and representative coordinates never cross forks.
 pub(super) struct MemoryAccessCandidates {
     entries: MemoryAccessEntries,
+    query: Pointer,
     index: std::sync::Arc<PairedMemoryIndex>,
 }
 impl Iterator for MemoryAccessCandidates {
@@ -455,17 +456,24 @@ impl MemoryAccessCandidates {
         self.entries.exact()
     }
 
-    pub(super) fn address(&self, pointer: &Pointer, range: &CMemoryRange) -> Option<Pointer> {
+    /// Align the retained occurrence against this query and this graph fork.
+    /// Consumers supply an occurrence ID, never an alternate pointer spelling
+    /// or a reconstructed range. Equality supplies evidence, not permission;
+    /// the ordinary checker still validates quantity, width and containment.
+    pub(super) fn address(&self, entry: ResourceEntryId) -> Option<Pointer> {
+        let range = self.index.resources.facts.get(&entry)?.memory_range()?;
         if self.entries.exact() {
-            Some(
-                range
-                    .base()
-                    .offset_by_elements(range.start().clone(), range.element_width()),
-            )
+            let start = range
+                .base()
+                .offset_by_elements(range.start().clone(), range.element_width());
+            self.index
+                .graph
+                .are_equal(&self.query, &start)
+                .then_some(start)
         } else {
             self.index
                 .graph
-                .pointer_in_block(pointer, &range.base().block)
+                .pointer_in_block(&self.query, &range.base().block)
         }
     }
 }
@@ -891,7 +899,11 @@ impl ResourceContext {
     ) -> Option<MemoryAccessCandidates> {
         let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
         let entries = Self::indexed_access_entries(&index, pointer, bytes, owned)?;
-        Some(MemoryAccessCandidates { entries, index })
+        Some(MemoryAccessCandidates {
+            entries,
+            query: pointer.clone(),
+            index,
+        })
     }
 
     fn indexed_access_entries(
@@ -922,12 +934,21 @@ impl ResourceContext {
                 return Some(MemoryAccessEntries::Exact(entries.owned_values()));
             }
         }
+        // A raw structural root has not registered every occurrence's load
+        // origin. Closing just the queried load cannot establish complete
+        // supplier coverage. Publication makes this fragment available; a
+        // simple lookup must never register the entire input itself.
+        let load_block = match &pointer.block {
+            PointerBlock::LoadedPointer(_) => true,
+            PointerBlock::Symbolic(variable) => crate::kernel::is_load_variable(variable),
+            _ => false,
+        };
+        if !index.points_initialized && load_block {
+            return None;
+        }
         let point = graph.canonical_pointer(pointer)?;
         let bucket = index.addresses.classes.get(&point.representative)?;
-        if graph.has_non_affine_term_equivalences()
-            || matches!(pointer.block, PointerBlock::LoadedPointer(_))
-            || !point.offset.is_constant()
-        {
+        if !graph.affine_addresses_complete(&point.representative) || !point.offset.is_constant() {
             return None;
         }
         if bucket.general_coordinates != 0
