@@ -3815,8 +3815,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             let CFunctionOutcome::Return { value, state } = &mut outcome else {
                 unreachable!("the return outcome was checked above");
             };
-            let population = lower_resource_clause_at_state_with_result(
-                resource, parameters, arguments, state, value,
+            let population = lower_resource_clause_at_state_with_assumptions(
+                resource,
+                parameters,
+                arguments,
+                state,
+                Some(value),
+                pure_facts.assumptions(),
             )?;
             let quantity = population
                 .owned_quantity_term()
@@ -3924,8 +3929,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             let CFunctionOutcome::Return { value, state } = &outcome else {
                 unreachable!("the return outcome was checked above");
             };
-            let population = lower_resource_clause_at_state_with_result(
-                resource, parameters, arguments, state, value,
+            let population = lower_resource_clause_at_state_with_assumptions(
+                resource,
+                parameters,
+                arguments,
+                state,
+                Some(value),
+                pure_facts.assumptions(),
             )?;
             let assumptions = pure_facts.assumptions();
             if !state.resources().satisfies_fact(&population, assumptions) {
@@ -4010,12 +4020,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                     describe_resource_clause(resource)
                 ))
             })?;
-            let lowered = lower_resource_clause_at_state_with_result(
+            let lowered = lower_resource_clause_at_state_with_assumptions(
                 &contained,
                 parameters,
                 arguments,
                 &guard_state,
-                &guard_result,
+                Some(&guard_result),
+                pure_facts.assumptions(),
             )?;
             if lowered.is_view()
                 && unique_borrowed_resource_dependency(&guard_state, &lowered)
@@ -4193,12 +4204,13 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     ))
                 })?;
-            let mut lowered = lower_resource_clause_at_state_with_result(
+            let mut lowered = lower_resource_clause_at_state_with_assumptions(
                 &contained,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             if lowered.is_view() {
                 let binding = unique_borrowed_resource_dependency(&post_state, &lowered)
@@ -4336,12 +4348,13 @@ fn fold_composite_resources_on_outcome_with_facts(
         post_state = post_state.with_resource_context(resources);
 
         if closure == ResourceBodyClosure::Initialize && !folded_representation_already_present {
-            let abstract_resource = lower_resource_clause_at_state_with_result(
+            let abstract_resource = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             // An owned composite that packages a loan-backed view is a
             // borrowing composite (escaping borrows in docs/internals/stable-views.md). Its head keeps the
@@ -4435,12 +4448,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             && !authority_control_body
             && !lowered_contained.is_empty()
         {
-            let abstract_resource = lower_resource_clause_at_state_with_result(
+            let abstract_resource = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             let assumptions = pure_facts.assumptions();
             let Some(authority_occurrence) = folded_authority_occurrence.or_else(|| {
@@ -4483,12 +4497,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             }
         }
         if matches!(closure, ResourceBodyClosure::CloseOpen { .. }) {
-            let selected = lower_resource_clause_at_state_with_result(
+            let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 parameters,
                 arguments,
                 &post_state,
-                &value,
+                Some(&value),
+                pure_facts.assumptions(),
             )?;
             if let CResource::Composite { name, arguments } | CResource::Token { name, arguments } =
                 selected.resource()
@@ -4861,12 +4876,14 @@ fn extend_substitutions_with_witnesses(
         ResourceClause::Quantified { resource, .. } => resource.as_ref(),
         _ => resource,
     };
-    let fact = match result {
-        Some(result) => lower_resource_clause_at_state_with_result(
-            resource, parameters, arguments, state, result,
-        )?,
-        None => lower_resource_clause_at_state(resource, parameters, arguments, state)?,
-    };
+    let fact = lower_resource_clause_at_state_with_assumptions(
+        resource,
+        parameters,
+        arguments,
+        state,
+        result,
+        assumptions,
+    )?;
     let owned_definitions;
     let definitions = if let Some(definitions) = compiled_definitions {
         definitions
