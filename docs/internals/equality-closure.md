@@ -680,6 +680,17 @@ candidates does not enumerate overlapping views. Both summaries receive the
 same occurrence updates and smaller-payload class merges. A deterministic
 regression measures write lookup beside 16, 64, 256, and 1,024 covering views
 with one owner; lookup work must remain independent of the view count.
+
+Composite fold argument and body lowering uses the operation's retained
+`PureFactContext`, including its trusted equality graph and checked bounds.
+Witness selection and reconstruction of the selected resource for the kernel
+certificate retain that context too. The assumption handle is persistent;
+these calls neither reconstruct the ambient fact list nor register ambient
+resources during a read query. A reduced fold of `tag(q[i])` through a view of
+`p[0..n]` uses checked `p == q` and `0 <= i < n`, expands, and independently
+reverifies. Dropping the equality or either bound refuses the read. This
+corrects context loss at the fold boundary; the general permission fallbacks
+remain pending their separate supplier migration.
 An indexed miss or failed candidate check is decisive for this covered
 fragment; it does not retry spellings or scan the remaining resources.
 Whole-cell writes additionally use a separate footprint payload containing
