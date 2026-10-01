@@ -905,26 +905,26 @@ impl CheckedLoadEquality {
                 let Some(derivation) = cell.node().derivation() else {
                     return false;
                 };
-                let Some((pointer, CValue::Int32(stored))) = stored_write_reaching(
+                let bytes =
+                    crate::kernel::load_access_width_or_widest(&endpoint.memory, &endpoint.pointer);
+                let Some((pointer, written @ CValue::Int32(_))) = stored_write_reaching(
                     derivation.as_ref(),
                     &endpoint.pointer,
-                    crate::kernel::load_access_width_or_widest(&endpoint.memory, &endpoint.pointer),
+                    bytes,
                     assumptions,
                 ) else {
                     return false;
                 };
-                let (pointer, stored) = (&pointer, &stored);
+                let CValue::Int32(stored) = &written else {
+                    unreachable!("matched as an int32 store")
+                };
+                let pointer = &pointer;
                 endpoint.matches_term(load)
                     && cell.has_only_typed_hops()
-                    && cell.checks_walk_from(
-                        &endpoint.memory,
-                        &endpoint.pointer,
-                        crate::kernel::load_access_width_or_widest(
-                            &endpoint.memory,
-                            &endpoint.pointer,
-                        ),
-                        assumptions,
-                    )
+                    // The stored value is the read's only when the store is
+                    // exactly as wide; the address half is `offset` below.
+                    && written.byte_width() == bytes
+                    && cell.checks_walk_from(&endpoint.memory, &endpoint.pointer, bytes, assumptions)
                     && pointer.block == endpoint.pointer.block
                     && offset.checks(&pointer.offset, &endpoint.pointer.offset, assumptions)
                     && stored == value
@@ -1147,11 +1147,20 @@ pub(crate) fn checked_stored_origin_equality(
             )
         });
         EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
-        let Some((pointer, CValue::Int32(stored))) = written else {
+        let Some((pointer, written @ CValue::Int32(_))) = written else {
             continue;
         };
-        let (pointer, stored) = (&pointer, &stored);
-        if stored != value || pointer.block != endpoint.pointer.block {
+        let CValue::Int32(stored) = &written else {
+            unreachable!("matched as an int32 store")
+        };
+        let pointer = &pointer;
+        // Exactly as wide as the read, as `write_supplies_read` asks of every
+        // stored value; the address half is the offset congruence below.
+        let bytes = crate::kernel::load_access_width_or_widest(&endpoint.memory, &endpoint.pointer);
+        if stored != value
+            || pointer.block != endpoint.pointer.block
+            || written.byte_width() != bytes
+        {
             continue;
         }
         let Some(offset) = assumptions
@@ -1985,16 +1994,11 @@ pub(crate) fn pointer_load_offset_proven_equal(
     let Some((memory, pointer)) = load else {
         return false;
     };
-    let Some(cell) = memory_dag_cell_source(
-        &memory,
-        &pointer,
-        crate::kernel::load_access_width_or_widest(&memory, &pointer),
-        assumptions,
-        true,
-    ) else {
+    let bytes = crate::kernel::load_access_width_or_widest(&memory, &pointer);
+    let Some(cell) = memory_dag_cell_source(&memory, &pointer, bytes, assumptions, true) else {
         return false;
     };
-    let Some(CValue::Pointer(stored)) = cell.resolved_value(&pointer) else {
+    let Some(CValue::Pointer(stored)) = cell.resolved_value(&pointer, bytes) else {
         return false;
     };
     crate::kernel::reasoning::pointer_offsets_proven_equal_for_memory_resolution(
@@ -2127,6 +2131,10 @@ struct LoadCellWalks {
     right: MemoryDagCell,
     left_stop: CellWalkStop,
     right_stop: CellWalkStop,
+    /// The access widths each walk was asked about, which are also the only
+    /// widths its resolved value may answer for.
+    left_bytes: u32,
+    right_bytes: u32,
 }
 
 impl LoadCellWalks {
@@ -2136,17 +2144,14 @@ impl LoadCellWalks {
         pointer: &Pointer,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
-        let (left, left_stop) = memory_dag_cell_source_with_stop(
-            left_memory,
-            pointer,
-            crate::kernel::load_access_width_or_widest(left_memory, pointer),
-            assumptions,
-            true,
-        )?;
+        let left_bytes = crate::kernel::load_access_width_or_widest(left_memory, pointer);
+        let right_bytes = crate::kernel::load_access_width_or_widest(right_memory, pointer);
+        let (left, left_stop) =
+            memory_dag_cell_source_with_stop(left_memory, pointer, left_bytes, assumptions, true)?;
         let (right, right_stop) = memory_dag_cell_source_with_stop(
             right_memory,
             pointer,
-            crate::kernel::load_access_width_or_widest(right_memory, pointer),
+            right_bytes,
             assumptions,
             true,
         )?;
@@ -2155,6 +2160,8 @@ impl LoadCellWalks {
             right,
             left_stop,
             right_stop,
+            left_bytes,
+            right_bytes,
         })
     }
 
@@ -2165,8 +2172,8 @@ impl LoadCellWalks {
             return Some(MemoryDagLoadEqualityReason::CommonSource);
         }
         match (
-            self.left.resolved_value(pointer),
-            self.right.resolved_value(pointer),
+            self.left.resolved_value(pointer, self.left_bytes),
+            self.right.resolved_value(pointer, self.right_bytes),
         ) {
             (Some(left_value), Some(right_value)) if left_value == right_value => {
                 Some(MemoryDagLoadEqualityReason::EqualResolvedValue(left_value))
@@ -2224,9 +2231,9 @@ impl LoadCellWalks {
         let load = |memory: &SharedCMemory| {
             Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()))
         };
-        let pins = |cell: &MemoryDagCell, other: &Bitvector32Term| {
+        let pins = |cell: &MemoryDagCell, bytes: u32, other: &Bitvector32Term| {
             matches!(
-                cell.resolved_value(pointer),
+                cell.resolved_value(pointer, bytes),
                 Some(
                     CValue::Int8(value) | CValue::Int16(value)
                         | CValue::Int32(value)
@@ -2236,9 +2243,9 @@ impl LoadCellWalks {
                 ) if &value == other
             )
         };
-        if pins(&self.left, &load(right_memory)) {
+        if pins(&self.left, self.left_bytes, &load(right_memory)) {
             Some(AtomicMemoryLoadEqualityEvidence::LeftResolvesToRight { left: self.left })
-        } else if pins(&self.right, &load(left_memory)) {
+        } else if pins(&self.right, self.right_bytes, &load(left_memory)) {
             Some(AtomicMemoryLoadEqualityEvidence::RightResolvesToLeft { right: self.right })
         } else {
             None
@@ -2478,40 +2485,25 @@ pub(crate) fn resolve_load_along_memory_derivations(
     let _assumptions_id_scope = assumptions.enter_id_scope();
     let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
     let result = with_extended_dag_bridging(|| {
-        match memory_dag_cell_source(
-            memory,
-            pointer,
-            crate::kernel::load_access_width_or_widest(memory, pointer),
-            assumptions,
-            true,
-        )? {
-            MemoryDagCell::Stored { value, .. } => match value {
-                CValue::Int8(value) => Some(value),
-                CValue::Int16(value)
+        let bytes = crate::kernel::load_access_width_or_widest(memory, pointer);
+        let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
+        if let Some(value) = cell.resolved_value(pointer, bytes) {
+            return match value {
+                CValue::Int8(value)
+                | CValue::Int16(value)
                 | CValue::Int32(value)
                 | CValue::UInt8(value)
                 | CValue::UInt16(value)
                 | CValue::UInt32(value) => Some(value),
                 _ => None,
-            },
-            MemoryDagCell::Unwritten { node, .. } => {
-                if let Some(value) = node.memory().known_value(pointer) {
-                    return match value {
-                        CValue::Int8(value) => Some(value),
-                        CValue::Int16(value)
-                        | CValue::Int32(value)
-                        | CValue::UInt8(value)
-                        | CValue::UInt16(value)
-                        | CValue::UInt32(value) => Some(value),
-                        _ => None,
-                    };
-                }
-                crate::kernel::eval::load_variable_for_term(&Bitvector32Term::MemoryLoad(
-                    node,
-                    Box::new(pointer.clone()),
-                ))
-                .map(|(variable, _)| Bitvector32Term::Variable(variable))
-            }
+            };
+        }
+        match cell {
+            MemoryDagCell::Stored { .. } => None,
+            MemoryDagCell::Unwritten { node, .. } => crate::kernel::eval::load_variable_for_term(
+                &Bitvector32Term::MemoryLoad(node, Box::new(pointer.clone())),
+            )
+            .map(|(variable, _)| Bitvector32Term::Variable(variable)),
         }
     });
     EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
@@ -2567,9 +2559,10 @@ pub(crate) fn explicit_atomic_equality_from_memory_derivations(
             let Bitvector32Term::MemoryLoad(memory, pointer) = load else {
                 return false;
             };
+            let bytes = crate::kernel::load_access_width_or_widest(memory, pointer);
             matches!(
-                memory_dag_cell_source(memory, pointer, crate::kernel::load_access_width_or_widest(memory, pointer), assumptions, true)
-                    .and_then(|cell| cell.resolved_value(pointer)),
+                memory_dag_cell_source(memory, pointer, bytes, assumptions, true)
+                    .and_then(|cell| cell.resolved_value(pointer, bytes)),
                 Some(CValue::Int8(resolved) | CValue::Int16(resolved) | CValue::Int32(resolved) | CValue::UInt8(resolved) | CValue::UInt16(resolved) | CValue::UInt32(resolved))
                     if resolved == *value
             )
