@@ -1,7 +1,7 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
 pub const COMPILER_COMMIT: &str = "01dfd79246f1b2d5f146616deff08223a840a9ae";
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
 
@@ -31,6 +31,8 @@ pub struct Span {
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Type {
     I32,
+    U8,
+    U32,
     Bool,
     Unit,
     Reference { mutable: bool, pointee: Box<Type> },
@@ -76,6 +78,10 @@ pub enum Expression {
     Integer {
         value: i32,
     },
+    UnsignedInteger {
+        value: u32,
+        value_type: Type,
+    },
     Boolean {
         value: bool,
     },
@@ -84,17 +90,29 @@ pub enum Expression {
     },
     Binary {
         operator: String,
+        left_type: Type,
+        right_type: Type,
         left: Box<Self>,
         right: Box<Self>,
     },
     Not {
         value: Box<Self>,
     },
+    BitwiseNot {
+        value: Box<Self>,
+        value_type: Type,
+    },
+    Cast {
+        value: Box<Self>,
+        value_type: Type,
+    },
     Borrow {
         place: Box<Self>,
+        value_type: Type,
     },
     Deref {
         reference: Box<Self>,
+        value_type: Type,
     },
     Field {
         base: Box<Self>,

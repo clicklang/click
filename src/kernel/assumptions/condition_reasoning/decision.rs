@@ -288,6 +288,15 @@ impl PureFactContext {
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
         }
+        if let Some(value) = self.decide_indexed_greater_equal(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_masked_order(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_widened_sum_bound(condition) {
+            return Some(value);
+        }
         // Wide comparisons may use a recorded constant equality. Consult only
         // the queried terms' equality components, never unrelated conditions.
         let wide_comparison = match condition {

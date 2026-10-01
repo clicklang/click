@@ -2,8 +2,9 @@
 
 This assessment pins the existing Adler-32 implementations selected by
 [the Rust roadmap](../issues/rust-support.md). It does not claim that Click
-verifies either library. The next implementation increment is Rust unsigned
-scalar arithmetic; slice/iterator and crate support follow from the actual
+verifies either library. The scalar checkpoint supports `u8` and `u32`
+arithmetic; byte slices/indexing, wider integers, iterators, and crate support
+follow from the actual
 reachable source, rather than from a replacement checksum implementation.
 
 ## Immutable inputs and configuration
@@ -132,11 +133,12 @@ does not establish a need for new public Click syntax.
 
 ## Reviewable implementation increments
 
-First repair the shared call-memory/pointer-read blocker exposed by the draft
-owned field-borrow prototype in [PR #29](https://github.com/clicklang/click/pull/29).
-Its nested guard must prove the child's write of 42, reject a stale result of 1,
-and retain existing C++ cleanup proofs with checkable expansion. This assessment
-adds no frontend or kernel behavior while that prototype's checks are failing.
+The shared field-borrow blocker was repaired in
+[PR #29](https://github.com/clicklang/click/pull/29). The nested guard proves the
+child's write of 42 and rejects a stale result of 1, with checked expansion.
+The subsequent scalar checkpoint covers `u8`/`u32`, casts, unsigned comparisons,
+remainder, shifts, bitwise operations, and checked panic obligations. `u16`
+and target-sized `usize` remain outstanding.
 
 1. Add `u8`, `u16`, `u32`, and target-sized `usize` to the Rust artifact and
    direct lowering, together with required casts, unsigned comparisons,

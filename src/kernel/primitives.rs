@@ -8424,6 +8424,7 @@ pub(crate) struct ForallInt32InstantiationEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AtomicPropositionDerivationEvidence {
+    WidenedUnsignedSumBound,
     MemoryDag(Box<AtomicMemoryLoadEqualityEvidence>),
     LoadAddressCongruence(Box<LoadAddressCongruenceEvidence>),
     PointerOffsetMemoryDag(Box<PointerOffsetEqualityEvidence>),

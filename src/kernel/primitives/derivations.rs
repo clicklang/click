@@ -17,6 +17,16 @@ impl PropositionDerivation {
         &self.conclusion
     }
 
+    pub(crate) fn is_widened_unsigned_sum_bound(&self) -> bool {
+        matches!(
+            &self.rule,
+            PropositionDerivationRule::ContextualAtomic {
+                evidence: AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound,
+                ..
+            }
+        )
+    }
+
     /// Whether an atomic leaf retained a concrete theory rule rather than
     /// the compatibility-era opaque success marker.
     pub fn has_typed_atomic_evidence(&self) -> bool {

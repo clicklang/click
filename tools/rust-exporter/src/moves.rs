@@ -34,6 +34,7 @@ impl<'tcx> Context<'_, 'tcx> {
                     };
                     expr = Expression::Deref {
                         reference: Box::new(expr),
+                        value_type: export_type(self.tcx, *pointee)?,
                     };
                     t = *pointee;
                 }
@@ -80,7 +81,12 @@ impl<'tcx> Context<'_, 'tcx> {
                     ty::Int(ty::IntTy::I32) => Ok(Expression::Integer {
                         value: bits as u32 as i32,
                     }),
-                    _ => Err("MIR constant outside i32/bool slice".into()),
+                    ty::Uint(ty::UintTy::U8 | ty::UintTy::U32) => Ok(Expression::UnsignedInteger {
+                        value: u32::try_from(bits)
+                            .map_err(|_| "MIR unsigned constant outside u32")?,
+                        value_type: export_type(self.tcx, c.const_.ty())?,
+                    }),
+                    _ => Err("MIR constant outside supported integer/bool slice".into()),
                 }
             }
             _ => Err("unsupported MIR operand".into()),
@@ -127,6 +133,7 @@ impl<'tcx> Context<'_, 'tcx> {
                     Rvalue::Use(value, _) => self.operand(value)?,
                     Rvalue::Ref(_, _, p) => Expression::Borrow {
                         place: Box::new(self.place(*p)?),
+                        value_type: export_type(self.tcx, target_type)?,
                     },
                     Rvalue::BinaryOp(op, values) => {
                         let operator = match op {
@@ -142,6 +149,14 @@ impl<'tcx> Context<'_, 'tcx> {
                         };
                         Expression::Binary {
                             operator: operator.into(),
+                            left_type: export_type(
+                                self.tcx,
+                                values.0.ty(&self.body.local_decls, self.tcx),
+                            )?,
+                            right_type: export_type(
+                                self.tcx,
+                                values.1.ty(&self.body.local_decls, self.tcx),
+                            )?,
                             left: Box::new(self.operand(&values.0)?),
                             right: Box::new(self.operand(&values.1)?),
                         }
@@ -171,6 +186,8 @@ impl<'tcx> Context<'_, 'tcx> {
                 let (value, target) = targets.iter().next().unwrap();
                 let condition = Expression::Binary {
                     operator: "eq".into(),
+                    left_type: export_type(self.tcx, discr.ty(&self.body.local_decls, self.tcx))?,
+                    right_type: Type::I32,
                     left: Box::new(self.operand(discr)?),
                     right: Box::new(Expression::Integer {
                         value: i32::try_from(value).map_err(|_| "unsupported MIR switch value")?,

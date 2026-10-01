@@ -432,6 +432,23 @@ impl PropositionSearch for PureFactContext {
                 return Some((exact, premises_id, evidence));
             }
         }
+        if let Proposition::ConditionIs(condition, _) = proposition
+            && let Some(selected) = self.widened_unsigned_sum_bound_premises(condition)
+        {
+            let candidate = selected
+                .into_iter()
+                .fold(PureFactContext::new(), |context, premise| {
+                    context.assume_proposition(premise)
+                });
+            let (evidence, premises_id) =
+                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            if matches!(
+                evidence,
+                Some(AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound)
+            ) {
+                return evidence.map(|evidence| (candidate, premises_id, evidence));
+            }
+        }
         let condition_goal = match proposition {
             Proposition::ConditionIs(_, _) => true,
             Proposition::Not(body) => matches!(body.as_ref(), Proposition::ConditionIs(_, _)),

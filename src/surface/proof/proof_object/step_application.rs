@@ -1305,6 +1305,15 @@ impl<'a> Proof<'a> {
                         result: lower_result(result)?,
                     }
                 }
+                SpecialArithmeticNode::UnsignedSumBound { bounds, result } => {
+                    KernelNode::UnsignedSumBound {
+                        bounds: bounds
+                            .iter()
+                            .map(|i| premise_ref(*i))
+                            .collect::<Result<_, _>>()?,
+                        result: lower_result(result)?,
+                    }
+                }
                 SpecialArithmeticNode::SignedDefined {
                     width,
                     bounds,

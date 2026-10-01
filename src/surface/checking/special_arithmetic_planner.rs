@@ -16,6 +16,26 @@ pub(in crate::surface) fn plan_special_arithmetic_certificate(
     if !charge_proposition(goal) {
         return None;
     }
+    if let Proposition::ConditionIs(condition, value) = goal
+        && crate::kernel::PureFactContext::new()
+            .widened_unsigned_sum_bound_premises(condition)
+            .is_some()
+    {
+        let context = premises
+            .iter()
+            .fold(crate::kernel::PureFactContext::new(), |context, premise| {
+                context.assume_proposition(premise.clone())
+            });
+        if context.decide_widened_sum_bound(condition) == Some(*value) {
+            return Some(KernelCertificate {
+                nodes: vec![KernelNode::UnsignedSumBound {
+                    bounds: (0..premises.len()).collect(),
+                    result: goal.clone(),
+                }],
+                conclusion: 0,
+            });
+        }
+    }
     // `defined(a + b)` or `defined(a - b)` over `int32` or `int64`: cite
     // exactly the listed premises that bound an operand by a constant of
     // the goal's width. The kernel recomputes the operand ranges and
@@ -173,6 +193,12 @@ pub(in crate::surface) fn special_plan_to_surface_certificate(
                 finite: *finite,
                 result: goal.clone(),
             },
+            KernelNode::UnsignedSumBound { bounds, .. } => {
+                SpecialArithmeticNode::UnsignedSumBound {
+                    bounds: bounds.clone(),
+                    result: goal.clone(),
+                }
+            }
             KernelNode::SignedDefined { width, bounds, .. } => {
                 SpecialArithmeticNode::SignedDefined {
                     width: *width,
