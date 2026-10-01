@@ -614,6 +614,47 @@ facts, repeated switches between views, read/write/fold selection, completed
 reads, branch isolation, real normalization replacements, and deterministic
 work over growing resource inputs.
 
+The read/write candidate contract retains the selected query, resource
+occurrence IDs, and their paired graph checkpoint together. Address alignment
+accepts an occurrence ID and reads its range from that retained checkpoint;
+consumers do not supply an alternate query spelling or reconstruct a range.
+The direct ownership-support consumer uses the same retained alignment, then
+restores the requested range's base from its checked start displacement. It
+never asks an ambient graph that may lack the selected loads' registrations.
+Whole-cell alignment checks the query against the occurrence's start in the
+trusted graph. Interval alignment uses the checked affine block relation.
+Neither path grants authority: the ordinary permission, width, and containment
+judgments still decide whether the selected occurrence supplies the access.
+
+Interval completeness is local to the registered affine address block class.
+The graph maintains whether non-affine offset equivalences reach that class
+through registered application dependencies. Unrelated scalar aliases no
+longer disable concrete interval queries. This metadata is persistent, follows
+late merges and block relabels, and applies to subsequently registered parents.
+Affected classes report unknown coverage; exact whole-cell evidence remains
+usable independently. Concrete loaded pointers use the interval contract after their retained
+definitions register; there is no blanket exclusion of loaded-pointer blocks. An unpublished
+loaded-pointer interval remains unknown: its raw structural root has not
+registered all suppliers' retained origins, and a simple query cannot do that
+whole-input work. Publication establishes this fragment's completeness.
+Producer metadata indexes the read atoms in kernel-minted storage-relative
+names, so a shifted expression registers its original defining read directly.
+Exact address evidence therefore applies to shifted names too. Storage-relative
+names whose affine coordinates remain symbolic still report unknown interval
+coverage; that belongs to the symbolic containment milestone.
+
+Completeness propagation uses a separate subset of the graph's parent-use
+index containing only applications whose status can still change. Once an
+application is affected, its edges leave that subset. Otherwise a new alias in
+each sibling could revisit already-affected parent applications and make fork
+checking quadratic. Each changed application is charged once along a branch;
+class merges move the smaller payload and query checks inspect a class marker.
+Multi-size regressions cover unrelated scalar facts, same-class non-supplier
+ranges, and repeated forks beside already-affected parent applications.
+Unsupported range coordinates, incomplete read-core coverage, and unregistered
+fragments still report unknown before selection. Removing those unknown cases
+and their general checker belongs to the remaining containment migrations.
+
 Symbolic containment, partial-range reads with non-affine offset aliases, and
 snapshot-based matching still need complete indexed coverage before the
 general read lookup can be retired. The interval summary is part of the trusted kernel's derived index;

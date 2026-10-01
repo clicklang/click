@@ -4782,6 +4782,20 @@ mod tests {
             });
             assert!(equal);
             assert!(work < 40, "size={size}, work={work}");
+            let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    branch.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8))
+                })
+            });
+            assert!(equal);
+            assert!(
+                work < 100,
+                "shifted read scanned definitions: size={size}, work={work}"
+            );
+            assert!(
+                map_work < 200 * (size.ilog2() as usize + 1),
+                "shifted read copied definitions: size={size}, work={map_work}"
+            );
             // Cold class lookup must resolve one newly produced term without
             // scanning the session's unrelated retained definitions.
             let address = Pointer::symbolic(Variable(94_000 + size));

@@ -2629,7 +2629,7 @@ impl ResourceContext {
         if let Some(range) = required.memory_own_range()
             && let Some((start, end)) = concrete_memory_range_bounds(range)
             && let Ok(bytes) = u32::try_from(end - start)
-            && let Some(entries) = self.concrete_write_entries(
+            && let Some(mut entries) = self.concrete_write_entries(
                 &Pointer {
                     block: range.base().block.clone(),
                     offset: PointerOffsetTerm::Constant(start),
@@ -2638,17 +2638,27 @@ impl ResourceContext {
                 assumptions,
             )
         {
-            for entry in entries {
+            // The selected query is the requested range's start. Restore its
+            // base coordinates after alignment in the retained graph, instead
+            // of asking an ambient graph that may not register these loads.
+            let start_bytes = i64::from(range.start().as_const()? as i32)
+                .checked_mul(i64::from(range.element_width()))?;
+            let base_delta = start_bytes.checked_neg()?;
+            while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let candidate = self.fact(entry);
-                let Some(available) = candidate.memory_own_range() else {
+                if candidate.memory_own_range().is_none() {
+                    continue;
+                }
+                let Some(address) = entries.address(entry) else {
                     continue;
                 };
-                let Some(base) = assumptions
-                    .equality_graph
-                    .pointer_in_block(range.base(), &available.base().block)
-                else {
-                    continue;
+                let base = Pointer {
+                    block: address.block,
+                    offset: PointerOffsetTerm::add(
+                        address.offset,
+                        PointerOffsetTerm::Constant(base_delta),
+                    ),
                 };
                 let mut translated = range.clone();
                 translated.base = base;
@@ -5123,10 +5133,7 @@ impl ResourceContext {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
-                let Some(range) = resource_fact_read_core_range(resource) else {
-                    continue;
-                };
-                let Some(address) = entries.address(pointer, &range) else {
+                let Some(address) = entries.address(entry) else {
                     continue;
                 };
                 if memory_resource_fact_permits_read(resource, &address, byte_width, assumptions) {
@@ -5281,7 +5288,7 @@ impl ResourceContext {
                 let Some(range) = resource.memory_own_range() else {
                     continue;
                 };
-                let Some(address) = entries.address(pointer, range) else {
+                let Some(address) = entries.address(entry) else {
                     continue;
                 };
                 if memory_resource_fact_permits_write(resource, &address, byte_width, assumptions) {

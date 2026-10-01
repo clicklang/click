@@ -83,17 +83,25 @@ this list.
    unchecked producer, document why it is structural-only or why publication
    is established before any equality-sensitive query. Tests observe actual
    attachment and cover persistent descendants and unrelated ambient state.
-2. **Make candidate identity independent of spelling.** Unify the resource
-   candidate contract around retained occurrence IDs and checked address
-   alignment. Account for kernel-minted names and retained load origins without
-   resolving several spellings in consumers. Review
-   `memory_equality_index::indexed_access_entries`: outside exact-cell hits,
-   interval selection refuses graph-wide non-affine equalities and any loaded
-   pointer. Exact-cell payloads already answer some of these queries. Track
-   completeness/unknown at the relevant query/index fragment; do not merely
-   remove a soundness guard. An unrelated unsupported term must not force an
-   otherwise complete query to search the frame. Include late offset/load
-   merges, sibling isolation, width guards, and retained-origin regressions.
+2. **Complete: make candidate identity independent of spelling.** Read/write
+   candidates retain their query, occurrence IDs and paired graph checkpoint.
+   Checked address alignment accepts an occurrence ID, with no caller-supplied
+   pointer spelling or reconstructed range. Direct ownership support uses
+   this same checkpoint rather than an unprepared ambient graph.
+   Concrete intervals support loaded
+   pointers via retained origins. Shifted kernel-minted names register their
+   original defining read through a producer-owned read-atom index; exact-cell
+   evidence applies even when their interval coordinates remain symbolic.
+   Interval completeness follows non-affine offset dependencies at the relevant
+   affine block class instead of using a graph-wide exclusion. Unknown interval
+   coverage does not discard exact-cell evidence. Unpublished loaded intervals
+   report unknown until a proof boundary registers all retained origins.
+   Persistent metadata handles
+   late registration, offset/load merges and sibling isolation without visiting
+   already-affected parents. Regressions retain width/authority/snapshot guards
+   and measure queries beside growing same-class non-supplier inputs.
+   Symbolic coordinates and incomplete read cores remain explicit unknown
+   fragments for milestone 3; general checker deletion remains milestone 4.
 3. **Provide bounded symbolic containment support.** Extend the candidate
    contract to existing symbolic range/read/index cases. Graph equality
    identifies addresses and endpoints; arithmetic checks an already selected

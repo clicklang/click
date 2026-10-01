@@ -522,6 +522,31 @@ fn cell_index_follows_completed_pointer_reads_and_preserves_snapshots() {
         resources.memory_write_range(&old, 4, &connected),
         cell.memory_own_range()
     );
+    // Shifted whole cells register only their retained read-atom dependency.
+    // Storage-relative names with symbolic coordinates are still outside the
+    // concrete interval fragment, but exact address evidence does apply.
+    let shifted = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            x.offset_by_bytes(8),
+            0u32.into(),
+            4u32.into(),
+            1,
+        )),
+    );
+    for value in [&y, &old] {
+        let query = value.offset_by_bytes(8);
+        let mut candidates = shifted
+            .concrete_read_entries(&query, 4, &connected)
+            .unwrap();
+        assert!(candidates.exact());
+        let entry = candidates.next().unwrap();
+        assert_eq!(candidates.address(entry), Some(x.offset_by_bytes(8)));
+        assert!(candidates.next().is_none());
+        assert!(shifted.permits_memory_read(&query, 4, &connected));
+        assert!(shifted.memory_write_range(&query, 4, &connected).is_some());
+    }
+    assert!(!shifted.permits_memory_read(&y.offset_by_bytes(8), 4, &facts));
+    assert!(shifted.permits_memory_read(&old.offset_by_bytes(8), 4, &facts));
     let later = crate::kernel::intern_c_memory(memory.with_block("later", 8));
     assert!(!resources.permits_memory_read(&Pointer::loaded_value(&later, &a), 4, &connected));
     assert!(
@@ -1069,4 +1094,234 @@ fn logical_pointer_reads_reach_resource_index_without_equality_warmup() {
     let later = memory.store(a, CValue::typed_pointer(b, CType::Int64Pointer));
     let z = logical_pointer_read(&later, &Pointer::symbolic(Variable(92_251)), &branch);
     assert!(!owner.permits_memory_read(&z, 4, &branch));
+}
+
+#[test]
+fn interval_candidates_ignore_unrelated_scalar_equalities() {
+    let base = Pointer::symbolic(Variable(895_000));
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(895_001)),
+            Bitvector32Term::Variable(Variable(895_002)),
+        ),
+        true,
+    );
+    let resources =
+        ResourceContext::new_with_equalities(&facts).unchecked_with_fact(view(&base, 0, 32));
+    let query = base.offset_by_bytes(8);
+    let mut candidates = resources
+        .concrete_read_entries(&query, 4, &facts)
+        .expect("unrelated scalar aliases must not disable a complete interval fragment");
+    assert!(!candidates.exact());
+    assert!(candidates.next().is_some());
+    assert!(candidates.next().is_none());
+    assert!(resources.permits_memory_read(&query, 4, &facts));
+}
+
+#[test]
+fn interval_candidates_follow_loaded_pointer_origins_without_spelling_retry() {
+    let a = Pointer::symbolic(Variable(895_010));
+    let b = Pointer::symbolic(Variable(895_011));
+    let snapshot = crate::kernel::intern_c_memory(CMemory::new());
+    let x = Pointer::loaded_value(&snapshot, &a);
+    let y = Pointer::loaded_value(&snapshot, &b);
+    let initial = PureFactContext::new();
+    let connected = initial
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(a, b), true);
+    let resources = ResourceContext::new_with_equalities(&initial).unchecked_with_fact(
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            x.clone(),
+            0u32.into(),
+            32u32.into(),
+            1,
+        )),
+    );
+    let query = y.offset_by_bytes(8);
+    let mut candidates = resources
+        .concrete_read_entries(&query, 4, &connected)
+        .expect("retained loaded-pointer origins must use the complete interval fragment");
+    assert!(!candidates.exact());
+    assert!(candidates.next().is_some());
+    assert!(candidates.next().is_none());
+    assert!(resources.permits_memory_read(&query, 4, &connected));
+    assert!(!resources.permits_memory_read(&query, 4, &initial));
+    assert!(
+        resources
+            .memory_write_range(&query, 4, &connected)
+            .is_some()
+    );
+    assert!(resources.memory_write_range(&query, 4, &initial).is_none());
+    for start in [0u32, 8] {
+        let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            if start == 0 { query.clone() } else { y.clone() },
+            start.into(),
+            (start + 4).into(),
+            1,
+        ));
+        assert!(
+            resources
+                .directly_supporting_owned_entry(&required, &connected)
+                .is_some(),
+            "ownership support must use the candidate's retained graph alignment"
+        );
+        assert!(
+            resources
+                .directly_supporting_owned_entry(&required, &initial)
+                .is_none()
+        );
+    }
+    assert!(!resources.permits_memory_read(&y.offset_by_bytes(30), 4, &connected));
+    assert!(
+        resources
+            .memory_write_range(&y.offset_by_bytes(30), 4, &connected)
+            .is_none()
+    );
+    let later = crate::kernel::intern_c_memory(CMemory::new().with_block("later", 8));
+    let other_snapshot = Pointer::loaded_value(&later, &Pointer::symbolic(Variable(895_010)));
+    assert!(!resources.permits_memory_read(&other_snapshot.offset_by_bytes(8), 4, &connected));
+}
+
+#[test]
+fn interval_completeness_is_local_and_follows_late_offset_dependencies() {
+    let base = Pointer::symbolic(Variable(895_020));
+    let other = Pointer::symbolic(Variable(895_021));
+    let offset = PointerOffsetTerm::Variable(Variable(895_022));
+    let initial = PureFactContext::new();
+    let resources = ResourceContext::new_with_equalities(&initial)
+        .unchecked_with_fact(view(&base, 0, 32))
+        .unchecked_with_fact(view(&other, 0, 32));
+    // Register an offset dependency before its later merge. It must taint
+    // only this block, including existing interval payloads in the fork.
+    let _ = resources.concrete_read_entries(
+        &Pointer {
+            block: base.block.clone(),
+            offset: offset.clone(),
+        },
+        4,
+        &initial,
+    );
+    let connected = initial.clone().assume_condition(
+        ConditionTerm::pointer_equal(
+            Pointer {
+                block: base.block.clone(),
+                offset,
+            },
+            base.offset_by_bytes(8),
+        ),
+        true,
+    );
+    assert!(
+        resources
+            .concrete_read_entries(&base.offset_by_bytes(12), 4, &connected)
+            .is_none()
+    );
+    assert!(
+        resources
+            .concrete_read_entries(&other.offset_by_bytes(12), 4, &connected)
+            .is_some()
+    );
+    assert!(
+        resources
+            .concrete_read_entries(&base.offset_by_bytes(12), 4, &initial)
+            .is_some()
+    );
+    // Unknown interval completeness does not erase checked exact evidence.
+    let exact = resources.clone().unchecked_with_fact(view(&base, 40, 44));
+    assert!(
+        exact
+            .concrete_read_entries(&base.offset_by_bytes(40), 4, &connected)
+            .is_some_and(|entries| entries.exact())
+    );
+}
+
+#[test]
+fn interval_selection_is_indexed_beside_same_class_non_suppliers() {
+    let base = Pointer::symbolic(Variable(895_030));
+    let alias = Pointer::symbolic(Variable(895_031));
+    let facts = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(895_032)),
+                Bitvector32Term::Variable(Variable(895_033)),
+            ),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            true,
+        );
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut resources =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(view(&base, 0, 32));
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(view(&base, 1024 + i * 32, 1040 + i * 32));
+        }
+        let query = alias.offset_by_bytes(8);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let mut entries = resources.concrete_read_entries(&query, 4, &facts).unwrap();
+                let entry = entries.next().expect("one supplier");
+                assert_eq!(entries.address(entry), Some(base.offset_by_bytes(8)));
+                assert!(entries.next().is_none());
+                assert!(resources.permits_memory_read(&query, 4, &facts));
+                assert!(!resources.permits_memory_read(&alias.offset_by_bytes(64), 4, &facts));
+            })
+        });
+        samples.push((work, map_work));
+    }
+    assert!(
+        samples[3].0 <= samples[0].0 * 2 + 64,
+        "same-class supplier scan: {samples:?}"
+    );
+    assert!(
+        samples[3].1 <= samples[0].1 * 4 + 512,
+        "same-class payload scan: {samples:?}"
+    );
+}
+
+#[test]
+fn interval_alignment_retains_query_and_occurrence_checkpoint() {
+    let base = Pointer::symbolic(Variable(895_040));
+    let alias = Pointer::symbolic(Variable(895_041));
+    let empty = PureFactContext::new();
+    let facts = empty.clone().assume_condition(
+        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        true,
+    );
+    let cell = view(&base, 0, 4);
+    let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(cell.clone());
+    let mut candidates = resources.concrete_read_entries(&alias, 4, &facts).unwrap();
+    let entry = candidates.next().unwrap();
+    // Removal changes the live fork, not retained evidence or occurrence IDs.
+    let removed = resources
+        .clone()
+        .without_exact_representation(&cell)
+        .unwrap();
+    assert_eq!(candidates.address(entry), Some(base.clone()));
+    assert!(!removed.permits_memory_read(&alias, 4, &facts));
+    assert!(!resources.permits_memory_read(&alias, 4, &empty));
+    assert!(!resources.permits_memory_read(&alias, 5, &facts));
+    assert!(resources.memory_write_range(&alias, 4, &facts).is_none());
+}
+
+#[test]
+fn unpublished_loaded_intervals_do_not_claim_complete_supplier_coverage() {
+    let a = Pointer::symbolic(Variable(895_060));
+    let b = Pointer::symbolic(Variable(895_061));
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let x = Pointer::loaded_value(&memory, &a);
+    let y = Pointer::loaded_value(&memory, &b);
+    let facts = PureFactContext::new().assume_condition(ConditionTerm::pointer_equal(a, b), true);
+    // The raw structural root has not registered x's defining load. A short
+    // unrelated entry under y must not turn a missing supplier into a denial.
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(view(&x, 0, 32))
+        .unchecked_with_fact(view(&y, 0, 4));
+    let query = y.offset_by_bytes(8);
+    assert!(resources.concrete_read_entries(&query, 4, &facts).is_none());
+    resources.synchronize_memory_equalities(&facts);
+    assert!(resources.concrete_read_entries(&query, 4, &facts).is_some());
+    assert!(resources.permits_memory_read(&query, 4, &facts));
 }
