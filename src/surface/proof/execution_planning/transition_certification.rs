@@ -892,6 +892,31 @@ fn certified_transitions_from_execution(
                                 }
                                 continue;
                             }
+                            // A premise the statement owes, such as a bounds
+                            // check the C frontend lowered to `assert`, is
+                            // named as the statement's prerequisite.
+                            if let Some(obligation) = path
+                                .obligations()
+                                .iter()
+                                .find(|obligation| obligation.proposition() == &premise)
+                            {
+                                return Err(ClickError::new(format!(
+                                    "{context_label} is missing prerequisite{}: {}",
+                                    obligation
+                                        .context()
+                                        .map(|context| format!(" ({context})"))
+                                        .unwrap_or_default(),
+                                    describe_statement_prerequisite_failure(
+                                        &premise,
+                                        &theorem_context,
+                                        &statement_facts,
+                                        state,
+                                        statement,
+                                        environment,
+                                        predicate_environment,
+                                    ),
+                                )));
+                            }
                             return Err(ClickError::new(format!(
                                 "{context_label} used an assumption-derived theorem premise without a checkable derivation: {}",
                                 describe_derivation_failure(

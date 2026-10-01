@@ -63,14 +63,23 @@ pub(crate) fn memory_access_element_bound(
                 pending.push(right);
                 pending.push(left);
             }
-            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            // A widened index is spelled as the C index it widens: a
+            // `uint32` index zero-extends to the 64-bit offset.
+            PointerOffsetTerm::Int32Scaled { value, byte_width }
+            | PointerOffsetTerm::Int64Scaled {
+                value, byte_width, ..
+            } => {
+                let value = match value.as_ref() {
+                    Bitvector32Term::UInt64From32(index) => index,
+                    value => value,
+                };
                 let stride = u32::try_from(*byte_width).ok()?;
                 if widest.is_none_or(|(_, widest)| stride > widest) {
                     widest = Some((value, stride));
                 }
             }
             PointerOffsetTerm::Constant(_) => {}
-            PointerOffsetTerm::Variable(_) | PointerOffsetTerm::Int64Scaled { .. } => return None,
+            PointerOffsetTerm::Variable(_) => return None,
         }
     }
     let (index, stride) = widest?;

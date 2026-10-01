@@ -2527,7 +2527,23 @@ impl<'a> Proof<'a> {
             } else {
                 None
             }) else {
-                return Ok(None);
+                // A statement whose successors are path cases (a load's
+                // may-alias cases) splits the proof on the condition that
+                // tells them apart, as the planner does; each case runs to
+                // exit under its side of the condition.
+                return match proof.apply_step(ProofStep::Step) {
+                    Err(error) if error.is_path_case_split() => {
+                        let Some(condition) = error.path_case_condition() else {
+                            return Ok(None);
+                        };
+                        proof.try_focused_execute_cases_to_exit(
+                            condition.clone(),
+                            &enclosing,
+                            retried_requirements,
+                        )
+                    }
+                    _ => Ok(None),
+                };
             };
             let mut advanced = split;
             for take_then in [true, false] {
@@ -2553,6 +2569,31 @@ impl<'a> Proof<'a> {
             };
             retried_requirements.clear();
         }
+    }
+
+    /// Splits the proof on `condition` and runs each case to function exit,
+    /// then joins the two terminal cases. `enclosing` is the chain of bounded
+    /// arms the split runs inside; each case escapes all of them.
+    fn try_focused_execute_cases_to_exit(
+        &self,
+        condition: ClickProposition,
+        enclosing: &[&ExecutionSplit<'a>],
+        retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+    ) -> Result<Option<Self>, ClickError> {
+        let (mut advanced, record) = self.split_focused_execution_if(condition)?;
+        for take_then in [true, false] {
+            let Some(next) = advanced
+                .focus_execution_if_arm(&record, take_then)?
+                .try_focused_execute_to_exit_within(enclosing.to_vec(), retried_requirements)?
+            else {
+                return Ok(None);
+            };
+            advanced = next;
+        }
+        retried_requirements.clear();
+        advanced
+            .join_focused_execution_if_terminal(&record)
+            .map(Some)
     }
 
     /// Validates and applies one already-expanded logical execution arm.

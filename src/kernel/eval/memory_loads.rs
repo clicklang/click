@@ -1045,30 +1045,6 @@ fn evaluate_c_memory_load_case(
         }];
     }
 
-    // Automatic storage is allocated by a declaration, but allocation alone
-    // does not initialize it. Once all possibly-aliasing stored cells have
-    // been considered above, a local load with no matching cell is an
-    // uninitialized read rather than an unconstrained value — unless the
-    // bytes it may read were written, by the initialization record or the
-    // cells of the memory the load was read at: a store the facts could not
-    // place, a havoc or a join forgot the cell's value, never that it was
-    // written, and a distinct case dropped a written cell only to name the
-    // value; the load then reads an unknown initialized value below. A
-    // symbolic offset must not bypass this check: allocation bounds are
-    // independent of whether the addressed element has ever been written.
-    if purpose != LoadPurpose::Logical
-        && pointer.block.starts_with("local:")
-        && memory.has_block(&pointer.block)
-        && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
-        && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
-    {
-        return vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
-            facts,
-            obligations,
-        }];
-    }
-
     if purpose != LoadPurpose::Logical && !has_external_read_resource {
         let proposition = Proposition::CMemoryLoadable {
             memory: memory.clone(),
@@ -1094,6 +1070,33 @@ fn evaluate_c_memory_load_case(
         } else if add_proof_obligation(&mut obligations, assumptions, proposition).is_none() {
             return Vec::new();
         }
+    }
+
+    // Automatic storage is allocated by a declaration, but allocation alone
+    // does not initialize it. Once all possibly-aliasing stored cells have
+    // been considered above, a local load with no matching cell is an
+    // uninitialized read rather than an unconstrained value — unless the
+    // bytes it may read were written, by the initialization record or the
+    // cells of the memory the load was read at: a store the facts could not
+    // place, a havoc or a join forgot the cell's value, never that it was
+    // written, and a distinct case dropped a written cell only to name the
+    // value; the load then reads an unknown initialized value below. A
+    // symbolic offset must not bypass this check: allocation bounds are
+    // independent of whether the addressed element has ever been written.
+    // The check follows the loadability obligation, which the refused path
+    // keeps as a premise: a read that may leave the object is refused for
+    // its bound first, and only a read inside it for unwritten bytes.
+    if purpose != LoadPurpose::Logical
+        && pointer.block.starts_with("local:")
+        && memory.has_block(&pointer.block)
+        && !written.has_initialized_bytes_under(&pointer, value_type.byte_width(), assumptions)
+        && !assumptions.has_memory_read_defined_evidence(&memory, &pointer, value_type)
+    {
+        return vec![CExpressionPath {
+            outcome: CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::UninitializedRead),
+            facts,
+            obligations,
+        }];
     }
 
     if let Some(value) = cell_value_recorded_on_path(
