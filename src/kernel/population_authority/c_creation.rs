@@ -1289,24 +1289,34 @@ impl CreationEvents {
             .ok_or(CreationRefusal::InvalidMember)?;
         if let Some(import) = self.0.opaque_imports.get(&scope) {
             if scope.population_arity().is_some() {
-                // This checkpoint admits one identified birth from an
-                // authority-only input. Borrowed members cannot be replaced,
-                // consumed, or used to authorize another birth.
-                if !produce || import.wildcard_member.is_some() || import.owned_members != 0 {
+                // One birth from authority-only input, or one death of the
+                // exact member supplied on entry. Retain its identity after
+                // death so neither replacement nor repeated exchanges pass.
+                if produce {
+                    if import.wildcard_member.is_some() || import.owned_members != 0 {
+                        return Err(CreationRefusal::InvalidMember);
+                    }
+                    let total = import
+                        .entry_count
+                        .clone()
+                        .ok_or(CreationRefusal::UnknownTotal)?;
+                    let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+                        total,
+                        Bitvector32Term::Constant(1),
+                    );
+                    if !assumptions.is_some_and(|facts| {
+                        facts.proves_exact(&crate::kernel::Proposition::ConditionIs(
+                            no_overflow,
+                            false,
+                        ))
+                    }) {
+                        return Err(CreationRefusal::InvalidQuantity);
+                    }
+                } else if import.entry_owned_members != 1
+                    || import.owned_members != 1
+                    || import.wildcard_member.as_ref() != Some(description)
+                {
                     return Err(CreationRefusal::InvalidMember);
-                }
-                let total = import
-                    .entry_count
-                    .clone()
-                    .ok_or(CreationRefusal::UnknownTotal)?;
-                let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
-                    total,
-                    Bitvector32Term::Constant(1),
-                );
-                if !assumptions.is_some_and(|facts| {
-                    facts.proves_exact(&crate::kernel::Proposition::ConditionIs(no_overflow, false))
-                }) {
-                    return Err(CreationRefusal::InvalidQuantity);
                 }
             }
             // Numeric transitions retain their exact net cardinality. Mixing a

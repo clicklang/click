@@ -2161,6 +2161,24 @@ fn authority_mode_protected_families(interface: &CFunctionContractInterface) -> 
     protected_families
 }
 
+fn population_member_requirement(member: &CResourceSpec) -> String {
+    let CResourceTerm::Composite {
+        name, arguments, ..
+    } = member.term()
+    else {
+        unreachable!("checked member effect")
+    };
+    let arguments = arguments
+        .iter()
+        .map(|argument| match argument {
+            CExpression::Variable(name) => name.as_str(),
+            _ => "...",
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{name}({arguments})")
+}
+
 /// The ledger effect uses the exact owner authenticated at call admission,
 /// rather than evaluating an entry field expression a second time.
 fn checked_consumed_population_member<'a>(
@@ -2433,6 +2451,81 @@ fn authority_mode_member_quantity_admitted(
 fn authority_mode_consumes_member_contract(interface: &CFunctionContractInterface) -> bool {
     authority_mode_member_effect(interface).is_some_and(|(produce, _)| !produce)
         && authority_mode_member_companions_admitted(interface)
+}
+
+/// Standalone claim certification must check a wildcard consumption even
+/// when its only output claim is the borrowed authority. Merely retaining
+/// that output does not establish the consumed member's ledger transition.
+pub(super) fn check_wildcard_consumption_at_return(
+    entry: &CState,
+    exit: &CState,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<(), CRuntimeError>> {
+    if !entry.uses_population_authority_semantics()
+        || !authority_mode_consumes_member_contract(interface)
+    {
+        return Ok(Ok(()));
+    }
+    let (_, member) = authority_mode_member_effect(interface).expect("checked member effect");
+    let CResourceTerm::Composite {
+        name: member_name, ..
+    } = member.term()
+    else {
+        unreachable!("checked member effect")
+    };
+    // This checkpoint covers direct wildcard authority inputs. Do not read
+    // unrelated unary control fields just to discover that they are outside
+    // this rule; their entry custody is checked by the existing boundary.
+    if !interface.resource_requires().iter().any(|input| {
+        matches!(input.term(), CResourceTerm::PopulationAuthority {
+            protected, population_arity: Some(_), ..
+        } if matches!(protected.resource.term(), CResourceTerm::Composite { name, .. } if name == member_name))
+    }) {
+        return Ok(Ok(()));
+    }
+    let fact = match evaluate_function_resource_spec_with_entry(
+        entry,
+        entry,
+        member,
+        assumptions,
+        budget,
+    )? {
+        Ok(fact) => fact,
+        Err(error) => return Ok(Err(error)),
+    };
+    let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) = fact else {
+        return Ok(Ok(()));
+    };
+    let description = ResourceDescription::new(
+        name.clone(),
+        arguments,
+        ResourceFieldSchema::new(vec![]).expect("empty schema"),
+    );
+    let wildcard = entry
+        .population_effects
+        .creation
+        .as_ref()
+        .and_then(|events| events.governing_authority(&description))
+        .is_some_and(|scope| scope.population_arity().is_some());
+    if !wildcard {
+        return Ok(Ok(()));
+    }
+    let consumed = exit
+        .population_effects
+        .creation
+        .as_ref()
+        .and_then(|events| events.imported_member_delta_since_entry(&description))
+        .is_some_and(|(produce, actual_quantity)| !produce && actual_quantity == *quantity);
+    if consumed {
+        Ok(Ok(()))
+    } else {
+        Ok(Err(CRuntimeError::FunctionContract(format!(
+            "Requires consumes {}",
+            population_member_requirement(member)
+        ))))
+    }
 }
 
 fn authority_mode_produces_member_contract(interface: &CFunctionContractInterface) -> bool {
@@ -24217,6 +24310,18 @@ pub(super) fn function_return_resources_definitionally_established(
     }
     let entry_resource_state =
         with_contract_argument_views(caller_state, function, &argument_values);
+    if !matches!(
+        check_wildcard_consumption_at_return(
+            &entry_resource_state,
+            return_state,
+            function.contract_interface(),
+            &assumptions,
+            &mut budget,
+        ),
+        Ok(Ok(()))
+    ) {
+        return false;
+    }
     let Ok(Ok(expected)) = evaluate_function_return_resource_context(
         function,
         &[],
@@ -29100,16 +29205,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                 }
             });
         if !exchanged {
-            let CResourceTerm::Composite {
-                name, arguments, ..
-            } = member_spec.term()
-            else {
-                unreachable!("checked member-transition contract shape")
-            };
-            let requirement = match arguments.as_slice() {
-                [CExpression::Variable(argument)] => format!("{name}({argument})"),
-                _ => format!("{name}(...)"),
-            };
+            let requirement = population_member_requirement(member_spec);
             return Ok(Err(CRuntimeError::FunctionContract(format!(
                 "Requires {} {requirement}",
                 if produce { "produces" } else { "consumes" }

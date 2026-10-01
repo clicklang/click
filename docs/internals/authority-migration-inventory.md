@@ -14,7 +14,13 @@ The `authority_wildcard_create_helper*` fixtures additionally create one
 field-free member from an authority-only helper input. They preserve arbitrary
 entry totals, require checked count bounds, retain concrete output arguments,
 and exercise both direct and nested creation while the caller holds other
-members. Consumption and private-body extensions remain separate work.
+members. The `authority_wildcard_consume_helper*` fixtures consume one exact
+entry member while returning authority, including nested calls. The caller
+retains other members, observes the checked decrement, and cannot reuse the
+consumed member. Return certification rejects a declared consumption without
+an actual transition. Kernel regressions cover identity, authority and member
+custody, repeated transitions, and scaling beside unrelated imports.
+Private-body extensions remain separate work.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 

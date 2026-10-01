@@ -1334,6 +1334,19 @@ fn prepare_function_claim_path(
         }
         _ => return Err(format!("the certified path is not safe: {outcome:?}").into()),
     };
+    if !exceptional {
+        match crate::kernel::functions::check_wildcard_consumption_at_return(
+            &entry_state,
+            raw_exit_state,
+            function.contract_interface(),
+            &assumptions,
+            &mut budget,
+        ) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => return Err(format!("{error:?}").into()),
+            Err(limit) => return Err(limit.describe().to_string().into()),
+        }
+    }
     let exit_memory = if exceptional {
         raw_exit_state.memory().clone()
     } else {
