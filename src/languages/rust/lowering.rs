@@ -330,7 +330,15 @@ impl Context<'_> {
                 if t == C0Type::Void {
                     return Err("unit locals outside Rust slice".into());
                 }
-                let declaration = c_declare(&place.name, t.to_kernel_type());
+                let constant = matches!(place.value_type, Type::Reference { mutable: false, .. });
+                let declaration = c_declare_with_all_qualifiers(
+                    &place.name,
+                    t.to_kernel_type(),
+                    false,
+                    false,
+                    false,
+                    constant,
+                );
                 let assign = self.assign(&place.name, initializer)?;
                 Ok(c_seq(declaration, assign))
             }

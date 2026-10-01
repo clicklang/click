@@ -11,10 +11,12 @@ protocol and copies each yielded byte through checked indexing. It exposes
 location, for invariants and the decreasing measure `bytes_len - counter`.
 The sidecar retains views of the input and checked full-width index bounds.
 
-This first iterator subset accepts immutable shared byte-slice bindings and
-copied byte patterns. Mutable slices/bindings, reference-valued loop variables,
-array iteration, `.iter()`, `.chunks_exact()`, labels, `break`, and `continue`
-remain unsupported. The pinned checksum libraries remain unverified.
+Immutable shared byte-slice bindings support copied byte patterns and shared
+reference variables, directly or through `.iter()`. The
+[reference iterator example](../rust-iter-references/README.md) proves a sum
+using yielded references. Mutable slices/bindings, array iteration, stored
+iterator locals, `.chunks_exact()`, labels, `break`, and `continue` remain
+unsupported. The pinned checksum libraries remain unverified.
 
 Build the pinned exporter with `scripts/build-rust-exporter.sh`, then run:
 

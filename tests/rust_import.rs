@@ -1417,6 +1417,13 @@ fn rust_slice_for_sum_verifies_and_expands() {
     let sidecar =
         include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let copied_iter = Project::new(
+        &include_str!("../examples/rust-iterators/sum.rs")
+            .replace("in bytes {", "in bytes.iter() {"),
+    );
+    refresh_import(&copied_iter.config()).unwrap();
+    let copied_prepared = load_import(&copied_iter.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &copied_prepared).unwrap();
     for invalid in [
         sidecar.replace(
             "ensures to_integer(result) == old(prefix",
@@ -1444,8 +1451,11 @@ fn rust_slice_for_sum_verifies_and_expands() {
 #[test]
 fn rust_slice_for_rejects_unsupported_iteration() {
     for source in [
-        "pub fn bad(bytes: &[u8]) { for byte in bytes {} }",
-        "pub fn bad(bytes: &[u8]) { for &byte in bytes.iter() {} }",
+        "pub fn bad(bytes: &[u8]) { for byte in bytes.iter().rev() {} }",
+        "pub fn bad(bytes: &mut [u8]) { for byte in bytes.iter_mut() {} }",
+        "pub fn bad(bytes: &mut [u8]) { for byte in bytes.iter() {} }",
+        "pub fn bad(bytes: &[u8]) { let iter = bytes.iter(); for byte in iter {} }",
+        "pub fn bad(mut bytes: &[u8]) { for byte in bytes.iter() {} }",
         "pub fn bad(bytes: &mut [u8]) { for byte in bytes {} }",
         "pub fn bad(mut bytes: &[u8]) { for &byte in bytes {} }",
         "pub fn bad(bytes: &[u8]) { 'outer: for &byte in bytes {} }",
@@ -1456,9 +1466,50 @@ fn rust_slice_for_rejects_unsupported_iteration() {
         let p = Project::new(source);
         let error = refresh_import(&p.config()).unwrap_err();
         assert!(
-            error.contains("Rust for loops") || error.contains("break and continue"),
+            error.contains("Rust for loops")
+                || error.contains("break and continue")
+                || error.contains("unsupported Rust type `std::slice::Iter"),
             "{error}"
         );
         assert!(!error.contains("panicked"), "{error}");
     }
+}
+
+#[test]
+fn rust_slice_iter_reference_sum_verifies_and_expands() {
+    let source = include_str!("../examples/rust-iter-references/sum.rs");
+    let sidecar =
+        include_str!("../examples/rust-iter-references/sum.click").replace("sum.rs", "borrow.rs");
+    // Shared references from both the implicit slice iterator and .iter()
+    // have the same checked address and dereference semantics.
+    for source in [source.to_string(), source.replace("bytes.iter()", "bytes")] {
+        let p = Project::new(&source);
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+        for invalid in [
+            sidecar.replace(
+                "ensures to_integer(result) == old(prefix",
+                "ensures to_integer(result) + 1 == old(prefix",
+            ),
+            sidecar.replace("requires bytes_len <= 1000u64;", ""),
+            sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+            sidecar.replace(
+                "decreases bytes_len - __rust_iter_index_3_5;",
+                "decreases __rust_iter_index_3_5;",
+            ),
+        ] {
+            assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        }
+        if source.contains(".iter()") {
+            fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+            assert_cli(&p, &["profile"]);
+            assert_cli(&p, &["audit"]);
+            assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
+            assert_cli(&p, &["verify"]);
+        }
+    }
+    let p = Project::new("pub fn bad(bytes: &[u8]) { for byte in bytes.iter() { *byte = 0; } }");
+    let error = refresh_import(&p.config()).unwrap_err();
+    assert!(error.contains("cannot assign"), "{error}");
 }
