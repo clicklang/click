@@ -1043,9 +1043,12 @@ pub(super) fn c_function_contract_certification_assumptions(
         )
     }
     .unwrap_or_else(|| entry_state.resources().clone());
-    // Selection facts are caller-supplied routing hints, not hypotheses. Only
-    // facts whose authority is independently available at this exact entry
-    // state may enter the assumptions used to lower requirements.
+    // Selection facts are the entry facts the proof ran under, built by the
+    // proof side (`initial_claim_context_with_mode`). They are not reused as
+    // given: two kinds are admitted here, each established again at this
+    // entry state, a loadability the entry resources supply and a quantified
+    // predicate implication that is an authorized theorem. The rest are
+    // rebuilt below from the contract, which repeats the proof side's work.
     for fact in selection_assumptions.prop_facts.iter() {
         let loadability_authorized = matches!(fact, Proposition::CMemoryLoadable { .. })
             && resources_certify_loadability(
@@ -1225,13 +1228,12 @@ pub(super) fn c_function_contract_certification_assumptions(
                 ));
             }
         };
-    // The entry partition, authorized here rather than accepted from the
-    // proof: a transferred clause and a borrowed `views` clause of this
-    // contract denote disjoint memory. The premise is derivable from the
-    // contract's own clause list, which is what this recomputes from
-    // `function.resource_requires()` — the analogue of the way a `viewable`
-    // entry fact is authorized above from the resources the same clauses
-    // supply. `functions::contract_entry_partition_facts` carries the rule
+    // The entry partition: a transferred clause and a borrowed `views`
+    // clause of this contract denote disjoint memory. It is computed here a
+    // second time from `function.resource_requires()`; the proof side
+    // computes the same facts from the same clause list
+    // (`evaluate_entry_resource_context`), as it does the `viewable` entry
+    // facts above. `functions::contract_entry_partition_facts` carries the rule
     // and its soundness argument; the fail-closed call-site planner is what
     // discharges the claim, so a caller owes nothing extra for it.
     for fact in crate::kernel::contract_entry_partition_facts(&required_entry_clauses) {
@@ -1553,11 +1555,10 @@ pub(super) fn c_function_contract_certification_assumptions(
         assumptions = assumptions.assume_proposition(proposition);
     }
     entry_state = entry_state.with_resource_context(entry_resources.clone());
-    // The contract-entry publication, derived here rather than accepted from
-    // the caller: the arms the requirements refute and the facts of the arm
-    // they leave. Contract lowering publishes exactly this to the checked
-    // execution, so the two entry contexts agree instead of the execution
-    // assuming a premise certification cannot derive.
+    // The contract-entry publication: the arms the requirements refute and
+    // the facts of the arm they leave. Contract lowering publishes exactly
+    // this to the checked execution; it is computed a second time here so the
+    // two entry contexts agree.
     let publication = crate::kernel::publish_instance_arms(
         &entry_resources,
         function.composite_resource_definitions(),

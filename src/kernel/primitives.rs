@@ -9092,8 +9092,9 @@ pub struct CFunctionContractExecution {
 /// A kernel-created record of one exact whole-function execution judgment.
 ///
 /// Callers may retain and present this artifact, but cannot manufacture or
-/// alter its execution metadata. Contract certification revalidates the
-/// boundary assumptions before reusing its checked frontier.
+/// alter its execution metadata. Before reusing its checked frontier,
+/// contract certification rebuilds the entry assumptions from the contract
+/// and proves each of this artifact's assumptions from them again.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCheckedFunctionExecution {
     pub(super) state: CState,
