@@ -6040,9 +6040,21 @@ fn evaluate_resource_count_paths(
                 let Some(Some(AlgebraicValue::C(CValue::Pointer(_)))) = arguments.first() else {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 };
-                if arguments.iter().skip(1).any(Option::is_some) {
+                let exact = arguments.len() > 1 && arguments.iter().all(Option::is_some);
+                if !exact && arguments.iter().skip(1).any(Option::is_some) {
                     return Err(ExecutionLimit::AuthorityCountNeedsExactPointer);
                 }
+                let member = exact.then(|| {
+                    ResourceDescription::new(
+                        name.to_owned(),
+                        arguments
+                            .iter()
+                            .map(|value| value.clone().expect("exact argument"))
+                            .collect::<Vec<_>>()
+                            .into(),
+                        ResourceFieldSchema::new(vec![]).expect("empty resource schema"),
+                    )
+                });
                 let description = ResourceDescription::new(
                     name.to_owned(),
                     vec![arguments[0].clone().expect("checked anchor")].into(),
@@ -6126,7 +6138,23 @@ fn evaluate_resource_count_paths(
                 {
                     return Err(ExecutionLimit::AuthorityCountNeedsOwnership);
                 }
-                if let Some(symbolic) = creation.observe_symbolic(&description) {
+                let symbolic = if let Some(member) = member {
+                    let mut arguments = member.arguments().to_vec();
+                    arguments[0] = description.arguments()[0].clone();
+                    let member = ResourceDescription::new(
+                        name.to_owned(),
+                        arguments.into(),
+                        member.schema().clone(),
+                    );
+                    Some(
+                        creation
+                            .observe_exact_member(&member, &path_assumptions)
+                            .map_err(|_| ExecutionLimit::AuthorityCountNeedsResolvedMember)?,
+                    )
+                } else {
+                    creation.observe_symbolic(&description)
+                };
+                if let Some(symbolic) = symbolic {
                     let entry = symbolic.entry_count;
                     // An imported control's checked equality to a population
                     // count entails this bound, including any member owned by

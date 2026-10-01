@@ -500,6 +500,14 @@ frontier. Dedicated negative fixtures reject missing, mismatched, and duplicated
 children, and kernel checks reject forged body exchanges. Built-in object
 ownership is covered separately. Named proof fields remain a later increment.
 
+Exact member counts under wildcard authority now have dedicated fixtures for
+creation/consumption helpers, retained neighbors, and equal-member multiplicity.
+Exact helper entry counts remain arbitrary and distinct from the family total.
+The initial implementation admits concrete pointer/int32 indices and the
+helper's selected member; unresolved aliases, partial patterns, and symbolic
+batch subset observations remain deferred. Indexed lookup/update scaling and
+rejections for missing authority and unproved exact cardinality are covered.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count
 individually identified members without erasing fields or treating equal

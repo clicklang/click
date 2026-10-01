@@ -64,6 +64,12 @@ frontier, without scanning the caller frame.
 The bounded-pool sidecar remains on its existing path; this group supplies
 one prerequisite without migrating it.
 
+The `authority_wildcard_exact_count*` fixtures distinguish exact member counts
+from wildcard totals, including creation and consumption helper contracts,
+retained neighboring members, equal-member multiplicity, and refusal to infer
+a global exact count from local custody. Kernel regressions cover authority
+transfer, unresolved indices, arbitrary entry counts, and indexed scaling.
+
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
 ```sh

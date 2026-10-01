@@ -4586,12 +4586,14 @@ impl AnnotationLowerer<'_> {
                     }
                     if arguments.is_empty()
                         || matches!(arguments[0], ContractExpression::ResourceWildcard)
-                        || arguments.iter().skip(1).any(|argument| {
+                        || (arguments.iter().skip(1).any(|argument| {
+                            matches!(argument, ContractExpression::ResourceWildcard)
+                        }) && arguments.iter().skip(1).any(|argument| {
                             !matches!(argument, ContractExpression::ResourceWildcard)
-                        })
+                        }))
                     {
                         return Err(
-                            "authority-mode count requires R(anchor) or R(anchor, _, ...)"
+                            "authority-mode count requires R(anchor), R(anchor, _, ...), or an exact member"
                                 .to_string(),
                         );
                     }
