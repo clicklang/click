@@ -1746,67 +1746,75 @@ pub(super) fn append_proof_step_for_operation(
             Some(ConstructionEvidence::CertifiedPathAssumption {
                 occurrence,
                 condition,
+                fallback_condition,
                 value,
                 facts,
-                ..
             }),
         ) => {
             // Planning records the exact statement-entry point where the
             // branch decision was made. Keep that form here: alternatives
             // can construction without their common statement-step prefix, so a
-            // transient "last step" pointer is not a reliable anchor.
-            let condition = condition.clone();
-            let surface_fact = if *value {
-                condition.clone()
-            } else {
-                negate_click_proposition(&condition)
-            };
-            let lowered = lower_surface_candidate_in_state(
-                construction.view(construction.context),
-                &surface_fact,
-                available,
-                parameters,
-                arguments,
-                state,
-                predicate_environment,
-                click_function_environment,
-            );
-            match lowered {
-                Ok(kernel_fact)
-                    if facts
-                        .iter()
-                        .any(|fact| path_condition_equivalent(fact, &kernel_fact)) =>
-                {
-                    let certified_fact = facts
-                        .iter()
-                        .find(|fact| path_condition_equivalent(fact, &kernel_fact))
-                        .expect("the matching certified path fact was checked above");
-                    if let Err(error) = construction
-                        .surface_propositions
-                        .record_lowering(&surface_fact, certified_fact)
-                    {
-                        construction.proof_certificate_builder.block(format!(
-                            "could not retain the certified path-condition form: {}",
+            // transient "last step" pointer is not a reliable anchor. A
+            // preferred spelling that does not lower to one of the certified
+            // facts gives way to the fallback the planner supplied.
+            let mut refusal = String::new();
+            let mut selected = None;
+            for condition in std::iter::once(condition).chain(fallback_condition.iter()) {
+                let surface_fact = if *value {
+                    condition.clone()
+                } else {
+                    negate_click_proposition(condition)
+                };
+                let lowered = lower_surface_candidate_in_state(
+                    construction.view(construction.context),
+                    &surface_fact,
+                    available,
+                    parameters,
+                    arguments,
+                    state,
+                    predicate_environment,
+                    click_function_environment,
+                );
+                match lowered {
+                    Ok(kernel_fact) => {
+                        if let Some(certified_fact) = facts
+                            .iter()
+                            .find(|fact| path_condition_equivalent(fact, &kernel_fact))
+                        {
+                            selected = Some((condition.clone(), surface_fact, certified_fact));
+                            break;
+                        }
+                        refusal = format!(
+                            "surface branch condition `{}` did not lower to a certified path fact\n  lowered: `{}`\n  certified facts: {}",
+                            describe_click_proposition(&surface_fact),
+                            crate::surface::proof_diagnostics::render::render_proposition(
+                                &kernel_fact
+                            ),
+                            crate::surface::diagnostics::describe_kernel_propositions(facts),
+                        );
+                    }
+                    Err(error) => {
+                        refusal = format!(
+                            "could not lower the certified path condition `{}`: {}",
+                            describe_click_proposition(&surface_fact),
                             error.message()
-                        ));
-                        return;
+                        );
                     }
                 }
-                Ok(kernel_fact) => {
-                    construction.proof_certificate_builder.block(format!(
-                        "surface branch condition did not lower to a certified path fact\n  lowered: `{}`\n  certified facts: {}",
-                        crate::surface::proof_diagnostics::render::render_proposition(&kernel_fact),
-                        crate::surface::diagnostics::describe_kernel_propositions(facts),
-                    ));
-                    return;
-                }
-                Err(error) => {
-                    construction.proof_certificate_builder.block(format!(
-                        "could not lower the certified path condition: {}",
-                        error.message()
-                    ));
-                    return;
-                }
+            }
+            let Some((condition, surface_fact, certified_fact)) = selected else {
+                construction.proof_certificate_builder.block(refusal);
+                return;
+            };
+            if let Err(error) = construction
+                .surface_propositions
+                .record_lowering(&surface_fact, certified_fact)
+            {
+                construction.proof_certificate_builder.block(format!(
+                    "could not retain the certified path-condition form: {}",
+                    error.message()
+                ));
+                return;
             }
             construction
                 .proof_certificate_builder

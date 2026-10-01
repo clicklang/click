@@ -6725,8 +6725,17 @@ impl<'a> Proof<'a> {
         }
         // The statement runs in the whole proof context; nothing can supply
         // more than the step already sees, so its failure is the answer,
-        // with the step's diagnostic.
-        apply(self).map(Some)
+        // with the step's diagnostic. The exception is a statement whose
+        // successors are path cases: a case split on their facts supplies
+        // each case's facts, and that split belongs to the planner.
+        match apply(self) {
+            Ok(proof) => Ok(Some(proof)),
+            Err(error) if error.is_path_case_split() => {
+                check_verification_deadline()?;
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 

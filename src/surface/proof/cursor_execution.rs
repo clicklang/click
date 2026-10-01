@@ -408,6 +408,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
     complete_empty_branch: bool,
     mut construction: Option<Construction<'_>>,
     context: Option<&PureFactContext>,
+    path_cases: Option<&mut Vec<CertifiedConditionTransition>>,
 ) -> Result<bool, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -490,6 +491,16 @@ pub(super) fn execute_branch_step_from_frontier_position(
         true,
         context,
     )?;
+    // A condition reaching one truth value along several checked paths has
+    // more cases than a C `if` has arms. An exploring planner that asks for
+    // them splits on the paths' facts first; nothing is committed here yet.
+    if matches!(branch_step_policy, BranchStepPolicy::Explore)
+        && let Some(path_cases) = path_cases
+        && condition_paths_are_path_cases(&condition_transitions)
+    {
+        *path_cases = condition_transitions;
+        return Ok(false);
+    }
     let condition_was_proven = condition_transitions.len() == 1;
     if matches!(branch_step_policy, BranchStepPolicy::RequireProven)
         && condition_transitions.len() != 1
@@ -603,7 +614,7 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     })
                 })
             })
-            .unwrap_or(statement_condition);
+            .unwrap_or_else(|| statement_condition.clone());
         if let Some(construction) = construction.as_mut() {
             let environments = construction.environments;
             let restore = apply_construction_snapshot_view(
@@ -621,10 +632,11 @@ pub(super) fn execute_branch_step_from_frontier_position(
                 environments,
                 &ConstructionEvidence::CertifiedPathAssumption {
                     occurrence,
+                    fallback_condition: (condition != statement_condition)
+                        .then(|| statement_condition.clone()),
                     condition,
                     value: condition_transition.is_true,
                     facts: condition_transition.path_facts.clone(),
-                    theorem: condition_transition.theorem.clone(),
                 },
             );
             restore_construction_snapshot_view(
@@ -1771,6 +1783,7 @@ pub(super) fn execute_step_from_frontier_position(
         construction.as_mut().map(Construction::reborrow),
         None,
         None,
+        None,
     )
 }
 
@@ -2141,6 +2154,7 @@ pub(super) fn execute_step_successor_from_frontier_position(
         None,
         None,
         context,
+        None,
     )?;
     Ok(ExecutionPointStepSuccessor {
         execution: successor,
@@ -2161,6 +2175,7 @@ fn execute_step_from_frontier_position_selecting_path(
     mut construction: Option<Construction<'_>>,
     selected_path_fact: Option<&Proposition>,
     context: Option<&PureFactContext>,
+    path_cases: Option<&mut Vec<CertifiedStatementTransition>>,
 ) -> Result<Vec<Proposition>, ClickError> {
     let function_block = proof_context.function_block;
     let function = proof_context.function;
@@ -2218,6 +2233,7 @@ fn execute_step_from_frontier_position_selecting_path(
             false,
             construction.as_mut().map(Construction::reborrow),
             context,
+            None,
         )?;
         debug_assert!(entered);
         return Ok(Vec::new());
@@ -2260,6 +2276,7 @@ fn execute_step_from_frontier_position_selecting_path(
     // later `Throw` resume at the handler entry instead of terminating the
     // path; normal completion pops it with the tail like any other
     // continuation.
+    let mut descended_try = false;
     while let CStatement::TryCatchInt32 {
         try_body,
         binding,
@@ -2279,6 +2296,7 @@ fn execute_step_from_frontier_position_selecting_path(
             ),
             _ => break,
         };
+        descended_try = true;
         execution
             .core
             .frontier
@@ -2766,6 +2784,23 @@ fn execute_step_from_frontier_position_selecting_path(
         let throw_transition = transitions.remove(throw_index);
         pending_exceptional_call = Some((split, root_facts, throw_transition));
     }
+    // A statement whose checked successors differ only in their path facts
+    // -- a load that may or may not read the cell an earlier store wrote --
+    // is one C operation with several cases. A step never publishes those
+    // cases as hidden siblings; a planner that asks for them receives them
+    // unchanged and splits the proof on their conditions. Nothing has been
+    // committed yet, so the caller runs the statement again from this
+    // frontier on each side of that split.
+    if transitions.len() > 1
+        && !descended_try
+        && pending_exceptional_call.is_none()
+        && let Some(path_cases) = path_cases
+        && statement_successors_are_path_cases(&transitions)
+    {
+        execution.core.next_opaque_call = next_opaque_call_before_step;
+        *path_cases = transitions;
+        return Ok(Vec::new());
+    }
     if transitions.len() != 1 {
         if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
             let safe = transitions
@@ -2853,11 +2888,27 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind));
         }
-        return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}\n{}{}{}",
+        let path_case_split = statement_successors_are_path_cases(&transitions);
+        let case_split_guidance = if path_case_split {
+            let cases = transitions
+                .iter()
+                .map(PathCase::of_statement)
+                .collect::<Vec<_>>();
+            describe_path_case_split_guidance(
+                &cases,
+                available_pure_facts,
+                &current_state,
+                proof_context,
+            )
+        } else {
+            String::new()
+        };
+        let error = ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}\n{}{}{}{}",
             describe_c_statement_head(&step_statement),
             transitions.len(),
             describe_undecided_statement_successors(&transitions, parameters, arguments),
+            case_split_guidance,
             describe_multiple_statement_successors_guidance(&step_statement, transitions.len()),
             describe_proof_context(
                 &listed_context_pure_facts(available_pure_facts, context),
@@ -2866,7 +2917,12 @@ fn execute_step_from_frontier_position_selecting_path(
                 arguments,
                 &[]
             )
-        )));
+        ));
+        return Err(if path_case_split {
+            error.with_path_case_split()
+        } else {
+            error
+        });
     }
     let transition = transitions
         .into_iter()
@@ -3946,6 +4002,10 @@ pub(super) fn bounded_execute_from_frontier_position(
                 ))
             })?;
         if matches!(source_region.kind, SourceStatementKind::If { .. }) {
+            // The first arm asks for the condition's path cases: a condition
+            // reaching one truth value along two paths is split on the paths'
+            // own facts before any arm is entered.
+            let mut condition_cases = Vec::new();
             for take_then in [false, true] {
                 let mut branch = frontier.clone();
                 let entered = execute_branch_step_from_frontier_position(
@@ -3965,10 +4025,34 @@ pub(super) fn bounded_execute_from_frontier_position(
                             .expect("construction implies a branch sink"),
                     }),
                     None,
+                    if take_then {
+                        None
+                    } else {
+                        Some(&mut condition_cases)
+                    },
                 )?;
+                if !condition_cases.is_empty() {
+                    break;
+                }
                 if entered {
                     pending.push(branch);
                 }
+            }
+            if !condition_cases.is_empty() {
+                let cases = condition_cases
+                    .iter()
+                    .map(PathCase::of_condition)
+                    .collect::<Vec<_>>();
+                split_on_path_case_condition(
+                    frontier,
+                    &cases,
+                    proof_context,
+                    construction
+                        .as_ref()
+                        .map(|construction| construction.environments),
+                    &mut pending,
+                    "condition path",
+                )?;
             }
             continue;
         }
@@ -4003,92 +4087,20 @@ pub(super) fn bounded_execute_from_frontier_position(
                     matches!(transition.outcome, CStatementOutcome::Return { .. })
                 })
             {
-                let path_choices = transitions
+                let cases = transitions
                     .iter()
-                    .map(|transition| {
-                        switch_surface_path_choices(
-                            transition,
-                            &frontier.execution.core.state,
-                            proof_context,
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let choice_count = path_choices.iter().map(Vec::len).max().unwrap_or_default();
-                if choice_count == 0 || path_choices.iter().any(Vec::is_empty) {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` tactic {tactic_index}: `execute` could not construct checked proof branches for switch paths"
-                    )));
-                }
-                for (transition, choices) in transitions.iter().zip(path_choices) {
-                    if transition.path_facts.is_empty() {
-                        return Err(ClickError::new(format!(
-                            "`{claim_label}` tactic {tactic_index}: switch path had no checked path fact"
-                        )));
-                    }
-                    let mut branch = frontier.clone();
-                    if let Some(construction) = construction.as_ref() {
-                        let base_occurrence = branch.execution.core.next_path_choice;
-                        for (choice_index, (condition, value)) in choices.into_iter().enumerate() {
-                            construct_proof_step_for_planned_operation(
-                                &mut branch.execution,
-                                proof_context,
-                                branch
-                                    .sink
-                                    .as_mut()
-                                    .expect("construction implies a branch sink"),
-                                &frontier.execution.core.state,
-                                proof_context.function_block,
-                                proof_context.parsed_function.parameters(),
-                                proof_context.arguments,
-                                construction.environments,
-                                &ConstructionEvidence::CertifiedPathAssumption {
-                                    occurrence: base_occurrence + choice_index,
-                                    condition,
-                                    value,
-                                    facts: transition.path_facts.clone(),
-                                    theorem: transition.theorem.clone(),
-                                },
-                            );
-                        }
-                        for fact in &transition.path_facts {
-                            branch
-                                .execution
-                                .presentation
-                                .surface_record
-                                .certificate_facts
-                                .insert(fact.clone());
-                            if !branch.pure_facts.contains(fact) {
-                                branch.pure_facts.push(fact.clone());
-                            }
-                        }
-                        branch.execution.core.next_path_choice += choice_count;
-                    }
-                    execute_step_from_frontier_position_selecting_path(
-                        &mut branch.execution,
-                        proof_context,
-                        &mut branch.pure_facts,
-                        "execute",
-                        prerequisite_policy,
-                        StatementFactTransportPolicy::Automatic,
-                        LoopStepPolicy::EnterBody,
-                        construction.as_ref().map(|construction| Construction {
-                            environments: construction.environments,
-                            sink: branch
-                                .sink
-                                .as_mut()
-                                .expect("construction implies a branch sink"),
-                        }),
-                        None,
-                        None,
-                    )
-                    .map_err(|error| {
-                        ClickError::new(format!(
-                            "`{claim_label}` tactic {tactic_index}: `execute` failed after switch path split: {}",
-                            error.message()
-                        ))
-                    })?;
-                    pending.push(branch);
-                }
+                    .map(PathCase::of_statement)
+                    .collect::<Vec<_>>();
+                split_on_path_case_condition(
+                    frontier.clone(),
+                    &cases,
+                    proof_context,
+                    construction
+                        .as_ref()
+                        .map(|construction| construction.environments),
+                    &mut pending,
+                    "switch path",
+                )?;
                 continue;
             }
         }
@@ -4121,7 +4133,8 @@ pub(super) fn bounded_execute_from_frontier_position(
             continue;
         }
 
-        execute_step_from_frontier_position(
+        let mut path_cases = Vec::new();
+        execute_step_from_frontier_position_selecting_path(
             &mut frontier.execution,
             proof_context,
             &mut frontier.pure_facts,
@@ -4136,6 +4149,9 @@ pub(super) fn bounded_execute_from_frontier_position(
                     .as_mut()
                     .expect("construction implies a frontier sink"),
             }),
+            None,
+            None,
+            Some(&mut path_cases),
         )
         .map_err(|error| {
             ClickError::new(format!(
@@ -4143,6 +4159,23 @@ pub(super) fn bounded_execute_from_frontier_position(
                 error.message()
             ))
         })?;
+        if !path_cases.is_empty() {
+            let cases = path_cases
+                .iter()
+                .map(PathCase::of_statement)
+                .collect::<Vec<_>>();
+            split_on_path_case_condition(
+                frontier,
+                &cases,
+                proof_context,
+                construction
+                    .as_ref()
+                    .map(|construction| construction.environments),
+                &mut pending,
+                "path case",
+            )?;
+            continue;
+        }
         pending.push(frontier);
     }
 
@@ -4177,6 +4210,75 @@ pub(super) fn bounded_execute_from_frontier_position(
     Ok(())
 }
 
+/// Whether several checked successors of one statement are the cases of a
+/// path split: each completes the statement normally or returns, and each
+/// assumes a path fact some other successor does not, so the facts tell the
+/// cases apart.
+fn statement_successors_are_path_cases(transitions: &[CertifiedStatementTransition]) -> bool {
+    let facts = transitions
+        .iter()
+        .map(|transition| transition.path_facts.as_slice())
+        .collect::<Vec<_>>();
+    transitions.iter().all(|transition| {
+        matches!(
+            transition.outcome,
+            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+        ) && !distinguishing_path_facts(&transition.path_facts, &facts).is_empty()
+    })
+}
+
+/// Whether the checked paths of one C condition are more than its two truth
+/// values: some truth value is reached along two paths, as when the condition
+/// short-circuits or reads a cell an earlier store may have written. Only a
+/// case split on the paths' own facts gives each path its own arm; a C
+/// `branch` has one arm per truth value.
+fn condition_paths_are_path_cases(transitions: &[CertifiedConditionTransition]) -> bool {
+    let facts = transitions
+        .iter()
+        .map(|transition| transition.path_facts.as_slice())
+        .collect::<Vec<_>>();
+    [false, true].into_iter().any(|value| {
+        transitions
+            .iter()
+            .filter(|transition| transition.is_true == value)
+            .count()
+            > 1
+    }) && transitions
+        .iter()
+        .all(|transition| !distinguishing_path_facts(&transition.path_facts, &facts).is_empty())
+}
+
+/// The facts in `facts` that not every case in `cases` assumes: the
+/// conditions that select this case.
+fn distinguishing_path_facts<'t>(
+    facts: &'t [Proposition],
+    cases: &[&[Proposition]],
+) -> Vec<&'t Proposition> {
+    facts
+        .iter()
+        .filter(|fact| !cases.iter().all(|other| other.contains(fact)))
+        .collect()
+}
+
+/// One case of a path split: the checked path facts that select it.
+struct PathCase<'t> {
+    path_facts: &'t [Proposition],
+}
+
+impl<'t> PathCase<'t> {
+    fn of_statement(transition: &'t CertifiedStatementTransition) -> Self {
+        Self {
+            path_facts: &transition.path_facts,
+        }
+    }
+
+    fn of_condition(transition: &'t CertifiedConditionTransition) -> Self {
+        Self {
+            path_facts: &transition.path_facts,
+        }
+    }
+}
+
 fn frontier_statement(
     execution: &ExecutionProofState,
     function: &CFunction,
@@ -4194,28 +4296,185 @@ fn frontier_statement(
     split_next_source_operation(&remaining).map(|(statement, _)| statement)
 }
 
-fn switch_surface_path_choices(
-    transition: &CertifiedStatementTransition,
+/// The condition a case split of `cases` splits on first: a distinguishing
+/// condition fact that some case assumes true and another false, that the
+/// facts do not already decide, and that Click can spell in source terms.
+/// A condition every case decides is preferred, in the cases' order: it is
+/// the one the operation consults first on every path (`x > 0` in
+/// `x > 0 && y > 0`, the address comparison before a load reads the cell it
+/// selects), so the facts of each side are then the facts that side's paths
+/// have. Splitting leaves fewer cases on each side, so repeating the split
+/// separates every case.
+fn path_case_split_condition(
+    cases: &[PathCase<'_>],
+    available: &[Proposition],
     state: &CState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Result<Vec<(ClickProposition, bool)>, ClickError> {
-    transition
-        .path_facts
+) -> Option<(ConditionTerm, ClickProposition)> {
+    let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
+    let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
+        case.path_facts
+            .contains(&Proposition::ConditionIs(condition.clone(), value))
+    };
+    let candidates = cases
         .iter()
+        .flat_map(|case| distinguishing_path_facts(case.path_facts, &facts))
         .filter_map(|fact| {
-            let Proposition::ConditionIs(condition, value) = fact else {
+            let Proposition::ConditionIs(condition, _) = fact else {
                 return None;
             };
-            let positive = Proposition::ConditionIs(condition.clone(), true);
+            let splits = [true, false]
+                .into_iter()
+                .all(|value| cases.iter().any(|case| decides(case, condition, value)));
+            let undecided = [true, false].into_iter().all(|value| {
+                !available.contains(&Proposition::ConditionIs(condition.clone(), value))
+            });
+            (splits && undecided).then_some(condition)
+        })
+        .collect::<Vec<_>>();
+    let decided_by_every_case = |condition: &ConditionTerm| {
+        cases
+            .iter()
+            .all(|case| decides(case, condition, true) || decides(case, condition, false))
+    };
+    candidates
+        .iter()
+        .filter(|condition| decided_by_every_case(condition))
+        .chain(
+            candidates
+                .iter()
+                .filter(|condition| !decided_by_every_case(condition)),
+        )
+        .find_map(|condition| {
             let surface = synthesize_surface_proposition(
-                &positive,
+                &Proposition::ConditionIs((*condition).clone(), true),
                 proof_context.parsed_function.parameters(),
                 proof_context.arguments,
                 state,
             )?;
-            Some(Ok((surface, *value)))
+            Some(((*condition).clone(), surface))
+        })
+}
+
+/// The cases of a split, each as the source-vocabulary facts that select it.
+fn describe_path_cases(
+    cases: &[PathCase<'_>],
+    proof_context: &ExecutionProofContext<'_>,
+) -> String {
+    let parameters = proof_context.parsed_function.parameters();
+    let arguments = proof_context.arguments;
+    let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
+    cases
+        .iter()
+        .enumerate()
+        .map(|(index, case)| {
+            let selecting = distinguishing_path_facts(case.path_facts, &facts)
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            format!(
+                "\n  case {}: {}",
+                index + 1,
+                describe_pure_facts_for_diagnostic(&selecting, parameters, arguments)
+            )
         })
         .collect()
+}
+
+/// What to write when a simple tactic meets a split it does not make: the
+/// proof `if` on the condition a planner would split on first, which gives
+/// each side its own frontier.
+fn describe_path_case_split_guidance(
+    cases: &[PathCase<'_>],
+    available: &[Proposition],
+    state: &CState,
+    proof_context: &ExecutionProofContext<'_>,
+) -> String {
+    let split = match path_case_split_condition(cases, available, state, proof_context) {
+        Some((_, condition)) => format!(
+            "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\n",
+            crate::surface::diagnostics::describe_click_proposition(&condition)
+        ),
+        None => "No case condition has a Click spelling, so the cases cannot yet be split in source terms.\n".to_string(),
+    };
+    format!(
+        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}`execute()` makes this split itself.\n",
+        cases.len(),
+    )
+}
+
+/// Splits `frontier` before a statement or C `if` whose checked paths are
+/// cases told apart by their facts (a `switch`'s arms, a short-circuit
+/// condition's paths, a load's may-alias cases): a proof-level case split on
+/// one condition that separates them, pushing one frontier per polarity, each
+/// still before the same operation and assuming its side of the condition.
+/// The operation then runs again under that assumption, splitting again while
+/// cases remain, so every case continues with the rest of the block under its
+/// own assumptions.
+fn split_on_path_case_condition(
+    frontier: BoundedProofFrontier,
+    cases: &[PathCase<'_>],
+    proof_context: &ExecutionProofContext<'_>,
+    environments: Option<ConstructionEnvironments<'_>>,
+    pending: &mut Vec<BoundedProofFrontier>,
+    case_kind: &str,
+) -> Result<(), ClickError> {
+    let claim_label = proof_context.claim_label;
+    let tactic_index = proof_context.tactic_index;
+    let Some((condition, surface)) = path_case_split_condition(
+        cases,
+        &frontier.pure_facts,
+        &frontier.execution.core.state,
+        proof_context,
+    ) else {
+        let statement = frontier_statement(&frontier.execution, proof_context.function)
+            .map_or_else(
+                |message| message,
+                |statement| describe_c_statement_head(&statement),
+            );
+        return Err(ClickError::new(format!(
+            "`{claim_label}` tactic {tactic_index}: `execute` could not split `{statement}` into its {} {case_kind}s: no condition that tells them apart has a Click spelling{}",
+            cases.len(),
+            describe_path_cases(cases, proof_context),
+        )));
+    };
+    for value in [true, false] {
+        let mut branch = frontier.clone();
+        let fact = Proposition::ConditionIs(condition.clone(), value);
+        if let Some(environments) = environments {
+            let occurrence = branch.execution.core.next_path_choice;
+            construct_proof_step_for_planned_operation(
+                &mut branch.execution,
+                proof_context,
+                branch
+                    .sink
+                    .as_mut()
+                    .expect("construction implies a branch sink"),
+                &frontier.execution.core.state,
+                proof_context.function_block,
+                proof_context.parsed_function.parameters(),
+                proof_context.arguments,
+                environments,
+                &ConstructionEvidence::CertifiedPathAssumption {
+                    occurrence,
+                    condition: surface.clone(),
+                    fallback_condition: None,
+                    value,
+                    facts: vec![fact.clone()],
+                },
+            );
+            branch
+                .execution
+                .presentation
+                .surface_record
+                .certificate_facts
+                .insert(fact.clone());
+            branch.execution.core.next_path_choice += 1;
+        }
+        branch.pure_facts.push(fact);
+        pending.push(branch);
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

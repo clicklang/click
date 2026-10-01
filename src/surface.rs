@@ -5702,6 +5702,10 @@ pub struct ClickError {
     search_failures: Option<std::sync::Arc<Vec<proof_diagnostics::ProofSearchFailure>>>,
     unresolved_requirement: Option<std::sync::Arc<UnresolvedRequirement>>,
     missing_tactic_requirement: Option<std::sync::Arc<String>>,
+    /// The refused statement or condition has several checked successors
+    /// that are cases told apart by their path facts. A simple tactic does
+    /// not split on them; a planner that can split may take over.
+    path_case_split: bool,
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
@@ -6916,6 +6920,7 @@ impl ClickError {
             search_failures: None,
             unresolved_requirement: None,
             missing_tactic_requirement: None,
+            path_case_split: false,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
     }
@@ -6941,6 +6946,7 @@ impl ClickError {
             search_failures: None,
             unresolved_requirement: None,
             missing_tactic_requirement: None,
+            path_case_split: false,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
     }
@@ -7268,6 +7274,18 @@ impl ClickError {
         self
     }
 
+    /// Marks a refusal whose statement or condition has path cases that a
+    /// case split on their facts would separate.
+    pub(crate) fn with_path_case_split(mut self) -> Self {
+        self.path_case_split = true;
+        self
+    }
+
+    /// Whether this refusal is a simple tactic declining to split path cases.
+    pub(crate) fn is_path_case_split(&self) -> bool {
+        self.path_case_split
+    }
+
     /// The bounded cause text, without rendering proof state or premises.
     pub(crate) fn raw_summary(&self) -> &str {
         &self.message
@@ -7321,6 +7339,7 @@ impl ClickError {
             search_failures: self.search_failures,
             unresolved_requirement: self.unresolved_requirement,
             missing_tactic_requirement: self.missing_tactic_requirement,
+            path_case_split: self.path_case_split,
             timing_tactic: self.timing_tactic,
         }
     }
@@ -7353,6 +7372,7 @@ impl Clone for ClickError {
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
             missing_tactic_requirement: self.missing_tactic_requirement.clone(),
+            path_case_split: self.path_case_split,
             timing_tactic: self.timing_tactic.clone(),
         }
     }
@@ -7367,6 +7387,7 @@ impl PartialEq for ClickError {
             && self.search_failures == other.search_failures
             && self.unresolved_requirement == other.unresolved_requirement
             && self.missing_tactic_requirement == other.missing_tactic_requirement
+            && self.path_case_split == other.path_case_split
             && self.timing_tactic == other.timing_tactic
     }
 }

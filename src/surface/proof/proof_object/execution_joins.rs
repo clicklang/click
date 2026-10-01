@@ -182,6 +182,60 @@ impl<'a> Proof<'a> {
                 context.claim_label, context.tactic_index
             ),
         )?;
+        // A `branch` has one arm per truth value. A condition that reaches one
+        // value along several checked paths -- a short-circuit, or a load
+        // that may read a cell an earlier store wrote -- has more cases than
+        // arms, and one arm cannot stand for two paths with different facts.
+        // Refuse here, naming the cases, rather than join an arm that covers
+        // only one of them.
+        if let Some(value) = [true, false].into_iter().find(|value| {
+            transitions
+                .iter()
+                .filter(|transition| transition.is_true == *value)
+                .count()
+                > 1
+        }) {
+            let parameters = context.parsed_function.parameters();
+            let path_facts = transitions
+                .iter()
+                .map(|transition| transition.path_facts.as_slice())
+                .collect::<Vec<_>>();
+            let cases = transitions
+                .iter()
+                .enumerate()
+                .map(|(index, transition)| {
+                    let selecting = transition
+                        .path_facts
+                        .iter()
+                        .filter(|fact| !path_facts.iter().all(|other| other.contains(fact)))
+                        .cloned()
+                        .collect::<Vec<_>>();
+                    format!(
+                        "\n  path {}: {} {}",
+                        index + 1,
+                        if transition.is_true {
+                            "true when"
+                        } else {
+                            "false when"
+                        },
+                        crate::surface::diagnostics::describe_pure_facts_for_diagnostic(
+                            &selecting,
+                            parameters,
+                            context.arguments,
+                        )
+                    )
+                })
+                .collect::<String>();
+            return Err(self.step_error(format!(
+                "`branch` cannot split the C `if` at statement({statement_index}): its condition `{}` is {value} along {} checked paths, and `branch` has one arm per truth value{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; in each case the condition has one path per arm. `execute()` makes this split itself.",
+                crate::surface::diagnostics::describe_c_expression(&condition),
+                transitions
+                    .iter()
+                    .filter(|transition| transition.is_true == value)
+                    .count(),
+            ))
+            .with_path_case_split());
+        }
         let mut arms: [Option<PreparedExecutionArm>; 2] = [None, None];
         for transition in transitions {
             let take_then = transition.is_true;
@@ -2461,7 +2515,14 @@ impl<'a> Proof<'a> {
                     .split_focused_call_outcomes()?
                     .map(|(split, record)| (split, record, true))
             } else if proof.is_at_execution_branch()? {
-                let (split, record) = proof.split_focused_execution_branch()?;
+                // A condition with path cases needs a case split on their
+                // facts before a C `branch` applies; that split belongs to
+                // the planner, so this linear search declines.
+                let (split, record) = match proof.split_focused_execution_branch() {
+                    Ok(split) => split,
+                    Err(error) if error.is_path_case_split() => return Ok(None),
+                    Err(error) => return Err(error),
+                };
                 Some((split, record, false))
             } else {
                 None
@@ -2739,17 +2800,18 @@ impl<'a> Proof<'a> {
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
     ) -> Result<Self, ClickError> {
-        // A native C `switch` is one checked statement, but symbolic dispatch
-        // still needs a proof-level case split so each generated arm can
-        // supply the selected case fact to that statement step. The ordinary
-        // planner `if` below instead enters an actual C `if` arm, including
-        // its branch-entry statement steps.
-        if self.execution_frontier_is_switch()? {
-            return self.clone().apply_execution_if_with(
-                condition.clone(),
-                |proof| proof.apply_planned_execution_steps_inner(then_steps),
-                |proof| proof.apply_planned_execution_steps_inner(else_steps),
-            );
+        // A planner `if` at a C `if` whose condition has one path per truth
+        // value enters an actual C `if` arm, including its branch-entry
+        // statement steps. Every other planner `if` is a proof-level case
+        // split: a native C `switch` is one checked statement whose symbolic
+        // dispatch needs each generated arm to supply its selected case fact;
+        // a statement or condition with path cases (a load that may read an
+        // earlier store's cell, a short-circuit condition) needs each case's
+        // facts before its one successor exists. The planner splits such an
+        // operation one condition at a time and re-runs it on each side, so
+        // the same question decides every nested planner `if` here as well.
+        if self.execution_frontier_is_switch()? || self.execution_frontier_has_path_cases()? {
+            return self.apply_planned_case_split(condition, then_steps, else_steps);
         }
         let (split, record) = self.split_focused_execution_branch()?;
         let mut advanced = split;
@@ -2775,6 +2837,72 @@ impl<'a> Proof<'a> {
                 .apply_execution_steps_in_arm(&record, &steps[entry_steps..], false)?;
         }
         advanced.join_focused_execution_split(&record, false, None)
+    }
+
+    /// Applies a planner `if` as a proof-level case split.
+    fn apply_planned_case_split(
+        &self,
+        condition: &ClickProposition,
+        then_steps: &[ProofStep],
+        else_steps: &[ProofStep],
+    ) -> Result<Self, ClickError> {
+        self.clone().apply_execution_if_with(
+            condition.clone(),
+            |proof| proof.apply_planned_execution_steps_inner(then_steps),
+            |proof| proof.apply_planned_execution_steps_inner(else_steps),
+        )
+    }
+
+    /// Whether the next C operation at the focused frontier has path cases a
+    /// C `branch` cannot represent: a plain statement (whose cases a planner
+    /// `if` can only select by their facts), or a C `if` whose condition
+    /// reaches one truth value along several checked paths.
+    fn execution_frontier_has_path_cases(&self) -> Result<bool, ClickError> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return Ok(false);
+        };
+        let Some(execution) = self.execution() else {
+            return Ok(false);
+        };
+        if matches!(
+            execution.core.frontier.position,
+            FrontierPosition::FunctionExit { .. } | FrontierPosition::RegionBoundary
+        ) {
+            return Ok(false);
+        }
+        let Ok((_, current_state, statement, remaining)) =
+            next_top_level_statement_from_frontier_position(
+                execution.view(context),
+                &execution.core.state,
+                context.function,
+                context.arguments,
+                context.claim_label,
+                context.tactic_index,
+                "planned case split",
+            )
+        else {
+            return Ok(false);
+        };
+        let CStatement::If { .. } = &statement else {
+            return Ok(true);
+        };
+        let (_, transitions) = certified_proof_condition_split(
+            &current_state,
+            self.facts(),
+            &statement,
+            remaining.as_ref(),
+            &format!(
+                "`{}` tactic {}: planned case split",
+                context.claim_label, context.tactic_index
+            ),
+        )?;
+        Ok([true, false].into_iter().any(|value| {
+            transitions
+                .iter()
+                .filter(|transition| transition.is_true == value)
+                .count()
+                > 1
+        }))
     }
 
     fn execution_frontier_is_switch(&self) -> Result<bool, ClickError> {
