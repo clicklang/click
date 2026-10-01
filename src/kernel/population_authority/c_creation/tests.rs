@@ -2002,10 +2002,6 @@ mod wildcard_scope_tests {
             held.checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
                 .is_err()
         );
-        assert!(
-            held.checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
-                .is_err()
-        );
         let returned = held
             .transfer_call_fact(&helper, &imported, &member, false)
             .unwrap();
@@ -2058,6 +2054,91 @@ mod wildcard_scope_tests {
         assert!(samples[0] > 0, "{samples:?}");
         for (index, work) in samples.iter().enumerate() {
             assert!(*work <= samples[0] + 64 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
+    fn wildcard_helper_death_checks_identity_custody_and_single_transition() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_population(&scope, &member)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap();
+        assert!(matches!(count.entry_count, Bitvector32Term::Variable(_)));
+        assert_eq!(count.entry_owned_members, 1);
+        let death = |events: &CreationEvents, candidate: &ResourceDescription| {
+            events.checked_member_exchange(&PointerBlock::ExternalArgument, candidate, false)
+        };
+        let mut arguments = member.arguments().to_vec();
+        arguments[1] = int32(8).into();
+        let different =
+            ResourceDescription::new("slot".into(), arguments.into(), member.schema().clone());
+        assert!(death(&entry, &different).is_err());
+        assert!(death(&entry, &opaque_scope(1).1).is_err());
+        let helper = entry.enter_call();
+        let authority_away = entry
+            .transfer_call_fact(&entry, &helper, &scope, true)
+            .unwrap();
+        assert!(death(&authority_away, &member).is_err());
+        let member_away = entry
+            .transfer_call_fact(&entry, &helper, &member, false)
+            .unwrap();
+        assert!(death(&member_away, &member).is_err());
+        let (spent, certificate) = death(&entry, &member).unwrap();
+        assert!(certificate.matches(&entry, &spent, &member, false));
+        assert!(!certificate.matches(&entry, &spent, &different, false));
+        assert!(!certificate.matches(&entry, &spent, &member, true));
+        assert!(!spent.owns_imported_population_member(&member));
+        let after = spent.observe_symbolic(&scope).unwrap();
+        assert_eq!(after.entry_count, count.entry_count);
+        assert_eq!(after.delta, -1);
+        assert_eq!(
+            spent.imported_member_delta_since_entry(&member),
+            Some((false, Bitvector32Term::Constant(1)))
+        );
+        assert!(
+            spent
+                .imported_member_delta_since_entry(&different)
+                .is_none()
+        );
+        assert!(death(&spent, &member).is_err());
+        assert!(
+            spent
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &member, true)
+                .is_err()
+        );
+        assert!(
+            spent
+                .checked_establish(&PointerBlock::ExternalArgument, &scope)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn wildcard_helper_death_does_not_scan_unrelated_imports() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, member) = opaque_scope(0);
+            let mut entry = CreationEvents::new()
+                .import_opaque_wildcard_population(&scope, &member)
+                .unwrap();
+            for index in 1..=size {
+                entry = entry
+                    .import_opaque_wildcard_authority(&opaque_scope(index).0)
+                    .unwrap();
+            }
+            let (spent, work) = crate::persistent::measure_persistent_work(|| {
+                entry
+                    .checked_member_exchange(&PointerBlock::ExternalArgument, &member, false)
+                    .unwrap()
+                    .0
+            });
+            assert_eq!(spent.observe_symbolic(&scope).unwrap().delta, -1);
+            assert_eq!(spent.observe_symbolic(&opaque_scope(1).0).unwrap().delta, 0);
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 32 * index, "{samples:?}");
         }
     }
 

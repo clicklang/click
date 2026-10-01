@@ -448,8 +448,12 @@ indexed transfer beside unrelated imports. Authority-only helper inputs now
 support one field-free concrete member birth using ordinary `produces`, including
 nested helpers. The checked update requires a count overflow bound, records the
 actual created member, and independently checks the promised output identity.
-Caller regressions retain two members while receiving the third. Wildcard member
-consumption inside helpers, identified proof fields, exact subsets, and bounded-pool
+Caller regressions retain two members while receiving the third. Helpers also
+consume their one exact entry member using ordinary `consumes` and `unfold`,
+including nested calls. Their arbitrary total falls by one while caller-retained
+members remain owned. Return certification requires the actual checked decrement,
+and regressions reject missing consumption, wrong identity or pool, missing
+authority, and reuse after the call. Identified proof fields, exact subsets, and bounded-pool
 migration remain separate subsequent changes.
 
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a

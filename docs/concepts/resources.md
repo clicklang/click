@@ -450,10 +450,30 @@ helpers use the same transfer. This initial creation support admits one birth
 from an authority-only input; it does not replace a borrowed member or consume
 one.
 
+The corresponding consumption helper borrows authority and takes one member:
+
+<!-- verified-example: mdtests/authority_wildcard_consume_helper.md -->
+```click
+void release(int32* pool, int32* member) {
+    owns authority(slot(pool, _));
+    consumes slot(pool, member);
+    ensures count(slot(pool, _)) == old(count(slot(pool, _))) - 1;
+}
+```
+
+Its proof uses `unfold(slot(pool, member))` to consume that exact member, or
+delegates consumption to a checked nested helper. Holding the input member
+establishes that the arbitrary entry total is at least one, so decrementing
+needs no additional bound. Return checks the member's checked consumption;
+merely declaring `consumes` and returning authority does not suffice. The
+caller retains its other members, recovers authority, and observes the total
+decreased by one. The consumed member cannot be used again. This initial
+support admits one consumption of the entry member, without replacement or
+multiple updates inside the helper.
+
 This scope support covers field-free members, aggregate wildcard observations,
 and helper contracts that borrow and return one concrete member with their
-authority or create one from an authority-only input. Consuming wildcard
-members inside helpers, fixed
+authority, consume the entry member, or create one from an authority-only input. Fixed
 trailing arguments in authority patterns, exact subset observations, and
 field-bearing members remain future work.
 
