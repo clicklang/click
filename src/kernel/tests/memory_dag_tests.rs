@@ -6,6 +6,9 @@ use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
 fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
+    // The load is an `int32` one: a stored value answers only for a read of
+    // its own width, and an unrecorded width is the widest scalar access.
+    crate::kernel::eval::declare_load_access_width(&arc_pointer(4), 4);
     let index = Bitvector32Term::Variable(Variable(971));
     let value = Bitvector32Term::Variable(Variable(972));
     let write = Pointer {
@@ -94,6 +97,7 @@ fn rewritten_goal_does_not_reuse_an_ambient_equality_for_a_bound_variable() {
 
 #[test]
 fn rewritten_store_witness_work_scales_with_selected_memory_path() {
+    crate::kernel::eval::declare_load_access_width(&arc_pointer(4), 4);
     for size in [1, 2, 4, 8] {
         let value = Bitvector32Term::Constant(17);
         let mut memory = CMemory::new()
@@ -3489,5 +3493,68 @@ fn read_identity_is_immutable_when_a_snapshot_was_interned_before_its_edge() {
         current.read_identity(),
         before,
         "late annotation cannot change existing graph keys"
+    );
+}
+
+/// A store the cell walk stops at answers for a read only when it starts at
+/// the read's address and is exactly as wide: a one-byte store inside a
+/// four-byte read, and a four-byte store around a one-byte read, write bytes
+/// the read returns without being its value. The exact store is the positive
+/// control.
+#[test]
+fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
+    let bare = PureFactContext::new();
+    let block = "resolved-width-memory";
+    let at = |offset: i64| Pointer {
+        block: block.into(),
+        offset: PointerOffsetTerm::Constant(offset),
+    };
+    let base = CMemory::new().with_block(block, 16);
+    let stored_at = |write: Pointer, value: CValue| {
+        crate::kernel::intern_c_memory_ref(
+            &base
+                .clone()
+                .without_possible_aliasing_cells(&write, value.byte_width(), &bare)
+                .store(write, value),
+        )
+    };
+    let resolves_to_seven = |memory: &SharedCMemory, read: &Pointer| {
+        let seven = Bitvector32Term::Constant(7);
+        let load = Bitvector32Term::MemoryLoad(memory.clone(), Box::new(read.clone()));
+        let resolved = crate::kernel::memory_provenance::resolve_load_along_memory_derivations(
+            memory, read, &bare,
+        );
+        let equal =
+            crate::kernel::explicit_atomic_equality_from_memory_derivations(&load, &seven, &bare);
+        assert_eq!(
+            resolved.as_ref() == Some(&seven),
+            equal,
+            "both explicit routes read one answer off one walk"
+        );
+        equal
+    };
+
+    let wide_read = at(0);
+    crate::kernel::eval::declare_load_access_width(&wide_read, 4);
+    let narrow_store = stored_at(at(1), CValue::UInt8(Bitvector32Term::Constant(7)));
+    assert!(
+        !resolves_to_seven(&narrow_store, &wide_read),
+        "a byte stored inside a four-byte read is one of its bytes, not its value"
+    );
+
+    let narrow_read = at(9);
+    crate::kernel::eval::declare_load_access_width(&narrow_read, 1);
+    let wide_store = stored_at(at(8), CValue::Int32(Bitvector32Term::Constant(7)));
+    assert!(
+        !resolves_to_seven(&wide_store, &narrow_read),
+        "a four-byte store around a one-byte read holds other bytes than that read returns"
+    );
+
+    let exact_read = at(4);
+    crate::kernel::eval::declare_load_access_width(&exact_read, 4);
+    let exact_store = stored_at(at(4), CValue::Int32(Bitvector32Term::Constant(7)));
+    assert!(
+        resolves_to_seven(&exact_store, &exact_read),
+        "a store of the read's own address and width is the read's value"
     );
 }

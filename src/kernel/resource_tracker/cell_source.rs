@@ -23,7 +23,11 @@ use crate::kernel::reasoning::*;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum MemoryDagCell {
     /// `node`'s derivation is a `Store` whose pointer is provably the loaded
-    /// one, so the load reads `value`.
+    /// one and whose value is exactly as wide as the read, so the load reads
+    /// `value` ([`write_supplies_read`]). A store that only *reaches* the
+    /// read's bytes — part of them, or more than them — stops the walk as
+    /// [`Self::Unwritten`] at the node it produced: no extraction rule turns
+    /// its value into the bytes the read returns.
     Stored {
         node: SharedCMemory,
         value: CValue,
@@ -526,11 +530,27 @@ impl MemoryDagCell {
         }
     }
 
-    /// The concrete value the lookup pins down, when it pins one down.
-    pub(in crate::kernel) fn resolved_value(&self, pointer: &Pointer) -> Option<CValue> {
+    /// The concrete value the lookup pins down for a `bytes`-byte read at
+    /// `pointer`, when it pins one down.
+    ///
+    /// `bytes` must be the width the walk was asked about. A stored value is
+    /// one by construction ([`write_supplies_read`]); a cell the stopping
+    /// snapshot materialized at this exact address answers only when it is
+    /// exactly as wide as the read, for the same reason: a cell of another
+    /// width holds other bytes than the read returns.
+    pub(in crate::kernel) fn resolved_value(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+    ) -> Option<CValue> {
         match self {
-            Self::Stored { value, .. } => Some(value.clone()),
-            Self::Unwritten { node, .. } => node.known_value(pointer),
+            Self::Stored { value, .. } => {
+                debug_assert_eq!(value.byte_width(), bytes);
+                (value.byte_width() == bytes).then(|| value.clone())
+            }
+            Self::Unwritten { node, .. } => node
+                .known_value(pointer)
+                .filter(|value| value.byte_width() == bytes),
         }
     }
 
@@ -884,6 +904,36 @@ fn range_structurally_covers_allocation(
     }
 }
 
+/// Whether a write of `value` at `write` supplies exactly the value a
+/// `bytes`-byte read at `pointer` returns: it starts at the read's address
+/// and is exactly as wide.
+///
+/// This is the one check every route that reads a value off the recorded
+/// history spends. A write the walk stops at only *reaches* the read when the
+/// two share a byte, and that is how a two-byte store's value was once read
+/// back as a four-byte load inside which it landed. The kernel has no rule
+/// that extracts a narrower read from a wider write or assembles a wider read
+/// from a narrower one, so anything other than an exact match pins nothing;
+/// the read is then whatever the produced snapshot holds there.
+///
+/// The read's width is the recorded access width at its address, since a
+/// load term carries no width or type. Signedness at one width is therefore
+/// not something this check can see: an `int8` value's term is sign-extended
+/// where a `uint8` read's is not.
+pub(in crate::kernel) fn write_supplies_read(
+    write: &Pointer,
+    value: &CValue,
+    pointer: &Pointer,
+    bytes: u32,
+    assumptions: &PureFactContext,
+) -> bool {
+    value.byte_width() == bytes
+        && (super::step_effect::write_is_at_read_address(write, pointer, assumptions)
+            || write.block == pointer.block
+                && crate::kernel::reasoning::memory_resolution::constant_byte_shift(write, pointer)
+                    == Some(0))
+}
+
 pub(in crate::kernel) fn memory_dag_cell_source(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -965,21 +1015,27 @@ fn memory_dag_cell_source_walk(
                             &evidence,
                         )
                     });
-                if let Some(super::step_effect::SeededCellEffect::Written(_, value)) = seeded {
+                let written = match (seeded, derivation.as_ref()) {
+                    (Some(super::step_effect::SeededCellEffect::Written(write, value)), _) => {
+                        Some((write, value))
+                    }
+                    (
+                        None,
+                        CMemoryDerivation::Store {
+                            pointer: write,
+                            value,
+                            ..
+                        },
+                    ) => Some((write.clone(), value.clone())),
+                    _ => None,
+                };
+                if let Some((write, value)) = written
+                    && write_supplies_read(&write, &value, pointer, bytes, assumptions)
+                {
                     return (
                         MemoryDagCell::Stored {
                             node: current,
                             value,
-                            path,
-                        },
-                        CellWalkStop::Affected,
-                    );
-                }
-                if let CMemoryDerivation::Store { value, .. } = derivation.as_ref() {
-                    return (
-                        MemoryDagCell::Stored {
-                            node: current,
-                            value: value.clone(),
                             path,
                         },
                         CellWalkStop::Affected,

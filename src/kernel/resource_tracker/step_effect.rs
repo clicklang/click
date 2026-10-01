@@ -498,20 +498,7 @@ fn store_cell_effect(
     let hop = |justification| StepEffect::Separate(Separation::Cell(justification));
     let unknown =
         || StepEffect::NotShownSeparate(separation_check(step, Resource::Cell { pointer, bytes }));
-    if write == pointer
-        || explicit_dag_check_active()
-            && write.block == pointer.block
-            && pointer_offsets_match_from_memory_derivations(
-                &write.offset,
-                &pointer.offset,
-                assumptions,
-            )
-        || write.block == pointer.block
-            && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
-                write.offset.clone(),
-                pointer.offset.clone(),
-            )) == Some(true)
-    {
+    if write_is_at_read_address(write, pointer, assumptions) {
         return StepEffect::Affected;
     }
     // The ladders below prove the two ADDRESSES are different. That
@@ -605,6 +592,31 @@ fn store_cell_effect(
     } else {
         unknown()
     }
+}
+
+/// Whether a write's address is provably the read's own address: the first
+/// rung of the `Store` arm of [`cell_effect`], and the address half of
+/// [`super::cell_source::write_supplies_read`]. Overlapping bytes are a
+/// different, weaker fact — a store can reach a read without starting where
+/// it starts.
+pub(in crate::kernel) fn write_is_at_read_address(
+    write: &Pointer,
+    pointer: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    write == pointer
+        || explicit_dag_check_active()
+            && write.block == pointer.block
+            && pointer_offsets_match_from_memory_derivations(
+                &write.offset,
+                &pointer.offset,
+                assumptions,
+            )
+        || write.block == pointer.block
+            && assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+                write.offset.clone(),
+                pointer.offset.clone(),
+            )) == Some(true)
 }
 
 /// What a `CellsSeeded` edge does to one cell.

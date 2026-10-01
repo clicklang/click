@@ -3498,8 +3498,7 @@ pub(in crate::kernel) fn exact_access_byte_overlap(
     if left.blocks_proven_distinct(right) {
         return Some(AccessByteOverlap::Separate);
     }
-    let shift = exact_constant_byte_shift(left, right)
-        .or_else(|| constant_byte_shift_between(left, right))?;
+    let shift = constant_byte_shift(left, right)?;
     Some(
         if crate::kernel::byte_intervals_disjoint(
             shift,
@@ -3512,6 +3511,12 @@ pub(in crate::kernel) fn exact_access_byte_overlap(
             AccessByteOverlap::Overlaps
         },
     )
+}
+
+/// The constant byte distance from `base` to `pointer`, when exact byte
+/// geometry knows one: the shift [`exact_access_byte_overlap`] decides from.
+pub(in crate::kernel) fn constant_byte_shift(pointer: &Pointer, base: &Pointer) -> Option<i64> {
+    exact_constant_byte_shift(pointer, base).or_else(|| constant_byte_shift_between(pointer, base))
 }
 
 /// The element-width half of [`access_byte_overlap`]: whether the gap an

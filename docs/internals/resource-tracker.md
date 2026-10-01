@@ -568,6 +568,25 @@ arm, `CMemory::without_possible_aliasing_cells` and the snapshot comparisons
 all conjoin it, which is what keeps one store from being separate at one site
 and overlapping at the next.
 
+Overlapping is also not *supplying*. A walk that stops at a store because the
+store writes bytes the read returns has learned that the cell changed, not what
+it now holds: a one-byte store of `7` inside a four-byte read is one of that
+read's bytes, and a four-byte store around a one-byte read holds three bytes
+the read does not return. The routes that read a value off the history —
+`resolve_load_along_memory_derivations`, the stored-value arms of
+`explicit_atomic_equality_from_memory_derivations` and of the load-equality
+walks, the pointer-offset resolution, and the stored-origin load equality —
+take a store's value only through `write_supplies_read`
+(`src/kernel/resource_tracker/cell_source.rs`): the store starts at the read's
+address and is exactly as wide. Click has no rule that extracts a narrower read
+from a wider store or assembles a wider read from narrower ones, so any other
+overlapping store stops the walk at the snapshot it produced, which is what the
+read is then known to read (`mdtests/a_byte_store_is_not_the_value_of_the_wide_read_it_lands_in.md`).
+A cell the stopping snapshot materialized answers only under the same width
+test. The read's width is the access width recorded at its address, because a
+load term carries none, and a width nobody recorded is the widest scalar, which
+no narrower store supplies.
+
 #### A load whose own block the verifier cannot resolve
 
 `observable_by_load` is the filter the three load-framing sites above share, and

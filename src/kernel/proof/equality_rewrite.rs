@@ -1853,6 +1853,10 @@ mod tests {
             block: "rewrite-presentation".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
+        // The load is an `int32` one. A stored value answers only for a read
+        // of its own width, and a load whose width nobody recorded is taken
+        // as the widest scalar access, which no `int32` store supplies.
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let memory = CMemory::new().with_block("rewrite-presentation", 4).store(
             pointer.clone(),
             CValue::Int32(Bitvector32Term::Constant(42)),
