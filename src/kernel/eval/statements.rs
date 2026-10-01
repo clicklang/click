@@ -893,6 +893,23 @@ fn execute_c_aggregate_copy_paths(
                 });
                 continue;
             }
+            if let Some(resource) = missing_aggregate_copy_write_resource(
+                state,
+                target_pointer.pointer(),
+                layout,
+                &assumptions_with_path_context(assumptions, &facts, &obligations),
+            ) {
+                paths.push(CStatementExecutionPath {
+                    loop_invariant_correspondence: Default::default(),
+                    outcome: CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
+                        resource,
+                    }),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            }
             let mut state = state.clone();
             let next_memory = match crate::kernel::functions::copy_aggregate_fields_checked(
                 state.memory.clone(),
@@ -926,6 +943,45 @@ fn execute_c_aggregate_copy_paths(
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+fn missing_aggregate_copy_write_resource(
+    state: &CState,
+    target: &Pointer,
+    layout: &CAggregateLayout,
+    assumptions: &PureFactContext,
+) -> Option<CResourceFact> {
+    if !is_external_memory_pointer(target) {
+        return None;
+    }
+    let ranges = layout
+        .fields()
+        .iter()
+        .map(|field| (field.offset_bytes(), field.c_type().byte_width()))
+        .chain(
+            layout
+                .unions()
+                .iter()
+                .map(|union| (union.offset_bytes(), union.size_bytes())),
+        );
+    for (offset, bytes) in ranges {
+        let pointer = target.offset_by_bytes(offset);
+        if state
+            .resources()
+            .memory_write_range(&pointer, bytes, assumptions)
+            .is_none()
+        {
+            return Some(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(
+                    pointer,
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::Constant(1),
+                    bytes,
+                ),
+            ));
+        }
+    }
+    None
 }
 
 fn missing_aggregate_copy_read_resource(

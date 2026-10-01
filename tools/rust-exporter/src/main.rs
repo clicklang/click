@@ -91,12 +91,33 @@ fn span(tcx: TyCtxt<'_>, s: rustc_span::Span) -> Span {
         column: loc.col.0 + 1,
     }
 }
-fn export_type(tcx: TyCtxt<'_>, t: ty::Ty<'_>) -> Result<Type, String> {
+fn export_type<'tcx>(tcx: TyCtxt<'tcx>, t: ty::Ty<'tcx>) -> Result<Type, String> {
     match t.kind() {
         ty::Int(ty::IntTy::I32) => Ok(Type::I32),
         ty::Uint(ty::UintTy::U8) => Ok(Type::U8),
         ty::Uint(ty::UintTy::U32) => Ok(Type::U32),
         ty::Uint(ty::UintTy::Usize) => Ok(Type::Usize),
+        ty::Array(element, length) => {
+            let element = export_type(tcx, *element)?;
+            if !matches!(element, Type::I32 | Type::U8 | Type::U32) {
+                return Err("fixed arrays require i32, u8 or u32 elements".into());
+            }
+            let length = tcx
+                .normalize_erasing_regions(
+                    ty::TypingEnv::fully_monomorphized(),
+                    ty::Unnormalized::new_wip(*length),
+                )
+                .try_to_target_usize(tcx)
+                .ok_or("fixed array length must be concrete")?;
+            let width = if element == Type::U8 { 1 } else { 4 };
+            if length > i32::MAX as u64 / width {
+                return Err("fixed array storage exceeds the signed-word memory model".into());
+            }
+            Ok(Type::Array {
+                element: Box::new(element),
+                length,
+            })
+        }
         ty::Bool => Ok(Type::Bool),
         ty::Tuple(ts) if ts.is_empty() => Ok(Type::Unit),
         ty::Ref(_, p, m) => {
@@ -109,7 +130,7 @@ fn export_type(tcx: TyCtxt<'_>, t: ty::Ty<'_>) -> Result<Type, String> {
             let pointee = export_type(tcx, *p)?;
             if !matches!(
                 pointee,
-                Type::I32 | Type::U8 | Type::U32 | Type::Record { .. }
+                Type::I32 | Type::U8 | Type::U32 | Type::Record { .. } | Type::Array { .. }
             ) {
                 return Err("reference pointee outside Rust slice".into());
             }
@@ -137,6 +158,10 @@ struct BodyExporter<'tcx> {
     typeck: &'tcx ty::TypeckResults<'tcx>,
     locals: BTreeMap<u32, String>,
 }
+fn indexed_type(t: &Type) -> bool {
+    matches!(t, Type::ByteSlice { .. } | Type::Array { .. })
+        || matches!(t, Type::Reference { pointee, .. } if matches!(pointee.as_ref(), Type::Array { .. }))
+}
 impl<'tcx> BodyExporter<'tcx> {
     fn error(&self, e: &hir::Expr<'_>, message: &str) -> String {
         let s = span(self.tcx, e.span);
@@ -159,20 +184,44 @@ impl<'tcx> BodyExporter<'tcx> {
         }
     }
     fn expr(&self, e: &hir::Expr<'tcx>) -> Result<Expression, String> {
+        self.adjusted_expr(e, false)
+    }
+    fn adjusted_expr(&self, e: &hir::Expr<'tcx>, array_length: bool) -> Result<Expression, String> {
         // Built-in reference deref/reborrow adjustments keep the same address.
         // Refuse trait-driven deref, pointer coercions and other implicit effects.
-        use ty::adjustment::{Adjust, AutoBorrow, DerefAdjustKind};
+        use ty::adjustment::{Adjust, AutoBorrow, DerefAdjustKind, PointerCoercion};
+        let value_type =
+            export_type(self.tcx, self.typeck.expr_ty(e)).map_err(|m| self.error(e, &m))?;
+        let fixed_array = matches!(value_type, Type::Array { .. })
+            || matches!(&value_type, Type::Reference { pointee, .. } if matches!(pointee.as_ref(), Type::Array { .. }));
         for adjustment in self.typeck.expr_adjustments(e) {
             if !matches!(
                 adjustment.kind,
                 Adjust::Deref(DerefAdjustKind::Builtin) | Adjust::Borrow(AutoBorrow::Ref(..))
-            ) {
+            ) && !(array_length
+                && matches!(adjustment.kind, Adjust::Pointer(PointerCoercion::Unsize))
+                && fixed_array)
+            {
                 return Err(self.error(e, "implicit adjustment outside Rust slice"));
             }
         }
         let t = self.typeck.expr_ty(e);
-        export_type(self.tcx, t).map_err(|m| self.error(e, &m))?;
         match e.kind {
+            hir::ExprKind::Array(elements) => Ok(Expression::Array {
+                elements: elements
+                    .iter()
+                    .map(|e| self.expr(e))
+                    .collect::<Result<_, _>>()?,
+            }),
+            hir::ExprKind::Repeat(value, _) => {
+                let Type::Array { length, .. } = export_type(self.tcx, t)? else {
+                    return Err(self.error(e, "array repeat requires a fixed array type"));
+                };
+                Ok(Expression::Repeat {
+                    value: Box::new(self.expr(value)?),
+                    length,
+                })
+            }
             hir::ExprKind::Lit(lit) => match lit.node {
                 rustc_ast::LitKind::Int(v, _) => match export_type(self.tcx, t)? {
                     value_type @ (Type::U8 | Type::U32) => Ok(Expression::UnsignedInteger {
@@ -207,31 +256,28 @@ impl<'tcx> BodyExporter<'tcx> {
                 if self.typeck.type_dependent_def_id(e.hir_id)
                     != self.tcx.lang_items().slice_len_fn()
                     || !args.is_empty()
-                    || !matches!(
-                        export_type(self.tcx, self.typeck.expr_ty(receiver))?,
-                        Type::ByteSlice { .. }
-                    )
+                    || !indexed_type(&export_type(self.tcx, self.typeck.expr_ty(receiver))?)
                 {
-                    return Err(self.error(e, "only builtin byte-slice len is supported"));
+                    return Err(
+                        self.error(e, "only builtin byte-slice or fixed-array len is supported")
+                    );
                 }
                 Ok(Expression::SliceLength {
-                    slice: Box::new(self.expr(receiver)?),
+                    slice: Box::new(self.adjusted_expr(receiver, true)?),
                 })
             }
             hir::ExprKind::Index(base, index, _) => {
                 if self.typeck.type_dependent_def_id(e.hir_id).is_some()
-                    || !matches!(
-                        export_type(self.tcx, self.typeck.expr_ty(base))?,
-                        Type::ByteSlice { .. }
-                    )
+                    || !indexed_type(&export_type(self.tcx, self.typeck.expr_ty(base))?)
                     || !matches!(
                         self.typeck.expr_ty(index).kind(),
                         ty::Uint(ty::UintTy::Usize)
                     )
                 {
-                    return Err(
-                        self.error(e, "only builtin byte-slice usize indexing is supported")
-                    );
+                    return Err(self.error(
+                        e,
+                        "only builtin byte-slice or fixed-array usize indexing is supported",
+                    ));
                 }
                 Ok(Expression::Index {
                     slice: Box::new(self.expr(base)?),
@@ -490,6 +536,11 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
     let mut functions = Vec::new();
     let mut records = BTreeMap::new();
     for id in tcx.hir_body_owners() {
+        // Array dimensions are compiler-evaluated constants, not executable
+        // functions. Their values are exported from the resolved array type.
+        if tcx.def_kind(id) == hir::def::DefKind::AnonConst {
+            continue;
+        }
         let destructor = if tcx.def_kind(id) == hir::def::DefKind::AssocFn {
             let implementation = tcx.parent(id.to_def_id());
             if !matches!(

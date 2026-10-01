@@ -35,6 +35,7 @@ pub enum Type {
     U32,
     Usize,
     ByteSlice { mutable: bool },
+    Array { element: Box<Type>, length: u64 },
     Bool,
     Unit,
     Reference { mutable: bool, pointee: Box<Type> },
@@ -77,6 +78,13 @@ pub struct Function {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expression {
+    Array {
+        elements: Vec<Self>,
+    },
+    Repeat {
+        value: Box<Self>,
+        length: u64,
+    },
     Integer {
         value: i32,
     },
