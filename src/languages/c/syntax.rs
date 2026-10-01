@@ -2855,6 +2855,11 @@ impl C0Function {
         &self.local_struct_pointers
     }
 
+    pub(crate) fn with_local_struct_values(mut self, values: BTreeMap<String, String>) -> Self {
+        self.local_struct_values = values;
+        self
+    }
+
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
         &self.local_struct_values
     }

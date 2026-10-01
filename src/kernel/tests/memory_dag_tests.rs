@@ -3640,3 +3640,196 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
         "a store of the read's own address and width is the read's value"
     );
 }
+
+#[test]
+fn canonical_load_naming_retains_the_live_memory_origin() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer {
+        block: "local:origin-cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let live =
+        crate::kernel::intern_c_memory(CMemory::new().with_block("unrelated-origin-storage", 16));
+    let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+        live.clone(),
+        pointer.clone(),
+        crate::kernel::LoadKind::Bits32,
+    ) else {
+        panic!("an unresolved scalar read has a load name");
+    };
+    assert_eq!(
+        crate::kernel::eval::registered_load_origin_for_variable(&variable),
+        Some((live, pointer))
+    );
+}
+
+#[test]
+fn an_unknown_pointer_call_drops_a_local_cache_without_separation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Pointer {
+        block: "local:unknown-call-target".into(),
+        offset: PointerOffsetTerm::Constant(8),
+    };
+    let base = CMemory::new()
+        .with_block("local:unknown-call-target", 16)
+        .store(cell.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+    let ranges = [memory_range(Pointer::symbolic(Variable(977_002)), 0, 1)];
+    let assumptions = PureFactContext::new();
+    let after = base
+        .clone()
+        .with_call_memory_havoc(Variable(977_003), &ranges, &assumptions, None);
+    assert!(!after.has_known_cell_at(&cell));
+    assert!(after.matches_call_memory_havoc_result(&base, &ranges, &assumptions, None));
+    let forged = after.store(cell, CValue::Int32(Bitvector32Term::Constant(1)));
+    assert!(!forged.matches_call_memory_havoc_result(&base, &ranges, &assumptions, None));
+}
+
+#[test]
+fn kept_constant_offset_fields_have_checkable_call_havoc_evidence() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let owner = Pointer {
+        block: "local:kept-offset-owner".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let cell = owner.offset_by_bytes(8);
+    crate::kernel::eval::declare_load_access_width(&cell, 4);
+    let assumptions = PureFactContext::new();
+    let residual = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_memory(memory_range(owner.clone(), 0, 4)));
+    let kept = CallKeptOwnership::new(
+        residual,
+        CallKeptRanges::new(ResourceContext::new(), vec![]),
+        &assumptions,
+    );
+    let base = CMemory::new().with_block("local:kept-offset-owner", 16);
+    let ranges = [memory_range(Pointer::symbolic(Variable(977_004)), 0, 1)];
+    let after =
+        base.clone()
+            .with_call_memory_havoc(Variable(977_005), &ranges, &assumptions, Some(&kept));
+    let recorded = CallKeptRanges::recorded_on(&after).unwrap();
+    assert!(recorded.holds_access(&cell, 4, &assumptions));
+    assert!(!recorded.holds_access(&owner.offset_by_bytes(16), 4, &assumptions));
+    let load = |memory: &CMemory| {
+        Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory_ref(memory),
+            Box::new(cell.clone()),
+            crate::kernel::LoadKind::Bits32,
+        )
+    };
+    let equality = Proposition::ConditionIs(ConditionTerm::equal(load(&after), load(&base)), true);
+    let evidence = with_extended_dag_bridging(|| {
+        atomic_memory_load_equality_evidence(&load(&after), &load(&base), &assumptions)
+    })
+    .expect("the caller's kept object preserves its offset field");
+    assert!(evidence.is_fully_typed());
+    assert!(evidence.checks(&equality, &assumptions));
+    let without_kept =
+        base.clone()
+            .with_call_memory_havoc(Variable(977_006), &ranges, &assumptions, None);
+    assert!(
+        with_extended_dag_bridging(|| atomic_memory_load_equality_evidence(
+            &load(&without_kept),
+            &load(&base),
+            &assumptions
+        ))
+        .is_none()
+    );
+    let overwritten = after.store(cell.clone(), CValue::Int32(Bitvector32Term::Constant(43)));
+    assert!(!evidence.checks(
+        &Proposition::ConditionIs(ConditionTerm::equal(load(&overwritten), load(&base)), true),
+        &assumptions
+    ));
+}
+
+#[test]
+fn two_edge_pointer_alias_witness_rechecks_each_named_premise() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let left = Pointer {
+        block: "local:two-edge-alias".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let middle = Pointer::symbolic(Variable(977_102));
+    let right = Pointer::symbolic(Variable(977_103));
+    for pointer in [&left, &right] {
+        crate::kernel::eval::declare_load_access_width(pointer, 4);
+    }
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let first = ConditionTerm::pointer_equal(left.clone(), middle.clone());
+    let second = ConditionTerm::pointer_equal(middle, right.clone());
+    let assumptions = PureFactContext::new()
+        .assume_condition(first.clone(), true)
+        .assume_condition(second.clone(), true);
+    let left_load = Bitvector32Term::MemoryLoad(
+        memory.clone(),
+        Box::new(left),
+        crate::kernel::LoadKind::Bits32,
+    );
+    let right_load =
+        Bitvector32Term::MemoryLoad(memory, Box::new(right), crate::kernel::LoadKind::Bits32);
+    let capture = CheckedLoadEqualityCapture::start();
+    assert!(checked_origin_load_equality(
+        &left_load,
+        &right_load,
+        &assumptions
+    ));
+    let witnesses = capture.finish();
+    let [witness] = witnesses.as_slice() else {
+        panic!("expected one retained alias witness");
+    };
+    assert!(witness.checks(&assumptions));
+    let Bitvector32Term::MemoryLoad(memory, pointer, _) = &left_load else {
+        unreachable!();
+    };
+    let byte_read = Bitvector32Term::MemoryLoad(
+        memory.clone(),
+        pointer.clone(),
+        crate::kernel::LoadKind::UInt8,
+    );
+    let mismatched_capture = CheckedLoadEqualityCapture::start();
+    assert!(!checked_origin_load_equality(
+        &byte_read,
+        &right_load,
+        &assumptions,
+    ));
+    assert!(mismatched_capture.finish().is_empty());
+    for premise in [first, second] {
+        let withdrawn = assumptions.without_exact_fact(&Proposition::ConditionIs(premise, true));
+        assert!(!witness.checks(&withdrawn));
+    }
+    assert!(!witness.checks(&PureFactContext::new()));
+}
+
+#[test]
+fn unrelated_symbolic_kept_bases_do_not_trigger_range_placement() {
+    let input = |name| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(name)), 4),
+    };
+    let pointer = input(977_199).offset_by_bytes(8);
+    let assumptions = PureFactContext::new();
+    for count in [16, 64, 256, 1024] {
+        let mut ranges = ResourceContext::new();
+        for index in 0..count {
+            ranges = ranges.unchecked_with_fact(CResourceFact::own_memory(memory_range(
+                input(978_000 + index),
+                0,
+                4,
+            )));
+        }
+        let placements = std::cell::Cell::new(0);
+        assert!(
+            assumptions
+                .kept_range_holding_access(
+                    &ranges,
+                    || {
+                        placements.set(placements.get() + 1);
+                        Some(assumptions.clone())
+                    },
+                    &pointer,
+                    4,
+                )
+                .is_none()
+        );
+        assert_eq!(placements.get(), 0, "unrelated kept bases: {count}");
+    }
+}

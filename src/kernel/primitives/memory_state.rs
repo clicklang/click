@@ -722,6 +722,230 @@ mod call_havoc_local_retention_tests {
     use super::*;
 
     #[test]
+    fn call_havoc_drops_explicitly_written_local_fields_and_keeps_disjoint_cells() {
+        let block: PointerBlock = "local:borrowed-guard".into();
+        let at = |offset| Pointer {
+            block: block.clone(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let before = CMemory::new()
+            .with_block(block.clone(), 16)
+            .store(at(0), CValue::Int32(Bitvector32Term::Constant(7)))
+            .store(at(8), CValue::Int32(Bitvector32Term::Constant(1)))
+            .store(at(12), CValue::Int32(Bitvector32Term::Constant(9)));
+        let range = CMemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
+        let facts = PureFactContext::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_012),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert_eq!(
+            after.known_value(&at(8)),
+            None,
+            "a callee can write directly named local storage"
+        );
+        assert_eq!(after.known_value(&at(0)), before.known_value(&at(0)));
+        assert_eq!(after.known_value(&at(12)), before.known_value(&at(12)));
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        let stale = after
+            .clone()
+            .store(at(8), CValue::Int32(Bitvector32Term::Constant(1)));
+        assert!(!stale.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+    }
+
+    #[test]
+    fn call_havoc_preserves_only_existing_local_initialization() {
+        let at = |offset| Pointer {
+            block: "local:initialization".into(),
+            offset: PointerOffsetTerm::Constant(offset),
+        };
+        let before = CMemory::new()
+            .with_block(at(0).block.clone(), 16)
+            .store(at(0), CValue::Int32(Bitvector32Term::Constant(7)));
+        let range = CMemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
+        let facts = PureFactContext::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_015),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert!(after.has_initialized_bytes_at(&at(0), 4));
+        assert!(!after.has_initialized_bytes_at(&at(0), 8));
+        assert!(!after.has_initialized_bytes_at(&at(8), 4));
+        let named = after.clone().materialize_named_cell(
+            at(0),
+            CValue::Int32(Bitvector32Term::Variable(Variable(944_016))),
+        );
+        assert!(
+            named.known_value(&at(0)).is_none(),
+            "logical naming does not materialize automatic storage"
+        );
+        assert!(named.has_initialized_bytes_at(&at(0), 4));
+        let fresh = after
+            .clone()
+            .materialize_named_cell(at(8), CValue::Int32(Bitvector32Term::Constant(1)));
+        assert!(fresh.known_value(&at(8)).is_none());
+        let mut forged = after.clone();
+        std::sync::Arc::make_mut(&mut forged.heap)
+            .initialized
+            .record(&at(8), 4);
+        assert!(!forged.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        let mut widened = after.clone();
+        std::sync::Arc::make_mut(&mut widened.heap)
+            .initialized
+            .record(&at(0), 8);
+        assert!(!widened.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        let retired = after.without_local_block(&at(0).block);
+        assert!(!retired.has_initialized_bytes_at(&at(0), 4));
+        assert!(!retired.is_loadable_concretely(&at(0), 4));
+    }
+
+    #[test]
+    fn local_initialization_havoc_checks_scale_with_changed_cells() {
+        let target = Pointer {
+            block: "local:target".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let range =
+            CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1);
+        let facts = PureFactContext::new();
+        let mut samples = Vec::new();
+        for count in [16, 64, 256, 1024] {
+            let mut before = CMemory::new()
+                .with_block(target.block.clone(), 8)
+                .store(target.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+            for index in 0..count {
+                let pointer = Pointer {
+                    block: format!("local:ambient-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                std::sync::Arc::make_mut(&mut before.heap)
+                    .initialized
+                    .record(&pointer, 4);
+            }
+            let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let after = before.clone().with_call_memory_havoc(
+                    Variable(944_017),
+                    std::slice::from_ref(&range),
+                    &facts,
+                    None,
+                );
+                after.matches_call_memory_havoc_result(
+                    &before,
+                    std::slice::from_ref(&range),
+                    &facts,
+                    None,
+                )
+            });
+            assert!(checked);
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] * 4 + 128),
+            "ambient initialization scan: {samples:?}"
+        );
+    }
+
+    #[test]
+    fn call_havoc_drops_explicitly_written_local_union_views() {
+        let pointer = Pointer {
+            block: "local:borrowed-union".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_block(pointer.block.clone(), 8)
+            .store_union_views(
+                pointer.clone(),
+                8,
+                vec![(
+                    pointer.clone(),
+                    CType::Int32,
+                    CValue::Int32(Bitvector32Term::Constant(1)),
+                )],
+            );
+        let range =
+            CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
+        let facts = PureFactContext::new();
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_013),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert_eq!(after.known_union_value(&pointer, CType::Int32), None);
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+    }
+
+    #[test]
+    fn call_havoc_drops_a_local_cell_written_through_an_interior_alias() {
+        let pointer = Pointer {
+            block: "local:interior-field".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let alias = Pointer::symbolic(Variable(944_021));
+        let before = CMemory::new()
+            .with_block(pointer.block.clone(), 4)
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
+            true,
+        );
+        let range = CMemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
+        let after = before.clone().with_call_memory_havoc(
+            Variable(944_022),
+            std::slice::from_ref(&range),
+            &facts,
+            None,
+        );
+        assert!(after.known_value(&pointer).is_none());
+        assert!(after.has_initialized_bytes_at(&pointer, 4));
+        assert!(after.matches_call_memory_havoc_result(
+            &before,
+            std::slice::from_ref(&range),
+            &facts,
+            None
+        ));
+        assert!(
+            !after
+                .store(pointer, CValue::Int32(Bitvector32Term::Constant(7)))
+                .matches_call_memory_havoc_result(
+                    &before,
+                    std::slice::from_ref(&range),
+                    &facts,
+                    None
+                )
+        );
+    }
+
+    #[test]
     fn call_havoc_drops_local_cell_when_write_range_is_assumed_equal_to_it() {
         let local = Pointer {
             block: PointerBlock::Concrete("local:t".to_string()),
@@ -1705,9 +1929,14 @@ impl CallKeptRanges {
             .is_some()
     }
 
+    pub(in crate::kernel) fn contains_range(&self, range: &CMemoryRange) -> bool {
+        self.ranges
+            .contains_exact_representation(&CResourceFact::own_memory(range.clone()))
+    }
+
     /// The kept range holding the access. `placement` is the premises already
     /// assumed into `assumptions`, when the caller has built it once.
-    fn range_holding<'a>(
+    pub(in crate::kernel) fn range_holding<'a>(
         &'a self,
         assumptions: &PureFactContext,
         placement: Option<&PureFactContext>,
@@ -1813,12 +2042,11 @@ enum CallHavocCellRule {
 /// ([`call_havoc_candidates`]), in the producing context. The
 /// two are compared in `docs/internals/resource-tracker.md`.
 ///
-/// Local cells may be kept without an owned-range lookup when the write set
-/// names the same local block directly. A different spelling cannot use the
-/// structural local-versus-argument separation rule: consult the proven
-/// pointer-equality graph before keeping the cell, so an assumed alias drops
-/// it. Other cells use the ordinary range-disjointness query, and then what
-/// the caller keeps owning ([`CallKeptOwnership`]).
+/// Unreachable local cells may be kept without an owned-range lookup. A write
+/// set naming that local block directly or through a checked affine alias
+/// uses the ordinary byte-disjointness rule, followed by what the caller
+/// keeps owning ([`CallKeptOwnership`]). An interior field alias can write
+/// part of a cached cell even when its start differs from the cell's start.
 fn call_havoc_keeps_cell(
     pointer: &Pointer,
     value: &CValue,
@@ -1827,7 +2055,19 @@ fn call_havoc_keeps_cell(
     kept: Option<&CallKeptOwnership>,
     preserve_local_slots: bool,
 ) -> CallHavocCellRule {
-    if preserve_local_slots && pointer.block.starts_with("local:") {
+    if preserve_local_slots
+        && pointer.block.starts_with("local:")
+        // An opaque pointer may reach a local even when no exact alias has
+        // yet been stated. Absence of an alias is not separation evidence.
+        && mutable_ranges.iter().all(|range| !matches!(range.base().block, PointerBlock::Symbolic(_)))
+        && !mutable_ranges.iter().any(|range| {
+            range.base().block == pointer.block
+                || assumptions
+                    .equality_graph
+                    .pointer_in_block(range.base(), &pointer.block)
+                    .is_some()
+        })
+    {
         return if mutable_ranges.iter().all(|range| {
             range.base().block == pointer.block
                 || !pointers_proven_equal_for_memory_resolution(range.base(), pointer, assumptions)
@@ -3266,7 +3506,7 @@ impl CMemory {
                 .map(|(pointer, _)| &pointer.block),
         );
         expected.forget_zeroed_allocations_written_by(mutable_ranges, assumptions);
-        if self.heap != expected.heap {
+        if !self.heap.eq_relative_to(&expected.heap, &before.heap) {
             return false;
         }
         let kept_ranges = call_havoc_kept_ranges(kept, flat_hits, &candidates);

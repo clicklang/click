@@ -108,8 +108,14 @@ pub(crate) enum SnapshotBlindBitvectorKey {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) struct SnapshotBlindPointerKey {
-    block: PointerBlock,
+    block: SnapshotBlindPointerBlockKey,
     offset: Box<SnapshotBlindPointerOffsetKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum SnapshotBlindPointerBlockKey {
+    Exact(PointerBlock),
+    Read(Box<SnapshotBlindPointerKey>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -201,7 +207,8 @@ impl SnapshotBlindBitvectorKey {
 
 impl SnapshotBlindPointerKey {
     fn forgets_a_snapshot(&self) -> bool {
-        self.offset.forgets_a_snapshot()
+        matches!(self.block, SnapshotBlindPointerBlockKey::Read(_))
+            || self.offset.forgets_a_snapshot()
     }
 }
 
@@ -526,9 +533,34 @@ fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvecto
     }
 }
 
+thread_local! {
+    static POINTER_READ_KEY_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+struct PointerReadKeyDepth(usize);
+impl Drop for PointerReadKeyDepth {
+    fn drop(&mut self) {
+        POINTER_READ_KEY_DEPTH.with(|depth| depth.set(self.0));
+    }
+}
+
 fn snapshot_blind_pointer_key(pointer: &Pointer) -> SnapshotBlindPointerKey {
+    let depth = POINTER_READ_KEY_DEPTH.with(|depth| depth.replace(depth.get() + 1));
+    let _restore = PointerReadKeyDepth(depth);
+    // This candidate key forgets snapshots, never proof authority. Bound
+    // registry expansion across both defining addresses and their offsets.
+    let read = match &pointer.block {
+        PointerBlock::Symbolic(variable) if depth < 3 => {
+            crate::kernel::registered_load_for_variable(variable).map(|(_, source)| source)
+        }
+        _ => None,
+    };
     SnapshotBlindPointerKey {
-        block: pointer.block.clone(),
+        block: read
+            .map(|source| {
+                SnapshotBlindPointerBlockKey::Read(Box::new(snapshot_blind_pointer_key(&source)))
+            })
+            .unwrap_or_else(|| SnapshotBlindPointerBlockKey::Exact(pointer.block.clone())),
         offset: Box::new(snapshot_blind_pointer_offset_key(&pointer.offset)),
     }
 }

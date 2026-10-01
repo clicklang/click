@@ -68,11 +68,51 @@ impl ProofFacts {
                 "`rewrite` requires its equality to be an exact available fact".to_string(),
             );
         }
-        let proposition = rewrite_with_admitted_equality(goal, equality)?;
-        Ok(CheckedEqualityRewrite {
-            proposition,
-            facts: self.clone(),
-        })
+        match rewrite_with_admitted_equality(goal, equality) {
+            Ok(proposition) => Ok(CheckedEqualityRewrite {
+                proposition,
+                facts: self.clone(),
+            }),
+            Err(original_error) => {
+                // The explicitly cited read may precede the goal's read of
+                // the same cell. Select only the goal's two atomic operands;
+                // retain and validate their checked snapshot/address bridge
+                // before doing ordinary exact substitution.
+                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(from, to), true) =
+                    equality
+                else {
+                    return Err(original_error);
+                };
+                let is_read = |term: &Bitvector32Term| {
+                    matches!(term, Bitvector32Term::MemoryLoad(..))
+                        || matches!(term, Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable))
+                };
+                if !is_read(from) {
+                    return Err(original_error);
+                }
+                let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), _) =
+                    goal
+                else {
+                    return Err(original_error);
+                };
+                for selected in [left, right] {
+                    if !is_read(selected) || selected == from {
+                        continue;
+                    }
+                    let adapted = Proposition::ConditionIs(
+                        ConditionTerm::equal(selected.as_ref().clone(), to.as_ref().clone()),
+                        true,
+                    );
+                    let Some(facts) = self.with_checked_rewritten_loads(equality, &adapted) else {
+                        continue;
+                    };
+                    if let Ok(proposition) = rewrite_with_admitted_equality(goal, &adapted) {
+                        return Ok(CheckedEqualityRewrite { proposition, facts });
+                    }
+                }
+                Err(original_error)
+            }
+        }
     }
 }
 
@@ -1896,6 +1936,64 @@ mod tests {
         assert_eq!(
             obligation.proposition(),
             &equality(y, Bitvector32Term::Constant(42))
+        );
+    }
+
+    #[test]
+    fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "rewrite-selected-read".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
+        let before = CMemory::new().with_block("rewrite-selected-read", 4);
+        let after = before.clone().with_block("local:rewrite-unrelated", 4);
+        let changed = after.clone().store(
+            pointer.clone(),
+            CValue::Int32(Bitvector32Term::Constant(43)),
+        );
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
+        let premise = equality(load(&before), Bitvector32Term::Constant(42));
+        let goal = equality(load(&after), Bitvector32Term::Constant(42));
+        let mut costs = vec![];
+        for size in [16u64, 64, 256, 1024] {
+            let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
+            for index in 0..size {
+                facts = facts.with_fact(equality(
+                    Bitvector32Term::Variable(Variable(80_000 + index)),
+                    Bitvector32Term::Constant(index as u32),
+                ));
+            }
+            crate::kernel::eval::clear_load_canonicalization_caches();
+            let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.check_equality_rewrite(&goal, &premise)
+            });
+            assert_eq!(
+                rewritten.unwrap().proposition(),
+                &equality(Bitvector32Term::Constant(42), Bitvector32Term::Constant(42))
+            );
+            assert!(
+                facts
+                    .check_equality_rewrite(
+                        &equality(load(&changed), Bitvector32Term::Constant(42)),
+                        &premise
+                    )
+                    .is_err()
+            );
+            costs.push(work);
+        }
+        assert!(costs.iter().all(|work| *work <= 8), "{costs:?}");
+        assert!(
+            ProofFacts::default()
+                .check_equality_rewrite(&goal, &premise)
+                .is_err()
         );
     }
 

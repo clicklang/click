@@ -1138,7 +1138,10 @@ fn canonicalized_pointer_value_from_int_cell(
     let loaded = if matches!(
         pointer.block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) {
+    ) || (pointer.block.starts_with("local:")
+        && registered_load_for_variable(&fresh)
+            .is_some_and(|(memory, _)| memory.has_call_memory_havoc()))
+    {
         Pointer::symbolic(fresh)
     } else {
         Pointer::loaded(
@@ -1187,7 +1190,8 @@ fn should_use_symbolic_pointer_identity(
     (matches!(
         pointer.block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || (memory.has_call_memory_havoc() && pointer_sized_load))
+    ) || (memory.has_call_memory_havoc()
+        && (pointer_sized_load || pointer.block.starts_with("local:"))))
         && value_type.is_pointer()
         && memory.known_union_value(pointer, value_type).is_none()
         && memory.known_value(pointer).is_none()
@@ -2111,6 +2115,13 @@ pub(crate) fn canonical_term(term: &Bitvector32Term) -> Bitvector32Term {
         return hit;
     }
     let structural = crate::kernel::memory_provenance::canonicalize_atomic_loads(term);
+    // Register the live observation before its projected form can claim the
+    // load's origin. Keep the established projected canonical identity.
+    if matches!(term, Bitvector32Term::MemoryLoad(..))
+        && matches!(structural, Bitvector32Term::MemoryLoad(..))
+    {
+        load_variable_for_term(term);
+    }
     let result = substitute_load_variables(&structural, &mut None);
     if cacheable {
         TERM_CACHE.with(|cache| {
@@ -3834,7 +3845,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
 /// `record_width` says the access width here, as [`symbolic_load_value`]
 /// does; a caller that declared it for a whole array
 /// ([`declare_symbolic_array_access_widths`]) passes `false`. An object
-/// pointer's load records no width either way.
+/// pointer's load retains the same typed definition as a logical read.
 pub(in crate::kernel) fn symbolic_storage_cell_value(
     memory: &CMemory,
     pointer: &Pointer,
@@ -3842,14 +3853,22 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
     record_width: bool,
 ) -> Option<CValue> {
     if c_type.is_object_pointer() {
+        if record_width && pointer.block.starts_with("local:") {
+            record_load_access_width(memory, pointer, c_type.byte_width());
+        }
         let load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(pointer.clone()),
             LoadKind::Bits32,
         );
-        let (variable, _) = load_variable_for_term(&load)
+        let (variable, definition) = load_variable_for_term(&load)
             .expect("symbolic pointer cells must be backed by memory loads");
-        return Some(CValue::typed_pointer(Pointer::symbolic(variable), c_type));
+        let value = Pointer::symbolic(variable);
+        if let Bitvector32Term::MemoryLoad(snapshot, address, _) = definition {
+            crate::kernel::equality_graph::EqualityGraph::default()
+                .register_pointer_read_definition(&value, &snapshot, &address);
+        }
+        return Some(CValue::typed_pointer(value, c_type));
     }
     // The cell holds the load of this storage at its symbolic base, and a
     // term is canonical at creation: name the load as its load variable,
@@ -4019,6 +4038,195 @@ mod tests {
                     matches!(&paths[0].outcome, CExpressionOutcome::Value(CValue::Pointer(value)) if value.pointer() == &target)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn logical_scalar_read_preserves_cached_offset_spelling() {
+        let pointer = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Add(
+                Box::new(PointerOffsetTerm::Int32Scaled {
+                    value: Box::new(Bitvector32Term::Variable(Variable(944_021))),
+                    byte_width: 4,
+                }),
+                Box::new(PointerOffsetTerm::Constant(16)),
+            ),
+        };
+        let expected = CValue::Int32(Bitvector32Term::Constant(7));
+        let memory = CMemory::new().store(pointer.clone(), expected.clone());
+        let paths = evaluate_logical_memory_load_paths(
+            &memory,
+            pointer,
+            CType::Int32,
+            Vec::new(),
+            Vec::new(),
+            &PureFactContext::new(),
+        );
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].outcome, CExpressionOutcome::Value(expected));
+    }
+
+    #[test]
+    fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
+        let field = Pointer {
+            block: "local:parent-guard".into(),
+            offset: PointerOffsetTerm::Constant(8),
+        };
+        let alias = Pointer::symbolic(Variable(944_019));
+        let before = CMemory::new()
+            .with_block(field.block.clone(), 16)
+            .store(field.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+        let range =
+            CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 4u32.into(), 1);
+        let memory = before.with_call_memory_havoc(
+            Variable(944_020),
+            &[range],
+            &PureFactContext::new(),
+            None,
+        );
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(alias.clone(), field.clone()),
+            true,
+        );
+        let read = |pointer, assumptions: &PureFactContext| {
+            evaluate_logical_memory_load_paths(
+                &memory,
+                pointer,
+                CType::Int32,
+                Vec::new(),
+                Vec::new(),
+                assumptions,
+            )
+        };
+        let direct = read(field, &facts);
+        let returned = read(alias.clone(), &facts);
+        assert!(matches!(
+            direct[0].outcome,
+            CExpressionOutcome::Value(CValue::Int32(_))
+        ));
+        let CExpressionOutcome::Value(CValue::Int32(left)) = &direct[0].outcome else {
+            panic!("scalar read expected");
+        };
+        let CExpressionOutcome::Value(CValue::Int32(right)) = &returned[0].outcome else {
+            panic!("scalar read expected");
+        };
+        let capture = crate::kernel::memory_provenance::CheckedLoadEqualityCapture::start();
+        assert!(facts.memory_loads_proven_equal(left, right));
+        let evidence = capture.finish();
+        assert!(!evidence.is_empty());
+        assert!(evidence.iter().all(|proof| proof.checks(&facts)));
+        assert!(
+            evidence
+                .iter()
+                .all(|proof| !proof.checks(&PureFactContext::new()))
+        );
+        let mut work = Vec::new();
+        for count in [16, 64, 256, 1024] {
+            let mut context = facts.clone();
+            for index in 0..count {
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(960_000 + index)),
+                        Bitvector32Term::Constant(index as u32),
+                    ),
+                    true,
+                );
+            }
+            let (valid, units) = crate::instrumentation::measure_deterministic_work(|| {
+                let capture = crate::kernel::memory_provenance::CheckedLoadEqualityCapture::start();
+                let equal = context.memory_loads_proven_equal(left, right);
+                let evidence = capture.finish();
+                equal && !evidence.is_empty() && evidence.iter().all(|proof| proof.checks(&context))
+            });
+            assert!(valid);
+            work.push(units);
+        }
+        assert!(
+            work[3] <= work[0] * 4 + 64,
+            "ambient alias-equality scan: {work:?}"
+        );
+        let unrelated = read(alias, &PureFactContext::new());
+        assert_ne!(
+            direct[0].outcome, unrelated[0].outcome,
+            "a missing alias premise cannot join reads"
+        );
+    }
+
+    #[test]
+    fn unknown_pointer_after_call_in_local_storage_has_opaque_provenance() {
+        for offset in [0, 8] {
+            let cell = Pointer {
+                block: "local:pointer-holder".into(),
+                offset: PointerOffsetTerm::Constant(offset),
+            };
+            let target = Pointer {
+                block: "local:other-object".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let value_type = CType::Int32Pointer;
+            let before = CMemory::new()
+                .with_block(target.block.clone(), 4)
+                .with_block(cell.block.clone(), 16)
+                .store(
+                    cell.clone(),
+                    CValue::typed_pointer(target.clone(), value_type),
+                );
+            let range =
+                CMemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 8u32.into(), 1);
+            let assumptions = PureFactContext::new();
+            let memory =
+                before.with_call_memory_havoc(Variable(944_014), &[range], &assumptions, None);
+            assert!(memory.known_value(&cell).is_none());
+            for logical in [false, true] {
+                let paths = if logical {
+                    evaluate_logical_memory_load_paths(
+                        &memory,
+                        cell.clone(),
+                        value_type,
+                        Vec::new(),
+                        Vec::new(),
+                        &assumptions,
+                    )
+                } else {
+                    evaluate_spec_memory_load_paths(
+                        &memory,
+                        cell.clone(),
+                        value_type,
+                        Vec::new(),
+                        Vec::new(),
+                        &assumptions,
+                    )
+                };
+                let [path] = paths.as_slice() else {
+                    panic!("one typed read expected");
+                };
+                let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+                    panic!("pointer value expected");
+                };
+                assert!(matches!(value.pointer().block, PointerBlock::Symbolic(_)));
+                assert!(!value.pointer().block.proven_distinct(&target.block));
+            }
+            let bits = Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(&memory),
+                Box::new(cell.clone()),
+                crate::kernel::LoadKind::Bits32,
+            );
+            let cached = canonicalized_pointer_value_from_int_cell(
+                &cell,
+                &CValue::Int32(bits),
+                value_type,
+                &mut Vec::new(),
+                &assumptions,
+                None,
+                LoadPurpose::Validity,
+            )
+            .unwrap();
+            let CValue::Pointer(cached) = cached else {
+                panic!("cached pointer expected");
+            };
+            assert!(matches!(cached.pointer().block, PointerBlock::Symbolic(_)));
+            assert!(!cached.pointer().block.proven_distinct(&target.block));
         }
     }
 

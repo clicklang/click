@@ -77,6 +77,8 @@ pub(in crate::surface) enum SourceStatementKind {
         try_statement_index: usize,
         handler_statement_index: usize,
         after_try_statement_index: usize,
+        try_last_statement_index: usize,
+        handler_last_statement_index: usize,
     },
 }
 
@@ -100,12 +102,28 @@ impl SourceExecutionLayout {
                 return;
             };
             region.continuation_node = continuation_node;
+            let try_lasts = if let SourceStatementKind::Try {
+                after_try_statement_index,
+                try_last_statement_index,
+                handler_last_statement_index,
+                ..
+            } = &mut region.kind
+            {
+                *after_try_statement_index = continuation_node;
+                Some([*try_last_statement_index, *handler_last_statement_index])
+            } else {
+                None
+            };
             layout
                 .exited_branch_regions
                 .entry(last_statement_index)
                 .or_default()
                 .push(exited_if_index);
-            if let SourceStatementKind::If { .. } = region.kind {
+            if let Some(lasts) = try_lasts {
+                for last in lasts {
+                    redirect_control_successor(layout, last, exited_if_index, continuation_node);
+                }
+            } else if let SourceStatementKind::If { .. } = region.kind {
                 let arm_lasts: Vec<usize> = layout
                     .exited_branch_regions
                     .iter()
@@ -190,6 +208,8 @@ impl SourceExecutionLayout {
                                 try_statement_index,
                                 handler_statement_index,
                                 after_try_statement_index: continuation_node,
+                                try_last_statement_index: try_last,
+                                handler_last_statement_index: handler_last,
                             },
                         },
                     );
@@ -203,7 +223,7 @@ impl SourceExecutionLayout {
                     if let Some(region) = layout.statements.get_mut(&handler_last) {
                         region.continuation_node = continuation_node;
                     }
-                    Ok(try_last)
+                    Ok(statement_index)
                 }
                 _ => {
                     let statement_index = *next_statement_index;

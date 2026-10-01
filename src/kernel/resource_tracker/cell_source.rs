@@ -120,6 +120,11 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     CallHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
+    CallHavocKeptRange {
+        range: CMemoryRange,
+        first: PointerInRangeEvidence,
+        last: PointerInRangeEvidence,
+    },
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
@@ -374,6 +379,29 @@ impl MemoryDagHopJustification {
                     && ranges.iter().zip(mutable_ranges).all(|(evidence, range)| {
                         evidence.checks(range, pointer, bytes, assumptions)
                     })
+            }
+            Self::CallHavocKeptRange { range, first, last } => {
+                let CMemoryDerivation::CallHavoc {
+                    kept_by_caller: Some(kept),
+                    ..
+                } = derivation
+                else {
+                    return false;
+                };
+                let width = range.element_width();
+                width != 0
+                    && bytes != 0
+                    && bytes.is_multiple_of(width)
+                    && kept.contains_range(range)
+                    && first.checks(pointer, range, assumptions)
+                    && last.checks(
+                        &pointer.offset_by_elements(
+                            Bitvector32Term::Constant(bytes / width - 1),
+                            width,
+                        ),
+                        range,
+                        assumptions,
+                    )
             }
             Self::LoopHavocRanges { ranges } => {
                 let CMemoryDerivation::LoopHavoc {
@@ -753,7 +781,7 @@ impl PointerInRangeEvidence {
         })
     }
 
-    fn checks(
+    pub(in crate::kernel) fn checks(
         &self,
         pointer: &Pointer,
         range: &CMemoryRange,

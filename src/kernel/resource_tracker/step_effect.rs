@@ -424,6 +424,27 @@ fn cell_effect(
                 assumptions,
             ) {
                 hop(MemoryDagHopJustification::CallHavocRanges { ranges })
+            } else if let Some((range, first, last)) = kept_by_caller.as_ref().and_then(|kept| {
+                let range = kept.range_holding(assumptions, None, pointer, bytes)?;
+                let width = range.element_width();
+                if width == 0 || bytes == 0 || !bytes.is_multiple_of(width) {
+                    return None;
+                }
+                let first = super::cell_source::PointerInRangeEvidence::for_pointer(
+                    pointer,
+                    range,
+                    assumptions,
+                )?;
+                let last_pointer =
+                    pointer.offset_by_elements(Bitvector32Term::Constant(bytes / width - 1), width);
+                let last = super::cell_source::PointerInRangeEvidence::for_pointer(
+                    &last_pointer,
+                    range,
+                    assumptions,
+                )?;
+                Some((range.clone(), first, last))
+            }) {
+                hop(MemoryDagHopJustification::CallHavocKeptRange { range, first, last })
             } else if assumptions.ranges_proven_disjoint_from_pointer_for_frame(
                 mutable_ranges,
                 pointer,

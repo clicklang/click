@@ -41,6 +41,8 @@ Current projects:
   disjoint struct fields through the pinned Rust compiler import.
 - `rust-move-drop/` verifies a moved Rust guard that restores borrowed storage
   on normal and early return through a checked destructor contract.
+- `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
+  with the inner destructor's write observed by the outer destructor.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that
   restores its referent on both normal and early return, and a modular caller
   that observes the captured result and restored memory, using Clang 19's

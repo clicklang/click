@@ -5112,6 +5112,21 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
             .expect("prepared Rust lowering")
             .1
             .clone();
+        for function in &c_sources
+            .rust_lowered
+            .as_ref()
+            .expect("prepared Rust lowering")
+            .0
+        {
+            aggregate_objects.insert(
+                function.source_name().to_string(),
+                function.local_struct_values().clone(),
+            );
+            local_struct_pointers.insert(
+                function.source_name().to_string(),
+                function.local_struct_pointers().clone(),
+            );
+        }
         return Ok((
             layouts,
             union_layouts,
@@ -5131,6 +5146,48 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                 expected.iter().cloned().collect::<Vec<_>>().join(", "),
                 actual.iter().cloned().collect::<Vec<_>>().join(", "),
             )));
+        }
+        for function in
+            std::iter::once(&import.export().function).chain(&import.export().reachable_functions)
+        {
+            let mut locals = BTreeMap::new();
+            let mut ambiguous = BTreeSet::new();
+            let mut pending = vec![function.body.as_slice()];
+            while let Some(body) = pending.pop() {
+                for statement in body {
+                    use crate::languages::cpp::{CppStatement as S, CppType as T};
+                    match statement {
+                        S::Declare { local, .. } => {
+                            if let T::Record { name, .. } = &local.value_type {
+                                if locals.get(&local.name).is_some_and(|known| known != name) {
+                                    ambiguous.insert(local.name.clone());
+                                }
+                                locals.insert(local.name.clone(), name.clone());
+                            }
+                        }
+                        S::Scope { body, .. } => pending.push(body),
+                        S::If {
+                            then_branch,
+                            else_branch,
+                            ..
+                        } => {
+                            pending.push(then_branch);
+                            pending.push(else_branch);
+                        }
+                        S::TryCatchInt32 {
+                            try_body, handler, ..
+                        } => {
+                            pending.push(try_body);
+                            pending.push(handler);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            for name in ambiguous {
+                locals.remove(&name);
+            }
+            aggregate_objects.insert(function.name.clone(), locals);
         }
         for record in &import.export().records {
             let fields = record

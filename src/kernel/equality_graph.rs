@@ -366,6 +366,26 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
     LOGICAL_POINTER_READS.with(|reads| *reads.borrow_mut() = Default::default());
 }
 
+/// The defining load of a producer-retained typed pointer value. The
+/// definition is term metadata, not a hypothesis about the loaded address.
+pub(in crate::kernel) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Term> {
+    let application = LOGICAL_POINTER_READS.with(|reads| {
+        reads
+            .borrow()
+            .lock()
+            .expect("logical pointer reads")
+            .definitions
+            .get(value)
+            .map(|(application, _)| application.clone())
+    })?;
+    let load = application.as_loaded_value()?;
+    Some(Bitvector32Term::MemoryLoad(
+        load.defining_memory,
+        Box::new(load.defining_address),
+        LoadKind::Bits32,
+    ))
+}
+
 impl Default for EqualityGraph {
     fn default() -> Self {
         Self {

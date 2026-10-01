@@ -804,6 +804,142 @@ fn write_candidates_do_not_scan_unrelated_memory_ranges() {
 }
 
 #[test]
+fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
+    let base = Pointer::symbolic(Variable(862_000));
+    let returned = Pointer::symbolic(Variable(862_001));
+    let bytes = |start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            start.into(),
+            end.into(),
+            1,
+        ))
+    };
+    // A returned i32 field sits beside padding still spelled in bytes.
+    let field = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        returned.clone(),
+        0u32.into(),
+        1u32.into(),
+        4,
+    ));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(field.clone())
+        .unchecked_with_fact(bytes(12, 16));
+    let empty = PureFactContext::new();
+    resources.synchronize_memory_equalities(&empty);
+    assert!(
+        resources
+            .clone()
+            .reserve_owned_memory_fragments(&bytes(8, 16), &empty)
+            .is_none()
+    );
+    let facts = empty.clone().assume_condition(
+        ConditionTerm::pointer_equal(
+            Pointer {
+                block: base.block.clone(),
+                offset: PointerOffsetTerm::Constant(8),
+            },
+            returned,
+        ),
+        true,
+    );
+    let (remaining, supports) = resources
+        .clone()
+        .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+        .unwrap();
+    assert_eq!(supports.len(), 2);
+    assert_ne!(supports[0], supports[1]);
+    for support in &supports {
+        assert!(resources.owned_fact_for_occurrence(*support).is_some());
+        assert!(remaining.owned_fact_for_occurrence(*support).is_none());
+    }
+    assert!(
+        remaining
+            .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+            .is_none()
+    );
+    assert!(
+        resources
+            .clone()
+            .reserve_owned_memory_fragments(&bytes(8, 17), &facts)
+            .is_none()
+    );
+    let viewed = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::view_memory(
+            field.memory_own_range().unwrap().clone(),
+        ))
+        .unchecked_with_fact(bytes(12, 16));
+    assert!(
+        viewed
+            .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+            .is_none()
+    );
+    // A failed reservation of a larger range did not consume its input.
+    assert!(
+        resources
+            .reserve_owned_memory_fragments(&bytes(8, 16), &facts)
+            .is_some()
+    );
+}
+
+#[test]
+fn owned_fragment_reservation_scales_with_fragments_not_ambient_memory() {
+    let base = Pointer::symbolic(Variable(862_010));
+    let fact = |start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            start.into(),
+            end.into(),
+            1,
+        ))
+    };
+    let measure = |fragments: u32, ambient: u32| {
+        let mut resources = ResourceContext::new();
+        for i in 0..fragments {
+            resources = resources.unchecked_with_fact(fact(i * 4, i * 4 + 4));
+        }
+        for i in 0..ambient {
+            resources = resources.unchecked_with_fact(fact(8192 + i * 8, 8196 + i * 8));
+        }
+        let facts = PureFactContext::new();
+        resources.synchronize_memory_equalities(&facts);
+        let required = fact(0, fragments * 4);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    resources
+                        .directly_supporting_owned_entry(&required, &facts)
+                        .is_none()
+                );
+                let (_, supports) = resources
+                    .reserve_owned_memory_fragments(&required, &facts)
+                    .unwrap();
+                assert_eq!(supports.len(), fragments as usize);
+            })
+        });
+        (work, map_work)
+    };
+    let ambient = [16, 64, 256, 1024].map(|n| measure(4, n));
+    assert!(
+        ambient[3].0 <= ambient[0].0 * 2 + 32,
+        "reservation scanned unrelated memory: {ambient:?}"
+    );
+    assert!(
+        ambient[3].1 <= ambient[0].1 * 4 + 256,
+        "reservation index scanned unrelated memory: {ambient:?}"
+    );
+    let fragments = [8, 32, 128].map(|n| measure(n, 0));
+    assert!(
+        fragments[2].0 <= fragments[0].0 * 20 + 128,
+        "reservation is superlinear: {fragments:?}"
+    );
+    assert!(
+        fragments[2].1 <= fragments[0].1 * 40 + 1024,
+        "reservation index is superlinear: {fragments:?}"
+    );
+}
+
+#[test]
 fn specification_read_candidates_do_not_scan_unrelated_memory_ranges() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256] {

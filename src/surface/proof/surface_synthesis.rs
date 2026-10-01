@@ -2114,6 +2114,26 @@ pub(in crate::surface) fn synthesize_surface_equality_across_points(
                 )
             })?,
         ),
+        ConditionTerm::PointerEqual(left, right) => (
+            anchored(&|state| {
+                synthesize_surface_pointer_expression(
+                    left,
+                    parameters,
+                    arguments,
+                    state,
+                    &bound_variables,
+                )
+            })?,
+            anchored(&|state| {
+                synthesize_surface_pointer_expression(
+                    right,
+                    parameters,
+                    arguments,
+                    state,
+                    &bound_variables,
+                )
+            })?,
+        ),
         _ => return None,
     };
     Some(ClickProposition::Comparison {
@@ -2557,6 +2577,22 @@ fn synthesize_surface_bitvector(
             }))
         }
         Bitvector32Term::MemoryLoad(memory, kernel_pointer, kind) => {
+            if *kind == crate::kernel::LoadKind::Bits32
+                && let Some(field) =
+                    synthesize_owned_field_at_address(kernel_pointer, CType::Int32, state)
+            {
+                return Some(field);
+            }
+
+            if *kind == crate::kernel::LoadKind::Bits32
+                && let Some(field) = synthesize_owned_pointer_field(kernel_pointer, state)
+            {
+                return Some(ContractExpression::Index(
+                    Box::new(field),
+                    Box::new(ContractExpression::CFragment(CExpression::Value(int32(0)))),
+                ));
+            }
+
             if let Some(source) = SYNTHESIS_QUALIFIED_SOURCES.with(|slot| {
                 slot.borrow()
                     .as_ref()?
@@ -3407,6 +3443,82 @@ fn synthesize_struct_field_load(
         .or_else(|| synthesize_local_field_load(pointer, value_type, parameters, arguments, state))
 }
 
+/// Recover source syntax for an opaque pointer value read from an owned
+/// aggregate field. Offset-based synthesis cannot name its distinct block.
+/// This is a candidate spelling; callers must re-lower it to the exact fact.
+fn synthesize_owned_field_at_address(
+    address: &Pointer,
+    value_type: CType,
+    state: &CState,
+) -> Option<ContractExpression> {
+    let PointerBlock::Concrete(block) = &address.block else {
+        return None;
+    };
+    let name = block.strip_prefix("local:")?.rsplit(':').next()?;
+    let slot = state.locals().aggregate_object_pointer(name)?;
+    let layout = state.locals().aggregate_layout(name)?;
+    let field = layout.fields().iter().find(|field| {
+        field.c_type() == value_type && slot.offset_by_bytes(field.offset_bytes()) == *address
+    })?;
+    let base = CExpression::Variable(name.to_string());
+    Some(ContractExpression::Field {
+        base: Box::new(ContractExpression::CFragment(base.clone())),
+        field: field.name().to_string(),
+        lowered: CExpression::TypedLoad {
+            pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
+            value_type,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        },
+        offset_bytes: field.offset_bytes(),
+    })
+}
+
+fn synthesize_owned_pointer_field(pointer: &Pointer, state: &CState) -> Option<ContractExpression> {
+    let PointerBlock::Symbolic(variable) = &pointer.block else {
+        return None;
+    };
+    if pointer.offset != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
+    let memory = crate::kernel::intern_c_memory_ref(state.memory());
+    if crate::kernel::canonical_form_of_load(
+        memory,
+        address.clone(),
+        crate::kernel::LoadKind::Bits32,
+    ) != Bitvector32Term::Variable(*variable)
+    {
+        return None;
+    }
+    let PointerBlock::Concrete(block) = &address.block else {
+        return None;
+    };
+    // Local storage names include a lifetime prefix when scopes reuse a name.
+    // Look up the named object and verify its actual slot rather than scanning
+    // all unrelated automatic aggregates in the snapshot.
+    let name = block.strip_prefix("local:")?.rsplit(':').next()?;
+    let slot = state.locals().aggregate_object_pointer(name)?;
+    let layout = state.locals().aggregate_layout(name)?;
+    let field = layout.fields().iter().find(|field| {
+        field.c_type().is_pointer() && slot.offset_by_bytes(field.offset_bytes()) == address
+    })?;
+    let base = CExpression::Variable(name.to_string());
+    Some(ContractExpression::Field {
+        base: Box::new(ContractExpression::CFragment(base.clone())),
+        field: field.name().to_string(),
+        lowered: CExpression::TypedLoad {
+            pointer: Box::new(owner_field_pointer(&base, field.offset_bytes())),
+            value_type: field.c_type(),
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        },
+        offset_bytes: field.offset_bytes(),
+    })
+}
+
 fn synthesize_surface_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
@@ -3469,6 +3581,9 @@ fn synthesize_surface_pointer(
     }) {
         return Some(expression);
     }
+    if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
+        return contract_expression_to_c_fragment(&field);
+    }
     if !arguments.iter().any(|argument| {
         matches!(
             argument,
@@ -3496,6 +3611,9 @@ fn synthesize_surface_pointer_expression(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    if let Some(field) = synthesize_owned_pointer_field(pointer, state) {
+        return Some(field);
+    }
     if let Some(pointer) =
         synthesize_surface_pointer(pointer, parameters, arguments, state, bound_variables)
     {

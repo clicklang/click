@@ -5696,6 +5696,23 @@ impl AnnotationLowerer<'_> {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             CExpression::Variable(name) => match environment.values.get(name) {
                 Some(value) => Ok(value.clone()),
+                None if environment.snapshot_state.as_ref().is_some_and(|state| {
+                    state.locals().aggregate_object_pointer(name).is_some()
+                }) =>
+                {
+                    // Automatic aggregates are places rather than ordinary
+                    // object-value bindings. Resolve only the named place in
+                    // this recorded state, including after it leaves scope.
+                    let pointer = environment
+                        .snapshot_state
+                        .as_ref()
+                        .and_then(|state| state.locals().aggregate_object_pointer(name))
+                        .expect("checked aggregate snapshot binding");
+                    Ok(SpecExpression::Value(CValue::typed_pointer(
+                        pointer.clone(),
+                        CType::UInt8Pointer,
+                    )))
+                }
                 None if self.entry_state.global_object_type(name).is_some() => {
                     Ok(SpecExpression::MemoryLoad {
                         memory: environment.current_memory.clone(),
