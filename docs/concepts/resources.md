@@ -542,6 +542,29 @@ its remaining memory ownership is available. It cannot reopen the consumed
 member or read the memory after freeing it. Opening and closing the member
 without consuming it cannot satisfy this contract.
 
+A private member body can also carry ordinary invariant facts:
+
+<!-- verified-example: mdtests/authority_wildcard_body_facts.md -->
+```click
+resource slot(pool: int32*, p: int32*) {
+    owns p[0..1];
+    fact 0 <= p[0];
+}
+```
+
+Folding must establish the fact at the current memory state. Opening exposes
+it, and closing must restore it after any C writes; an old snapshot of the
+fact cannot justify closing after an invalidating write. Consuming the exact
+member exposes its memory and invariant together. A helper may open and close
+the member without holding population authority, preserving membership.
+
+These facts may depend on the member's arguments and its privately owned
+memory. Ambient ownership of another cell does not let the member promise a
+fact about that cell. This increment supports unit members with field-free,
+owned-memory bodies, not named proof fields, aggregate count invariants inside
+members, or independent external lifetime claims. Population-wide facts belong
+in the authority control resource.
+
 A helper can move a unit member between two authorities of the same family:
 
 <!-- verified-example: mdtests/authority_wildcard_transfer_private_body.md -->

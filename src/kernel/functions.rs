@@ -24303,6 +24303,28 @@ pub(crate) fn instantiate_composite_resource_facts(
     )
 }
 
+/// Private member invariants may read only their own body, even when the
+/// ambient proof owns other memory. Otherwise opening one member after an
+/// unrelated write could publish a false current invariant.
+pub(crate) fn instantiate_private_member_body_facts(
+    composite: &CResourceFact,
+    definition: &CCompositeResourceDefinition,
+    memory: &CMemory,
+    assumptions: &PureFactContext,
+) -> Option<InstantiatedCompositeResourceFacts> {
+    let definitions = std::slice::from_ref(definition);
+    let singleton = ResourceContext::new().unchecked_with_fact(composite.clone());
+    let body =
+        expand_composite_resource_fact(&singleton, composite, definitions, memory, assumptions)?;
+    instantiate_composite_resource_facts(
+        composite,
+        definitions,
+        memory,
+        &body,
+        &assumptions.clone().require_owned_expression_loads(),
+    )
+}
+
 fn instantiate_composite_resource_facts_with_state(
     composite: &CResourceFact,
     definitions: &[CCompositeResourceDefinition],

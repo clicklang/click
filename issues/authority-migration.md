@@ -484,6 +484,13 @@ changes. Callers retain members in both pools, preserve private memory, and
 retire both populations after cleanup. This remains a narrow same-family,
 same-trailing-arguments transfer, not arbitrary multi-update support.
 
+Unit members with private owned-memory bodies now also carry ordinary `fact`
+invariants. Fold checks current facts; open exposes them and close requires
+restoration; exact consumption exposes the invariant with its memory. Member
+invariants can read only their own body, not unrelated ambient ownership.
+Dedicated fixtures and kernel forgery regressions cover this independently.
+Named proof fields and field-bearing population identity remain deferred.
+
 **Work:** Implement disjoint per-pool scopes, exact observations governed by a
 wildcard authority, and extend the checked transfer beyond the memory-only unit case as needed. Count
 individually identified members without erasing fields or treating equal

@@ -96,7 +96,6 @@ impl<'a> Proof<'a> {
                 .contains
                 .iter()
                 .any(|clause| !matches!(clause, ResourceClause::OwnMemory(_)))
-            || !body.facts.is_empty()
             || !body.witnesses.is_empty()
         {
             return Err(self.step_error(format!(
@@ -132,6 +131,27 @@ impl<'a> Proof<'a> {
                 before_facts.assumptions(),
             )
             .map_err(|message| {
+                if let Some(index) = message
+                    .strip_prefix("Requires member body fact #")
+                    .and_then(|index| index.parse::<usize>().ok())
+                    && let Some(fact) = body.facts.get(index)
+                {
+                    let fact = resource_argument_substitutions(
+                        definition,
+                        resource,
+                        context.claim_label,
+                        context.tactic_index,
+                    )
+                    .ok()
+                    .and_then(|substitutions| {
+                        substitute_click_proposition(fact, &substitutions).ok()
+                    });
+                    if let Some(fact) = fact {
+                        return self
+                            .step_error(format!("Requires {}", describe_click_proposition(&fact)));
+                    }
+                }
+
                 if produce && message.contains("Requires the private body") {
                     let missing = resource_argument_substitutions(
                         definition,
@@ -166,6 +186,24 @@ impl<'a> Proof<'a> {
                 }
                 self.step_error(message)
             })?;
+        let added_facts = if !produce && !compiled_definition.facts().is_empty() {
+            crate::kernel::instantiate_private_member_body_facts(
+                &selected,
+                compiled_definition,
+                execution.core.state.memory(),
+                before_facts.assumptions(),
+            )
+            .ok_or_else(|| {
+                self.step_error("Requires ownership of every cell read by member body facts")
+            })?
+            .propositions
+        } else {
+            Vec::new()
+        };
+        let mut after_facts = before_facts.clone();
+        for fact in &added_facts {
+            after_facts = after_facts.with_kernel_checked_fact(fact.clone());
+        }
         let entry_successor = execution
             .core
             .record_population_member_rewrite(
@@ -176,7 +214,7 @@ impl<'a> Proof<'a> {
                 produce,
                 &witness,
                 &after_state,
-                &before_facts,
+                &after_facts,
             )
             .map_err(|message| {
                 self.step_error(format!(
@@ -188,15 +226,15 @@ impl<'a> Proof<'a> {
             .focused_branch()
             .expect("population member change requires an open goal")
             .with_state(BranchState {
-                facts: before_facts,
+                facts: after_facts,
                 unfolded_predicates: self.focused_branch_unfolds().clone(),
                 execution: Some(Arc::new(execution)),
             });
         Ok(CheckedFocusedTransition {
             locals: self.state().locals().clone(),
             branch: Some(branch),
-            added_facts: Vec::new(),
-            checked_facts: Vec::new(),
+            added_facts: added_facts.clone(),
+            checked_facts: added_facts,
         })
     }
 
