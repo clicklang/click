@@ -188,25 +188,34 @@ impl<'tcx> BodyExporter<'tcx> {
     }
     fn adjusted_expr(&self, e: &hir::Expr<'tcx>, array_length: bool) -> Result<Expression, String> {
         // Built-in reference deref/reborrow adjustments keep the same address.
-        // Refuse trait-driven deref, pointer coercions and other implicit effects.
+        // Array unsizing carries the fixed length into byte-slice metadata.
+        // Refuse trait-driven deref and other pointer coercions.
         use ty::adjustment::{Adjust, AutoBorrow, DerefAdjustKind, PointerCoercion};
         let value_type =
             export_type(self.tcx, self.typeck.expr_ty(e)).map_err(|m| self.error(e, &m))?;
         let fixed_array = matches!(value_type, Type::Array { .. })
             || matches!(&value_type, Type::Reference { pointee, .. } if matches!(pointee.as_ref(), Type::Array { .. }));
+        let mut slice_coercion = None;
         for adjustment in self.typeck.expr_adjustments(e) {
+            if matches!(adjustment.kind, Adjust::Pointer(PointerCoercion::Unsize)) && fixed_array {
+                if !array_length {
+                    let Type::ByteSlice { mutable } = export_type(self.tcx, adjustment.target)?
+                    else {
+                        return Err(self.error(e, "array coercion requires a byte slice"));
+                    };
+                    slice_coercion = Some(mutable);
+                }
+                continue;
+            }
             if !matches!(
                 adjustment.kind,
                 Adjust::Deref(DerefAdjustKind::Builtin) | Adjust::Borrow(AutoBorrow::Ref(..))
-            ) && !(array_length
-                && matches!(adjustment.kind, Adjust::Pointer(PointerCoercion::Unsize))
-                && fixed_array)
-            {
+            ) {
                 return Err(self.error(e, "implicit adjustment outside Rust slice"));
             }
         }
         let t = self.typeck.expr_ty(e);
-        match e.kind {
+        let expression = match e.kind {
             hir::ExprKind::Array(elements) => Ok(Expression::Array {
                 elements: elements
                     .iter()
@@ -412,7 +421,14 @@ impl<'tcx> BodyExporter<'tcx> {
                 })
             }
             _ => Err(self.error(e, "expression outside the supported typed Rust subset")),
-        }
+        }?;
+        Ok(match slice_coercion {
+            Some(mutable) => Expression::ArrayToSlice {
+                array: Box::new(expression),
+                mutable,
+            },
+            None => expression,
+        })
     }
     fn block(&mut self, b: &hir::Block<'tcx>, tail_return: bool) -> Result<Vec<Statement>, String> {
         if !matches!(b.rules, hir::BlockCheckMode::DefaultBlock) {

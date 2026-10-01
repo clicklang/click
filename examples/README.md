@@ -47,6 +47,8 @@ Current projects:
   reborrows, direct calls, and parent reuse.
 - `rust-array-values/` checks local array construction, independent whole-array
   copies, assignment through references, and constructor evaluation order.
+- `rust-array-slices/` checks fixed byte arrays coercing to shared/mutable slices,
+  length metadata, slice reassignment, helper calls, and parent reuse.
 - `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
   with the inner destructor's write observed by the outer destructor.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that

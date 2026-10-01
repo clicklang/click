@@ -163,11 +163,20 @@ The synthetic [array-values example](https://github.com/clicklang/click/blob/mas
 checks independent copies, replacing an array from its own elements, copies
 through references, empty arrays, and constructor calls with observable effects.
 
+Fixed byte arrays coerce to `&[u8]` and `&mut [u8]` in local initialization,
+slice reassignment, and direct calls. The slice points at the original array
+and carries its fixed length as 64-bit metadata; coercion allocates no storage
+and grants no memory authority. Mutable sources can also coerce to shared
+slices. Zero-length arrays support length-only calls without memory authority.
+The compiler checks borrow validity, and Click still checks slice bounds and
+the callee's `views`/`owns` requirements. See the synthetic
+[array-to-slice example](https://github.com/clicklang/click/blob/master/examples/rust-array-slices/arrays.click).
+
 By-value array parameters or returns, nested arrays, array fields, and
-array-to-slice coercions remain unsupported. Indexed compound assignment and arrays
+non-byte slices remain unsupported. Indexed compound assignment and arrays
 in owned-value MIR remain outside the supported subset. The builtin length
-operation's compiler-generated unsizing is accepted only to recover the fixed
-length; it does not enable general coercions or library methods.
+operation also supports non-byte fixed arrays by recovering their fixed
+length; this does not enable non-byte slices or general library methods.
 
 Modules, imports, macros, semantic attributes, dependencies, unsafe code,
 general traits, type/const generics, loops, heap allocation, aggregate parameters and returns, reference
