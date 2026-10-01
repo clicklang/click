@@ -163,6 +163,18 @@ impl PureFactContext {
                             return Some(left == right);
                         }
                         let (left, right) = (&left, &right);
+                        // One scaled index against a constant is exactly a
+                        // question about the index: `x * 8 + 4 == 12` is
+                        // `x == 1`, at any stride.
+                        if let Some((index, element)) =
+                            single_scaled_index_equal_to_constant(left, right)
+                                .or_else(|| single_scaled_index_equal_to_constant(right, left))
+                        {
+                            return self.decide(&ConditionTerm::equal(
+                                index.clone(),
+                                Bitvector32Term::Constant(element as u32),
+                            ));
+                        }
                         let left_index = int32_element_index_from_offset(left);
                         let right_index = int32_element_index_from_offset(right);
                         match (left_index, right_index) {

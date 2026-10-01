@@ -1730,6 +1730,46 @@ impl PointerOffsetTerm {
         Self::Constant(value)
     }
 
+    /// This offset as `sum(sext(index) * stride) + constant`, when every
+    /// leaf is a constant or a scaled `int32` index: the scaled leaves and
+    /// the constant. The sum is exact, with no wrap, so it describes the
+    /// offset's integer value.
+    pub(in crate::kernel) fn int32_scaled_linear_form(
+        &self,
+    ) -> Option<(Vec<(&Bitvector32Term, i64)>, i64)> {
+        // Each leaf's magnitude stays below `2^31 * 2^24`, so a sum of at
+        // most this many of them, and their constant, fits in an `i64`.
+        const MAX_LEAVES: usize = 64;
+        const MAX_STRIDE: i64 = 1 << 24;
+        const MAX_CONSTANT: i64 = 1 << 48;
+        let mut scaled = Vec::new();
+        let mut constant = 0i64;
+        let mut pending = vec![self];
+        let mut leaves = 0usize;
+        while let Some(term) = pending.pop() {
+            leaves += 1;
+            if leaves > MAX_LEAVES {
+                return None;
+            }
+            match term {
+                Self::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                Self::Constant(value) if value.unsigned_abs() < MAX_CONSTANT as u64 => {
+                    constant += value;
+                }
+                Self::Int32Scaled { value, byte_width }
+                    if byte_width.unsigned_abs() <= MAX_STRIDE as u64 =>
+                {
+                    scaled.push((value.as_ref(), *byte_width));
+                }
+                _ => return None,
+            }
+        }
+        Some((scaled, constant))
+    }
+
     pub(in crate::kernel) fn as_const(&self) -> Option<i64> {
         match self {
             Self::Constant(value) => Some(*value),
@@ -2359,6 +2399,7 @@ impl ConditionTerm {
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
+            _ if pointer_offsets_differ_by_residue(&left, &right) => Self::Constant(false),
             _ => Self::PointerOffsetEqual(Box::new(left), Box::new(right)),
         }
     }
@@ -2374,6 +2415,34 @@ impl ConditionTerm {
             Self::PointerEqual(Box::new(left), Box::new(right))
         }
     }
+}
+
+/// Whether two offsets can never be equal because they differ by a constant
+/// that no combination of their scaled indexes makes up: every scaled leaf
+/// is a multiple of the strides' greatest common divisor, so offsets whose
+/// constants differ modulo it are distinct. `items[x].y` at `x * 8 + 4` is
+/// never the cell at `0` or `8`.
+fn pointer_offsets_differ_by_residue(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
+    let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
+        left.int32_scaled_linear_form(),
+        right.int32_scaled_linear_form(),
+    ) else {
+        return false;
+    };
+    let divisor = left_scaled
+        .iter()
+        .chain(&right_scaled)
+        .fold(0u64, |divisor, (_, stride)| {
+            gcd(divisor, stride.unsigned_abs())
+        });
+    divisor > 1 && (left_constant - right_constant).unsigned_abs() % divisor != 0
+}
+
+fn gcd(mut left: u64, mut right: u64) -> u64 {
+    while right != 0 {
+        (left, right) = (right, left % right);
+    }
+    left
 }
 
 fn classify_float_bits(

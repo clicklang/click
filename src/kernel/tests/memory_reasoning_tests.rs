@@ -2484,6 +2484,61 @@ fn pointer_offset_equality_combines_equal_base_and_zero_index() {
 }
 
 #[test]
+fn a_struct_field_offset_is_distinct_from_offsets_off_its_stride_residue() {
+    let index = Bitvector32Term::Variable(Variable(93));
+    // `items[x].y` in an array of 8-byte structs is at `x * 8 + 4`.
+    let field = PointerOffsetTerm::add(
+        PointerOffsetTerm::scale_int32(index.clone(), 8),
+        PointerOffsetTerm::Constant(4),
+    );
+    for other in [0, 8, -8, 13] {
+        assert_eq!(
+            ConditionTerm::pointer_offset_equal(field.clone(), PointerOffsetTerm::Constant(other)),
+            ConditionTerm::Constant(false),
+            "offset {other}",
+        );
+    }
+    // A symbolic offset on the other side shares the residue only when its
+    // strides allow it: `y * 4` can be `x * 8 + 4`, `y * 8` cannot.
+    let other_index = Bitvector32Term::Variable(Variable(94));
+    assert_eq!(
+        ConditionTerm::pointer_offset_equal(
+            field.clone(),
+            PointerOffsetTerm::scale_int32(other_index.clone(), 8),
+        ),
+        ConditionTerm::Constant(false),
+    );
+    assert!(matches!(
+        ConditionTerm::pointer_offset_equal(
+            field.clone(),
+            PointerOffsetTerm::scale_int32(other_index, 4),
+        ),
+        ConditionTerm::PointerOffsetEqual(_, _),
+    ));
+    assert!(matches!(
+        ConditionTerm::pointer_offset_equal(field, PointerOffsetTerm::Constant(12)),
+        ConditionTerm::PointerOffsetEqual(_, _),
+    ));
+}
+
+#[test]
+fn a_struct_field_offset_at_a_constant_is_decided_by_its_index() {
+    let index = Bitvector32Term::Variable(Variable(95));
+    let field = PointerOffsetTerm::add(
+        PointerOffsetTerm::scale_int32(index.clone(), 8),
+        PointerOffsetTerm::Constant(4),
+    );
+    let at_twelve = ConditionTerm::pointer_offset_equal(field, PointerOffsetTerm::Constant(12));
+    for (value, decided) in [(true, true), (false, false)] {
+        let assumptions = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(1)),
+            value,
+        );
+        assert_eq!(assumptions.decide(&at_twelve), Some(decided));
+    }
+}
+
+#[test]
 fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
     let before = CMemory::new();
     let after = before.clone().with_block("call-havoc:0", 0);
