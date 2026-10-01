@@ -1969,8 +1969,11 @@ impl ConditionTerm {
         {
             return Self::Constant(true);
         }
+        // No unsigned value is below zero: `x < 0u` is the C test an
+        // unsigned bounds check `x >= 0 && x < n` negates.
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left < right),
+            (_, Some(0)) => Self::Constant(false),
             _ => Self::Bitvector64UnsignedLessThan(Box::new(left), Box::new(right)),
         }
     }
@@ -1978,6 +1981,7 @@ impl ConditionTerm {
     pub(crate) fn uint64_less_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left <= right),
+            (Some(0), _) => Self::Constant(true),
             _ => Self::Bitvector64UnsignedLessEqual(Box::new(left), Box::new(right)),
         }
     }
@@ -1985,6 +1989,7 @@ impl ConditionTerm {
     pub(crate) fn uint64_greater_than(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left > right),
+            (Some(0), _) => Self::Constant(false),
             _ => Self::Bitvector64UnsignedGreaterThan(Box::new(left), Box::new(right)),
         }
     }
@@ -1992,6 +1997,7 @@ impl ConditionTerm {
     pub(crate) fn uint64_greater_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
         match (left.uint64_as_const(), right.uint64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left >= right),
+            (_, Some(0)) => Self::Constant(true),
             _ => Self::Bitvector64UnsignedGreaterEqual(Box::new(left), Box::new(right)),
         }
     }

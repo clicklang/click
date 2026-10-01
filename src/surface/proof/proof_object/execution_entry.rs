@@ -39,6 +39,7 @@ impl<'a> Proof<'a> {
                 predicate_environment,
                 click_function_environment,
                 theorem_environment,
+                step_tactic_name: "step()",
                 constants: Arc::new(constants),
             })),
             state: KernelProofObject::root(

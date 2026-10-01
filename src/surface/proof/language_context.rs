@@ -204,6 +204,10 @@ pub(in crate::surface::proof) struct ExecutionProofContext<'a> {
     pub(in crate::surface::proof) predicate_environment: &'a PredicateEnvironment,
     pub(in crate::surface::proof) click_function_environment: &'a ClickFunctionEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'a TheoremEnvironment,
+    /// The source tactic a statement step runs on behalf of, as diagnostics
+    /// name it: `step()` for an explicit step, `execute()` while a smart
+    /// `execute()` advances statement by statement.
+    pub(in crate::surface::proof) step_tactic_name: &'static str,
     /// Shared by every context derived from this proof (tactic-index
     /// re-attribution, loop-bound executions), so deriving one is cheap.
     pub(in crate::surface::proof) constants: Arc<ExecutionProofConstants>,
@@ -237,6 +241,19 @@ impl<'a> ExecutionProofContext<'a> {
     pub(in crate::surface::proof) fn with_tactic_index(&self, tactic_index: usize) -> Self {
         Self {
             tactic_index,
+            constants: self.constants.clone(),
+            ..*self
+        }
+    }
+
+    /// The same proof, naming `step_tactic_name` as the source tactic of the
+    /// statement steps it checks.
+    pub(in crate::surface::proof) fn with_step_tactic_name(
+        &self,
+        step_tactic_name: &'static str,
+    ) -> Self {
+        Self {
+            step_tactic_name,
             constants: self.constants.clone(),
             ..*self
         }

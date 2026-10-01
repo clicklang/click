@@ -33,7 +33,7 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        if let Some((term, bound)) = unsigned_upper_bound_below_sign_bit(condition)
+        if let Some((term, bound, _)) = unsigned_upper_bound_below_sign_bit(condition, true)
             && let Some(value) = self.decide_unsigned_upper_bound_by_signed_order(term, bound)
         {
             return Some(value);
@@ -1072,7 +1072,9 @@ impl PureFactContext {
         // signed pair `0 <= term` and `term <= bound`, read the same way the
         // condition checker reads it (`unsigned_upper_bound_below_sign_bit`),
         // so the two provers agree on what a range's extent guard means.
-        if value && let Some((term, bound)) = unsigned_upper_bound_below_sign_bit(condition) {
+        if value
+            && let Some((term, bound, _)) = unsigned_upper_bound_below_sign_bit(condition, true)
+        {
             return self.proves_order_condition_for_memory_resolution(
                 &ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone()),
                 true,
@@ -1488,23 +1490,39 @@ fn split_constant_displacement(
     (base, displacement)
 }
 
-/// The operand and inclusive bound of an unsigned upper bound `x <=u c` (or
-/// `x <u c + 1`) whose bound `c` lies below the sign bit, read back from the
+/// The operand, inclusive bound, and source strictness of an unsigned upper
+/// bound `x <=u c` (or `x <u c + 1`) whose bound `c` lies below the sign bit,
+/// read back from the
 /// biased encoding [`ConditionTerm::unsigned_less_equal`] builds:
-/// `(x ^ 2^31) <=s (c ^ 2^31)`.
+/// `(x ^ 2^31) <=s (c ^ 2^31)`, held with `value`: the mirrored
+/// `(c ^ 2^31) >s (x ^ 2^31)` and the refuted converses (a false
+/// `(x ^ 2^31) >s c'`) read the same way [`condition_as_order_fact`] reads
+/// them.
 ///
 /// Such a bound means exactly `0 <= x` and `x <= c` in signed arithmetic: a
 /// word no larger than `c < 2^31` as unsigned has a clear sign bit, and for a
 /// clear sign bit the two readings agree. That is the form order facts are
-/// written in, so the condition checker decides it by deciding those two.
-/// The recognizer is a constant-size match on the condition's own shape.
-fn unsigned_upper_bound_below_sign_bit(
+/// written in, so the condition checker decides it by deciding those two, and
+/// a context that assumes it files those two beside it
+/// (`PureFactContext::assume_condition`), so every reader of signed order
+/// facts sees the range an unsigned test established. The recognizer is a
+/// constant-size match on the condition's own shape.
+pub(in crate::kernel) fn unsigned_upper_bound_below_sign_bit(
     condition: &ConditionTerm,
-) -> Option<(&Bitvector32Term, u32)> {
+    value: bool,
+) -> Option<(&Bitvector32Term, u32, bool)> {
     const SIGN_BIT: u32 = 0x8000_0000;
-    let (left, right, strict) = match condition {
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, right, false),
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, right, true),
+    // `(lower, upper, strict)`: the held fact is `lower < upper` when
+    // strict and `lower <= upper` otherwise.
+    let (left, right, strict) = match (condition, value) {
+        (ConditionTerm::Bitvector32SignedLessEqual(a, b), true)
+        | (ConditionTerm::Bitvector32SignedGreaterThan(a, b), false) => (a, b, false),
+        (ConditionTerm::Bitvector32SignedLessThan(a, b), true)
+        | (ConditionTerm::Bitvector32SignedGreaterEqual(a, b), false) => (a, b, true),
+        (ConditionTerm::Bitvector32SignedGreaterEqual(a, b), true)
+        | (ConditionTerm::Bitvector32SignedLessThan(a, b), false) => (b, a, false),
+        (ConditionTerm::Bitvector32SignedGreaterThan(a, b), true)
+        | (ConditionTerm::Bitvector32SignedLessEqual(a, b), false) => (b, a, true),
         _ => return None,
     };
     let term = match left.as_ref() {
@@ -1518,7 +1536,39 @@ fn unsigned_upper_bound_below_sign_bit(
     let biased = right.as_const()?;
     let bound = biased ^ SIGN_BIT;
     let bound = if strict { bound.checked_sub(1)? } else { bound };
-    (bound <= i32::MAX as u32).then_some((term, bound))
+    (bound <= i32::MAX as u32).then_some((term, bound, strict))
+}
+
+/// The operand, inclusive bound, and source strictness of a sixty-four-bit
+/// unsigned upper bound `x <=u c` (or `x <u c + 1`) held with `value`, in
+/// either orientation or polarity, whose bound `c` lies below `2^31`.
+///
+/// Such a bound pins `x` below the sign bit of its low word: `x` is exactly
+/// its truncation `(uint32)x`, which as a signed word lies in `0..=c`. A
+/// context that assumes the bound files that range on the truncation beside
+/// it (`PureFactContext::assume_condition`), the sixty-four-bit counterpart
+/// of [`unsigned_upper_bound_below_sign_bit`]. Constant-size match.
+pub(in crate::kernel) fn uint64_upper_bound_below_sign_bit(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(&Bitvector32Term, u32, bool)> {
+    let (left, right, strict) = match (condition, value) {
+        (ConditionTerm::Bitvector64UnsignedLessEqual(a, b), true)
+        | (ConditionTerm::Bitvector64UnsignedGreaterThan(a, b), false) => (a, b, false),
+        (ConditionTerm::Bitvector64UnsignedLessThan(a, b), true)
+        | (ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b), false) => (a, b, true),
+        (ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b), true)
+        | (ConditionTerm::Bitvector64UnsignedLessThan(a, b), false) => (b, a, false),
+        (ConditionTerm::Bitvector64UnsignedGreaterThan(a, b), true)
+        | (ConditionTerm::Bitvector64UnsignedLessEqual(a, b), false) => (b, a, true),
+        _ => return None,
+    };
+    if left.uint64_as_const().is_some() {
+        return None;
+    }
+    let bound = right.uint64_as_const()?;
+    let bound = if strict { bound.checked_sub(1)? } else { bound };
+    (bound <= i32::MAX as u64).then_some((left.as_ref(), bound as u32, strict))
 }
 
 impl PureFactContext {
