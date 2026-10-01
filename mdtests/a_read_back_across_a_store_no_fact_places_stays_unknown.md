@@ -41,5 +41,5 @@ int32 read_back(int32 u, int32 v) {
 ```
 
 ```expect
-fail: v < 4, 0 == v is false, … == NULL is false
+fail: case: [0 == v is false, … == NULL is false]
 ```
