@@ -476,12 +476,22 @@ impl PureFactContext {
             range.1 = range.1.min(hi + 0x8000_0000);
         }
         if let Some((lo, hi)) = self.indexed_constant_interval(term)
-            && lo >= 0
+            && (lo >= 0 || range.1 <= i32::MAX as i64)
         {
             range.0 = range.0.max(lo);
             range.1 = range.1.min(hi);
         }
         range
+    }
+
+    fn widened_unsigned_operand(term: &Bitvector32Term) -> Option<Option<&Bitvector32Term>> {
+        match term {
+            Bitvector32Term::Int64FromUInt32(value) => Some(Some(value)),
+            Bitvector32Term::Int64Constant(value) if (0..=u32::MAX as i64).contains(value) => {
+                Some(None)
+            }
+            _ => None,
+        }
     }
 
     pub(crate) fn widened_unsigned_sum_bound_premises(
@@ -494,25 +504,42 @@ impl PureFactContext {
         let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
             return None;
         };
-        let (Bitvector32Term::Int64FromUInt32(a), Bitvector32Term::Int64FromUInt32(b)) =
-            (a.as_ref(), b.as_ref())
-        else {
-            return None;
-        };
+        let a_operand = Self::widened_unsigned_operand(a)?;
+        let b_operand = Self::widened_unsigned_operand(b)?;
         let mut premises = Vec::new();
-        for operand in [a.as_ref(), b.as_ref()] {
+        for operand in [a_operand, b_operand].into_iter().flatten() {
             let biased = crate::kernel::eval::canonical_term(&Bitvector32Term::bitwise_xor(
                 operand.clone(),
                 Bitvector32Term::Constant(0x8000_0000),
             ));
             let unsigned = self.signed_constant_bound_facts(SignedDefinedWidth::Int32, &biased);
+            let signed = self.signed_constant_bound_facts(
+                SignedDefinedWidth::Int32,
+                &crate::kernel::eval::canonical_term(operand),
+            );
             if unsigned.is_empty() {
-                premises.extend(self.signed_constant_bound_facts(
-                    SignedDefinedWidth::Int32,
-                    &crate::kernel::eval::canonical_term(operand),
-                ));
+                premises.extend(signed);
             } else {
+                let unsigned_upper = self
+                    .indexed_constant_interval(&biased)
+                    .map_or(u32::MAX as i64, |(_, upper)| upper + 0x8000_0000);
                 premises.extend(unsigned);
+                premises.extend(signed.into_iter().filter(|premise| {
+                    if unsigned_upper > i32::MAX as i64 {
+                        return true;
+                    }
+                    let Proposition::ConditionIs(condition, value) = premise else {
+                        return false;
+                    };
+                    condition_as_order_fact(condition, *value).is_some_and(
+                        |(lower, upper, strict)| {
+                            crate::kernel::eval::canonical_term(&lower)
+                                == crate::kernel::eval::canonical_term(operand)
+                                && signed_bitvector_constant(&upper)
+                                    .is_some_and(|bound| bound - i64::from(strict) < unsigned_upper)
+                        },
+                    )
+                }));
             }
         }
         Some(premises)
@@ -525,14 +552,19 @@ impl PureFactContext {
         let Bitvector32Term::Int64Add(a, b) = left.as_ref() else {
             return None;
         };
-        let (Bitvector32Term::Int64FromUInt32(a), Bitvector32Term::Int64FromUInt32(b)) =
-            (a.as_ref(), b.as_ref())
-        else {
-            return None;
-        };
+        let a_operand = Self::widened_unsigned_operand(a)?;
+        let b_operand = Self::widened_unsigned_operand(b)?;
         let bound = right.int64_as_const()?;
-        let (a_lo, a_hi) = self.widened_unsigned_interval(a);
-        let (b_lo, b_hi) = self.widened_unsigned_interval(b);
+        let interval = |term: &Bitvector32Term, operand: Option<&Bitvector32Term>| {
+            if let Some(operand) = operand {
+                self.widened_unsigned_interval(operand)
+            } else {
+                let value = term.int64_as_const().expect("checked widened constant");
+                (value, value)
+            }
+        };
+        let (a_lo, a_hi) = interval(a, a_operand);
+        let (b_lo, b_hi) = interval(b, b_operand);
         if a_hi + b_hi <= bound {
             Some(true)
         } else if a_lo + b_lo > bound {

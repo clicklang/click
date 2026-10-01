@@ -38,13 +38,13 @@ writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
 exporter, refresh existing imports. Configuration schema 2 is unchanged; the
-typed artifact and lock now use schema 3.
+typed artifact and lock now use schema 4.
 
 ## Supported semantics
 
-The scalar slice supports `i32`, `u8`, `u32`, booleans, unit returns, initialized scalar
+The scalar slice supports `i32`, `u8`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
-references to supported integers and plain structs with integer or reference fields, field
+references to `i32`, `u8`, and `u32`, and plain structs with those integers or reference fields, field
 access, and local reborrowing of reference-backed places. Arithmetic supports addition,
 subtraction, multiplication, division, remainder, bitwise operations, comparisons,
 and boolean operations. Unsigned shifts support `u8` and `u32`; signed shifts
@@ -75,12 +75,48 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 It does not establish checksum-library support;
-byte slices, loops, and crate extraction remain outstanding.
+loops and crate extraction remain outstanding.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
 cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
 ```
+
+## Byte slices and indexing
+
+Shared `&[u8]` and mutable `&mut [u8]` parameters, local copies and reborrows,
+builtin `.len()`, indexed reads and writes, and direct slice calls are supported.
+Slice references lower to paired parameters: `bytes: &[u8]` becomes
+`const uint8* bytes, uint64 bytes_len`; a mutable slice uses `uint8*`.
+The generated `<parameter>_len` name must not collide with another parameter.
+On the pinned target, `usize` is a 64-bit unsigned value, including lengths,
+index literals, comparisons, casts, and returns. General `usize` arithmetic
+remains unsupported.
+
+Every index checks `index < length` at the full target width before address
+formation. Shared reads require `views`; writes require `owns`. Local slice
+copies and calls preserve both pointer and length. The compiler checks borrow
+legality; Click checks memory authority and the indexed values.
+
+The [byte-slice example](https://github.com/clicklang/click/blob/master/examples/rust-slices/bytes.click)
+uses variable-length contracts with existing memory ranges:
+
+<!-- verified-example: mdtests/uint64_index_variable_length.md -->
+```click
+uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
+    requires bytes_len <= 2147483647u64;
+    requires index < bytes_len;
+    views bytes[0..(int32)bytes_len];
+    ensures result == bytes[(int32)index];
+} by { execute(); simp(); }
+```
+
+The length bound reflects the current signed-word memory-range model; it does
+not truncate Rust slice metadata. `.len()` alone needs no byte resource and
+preserves larger 64-bit lengths. Slice returns, subslices, fixed arrays,
+indexed compound assignment, other slice element types, and slices in owned-value
+MIR functions remain unsupported. Normal numeric contract casts now include
+`(int32)`, `(uint32)`, and `(uint64)`.
 
 Modules, imports, macros, semantic attributes, dependencies, unsafe code,
 general traits, type/const generics, loops, heap allocation, aggregate parameters and returns, reference

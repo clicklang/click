@@ -2757,6 +2757,12 @@ impl PureFactContext {
             let mut index = std::mem::take(&mut self.int64_signed_order_bounds);
             Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
             self.int64_signed_order_bounds = index;
+        } else if let Some((left, right, strict)) =
+            condition_reasoning::condition_as_uint64_order_fact(condition, value)
+        {
+            let mut index = std::mem::take(&mut self.uint64_order_bounds);
+            Self::adjust_order_bound_index(&mut index, left, right, strict, insert);
+            self.uint64_order_bounds = index;
         }
     }
 
@@ -3373,6 +3379,7 @@ impl PureFactContext {
     pub(super) fn rebuild_signed_order_bounds(&mut self) {
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
+        self.uint64_order_bounds = crate::persistent::PersistentMap::default();
         let facts = self
             .condition_facts
             .iter()
@@ -4541,6 +4548,9 @@ impl PureFactContext {
             && self
                 .int64_signed_order_bounds
                 .shares_root_with(&other.int64_signed_order_bounds)
+            && self
+                .uint64_order_bounds
+                .shares_root_with(&other.uint64_order_bounds)
             && std::sync::Arc::ptr_eq(
                 &self.memory_load_condition_facts,
                 &other.memory_load_condition_facts,

@@ -1355,8 +1355,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 Bitvector32Term::UnsignedRemainder(left, right)
             }
             Bitvector32Term::ShiftLeft(left, right) => {
-                let (left, right) = binary(left, right);
-                Bitvector32Term::ShiftLeft(left, right)
+                // The term denotes the shifted bits; signed C overflow is
+                // checked separately during expression evaluation. Preserve
+                // unsigned high-bit results when substitution makes both
+                // operands constant.
+                Bitvector32Term::unsigned_shift_left(
+                    rewrite_term(left, from, to),
+                    rewrite_term(right, from, to),
+                )
             }
             Bitvector32Term::ArithmeticShiftRight(left, right) => {
                 let (left, right) = binary(left, right);

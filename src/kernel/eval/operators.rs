@@ -1780,6 +1780,7 @@ fn uint64_index_has_signed_word_range(
         true,
     );
     assumptions.proves_exact(&sign_bit_clear)
+        || matches!(&sign_bit_clear, Proposition::ConditionIs(condition, true) if assumptions.decide(condition) == Some(true))
         || facts.iter().any(|fact| match fact.proposition() {
             Proposition::ConditionIs(condition, held) => {
                 crate::kernel::assumptions::uint64_upper_bound_below_sign_bit(condition, *held)

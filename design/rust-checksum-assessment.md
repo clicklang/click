@@ -3,7 +3,7 @@
 This assessment pins the existing Adler-32 implementations selected by
 [the Rust roadmap](../issues/rust-support.md). It does not claim that Click
 verifies either library. The scalar checkpoint supports `u8` and `u32`
-arithmetic; byte slices/indexing, wider integers, iterators, and crate support
+arithmetic and bounded byte slices/indexing; wider integers, iterators, and crate support
 follow from the actual
 reachable source, rather than from a replacement checksum implementation.
 
@@ -138,7 +138,10 @@ The shared field-borrow blocker was repaired in
 child's write of 42 and rejects a stale result of 1, with checked expansion.
 The subsequent scalar checkpoint covers `u8`/`u32`, casts, unsigned comparisons,
 remainder, shifts, bitwise operations, and checked panic obligations. `u16`
-and target-sized `usize` remain outstanding.
+and general target-sized `usize` arithmetic remain outstanding. Byte slices
+now support `.len()`, indexed reads/writes, local reborrows and direct calls;
+variable-length memory contracts currently require length at most `INT32_MAX`.
+Slice metadata and index checks retain the target's full 64-bit width.
 
 1. Add `u8`, `u16`, `u32`, and target-sized `usize` to the Rust artifact and
    direct lowering, together with required casts, unsigned comparisons,

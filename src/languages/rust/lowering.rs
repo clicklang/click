@@ -10,6 +10,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::I32 => Ok(C0Type::Int32),
         Type::U8 => Ok(C0Type::UInt8),
         Type::U32 => Ok(C0Type::UInt32),
+        Type::Usize => Ok(C0Type::UInt64),
         Type::Bool => Ok(C0Type::Bool),
         Type::Unit => Ok(C0Type::Void),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
@@ -109,7 +110,7 @@ fn lower_function(
 ) -> Result<C0Function, String> {
     if !matches!(
         f.return_type,
-        Type::I32 | Type::U8 | Type::U32 | Type::Bool | Type::Unit
+        Type::I32 | Type::U8 | Type::U32 | Type::Usize | Type::Bool | Type::Unit
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
@@ -117,9 +118,30 @@ fn lower_function(
     let mut parameters = Vec::new();
     let mut kernel_parameters = Vec::new();
     let mut locals = BTreeSet::new();
+    let mut slices = BTreeMap::new();
     for p in &f.parameters {
         if !locals.insert(p.name.clone()) {
             return Err("duplicate Rust parameter".into());
+        }
+        if let Type::ByteSlice { mutable } = &p.value_type {
+            let length = format!("{}_len", p.name);
+            if f.parameters.iter().any(|other| other.name == length)
+                || !locals.insert(length.clone())
+            {
+                return Err(format!(
+                    "Rust slice length parameter `{length}` collides with a parameter"
+                ));
+            }
+            slices.insert(p.name.clone(), (length.clone(), !mutable));
+            parameters.push(
+                C0Parameter::new(C0Type::UInt8Pointer, p.name.clone(), None)
+                    .with_pointee_constant(!mutable),
+            );
+            parameters.push(C0Parameter::new(C0Type::UInt64, length.clone(), None));
+            kernel_parameters
+                .push(c_parameter(&p.name, CType::UInt8Pointer).with_pointee_constant(!mutable));
+            kernel_parameters.push(c_parameter(length, CType::UInt64));
+            continue;
         }
         let c_type = scalar_type(&p.value_type)?;
         if c_type == C0Type::Void {
@@ -142,6 +164,7 @@ fn lower_function(
     }
     let mut cx = Context {
         owned_locals: BTreeSet::new(),
+        slices,
         source: &export.logical_source,
         function: &f.name,
         fields,
@@ -185,6 +208,7 @@ fn lower_function(
 }
 struct Context<'a> {
     owned_locals: BTreeSet<String>,
+    slices: BTreeMap<String, (String, bool)>,
     source: &'a str,
     function: &'a str,
     fields: &'a BTreeMap<(&'a str, &'a str), (u32, CType)>,
@@ -210,6 +234,40 @@ impl Context<'_> {
                 if !self.locals.insert(place.name.clone()) {
                     return Err("duplicate Rust local identity".into());
                 }
+                if let Type::ByteSlice { mutable } = &place.value_type {
+                    let (pointer, length_value) = self.slice_parts(initializer)?;
+                    let length = format!("{}_len", place.name);
+                    if !self.locals.insert(length.clone()) {
+                        return Err("slice local length collision".into());
+                    }
+                    self.slices
+                        .insert(place.name.clone(), (length.clone(), !mutable));
+                    return Ok(c_seq(
+                        c_declare_with_all_qualifiers(
+                            &place.name,
+                            CType::UInt8Pointer,
+                            false,
+                            false,
+                            false,
+                            !mutable,
+                        ),
+                        c_seq(
+                            c_declare(&length, CType::UInt64),
+                            c_seq(
+                                c_assign(
+                                    &place.name,
+                                    c_cast_with_pointee_qualifiers(
+                                        pointer,
+                                        CType::UInt8Pointer,
+                                        false,
+                                        !mutable,
+                                    ),
+                                ),
+                                c_assign(length, length_value),
+                            ),
+                        ),
+                    ));
+                }
                 let t = scalar_type(&place.value_type)?;
                 if t == C0Type::Void {
                     return Err("unit locals outside Rust slice".into());
@@ -224,9 +282,10 @@ impl Context<'_> {
             } => self.assign(name, value),
             S::Assign { target, value } => {
                 let (checks, value) = self.prepared_expr(value)?;
+                let (target_checks, address) = self.prepared_address(target)?;
                 Ok(c_seq(
-                    checks,
-                    c_typed_store(self.address(target)?, value, self.place_type(target)?),
+                    c_seq(checks, target_checks),
+                    c_typed_store(address, value, self.place_type(target)?),
                 ))
             }
             S::If {
@@ -285,6 +344,16 @@ impl Context<'_> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
         }
+        if let Some((length, constant)) = self.slices.get(name).cloned() {
+            let (pointer, length_value) = self.slice_parts(e)?;
+            return Ok(c_seq(
+                c_assign(
+                    name,
+                    c_cast_with_pointee_qualifiers(pointer, CType::UInt8Pointer, false, constant),
+                ),
+                c_assign(length, length_value),
+            ));
+        }
         match e {
             E::Call {
                 function,
@@ -303,6 +372,11 @@ impl Context<'_> {
         let mut checks = c_skip();
         let mut values = Vec::new();
         for argument in args {
+            if matches!(argument, E::Local { name } if self.slices.contains_key(name)) {
+                let (pointer, length) = self.slice_parts(argument)?;
+                values.extend([pointer, length]);
+                continue;
+            }
             let (prefix, value) = self.prepared_expr(argument)?;
             checks = c_seq(checks, prefix);
             values.push(value);
@@ -340,6 +414,35 @@ impl Context<'_> {
     // The generated asserts are checked execution obligations, not assumptions.
     fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         match e {
+            E::Index { .. } => {
+                let (checks, pointer) = self.prepared_address(e)?;
+                let occurrence = self.next_load;
+                self.next_load = self
+                    .next_load
+                    .checked_add(1)
+                    .ok_or("Rust load identity exhausted")?;
+                Ok((
+                    checks,
+                    c_typed_load_with_source(
+                        pointer,
+                        CType::UInt8,
+                        Some(LoadSourceId {
+                            owner: LoadSourceOwnerId {
+                                source_unit: self.source.into(),
+                                function: self.function.into(),
+                            },
+                            occurrence,
+                        }),
+                    ),
+                ))
+            }
+            E::Borrow { place, value_type } if matches!(place.as_ref(), E::Index { .. }) => {
+                let (checks, pointer) = self.prepared_address(place)?;
+                Ok((
+                    checks,
+                    c_cast(pointer, scalar_type(value_type)?.to_kernel_type()),
+                ))
+            }
             E::Binary {
                 operator,
                 left_type,
@@ -347,6 +450,11 @@ impl Context<'_> {
                 left,
                 right,
             } => {
+                if *left_type == Type::Usize
+                    && !matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge")
+                {
+                    return Err("usize arithmetic outside Rust slice support".into());
+                }
                 let (left_prefix, left_value) = self.prepared_expr(left)?;
                 let (left_capture, left_name) = self.capture_operand(left_value, left_type)?;
                 let prefix = c_seq(left_prefix, left_capture);
@@ -394,10 +502,17 @@ impl Context<'_> {
                             c_equal(r.clone(), c_uint32_literal(0)),
                             c_less_equal(l, c_divide(max, r)),
                         )),
-                        "shl" | "shr" => Some(c_less_than(
-                            r,
-                            c_uint32_literal(if *left_type == Type::U8 { 8 } else { 32 }),
-                        )),
+                        "shl" | "shr" => Some(if *right_type == Type::Usize {
+                            c_less_than(
+                                c_variable(&right_name),
+                                c_uint64_literal(if *left_type == Type::U8 { 8 } else { 32 }),
+                            )
+                        } else {
+                            c_less_than(
+                                r,
+                                c_uint32_literal(if *left_type == Type::U8 { 8 } else { 32 }),
+                            )
+                        }),
                         _ => None,
                     };
                     if let Some(obligation) = obligation {
@@ -434,6 +549,38 @@ impl Context<'_> {
             _ => Ok((c_skip(), self.expr(e)?)),
         }
     }
+    fn slice_parts(&self, e: &E) -> Result<(CExpression, CExpression), String> {
+        let E::Local { name } = e else {
+            return Err("slice values must be local slice references".into());
+        };
+        let (length, _) = self
+            .slices
+            .get(name)
+            .ok_or("unknown Rust slice reference")?;
+        Ok((c_variable(name), c_variable(length)))
+    }
+    fn prepared_address(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
+        if let E::Index { slice, index } = e {
+            let (pointer, length) = self.slice_parts(slice)?;
+            let (checks, value) = self.prepared_expr(index)?;
+            let (capture, name) = self.capture_operand(value, &Type::Usize)?;
+            let index = c_variable(name);
+            return Ok((
+                c_seq(
+                    checks,
+                    c_seq(
+                        capture,
+                        c_labeled_assert(
+                            c_less_than(index.clone(), length),
+                            "Rust slice index panic check",
+                        ),
+                    ),
+                ),
+                c_add(pointer, index),
+            ));
+        }
+        Ok((c_skip(), self.address(e)?))
+    }
     fn address(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
             E::Deref { reference, .. } => self.expr(reference),
@@ -461,6 +608,7 @@ impl Context<'_> {
     }
     fn place_type(&self, e: &E) -> Result<CType, String> {
         match e {
+            E::Index { .. } => Ok(CType::UInt8),
             E::Field { record, field, .. } => self
                 .fields
                 .get(&(record.as_str(), field.as_str()))
@@ -473,6 +621,9 @@ impl Context<'_> {
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
             E::Integer { value } => Ok(c_int32_literal(*value as u32)),
+            E::UsizeInteger { value } => Ok(c_uint64_literal(*value)),
+            E::SliceLength { slice } => Ok(self.slice_parts(slice)?.1),
+            E::Index { .. } => Err("indexed Rust places require checked preparation".into()),
             E::UnsignedInteger { value, value_type } => match value_type {
                 Type::U8 => Ok(c_uint8_literal(
                     u8::try_from(*value).map_err(|_| "Rust u8 literal out of range")?,
@@ -568,6 +719,13 @@ impl Context<'_> {
                     "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
                 ) {
                     Ok(result)
+                } else if *left_type == Type::U8
+                    && matches!(operator.as_str(), "add" | "sub" | "mul" | "div" | "rem")
+                {
+                    // Checked byte arithmetic cannot discard bits. Its range
+                    // obligation permits an exact byte coercion; only casts,
+                    // bitwise results and shifts need explicit truncation.
+                    Ok(c_cast(c_cast(result, CType::Int32), CType::UInt8))
                 } else {
                     Ok(rust_scalar_cast(
                         result,

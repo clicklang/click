@@ -6,7 +6,8 @@ impl PureFactContext {
             return Some(value);
         }
         if let Some(value) = self
-            .decide_indexed_greater_equal(condition)
+            .decide_small_uint64_index_order(condition)
+            .or_else(|| self.decide_indexed_greater_equal(condition))
             .or_else(|| self.decide_masked_order(condition))
             .or_else(|| self.decide_widened_sum_bound(condition))
         {
@@ -229,7 +230,8 @@ impl PureFactContext {
             return Some(value);
         }
         if let Some(value) = self
-            .decide_indexed_greater_equal(condition)
+            .decide_small_uint64_index_order(condition)
+            .or_else(|| self.decide_indexed_greater_equal(condition))
             .or_else(|| self.decide_masked_order(condition))
             .or_else(|| self.decide_widened_sum_bound(condition))
         {
