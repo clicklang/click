@@ -59,7 +59,7 @@ provenance, initialization, and snapshot transport.
   their own residual lookup paths. Producer publication is complete, but
   containment selection and consumer deletion remain unfinished.
 
-### Seven milestones (milestone 1 complete)
+### Seven milestones (milestones 1–3 complete; milestone 4 in progress)
 
 These are seven reviewable outcomes, **not a promise of seven commits**.
 Split an outcome into small green slices when necessary, and record completion
@@ -124,6 +124,24 @@ this list.
    indexed miss is final; unknown support is a bounded, actionable refusal or
    an explicitly supplied witness, never another lookup strategy. Keep read
    views distinct from write authority and preserve all permission checks.
+
+   **Partial checkpoint:** concrete interval writes now have a separate owned
+   supplier summary. They no longer enumerate overlapping read views to find
+   an owner. A deterministic regression varies covering views from 16 to 1,024
+   while retaining one owner, measuring both checker and persistent-map work.
+   The general permission retries have **not** been removed.
+
+   The attempted wholesale removal exposed two prerequisites: provisional
+   resource lowering sometimes checks reads with a fresh, empty pure context,
+   and symbolic per-access coverage needs more than the whole-range evidence
+   introduced in milestone 3. Examples include lowering `readable_input` after
+   unfolding, and writing into an owned symbolic range with a nonzero lower
+   bound. Publishing the ambient resource input during these queries restores
+   some behavior but violates the no-scan contract; it is not an acceptable fix.
+   The broad prototype was withdrawn. Before deleting retries, reduce these
+   boundaries to independent regressions and pass retained checked context or
+   explicit supplier evidence through the shared interface. Do not grow this
+   into separate fixes for each failing loop, contract, or fold consumer.
 5. **Delete symbolic-range read searches.** Migrate
    `memory_state::resource_context_has_symbolic_range_read`. Remove its
    exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
@@ -155,9 +173,9 @@ this list.
 Milestones 1–3 establish the common interface. Milestones 4–7 migrate and
 remove its remaining consumers; they must not introduce their own alias walks
 or containment indexes. Do not implement several independently evolving
-fallback replacements in parallel. Milestones 1–3 establish the shared
-interface. Next is milestone 4: delete general read/write permission retries,
-using the shared bounded symbolic support for unknown containment fragments.
+fallback replacements in parallel. Continue milestone 4: delete general
+read/write permission retries using shared bounded supplier evidence, after
+reducing the provisional read-context and symbolic per-access gaps above.
 
 ### Meaning of “no scans” and completion
 

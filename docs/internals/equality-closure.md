@@ -675,6 +675,11 @@ Write-resource candidate selection now shares the complete affine interval
 summary. It selects covering occurrences lazily, translates the access into
 each owner's block through checked graph equality, then applies the existing
 write-permission and bounds judgment. Views cannot supply write authority.
+The interval index maintains a separate owned summary, so selecting write
+candidates does not enumerate overlapping views. Both summaries receive the
+same occurrence updates and smaller-payload class merges. A deterministic
+regression measures write lookup beside 16, 64, 256, and 1,024 covering views
+with one owner; lookup work must remain independent of the view count.
 An indexed miss or failed candidate check is decisive for this covered
 fragment; it does not retry spellings or scan the remaining resources.
 Whole-cell writes additionally use a separate footprint payload containing
