@@ -686,8 +686,27 @@ construction now owns attachment: an empty input captures the closed graph
 before insertion, and composition advances a prepared lineage. Normalization
 already visits its full input and publishes even when no representation changes. These boundaries also
 cover temporary contexts built during resource-clause evaluation, independent
-of the surface execution-step wrapper. Normalization refreshes existing
-attachments when it replaces occurrences.
+of the surface execution-step wrapper. The temporary context for checked
+composite/loan projection evidence also uses checked construction. It starts
+with only the selected composite head; removing that head and adding dependent
+children retains the graph attachment, so a prior child's whole-cell payload
+can be selected through transitive address equality. This is part of the
+trusted kernel and changes candidate selection only: checked expansion and the
+loan ledger still establish the exact parent, children, and authority. Logical
+contract loads can bypass permission lookup, so regressions inspect the actual
+projection input's attachment in addition to checking expansion and loan
+controls. The owned one-level frontier used to adapt a composite view to loan
+backing uses the same checked construction. Its temporary context contains only
+the selected owned head, and dependent child deltas retain the attachment. This
+does not authorize a lend: the adapter still checks the caller's owned coverage,
+definition facts, and recovery recipe. The coverage context reconstructed from
+that owner's checked children also uses checked construction before consuming
+the requested frontier. It retains graph candidate selection while ordinary
+resource consumption checks quantity, ownership, and sufficient coverage;
+partial consumption leaves only the residual authority in a proof-local fork.
+Branch isolation, read width, double consumption, partial coverage, snapshot
+isolation, and scaling against unrelated facts and caller resources are covered.
+Normalization refreshes existing attachments when it replaces occurrences.
 
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its

@@ -17061,8 +17061,7 @@ fn candidate_composite_view_adapter(
         else {
             continue;
         };
-        let covering = ResourceContext::new().unchecked_with_facts(owner_frontier);
-        if remove_frontier(covering, &frontier, assumptions).is_none() {
+        if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
             continue;
         }
         return Ok(Some(CompositeViewAdapter {
@@ -17079,13 +17078,20 @@ fn candidate_composite_view_adapter(
 /// the caller's memory. This is the same boundary the composite lend and
 /// `project` use, so nothing enters a loan that the definition does not
 /// contain.
-fn checked_one_level_frontier(
+pub(super) fn checked_one_level_frontier(
     head: &CResourceFact,
     definitions: &[CCompositeResourceDefinition],
     caller_state: &CState,
     assumptions: &PureFactContext,
 ) -> Option<Vec<CResourceFact>> {
-    let singleton = ResourceContext::new().unchecked_with_fact(head.clone());
+    // Expand only the selected head. Checked construction attaches the trusted
+    // equality graph before dependent children are added, without importing the
+    // caller's ambient resources or changing the loan's backing judgment.
+    let singleton = ResourceContext::new()
+        .try_compose_with_fact(head.clone(), assumptions)
+        .ok()?;
+    #[cfg(test)]
+    singleton.observe_composite_context();
     let (_, children, _) = expand_composite_resource_fact_with_children(
         &singleton,
         head,
@@ -17094,6 +17100,24 @@ fn checked_one_level_frontier(
         assumptions,
     )?;
     Some(children)
+}
+
+/// Consume the requested frontier from the owner's checked expansion alone.
+/// The residual is proof-local; the adapter escrows and recovers the owner head.
+pub(super) fn checked_frontier_coverage(
+    owner_frontier: Vec<CResourceFact>,
+    required: &[CResourceFact],
+    assumptions: &PureFactContext,
+) -> Option<ResourceContext> {
+    // This whole input has already been checked by expansion. Checked
+    // construction retains the trusted graph's resource payload for coverage;
+    // equality selects candidates, and ordinary consumption checks authority.
+    let covering = ResourceContext::new()
+        .try_compose_with_facts(owner_frontier, assumptions)
+        .ok()?;
+    #[cfg(test)]
+    covering.observe_composite_context();
+    remove_frontier(covering, required, assumptions)
 }
 
 /// Removes a checked frontier from a context piecewise, or reports that the
@@ -22709,7 +22733,14 @@ pub(crate) fn checked_composite_projection_evidence(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
-    let head = ResourceContext::new().unchecked_with_fact(viewed.clone());
+    // Projection checks the selected head alone. Checked construction attaches
+    // its closed equality graph before expansion adds dependent child resources;
+    // it must not publish or borrow authority from the ambient resource frame.
+    let head = ResourceContext::new()
+        .try_compose_with_fact(viewed.clone(), assumptions)
+        .ok()?;
+    #[cfg(test)]
+    head.observe_composite_context();
     let (_, children, _) = expand_composite_resource_fact_with_children(
         &head,
         viewed,
