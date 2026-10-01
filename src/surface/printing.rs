@@ -1244,7 +1244,6 @@ fn format_click_function_application(application: &ClickFunctionApplication) -> 
 fn format_fact_source(source: &ProofFactSource) -> String {
     match source {
         ProofFactSource::Requirement(index) => format!("requirement {index}"),
-        ProofFactSource::RequirementLabel(label) => format!("requirement {label}"),
         ProofFactSource::Invariant(index) => format!("invariant {index}"),
     }
 }

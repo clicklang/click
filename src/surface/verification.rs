@@ -4773,7 +4773,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                     let mut resource_index = 0;
                     let mut matched = None;
                     for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement.inner() else {
+                        let Requirement::Resource(required) = requirement else {
                             continue;
                         };
                         if matches!(
@@ -4846,7 +4846,7 @@ pub(in crate::surface) fn c_function_termination_plans(
                     let mut resource_index = 0;
                     let mut matched = None;
                     for requirement in function.requires() {
-                        let Requirement::Resource(required) = requirement.inner() else {
+                        let Requirement::Resource(required) = requirement else {
                             continue;
                         };
                         if matches!(
@@ -6790,7 +6790,7 @@ pub(in crate::surface) fn build_function_environment(
                 let resource_derived_mutable_frame = function_block
                     .requires()
                     .iter()
-                    .any(|requirement| matches!(requirement.inner(), Requirement::Resource(_)));
+                    .any(|requirement| matches!(requirement, Requirement::Resource(_)));
                 let mut function = function
                     .to_kernel_function()
                     .with_resource_summary(resource_requires, resource_ensures)
@@ -6907,12 +6907,12 @@ pub(in crate::surface) fn function_resource_summary(
     let resource_clause_count = function_block
         .requires()
         .iter()
-        .filter(|requirement| matches!(requirement.inner(), Requirement::Resource(_)))
+        .filter(|requirement| matches!(requirement, Requirement::Resource(_)))
         .count();
     let resource_positions = function_block.resource_requirement_positions();
     let mut resource_clause_index = 0;
     for requirement in function_block.requires() {
-        let Requirement::Resource(resource) = requirement.inner() else {
+        let Requirement::Resource(resource) = requirement else {
             continue;
         };
         let (clause_index, clause_count) = resource_positions

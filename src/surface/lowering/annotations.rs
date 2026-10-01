@@ -938,7 +938,7 @@ pub(in crate::surface) fn annotated_function_with_assumptions(
     let resource_derived_mutable_frame = function_block
         .requires()
         .iter()
-        .any(|requirement| matches!(requirement.inner(), Requirement::Resource(_)));
+        .any(|requirement| matches!(requirement, Requirement::Resource(_)));
     // A resource-derived function's write footprint is never lowered from
     // source: the kernel projects it from the checked resource transition,
     // and a loop inherits it as validated ranges installed at function
@@ -1737,12 +1737,12 @@ pub(in crate::surface) fn function_contract_summary(
         }
     }
     for (source_index, requirement) in function_block.requires().iter().enumerate() {
-        let proposition = match requirement.inner() {
+        let proposition = match requirement {
             Requirement::Proposition(proposition) => proposition.clone(),
             Requirement::LoadableSegment { segment } => ClickProposition::Loadable {
                 segment: segment.clone(),
             },
-            Requirement::Resource(_) | Requirement::Labeled { .. } => continue,
+            Requirement::Resource(_) => continue,
         };
         let opaque_predicate = matches!(
             &proposition,

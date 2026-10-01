@@ -70,7 +70,6 @@ impl<'a> Proof<'a> {
             &[],
             &[],
             &[],
-            None,
         )
     }
     /// Reattributes subsequent execution-structure diagnostics to the source
@@ -358,7 +357,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            None,
         )
     }
 
@@ -401,7 +399,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            None,
         )
     }
 
@@ -426,7 +423,6 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &'a [ExecutionPureFact],
         original_requirements: &'a [Requirement],
-        requirement_label_indices: &'a BTreeMap<String, usize>,
     ) -> Self {
         Self::for_fixed_state_goal_with_requirements_inner(
             claim_label,
@@ -447,7 +443,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             original_requirements,
-            requirement_label_indices,
         )
     }
 
@@ -472,7 +467,6 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &'a [ExecutionPureFact],
         original_requirements: &'a [Requirement],
-        requirement_label_indices: &'a BTreeMap<String, usize>,
     ) -> Self {
         Self::for_fixed_state(
             claim_label,
@@ -493,7 +487,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             original_requirements,
-            Some(requirement_label_indices),
         )
     }
 
@@ -534,7 +527,6 @@ impl<'a> Proof<'a> {
             unfolded_predicates,
             effect_facts,
             &[],
-            None,
         )
     }
 
@@ -558,7 +550,6 @@ impl<'a> Proof<'a> {
         unfolded_predicates: &'a [String],
         effect_facts: &'a [ExecutionPureFact],
         original_requirements: &'a [Requirement],
-        requirement_label_indices: Option<&'a BTreeMap<String, usize>>,
     ) -> Self {
         let facts = ProofFacts::from_ordered(available);
         let lowering_context =
@@ -599,7 +590,6 @@ impl<'a> Proof<'a> {
                 effect_facts,
                 lowering_context: Arc::new(lowering_context),
                 original_requirements,
-                requirement_label_indices,
                 requirement_facts: available,
                 nested_tactic_capture: None,
             })),

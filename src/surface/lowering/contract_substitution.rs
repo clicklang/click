@@ -1677,10 +1677,6 @@ pub(in crate::surface) fn apply_contract_lets_to_requirement(
     bindings: &[ContractLetBinding],
 ) -> Result<Requirement, String> {
     match requirement {
-        Requirement::Labeled { label, requirement } => Ok(Requirement::Labeled {
-            label,
-            requirement: Box::new(apply_contract_lets_to_requirement(*requirement, bindings)?),
-        }),
         Requirement::LoadableSegment { segment } => Ok(Requirement::LoadableSegment {
             segment: apply_contract_lets_to_segment(segment, bindings)?,
         }),

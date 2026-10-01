@@ -1341,7 +1341,6 @@ pub(in crate::surface::proof) struct FixedStateOperationView<'p> {
     pub(in crate::surface::proof) click_function_environment: &'p ClickFunctionEnvironment,
     pub(in crate::surface::proof) theorem_environment: &'p TheoremEnvironment,
     pub(in crate::surface::proof) original_requirements: &'p [Requirement],
-    pub(in crate::surface::proof) requirement_label_indices: Option<&'p BTreeMap<String, usize>>,
     pub(in crate::surface::proof) requirement_facts: &'p [Proposition],
 }
 
@@ -1364,7 +1363,6 @@ impl<'p> FixedStateOperationView<'p> {
             click_function_environment: context.click_function_environment,
             theorem_environment: context.theorem_environment,
             original_requirements: context.original_requirements,
-            requirement_label_indices: context.requirement_label_indices,
             requirement_facts: context.requirement_facts,
         }
     }

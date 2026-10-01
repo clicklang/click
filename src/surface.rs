@@ -1090,9 +1090,6 @@ pub struct FunctionBlock {
     /// Empty when the block was built without a source (tests), in which
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
-    /// Legacy label index for internal proof-object compatibility. Surface
-    /// `requires` clauses no longer accept labels.
-    requirement_label_indices: BTreeMap<String, usize>,
     decreases: Option<CFunctionDecrease>,
     structural_clauses: Vec<StructuralClause>,
     constructs: Vec<ResourceClause>,
@@ -1182,13 +1179,7 @@ pub struct FunctionParameter {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Requirement {
-    Labeled {
-        label: String,
-        requirement: Box<Requirement>,
-    },
-    LoadableSegment {
-        segment: ContractSegment,
-    },
+    LoadableSegment { segment: ContractSegment },
     Resource(ResourceClause),
     Proposition(ClickProposition),
 }
@@ -1795,10 +1786,6 @@ fn clone_requirement_iteratively(requirement: &Requirement) -> Requirement {
         Requirement::Proposition(proposition) => {
             Requirement::Proposition(clone_click_proposition_iteratively(proposition))
         }
-        Requirement::Labeled { label, requirement } => Requirement::Labeled {
-            label: label.clone(),
-            requirement: Box::new(clone_requirement_iteratively(requirement)),
-        },
         requirement => requirement.clone(),
     }
 }
@@ -5197,7 +5184,6 @@ pub struct ProofChoice {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofFactSource {
     Requirement(usize),
-    RequirementLabel(String),
     Invariant(usize),
 }
 
@@ -6097,7 +6083,7 @@ impl FunctionBlock {
             self.requires
                 .iter()
                 .enumerate()
-                .filter(|(_, requirement)| matches!(requirement.inner(), Requirement::Resource(_)))
+                .filter(|(_, requirement)| matches!(requirement, Requirement::Resource(_)))
                 .map(|(index, _)| self.requirement_source_clauses.get(index).copied()),
         )
     }
@@ -6112,10 +6098,6 @@ impl FunctionBlock {
                 .filter(|(_, ensure)| matches!(ensure.ensure(), Ensure::Resource(_)))
                 .map(|(index, _)| self.ensure_source_clauses.get(index).copied()),
         )
-    }
-
-    pub(in crate::surface) fn requirement_label_indices(&self) -> &BTreeMap<String, usize> {
-        &self.requirement_label_indices
     }
 
     pub fn decreases(&self) -> Option<&CFunctionDecrease> {
@@ -6287,22 +6269,8 @@ impl FunctionParameter {
 }
 
 impl Requirement {
-    pub fn label(&self) -> Option<&str> {
-        match self {
-            Self::Labeled { label, .. } => Some(label),
-            _ => None,
-        }
-    }
-
-    fn inner(&self) -> &Requirement {
-        match self {
-            Self::Labeled { requirement, .. } => requirement.inner(),
-            _ => self,
-        }
-    }
-
     fn proposition(&self) -> Option<&ClickProposition> {
-        match self.inner() {
+        match self {
             Self::Proposition(proposition) => Some(proposition),
             _ => None,
         }
@@ -6322,7 +6290,7 @@ impl Requirement {
     /// `owns`, `consumes` and `produces` have no reading here at all, and
     /// stay refused where this returns `None`.
     pub(crate) fn theorem_proposition(&self) -> Option<ClickProposition> {
-        match self.inner() {
+        match self {
             Self::Proposition(proposition) => {
                 Some(clone_click_proposition_iteratively(proposition))
             }
@@ -6330,7 +6298,6 @@ impl Requirement {
                 segment: segment.clone(),
             }),
             Self::Resource(resource) => theorem_resource_proposition(resource),
-            Self::Labeled { .. } => unreachable!("requirement.inner() removes labels"),
         }
     }
 }
@@ -6359,7 +6326,7 @@ fn theorem_resource_proposition(resource: &ResourceClause) -> Option<ClickPropos
 }
 
 fn requirement_contains_resource(requirement: &Requirement) -> bool {
-    matches!(requirement.inner(), Requirement::Resource(_))
+    matches!(requirement, Requirement::Resource(_))
 }
 
 fn parameter_is_click_array_ref(parameter: &FunctionParameter) -> bool {

@@ -2088,7 +2088,7 @@ pub(super) fn initial_claim_context_with_mode(
     let symbolic_population_families = function_block
         .requires()
         .iter()
-        .filter_map(|requirement| match requirement.inner() {
+        .filter_map(|requirement| match requirement {
             Requirement::Resource(resource) => declared_resource_family(resource),
             _ => None,
         })
@@ -2252,7 +2252,7 @@ pub(super) fn initial_claim_context_with_mode(
         .enumerate()
         .filter_map(|(ordinal, requirement)| {
             matches!(
-                requirement.inner(),
+                requirement,
                 Requirement::Proposition(surface) if click_proposition_mentions_defined(surface)
             )
             .then_some(ordinal)
@@ -2267,7 +2267,7 @@ pub(super) fn initial_claim_context_with_mode(
         .iter()
         .filter(|requirement| {
             matches!(
-                requirement.inner(),
+                requirement,
                 Requirement::Proposition(surface) if click_proposition_mentions_defined(surface)
             )
         })
@@ -2291,12 +2291,12 @@ pub(super) fn initial_claim_context_with_mode(
         surface_propositions.record_lowering(surface, kernel)?;
     }
     for requirement in function_block.requires() {
-        let surface = match requirement.inner() {
+        let surface = match requirement {
             Requirement::Proposition(proposition) => Some(proposition.clone()),
             Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
                 segment: segment.clone(),
             }),
-            Requirement::Resource(_) | Requirement::Labeled { .. } => None,
+            Requirement::Resource(_) => None,
         };
         let Some(surface) = surface else {
             continue;
@@ -2388,7 +2388,7 @@ pub(super) fn initial_claim_context_with_mode(
     let mut definedness_context = PureFactContext::new();
     let mut definedness_context_facts = 0;
     for (source_ordinal, requirement) in function_block.requires().iter().enumerate() {
-        let Requirement::Proposition(surface) = requirement.inner() else {
+        let Requirement::Proposition(surface) = requirement else {
             continue;
         };
         if !click_proposition_mentions_defined(surface) {
@@ -2520,7 +2520,7 @@ pub(super) fn initial_claim_context_with_mode(
     // below extends one built context.
     let mut requirement_pure_facts = PureFactList::from(requirement_pure_facts);
     for requirement in function_block.requires() {
-        let Requirement::Resource(resource) = requirement.inner() else {
+        let Requirement::Resource(resource) = requirement else {
             continue;
         };
         record_initial_composite_surface_facts(
@@ -2672,7 +2672,7 @@ fn explicit_entry_loadability_facts(
 ) -> Result<Vec<Proposition>, ClickError> {
     let mut facts = Vec::new();
     for requirement in function_block.requires() {
-        match requirement.inner() {
+        match requirement {
             Requirement::LoadableSegment { .. } => {
                 let lowered = crate::surface::lowering::requirement_propositions_with_assumptions(
                     std::slice::from_ref(requirement),
@@ -2714,7 +2714,7 @@ fn explicit_entry_loadability_facts(
                     }
                 }
             }
-            Requirement::Resource(_) | Requirement::Labeled { .. } => {}
+            Requirement::Resource(_) => {}
         }
     }
     Ok(facts)

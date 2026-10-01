@@ -965,7 +965,6 @@ fn parses_pure_theorem_definition() {
         }]
     );
     assert_eq!(theorem.requires().len(), 1);
-    assert_eq!(theorem.requires()[0].label(), None);
     assert_eq!(theorem.ensures().len(), 1);
     assert_eq!(theorem.ensures()[0].name(), Some("output_nonnegative"));
 }

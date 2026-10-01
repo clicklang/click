@@ -26,7 +26,7 @@ pub(in crate::surface) fn initial_call_state(
         .map(|parameter| parameter.name())
         .collect::<BTreeSet<_>>();
     for requirement in requires {
-        if let Requirement::Resource(resource) = requirement.inner() {
+        if let Requirement::Resource(resource) = requirement {
             reject_aggregate_parameter_storage_resource(resource, &aggregate_parameters)?;
         }
     }
@@ -279,7 +279,7 @@ pub(in crate::surface) fn initial_call_state(
         if let Some((name, bytes)) = concrete_loadable_block(requirement, parameters, &arguments)? {
             loadable_ranges.insert(name, bytes);
         }
-        if let Requirement::Resource(resource) = requirement.inner() {
+        if let Requirement::Resource(resource) = requirement {
             for (name, bytes) in concrete_access_resource_blocks(resource, parameters, &arguments)?
             {
                 loadable_ranges.insert(name, bytes);
@@ -496,7 +496,7 @@ fn materialize_symbolic_access_resource_cells(
     arguments: &[CExpression],
 ) -> Result<CMemory, ClickError> {
     for requirement in requires {
-        let Requirement::Resource(resource) = requirement.inner() else {
+        let Requirement::Resource(resource) = requirement else {
             continue;
         };
         match resource {
@@ -549,7 +549,7 @@ pub(in crate::surface) fn check_resource_segment_base_loadability(
     let clauses = function_block
         .requires()
         .iter()
-        .filter_map(|requirement| match requirement.inner() {
+        .filter_map(|requirement| match requirement {
             Requirement::Resource(resource) => Some(resource),
             _ => None,
         })
@@ -965,7 +965,7 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
         let mut made_progress = false;
         for index in std::mem::take(&mut pending) {
             let requirement = &requires[index];
-            let result = match requirement.inner() {
+            let result = match requirement {
                 Requirement::LoadableSegment { .. } => loadable_requirement_props(
                     requirement,
                     parameters,
@@ -995,7 +995,6 @@ pub(in crate::surface) fn requirement_propositions_with_sources_and_assumptions(
                     state,
                     &assumptions,
                 ),
-                Requirement::Labeled { .. } => unreachable!("requirement.inner() removes labels"),
             };
             let result = match result {
                 Ok(Some(propositions)) => Ok(propositions),
@@ -1129,7 +1128,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
 
     let mut result = Vec::new();
     for requirement in requires {
-        let Requirement::Proposition(proposition) = requirement.inner() else {
+        let Requirement::Proposition(proposition) = requirement else {
             continue;
         };
         let mut expressions = Vec::new();
@@ -1191,7 +1190,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
     // for every clause or introducing ownership beyond these requirements.
     let mut lowering_state = state.clone();
     for requirement in requires {
-        if let Requirement::Resource(resource) = requirement.inner() {
+        if let Requirement::Resource(resource) = requirement {
             // This lowering path has no proposition assumptions yet. It builds
             // a provisional context; execution paths use checked composition
             // once assumptions are available.  Resource arguments may contain
@@ -2444,7 +2443,7 @@ pub(in crate::surface) fn concrete_loadable_block(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Result<Option<(String, ConcreteMemoryRangeSeed)>, ClickError> {
-    match requirement.inner() {
+    match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = CState::new();
             let source_segment = segment;
@@ -2487,9 +2486,7 @@ pub(in crate::surface) fn concrete_loadable_block(
                 },
             )))
         }
-        Requirement::Labeled { .. } | Requirement::Resource(_) | Requirement::Proposition(_) => {
-            Ok(None)
-        }
+        Requirement::Resource(_) | Requirement::Proposition(_) => Ok(None),
     }
 }
 
@@ -2567,7 +2564,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> Result<(Pointer, Bitvector32Term, Vec<Proposition>), ClickError> {
-    match requirement.inner() {
+    match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = CState::new();
             let segment = evaluate_requirement_segment(parameters, arguments, &state, segment)
@@ -2605,7 +2602,7 @@ pub(in crate::surface) fn loadable_base_and_bytes(
                 guards,
             ))
         }
-        Requirement::Labeled { .. } | Requirement::Proposition(_) | Requirement::Resource(_) => {
+        Requirement::Proposition(_) | Requirement::Resource(_) => {
             Err(ClickError::new("expected viewable requirement"))
         }
     }

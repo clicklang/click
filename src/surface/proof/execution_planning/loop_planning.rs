@@ -36,7 +36,7 @@ fn fresh_loop_binder_name(
 ) -> Option<String> {
     let mut enclosing = BTreeSet::new();
     for requirement in function_block.requires() {
-        if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement.inner() {
+        if let Requirement::Resource(ResourceClause::Named { binding, .. }) = requirement {
             enclosing.insert(binding.name.clone());
         }
     }
