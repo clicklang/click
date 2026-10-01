@@ -67,7 +67,7 @@ fn ordinary_function_entry_does_not_restore_static_initializers() {
         CExpressionOutcome::Value(int32(11))
     );
 
-    let startup = initialize_c_program_storage([function]);
+    let startup = initialize_c_program_storage([function]).expect("no run limit is installed");
     assert_eq!(
         startup.memory().load(&CMemory::global_pointer("state")),
         CExpressionOutcome::Value(int32(7))
@@ -85,7 +85,8 @@ fn startup_coalesces_declarations_and_calls_cannot_replenish_ownership() {
     let global = CGlobal::new("state", CType::Int32, int32(7));
     let left = storage_function("left", vec![global.clone()]);
     let right = storage_function("right", vec![global]);
-    let startup = initialize_c_program_storage([left.clone(), right]);
+    let startup =
+        initialize_c_program_storage([left.clone(), right]).expect("no run limit is installed");
     let owned = scalar_ownership("state");
     let assumptions = PureFactContext::new();
     assert_eq!(startup.resources().facts().len(), 1);
@@ -138,7 +139,7 @@ fn startup_preserves_private_identities_and_const_permissions() {
                 .with_constant(true),
         ],
     );
-    let state = initialize_c_program_storage([left, right]);
+    let state = initialize_c_program_storage([left, right]).expect("no run limit is installed");
     let assumptions = PureFactContext::new();
     assert_eq!(state.resources().facts().len(), 2);
     assert!(
@@ -166,7 +167,8 @@ fn startup_permission_partition_visits_scale_with_cells_and_blocks() {
                 .store(pointer, int32(7));
         }
         let mut visits = 0;
-        let resources = initial_static_resources(&memory, || visits += 1);
+        let resources =
+            initial_static_resources(&memory, || visits += 1).expect("no run limit is installed");
         assert_eq!(resources.facts().len(), count as usize);
         assert_eq!(visits, 4 * count);
     }
@@ -193,7 +195,8 @@ fn binding_program_entry_does_not_upgrade_literal_views_to_ownership() {
     let function = storage_function("main", vec![])
         .with_string_literals(vec![CStringLiteral::new("text", vec![b'x', 0])])
         .with_program_entry();
-    let startup = initialize_c_program_storage([function.clone()]);
+    let startup =
+        initialize_c_program_storage([function.clone()]).expect("no run limit is installed");
     let entry = initialize_c_function_globals(&startup, &function);
     assert_eq!(entry.resources().facts().len(), 1);
     assert!(entry.resources().facts()[0].is_view());
@@ -224,7 +227,8 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
             vec![uint16(7), uint16(9)],
         ),
     ]);
-    let startup = initialize_c_program_storage([left, right, array]);
+    let startup =
+        initialize_c_program_storage([left, right, array]).expect("no run limit is installed");
     assert_eq!(startup.resources().facts().len(), 3);
     assert_eq!(
         startup
@@ -508,7 +512,8 @@ fn function_with_initialized_arrays(length: u32, constant: bool) -> CFunction {
 fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
     for length in [4u32, 5, 64, 65, 300] {
         let function = function_with_initialized_arrays(length, false);
-        let startup = initialize_c_program_storage([function.clone()]);
+        let startup =
+            initialize_c_program_storage([function.clone()]).expect("no run limit is installed");
         let mut reference = CMemory::new();
         let mut per_element = |pointer: Pointer, element_type: CType, contents: &CArrayContents| {
             reference = reference.clone().with_block_or_read_only(
@@ -544,7 +549,9 @@ fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
         );
         assert_eq!(
             startup.resources().facts(),
-            initial_static_resources(&reference, || {}).facts(),
+            initial_static_resources(&reference, || {})
+                .expect("no run limit is installed")
+                .facts(),
             "[{length}] partitions its storage as the per-element cells do"
         );
     }
@@ -561,7 +568,7 @@ fn an_initialized_array_at_startup_costs_the_same_whatever_its_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_initialized_arrays(length, false);
         let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_program_storage([function.clone()])
+            initialize_c_program_storage([function.clone()]).expect("no run limit is installed")
         });
         let buf = CMemory::global_pointer("buf");
         let counts = CMemory::static_pointer("main", "counts");
@@ -697,7 +704,8 @@ fn function_with_aggregate_arrays(length: u32, wide: u32, constant: bool) -> CFu
 fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
     for (length, wide) in [(3u32, 0u32), (4, 0), (5, 12), (12, 8), (65, 0), (3, 100)] {
         let function = function_with_aggregate_arrays(length, wide, false);
-        let startup = initialize_c_program_storage([function.clone()]);
+        let startup =
+            initialize_c_program_storage([function.clone()]).expect("no run limit is installed");
         let layout = node_layout(wide);
         let mut reference = CMemory::new();
         for (pointer, initializers) in [
@@ -732,7 +740,8 @@ fn an_aggregate_array_at_startup_holds_exactly_the_per_field_stores() {
         // The per-field cells partition each block by cell width, a range
         // per field per element; the runs' periodic block is one range of
         // struct-sized elements. Both own exactly the same bytes.
-        let per_field = initial_static_resources(&reference, || {});
+        let per_field =
+            initial_static_resources(&reference, || {}).expect("no run limit is installed");
         assert_eq!(
             owned_bytes(startup.resources()),
             owned_bytes(&per_field),
@@ -790,7 +799,7 @@ fn an_aggregate_array_at_startup_costs_the_same_whatever_its_length() {
         let _session = crate::kernel::VerificationSession::enter();
         let function = function_with_aggregate_arrays(length, 0, false);
         let (startup, startup_work) = crate::instrumentation::measure_deterministic_work(|| {
-            initialize_c_program_storage([function.clone()])
+            initialize_c_program_storage([function.clone()]).expect("no run limit is installed")
         });
         let pool = CMemory::global_pointer("pool");
         let slots = CMemory::static_pointer("main", "slots");

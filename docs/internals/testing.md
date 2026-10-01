@@ -694,9 +694,13 @@ resources only) is checked through its importers and is not an entry
 way.
 Every sidecar or selected proof unit has an independent deterministic
 whole-run work budget (`--work-limit`, default 50 million units) and an
-independent ten-minute crash-containment bound (`--time-limit`). An exhausted
-budget exits unsuccessfully and names both the target and the active phase or
-tactic; one expensive project cannot consume the following projects'
+independent ten-minute crash-containment bound (`--time-limit`). Both cover
+the whole run, from loading its sources on: source resolution and C parsing,
+the external-dependency summary, and program-entry storage charge the budget
+and stop at checkpoints like the proof phases do. An exhausted
+budget exits unsuccessfully and names both the target and the active tactic
+or open phases (`external dependency summary > program-entry storage
+phase`); one expensive project cannot consume the following projects'
 budgets. A run the crash-containment bound stops says so, and that is not a
 verdict about the proof.
 

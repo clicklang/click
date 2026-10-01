@@ -7737,6 +7737,21 @@ impl Parser {
         })
     }
 
+    /// One unit of parsing work per top-level declaration, and a
+    /// cooperative checkpoint: a translation unit as large as the program
+    /// stops at the run's work budget or crash-containment bound instead of
+    /// parsing to its end first.
+    fn checkpoint(&self) -> Result<(), C0SyntaxError> {
+        if crate::instrumentation::deadline_exceeded() {
+            Err(self.error_here(format!(
+                "C parsing stopped: {}",
+                crate::instrumentation::deadline_context()
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
     /// An error at the next unconsumed token.
     fn error_here(&self, message: impl Into<String>) -> C0SyntaxError {
         match self.here() {
@@ -7803,6 +7818,7 @@ impl Parser {
         self.parse_declarations()?;
         let mut functions = Vec::new();
         while self.peek().is_some() {
+            self.checkpoint()?;
             let is_extern = if self.peek_ident() == Some("extern") {
                 self.position += 1;
                 true
@@ -8473,6 +8489,7 @@ impl Parser {
 
     fn parse_declarations(&mut self) -> Result<(), C0SyntaxError> {
         while self.peek().is_some() {
+            self.checkpoint()?;
             if (self.peek_ident() == Some("static")
                 && self.peek_n(1).is_some_and(Self::is_inline_specifier))
                 || self.peek_inline_specifier()

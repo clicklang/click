@@ -224,6 +224,11 @@ fn command_line_tests_name_every_wall_clock_bound_they_set() {
         ),
         (
             "click-verify.rs",
+            "the_crash_bound_covers_source_loading_and_parsing",
+            "checks that `--time-limit 1ms` containment is installed before sources load",
+        ),
+        (
+            "click-verify.rs",
             "parses_default_and_overridden_run_limits",
             "parses the option; runs no verification",
         ),

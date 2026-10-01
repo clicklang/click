@@ -438,38 +438,8 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
 const CLICK_STANDARD_LIBRARY: &str = include_str!("../stdlib/prelude.click");
 
 /// Emits one non-overlapping verifier phase on every exit path, including an
-/// early `?`. Profiling enables this with `CLICK_TIMINGS`; ordinary
-/// verification pays only one environment lookup and an `Instant` read.
-struct VerificationTimingPhase {
-    name: &'static str,
-    started: std::time::Instant,
-    enabled: bool,
-}
-
-impl VerificationTimingPhase {
-    fn new(name: &'static str) -> Self {
-        let enabled = instrumentation::enabled();
-        if enabled {
-            instrumentation::emit(VerificationEvent::PhaseStarted(name));
-        }
-        Self {
-            name,
-            started: std::time::Instant::now(),
-            enabled,
-        }
-    }
-}
-
-impl Drop for VerificationTimingPhase {
-    fn drop(&mut self) {
-        if self.enabled {
-            instrumentation::emit(VerificationEvent::PhaseFinished {
-                name: self.name,
-                elapsed: self.started.elapsed(),
-            });
-        }
-    }
-}
+/// early `?`; see [`instrumentation::VerificationPhase`].
+type VerificationTimingPhase = instrumentation::VerificationPhase;
 
 fn check_verification_deadline() -> Result<(), ClickError> {
     if instrumentation::deadline_exceeded() {

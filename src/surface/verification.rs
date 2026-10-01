@@ -981,6 +981,7 @@ pub(in crate::surface) fn resolve_click_project_context(
     project: &ClickProject,
     sources: &CSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
+    let _timing = VerificationTimingPhase::new("source resolution");
     ensure_resource_semantics_supported(sources)?;
     let click_source = project
         .entry_source()
@@ -998,6 +999,7 @@ pub(in crate::surface) fn resolve_click_project_context(
         sources,
         super::selected_project_c_target(project)?,
     )?;
+    check_verification_deadline()?;
     modules::resolve_click_project_with_layouts(
         project,
         struct_layouts,
@@ -3892,6 +3894,10 @@ pub fn c0_project_external_dependencies(
     project: &ClickProject,
     c_sources: &[(&str, &str)],
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
+    // The summary builds kernel state, program-entry storage among it, and
+    // the run's budget charges that work, so it gets its own kernel session:
+    // what this thread verified before cannot change the units it spends.
+    let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::bundle(c_sources).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_external_dependencies_file(&file, &sources)
@@ -3901,6 +3907,10 @@ pub fn c0_prepared_project_external_dependencies(
     project: &ClickProject,
     imports: &[PreparedCImport],
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
+    // The summary builds kernel state, program-entry storage among it, and
+    // the run's budget charges that work, so it gets its own kernel session:
+    // what this thread verified before cannot change the units it spends.
+    let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::prepared(imports).with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_external_dependencies_file(&file, &sources)
@@ -3910,6 +3920,10 @@ pub fn program_prepared_project_external_dependencies(
     project: &ClickProject,
     import: &impl PreparedProgramSource,
 ) -> Result<BTreeMap<String, Vec<String>>, ClickError> {
+    // The summary builds kernel state, program-entry storage among it, and
+    // the run's budget charges that work, so it gets its own kernel session:
+    // what this thread verified before cannot change the units it spends.
+    let _session = crate::kernel::VerificationSession::enter();
     let sources = CSourceContext::program(import)?.with_click_project(project);
     let file = resolve_click_project_context(project, &sources)?;
     c0_external_dependencies_file(&file, &sources)
@@ -6357,9 +6371,15 @@ pub(in crate::surface) fn parse_verified_sources_context(
             .get_mut("main")
             .expect("main was found")
             .1
-            .program_entry_state = Some(std::sync::Arc::new(
-            crate::kernel::initialize_c_program_storage(storage_functions),
-        ));
+            .program_entry_state = Some(std::sync::Arc::new({
+            let _timing = VerificationTimingPhase::new("program-entry storage");
+            crate::kernel::initialize_c_program_storage(storage_functions).ok_or_else(|| {
+                ClickError::new(format!(
+                    "verification budget exhausted inside {}",
+                    instrumentation::deadline_context()
+                ))
+            })?
+        }));
     }
     Ok(parsed)
 }
