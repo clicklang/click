@@ -6781,8 +6781,8 @@ impl VerifiedPureTheorem {
 /// A refusal's whole-context `proof context:` section is dropped with
 /// everything after it, as it always was: it lists the entire ambient context
 /// in kernel spellings. An unclosed goal's section
-/// ([`diagnostics::GOAL_PROOF_CONTEXT_HEADER`]) lists only the facts bearing
-/// on the goal, so its non-empty lists are shown. What follows the lists is
+/// ([`diagnostics::GOAL_PROOF_CONTEXT_HEADER`]) lists only the path's case
+/// and the facts bearing on the goal, so its non-empty lists are shown. What follows the lists is
 /// the enclosing failure's own premise and search report, which the full
 /// report and `--trace-proof` carry; it is dropped here as before.
 fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
@@ -6799,7 +6799,9 @@ fn split_proof_context(reason: &str) -> (&str, Vec<&str>) {
                 .map(str::trim)
                 .skip_while(|line| line.is_empty())
                 .take_while(|line| {
-                    line.starts_with("pure facts: ") || line.starts_with("resource facts: ")
+                    line.starts_with("case: ")
+                        || line.starts_with("pure facts: ")
+                        || line.starts_with("resource facts: ")
                 })
                 .filter(|line| !line.ends_with(": []"))
                 .collect();

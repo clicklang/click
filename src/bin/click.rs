@@ -824,6 +824,40 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// A goal refused inside one case of a proof `if` names that case, even
+    /// though the case condition shares no term with the goal; an unrelated
+    /// `requires` still stays out.
+    #[test]
+    fn an_unclosed_goal_in_a_proof_if_case_names_the_case() {
+        let directory =
+            std::env::temp_dir().join(format!("click-goal-case-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("case.c"),
+            "int32 pick(int32 x, int32 y, int32 z) { return x; }\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("case.click");
+        fs::write(
+            &sidecar,
+            "verifying \"case.c\";\nint32 pick(int32 x, int32 y, int32 z) {\n    requires x < 10;\n    requires z > 3;\n    ensures result == 0;\n} by {\n    if y > 3 { execute(); simp(); } else { execute(); simp(); }\n}\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("\n  proof context\n  case: [y > 3]\n  pure facts: [x < 10]"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("z > 3") && !error.contains("3 < z"),
+            "{error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn trace_verifies_only_the_named_function() {
         let directory = std::env::temp_dir().join(format!(

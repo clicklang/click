@@ -713,27 +713,41 @@ fn pure_facts_relevant_to(goal: &Proposition, facts: &[Proposition]) -> Vec<Prop
         .collect()
 }
 
-/// The header of the proof context an unclosed goal lists: the facts bearing
-/// on that goal (`pure_facts_relevant_to`). Unlike the whole-context
+/// The header of the proof context an unclosed goal lists: the path's case
+/// and the facts bearing on that goal (`pure_facts_relevant_to`). Unlike the whole-context
 /// `proof context:` other refusals carry, the command line shows it.
 pub(crate) const GOAL_PROOF_CONTEXT_HEADER: &str = "proof context for the goal:";
 
-/// The proof context of an unclosed goal: the pure facts bearing on `goal`
-/// (every fact when the goal has no kernel form) and the held resources,
-/// each list bounded by the diagnostic item limit.
+/// The proof context of an unclosed goal: the case this path is (`case_facts`,
+/// the conditions its branches and case splits assumed), the pure facts
+/// bearing on `goal` (every fact when the goal has no kernel form), and the
+/// held resources, each list bounded by the diagnostic item limit.
 pub(super) fn describe_goal_proof_context(
     goal: Option<&Proposition>,
     pure_facts: &[Proposition],
+    case_facts: &[Proposition],
     resource_facts: &[CResourceFact],
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
 ) -> String {
-    let relevant = match goal {
+    let mut relevant = match goal {
         Some(goal) => pure_facts_relevant_to(goal, pure_facts),
         None => pure_facts.to_vec(),
     };
+    relevant.retain(|fact| !case_facts.contains(fact));
+    // A case condition often shares no term with the goal -- `u == 0` false
+    // after a split on whether a store wrote the cell a load reads -- yet it
+    // says which case the claim fails in, so it gets its own line.
+    let case = if case_facts.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n  case: {}",
+            describe_context_pure_and_execution_facts(case_facts, &[], parameters, arguments)
+        )
+    };
     format!(
-        "{GOAL_PROOF_CONTEXT_HEADER}\n  pure facts: {}\n  resource facts: {}",
+        "{GOAL_PROOF_CONTEXT_HEADER}{case}\n  pure facts: {}\n  resource facts: {}",
         describe_context_pure_and_execution_facts(&relevant, &[], parameters, arguments),
         describe_resource_facts(resource_facts, parameters, arguments)
     )

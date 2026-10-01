@@ -1360,6 +1360,8 @@ fn close_claim_directly_from_outcome<'a>(
     unfolded_predicates: &[String],
     claim_label: &str,
     path_index: usize,
+    entry_facts: &[Proposition],
+    execution_paths: &[crate::kernel::CFunctionExecutionCandidate],
     parameters: &[syntax::C0Parameter],
     predicate_environment: &PredicateEnvironment,
     click_function_environment: &ClickFunctionEnvironment,
@@ -1582,9 +1584,11 @@ fn close_claim_directly_from_outcome<'a>(
     };
     // The pure facts listed are those bearing on the goal, so a premise the
     // closure lacked is not pushed past the item limit by unrelated ones.
+    let path_facts = root.facts().propositions().cloned().collect::<Vec<_>>();
     let context = describe_goal_proof_context(
         listed_goal.as_ref().map(|(goal, _)| goal),
-        &root.facts().propositions().cloned().collect::<Vec<_>>(),
+        &path_facts,
+        &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
         parameters,
         arguments,
@@ -1593,6 +1597,67 @@ fn close_claim_directly_from_outcome<'a>(
         "`ensures {surface}` failed for `{claim_label}` path {path_index}: unclosed goal: {surface}{evaluated_sides}\n{context}"
     ));
     Ok(Err(error.with_search_failures(search.finish())))
+}
+
+/// The conditions that make one execution path the case it is: each C
+/// branch condition, `execute()` case split, and proof `if` case that sets
+/// its checked path apart from another -- a condition fact of
+/// `paths[path_index]` that some other path lacks. A fact the execution
+/// started from -- an entry `requires`, or a `have` before the first step --
+/// is never among them: every path has it.
+fn path_case_facts(
+    entry_facts: &[Proposition],
+    paths: &[crate::kernel::CFunctionExecutionCandidate],
+    path_index: usize,
+) -> Vec<Proposition> {
+    use std::collections::BTreeSet;
+    fn is_condition(fact: &Proposition) -> bool {
+        match fact {
+            Proposition::ConditionIs(..) => true,
+            Proposition::Not(inner) => is_condition(inner),
+            Proposition::And(left, right)
+            | Proposition::Or(left, right)
+            | Proposition::Implies(left, right) => is_condition(left) && is_condition(right),
+            _ => false,
+        }
+    }
+    let Some(path) = paths.get(path_index) else {
+        return Vec::new();
+    };
+    // An entry conjunction is assumed conjunct by conjunct.
+    let mut entry = BTreeSet::new();
+    let mut pending = entry_facts.iter().collect::<Vec<_>>();
+    while let Some(fact) = pending.pop() {
+        if let Proposition::And(left, right) = fact {
+            pending.push(left);
+            pending.push(right);
+        }
+        entry.insert(fact);
+    }
+    let others = paths
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != path_index)
+        .map(|(_, other)| {
+            other
+                .facts()
+                .iter()
+                .map(|fact| fact.proposition())
+                .collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut listed = BTreeSet::new();
+    let mut cases = Vec::new();
+    for fact in path.facts().iter().map(|fact| fact.proposition()) {
+        if is_condition(fact)
+            && !entry.contains(fact)
+            && others.iter().any(|other| !other.contains(fact))
+            && listed.insert(fact)
+        {
+            cases.push(fact.clone());
+        }
+    }
+    cases
 }
 
 /// Serializes a completed existential claim Proof in the established
@@ -4011,6 +4076,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         &unfolded_predicates,
                                                         &claim_label,
                                                         path_index,
+                                                        entry_pure_facts.as_slice(),
+                                                        execution.paths(),
                                                         parsed_function.parameters(),
                                                         predicate_environment,
                                                         click_function_environment,
@@ -4242,6 +4309,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &unfolded_predicates,
                                         &claim_label,
                                         path_index,
+                                        entry_pure_facts.as_slice(),
+                                        execution.paths(),
                                         parsed_function.parameters(),
                                         predicate_environment,
                                         click_function_environment,
@@ -4466,6 +4535,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     &unfolded_predicates,
                                     &claim_label,
                                     path_index,
+                                    entry_pure_facts.as_slice(),
+                                    execution.paths(),
                                     parsed_function.parameters(),
                                     predicate_environment,
                                     click_function_environment,
