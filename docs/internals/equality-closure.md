@@ -880,10 +880,13 @@ constants in different sorts must not be merged at all.
 
 ## Migration and deletion
 
-The issue defines four milestones: contract/regressions, integrated pointer/load
-foundation, remaining pointer consumers, then theory/tactic extensions. The
-historical non-green loaded-pointer trial is evidence about dependencies, not
-the implementation plan. Use isolated worktrees and integrate only coherent
+The egraph issue (`issues/egraph.md` in the repository) now defines seven
+bounded resource lookup cleanup milestones, from producer publication and
+shared containment support through deletion of spelling retries and ambient supplier searches.
+The earlier pointer/load foundation is implemented; broader theory and tactic
+extensions remain outside this completion target. The historical non-green
+loaded-pointer trial is evidence about dependencies, not the implementation
+plan. Use isolated worktrees and integrate only coherent
 green commits. Preserve the original C regressions.
 
 Delete old mechanisms as their responsibilities migrate:
