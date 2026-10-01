@@ -4987,6 +4987,20 @@ impl ResourceContext {
         {
             return true;
         }
+        if let CResource::Memory(range) = fact.resource() {
+            // The trusted graph selects retained occurrences; equality alone
+            // grants no authority. Align the query just as consumption does,
+            // then let the memory algebra check access and byte coverage.
+            let entries = self.equal_address_entries(range, fact.is_own(), assumptions);
+            if entries.iter().any(|entry| {
+                let available = self.fact(*entry);
+                memory_fact_in_available_block(fact, available, assumptions).is_some_and(
+                    |required| resource_fact_entails(available, &required, assumptions),
+                )
+            }) {
+                return true;
+            }
+        }
         if crate::instrumentation::measure_operation(
             "kernel",
             "resource satisfaction",
@@ -5375,24 +5389,10 @@ impl ResourceContext {
         entries: &[ResourceEntryId],
     ) -> bool {
         for entry in entries {
-            let Some(available) = self.fact(*entry).memory_range() else {
-                continue;
-            };
-            let CResource::Memory(range) = fact.resource() else {
-                return false;
-            };
-            let Some(base) = assumptions
-                .equality_graph
-                .pointer_in_block(range.base(), &available.base().block)
+            let Some(required) =
+                memory_fact_in_available_block(fact, self.fact(*entry), assumptions)
             else {
                 continue;
-            };
-            let mut range = range.clone();
-            range.base = base;
-            let required = if let CResourceFact::Own(_, quantity) = fact {
-                CResourceFact::Own(CResource::Memory(range), quantity.clone())
-            } else {
-                CResourceFact::View(CResource::Memory(range))
             };
             if self.consume_fact_from_candidates(&required, assumptions, std::iter::once(*entry)) {
                 return true;
@@ -6223,6 +6223,31 @@ fn normalize_resource_fact_pair(
         return None;
     }
     resource_family_algebra(left.family()).normalize_pair(left, right, assumptions)
+}
+
+/// Express a memory requirement in a selected occurrence's block using the
+/// trusted equality graph. This preserves bounds, element width and access
+/// mode; satisfaction and consumption still check the ordinary resource algebra.
+fn memory_fact_in_available_block(
+    required: &CResourceFact,
+    available: &CResourceFact,
+    assumptions: &PureFactContext,
+) -> Option<CResourceFact> {
+    let available = available.memory_range()?;
+    let CResource::Memory(range) = required.resource() else {
+        return None;
+    };
+    let base = assumptions
+        .equality_graph
+        .pointer_in_block(range.base(), &available.base().block)?;
+    let mut range = range.clone();
+    range.base = base;
+    Some(match required {
+        CResourceFact::Own(_, quantity) => {
+            CResourceFact::Own(CResource::Memory(range), quantity.clone())
+        }
+        CResourceFact::View(_) => CResourceFact::View(CResource::Memory(range)),
+    })
 }
 
 fn memory_resource_fact_entails(

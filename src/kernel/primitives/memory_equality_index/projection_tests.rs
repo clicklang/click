@@ -460,3 +460,86 @@ fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
         "frontier coverage rebuilt unrelated graph state: {samples:?}"
     );
 }
+
+#[test]
+fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ownership() {
+    let (_, _, _, facts, sibling) = fixture();
+    let original = ResourceContext::new()
+        .try_compose_with_fact(coverage_piece(881_000, 0, 3), &facts)
+        .unwrap();
+    let residual = original
+        .clone()
+        .without_fact_incrementally(&coverage_piece(881_002, 0, 1), &facts)
+        .unwrap();
+    let wanted = coverage_piece(881_002, 1, 3);
+    assert!(residual.satisfies_fact(&wanted, &facts));
+    assert!(!residual.satisfies_fact(&wanted, &sibling));
+    assert!(!residual.satisfies_fact(&coverage_piece(881_002, 0, 1), &facts));
+    assert!(!residual.satisfies_fact(&coverage_piece(881_002, 1, 4), &facts));
+    let alias = Pointer::symbolic(Variable(881_002));
+    let shifted = CResourceFact::own_memory(CMemoryRange::new(
+        alias.offset_by_elements(Bitvector32Term::Constant(1), 4),
+        Bitvector32Term::Constant(0),
+        Bitvector32Term::Constant(2),
+    ));
+    assert!(residual.satisfies_fact(&shifted, &facts));
+    let bytes = |end| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            alias.clone(),
+            Bitvector32Term::Constant(4),
+            Bitvector32Term::Constant(end),
+            1,
+        ))
+    };
+    assert!(residual.satisfies_fact(&bytes(12), &facts));
+    assert!(!residual.satisfies_fact(&bytes(13), &facts));
+    assert!(residual.satisfies_fact(&CResourceFact::View(wanted.resource().clone()), &facts));
+    assert!(original.satisfies_fact(&coverage_piece(881_002, 0, 3), &facts));
+    assert_eq!(residual.facts(), &[coverage_piece(881_000, 1, 3)]);
+    let viewed = ResourceContext::new()
+        .try_compose_with_fact(
+            CResourceFact::View(coverage_piece(881_000, 1, 3).resource().clone()),
+            &facts,
+        )
+        .unwrap();
+    assert!(!viewed.satisfies_fact(&wanted, &facts));
+}
+
+#[test]
+fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let (_, _, _, mut facts, _) = fixture();
+        let mut available = vec![coverage_piece(881_000, 1, 3)];
+        for i in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(899_000 + i * 2)),
+                    Bitvector32Term::Variable(Variable(899_001 + i * 2)),
+                ),
+                true,
+            );
+            available.push(coverage_piece(895_000 + i, 0, 1));
+        }
+        let context = ResourceContext::new()
+            .try_compose_with_facts(available, &facts)
+            .unwrap();
+        let wanted = coverage_piece(881_002, 1, 3);
+        let consumed = coverage_piece(881_002, 0, 1);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(context.satisfies_fact(&wanted, &facts));
+                assert!(!context.satisfies_fact(&consumed, &facts));
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "resource satisfaction scanned unrelated state: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "resource satisfaction rebuilt unrelated state: {samples:?}"
+    );
+}

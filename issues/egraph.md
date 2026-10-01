@@ -1,4 +1,4 @@
-# P1: Use kernel equality for rbtree pointer reads and folds
+# P1: Finish graph-indexed resource lookup
 
 The [rbtree insertion proof](rbtree-example.md) has two unfinished case-3
 leaves under a `Right` great-grandparent frame. Its untouched frontier remains
@@ -9,8 +9,11 @@ recursive child-argument equality that previously failed. The following
 `p->word` / `id->word` store/read regression also passes. No remaining egraph
 failure has been established at that next proof boundary.
 
-This P1 issue is limited to the equality behavior needed to finish those
-proofs. The e-graph is part of the **trusted kernel**. The broader design
+This issue tracks the shared equality behavior motivated by those proofs and
+the bounded resource-lookup cleanup below. Finishing the rbtree proof itself
+belongs to [the rbtree issue](rbtree-example.md); a later unrelated proof
+failure is not a reason to keep extending this egraph issue. The e-graph and
+its resource indexes are part of the **trusted kernel**. The broader design
 space is recorded in [Equality closure design](../docs/internals/equality-closure.md),
 but that document is not a list of launch requirements.
 
@@ -25,6 +28,138 @@ Int32 known-value equality likewise has one graph query. Its Boolean
 fact-component walk and memo are removed; exact-offset no-wrap checks,
 load-width guards, and evidence-producing enumeration remain explicit.
 Wider scalar theories are future work rather than additional P1 requirements.
+
+## Remaining lookup cleanup roadmap, 2026-10-01
+
+The engineering endpoint is one indexed resource-candidate interface, with no
+consumer retrying equivalent pointer spellings or searching an ambient frame
+for supporting memory authority. This is a deletion target, not merely a list
+of additional graph fast paths. Preserve C pointer representations and the
+existing checked distinctions between equality, containment, authority,
+provenance, initialization, and snapshot transport.
+
+### Current progress
+
+- Equality queries, completed pointer-read admission, concrete interval
+  selection, exact whole-cell payloads, late merges, and persistent fork
+  pairing are implemented and tested.
+- Checked resource construction and normalization establish graph attachment;
+  ordinary descendants maintain it through deltas. Composite projection,
+  owned one-level frontier, and frontier coverage construction now use these
+  boundaries. Other unchecked temporary producers remain to classify and
+  migrate; adding a new query fast path does not fix their publication.
+- The direct memory `satisfies_fact` migration has passed its red regression,
+  control tests, deterministic scaling, and full gate. It shares consumption's
+  graph-based address alignment. The remaining retry/normalization paths in
+  satisfaction have not been removed; a passing direct query does not complete
+  milestone 6.
+- General read/write permission still retries spellings and can search all
+  resources. Symbolic whole-range readability and storage ownership have
+  their own residual lookup paths. Thus neither attachment nor containment
+  cleanup is complete.
+
+### Seven remaining milestones
+
+These are seven reviewable outcomes, **not a promise of seven commits**.
+Split an outcome into small green slices when necessary, and record completion
+here when the old path is deleted. Do not add more resource theories to finish
+this list.
+
+1. **Finish resource publication at producers.** Audit production constructors
+   reaching memory permission, satisfaction, support, and consumption queries.
+   In `src/kernel/functions.rs`, start with single-view satisfaction contexts,
+   conditional-control frontiers, returned composite/population body contexts,
+   footprint derivation contexts, and access-mode refinement. Separate fresh
+   whole-input construction from deltas extending a published context. Publish
+   at construction/validation, never on the first lookup. For every retained
+   unchecked producer, document why it is structural-only or why publication
+   is established before any equality-sensitive query. Tests observe actual
+   attachment and cover persistent descendants and unrelated ambient state.
+2. **Make candidate identity independent of spelling.** Unify the resource
+   candidate contract around retained occurrence IDs and checked address
+   alignment. Account for kernel-minted names and retained load origins without
+   resolving several spellings in consumers. Review
+   `memory_equality_index::indexed_access_entries`: outside exact-cell hits,
+   interval selection refuses graph-wide non-affine equalities and any loaded
+   pointer. Exact-cell payloads already answer some of these queries. Track
+   completeness/unknown at the relevant query/index fragment; do not merely
+   remove a soundness guard. An unrelated unsupported term must not force an
+   otherwise complete query to search the frame. Include late offset/load
+   merges, sibling isolation, width guards, and retained-origin regressions.
+3. **Provide bounded symbolic containment support.** Extend the candidate
+   contract to existing symbolic range/read/index cases. Graph equality
+   identifies addresses and endpoints; arithmetic checks an already selected
+   supplier's coverage. Symbolic endpoints are not generally totally ordered,
+   so putting every range of an equality class into a bucket and scanning it
+   is not a solution. Use indexed exact support where available; when selection
+   cannot be bounded, require an explicit checked supplier/footprint witness
+   instead of hidden search. Establish how that evidence reaches ordinary
+   verification and expansion before changing the callers. Preserve existing
+   borrowed-buffer and completed-read regressions. This is the main design
+   milestone, and the number of slices it needs is still uncertain.
+4. **Delete general read/write permission retries.** Route
+   `ResourceContext::permits_memory_read` and `memory_write_range` entirely
+   through the shared candidate contract. Remove `pointer_spellings`, the
+   per-spelling block searches, and the final `self.iter()` searches. A complete
+   indexed miss is final; unknown support is a bounded, actionable refusal or
+   an explicitly supplied witness, never another lookup strategy. Keep read
+   views distinct from write authority and preserve all permission checks.
+5. **Delete symbolic-range read searches.** Migrate
+   `memory_state::resource_context_has_symbolic_range_read`. Remove its
+   exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
+   from milestone 3 and retain element-width, valid-extent, bounds, and
+   initialization checks. Test symbolic buffers through equal bases and
+   increasing unrelated ranges, including many ranges in the same class.
+6. **Unify satisfaction, support, and fragment consumption.** Finish the
+   memory paths in `satisfies_fact`, `directly_supporting_fact`,
+   `directly_supporting_owned_entry_with_separation`, and
+   `without_fact_incrementally`. They still combine graph candidates with
+   structural/shape candidates or normalization retries. Return the original
+   retained occurrence as support evidence. A multi-fragment requirement may
+   visit its explicitly selected suppliers and compute their residuals; it
+   must not discover them by scanning a block or normalizing unrelated facts.
+   Preserve access mode, separation policy, partial consumption, projection
+   dependency, quantities where applicable, and persistent input snapshots.
+7. **Finish adjacent storage/object queries and delete obsolete helpers.**
+   Migrate `owns_storage_access`, the resource-derived object-provenance lookup
+   in `eval/operators.rs`, and callers of `storage_pointer_spellings` in mutex
+   initialization and loop storage effects. Object identity is a checked
+   storage/provenance judgment, not an arbitrary choice of graph representative.
+   Supply that judgment from indexed retained evidence. Remove the spelling
+   helper once all callers migrate. Audit the remaining uses of
+   `memory_base_facts` and `memory_block_facts`; keep only documented visits
+   proportional to explicitly selected input, rather than implicit searches
+   for a supplier. Close with source audit, expansion/rechecking, deterministic
+   scaling, and the full gate.
+
+Milestones 1–3 establish the common interface. Milestones 4–7 migrate and
+remove its remaining consumers; they must not introduce their own alias walks
+or containment indexes. Do not implement several independently evolving
+fallback replacements in parallel. The next implementation slice should start
+with a remaining producer from milestone 1, then settle the shared contract
+before broad caller deletion.
+
+### Meaning of “no scans” and completion
+
+Allowed work includes initial publication proportional to its explicit input,
+class/resource delta maintenance, and checking the suppliers selected by an
+index or named in a certificate. Ordinary queries must not enumerate equal
+spellings, visit an entire pointer block/class to find an owner, or walk the
+ambient resource context after an index misses. Moving that search into a
+shared helper, query-time attachment, or an eager pairwise cache does not meet
+the goal. Smart tactics may perform explicit bounded search, but expanded
+simple certificates must carry support so the kernel does not repeat it.
+
+Completion requires all seven outcomes, the named retry/search paths deleted,
+and deterministic scaling for hits and misses against unrelated resources,
+same-class non-suppliers, equality history, and forks. No existing passing
+fixture may silently lose support: reduce any missing case, add indexed or
+explicit checked evidence, and keep the full gate green. If a genuinely
+incomparable symbolic selection requires new proof-facing support, design that
+support explicitly rather than weakening the C or leaving an invisible scan.
+The endpoint does not require arbitrary new arithmetic, wider scalar theories,
+new term constructors, or finishing every rbtree branch. Further work needs a
+concrete new requirement, not another unspecified “next egraph slice.”
 
 ## Required behavior
 
@@ -46,7 +181,8 @@ Wider scalar theories are future work rather than additional P1 requirements.
    permission with equality, or identify loads from different snapshots
    without separate checked evidence.
 3. **Equality-aware reads and fold consumption.** Specification reads and the
-   owned-cell/instance lookup used by `fold` must find the same resource
+   owned-cell/instance lookup used by `fold`, and the resource consumers named
+   in the cleanup roadmap, must find the same resource
    through addresses the graph proves equal. Index the relevant resources
    so lookup and class updates do not enumerate every spelling or scan
    unrelated state. Replace the spelling retries for these migrated consumers
@@ -106,7 +242,7 @@ known cell match. Unbound classes remain unknown rather than denying arithmetic
 or snapshot-based reads; broader symbolic containment, partial-range reads with offset aliases,
 and snapshot matching still use the general checker. Initial registration
 belongs to the execution proof input boundary; lookups cannot scan a cold
-frame to attach it. The rbtree acceptance remains open.
+frame to attach it. The remaining rbtree proof frontier is tracked separately.
 
 The previous attempt to publish `load(M, p) == value` as a certified
 `ExecutionPureFact` was reverted: it changed execution theorem shapes by
@@ -118,7 +254,8 @@ path context without changing logical premises. The
 reads two pointer fields before a three-link address equality and closes their
 value equality with one `simp()`. Kernel regressions check insertion order,
 branch isolation, withdrawal, snapshot separation, and volatile exclusion.
-The rbtree read/fold and resource-lookup acceptance work remains open.
+Read/fold regressions now pass; resource-lookup deletion remains in the cleanup
+roadmap above, and the rbtree proof frontier is tracked separately.
 
 The earlier `codex/egraph-foundation` pointer-representation experiment is
 historical reference material, not an integration target. Its failures mixed
@@ -309,14 +446,17 @@ recursive child-definition slice below closes that no-write reduction.
 ## Acceptance
 
 - The original `p->word = 5` / `id->word == 5` case and a reduced rbtree
-  read/fold case verify through the new paths. The two blocked case-3 rbtree
-  leaves then verify with the unchanged C, and `tests/examples.rs` pins the
-  advanced frontier. A passing synthetic example alone is insufficient.
+  read/fold case verify through the new paths, with unchanged C. The separate
+  rbtree issue owns the two unfinished case-3 leaves and their frontier pin;
+  a remaining unrelated proof gap does not expand this issue's scope.
 - A regression shows a pointer read registered **before** a later proved
   address equality and checks the resulting loaded-value equality. Cover
   insertion order, branch isolation, withdrawal or restriction of evidence,
   snapshot and type separation, volatile reads, and an unavailable read or
   missing owner. Both ordinary verification and expansion/rechecking agree.
+- All seven cleanup outcomes above are met, including deletion of the named
+  spelling retries and ambient/block supplier searches. Published descendants
+  and explicitly supported symbolic queries respect the scaling contract.
 - Migrated specification reads and fold consumption use equality-aware
   indexed lookup, including resources inserted before and after a class
   merge and displaced aliases. Their superseded spelling retries are removed.
@@ -333,9 +473,11 @@ Broader use of the same kernel equality service is desirable, but it is not
 required to finish the rbtree leaves. Consider each extension only when a
 concrete proof needs it, with its own soundness and scaling review:
 
-- Migrate other pointer consumers, such as general read/write permission,
-  loans, retirement, validity, framing, effect lookup, and diagnostics. Retire
-  their legacy alias walks when each one has a complete replacement.
+- Migrate pointer consumers beyond the named resource/storage cleanup, such
+  as broader loan, retirement, validity, framing, effect, and diagnostic
+  judgments. Retire their legacy alias walks when each one has a complete
+  replacement. General read/write permission and the named storage queries
+  are now in the bounded cleanup roadmap above, not deferred future work.
 - Add other sorted term constructors, scalar widths, algebraic constructors,
   pure functions, and more tactic matching modulo equality. Existing int32
   work does not imply those theories are already supported.
