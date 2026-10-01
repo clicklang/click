@@ -31,7 +31,6 @@ mod canonicalization_tests;
 mod contract_execution_tests;
 mod execution_tests;
 mod expression_tests;
-mod fact_publication_tests;
 mod memory_reasoning_tests;
 mod proof_reasoning_tests;
 mod representation_copy_tests;

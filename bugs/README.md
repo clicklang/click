@@ -16,3 +16,4 @@ coverage, and documentation land.
 - [Whole-path refusals don't name a C statement](whole-path-refusals-lack-a-statement-location.md)
 - [`simp` and `arithmetic()` treat sign-bit-flipped unsigned values as opaque](unsigned-order-arithmetic-in-closers.md)
 - [A ranked loop whose body branches loses its decrease member](branching-loop-body-ranking-member-not-certified.md)
+- [An interface join keeps two live spellings of one allocation](interface-join-keeps-two-live-spellings-of-one-allocation.md)

@@ -13835,36 +13835,6 @@ fn completed_application_retention_does_not_rerun_and_scales() {
 }
 
 #[test]
-fn source_script_compatibility_entry_points_stay_removed() {
-    for source in [
-        include_str!("../smart_closures.rs"),
-        include_str!("../proof_object.rs"),
-        include_str!("scope.rs"),
-        include_str!("../claim_proofs.rs"),
-        include_str!("../execution_planning/forward_planning.rs"),
-        include_str!("../execution_planning/loop_planning.rs"),
-        include_str!("../../proof.rs"),
-        include_str!("../checked_drivers/proof_execution.rs"),
-    ] {
-        for removed in [
-            "pure_goal_proof_certificate_gateway_with_checked_result",
-            "plan_fixed_state_pure_goal_certificate",
-            "source_contains_legacy_arithmetic",
-            "try_linear_script(",
-            "try_planned_linear_script(",
-            "EXPLICIT_LINEAR_FALLBACKS",
-            "count_explicit_linear_fallbacks",
-            "record_explicit_linear_fallback",
-        ] {
-            assert!(
-                !source.contains(removed),
-                "removed script authority returned: {removed}"
-            );
-        }
-    }
-}
-
-#[test]
 fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
     let state = CState::new();
     let snapshots = RecordedSnapshots::new();

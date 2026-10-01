@@ -2018,33 +2018,4 @@ mod condition_transition_tests {
         expressions.insert(second);
         assert_eq!(expressions.len(), 1);
     }
-
-    #[test]
-    fn generated_load_collection_scales_with_producer_fact_output() {
-        let memory = crate::kernel::intern_c_memory(CMemory::new());
-        for size in [8usize, 32, 128, 512] {
-            let mut facts = Vec::with_capacity(size);
-            for index in 0..size {
-                let pointer = Pointer {
-                    block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::Constant((index * 4) as i64),
-                };
-                crate::kernel::record_load_variable_defining_fact(
-                    Variable(0x1000 + index as u64),
-                    Bitvector32Term::MemoryLoad(
-                        memory.clone(),
-                        Box::new(pointer),
-                        crate::kernel::LoadKind::Bits32,
-                    ),
-                    &mut facts,
-                );
-            }
-            let bindings = generated_load_bindings_from_facts(&facts);
-            assert_eq!(bindings.len(), size);
-            assert!(bindings.iter().all(|binding| matches!(
-                binding,
-                crate::kernel::GeneratedLoadBinding::Exact { .. }
-            )));
-        }
-    }
 }

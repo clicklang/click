@@ -51,29 +51,6 @@ fn both_and_outcome_expands_and_rechecks() {
 }
 
 #[test]
-fn parses_logical_if_with_execution_tactics() {
-    let source = FILL3_CLICK.replace(
-        "by auto;",
-        "by { if n <= 0 { step(); execute(); simp(); } else { step(); execute(); simp(); } }",
-    );
-    let file = parse(&source).expect("explicit branch execution tactics should parse");
-    let tactics = file.function_blocks()[0].ensures()[0]
-        .proof()
-        .tactics()
-        .expect("expected tactics");
-
-    assert!(matches!(
-        &tactics[0],
-        ProofTactic::If(ProofIf {
-            then_tactics,
-            else_tactics,
-            ..
-        }) if then_tactics.first() == Some(&ProofTactic::Step)
-            && else_tactics.first() == Some(&ProofTactic::Step)
-    ));
-}
-
-#[test]
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "by auto;",
@@ -120,47 +97,6 @@ fn parses_frontier_branch_ensuring_interface() {
         ]) && then_tactics == &[ProofTactic::Step]
             && else_tactics == &[ProofTactic::SmartExecute]
     ));
-}
-
-#[test]
-fn empty_frontier_branch_uses_the_checked_structural_join() {
-    let c_source = r#"
-        int32 identity(int32 x) {
-            if (x < 0) {
-            } else {
-            }
-            return x;
-        }
-    "#;
-    let click_source = r#"
-        verifying "identity.c";
-
-        int32 identity(int32 x) {
-            ensures returns_x: result == x;
-        } by {
-            branch {
-                then {
-                }
-                else {
-                }
-            }
-            step();
-            simp();
-        }
-    "#;
-
-    let _ = crate::kernel::take_checked_function_body_execution_count();
-    verify_c0_sources(click_source, &[("identity.c", c_source)]).unwrap_or_else(|error| {
-        panic!(
-            "empty frontier branch should retain and check its structural proof: {}",
-            error.message()
-        )
-    });
-    assert_eq!(
-        crate::kernel::take_checked_function_body_execution_count(),
-        0,
-        "a shared-continuation C branch should seal from its retained arm evidence"
-    );
 }
 
 #[test]

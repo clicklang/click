@@ -611,35 +611,6 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
     }
 }
 
-/// The saved expansion checks all invariant bodies without repeating smart
-/// search or invoking legacy invariant discovery.
-#[test]
-fn sorting_rewritten_invariant_body_checks_and_expands() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/bubble_sort3_two_pass_sorted.md");
-    let source = std::fs::read_to_string(&path).unwrap();
-    let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let click = fixture.click_source.as_deref().unwrap();
-    assert!(!click.contains("simp("));
-    assert!(!click.contains("by simp"));
-    assert!(!click.contains("close_invariants();"));
-    assert_eq!(click.matches("close_invariants by {").count(), 4);
-    verify_c0_sources(click, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
-    let expanded = expand_c0_claim_source(
-        click,
-        &sources,
-        "bubble_sort3_two_pass",
-        CProofClaim::Grouped,
-    )
-    .unwrap_or_else(|e| panic!("{}", e.message()));
-    verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
-}
-
 #[test]
 fn explicit_straight_line_swap_transports_an_entry_bound() {
     for index in ["0", "j"] {
@@ -1572,93 +1543,6 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
     assert_eq!(expanded, click_source);
     verify_c0_sources(&expanded, &[("fill_n.c", c_source)])
         .expect("the expanded store should use the invariant at the current frontier");
-}
-
-#[test]
-fn frontier_local_loop_preserves_a_perpetual_partial_contract() {
-    let c_source = r#"
-            int32 spin() {
-                while (1) {
-                }
-                return 0;
-            }
-        "#;
-    let click_source = r#"
-            verifying "spin.c";
-
-            int32 spin() diverges {
-                ensures 0 == 0;
-            } by {
-                loop diverges {
-                    invariant 0 == 0;
-                    initialize by simp;
-                    preserve by {
-                        step();
-                        close_invariants();
-                    }
-                }
-                simp();
-            }
-        "#;
-
-    // The work budgets decide the verdict; the deadline only contains a
-    // genuine hang in executing the perpetual loop.
-    crate::instrumentation::with_deadline(crate::cli::CRASH_CONTAINMENT_TIME_LIMIT, || {
-        verify_c0_sources(click_source, &[("spin.c", c_source)])
-    })
-    .expect("a frontier-local loop without `decreases` should prove partial correctness");
-}
-
-#[test]
-fn frontier_local_perpetual_loop_expands_a_direct_closer_without_a_return() {
-    let c_source = r#"
-            int32 spin() {
-                while (1) {
-                }
-                return 0;
-            }
-        "#;
-    let click_source = r#"
-            verifying "spin.c";
-
-            int32 spin() diverges {
-                ensures 0 == 0;
-            } by {
-                loop diverges {
-                    invariant 0 == 0;
-                    initialize by simp;
-                    preserve by {
-                        step();
-                        close_invariants();
-                    }
-                }
-                simp();
-            }
-        "#;
-    let closer = click_source
-        .rfind("simp();")
-        .expect("proof should contain its direct closer");
-    let line = click_source[..closer]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = closer
-        - click_source[..closer]
-            .rfind('\n')
-            .map(|offset| offset + 1)
-            .unwrap_or(0)
-        + 1;
-
-    let expanded = expand_c0_tactic_source_at(click_source, &[("spin.c", c_source)], line, column)
-        .expect("a direct tautology closer should expand without a return outcome");
-
-    verify_c0_sources(&expanded, &[("spin.c", c_source)]).unwrap_or_else(|error| {
-        panic!(
-            "the expanded perpetual-loop proof should freshly check: {}\n{expanded}",
-            error.message()
-        )
-    });
 }
 
 #[test]

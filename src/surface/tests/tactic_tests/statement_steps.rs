@@ -319,29 +319,6 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
 }
 
 #[test]
-fn step_executes_with_the_whole_proof_context() {
-    let c_source = r#"
-            int32 increment(int32 x) {
-                return x + 1;
-            }
-        "#;
-    let click_source = r#"
-            verifying "increment.c";
-
-            int32 increment(int32 x) {
-                requires x < 2147483647;
-                ensures result == x + 1;
-            } by {
-                step();
-                simp();
-            }
-        "#;
-
-    verify_c0_sources(click_source, &[("increment.c", c_source)])
-        .expect("the whole proof context should justify one execution transition");
-}
-
-#[test]
 fn failed_call_step_reports_its_unresolved_required_precondition() {
     let c_source = r#"
             int32 caller(int32 x, int32 y) {

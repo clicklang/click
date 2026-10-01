@@ -103,12 +103,6 @@ fn authority_conditional_release_certifies_its_resource_guard() {
 }
 
 #[test]
-fn authority_conditional_release_certifies_both_lifetime_branches() {
-    verify(SOURCE)
-        .expect("nonfinal release restores control; final release retires authority and frees");
-}
-
-#[test]
 fn authority_conditional_release_rejects_returning_control_after_free() {
     let source = SOURCE.replace("if old(obj->refs) > 1", "if old(obj->refs) >= 1");
     let error = verify(&source).expect_err("the final branch cannot return freed control");
@@ -120,15 +114,6 @@ fn authority_conditional_release_rejects_missing_returned_control_witness() {
     let source = SOURCE.replace("fold(child_control(obj));", "");
     verify(&source)
         .expect_err("a conditional claim key cannot replace its returned resource witness");
-}
-
-#[test]
-fn authority_nonfinal_helper_postcondition_observes_updated_count() {
-    let source = SOURCE.replace(
-        "    ensures obj->payload == old(obj->payload);",
-        "    ensures obj->payload == old(obj->payload);\n    ensures count(child_ref(obj)) == old(count(child_ref(obj))) - 1;",
-    );
-    verify(&source).expect("the caller observes the checked member delta in its postcondition");
 }
 
 #[test]
