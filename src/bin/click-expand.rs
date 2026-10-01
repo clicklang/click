@@ -751,6 +751,27 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn symbolic_borrowed_range_expansion_rechecks_without_serializing_graph_ids() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/views_a_byte_range_makes_an_index_readable.md");
+        for label in [
+            "read_byte.contract",
+            "read_byte_from.contract",
+            "read_half.contract",
+        ] {
+            let arguments =
+                parse_arguments(["--claim", label, path.to_str().unwrap()].map(str::to_string))
+                    .unwrap();
+            let expanded =
+                run(&arguments).expect("symbolic supplier evidence must expand and recheck");
+            let parsed = click::cli::parse_mdtest(&path, &expanded).unwrap();
+            let sources = source_refs(&parsed.c_sources);
+            click::surface::verify_c0_sources(parsed.click_source.as_deref().unwrap(), &sources)
+                .expect("fresh ordinary verification must reconstruct supplier evidence");
+        }
+    }
+
+    #[test]
     fn cpp_mdtest_expansion_rechecks_the_imported_source() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_scalar_catch.md");
         let arguments = parse_arguments(

@@ -9,6 +9,7 @@ mod cell_tests;
 mod projection_tests;
 mod read_intervals;
 pub(super) mod structural;
+mod symbolic;
 use read_intervals::ReadIntervals;
 
 use super::*;
@@ -295,6 +296,7 @@ pub(super) struct PairedMemoryIndex {
     graph: EqualityGraph,
     addresses: MemoryAddresses,
     points: AddressPoints,
+    symbolic: symbolic::RangeSupports,
     points_initialized: bool,
 }
 
@@ -478,6 +480,25 @@ impl MemoryAccessCandidates {
     }
 }
 
+#[derive(Clone, Copy)]
+enum MemoryQuery<'a> {
+    Address(&'a Pointer),
+    Footprint(&'a CMemoryRange),
+}
+impl MemoryQuery<'_> {
+    fn register(self, graph: &EqualityGraph) {
+        match self {
+            Self::Address(pointer) => {
+                graph.address_class(pointer);
+            }
+            Self::Footprint(range) => {
+                graph.address_class(range.base());
+                graph.footprint_class(range);
+            }
+        }
+    }
+}
+
 impl ResourceContext {
     #[cfg(test)]
     pub(in crate::kernel) fn observe_composite_context(&self) {
@@ -565,7 +586,7 @@ impl ResourceContext {
         self.pair_memory_equalities_in_graph(
             assumptions.equality_graph.clone(),
             register_input,
-            query,
+            query.map(MemoryQuery::Address),
         )
     }
 
@@ -573,7 +594,7 @@ impl ResourceContext {
         &self,
         source: EqualityGraph,
         register_input: bool,
-        query: Option<&Pointer>,
+        query: Option<MemoryQuery<'_>>,
     ) -> std::sync::Arc<PairedMemoryIndex> {
         let key = source.input_key();
         let mut cache = self
@@ -666,18 +687,14 @@ impl ResourceContext {
                     assert!(graph.append_inputs_from(&source), "input checkpoint prefix");
                 }
                 if let Some(query) = query {
-                    graph.address_class(query);
+                    query.register(&graph);
                 }
                 for (_, insert, fact) in changed.iter().rev() {
                     if index.points_initialized
                         && *insert
                         && let Some(range) = fact.memory_range()
                     {
-                        graph.address_class(
-                            &range
-                                .base()
-                                .offset_by_elements(range.start().clone(), range.element_width()),
-                        );
+                        symbolic::RangeSupports::register(range, &graph);
                     }
                 }
                 let merges = if adopt_source {
@@ -688,6 +705,7 @@ impl ResourceContext {
                         .expect("address prefix")
                     {
                         index.points.merge(merge.moved, merge.kept);
+                        index.symbolic.merge(merge.moved, merge.kept);
                     }
                     graph
                         .pointer_merges_since(&index.graph)
@@ -696,6 +714,7 @@ impl ResourceContext {
                 for (entry, insert, fact) in changed.into_iter().rev() {
                     if index.points_initialized {
                         index.points.update(entry, insert, &fact, &graph);
+                        index.symbolic.update(entry, insert, &fact, &graph);
                     }
                     let Some(range) = fact.memory_range() else {
                         continue;
@@ -747,7 +766,7 @@ impl ResourceContext {
         }
         let graph = source;
         if let Some(query) = query {
-            graph.address_class(query);
+            query.register(&graph);
         }
         let mut addresses = self.storage.index.memory_addresses.clone();
         for merge in graph.pointer_merges() {
@@ -758,6 +777,7 @@ impl ResourceContext {
             graph,
             addresses,
             points: AddressPoints::default(),
+            symbolic: symbolic::RangeSupports::default(),
             points_initialized: false,
         });
         cache.by_inputs = cache.by_inputs.with_inserted(key, paired.clone());
@@ -770,6 +790,7 @@ impl ResourceContext {
             graph,
             addresses: MemoryAddresses::default(),
             points: AddressPoints::default(),
+            symbolic: symbolic::RangeSupports::default(),
             points_initialized: true,
         })
     }
@@ -779,17 +800,15 @@ impl ResourceContext {
     fn registered_memory_index(&self, graph: EqualityGraph) -> std::sync::Arc<PairedMemoryIndex> {
         for (_, fact) in self.storage.facts.iter() {
             if let Some(range) = fact.memory_range() {
-                graph.address_class(
-                    &range
-                        .base()
-                        .offset_by_elements(range.start().clone(), range.element_width()),
-                );
+                symbolic::RangeSupports::register(range, &graph);
             }
         }
         let mut points = AddressPoints::default();
+        let mut symbolic = symbolic::RangeSupports::default();
         let mut addresses = MemoryAddresses::default();
         for (entry, fact) in self.storage.facts.iter() {
             points.update(*entry, true, fact, &graph);
+            symbolic.update(*entry, true, fact, &graph);
             if let Some(range) = fact.memory_range() {
                 addresses.update_in_graph(range, fact.is_own(), *entry, true, &graph, fact);
             }
@@ -799,6 +818,7 @@ impl ResourceContext {
             graph,
             addresses,
             points,
+            symbolic,
             points_initialized: true,
         })
     }

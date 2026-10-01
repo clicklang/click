@@ -42,7 +42,9 @@ uint8 read_byte(uint8 s[], int32 i, int32 n) {
     requires 0 <= i;
     requires i < n;
     views s[0..n];
-
+} by {
+    execute();
+    simp();
 }
 
 uint8 read_byte_from(uint8 s[], int32 a, int32 b, int32 i) {
@@ -50,14 +52,18 @@ uint8 read_byte_from(uint8 s[], int32 a, int32 b, int32 i) {
     requires a <= i;
     requires i < b;
     views s[a..b];
-
+} by {
+    execute();
+    simp();
 }
 
 uint16 read_half(uint16 s[], int32 i, int32 n) {
     requires 0 <= i;
     requires i < n;
     views s[0..n];
-
+} by {
+    execute();
+    simp();
 }
 ```
 

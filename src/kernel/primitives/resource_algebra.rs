@@ -6515,7 +6515,7 @@ fn constant_quantity_is_positive(quantity: &Bitvector32Term) -> bool {
     signed_bitvector_constant(quantity).is_some_and(|value| value > 0)
 }
 
-fn resource_quantity_is_positive(
+pub(super) fn resource_quantity_is_positive(
     quantity: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -7452,7 +7452,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
             .all(|(a, b)| term_equal(a, b))
 }
 
-fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRange> {
+pub(super) fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRange> {
     match resource.core()? {
         CResourceFact::View(CResource::Memory(range)) => Some(range),
         CResourceFact::View(

@@ -1309,6 +1309,12 @@ pub(crate) fn resource_context_has_symbolic_range_read(
     bytes: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
+    let footprint =
+        CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
+    if let Some(covered) = resources.symbolic_range_read_supported(&footprint, assumptions, None) {
+        return covered;
+    }
+    // Unknown selection retains the existing consumer until milestone 5.
     // The ranges written against `base` itself are asked first, from the base
     // index; they are the usual answer. The whole-context scan is the same
     // question over a superset, kept for a range reached through an alias or
