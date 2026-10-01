@@ -132,21 +132,21 @@ fn integer_source_certificates_reject_missing_facts_and_tampered_nodes() {
             "x < y",
             "premise 0: x <= y => x < y;",
             0,
-            "NodeResultMismatch",
+            "node 0 does not state what its rule derives",
         ),
         (
             "requires x <= y;",
             "y <= x",
             "premise 0: x <= y => x <= y; scale 0 by -1 => y <= x;",
             1,
-            "InvalidCoefficient",
+            "node 1 uses an invalid coefficient",
         ),
         (
             "requires x <= y;",
             "x <= y",
             "premise 0: x <= y => x <= y; add 0, 9 => x <= y;",
             1,
-            "InvalidNodeReference",
+            "node 9 is referenced but is not an earlier node",
         ),
     ] {
         let source = format!(

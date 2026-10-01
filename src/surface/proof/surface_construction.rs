@@ -197,11 +197,16 @@ fn checked_surface_fact_in_state_with_assumptions(
     }
     match lowered {
         Ok(lowered) => Err(ClickError::new(format!(
-            "synthesized Click fact does not lower to the kernel fact at this proof state\n  Click: {candidate:?}\n  lowered: {lowered:?}\n  kernel: {kernel:?}"
+            "synthesized Click fact does not lower to the kernel fact at this proof state\n  Click: `{}`\n  lowered: `{}`\n  kernel: `{}`",
+            crate::surface::diagnostics::describe_click_proposition(&candidate),
+            crate::surface::proof_diagnostics::render::render_proposition(&lowered),
+            crate::surface::proof_diagnostics::render::render_proposition(kernel),
         ))),
         Err(error) => Err(ClickError::new(format!(
-            "synthesized Click fact could not be lowered at this proof state\n  Click: {candidate:?}\n  error: {}\n  kernel: {kernel:?}",
-            error.message()
+            "synthesized Click fact could not be lowered at this proof state\n  Click: `{}`\n  error: {}\n  kernel: `{}`",
+            crate::surface::diagnostics::describe_click_proposition(&candidate),
+            error.message(),
+            crate::surface::proof_diagnostics::render::render_proposition(kernel),
         ))),
     }
 }
@@ -1548,7 +1553,9 @@ pub(super) fn append_proof_step_for_operation(
             }
             if base_surfaces.is_empty() {
                 construction.proof_certificate_builder.block(format!(
-                    "fact transport has no recorded or synthesized Click comparison form\n  source: {source:?}\n  target: {target:?}"
+                    "fact transport has no recorded or synthesized Click comparison form\n  source: `{}`\n  target: `{}`",
+                    crate::surface::proof_diagnostics::render::render_proposition(source),
+                    crate::surface::proof_diagnostics::render::render_proposition(target),
                 ));
                 return;
             }
@@ -1726,8 +1733,10 @@ pub(super) fn append_proof_step_for_operation(
                     }
                 }
                 _ => construction.proof_certificate_builder.block(format!(
-                    "no placement of the comparison operands at the {} recorded snapshots lowered to the certified fact transport\n  certified source: {source:?}\n  certified target: {target:?}",
-                    selectors.len()
+                    "no placement of the comparison operands at the {} recorded snapshots lowered to the certified fact transport\n  certified source: `{}`\n  certified target: `{}`",
+                    selectors.len(),
+                    crate::surface::proof_diagnostics::render::render_proposition(source),
+                    crate::surface::proof_diagnostics::render::render_proposition(target),
                 )),
             }
         }
@@ -1785,7 +1794,9 @@ pub(super) fn append_proof_step_for_operation(
                 }
                 Ok(kernel_fact) => {
                     construction.proof_certificate_builder.block(format!(
-                        "surface branch condition did not lower to a certified path fact\n  lowered: {kernel_fact:?}\n  certified facts: {facts:?}"
+                        "surface branch condition did not lower to a certified path fact\n  lowered: `{}`\n  certified facts: {}",
+                        crate::surface::proof_diagnostics::render::render_proposition(&kernel_fact),
+                        crate::surface::diagnostics::describe_kernel_propositions(facts),
                     ));
                     return;
                 }

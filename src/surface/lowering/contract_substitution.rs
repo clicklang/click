@@ -3127,7 +3127,8 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             };
             contract_expression_as_c_fragment(substitution).ok_or_else(|| {
                 format!(
-                    "cannot substitute non-C-fragment expression for `{name}` inside C fragment `{expression:?}`"
+                    "cannot substitute non-C-fragment expression for `{name}` inside C fragment `{}`",
+                    crate::surface::diagnostics::describe_c_expression(expression)
                 )
             })
         }

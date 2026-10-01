@@ -44,5 +44,5 @@ int32 next_index(int32 i, int32 n) {
 ```
 
 ```expect
-fail: NodeResultMismatch(2)
+fail: node 2 does not state what its rule derives from its inputs
 ```

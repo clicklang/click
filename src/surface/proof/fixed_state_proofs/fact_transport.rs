@@ -161,7 +161,9 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
                 .filter(|fact| !candidates.iter().any(|(candidate, _)| candidate == *fact))
                 .count();
             return Err(ClickError::new(format!(
-                "explicit surface premises do not view the certified fact transport\n  source: {source:?}\n  target: {target:?}\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted)",
+                "explicit surface premises do not view the certified fact transport\n  source: `{}`\n  target: `{}`\n  selected surface premises: {}\n  unsynthesizable ambient facts: {unavailable_count} (internal facts omitted)",
+                crate::surface::proof_diagnostics::render::render_proposition(source),
+                crate::surface::proof_diagnostics::render::render_proposition(target),
                 complete.len(),
             )));
         }

@@ -1191,15 +1191,28 @@ impl SurfacePropositionMap {
                 Ok(lowered) if &lowered == kernel => {
                     return Ok(clone_click_proposition_iteratively(surface));
                 }
-                Ok(lowered) => last_mismatch = Some(format!("{surface:?} -> {lowered:?}")),
-                Err(error) => last_mismatch = Some(format!("{surface:?} -> {}", error.message())),
+                Ok(lowered) => {
+                    last_mismatch = Some(format!(
+                        "`{}` -> `{}`",
+                        crate::surface::diagnostics::describe_click_proposition(surface),
+                        crate::surface::proof_diagnostics::render::render_proposition(&lowered)
+                    ))
+                }
+                Err(error) => {
+                    last_mismatch = Some(format!(
+                        "`{}` -> {}",
+                        crate::surface::diagnostics::describe_click_proposition(surface),
+                        error.message()
+                    ))
+                }
             }
         }
         Err(ClickError::new(format!(
-            "none of the recorded surface forms lower to the proposition at the current proof state{}; expected {kernel:?}",
+            "none of the recorded surface forms lower to the proposition at the current proof state{}; expected `{}`",
             last_mismatch
                 .map(|mismatch| format!(" (last mismatch: {mismatch})"))
-                .unwrap_or_default()
+                .unwrap_or_default(),
+            crate::surface::proof_diagnostics::render::render_proposition(kernel),
         )))
     }
 }

@@ -26,7 +26,9 @@ fn check_selected_premise_spelling(
         Ok(())
     } else {
         Err(ClickError::new(format!(
-            "selected premise spelling denotes a different fact at this proof location: {lowered:?}"
+            "selected premise spelling `{}` denotes a different fact at this proof location: `{}`",
+            crate::surface::diagnostics::describe_click_proposition(surface),
+            crate::surface::proof_diagnostics::render::render_proposition(&lowered),
         )))
     }
 }
