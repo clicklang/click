@@ -9,7 +9,8 @@ The claim is true, but closing it needs unsigned order arithmetic: the
 closer reads `x - 1 <u x` as a signed order between the sign-bit-flipped
 values `(x - 1) ^ 2^31` and `x ^ 2^31`, and does not relate the two. That
 open decrease member is the refusal this test pins; it changes to `pass`
-when the closer reasons about unsigned order.
+when
+`bugs/unsigned-order-arithmetic-in-closers.md` is fixed.
 
 ```c filename=an_unsigned_count_down_loop_owes_an_unsigned_descent.c
 int32 drain(uint32 x) {

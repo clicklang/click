@@ -379,7 +379,8 @@ the flip. A true descent such as `while (x > 0u) x--;` under `decreases x` is
 therefore still refused at its decrease member
 (`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`,
 `mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`,
-`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`).
+`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`;
+see `bugs/unsigned-order-arithmetic-in-closers.md`).
 
 A component whose type is `Integer` ranks the loop in that carrier:
 

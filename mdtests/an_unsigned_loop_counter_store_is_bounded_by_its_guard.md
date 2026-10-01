@@ -13,8 +13,9 @@ value of `x`. Both it and the invariant member `x + 1 <=u 4` are true here,
 but closing either needs unsigned order arithmetic over the counter, which
 the closer does not do yet: it reads an unsigned comparison as a signed
 order between sign-bit-flipped values, and a flipped `x + 1` is not related
-to a flipped `x`. That open bundle is the refusal this test pins; it
-changes to `pass` when the closer reasons about unsigned order.
+to a flipped `x` (`bugs/unsigned-order-arithmetic-in-closers.md`). The
+first open member, the invariant, is the refusal this test pins; it changes
+to `pass` when that bug is fixed.
 
 ```c filename=an_unsigned_loop_counter_store_is_bounded_by_its_guard.c
 void clear(int32* values) {

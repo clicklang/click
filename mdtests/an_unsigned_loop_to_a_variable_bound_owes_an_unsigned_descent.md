@@ -9,8 +9,8 @@ guard is what keeps that value from wrapping.
 
 The claim is true, but closing it needs unsigned order arithmetic over the
 sign-bit-flipped differences, which the closer does not do yet. That open
-decrease member is the refusal this test pins; it changes to `pass` when the
-closer reasons about unsigned order.
+decrease member is the refusal this test pins; it changes to `pass` when
+`bugs/unsigned-order-arithmetic-in-closers.md` is fixed.
 
 ```c filename=an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.c
 int32 count(uint32 n) {
