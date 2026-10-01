@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::*;
 
-// Observe only this test's actual composite expansion input, with no production hook
+// Observe only this test's composite expansion/coverage input; release builds omit the hook
 // and no retained contexts or extra clones in other tests.
 thread_local! {
     static OBSERVED_CONTEXT: std::cell::RefCell<Option<Option<ResourceContext>>> = const { std::cell::RefCell::new(None) };
@@ -312,5 +312,151 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
     assert!(
         samples[3].2 <= samples[0].2 * 4 + 512,
         "owned frontier rebuilt unrelated state: {samples:?}"
+    );
+}
+
+fn coverage_context(
+    available: Vec<CResourceFact>,
+    required: &[CResourceFact],
+    facts: &PureFactContext,
+) -> (ResourceContext, Option<ResourceContext>) {
+    let mut residual = None;
+    let input = capture_context(|| {
+        residual = crate::kernel::functions::checked_frontier_coverage(available, required, facts);
+    });
+    (input, residual)
+}
+
+fn coverage_piece(id: u64, start: u32, end: u32) -> CResourceFact {
+    CResourceFact::own_memory(CMemoryRange::new(
+        Pointer::symbolic(Variable(id)),
+        Bitvector32Term::Constant(start),
+        Bitvector32Term::Constant(end),
+    ))
+}
+
+#[test]
+fn frontier_coverage_selects_and_consumes_through_transitive_address_equality() {
+    let (_, _, _, branch, sibling) = fixture();
+    let owner = coverage_piece(881_000, 0, 1);
+    let wanted = coverage_piece(881_002, 0, 1);
+    let (input, residual) =
+        coverage_context(vec![owner.clone()], std::slice::from_ref(&wanted), &branch);
+    assert!(
+        input
+            .concrete_write_entries(&Pointer::symbolic(Variable(881_002)), 4, &branch)
+            .is_some_and(|entries| entries.exact()),
+        "frontier coverage bypassed the graph's whole-cell ownership payload"
+    );
+    assert!(
+        residual
+            .expect("equal addresses cover the requested piece")
+            .is_empty()
+    );
+    assert!(
+        coverage_context(vec![owner.clone()], std::slice::from_ref(&wanted), &sibling)
+            .1
+            .is_none()
+    );
+    assert!(
+        coverage_context(
+            vec![owner.clone()],
+            &[coverage_piece(881_002, 0, 2)],
+            &branch
+        )
+        .1
+        .is_none()
+    );
+    assert!(
+        coverage_context(vec![owner.clone()], &[wanted.clone(), wanted], &branch)
+            .1
+            .is_none(),
+        "one occurrence cannot back the requested piece twice"
+    );
+    assert!(
+        coverage_context(
+            vec![CResourceFact::View(owner.resource().clone())],
+            &[coverage_piece(881_002, 0, 1)],
+            &branch
+        )
+        .1
+        .is_none(),
+        "a view must not supply owned coverage"
+    );
+    assert!(
+        coverage_context(vec![owner], &[coverage_piece(881_002, 1, 2)], &branch)
+            .1
+            .is_none()
+    );
+}
+
+#[test]
+fn frontier_coverage_splits_ownership_and_preserves_the_input_snapshot() {
+    let (_, _, _, facts, _) = fixture();
+    let wanted = coverage_piece(881_002, 0, 1);
+    let (input, residual) = coverage_context(
+        vec![coverage_piece(881_000, 0, 3)],
+        std::slice::from_ref(&wanted),
+        &facts,
+    );
+    let residual = residual.expect("partial coverage splits the owner");
+    assert_eq!(residual.facts(), &[coverage_piece(881_000, 1, 3)]);
+    assert!(
+        residual
+            .clone()
+            .without_fact_incrementally(&coverage_piece(881_002, 1, 3), &facts)
+            .expect("the same graph-aware coverage path consumes the residual")
+            .is_empty()
+    );
+    assert!(
+        residual
+            .without_fact_incrementally(&wanted, &facts)
+            .is_none()
+    );
+    assert_eq!(
+        input.facts(),
+        &[coverage_piece(881_000, 0, 3)],
+        "proof-local consumption must preserve the input snapshot"
+    );
+}
+
+#[test]
+fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let (_, _, _, mut facts, _) = fixture();
+        for i in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(899_000 + i * 2)),
+                    Bitvector32Term::Variable(Variable(899_001 + i * 2)),
+                ),
+                true,
+            );
+        }
+        let available = vec![coverage_piece(881_000, 0, 1)];
+        let wanted = coverage_piece(881_002, 0, 1);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                let (input, residual) =
+                    coverage_context(available, std::slice::from_ref(&wanted), &facts);
+                assert!(
+                    input
+                        .concrete_write_entries(&Pointer::symbolic(Variable(881_002)), 4, &facts)
+                        .unwrap()
+                        .exact()
+                );
+                assert!(residual.unwrap().is_empty());
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "frontier coverage scanned unrelated facts: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "frontier coverage rebuilt unrelated graph state: {samples:?}"
     );
 }

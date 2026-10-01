@@ -472,7 +472,7 @@ impl MemoryAccessCandidates {
 
 impl ResourceContext {
     #[cfg(test)]
-    pub(in crate::kernel) fn observe_projection_context(&self) {
+    pub(in crate::kernel) fn observe_composite_context(&self) {
         projection_tests::record_context(self);
     }
 

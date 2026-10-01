@@ -16968,8 +16968,7 @@ fn candidate_composite_view_adapter(
         else {
             continue;
         };
-        let covering = ResourceContext::new().unchecked_with_facts(owner_frontier);
-        if remove_frontier(covering, &frontier, assumptions).is_none() {
+        if checked_frontier_coverage(owner_frontier, &frontier, assumptions).is_none() {
             continue;
         }
         return Ok(Some(CompositeViewAdapter {
@@ -16999,7 +16998,7 @@ pub(super) fn checked_one_level_frontier(
         .try_compose_with_fact(head.clone(), assumptions)
         .ok()?;
     #[cfg(test)]
-    singleton.observe_projection_context();
+    singleton.observe_composite_context();
     let (_, children, _) = expand_composite_resource_fact_with_children(
         &singleton,
         head,
@@ -17008,6 +17007,24 @@ pub(super) fn checked_one_level_frontier(
         assumptions,
     )?;
     Some(children)
+}
+
+/// Consume the requested frontier from the owner's checked expansion alone.
+/// The residual is proof-local; the adapter escrows and recovers the owner head.
+pub(super) fn checked_frontier_coverage(
+    owner_frontier: Vec<CResourceFact>,
+    required: &[CResourceFact],
+    assumptions: &PureFactContext,
+) -> Option<ResourceContext> {
+    // This whole input has already been checked by expansion. Checked
+    // construction retains the trusted graph's resource payload for coverage;
+    // equality selects candidates, and ordinary consumption checks authority.
+    let covering = ResourceContext::new()
+        .try_compose_with_facts(owner_frontier, assumptions)
+        .ok()?;
+    #[cfg(test)]
+    covering.observe_composite_context();
+    remove_frontier(covering, required, assumptions)
 }
 
 /// Removes a checked frontier from a context piecewise, or reports that the
@@ -22630,7 +22647,7 @@ pub(crate) fn checked_composite_projection_evidence(
         .try_compose_with_fact(viewed.clone(), assumptions)
         .ok()?;
     #[cfg(test)]
-    head.observe_projection_context();
+    head.observe_composite_context();
     let (_, children, _) = expand_composite_resource_fact_with_children(
         &head,
         viewed,
