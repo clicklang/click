@@ -143,8 +143,12 @@ remain unverified.
 The [slice iterator fixture](../examples/rust-iterators/README.md) proves the
 same sum with unchanged `for &byte in bytes` source, using compiler-resolved
 iterator calls, copied byte bindings, checked indexing, and shared loop rules.
-Only immutable shared byte-slice bindings are supported; reference-valued
-bindings, `.iter()`, chunk iterators, and iterator control flow remain outstanding.
+The [reference iterator fixture](../examples/rust-iter-references/README.md)
+proves the same sum with `for byte in bytes.iter()` and shared-reference
+dereferences. Direct slices and `.iter()` support both copied and reference
+bindings, with read authority and shared-reference write rejection regressions.
+Only immutable shared byte-slice bindings are supported; mutable iteration,
+stored iterators, chunk iterators, and iterator control flow remain outstanding.
 By-value array parameters/returns, non-byte slices, and crate extraction also
 remain outstanding. Neither library is verified
 by this assessment.

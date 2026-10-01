@@ -466,14 +466,14 @@ impl<'tcx> BodyExporter<'tcx> {
         Ok(out)
     }
     // Recognize the pinned compiler's for desugaring, never user call names.
-    // Only copied byte bindings from an immutable shared slice are supported.
+    // Copied bytes and shared byte references use the same checked progress.
     fn slice_for(
         &mut self,
         e: &hir::Expr<'tcx>,
         tail_return: bool,
     ) -> Result<Vec<Statement>, String> {
         let bad = || {
-            self.error(e, "Rust for loops currently require `for &byte in slice` with an immutable shared byte-slice binding")
+            self.error(e, "Rust for loops currently require a shared byte-slice iterator over an immutable binding")
         };
         let hir::ExprKind::Match(input, [outer], hir::MatchSource::ForLoopDesugar) = e.kind else {
             return Err(bad());
@@ -488,6 +488,35 @@ impl<'tcx> BodyExporter<'tcx> {
         {
             return Err(bad());
         }
+        let slice = if let hir::ExprKind::MethodCall(_, receiver, [], _) = slice.kind {
+            let method = self
+                .typeck
+                .type_dependent_def_id(slice.hir_id)
+                .ok_or_else(bad)?;
+            let implementation = self.tcx.parent(method);
+            // `iter` has no lang item. Check the resolved core inherent slice
+            // method, including its impl self type, rather than source spelling.
+            if !matches!(
+                self.tcx.def_kind(implementation),
+                hir::def::DefKind::Impl { of_trait: false }
+            ) || method.is_local()
+                || self.tcx.crate_name(method.krate).as_str() != "core"
+                || self.tcx.item_name(method).as_str() != "iter"
+                || !matches!(
+                    self.tcx
+                        .type_of(implementation)
+                        .instantiate_identity()
+                        .skip_norm_wip()
+                        .kind(),
+                    ty::Slice(_)
+                )
+            {
+                return Err(bad());
+            }
+            receiver
+        } else {
+            slice
+        };
         let hir::ExprKind::Path(hir::QPath::Resolved(_, source)) = slice.kind else {
             return Err(bad());
         };
@@ -549,13 +578,23 @@ impl<'tcx> BodyExporter<'tcx> {
         {
             return Err(bad());
         }
-        let hir::PatKind::Ref(binding, hir::Pinnedness::Not, hir::Mutability::Not) = field.pat.kind
-        else {
-            return Err(bad());
+        let (binding, reference) = match field.pat.kind {
+            hir::PatKind::Ref(binding, hir::Pinnedness::Not, hir::Mutability::Not)
+                if export_type(self.tcx, self.typeck.pat_ty(binding))? == Type::U8 =>
+            {
+                (binding, false)
+            }
+            hir::PatKind::Binding(..)
+                if export_type(self.tcx, self.typeck.pat_ty(field.pat))?
+                    == (Type::Reference {
+                        mutable: false,
+                        pointee: Box::new(Type::U8),
+                    }) =>
+            {
+                (field.pat, true)
+            }
+            _ => return Err(bad()),
         };
-        if export_type(self.tcx, self.typeck.pat_ty(binding))? != Type::U8 {
-            return Err(bad());
-        }
         let slice = self.expr(slice)?;
         let location = span(self.tcx, e.span);
         let index = format!("__rust_iter_index_{}_{}", location.line, location.column);
@@ -566,16 +605,33 @@ impl<'tcx> BodyExporter<'tcx> {
         let local = Expression::Local {
             name: index.clone(),
         };
+        let value_type = if reference {
+            Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U8),
+            }
+        } else {
+            Type::U8
+        };
+        let element = Expression::Index {
+            slice: Box::new(slice.clone()),
+            index: Box::new(local.clone()),
+        };
+        let initializer = if reference {
+            Expression::Borrow {
+                place: Box::new(element),
+                value_type: value_type.clone(),
+            }
+        } else {
+            element
+        };
         let mut body = vec![Statement::Declare {
             place: Place {
                 name: byte,
-                value_type: Type::U8,
+                value_type,
                 span: span(self.tcx, binding.span),
             },
-            initializer: Expression::Index {
-                slice: Box::new(slice.clone()),
-                index: Box::new(local.clone()),
-            },
+            initializer,
         }];
         body.extend(self.statement(some.body, false)?);
         body.push(Statement::Assign {

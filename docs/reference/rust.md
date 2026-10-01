@@ -232,11 +232,15 @@ empty input and supports profiling, audit, and expanded-proof reverification.
 
 ## Slice iterator loops
 
-`for &byte in bytes` supports an immutable binding of type `&[u8]`.
+`for &byte in bytes`, `for byte in bytes`, and either pattern over
+`bytes.iter()` support an immutable binding of type `&[u8]`.
 The pinned compiler resolves `IntoIterator::into_iter` and `Iterator::next`;
 the exporter checks their identities and the compiler's `Option` match before
-lowering the loop. Each yielded shared reference is read once into the copied
-`u8` binding. The original Rust source stays unchanged.
+lowering the loop. The `.iter()` method must resolve to the standard core
+inherent slice method. Copied patterns read each yielded byte into a `u8`
+binding; reference patterns bind a shared `&u8` address whose dereferences
+require view authority. Shared-reference qualifiers survive local declarations.
+The original Rust source stays unchanged.
 
 The exported loop uses a native `usize` progress counter named
 `__rust_iter_index_LINE_COLUMN`, where the location identifies the `for`
@@ -249,9 +253,12 @@ and length stable. Mutable bindings and mutable slices are rejected.
 [`examples/rust-iterators/sum.rs`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.rs)
 and its sidecar prove the same exact byte sum as the `while` example for arbitrary
 bytes and lengths `0..=1000`. Verification, profiling, audit, and expanded-proof
-verification have regressions. Reference-valued bindings, array iteration,
-`.iter()`, `.chunks_exact()`, custom iterators, labels, `break`, and `continue`
-remain outside this subset.
+verification have regressions. The
+[reference iterator fixture](https://github.com/clicklang/click/blob/master/examples/rust-iter-references/sum.rs)
+proves the same sum using `for byte in bytes.iter()` and `*byte`. Missing views
+and attempts to write through yielded shared references are rejected.
+Array iteration, `.iter_mut()`, stored iterator locals, `.chunks_exact()`,
+custom iterators, labels, `break`, and `continue` remain outside this subset.
 
 ## Moves and drops
 
