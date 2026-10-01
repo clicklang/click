@@ -2085,11 +2085,13 @@ impl<'a> Proof<'a> {
             context.click_function_environment,
             &execution.core.unfolded_predicates,
         )?;
-        let selected = lower_resource_clause_at_state(
+        let selected = lower_resource_clause_at_state_with_assumptions(
             resource,
             context.parsed_function.parameters(),
             context.arguments,
             &checked.state,
+            None,
+            checked.facts.assumptions(),
         )?;
         execution
             .core
@@ -2310,12 +2312,13 @@ impl<'a> Proof<'a> {
         if state.uses_population_authority_semantics()
             && self.is_authority_transfer_wrapper(resource)
         {
-            let selected = lower_resource_clause_at_state_with_result(
+            let selected = lower_resource_clause_at_state_with_assumptions(
                 resource,
                 context.parsed_function.parameters(),
                 context.arguments,
                 &state,
-                &value,
+                Some(&value),
+                checked.facts.assumptions(),
             )?;
             execution
                 .core

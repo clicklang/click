@@ -14713,3 +14713,42 @@ void caller(struct parent* p, struct child* kid) {
             .expect("the explicit proof preserves actual instance fields and the caller frame");
     }
 }
+
+#[test]
+fn composite_fold_argument_read_retains_checked_address_and_bounds() {
+    let c_source = "int32 keep(int32* p, int32* q, int32 i, int32 n) { return 0; }";
+    let click_source = r#"
+resource tag(value: int32) {}
+verifying "fold_context.c";
+int32 keep(int32* p, int32* q, int32 i, int32 n) {
+    requires p == q;
+    requires 0 <= i;
+    requires i < n;
+    views p[0..n];
+    ensures result == 0;
+} by {
+    fold(tag(q[i]));
+    execute();
+    simp();
+}
+"#;
+    let c_sources = [("fold_context.c", c_source)];
+    verify_c0_sources(click_source, &c_sources)
+        .expect("fold argument reads should retain checked equality and bounds");
+    for required in ["requires p == q;", "requires 0 <= i;", "requires i < n;"] {
+        let missing = click_source.replace(required, "");
+        let error = verify_c0_sources(&missing, &c_sources)
+            .expect_err("fold must not invent missing address equality or bounds");
+        assert!(
+            error
+                .message()
+                .contains("could not lower resource `tag` argument 0"),
+            "missing {required}: {}",
+            error.message()
+        );
+    }
+    let expanded = expand_c0_claim_source(click_source, &c_sources, "keep", CProofClaim::Ensure(0))
+        .expect("fold argument reads should expand");
+    verify_c0_sources(&expanded, &c_sources)
+        .expect("expanded fold argument reads should independently reverify");
+}

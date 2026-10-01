@@ -1386,9 +1386,39 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
     state: &CState,
     result: &CValue,
 ) -> Result<CResourceFact, ClickError> {
+    lower_resource_clause_at_state_with_assumptions(
+        resource,
+        parameters,
+        arguments,
+        state,
+        Some(result),
+        &PureFactContext::new(),
+    )
+}
+
+/// Lowers a live proof operation's resource clause under its checked context.
+/// Retain the persistent assumption handle, including its trusted equality
+/// graph; do not reconstruct facts or publish ambient resources at this query.
+pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
+    resource: &ResourceClause,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+    state: &CState,
+    result: Option<&CValue>,
+    assumptions: &PureFactContext,
+) -> Result<CResourceFact, ClickError> {
+    let values =
+        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
     if matches!(resource, ResourceClause::MemoryAggregate { .. }) {
-        let mut facts = lower_resource_clause_facts_at_state_with_result(
-            resource, parameters, arguments, state, result,
+        let mut facts = lower_resource_clause_facts_with_values_mode_at_entry(
+            resource,
+            parameters,
+            &values,
+            state,
+            state,
+            result,
+            false,
+            assumptions,
         )?;
         if facts.len() != 1 {
             return Err(ClickError::new(format!(
@@ -1398,9 +1428,16 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_result(
         }
         return Ok(facts.pop().expect("resource clause fact count was checked"));
     }
-    let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_with_values(resource, parameters, &values, state, Some(result))
+    lower_resource_clause_with_values_mode_at_entry(
+        resource,
+        parameters,
+        &values,
+        state,
+        state,
+        result,
+        false,
+        assumptions,
+    )
 }
 
 /// Lowers a proof tactic's resource clause with every C name it mentions read
@@ -1427,18 +1464,6 @@ pub(in crate::surface) fn lower_resource_clause_at_current_locals(
     let array_refs = array_refs_for_parameters(parameters, &values, state.memory());
     let (values, _) = contract_environment_at_state(&values, &array_refs, state);
     lower_resource_clause_with_values(resource, parameters, &values, state, result)
-}
-
-pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result(
-    resource: &ResourceClause,
-    parameters: &[syntax::C0Parameter],
-    arguments: &[CExpression],
-    state: &CState,
-    result: &CValue,
-) -> Result<Vec<CResourceFact>, ClickError> {
-    let values =
-        parameter_values(parameters, arguments).map_err(|error| ClickError::new(error.message))?;
-    lower_resource_clause_facts_with_values(resource, parameters, &values, state, Some(result))
 }
 
 pub(in crate::surface) fn lower_resource_clause_facts_at_state_with_result_and_entry(

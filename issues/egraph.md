@@ -142,6 +142,17 @@ this list.
    boundaries to independent regressions and pass retained checked context or
    explicit supplier evidence through the shared interface. Do not grow this
    into separate fixes for each failing loop, contract, or fold consumer.
+
+   **Follow-up context slice:** composite fold lowering now passes its retained
+   checked assumptions through resource arguments, body clauses, witness
+   selection, and reconstruction of the selected resource for its certificate.
+   It no longer starts those reads in an empty context. A reduced regression
+   folds `tag(q[i])` with a view of `p[0..n]`, checked `p == q`, and index bounds;
+   ordinary verification and expanded rechecking agree. Missing equality or
+   either bound is still refused. This is context plumbing, not a new graph
+   rule or query-time resource publication. Other provisional read boundaries
+   and the symbolic per-access supplier migration remain to be reduced before
+   the general retries can be removed.
 5. **Delete symbolic-range read searches.** Migrate
    `memory_state::resource_context_has_symbolic_range_read`. Remove its
    exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
