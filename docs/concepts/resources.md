@@ -565,6 +565,32 @@ owned-memory bodies, not named proof fields, aggregate count invariants inside
 members, or independent external lifetime claims. Population-wide facts belong
 in the authority control resource.
 
+A population member may instead own another ordinary declared resource:
+
+<!-- verified-example: mdtests/authority_wildcard_contained_resource.md -->
+```click
+resource cell(pool: int32*, p: int32*) { owns p[0..1]; }
+resource slot(pool: int32*, p: int32*) { owns cell(pool, p); }
+```
+
+Folding `slot(pool, p)` transfers the already-owned `cell(pool, p)` into its
+body and increments the slot population. Consuming the slot returns that exact
+cell and decrements the slot population. These operations preserve the cell's
+membership in its own population, if it has one; they do not create or destroy
+that cell. Ordinary helpers express these transfers with `consumes` and
+`produces`, including nested calls. Their count changes concern the outer
+member only.
+
+`open(slot(pool, p))` temporarily exposes the cell. Inside that block,
+`open(cell(pool, p))` exposes its memory for C access. Both scopes must restore
+their owned contents, and neither requires population authority. Missing or
+mismatched children cannot establish the outer member; its child cannot also
+be returned as independent ownership while retained inside the folded member.
+Built-in `owns object(p)` also works inside a member body. This checkpoint
+supports unit owned contents in field-free bodies; named proof fields,
+conditional contents, and counted batches with nonempty bodies remain separate.
+Private facts inside each resource layer follow that layer's existing checks.
+
 A helper can move a unit member between two authorities of the same family:
 
 <!-- verified-example: mdtests/authority_wildcard_transfer_private_body.md -->
