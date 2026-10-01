@@ -3562,13 +3562,24 @@ impl CRankingComponent {
 ///
 /// The carrier is a function of the component, not of the state: a
 /// [`CRankingComponent::PureInteger`] reads as an `Integer` at every state and
-/// the other two read as a machine int32 at every state. That is what lets the
+/// the other two read as the machine type C's usual arithmetic conversions
+/// give the expression -- int32, uint32, or uint64 -- which is a function of
+/// the declared types it names, so it is the same at every state. A reading
+/// whose carrier differs from the other reading's is refused rather than
+/// coerced. That is what lets the
 /// two obligations be built from the two readings of one component without
 /// asking which carrier each reading happened to land in.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CRankingMeasureValue {
     /// A machine int32 quantity, ranked by signed comparison.
     Machine(Bitvector32Term),
+    /// A machine uint32 quantity, ranked by unsigned comparison of the value
+    /// C computes, wraparound included. Every such value is a natural number
+    /// below 2^32, so it is nonnegative by construction.
+    Unsigned32(Bitvector32Term),
+    /// A machine uint64 quantity, ranked by unsigned 64-bit comparison of the
+    /// value C computes, wraparound included; nonnegative by construction.
+    Unsigned64(Bitvector32Term),
     /// A mathematical Integer quantity, ranked by Integer comparison.
     Integer(IntegerTerm),
 }
