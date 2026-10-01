@@ -118,7 +118,7 @@ indexed compound assignment, other slice element types, and slices in owned-valu
 MIR functions remain unsupported. Normal numeric contract casts now include
 `(int32)`, `(uint32)`, and `(uint64)`.
 
-## Fixed-array references and checked indexing
+## Fixed arrays, copies, and checked indexing
 
 Shared `&[T; N]` and mutable `&mut [T; N]` parameters support `u8`, `u32`,
 and `i32` elements with concrete, compiler-evaluated lengths. A fixed-array
@@ -150,9 +150,21 @@ cargo run --bin click -- verify examples/rust-arrays/arrays.click
 cargo run --bin click -- audit examples/rust-arrays/arrays.click
 ```
 
-This increment supports references to arrays, not by-value array parameters or
-returns, local array construction, whole-array copies, nested arrays, array
-fields, or array-to-slice coercions. Indexed compound assignment and arrays
+Initialized local arrays support literals (`[3u32, 5]`), repeats (`[value; 4]`),
+and whole-array copies (`let copied = original`, `words = replacement`,
+`*target = *source`). Each local has independent automatic storage. Constructor
+operands are evaluated in source order before writing the destination; a repeat
+operand is evaluated once, even when its length is zero. Copies capture all
+source elements before writing and require read authority over the entire
+source and write authority over the entire destination. Local arrays can be
+borrowed, indexed, and passed to fixed-array reference parameters.
+
+The synthetic [array-values example](https://github.com/clicklang/click/blob/master/examples/rust-array-values/arrays.click)
+checks independent copies, replacing an array from its own elements, copies
+through references, empty arrays, and constructor calls with observable effects.
+
+By-value array parameters or returns, nested arrays, array fields, and
+array-to-slice coercions remain unsupported. Indexed compound assignment and arrays
 in owned-value MIR remain outside the supported subset. The builtin length
 operation's compiler-generated unsizing is accepted only to recover the fixed
 length; it does not enable general coercions or library methods.

@@ -5845,3 +5845,71 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
         "conditional lookup scanned unrelated facts: {samples:?}"
     );
 }
+
+#[test]
+fn aggregate_copy_requires_write_authority_for_each_destination_field() {
+    let target = Pointer {
+        block: "target".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let source = Pointer {
+        block: "source".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let layout = CAggregateLayout::new(
+        8,
+        4,
+        vec![
+            CAggregateField::new("a", 0, CType::Int32),
+            CAggregateField::new("b", 4, CType::Int32),
+        ],
+    );
+    let function = c_function(
+        CType::Void,
+        "copy_fields",
+        vec![
+            c_parameter("target", CType::Int32Pointer),
+            c_parameter("source", CType::Int32Pointer),
+        ],
+        c_copy_aggregate(c_variable("target"), c_variable("source"), layout),
+    );
+    for complete in [false, true] {
+        let mut resources = vec![
+            own_memory_fact(target.clone(), 0, 1),
+            view_memory_fact(source.clone(), 0, 2),
+        ];
+        if complete {
+            resources.push(own_memory_fact(target.clone(), 1, 2));
+        }
+        let theorem = prove_symbolic_c_function_execution_with_environment(
+            CState::new()
+                .with_resource_context(ResourceContext::new().unchecked_with_facts(resources)),
+            function.clone(),
+            vec![
+                c_pointer_value(target.clone()),
+                c_pointer_value(source.clone()),
+            ],
+            PureFactContext::new(),
+            CExecutionEnvironment::new(),
+            CExecutionSemantics::EXECUTE_BODIES,
+        )
+        .unwrap();
+        let Proposition::CFunctionExecutes { outcome, .. } = theorem.proposition() else {
+            panic!("expected function execution");
+        };
+        if complete {
+            assert!(
+                matches!(outcome, CFunctionOutcome::Return { .. }),
+                "{outcome:?}"
+            );
+        } else {
+            assert!(
+                matches!(
+                    outcome,
+                    CFunctionOutcome::RuntimeError(CRuntimeError::MissingResource { .. })
+                ),
+                "{outcome:?}"
+            );
+        }
+    }
+}

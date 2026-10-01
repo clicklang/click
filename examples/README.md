@@ -45,6 +45,8 @@ Current projects:
 - `rust-slices/` checks byte-slice lengths, indexed reads/writes, and slice calls.
 - `rust-arrays/` checks fixed-array reference lengths, typed indexing, element
   reborrows, direct calls, and parent reuse.
+- `rust-array-values/` checks local array construction, independent whole-array
+  copies, assignment through references, and constructor evaluation order.
 - `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
   with the inner destructor's write observed by the outer destructor.
 - `basic-cpp/` verifies a small C++ reference mutation, an RAII guard that

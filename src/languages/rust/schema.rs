@@ -78,6 +78,13 @@ pub struct Function {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expression {
+    Array {
+        elements: Vec<Self>,
+    },
+    Repeat {
+        value: Box<Self>,
+        length: u64,
+    },
     Integer {
         value: i32,
     },

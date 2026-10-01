@@ -207,6 +207,21 @@ impl<'tcx> BodyExporter<'tcx> {
         }
         let t = self.typeck.expr_ty(e);
         match e.kind {
+            hir::ExprKind::Array(elements) => Ok(Expression::Array {
+                elements: elements
+                    .iter()
+                    .map(|e| self.expr(e))
+                    .collect::<Result<_, _>>()?,
+            }),
+            hir::ExprKind::Repeat(value, _) => {
+                let Type::Array { length, .. } = export_type(self.tcx, t)? else {
+                    return Err(self.error(e, "array repeat requires a fixed array type"));
+                };
+                Ok(Expression::Repeat {
+                    value: Box::new(self.expr(value)?),
+                    length,
+                })
+            }
             hir::ExprKind::Lit(lit) => match lit.node {
                 rustc_ast::LitKind::Int(v, _) => match export_type(self.tcx, t)? {
                     value_type @ (Type::U8 | Type::U32) => Ok(Expression::UnsignedInteger {

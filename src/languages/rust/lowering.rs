@@ -1,4 +1,5 @@
 use super::schema::{Expression as E, Function, Record, RustExport, Statement as S, Type};
+mod arrays;
 mod moves;
 use crate::kernel::*;
 use crate::languages::c::syntax::{C0Function, C0Parameter, C0StructLayout, C0Type};
@@ -182,6 +183,7 @@ fn lower_function(
             .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
     }
     let mut cx = Context {
+        local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
         slices,
         arrays,
@@ -227,6 +229,7 @@ fn lower_function(
     )
 }
 struct Context<'a> {
+    local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
     slices: BTreeMap<String, (String, bool)>,
     arrays: BTreeMap<String, (u64, CType, bool)>,
@@ -254,6 +257,9 @@ impl Context<'_> {
             S::Declare { place, initializer } => {
                 if !self.locals.insert(place.name.clone()) {
                     return Err("duplicate Rust local identity".into());
+                }
+                if let Type::Array { element, length } = &place.value_type {
+                    return self.declare_array(&place.name, element, *length, initializer);
                 }
                 if let Type::ByteSlice { mutable } = &place.value_type {
                     let (pointer, length_value) = self.slice_parts(initializer)?;
@@ -330,7 +336,36 @@ impl Context<'_> {
                 value,
             } => self.assign(name, value),
             S::Assign { target, value } => {
-                let (checks, value) = self.prepared_expr(value)?;
+                if let E::Deref {
+                    value_type: Type::Array { element, length },
+                    ..
+                } = target
+                {
+                    let (checks, pointer) = self.prepared_address(target)?;
+                    return Ok(c_seq(
+                        checks,
+                        self.assign_array(
+                            pointer,
+                            scalar_type(element)?.to_kernel_type(),
+                            *length,
+                            value,
+                        )?,
+                    ));
+                }
+                let (mut checks, mut value) = self.prepared_expr(value)?;
+                if matches!(target, E::Index { .. }) {
+                    // Rust evaluates the RHS before the destination index,
+                    // which may call a function that changes the RHS storage.
+                    let value_type = match self.place_type(target)? {
+                        CType::UInt8 => Type::U8,
+                        CType::UInt32 => Type::U32,
+                        CType::Int32 => Type::I32,
+                        _ => return Err("unsupported Rust indexed assignment type".into()),
+                    };
+                    let (capture, name) = self.capture_operand(value, &value_type)?;
+                    checks = c_seq(checks, capture);
+                    value = c_variable(name);
+                }
                 let (target_checks, address) = self.prepared_address(target)?;
                 Ok(c_seq(
                     c_seq(checks, target_checks),
@@ -360,7 +395,7 @@ impl Context<'_> {
                     name.push('_');
                 }
                 self.locals.insert(name.clone());
-                let (checks, arguments) = self.prepared_arguments(arguments)?;
+                let (checks, arguments) = self.prepared_arguments(function, arguments)?;
                 Ok(c_seq(
                     checks,
                     c_seq(
@@ -384,7 +419,7 @@ impl Context<'_> {
                 function,
                 arguments,
             } => {
-                let (checks, arguments) = self.prepared_arguments(arguments)?;
+                let (checks, arguments) = self.prepared_arguments(function, arguments)?;
                 Ok(c_seq(checks, c_call(function, arguments)))
             }
         }
@@ -392,6 +427,10 @@ impl Context<'_> {
     fn assign(&mut self, name: &str, e: &E) -> Result<CStatement, String> {
         if !self.locals.contains(name) {
             return Err(format!("unknown Rust local `{name}`"));
+        }
+        if self.local_arrays.contains(name) {
+            let (length, element, _) = self.arrays[name];
+            return self.assign_array(c_variable(name), element, length, e);
         }
         if let Some((length, constant)) = self.slices.get(name).cloned() {
             let (pointer, length_value) = self.slice_parts(e)?;
@@ -424,7 +463,7 @@ impl Context<'_> {
                 function,
                 arguments,
             } => {
-                let (checks, arguments) = self.prepared_arguments(arguments)?;
+                let (checks, arguments) = self.prepared_arguments(function, arguments)?;
                 Ok(c_seq(checks, c_call_assign(name, function, arguments)))
             }
             _ => {
@@ -433,18 +472,43 @@ impl Context<'_> {
             }
         }
     }
-    fn prepared_arguments(&mut self, args: &[E]) -> Result<(CStatement, Vec<CExpression>), String> {
+    fn prepared_arguments(
+        &mut self,
+        function: &str,
+        args: &[E],
+    ) -> Result<(CStatement, Vec<CExpression>), String> {
+        let types = self
+            .functions
+            .get(function)
+            .ok_or("missing Rust call definition")?
+            .parameters
+            .iter()
+            .map(|p| p.value_type.clone())
+            .collect::<Vec<_>>();
+        if types.len() != args.len() {
+            return Err("Rust call argument count disagrees with callee".into());
+        }
         let mut checks = c_skip();
         let mut values = Vec::new();
-        for argument in args {
-            if matches!(argument, E::Local { name } if self.slices.contains_key(name)) {
+        for (argument, value_type) in args.iter().zip(types) {
+            if let Type::ByteSlice { mutable } = value_type {
                 let (pointer, length) = self.slice_parts(argument)?;
-                values.extend([pointer, length]);
+                let (capture_pointer, pointer_name) = self.capture_operand(
+                    pointer,
+                    &Type::Reference {
+                        mutable,
+                        pointee: Box::new(Type::U8),
+                    },
+                )?;
+                let (capture_length, length_name) = self.capture_operand(length, &Type::Usize)?;
+                checks = c_seq(checks, c_seq(capture_pointer, capture_length));
+                values.extend([c_variable(pointer_name), c_variable(length_name)]);
                 continue;
             }
             let (prefix, value) = self.prepared_expr(argument)?;
-            checks = c_seq(checks, prefix);
-            values.push(value);
+            let (capture, name) = self.capture_operand(value, &value_type)?;
+            checks = c_seq(checks, c_seq(prefix, capture));
+            values.push(c_variable(name));
         }
         Ok((checks, values))
     }
@@ -465,10 +529,16 @@ impl Context<'_> {
             }
         };
         let c_type = scalar_type(value_type)?.to_kernel_type();
+        let constant = matches!(value_type, Type::Reference { mutable: false, .. });
+        let value = if matches!(value_type, Type::Reference { .. }) {
+            c_cast_with_pointee_qualifiers(value, c_type, false, constant)
+        } else {
+            c_cast(value, c_type)
+        };
         Ok((
             c_seq(
-                c_declare(&name, c_type),
-                c_assign(&name, c_cast(value, c_type)),
+                c_declare_with_all_qualifiers(&name, c_type, false, false, false, constant),
+                c_assign(&name, value),
             ),
             name,
         ))
@@ -479,6 +549,26 @@ impl Context<'_> {
     // The generated asserts are checked execution obligations, not assumptions.
     fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         match e {
+            E::Call {
+                function,
+                arguments,
+            } => {
+                let return_type = self
+                    .functions
+                    .get(function.as_str())
+                    .ok_or("missing Rust call definition")?
+                    .return_type
+                    .clone();
+                let (prefix, arguments) = self.prepared_arguments(function, arguments)?;
+                let (declare, name) = self.capture_operand(c_int32_literal(0), &return_type)?;
+                Ok((
+                    c_seq(
+                        prefix,
+                        c_seq(declare, c_call_assign(&name, function, arguments)),
+                    ),
+                    c_variable(name),
+                ))
+            }
             E::Index { .. } => {
                 let (checks, pointer) = self.prepared_address(e)?;
                 let occurrence = self.next_load;
@@ -667,6 +757,7 @@ impl Context<'_> {
     }
     fn address(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
+            E::Local { name } if self.local_arrays.contains(name) => Ok(c_variable(name)),
             E::Deref { reference, .. } => self.expr(reference),
             E::Field {
                 base,
@@ -704,6 +795,9 @@ impl Context<'_> {
     }
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
+            E::Array { .. } | E::Repeat { .. } => {
+                Err("array values require whole-array assignment".into())
+            }
             E::Integer { value } => Ok(c_int32_literal(*value as u32)),
             E::UsizeInteger { value } => Ok(c_uint64_literal(*value)),
             E::SliceLength { slice } => Ok(self.indexed_parts(slice)?.1),

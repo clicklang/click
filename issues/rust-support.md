@@ -117,8 +117,12 @@ compiler-evaluated lengths, checked indexing and element borrows, `.len()`,
 local aliases/reborrows, and direct calls. Bounds are checked at the full
 target `usize` width before address formation; zero-length and oversized
 indices, false values, missing authority, and conflicting borrows have
-regressions. Local array construction, whole-array copies, array-to-slice
-coercions, general `usize` arithmetic, crate extraction, and
+regressions. Local scalar arrays now support literal and repeat construction,
+independent whole-array copies and assignment through references, and local
+array borrows. Constructor evaluation order, one evaluation for repeats
+(including empty arrays), self-copy, and full source/destination authority
+have regressions. Array-to-slice coercions, by-value array parameters/returns,
+general `usize` arithmetic, crate extraction, and
 iterator loops remain outstanding. Neither library is verified
 by this assessment.
 

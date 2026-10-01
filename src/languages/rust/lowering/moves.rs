@@ -153,7 +153,7 @@ pub(super) fn lower(
                     .functions
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
-                let (prefix, arguments_values) = cx.prepared_arguments(arguments)?;
+                let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
                 let call = if callee.return_type == Type::Unit {
                     c_call(function, arguments_values)
                 } else {
@@ -520,6 +520,7 @@ mod tests {
             let records = BTreeMap::new();
             let functions = BTreeMap::new();
             let mut cx = Context {
+                local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),
                 slices: BTreeMap::new(),

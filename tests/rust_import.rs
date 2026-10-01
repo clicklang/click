@@ -893,3 +893,55 @@ fn rust_fixed_array_unsupported_shapes_and_conflicting_borrows_are_refused() {
         assert!(!p.root.join("borrow.rs.click-rust.json").exists());
     }
 }
+
+#[test]
+fn rust_local_array_construction_and_whole_value_copies_verify() {
+    let p = Project::new(include_str!("../examples/rust-array-values/arrays.rs"));
+    let sidecar = include_str!("../examples/rust-array-values/arrays.click")
+        .replace("arrays.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "literal.contract",
+        "independent.contract",
+        "replace.contract",
+        "copy_into.contract",
+        "repeat_call.contract",
+        "zero_repeat_call.contract",
+        "argument_order.contract",
+        "assignment_order.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures result == 8;", "ensures result == 16;"),
+            &prepared
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn rust_whole_array_copies_require_authority_for_every_element() {
+    let p = Project::new(include_str!("../examples/rust-array-values/arrays.rs"));
+    let sidecar = include_str!("../examples/rust-array-values/arrays.click")
+        .replace("arrays.rs", "borrow.rs");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    for unsupported in [
+        sidecar.replace("views source[0..2];", "views source[0..1];"),
+        sidecar.replace("owns target[0..2];", "views target[0..2];"),
+        sidecar.replace("owns target[0..2];", "owns target[0..1];"),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(&unsupported, &prepared).is_err(),
+            "unexpectedly verified: {unsupported}"
+        );
+    }
+}
