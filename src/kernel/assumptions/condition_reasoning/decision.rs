@@ -1929,6 +1929,15 @@ impl PureFactContext {
 
         let mut range = IntegerRangeFacts::default();
         for (condition, value) in self.condition_facts.iter() {
+            if let (ConditionTerm::Bitvector32Equal(fact_left, fact_right), false) =
+                (condition, *value)
+                && let Some((fact_variable, excluded)) =
+                    bitvector_variable_and_constant(fact_left, fact_right)
+                && fact_variable == variable
+            {
+                range.excluded.insert(excluded);
+                continue;
+            }
             let Some((fact_left, fact_right, strict)) = condition_as_order_fact(condition, *value)
             else {
                 continue;
@@ -1955,7 +1964,20 @@ impl PureFactContext {
             }
         }
 
-        matches!((range.lower, range.upper), (Some(lower), Some(upper)) if lower == upper && lower == constant)
+        // A bound the variable is known not to equal moves past that value:
+        // `0 <= x < 4` with `x != 0`, `x != 1` and `x != 2` leaves `x == 3`.
+        // Each step consumes one excluded value, so the walk is bounded by
+        // the facts.
+        let (Some(mut lower), Some(mut upper)) = (range.lower, range.upper) else {
+            return false;
+        };
+        while lower < upper && range.excluded.remove(&lower) {
+            lower += 1;
+        }
+        while lower < upper && range.excluded.remove(&upper) {
+            upper -= 1;
+        }
+        lower == upper && lower == constant
     }
 
     pub(in crate::kernel) fn signed_constant_known_equal(

@@ -1292,7 +1292,7 @@ fn should_use_symbolic_pointer_identity(
 /// The value of a load at `pointer` that indexes a run of `memory`
 /// symbolically, when the facts place every value of the index on the run's
 /// live slots: the load of `pointer` in the run's source, which is what the
-/// slot at each such index holds.
+/// slot at each such index holds, or a constant run's one value.
 ///
 /// The access must step by the run's element width from a slot boundary and
 /// read the run's own element type. Every index the facts' interval admits
@@ -1318,14 +1318,6 @@ fn symbolic_index_run_load(
         .candidate_runs(&AliasCandidates::of_block(&pointer.block))
         .find(|run| {
             crate::instrumentation::record_deterministic_work(1);
-            // A constant run's slots are not loads of its source, which is
-            // empty; its slots are read as the equal cells they stand for.
-            if matches!(
-                run.value_mode(),
-                crate::kernel::primitives::RunValueMode::Constant(_)
-            ) {
-                return false;
-            }
             let RunAccess::Scaled {
                 index,
                 scale,
@@ -1363,6 +1355,11 @@ fn symbolic_index_run_load(
                     .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
         })?
         .clone();
+    // A constant run's slots are not loads of its source, which is empty:
+    // every live slot holds the run's one value, so the load reads it.
+    if let crate::kernel::primitives::RunValueMode::Constant(value) = run.value_mode() {
+        return value_type.accepts(value).then(|| value.clone());
+    }
     canonicalized_symbolic_load_value_with_identity(
         run.source().memory(),
         pointer,
