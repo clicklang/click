@@ -21,6 +21,7 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 use std::cell::{Cell, RefCell};
 
 mod condition_reasoning;
+pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::uint64_upper_bound_below_sign_bit;
 #[cfg(test)]
 pub(in crate::kernel) use condition_reasoning::with_order_walk_full_scan;

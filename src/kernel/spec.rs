@@ -6654,10 +6654,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             }
             paths
         }
-        SpecExpression::CExpression(expression) => spec_value_paths_in(
-            evaluate_c_expression_paths(state, expression, assumptions, budget)?,
-            budget,
-        ),
+        SpecExpression::CExpression(expression) => {
+            let _specification = crate::kernel::eval::SpecificationReadScope::enter();
+            spec_value_paths_in(
+                evaluate_c_expression_paths(state, expression, assumptions, budget)?,
+                budget,
+            )
+        }
         SpecExpression::CountedResourceCount { name, arguments } => evaluate_resource_count_paths(
             state,
             name,
@@ -6828,7 +6831,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             algebraic_bindings,
             budget,
-            |value, facts, obligations| apply_c_bitwise_not(value, facts, obligations, assumptions),
+            apply_c_bitwise_not,
         )?,
         SpecExpression::If {
             condition,

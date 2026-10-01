@@ -426,26 +426,6 @@ pub(in crate::kernel) fn write_c_lvalue_paths(
     let pointee_constant = lvalue.pointee_is_constant();
     let value = value.with_pointer_pointee_volatile(pointee_volatile);
     let volatile_pointer = is_volatile.then(|| lvalue.pointer(state)).flatten();
-    if lvalue.value_type == CType::Int32 {
-        let range_result = match &value {
-            CValue::Int8(value) => {
-                add_int8_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            CValue::Int16(value) => {
-                add_int16_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            CValue::UInt8(value) => {
-                add_uint8_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            CValue::UInt16(value) => {
-                add_uint16_range_execution_pure_facts(&mut facts, &effective_assumptions, value)
-            }
-            _ => Some(()),
-        };
-        if range_result.is_none() {
-            return Ok(Vec::new());
-        }
-    }
     // Storing a freed pointer moves it without using it, but an implicit
     // conversion to `_Bool` (or any non-pointer type) tests its value; see
     // `freed_pointer_use`.
@@ -3375,16 +3355,12 @@ fn execute_c_switch_paths(
     for selector_path in evaluate_c_expression_paths(state, expression, assumptions, budget)? {
         let CExpressionPath {
             outcome,
-            mut facts,
+            facts,
             obligations,
         } = selector_path;
         match outcome {
             CExpressionOutcome::Value(value) => {
-                let selector_assumptions =
-                    assumptions_with_path_context(assumptions, &facts, &obligations);
-                let Some(selector) =
-                    promote_c_int32_path_value(value, &mut facts, &selector_assumptions)
-                else {
+                let Some(selector) = promote_c_int32_path_value(value) else {
                     paths.push(CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
                         outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),

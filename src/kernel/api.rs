@@ -177,6 +177,62 @@ pub(crate) fn c_bool_range_fact(value: &CValue) -> Option<Proposition> {
     Some(Proposition::Or(Box::new(equals(0)), Box::new(equals(1))))
 }
 
+/// The range `[lower, upper]` every value of a narrow C integer type lies
+/// in, with the term holding it: a `uint8` is in `[0, 255]`, an `int16` in
+/// `[-32768, 32767]`. `None` for every other type, whose range is its word.
+pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&Bitvector32Term, i32, i32)> {
+    match value {
+        CValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
+        CValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
+        CValue::UInt8(term) => Some((term, 0, i32::from(u8::MAX))),
+        CValue::UInt16(term) => Some((term, 0, i32::from(u16::MAX))),
+        _ => None,
+    }
+}
+
+/// The type range `lower <= value` and `value <= upper` of a narrow integer
+/// value that is not a constant, as the facts every reader of the value may
+/// use.
+///
+/// Click never truncates: each conversion into a narrow type owes the
+/// obligation that its operand is in the type's range, so a narrow value is
+/// in range wherever one exists. A parameter's entry value is one such value
+/// (the caller's argument was converted to the parameter's type), so its
+/// range is an entry fact of the function, stated once where the value is
+/// introduced instead of at each use.
+pub(crate) fn c_narrow_integer_range_facts(value: &CValue) -> Option<Vec<Proposition>> {
+    let (term, lower, upper) = c_narrow_integer_range(value)?;
+    if term.as_const().is_some() {
+        return None;
+    }
+    let mut facts = vec![
+        Proposition::ConditionIs(
+            ConditionTerm::signed_greater_equal(
+                term.clone(),
+                Bitvector32Term::Constant(lower as u32),
+            ),
+            true,
+        ),
+        Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(term.clone(), Bitvector32Term::Constant(upper as u32)),
+            true,
+        ),
+    ];
+    // An unsigned type's range is also an unsigned bound. The closers do
+    // not yet bridge the signed pair to it, and a widening to `uint32` is
+    // read in that order, so it is stated beside them.
+    if lower == 0 {
+        facts.push(Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                term.clone(),
+                Bitvector32Term::Constant(upper as u32),
+            ),
+            true,
+        ));
+    }
+    Some(facts)
+}
+
 pub fn int8(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::Int8(bits.into())
 }

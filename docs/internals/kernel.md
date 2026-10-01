@@ -459,12 +459,30 @@ In `src/kernel/`:
 
 The current integer conversion slice is deliberately small. `eval.rs` promotes
 `int8`, `int16`, `uint8`, and `uint16` rvalues to `int32` terms for arithmetic, ordered
-comparisons, shifts, and bitwise operators, assignments, and returns, adding
-the promoted term's type range (`0 <= x` and `x <= 255` for `uint8`) as path
-facts when an expression needs them. They are public path facts, so a
+comparisons, shifts, and bitwise operators, assignments, and returns.
+
+A narrow value is in its type's range wherever one exists, because every
+conversion into a narrow type owes that range as an obligation. The range
+(`0 <= x` and `x <= 255` for `uint8`, with the unsigned bound beside them for
+an unsigned type) has one definition, `c_narrow_integer_range_facts`, and is
+stated where the value is introduced, never where it is used:
+
+- a narrow parameter's range is an entry fact of the function, as a `_Bool`
+  parameter's `flag == 0 or flag == 1` is, so a claim may name the parameter
+  without any C use of it;
+- every other narrow value a program expression holds (a loaded cell, a local
+  a loop or a call gave a fresh value) enters it through the lvalue read
+  (`read_c_lvalue_paths`) or as a value the kernel substituted into the
+  expression (`CExpression::Value`). Those two points file the range as
+  certified path facts unless the context already holds or decides it.
+
+The read's facts are certified: the step's theorem concludes them, and no
+reader of the step owes a derivation of them. They are also public, so a
 prerequisite a step leaves to the proof (a file-scope subscript check, the
 owned-footprint check of a store) reads the range beside the source's own
-tests, as the kernel's in-place access checks do.
+tests. A specification read names a value the program produced and files
+nothing. Promotions, casts, and the return conversion state no range of their
+own.
 Scalar `uint32`
 addition, subtraction, and multiplication use the same 32-bit term
 representation without signed overflow obligations. Unsigned division and

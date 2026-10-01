@@ -4,6 +4,7 @@ mod bounds;
 mod decision;
 mod memory_conditions;
 mod order_paths;
+pub(in crate::kernel) use order_paths::cancel_common_offset_addends;
 #[cfg(test)]
 pub(in crate::kernel) use order_paths::with_order_walk_full_scan;
 pub(in crate::kernel) use order_paths::{

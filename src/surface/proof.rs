@@ -2230,6 +2230,17 @@ pub(super) fn initial_claim_context_with_mode(
         })
         .collect::<Vec<_>>();
     requirement_pure_facts.extend(bool_range_facts.iter().map(|(_, fact)| fact.clone()));
+    // Each narrow integer parameter's type range, such as `0 <= x` and
+    // `x <= 255` for a `uint8`, is likewise a derived entry fact the kernel
+    // states from the parameter's value. It is filed here once, where the
+    // value is introduced, so no use of the parameter has to restate it.
+    for argument in &arguments {
+        if let CExpression::Value(value) = argument
+            && let Some(facts) = crate::kernel::c_narrow_integer_range_facts(value)
+        {
+            requirement_pure_facts.extend(facts);
+        }
+    }
     entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // The lowerings of requirements that mention `defined(...)` at this
     // folded state; they are replaced at the definedness state below.

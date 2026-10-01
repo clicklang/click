@@ -971,6 +971,16 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     if resolution_interrupted() {
         return None;
     }
+    // Addends both offsets share cancel exactly, and constants regroup:
+    // `s + 5` is `(s + 4) + 1`, which is how a field's element and a run's
+    // base spell one address. Only sums are split, so a pair of leaves pays
+    // nothing.
+    if matches!(left, PointerOffsetTerm::Add(..)) || matches!(right, PointerOffsetTerm::Add(..)) {
+        let (left, right) = crate::kernel::assumptions::cancel_common_offset_addends(left, right);
+        if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
+            return Some(left == right);
+        }
+    }
     let _query =
         ResolutionQueryGuard::enter(ResolutionQuery::OffsetEqual(left.clone(), right.clone()))?;
     if let Some(value) = assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
