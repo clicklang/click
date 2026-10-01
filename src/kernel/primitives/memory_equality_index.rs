@@ -5,6 +5,8 @@
 //! roots are excluded from semantic resource equality and fork with the context.
 #[cfg(test)]
 mod cell_tests;
+#[cfg(test)]
+mod projection_tests;
 mod read_intervals;
 pub(super) mod structural;
 use read_intervals::ReadIntervals;
@@ -469,6 +471,11 @@ impl MemoryAccessCandidates {
 }
 
 impl ResourceContext {
+    #[cfg(test)]
+    pub(in crate::kernel) fn observe_projection_context(&self) {
+        projection_tests::record_context(self);
+    }
+
     /// Pair at proof boundaries, then apply only resource and class deltas.
     /// Forks share the registered input and apply only their admitted delta.
     /// Independent lineages start from raw roots; no sibling premise leaks.

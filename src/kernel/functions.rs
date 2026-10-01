@@ -22616,7 +22616,14 @@ pub(crate) fn checked_composite_projection_evidence(
     memory: &CMemory,
     assumptions: &PureFactContext,
 ) -> Option<CompositeProjectionEvidence> {
-    let head = ResourceContext::new().unchecked_with_fact(viewed.clone());
+    // Projection checks the selected head alone. Checked construction attaches
+    // its closed equality graph before expansion adds dependent child resources;
+    // it must not publish or borrow authority from the ambient resource frame.
+    let head = ResourceContext::new()
+        .try_compose_with_fact(viewed.clone(), assumptions)
+        .ok()?;
+    #[cfg(test)]
+    head.observe_projection_context();
     let (_, children, _) = expand_composite_resource_fact_with_children(
         &head,
         viewed,
