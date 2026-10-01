@@ -30,7 +30,7 @@ int32 f(int32 x) {
 verifying "a_nested_struct_field_read_in_a_conjunctive_branch_splits_by_index.c";
 
 int32 f(int32 x) {
-    ensures result == result;
+    ensures result == 0 or result == 3 or result == 6;
 } by {
     execute();
     simp();

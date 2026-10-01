@@ -5,11 +5,10 @@
 `4` and `12` had no Click spelling, so `execute()` could not split them. The
 offset differs from `0` and `8` modulo the 8-byte stride, so those cells are
 now distinct from it without a case, and `x * 8 + 4 == 12` is `x == 1`. The
-read splits into `x == 0`, `x == 1` and the rest, exactly as a scalar
-`items[x]` does. As for the scalar read, the remaining case is not yet
-refuted from `0 <= x < 2`
-(`bugs/symbolic-array-read-values-are-not-bounded.md`), so this claims only
-that execution reaches the end.
+read splits into `x == 0` and `x == 1`, exactly as a scalar `items[x]` does,
+and each case reads its own element's field.
+`mdtests/a_struct_field_read_in_a_conjunctive_branch_claimed_without_a_value_is_refused.md`
+is the negative.
 
 ```c filename=a_struct_field_read_in_a_conjunctive_branch_splits_by_index.c
 struct point {
@@ -31,7 +30,7 @@ int32 f(int32 x) {
 verifying "a_struct_field_read_in_a_conjunctive_branch_splits_by_index.c";
 
 int32 f(int32 x) {
-    ensures result == result;
+    ensures result == 0 or result == 2 or result == 4;
 } by {
     execute();
     simp();
