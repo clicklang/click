@@ -890,7 +890,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(observed.delta, 0);
     assert_eq!(observed.entry_owned_members, 0);
     assert!(
-        matches!(observed.entry_count, Bitvector32Term::MemoryLoad(_, loaded) if *loaded == pointer)
+        matches!(observed.entry_count, Bitvector32Term::MemoryLoad(_, loaded, _) if *loaded == pointer)
     );
     let count_expression = SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -963,7 +963,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(paths.len(), 1);
     assert!(matches!(
         paths[0].value,
-        CValue::Int32(Bitvector32Term::MemoryLoad(_, _))
+        CValue::Int32(Bitvector32Term::MemoryLoad(_, _, _))
     ));
     // A population entry in the ledger is insufficient without current
     // ownership. Preserve the same ledger while changing only custody.

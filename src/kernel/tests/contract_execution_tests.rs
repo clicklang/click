@@ -1008,9 +1008,13 @@ fn signed_addition_matches_interval_facts_across_unchanged_snapshots() {
     let before_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(before),
         Box::new(cell.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
-    let after_load =
-        Bitvector32Term::MemoryLoad(crate::kernel::intern_c_memory(after), Box::new(cell));
+    let after_load = Bitvector32Term::MemoryLoad(
+        crate::kernel::intern_c_memory(after),
+        Box::new(cell),
+        crate::kernel::LoadKind::Bits32,
+    );
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), before_load.clone()),

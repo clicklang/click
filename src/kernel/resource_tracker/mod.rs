@@ -198,10 +198,11 @@ pub(crate) enum Resource<'a> {
 
 /// The width a cell resource stands in when its caller cannot name one.
 ///
-/// A raw `MemoryLoad` term records no access width, so a caller holding only
-/// the term must assume the widest scalar the kernel can load. Over-stating
-/// the width only shrinks the separated set, so this is the fail-closed
-/// reading of a width the term does not carry.
+/// A load term carries its own read's kind, but a cell resource stands for
+/// every read of its address, and a caller holding only the address must
+/// assume the widest scalar the kernel can load. Over-stating the width only
+/// shrinks the separated set, so this is the fail-closed reading of a width
+/// the caller cannot name.
 pub(crate) fn widest_scalar_access_bytes() -> u32 {
     u32::try_from(crate::kernel::MAX_SCALAR_ACCESS_BYTES)
         .expect("the widest scalar access is a small positive byte count")
@@ -1352,9 +1353,9 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
 
 fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>) {
     match term {
-        // A raw load term records no access width, so this read covers the
-        // widest scalar one could be.
-        Bitvector32Term::MemoryLoad(memory, pointer) => push_read(
+        // A raw load term reads at least its own kind; the read covers the
+        // widest scalar, which every kind fits.
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => push_read(
             reads,
             OwnedResource::Cell {
                 pointer: pointer.as_ref().clone(),

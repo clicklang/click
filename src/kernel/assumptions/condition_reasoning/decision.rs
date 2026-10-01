@@ -1349,7 +1349,14 @@ impl PureFactContext {
         let (left_memory, left_pointer) = crate::kernel::eval::registered_load_for_variable(left)?;
         let (right_memory, right_pointer) =
             crate::kernel::eval::registered_load_for_variable(right)?;
-        if left_memory != right_memory || left_pointer.block != right_pointer.block {
+        // Congruent addresses in one snapshot name one value only when the two
+        // reads are one kind of read.
+        let left_kind = crate::kernel::eval::registered_load_kind_for_variable(left)?;
+        let right_kind = crate::kernel::eval::registered_load_kind_for_variable(right)?;
+        if left_memory != right_memory
+            || left_kind != right_kind
+            || left_pointer.block != right_pointer.block
+        {
             return None;
         }
         Some(LoadAddressCongruenceEvidence {
@@ -1821,8 +1828,8 @@ impl PureFactContext {
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
-            Bitvector32Term::MemoryLoad(memory, pointer) => {
-                Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone())
+            Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+                Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
             }
             Bitvector32Term::PointerAddress(pointer) => {
                 Bitvector32Term::PointerAddress(pointer.clone())
@@ -2056,13 +2063,14 @@ impl PureFactContext {
             return false;
         };
         let (
-            Bitvector32Term::MemoryLoad(_, left_pointer),
-            Bitvector32Term::MemoryLoad(_, right_pointer),
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
         ) = (&left_view, &right_view)
         else {
             return false;
         };
-        pointers_equal_ignoring_memories(left_pointer, right_pointer)
+        left_kind == right_kind
+            && pointers_equal_ignoring_memories(left_pointer, right_pointer)
             && self.bitvector_terms_proven_equal(left, right)
     }
 

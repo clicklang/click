@@ -682,9 +682,9 @@ pub(in crate::surface::proof) fn is_internal_snapshot_frame_witness(fact: &Propo
         matches!(
             (left, right),
             (
-                Bitvector32Term::MemoryLoad(_, left_pointer),
-                Bitvector32Term::MemoryLoad(_, right_pointer),
-            ) if left_pointer == right_pointer
+                Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+                Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+            ) if left_pointer == right_pointer && left_kind == right_kind
         )
     };
     let Proposition::ConditionIs(condition, true) = fact else {
@@ -1690,8 +1690,13 @@ mod condition_transition_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load =
-            |pointer: Pointer| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer));
+        let load = |pointer: Pointer| {
+            Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            )
+        };
         let variable = Variable(0xfeed);
         let producer_fact = |pointer: Pointer| {
             let mut facts = Vec::new();
@@ -1999,7 +2004,11 @@ mod condition_transition_tests {
                 };
                 crate::kernel::record_load_variable_defining_fact(
                     Variable(0x1000 + index as u64),
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer)),
+                    Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
+                    ),
                     &mut facts,
                 );
             }

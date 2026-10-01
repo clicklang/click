@@ -6117,6 +6117,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
     let selector_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(selector.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {
@@ -6190,6 +6191,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
     let selector_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(selector.clone()),
+        crate::kernel::LoadKind::Bits32,
     );
     let base_projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {

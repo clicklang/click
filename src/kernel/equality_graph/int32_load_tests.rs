@@ -10,7 +10,10 @@ fn address(id: u64) -> Pointer {
 }
 fn load(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> Bitvector32Term {
     Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
-        memory, pointer, bytes,
+        memory,
+        pointer,
+        crate::kernel::LoadKind::Bits32,
+        bytes,
     ))
 }
 fn memory() -> SharedCMemory {
@@ -137,6 +140,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let left = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
+        crate::kernel::LoadKind::Bits32,
         4,
         &before,
     ));
@@ -145,6 +149,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let renamed = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
+        crate::kernel::LoadKind::Bits32,
         4,
         &after,
     ));
@@ -165,7 +170,13 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&var(1), &var(2));
     assert!(!graph.are_int32_equal(&left, &right));
-    let raw = |m: &SharedCMemory| Bitvector32Term::MemoryLoad(m.clone(), Box::new(address(1)));
+    let raw = |m: &SharedCMemory| {
+        Bitvector32Term::MemoryLoad(
+            m.clone(),
+            Box::new(address(1)),
+            crate::kernel::LoadKind::Bits32,
+        )
+    };
     crate::kernel::eval::declare_load_access_width(&address(1), 4);
     assert!(!graph.are_int32_equal(&raw(&before), &raw(&after)));
 }

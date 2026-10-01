@@ -22,7 +22,7 @@ pub(crate) fn resolve_minted_load_pointer(
         else {
             continue;
         };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _)) =
+        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             continue;
@@ -409,12 +409,10 @@ pub fn resolve_load_variables_from_registry(proposition: &Proposition) -> Propos
         if !crate::kernel::eval::is_load_variable(&variable) {
             continue;
         }
-        let Some((memory, pointer)) =
-            crate::kernel::eval::registered_load_origin_for_variable(&variable)
+        let Some(load) = crate::kernel::eval::registered_load_origin_term_for_variable(&variable)
         else {
             continue;
         };
-        let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer));
         resolved = substitute_bitvector_variable_in_proposition(&resolved, variable, &load);
     }
     resolved
@@ -430,7 +428,7 @@ pub fn resolve_load_variables_via(
         else {
             continue;
         };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _)) =
+        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             continue;
@@ -457,7 +455,7 @@ pub fn resolve_minted_load_variables(
         else {
             continue;
         };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _)) =
+        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             continue;
@@ -1735,7 +1733,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
                 collect_bitvector_bound_variables(&arm.body, variables);
             }
         }
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             // Memory snapshots are immutable kernel values; their free
             // variable collector remains the source of truth for snapshot
             // contents, while the pointer can contain nested fold terms.
@@ -4766,6 +4764,7 @@ fn substitute_through_load_variable(
         return None;
     }
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
+    let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
     let substituted_pointer = Pointer {
         block: pointer.block.clone(),
         offset: substitute_bitvector_variable_in_pointer_offset(&pointer.offset, from, to),
@@ -4801,7 +4800,7 @@ fn substitute_through_load_variable(
         }
     };
     Some(crate::kernel::eval::canonical_term(
-        &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer)),
+        &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
     ))
 }
 
@@ -5126,9 +5125,10 @@ pub(crate) fn substitute_bitvector_variable(
                 })
                 .collect(),
         },
-        Bitvector32Term::MemoryLoad(memory, pointer) => Bitvector32Term::MemoryLoad(
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
             substitute_bitvector_variable_in_shared_memory(memory, from, to),
             Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
+            *kind,
         ),
         Bitvector32Term::PointerAddress(pointer) => Bitvector32Term::PointerAddress(Box::new(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
@@ -8927,6 +8927,7 @@ mod integer_mixed_quantifier_tests {
                     byte_width: 4,
                 },
             },
+            crate::kernel::LoadKind::Bits32,
             4,
         );
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -9465,7 +9466,11 @@ mod integer_range_fold_substitution_tests {
                 byte_width: 4,
             },
         };
-        let load_variable = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load_variable = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let (source_snapshot, _) =
             crate::kernel::eval::registered_load_for_variable(&load_variable)
                 .expect("the source load must be registered");
@@ -9509,7 +9514,11 @@ mod integer_range_fold_substitution_tests {
                 }),
             ),
         };
-        let load_variable = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let load_variable = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let (source_snapshot, _) =
             crate::kernel::eval::registered_load_for_variable(&load_variable)
                 .expect("the source load must be registered");

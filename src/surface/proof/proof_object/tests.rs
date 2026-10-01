@@ -612,6 +612,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
                 Box::new(Bitvector32Term::MemoryLoad(
                     memory.clone().into(),
                     Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
                 )),
                 Box::new(Bitvector32Term::Variable(Variable(binder))),
             ),
@@ -11526,7 +11527,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         else {
             panic!("fresh producer observation should be exact");
         };
-        let crate::kernel::Bitvector32Term::MemoryLoad(memory, _) = load else {
+        let crate::kernel::Bitvector32Term::MemoryLoad(memory, _, _) = load else {
             panic!("fresh producer observation should carry a memory load");
         };
         let conflicting_pointer = Pointer {
@@ -11539,6 +11540,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
             crate::kernel::Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(conflicting_pointer),
+                crate::kernel::LoadKind::Bits32,
             ),
             &mut producer_facts,
         );
@@ -11814,7 +11816,11 @@ fn generated_load_source_event_fixture(
             variable: Variable(variable.into()),
             snapshot: crate::kernel::CMemorySnapshotIdentity::of(&CMemory::new()),
             pointer: pointer.clone(),
-            load: Bitvector32Term::MemoryLoad(CMemory::new().into(), Box::new(pointer)),
+            load: Bitvector32Term::MemoryLoad(
+                CMemory::new().into(),
+                Box::new(pointer),
+                crate::kernel::LoadKind::Bits32,
+            ),
             typed_pointer_value: None,
         },
     )

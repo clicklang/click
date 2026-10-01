@@ -513,10 +513,8 @@ pub(crate) fn propositions_equal_modulo_proven_snapshots(
 fn expand_load_variables_shallow(bits: &Bitvector32Term) -> Bitvector32Term {
     match bits {
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
-            match crate::kernel::registered_load_for_variable(variable) {
-                Some((memory, pointer)) => Bitvector32Term::MemoryLoad(memory, Box::new(pointer)),
-                None => bits.clone(),
-            }
+            crate::kernel::registered_load_term_for_variable(variable)
+                .unwrap_or_else(|| bits.clone())
         }
         Bitvector32Term::Add(left, right) => Bitvector32Term::Add(
             Box::new(expand_load_variables_shallow(left)),
@@ -1117,11 +1115,16 @@ mod tests {
                 Bitvector32Term::Variable(load_variable_for_cell_with_origin(
                     &memory,
                     &pointer,
+                    crate::kernel::LoadKind::Bits32,
                     crate::kernel::load_access_width_or_widest(&memory, &pointer),
                     &memory,
                 ))
             } else {
-                Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()))
+                Bitvector32Term::MemoryLoad(
+                    memory,
+                    Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Bits32,
+                )
             };
             Proposition::ForAll {
                 var: Variable(1),
@@ -1171,7 +1174,13 @@ mod tests {
                     byte_width: 4,
                 },
             };
-            let load = load_variable_for_cell_with_origin(snapshot, &pointer, 4, snapshot);
+            let load = load_variable_for_cell_with_origin(
+                snapshot,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                snapshot,
+            );
             Proposition::ForAll {
                 var: binder,
                 sort: Sort::CInt32,
@@ -1281,6 +1290,7 @@ mod tests {
                     Box::new(Bitvector32Term::MemoryLoad(
                         memory.clone().into(),
                         Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
                     )),
                     Box::new(Bitvector32Term::Variable(Variable(binder))),
                 ),
@@ -1325,12 +1335,14 @@ mod tests {
         let left = load_variable_for_cell_with_origin(
             &intern_c_memory(before.clone()),
             &preserved,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(before.clone()),
         );
         let right = load_variable_for_cell_with_origin(
             &intern_c_memory(after.clone()),
             &preserved,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(after.clone()),
         );
@@ -1353,12 +1365,14 @@ mod tests {
         let changed_left = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_before.clone()),
             &loaded,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(changed_before),
         );
         let changed_right = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_after.clone()),
             &loaded,
+            crate::kernel::LoadKind::Bits32,
             4,
             &intern_c_memory(changed_after),
         );
@@ -1511,6 +1525,7 @@ mod tests {
                         byte_width: 4,
                     },
                 }),
+                crate::kernel::LoadKind::Bits32,
             )
         };
         let universal = |index: Variable, term: Bitvector32Term| Proposition::ForAll {
@@ -1613,7 +1628,11 @@ mod tests {
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
         let load = |memory: &CMemory, pointer: &Pointer| {
-            Bitvector32Term::MemoryLoad(intern_c_memory(memory.clone()), Box::new(pointer.clone()))
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory.clone()),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
         };
         let empty = CMemory::new();
         // The form recorded when the resource body was unfolded: the cell
@@ -1743,7 +1762,7 @@ impl LoadVariableBridgeSide for Bitvector32Term {
             Bitvector32Term::Variable(variable) => {
                 crate::kernel::is_load_variable(variable).then_some(*variable)
             }
-            Bitvector32Term::MemoryLoad(_, _) => {
+            Bitvector32Term::MemoryLoad(_, _, _) => {
                 crate::kernel::load_variable_for_term(self).map(|(variable, _)| variable)
             }
             _ => None,
@@ -1839,18 +1858,26 @@ impl<'a> OriginsUnchanged<'a> {
     }
 
     fn compute(&self, left: Variable, right: Variable) -> bool {
-        let (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) = (
-            crate::kernel::registered_load_origin_for_variable(&left),
-            crate::kernel::registered_load_origin_for_variable(&right),
+        let (Some(left_load), Some(right_load)) = (
+            crate::kernel::registered_load_origin_term_for_variable(&left),
+            crate::kernel::registered_load_origin_term_for_variable(&right),
         ) else {
+            return false;
+        };
+        let (
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+        ) = (&left_load, &right_load)
+        else {
             return false;
         };
         // The unchanged proof comes from recorded derivations crossed with
         // exact-fact distinctness, never from whole-snapshot alias search.
         left_pointer == right_pointer
+            && left_kind == right_kind
             && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &Bitvector32Term::MemoryLoad(left_memory, Box::new(left_pointer.clone())),
-                &Bitvector32Term::MemoryLoad(right_memory, Box::new(right_pointer)),
+                &left_load,
+                &right_load,
                 self.assumptions,
             )
     }
@@ -2322,7 +2349,11 @@ mod integer_reflexivity_tests {
         );
         let load = |memory: &crate::kernel::SharedCMemory, address: &Pointer| {
             Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                memory, address, 8, memory,
+                memory,
+                address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             ))
         };
         let left = load(&before, &a);
@@ -2440,7 +2471,11 @@ mod integer_reflexivity_tests {
                 item,
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone())),
+                    Bitvector32Term::MemoryLoad(
+                        memory.clone(),
+                        Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Bits32,
+                    ),
                 )),
             )
         };

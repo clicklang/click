@@ -401,6 +401,7 @@ struct LoadSignature {
     memory: (u32, u32),
     address_block: PointerBlock,
     address_offset: u64,
+    kind: crate::kernel::LoadKind,
 }
 
 #[derive(Clone)]
@@ -408,6 +409,8 @@ struct LoadApplication {
     memory: (u32, u32),
     address_block: PointerBlock,
     address_offset: AffineOffset,
+    /// Two reads of one address are one value only when they are one kind.
+    kind: crate::kernel::LoadKind,
 }
 
 /// Hash-consing the affine sequence uses shallow keys. Offset atoms hold
@@ -1022,17 +1025,23 @@ impl EqualityGraphState {
             let definition = match &block {
                 PointerBlock::LoadedPointer(identity) => {
                     crate::kernel::eval::registered_pointer_load(*identity)
+                        .map(|(memory, address)| (memory, address, crate::kernel::LoadKind::Bits32))
                 }
                 PointerBlock::Symbolic(variable)
                     if crate::kernel::is_load_variable(variable)
                         && crate::kernel::registered_load_bytes_for_variable(variable)
                             == Some(8) =>
                 {
-                    crate::kernel::registered_load_for_variable(variable)
+                    crate::kernel::registered_load_for_variable(variable).and_then(
+                        |(memory, address)| {
+                            crate::kernel::registered_load_kind_for_variable(variable)
+                                .map(|kind| (memory, address, kind))
+                        },
+                    )
                 }
                 _ => None,
             };
-            let Some((memory, address)) = definition else {
+            let Some((memory, address, kind)) = definition else {
                 continue;
             };
             let Some(address_offset) = AffineOffset::of(&address.offset) else {
@@ -1044,6 +1053,7 @@ impl EqualityGraphState {
                     memory: memory.read_identity(),
                     address_block: address.block.clone(),
                     address_offset,
+                    kind,
                 },
             );
             let users = self.uses.get(&address.block).cloned().unwrap_or_default();
@@ -1077,6 +1087,7 @@ impl EqualityGraphState {
             memory: load.memory,
             address_block,
             address_offset: self.intern_offset(&offset),
+            kind: load.kind,
         };
         if let Some(other) = self.signatures.get(&signature) {
             if other != block {
@@ -1940,7 +1951,11 @@ mod tests {
         assert!(from_p.has_symbolic_block());
         let scalar_indexed_address = Pointer::loaded(
             p.block.clone(),
-            Bitvector32Term::MemoryLoad(memory.clone(), Box::new(p.clone())),
+            Bitvector32Term::MemoryLoad(
+                memory.clone(),
+                Box::new(p.clone()),
+                crate::kernel::LoadKind::Bits32,
+            ),
             8,
         );
         assert!(scalar_indexed_address.as_loaded_value().is_none());
@@ -1957,7 +1972,13 @@ mod tests {
         // A scalar read of the same cell may have a four-byte interpretation;
         // it cannot determine whether the distinct pointer-load name enters
         // the graph's eight-byte application index.
-        crate::kernel::load_variable_for_cell_with_origin(&memory, &p, 4, &memory);
+        crate::kernel::load_variable_for_cell_with_origin(
+            &memory,
+            &p,
+            crate::kernel::LoadKind::Bits32,
+            4,
+            &memory,
+        );
         let mut graph = EqualityGraph::default();
         assert!(!graph.are_pointer_loads_equal(&memory, &p, &q));
         assert!(!graph.are_equal(&from_p, &from_q));
@@ -2013,7 +2034,11 @@ mod tests {
         ));
         let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                memory, &address, 8, memory,
+                memory,
+                &address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             ))
         };
         let through_p = name(&memory, at(symbolic(41), 0));
@@ -2044,7 +2069,11 @@ mod tests {
         let load = |address: &Pointer| {
             at(
                 PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                    &memory, address, 8, &memory,
+                    &memory,
+                    address,
+                    crate::kernel::LoadKind::Bits32,
+                    8,
+                    &memory,
                 )),
                 0,
             )
@@ -2079,7 +2108,11 @@ mod tests {
         let name = |memory: &crate::kernel::CMemory| {
             let memory = crate::kernel::intern_c_memory(memory.clone());
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                &memory, &cell, 8, &memory,
+                &memory,
+                &cell,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                &memory,
             ))
         };
         let (read_before, read_after) = (name(&before), name(&after));
@@ -2098,7 +2131,7 @@ mod tests {
             };
             let (memory, address) =
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
-            Bitvector32Term::MemoryLoad(memory, Box::new(address))
+            Bitvector32Term::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Bits32)
         };
         assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
@@ -2126,7 +2159,11 @@ mod tests {
     fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
         let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                memory, &address, 8, memory,
+                memory,
+                &address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             ))
         };
         let mut costs = Vec::new();
@@ -2162,7 +2199,11 @@ mod tests {
     fn named_load(memory: &SharedCMemory, address: &Pointer) -> Pointer {
         at(
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                memory, address, 8, memory,
+                memory,
+                address,
+                crate::kernel::LoadKind::Bits32,
+                8,
+                memory,
             )),
             0,
         )
@@ -2321,7 +2362,11 @@ mod tests {
                             address.block.clone(),
                             Bitvector32Term::Variable(
                                 crate::kernel::load_variable_for_cell_with_origin(
-                                    &memory, address, 8, &memory,
+                                    &memory,
+                                    address,
+                                    crate::kernel::LoadKind::Bits32,
+                                    8,
+                                    &memory,
                                 ),
                             ),
                             8,
@@ -2420,7 +2465,11 @@ mod tests {
         let q = at(symbolic(903), 0);
         let small = at(
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
-                &memory, &p, 4, &memory,
+                &memory,
+                &p,
+                crate::kernel::LoadKind::Bits32,
+                4,
+                &memory,
             )),
             0,
         );

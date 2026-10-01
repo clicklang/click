@@ -13,8 +13,16 @@ fn checked_memory_load_equality(
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
-        &Bitvector32Term::MemoryLoad(intern_c_memory_ref(left), Box::new(pointer.clone())),
-        &Bitvector32Term::MemoryLoad(intern_c_memory_ref(right), Box::new(pointer.clone())),
+        &Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(left),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        ),
+        &Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(right),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        ),
         assumptions,
     )
 }

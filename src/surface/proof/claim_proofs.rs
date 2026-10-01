@@ -1460,110 +1460,131 @@ fn close_claim_directly_from_outcome<'a>(
                 (Some(kernel_left), Some(kernel_right)) => {
                     let rendered_left = describe_c_value(&kernel_left, parameters, arguments);
                     let rendered_right = describe_c_value(&kernel_right, parameters, arguments);
-                    // Which state a side reads, as the reader would name it.
-                    // Both branches below need it: one to say the two sides
-                    // read different snapshots, the other to say what a value
-                    // may have changed *since*.
-                    let snapshot_role = |expression: &ContractExpression| {
-                        if contains_old_expression(expression) {
-                            "function entry"
-                        } else if contains_at_expression(expression) {
-                            "a recorded snapshot"
-                        } else {
-                            "the outcome state"
-                        }
-                    };
-                    if rendered_left == rendered_right && kernel_left != kernel_right {
-                        let surface_left = describe_contract_expression(left);
-                        let surface_right = describe_contract_expression(right);
-                        let left_role = snapshot_role(left);
-                        let right_role = snapshot_role(right);
-                        let snapshot_note = if left_role == right_role {
-                            format!("`{surface_left}` and `{surface_right}` both read {left_role}")
-                        } else {
-                            format!(
-                                "`{surface_left}` reads {left_role}, `{surface_right}` reads {right_role}"
-                            )
-                        };
-                        // Both sides read one address at two program points,
-                        // which is the resource tracker's question: it names
-                        // the step in between that broke the chain.
-                        let tracked = describe_two_sided_version_mismatch(
-                            &kernel_left,
-                            &kernel_right,
-                            left_role,
-                            right_role,
-                            parameters,
-                            arguments,
-                        )
-                        .map(|mismatch| format!("; {mismatch}"))
-                        .unwrap_or_default();
+                    // Two reads of one address of different kinds are two
+                    // values whatever happened in between: say that, and not
+                    // which snapshot or store set them apart.
+                    if let Some(mismatch) = crate::surface::diagnostics::describe_load_kind_mismatch(
+                        &kernel_left,
+                        &kernel_right,
+                        parameters,
+                        arguments,
+                    ) {
                         format!(
-                            "; the two sides read the same address in different memory snapshots ({snapshot_note}){tracked}"
+                            "; left side evaluated to {rendered_left}, right side evaluated to \
+                             {rendered_right}; {mismatch}"
                         )
                     } else {
-                        // A side still standing as a load did not survive the
-                        // body. The tracker names the step its walk stopped
-                        // at: the repair is a resource or a `separate`, not
-                        // another tactic.
-                        // A side that is a model field did not survive either,
-                        // and its versions are values in two saved states
-                        // rather than points on the memory history, so the
-                        // tracker is asked about the two states this claim
-                        // compares.
-                        let model_field = |value: &CValue, role: &str| {
-                            describe_model_field_mismatch(
-                                value,
-                                state,
-                                pre_state,
-                                if role == "the outcome state" {
-                                    "function entry"
-                                } else {
-                                    role
-                                },
+                        // Which state a side reads, as the reader would name it.
+                        // Both branches below need it: one to say the two sides
+                        // read different snapshots, the other to say what a value
+                        // may have changed *since*.
+                        let snapshot_role = |expression: &ContractExpression| {
+                            if contains_old_expression(expression) {
+                                "function entry"
+                            } else if contains_at_expression(expression) {
+                                "a recorded snapshot"
+                            } else {
+                                "the outcome state"
+                            }
+                        };
+                        if rendered_left == rendered_right && kernel_left != kernel_right {
+                            let surface_left = describe_contract_expression(left);
+                            let surface_right = describe_contract_expression(right);
+                            let left_role = snapshot_role(left);
+                            let right_role = snapshot_role(right);
+                            let snapshot_note = if left_role == right_role {
+                                format!(
+                                    "`{surface_left}` and `{surface_right}` both read {left_role}"
+                                )
+                            } else {
+                                format!(
+                                    "`{surface_left}` reads {left_role}, `{surface_right}` reads {right_role}"
+                                )
+                            };
+                            // Both sides read one address at two program points,
+                            // which is the resource tracker's question: it names
+                            // the step in between that broke the chain.
+                            let tracked = describe_two_sided_version_mismatch(
+                                &kernel_left,
+                                &kernel_right,
+                                left_role,
+                                right_role,
                                 parameters,
                                 arguments,
                             )
-                        };
-                        let unseparated =
-                            describe_unseparated_write(&kernel_left, parameters, arguments)
-                                .or_else(|| {
-                                    describe_unseparated_write(&kernel_right, parameters, arguments)
-                                })
-                                .or_else(|| {
-                                    model_field(&kernel_left, snapshot_role(left))
-                                        .or_else(|| {
-                                            model_field(&kernel_right, snapshot_role(right))
-                                        })
-                                        .map(|mismatch| format!("; {mismatch}"))
-                                })
-                                // A `count(..)` side is a population, whose
-                                // version is the count the state holds.
-                                .or_else(|| {
-                                    describe_population_mismatch(
-                                        left,
-                                        state,
-                                        pre_state,
-                                        "function entry",
-                                        parameters,
-                                        arguments,
-                                    )
+                            .map(|mismatch| format!("; {mismatch}"))
+                            .unwrap_or_default();
+                            format!(
+                                "; the two sides read the same address in different memory snapshots ({snapshot_note}){tracked}"
+                            )
+                        } else {
+                            // A side still standing as a load did not survive the
+                            // body. The tracker names the step its walk stopped
+                            // at: the repair is a resource or a `separate`, not
+                            // another tactic.
+                            // A side that is a model field did not survive either,
+                            // and its versions are values in two saved states
+                            // rather than points on the memory history, so the
+                            // tracker is asked about the two states this claim
+                            // compares.
+                            let model_field = |value: &CValue, role: &str| {
+                                describe_model_field_mismatch(
+                                    value,
+                                    state,
+                                    pre_state,
+                                    if role == "the outcome state" {
+                                        "function entry"
+                                    } else {
+                                        role
+                                    },
+                                    parameters,
+                                    arguments,
+                                )
+                            };
+                            let unseparated =
+                                describe_unseparated_write(&kernel_left, parameters, arguments)
+                                    .or_else(|| {
+                                        describe_unseparated_write(
+                                            &kernel_right,
+                                            parameters,
+                                            arguments,
+                                        )
+                                    })
+                                    .or_else(|| {
+                                        model_field(&kernel_left, snapshot_role(left))
+                                            .or_else(|| {
+                                                model_field(&kernel_right, snapshot_role(right))
+                                            })
+                                            .map(|mismatch| format!("; {mismatch}"))
+                                    })
+                                    // A `count(..)` side is a population, whose
+                                    // version is the count the state holds.
                                     .or_else(|| {
                                         describe_population_mismatch(
-                                            right,
+                                            left,
                                             state,
                                             pre_state,
                                             "function entry",
                                             parameters,
                                             arguments,
                                         )
+                                        .or_else(|| {
+                                            describe_population_mismatch(
+                                                right,
+                                                state,
+                                                pre_state,
+                                                "function entry",
+                                                parameters,
+                                                arguments,
+                                            )
+                                        })
+                                        .map(|mismatch| format!("; {mismatch}"))
                                     })
-                                    .map(|mismatch| format!("; {mismatch}"))
-                                })
-                                .unwrap_or_default();
-                        format!(
-                            "; left side evaluated to {rendered_left}, right side evaluated to {rendered_right}{unseparated}"
-                        )
+                                    .unwrap_or_default();
+                            format!(
+                                "; left side evaluated to {rendered_left}, right side evaluated to {rendered_right}{unseparated}"
+                            )
+                        }
                     }
                 }
                 _ => String::new(),

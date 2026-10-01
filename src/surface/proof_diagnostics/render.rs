@@ -997,7 +997,7 @@ impl Renderer<'_> {
             return;
         }
         self.depth += 1;
-        if let Bitvector32Term::MemoryLoad(snapshot, pointer) = v {
+        if let Bitvector32Term::MemoryLoad(snapshot, pointer, _) = v {
             // `memory` prints its own `snapshot=` prefix.
             self.push("load(");
             self.memory(snapshot.as_ref());

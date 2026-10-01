@@ -614,7 +614,14 @@ mod tests {
             block: "load-source".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let mint = || crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, 4);
+        let mint = || {
+            crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &address,
+                crate::kernel::LoadKind::Bits32,
+                4,
+            )
+        };
         let variable = mint();
         assert!(crate::kernel::is_load_variable(&variable));
         let assumptions = PureFactContext::new();

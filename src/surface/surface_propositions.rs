@@ -907,7 +907,7 @@ impl SurfacePropositionMap {
                             };
                         }
                         if matches!(base, ContractExpression::QualifiedC { .. })
-                            && let Bitvector32Term::MemoryLoad(_, pointer) = term.as_ref()
+                            && let Bitvector32Term::MemoryLoad(_, pointer, _) = term.as_ref()
                             && !storage
                                 .qualified_load_sources
                                 .contains_key(pointer.as_ref())

@@ -373,18 +373,21 @@ pub(crate) fn matching_recomputed_call_havoc_views(
         pointer: &Pointer,
         value: &CValue,
     ) -> bool {
-        let (CValue::Int8(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::Int16(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::Int32(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::UInt8(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::UInt16(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::UInt32(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::Int64(Bitvector32Term::MemoryLoad(load_memory, load_pointer))
-        | CValue::UInt64(Bitvector32Term::MemoryLoad(load_memory, load_pointer))) = value
+        let (CValue::Int8(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::Int16(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::Int32(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt8(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt16(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt32(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::Int64(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt64(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))) = value
         else {
             return false;
         };
+        // Storing a read back is a no-op only when it is the cell's own read:
+        // a narrower or differently signed read changes the cell.
         load_pointer.as_ref() == pointer
+            && kind.reads_value(value)
             && intern_c_memory_ref(load_memory).arena_id() == base.arena_id()
     }
     fn match_inner(
@@ -565,6 +568,7 @@ mod range_list_equality_graph_tests {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
+                crate::kernel::LoadKind::Bits32,
                 4,
                 memory,
             ))
@@ -738,44 +742,24 @@ fn materialized_load_is_unchanged(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
+    // With terms canonical at creation a materialized cell holds the load
+    // variable for its load; the registry records the load it stands for.
+    let load_of = |bits: &Bitvector32Term| match bits {
+        Bitvector32Term::MemoryLoad(_, _, _) => Some(bits.clone()),
+        Bitvector32Term::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+            crate::kernel::eval::registered_load_term_for_variable(variable)
+        }
+        _ => None,
+    };
     let load = match value {
-        CValue::Int8(Bitvector32Term::MemoryLoad(memory, load_pointer)) => {
-            (memory.clone(), load_pointer.as_ref().clone())
-        }
-        CValue::Int16(Bitvector32Term::MemoryLoad(memory, load_pointer))
-        | CValue::Int32(Bitvector32Term::MemoryLoad(memory, load_pointer))
-        | CValue::UInt8(Bitvector32Term::MemoryLoad(memory, load_pointer))
-        | CValue::UInt16(Bitvector32Term::MemoryLoad(memory, load_pointer))
-        | CValue::UInt32(Bitvector32Term::MemoryLoad(memory, load_pointer))
-        | CValue::Int64(Bitvector32Term::MemoryLoad(memory, load_pointer))
-        | CValue::UInt64(Bitvector32Term::MemoryLoad(memory, load_pointer)) => {
-            (memory.clone(), load_pointer.as_ref().clone())
-        }
-        // With terms canonical at creation a materialized cell holds the
-        // load variable for its load; the registry records the load it
-        // stands for.
-        CValue::Int8(Bitvector32Term::Variable(variable))
-            if crate::kernel::eval::is_load_variable(variable) =>
-        {
-            let Some(load) = crate::kernel::eval::registered_load_for_variable(variable) else {
-                return false;
-            };
-            load
-        }
-        CValue::Int16(Bitvector32Term::Variable(variable))
-        | CValue::Int32(Bitvector32Term::Variable(variable))
-        | CValue::UInt8(Bitvector32Term::Variable(variable))
-        | CValue::UInt16(Bitvector32Term::Variable(variable))
-        | CValue::UInt32(Bitvector32Term::Variable(variable))
-        | CValue::Int64(Bitvector32Term::Variable(variable))
-        | CValue::UInt64(Bitvector32Term::Variable(variable))
-            if crate::kernel::eval::is_load_variable(variable) =>
-        {
-            let Some(load) = crate::kernel::eval::registered_load_for_variable(variable) else {
-                return false;
-            };
-            load
-        }
+        CValue::Int8(bits)
+        | CValue::Int16(bits)
+        | CValue::Int32(bits)
+        | CValue::UInt8(bits)
+        | CValue::UInt16(bits)
+        | CValue::UInt32(bits)
+        | CValue::Int64(bits)
+        | CValue::UInt64(bits) => load_of(bits),
         // A pointer-typed cell materialized from a load scales the load (or
         // its load variable) by the pointee width, as the kernel's own
         // symbolic pointer loads do.
@@ -787,30 +771,29 @@ fn materialized_load_is_unchanged(
             else {
                 return false;
             };
-            match bits.as_ref() {
-                Bitvector32Term::MemoryLoad(memory, load_pointer) => {
-                    (memory.clone(), load_pointer.as_ref().clone())
-                }
-                Bitvector32Term::Variable(variable)
-                    if crate::kernel::eval::is_load_variable(variable) =>
-                {
-                    let Some(load) = crate::kernel::eval::registered_load_for_variable(variable)
-                    else {
-                        return false;
-                    };
-                    load
-                }
-                _ => return false,
-            }
+            load_of(bits)
         }
         _ => return false,
     };
-    let left = Bitvector32Term::MemoryLoad(load.0, Box::new(load.1.clone()));
+    // The cell is the read only when it is a read of the cell's own kind: a
+    // narrower or differently signed load stored in it holds another value
+    // than a read of the cell returns.
+    let Some(left) = load else {
+        return false;
+    };
+    let Bitvector32Term::MemoryLoad(_, load_pointer, kind) = &left else {
+        return false;
+    };
+    let kind = *kind;
+    if LoadKind::of_value(value) != Some(kind) {
+        return false;
+    }
     let right = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(symbolic_memory.clone()),
         Box::new(pointer.clone()),
+        kind,
     );
-    pointers_proven_equal_for_memory_resolution(&load.1, pointer, assumptions)
+    pointers_proven_equal_for_memory_resolution(load_pointer, pointer, assumptions)
         && crate::kernel::checked_atomic_load_equality(&left, &right, assumptions)
 }
 
@@ -3227,7 +3210,12 @@ mod checked_proposition_index_tests {
                 .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(2))),
         );
         let folded = |memory: &SharedCMemory, accumulator, item| {
-            let load = crate::kernel::eval::load_variable_for_exact_cell(memory, &pointer, 4);
+            let load = crate::kernel::eval::load_variable_for_exact_cell(
+                memory,
+                &pointer,
+                crate::kernel::LoadKind::Bits32,
+                4,
+            );
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Integer {
                     start: IntegerTerm::constant_i64(0).into(),

@@ -1833,6 +1833,76 @@ pub(super) fn describe_missing_range_end_note(
 /// The snapshot and pointer a still-unresolved comparison side loads from, if
 /// that side is exactly one load. A resolved side is a value and reads
 /// nothing.
+/// The explanation for two evaluated sides that are reads of one address of
+/// different kinds: a byte and a word, or a signed and an unsigned byte. They
+/// are two values at any program point, so no step of the history explains
+/// them apart, and a sentence about what changed in between would send the
+/// reader after a store that is not the cause.
+pub(in crate::surface) fn describe_load_kind_mismatch(
+    left: &CValue,
+    right: &CValue,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    let (_, left_load) = unresolved_load(left)?;
+    let (_, right_load) = unresolved_load(right)?;
+    let left_kind = unresolved_load_kind(left)?;
+    let right_kind = unresolved_load_kind(right)?;
+    if left_load != right_load || left_kind == right_kind {
+        return None;
+    }
+    let named = match describe_source_cell(&left_load, parameters, arguments) {
+        Some(cell) => format!("`{}`", cell.text()),
+        None => "one address".to_string(),
+    };
+    Some(format!(
+        "the two sides read {named} as different kinds of value, the left as {} and the right \
+         as {}. A read's width and signedness are part of the value it names, so these are two \
+         values at any point of the program.",
+        describe_load_kind(left_kind),
+        describe_load_kind(right_kind),
+    ))
+}
+
+/// The kind of read a still-unresolved comparison side is, when that side is
+/// exactly one load.
+fn unresolved_load_kind(value: &CValue) -> Option<crate::kernel::LoadKind> {
+    let term = match value {
+        CValue::Int8(term)
+        | CValue::Bool(term)
+        | CValue::Int16(term)
+        | CValue::Int32(term)
+        | CValue::UInt8(term)
+        | CValue::UInt16(term)
+        | CValue::UInt32(term)
+        | CValue::Int64(term)
+        | CValue::UInt64(term) => term,
+        _ => return None,
+    };
+    match term {
+        Bitvector32Term::MemoryLoad(_, _, kind) => Some(*kind),
+        Bitvector32Term::Variable(variable) => {
+            crate::kernel::registered_load_kind_for_variable(variable)
+        }
+        _ => None,
+    }
+}
+
+/// A read's kind in the reader's words.
+fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
+    use crate::kernel::LoadKind;
+    match kind {
+        LoadKind::Int8 => "a signed byte",
+        LoadKind::UInt8 => "an unsigned byte",
+        LoadKind::Int16 => "a signed two-byte integer",
+        LoadKind::UInt16 => "an unsigned two-byte integer",
+        LoadKind::Bits32 => "a four-byte word",
+        LoadKind::Bits64 => "an eight-byte word",
+        LoadKind::Float32 => "a `float32`",
+        LoadKind::Float64 => "a `float64`",
+    }
+}
+
 pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)> {
     let term = match value {
         CValue::Int8(term) => term,
@@ -1847,7 +1917,7 @@ pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)
         _ => return None,
     };
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
         }
         Bitvector32Term::Variable(variable) => {
@@ -2129,6 +2199,9 @@ pub(super) fn describe_two_sided_version_mismatch(
     let (right_memory, right_load) = unresolved_load(right)?;
     if left_load != right_load {
         return None;
+    }
+    if let Some(mismatch) = describe_load_kind_mismatch(left, right, parameters, arguments) {
+        return Some(mismatch);
     }
     let explanation = resource_tracker::explain(
         resource_tracker::Resource::Cell {
@@ -3338,7 +3411,7 @@ fn describe_parameter_struct_field_pointer(
         return None;
     };
     let loaded_at = match value.as_ref() {
-        Bitvector32Term::MemoryLoad(_, loaded_at) => loaded_at.as_ref().clone(),
+        Bitvector32Term::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
         Bitvector32Term::Variable(variable) => {
             crate::kernel::registered_load_for_variable(variable)?.1
         }
@@ -4686,7 +4759,7 @@ pub(super) fn describe_bitvector_with_context(
             format!("{name}(<typed Click arguments>)")
         }
         Bitvector32Term::AlgebraicMatch { .. } => "match <algebraic value> { ... }".to_string(),
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             format!("load({})", describe_pointer(pointer, parameters, arguments))
         }
         Bitvector32Term::PointerAddress(pointer) => {

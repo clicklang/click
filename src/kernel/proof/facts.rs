@@ -1838,9 +1838,10 @@ fn bitvector_equality_atom_key(term: &Bitvector32Term) -> Option<BitvectorEquali
                 arguments_hash: hasher.finish(),
             })
         }
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(pointer.as_ref(), &mut hasher);
+            std::hash::Hash::hash(kind, &mut hasher);
             Some(BitvectorEqualityAtomKey::MemoryLoad {
                 memory: memory.arena_id(),
                 pointer_hash: std::hash::Hasher::finish(&hasher),
@@ -2026,7 +2027,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
                 collect_bitvector_atoms(&arm.body, atoms);
             }
         }
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             collect_pointer_offset_bitvector_atoms(&pointer.offset, atoms)
         }
         Bitvector32Term::PointerAddress(pointer) => {
@@ -2356,6 +2357,7 @@ mod integer_equality_fact_index_tests {
                         block: "snapshot-alpha-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 ),
             )),
         )
@@ -3396,6 +3398,7 @@ mod integer_equality_fact_index_tests {
                         block: "same-bucket-facts".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     }),
+                    crate::kernel::LoadKind::Bits32,
                 )
             };
             let facts = memories[..size]

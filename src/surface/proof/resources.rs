@@ -5081,9 +5081,16 @@ fn materialize_composite_resource_cells_from_snapshot(
                         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
                             continue;
                         }
+                        // A pointer field is held as its four-byte words.
+                        let kind = if element_type.is_pointer() {
+                            crate::kernel::LoadKind::Bits32
+                        } else {
+                            crate::surface::lowering::load_kind_of_element(element_type)
+                        };
                         let load = crate::kernel::canonical_form_of_load(
                             crate::kernel::intern_c_memory(naming_memory.clone()),
                             pointer.clone(),
+                            kind,
                         );
                         let value = if element_type.is_pointer() {
                             CValue::Int32(load)
@@ -5138,13 +5145,23 @@ fn materialize_composite_resource_cells_from_snapshot(
         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
             continue;
         }
+        // Preserve scalar pointee types, including substituted pointer values.
+        // Pointer cells retain the word representation used for load origins,
+        // and each cell is named as the read of its own kind.
+        let element_type = contract_segment_element_type(parameters, segment);
+        let kind = if !element_type.is_pointer() {
+            crate::surface::lowering::load_kind_of_element(element_type)
+        } else if element_width == 1 {
+            crate::kernel::LoadKind::UInt8
+        } else {
+            crate::kernel::LoadKind::Bits32
+        };
         let load = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_c_memory(naming_memory.clone()),
             pointer.clone(),
+            kind,
         );
-        // Preserve scalar pointee types, including substituted pointer values.
-        // Pointer cells retain the word representation used for load origins.
-        let value = match contract_segment_element_type(parameters, segment) {
+        let value = match element_type {
             element_type if !element_type.is_pointer() => {
                 crate::surface::lowering::symbolic_value_from_load(&pointer, element_type, load)
             }
@@ -5356,6 +5373,7 @@ void child_release(struct child* obj) {
             Box::new(Bitvector32Term::MemoryLoad(
                 snapshot,
                 Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
             )),
             Box::new(Bitvector32Term::Constant(0)),
         );

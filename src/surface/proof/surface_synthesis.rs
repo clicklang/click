@@ -577,7 +577,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
             Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => {}
-            Bitvector32Term::MemoryLoad(_, pointer) => {
+            Bitvector32Term::MemoryLoad(_, pointer, _) => {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
                 {
@@ -1563,9 +1563,12 @@ fn synthesize_surface_atomic_proposition(
 ) -> Option<ClickProposition> {
     if let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
         proposition
-        && let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, pointer)) =
-            (left.as_ref(), right.as_ref())
+        && let (
+            Bitvector32Term::Variable(variable),
+            Bitvector32Term::MemoryLoad(memory, pointer, kind),
+        ) = (left.as_ref(), right.as_ref())
         && crate::kernel::is_load_variable(variable)
+        && crate::kernel::registered_load_kind_for_variable(variable) == Some(*kind)
     {
         return synthesize_load_defining_equation(
             variable,
@@ -2168,8 +2171,8 @@ pub(super) fn synthesize_surface_pointer_offset(
         PointerOffsetTerm::Int32Scaled {
             value,
             byte_width: 4,
-        } if matches!(value.as_ref(), Bitvector32Term::MemoryLoad(_, _)) => {
-            let Bitvector32Term::MemoryLoad(_, pointer) = value.as_ref() else {
+        } if matches!(value.as_ref(), Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let Bitvector32Term::MemoryLoad(_, pointer, _) = value.as_ref() else {
                 unreachable!()
             };
             if let Some(field) = synthesize_struct_field_load(
@@ -2370,13 +2373,14 @@ fn registered_load_in_state(variable: &Variable, state: &CState) -> Option<Bitve
         return None;
     }
     let (_, pointer) = crate::kernel::registered_load_for_variable(variable)?;
+    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let memory = crate::kernel::intern_c_memory_ref(state.memory());
     let Bitvector32Term::Variable(named) =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone())
+        crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone(), kind)
     else {
         return None;
     };
-    (named == *variable).then(|| Bitvector32Term::MemoryLoad(memory, Box::new(pointer)))
+    (named == *variable).then(|| Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind))
 }
 
 fn synthesize_surface_bitvector(
@@ -2552,7 +2556,7 @@ fn synthesize_surface_bitvector(
                 pointee_constant: false,
             }))
         }
-        Bitvector32Term::MemoryLoad(memory, kernel_pointer) => {
+        Bitvector32Term::MemoryLoad(memory, kernel_pointer, kind) => {
             if let Some(source) = SYNTHESIS_QUALIFIED_SOURCES.with(|slot| {
                 slot.borrow()
                     .as_ref()?
@@ -2572,6 +2576,7 @@ fn synthesize_surface_bitvector(
                 let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
                     memory.clone(),
                     kernel_pointer.as_ref().clone(),
+                    *kind,
                 ) else {
                     return None;
                 };
@@ -2954,7 +2959,7 @@ fn synthesize_parameter_field_indexed_int32_load(
             Bitvector32Term::Variable(variable) => registered_load_in_state(variable, state),
             _ => None,
         };
-        let Bitvector32Term::MemoryLoad(_, field_pointer) =
+        let Bitvector32Term::MemoryLoad(_, field_pointer, _) =
             named_load.as_ref().unwrap_or(value.as_ref())
         else {
             return None;
@@ -3144,7 +3149,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             return false;
         }
         match term {
-            Bitvector32Term::MemoryLoad(_, _) => return false,
+            Bitvector32Term::MemoryLoad(_, _, _) => return false,
             Bitvector32Term::PointerAddress(pointer) => {
                 pending.extend(pointer.offset.scaled_values());
             }

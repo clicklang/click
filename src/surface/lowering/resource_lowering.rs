@@ -856,6 +856,7 @@ fn materialize_access_segment_cells(
                     let load = crate::kernel::canonical_form_of_load(
                         crate::kernel::intern_c_memory(base_memory.clone()),
                         pointer.clone(),
+                        load_kind_of_element(element_type),
                     );
                     let value = symbolic_value_from_load(&pointer, element_type, load);
                     memory.store(pointer, value)
@@ -884,6 +885,7 @@ fn materialize_access_segment_cells(
                         let load = crate::kernel::canonical_form_of_load(
                             crate::kernel::intern_c_memory(base_memory.clone()),
                             pointer.clone(),
+                            load_kind_of_element(element_type),
                         );
                         let value = symbolic_value_from_load(&pointer, element_type, load);
                         memory.store(pointer, value)
@@ -2888,8 +2890,16 @@ fn symbolic_value_for_element(memory: &CMemory, pointer: &Pointer, element_type:
     let load = crate::kernel::canonical_form_of_load(
         crate::kernel::intern_c_memory(memory.clone()),
         pointer.clone(),
+        load_kind_of_element(element_type),
     );
     symbolic_value_from_load(pointer, element_type, load)
+}
+
+/// The kind of read a resource element of `element_type` is: the element's
+/// own C read, which is what a C load of the element names.
+pub(in crate::surface) fn load_kind_of_element(element_type: CType) -> crate::kernel::LoadKind {
+    crate::kernel::LoadKind::of_type(element_type)
+        .expect("memory ranges cannot contain aggregate elements")
 }
 
 pub(in crate::surface) fn symbolic_value_from_load(
@@ -2920,9 +2930,11 @@ pub(in crate::surface) fn symbolic_value_from_load(
                 {
                     *variable
                 }
-                Bitvector32Term::MemoryLoad(_, _) => crate::kernel::load_variable_for_term(&load)
-                    .map(|(variable, _)| variable)
-                    .expect("exact function-pointer loads have canonical identities"),
+                Bitvector32Term::MemoryLoad(_, _, _) => {
+                    crate::kernel::load_variable_for_term(&load)
+                        .map(|(variable, _)| variable)
+                        .expect("exact function-pointer loads have canonical identities")
+                }
                 _ => unreachable!(
                     "symbolic function-pointer fields use raw or canonical exact loads"
                 ),

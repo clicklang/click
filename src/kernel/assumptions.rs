@@ -87,7 +87,7 @@ fn terms_equal_with_load_atoms(
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
     match (left, right) {
-        (Bitvector32Term::MemoryLoad(_, _), Bitvector32Term::MemoryLoad(_, _)) => {
+        (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
             loads_match(left, right)
         }
         // A registered load variable is a load atom too: the same cell named
@@ -101,15 +101,10 @@ fn terms_equal_with_load_atoms(
                 && crate::kernel::is_load_variable(b) =>
         {
             match (
-                crate::kernel::registered_load_origin_for_variable(a),
-                crate::kernel::registered_load_origin_for_variable(b),
+                crate::kernel::registered_load_origin_term_for_variable(a),
+                crate::kernel::registered_load_origin_term_for_variable(b),
             ) {
-                (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) => {
-                    loads_match(
-                        &Bitvector32Term::MemoryLoad(left_memory, Box::new(left_pointer)),
-                        &Bitvector32Term::MemoryLoad(right_memory, Box::new(right_pointer)),
-                    )
-                }
+                (Some(left), Some(right)) => loads_match(&left, &right),
                 _ => false,
             }
         }
@@ -200,9 +195,11 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
 fn load_atoms_equal_ignoring_memories(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     match (left, right) {
         (
-            Bitvector32Term::MemoryLoad(_, left_pointer),
-            Bitvector32Term::MemoryLoad(_, right_pointer),
-        ) => pointers_equal_ignoring_memories(left_pointer, right_pointer),
+            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+        ) => {
+            left_kind == right_kind && pointers_equal_ignoring_memories(left_pointer, right_pointer)
+        }
         _ => left == right,
     }
 }
@@ -395,19 +392,20 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
 /// joins equal terms by construction rather than by per-query bridging.
 /// The memory snapshot and cell a load term reads, for a raw load or a
 /// registered load variable.
-fn load_snapshot_and_pointer(term: &Bitvector32Term) -> Option<(CMemory, Pointer)> {
+fn load_snapshot_and_pointer(term: &Bitvector32Term) -> Option<(CMemory, Pointer, LoadKind)> {
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
-            Some(((**memory).clone(), pointer.as_ref().clone()))
+        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+            Some(((**memory).clone(), pointer.as_ref().clone(), *kind))
         }
         // A load variable's canonical registration carries a placeholder
         // snapshot; its origin registration is the live snapshot it was
         // first minted from, which frame evidence can relate to later
         // snapshots.
         Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+            let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
             crate::kernel::eval::registered_load_origin_for_variable(variable)
                 .or_else(|| crate::kernel::registered_load_for_variable(variable))
-                .map(|(memory, pointer)| ((*memory).clone(), pointer))
+                .map(|(memory, pointer)| ((*memory).clone(), pointer, kind))
         }
         _ => None,
     }
@@ -1230,17 +1228,19 @@ fn loads_equal_by_bounded_snapshot_match(left: &Bitvector32Term, right: &Bitvect
         return false;
     };
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer),
+        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left_load, &right_load)
     else {
         return false;
     };
     left_pointer == right_pointer
+        && left_kind == right_kind
         && !crate::kernel::reasoning::loads_separated_by_recorded_history(
             left_memory,
             right_memory,
             left_pointer,
+            *left_kind,
             &PureFactContext::new(),
         )
         && crate::kernel::reasoning::memories_match_for_pointer_load_under_assumptions(
@@ -1263,7 +1263,7 @@ fn exact_materialized_load_fixed_point(term: &Bitvector32Term) -> Bitvector32Ter
     let mut visited = std::collections::HashSet::new();
     while visited.insert(current.clone()) {
         crate::instrumentation::record_deterministic_work(1);
-        let Bitvector32Term::MemoryLoad(memory, pointer) = &current else {
+        let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits32) = &current else {
             break;
         };
         let Some(CValue::Int32(value)) = memory.known_value(pointer) else {
@@ -1285,7 +1285,11 @@ mod exact_materialization_tests {
         };
         (0..length).fold(Bitvector32Term::Constant(tail), |value, _| {
             let memory = CMemory::new().store(pointer.clone(), CValue::Int32(value));
-            Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer.clone()))
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Bits32,
+            )
         })
     }
 
@@ -1477,7 +1481,10 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
         Bitvector32Term::Int64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::UInt64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::Variable(variable) => std::hash::Hash::hash(variable, hasher),
-        Bitvector32Term::MemoryLoad(_, pointer) => hash_memory_blind_pointer(pointer, hasher),
+        Bitvector32Term::MemoryLoad(_, pointer, kind) => {
+            std::hash::Hash::hash(kind, hasher);
+            hash_memory_blind_pointer(pointer, hasher)
+        }
         Bitvector32Term::PointerAddress(pointer) => {
             std::hash::Hash::hash("address", hasher);
             hash_memory_blind_pointer(pointer, hasher)
@@ -1663,7 +1670,7 @@ fn collect_bitvector_memory_load_keys(
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_) => {}
-        Bitvector32Term::MemoryLoad(_, pointer) => {
+        Bitvector32Term::MemoryLoad(_, pointer, _) => {
             keys.insert((
                 pointer.block.clone(),
                 memory_blind_pointer_fingerprint(pointer),
@@ -1976,7 +1983,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_) => Ok(()),
-        Bitvector32Term::MemoryLoad(memory, pointer) => {
+        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
             if CMemorySnapshotIdentity::of(memory.memory())
                 == CMemorySnapshotIdentity::of(current_memory)
             {
@@ -2975,7 +2982,7 @@ impl PureFactContext {
             binding @ GeneratedLoadBinding::Exact {
                 variable,
                 pointer: address,
-                load: Bitvector32Term::MemoryLoad(memory, _),
+                load: Bitvector32Term::MemoryLoad(memory, _, kind),
                 typed_pointer_value: Some(value),
                 ..
             },
@@ -2993,6 +3000,7 @@ impl PureFactContext {
             Box::new(Bitvector32Term::MemoryLoad(
                 memory.clone(),
                 Box::new(address.clone()),
+                *kind,
             )),
         );
         if self.condition_facts.get(&condition) != Some(&true) {
@@ -3108,10 +3116,14 @@ impl PureFactContext {
             return;
         };
         let definition = match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, address))
-            | (Bitvector32Term::MemoryLoad(memory, address), Bitvector32Term::Variable(variable)) => {
-                (*variable, memory, address.as_ref())
-            }
+            (
+                Bitvector32Term::Variable(variable),
+                Bitvector32Term::MemoryLoad(memory, address, _),
+            )
+            | (
+                Bitvector32Term::MemoryLoad(memory, address, _),
+                Bitvector32Term::Variable(variable),
+            ) => (*variable, memory, address.as_ref()),
             _ => return,
         };
         let (variable, memory, address) = definition;
@@ -3394,12 +3406,16 @@ impl PureFactContext {
             self.adjust_int32_graph_equality(condition, *value, true);
         }
         for (variable, definitions) in prior_typed_reads.iter() {
+            let Some(kind) = crate::kernel::registered_load_kind_for_variable(variable) else {
+                continue;
+            };
             for ((_, address), (pointer_value, memory)) in definitions.iter() {
                 let condition = ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::Variable(*variable)),
                     Box::new(Bitvector32Term::MemoryLoad(
                         memory.clone(),
                         Box::new(address.clone()),
+                        kind,
                     )),
                 );
                 if self.condition_facts.get(&condition) == Some(&true) {
@@ -3578,7 +3594,7 @@ impl PureFactContext {
         if !exact.is_empty() {
             return exact;
         }
-        let Some((query_memory, pointer)) = load_snapshot_and_pointer(term) else {
+        let Some((query_memory, pointer, kind)) = load_snapshot_and_pointer(term) else {
             return exact;
         };
         let mut transported = Vec::new();
@@ -3587,10 +3603,12 @@ impl PureFactContext {
                 continue;
             };
             for (side, other) in [(left, right), (right, left)] {
-                let Some((fact_memory, fact_pointer)) = load_snapshot_and_pointer(side) else {
+                let Some((fact_memory, fact_pointer, fact_kind)) = load_snapshot_and_pointer(side)
+                else {
                     continue;
                 };
                 if fact_pointer != pointer
+                    || fact_kind != kind
                     || !memories_match_for_pointer_load(&fact_memory, &query_memory, &pointer)
                 {
                     continue;
@@ -6782,7 +6800,7 @@ impl ExecutionPureFact {
             binding @ GeneratedLoadBinding::Exact {
                 variable,
                 pointer: address,
-                load: Bitvector32Term::MemoryLoad(memory, _),
+                load: Bitvector32Term::MemoryLoad(memory, _, _),
                 typed_pointer_value: Some(value),
                 ..
             },
@@ -6973,7 +6991,7 @@ fn generated_load_binding_matches_proposition(
     };
     let (
         Bitvector32Term::Variable(proposition_variable),
-        Bitvector32Term::MemoryLoad(memory, proposition_pointer),
+        Bitvector32Term::MemoryLoad(memory, proposition_pointer, _),
     ) = (left.as_ref(), right.as_ref())
     else {
         return false;
@@ -7314,7 +7332,11 @@ mod dynamic_current_load_tests {
         let pointer = pointer();
         let memory = CMemory::new();
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
-        let load = Bitvector32Term::MemoryLoad(snapshot, Box::new(pointer.clone()));
+        let load = Bitvector32Term::MemoryLoad(
+            snapshot,
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Bits32,
+        );
         let value = Term::CValue(CValue::Int64(load.clone()));
         assert_eq!(
             current_memory_loads_in_term(&value, &memory).unwrap(),

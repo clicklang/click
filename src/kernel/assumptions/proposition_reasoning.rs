@@ -137,10 +137,10 @@ fn canonical_contradiction_condition(condition: &ConditionTerm) -> ConditionTerm
 fn bitvector_terms_may_be_theory_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     matches!(
         left,
-        Bitvector32Term::MemoryLoad(_, _) | Bitvector32Term::Add(_, _)
+        Bitvector32Term::MemoryLoad(_, _, _) | Bitvector32Term::Add(_, _)
     ) || matches!(
         right,
-        Bitvector32Term::MemoryLoad(_, _) | Bitvector32Term::Add(_, _)
+        Bitvector32Term::MemoryLoad(_, _, _) | Bitvector32Term::Add(_, _)
     ) || matches!(
         (left, right),
         (Bitvector32Term::If { .. }, Bitvector32Term::If { .. })
@@ -2700,9 +2700,11 @@ impl PureFactContext {
                     collect_term_candidates(left, right, bound, candidates);
                 }
                 (
-                    Bitvector32Term::MemoryLoad(_, left_pointer),
-                    Bitvector32Term::MemoryLoad(_, right_pointer),
-                ) => collect_pointer_candidates(left_pointer, right_pointer, bound, candidates),
+                    Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+                    Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+                ) if left_kind == right_kind => {
+                    collect_pointer_candidates(left_pointer, right_pointer, bound, candidates)
+                }
                 (left, right) => {
                     if let (Some((left_a, left_b)), Some((right_a, right_b))) =
                         (binary(left), binary(right))
@@ -3134,7 +3136,7 @@ impl PureFactContext {
             return true;
         }
         match (left, right) {
-            (Bitvector32Term::MemoryLoad(_, _), Bitvector32Term::MemoryLoad(_, _)) => {
+            (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
                 memory_load_terms_equal_for_fact_transport(left, right, self)
             }
             (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
@@ -3505,7 +3507,7 @@ impl PureFactContext {
                     Task::Visit(term) => {
                         crate::instrumentation::record_deterministic_work(1);
                         match term {
-                            term @ Bitvector32Term::MemoryLoad(_, _) => {
+                            term @ Bitvector32Term::MemoryLoad(_, _, _) => {
                                 if let Some(resolved) = assumptions.resolve_memory_load_term(&term)
                                 {
                                     tasks.push(Task::Visit(resolved));
@@ -3599,7 +3601,7 @@ impl PureFactContext {
             let mut pending = vec![term.clone()];
             while let Some(term) = pending.pop() {
                 match term {
-                    Bitvector32Term::MemoryLoad(_, _)
+                    Bitvector32Term::MemoryLoad(_, _, _)
                     | Bitvector32Term::If { .. }
                     | Bitvector32Term::RangeFold { .. } => return true,
                     term @ Bitvector32Term::Add(_, _) => {
@@ -3641,7 +3643,7 @@ impl PureFactContext {
             while let Some(term) = pending.pop() {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
-                    term @ Bitvector32Term::MemoryLoad(_, _) => {
+                    term @ Bitvector32Term::MemoryLoad(_, _, _) => {
                         keys.insert(LOAD_BUCKET);
                         if let Some(resolved) = assumptions.resolve_memory_load_term(&term) {
                             pending.push(resolved);

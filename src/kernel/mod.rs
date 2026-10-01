@@ -110,6 +110,7 @@ pub(crate) use eval::is_load_variable;
 pub(crate) use eval::is_load_variable_defining_fact;
 pub(crate) use eval::load_access_width_at_address_or_widest;
 pub(crate) use eval::load_access_width_or_widest;
+pub(crate) use eval::load_term_access_width;
 #[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
@@ -125,6 +126,10 @@ pub(crate) use eval::terms_have_same_canonical_form;
 #[cfg(test)]
 pub(crate) use eval::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
+};
+pub(crate) use eval::{
+    registered_load_kind_for_variable, registered_load_origin_term_for_variable,
+    registered_load_term_for_variable,
 };
 pub(crate) use functions::ResourceModelArmDecision;
 pub(crate) use functions::ResourceModelArmSelection;

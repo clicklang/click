@@ -205,6 +205,103 @@ pub enum Sort {
     CFunctionOutcome,
 }
 
+/// What a load term reads at its address: how many bytes, and how the term
+/// represents them.
+///
+/// A load term is a value, and the value a read returns depends on more than
+/// the address. A one-byte read of `0xFF` is `-1` as `int8` and `255` as
+/// `uint8`, and an `int32` read at the same address returns all four bytes.
+/// Two reads of one address therefore name one value only when they agree on
+/// this kind.
+///
+/// Four- and eight-byte integer reads keep their two's-complement bit pattern
+/// in the term and let the `CValue` wrapper choose the interpretation, so a
+/// signed and an unsigned read of that width are one kind (`Bits32`,
+/// `Bits64`). Narrower reads store the extended value, which signedness
+/// changes, so they keep it. Floating-point reads are kinds of their own.
+///
+/// A pointer read is a `Bits32` read: Click names a pointer value by the
+/// four-byte word at its address (`Pointer::loaded` scales that word), which
+/// is also how a materialized pointer field's cells hold it. The access is
+/// still eight bytes wide; framing takes the width recorded at the address,
+/// which a pointer read records, and never less than the kind's own.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum LoadKind {
+    Int8,
+    UInt8,
+    Int16,
+    UInt16,
+    Bits32,
+    Bits64,
+    Float32,
+    Float64,
+}
+
+impl LoadKind {
+    /// The kind of a C read of `value_type`, for every scalar or pointer type
+    /// a load can have. `_Bool` reads its byte unsigned and normalizes it.
+    pub fn of_type(value_type: CType) -> Option<Self> {
+        Some(match value_type {
+            CType::Bool | CType::UInt8 => Self::UInt8,
+            CType::Int8 => Self::Int8,
+            CType::Int16 => Self::Int16,
+            CType::UInt16 => Self::UInt16,
+            CType::Int32 | CType::UInt32 => Self::Bits32,
+            CType::Int64 | CType::UInt64 => Self::Bits64,
+            CType::Float32 => Self::Float32,
+            CType::Float64 => Self::Float64,
+            CType::Void
+            | CType::Int8Array(_)
+            | CType::Int16Array(_)
+            | CType::Int32Array(_)
+            | CType::UInt8Array(_)
+            | CType::UInt16Array(_)
+            | CType::UInt32Array(_)
+            | CType::Int64Array(_)
+            | CType::UInt64Array(_)
+            | CType::Float32Array(_)
+            | CType::Float64Array(_)
+            | CType::PointerArray(_, _) => return None,
+            _ if value_type.is_pointer() => Self::Bits32,
+            _ => return None,
+        })
+    }
+
+    /// The kind of read that returns exactly `value`, a cell's stored value:
+    /// a read of any other kind at the cell's address does not.
+    pub fn of_value(value: &CValue) -> Option<Self> {
+        Some(match value {
+            CValue::Void => return None,
+            CValue::Bool(_) | CValue::UInt8(_) => Self::UInt8,
+            CValue::Int8(_) => Self::Int8,
+            CValue::Int16(_) => Self::Int16,
+            CValue::UInt16(_) => Self::UInt16,
+            CValue::Int32(_) | CValue::UInt32(_) => Self::Bits32,
+            CValue::Int64(_) | CValue::UInt64(_) => Self::Bits64,
+            CValue::Float32(_) => Self::Float32,
+            CValue::Float64(_) => Self::Float64,
+            CValue::Pointer(_) => Self::Bits32,
+        })
+    }
+
+    /// Whether a read of this kind returns `value` itself, where `value` is
+    /// what a cell holds. This is the one test every route that answers a
+    /// load term from a cell or a store applies.
+    pub fn reads_value(self, value: &CValue) -> bool {
+        Self::of_value(value) == Some(self)
+    }
+
+    /// How many bytes a read of this kind returns.
+    pub fn byte_width(self) -> u32 {
+        match self {
+            Self::Int8 | Self::UInt8 => 1,
+            Self::Int16 | Self::UInt16 => 2,
+            Self::Bits32 | Self::Float32 => 4,
+            Self::Bits64 | Self::Float64 => 8,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Bitvector32Term {
     Constant(u32),
@@ -264,7 +361,11 @@ pub enum Bitvector32Term {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicBitvectorMatchArm>,
     },
-    MemoryLoad(SharedCMemory, Box<Pointer>),
+    /// The value a read of `LoadKind` at the pointer returns in the snapshot.
+    /// The kind is part of the load's identity: two reads of one address
+    /// that differ in width or, below four bytes, in signedness return
+    /// different values, so they are different terms. See [`LoadKind`].
+    MemoryLoad(SharedCMemory, Box<Pointer>, LoadKind),
     /// The 64-bit integer representation of a non-null object pointer under
     /// the LP64 profile.  The term keeps the exact source pointer, so the
     /// integer carries provenance: a cast back recovers that pointer, and two

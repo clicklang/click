@@ -832,12 +832,13 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
 ) -> Option<Proposition> {
     fn erase_term(term: &Bitvector32Term) -> Bitvector32Term {
         match term {
-            Bitvector32Term::MemoryLoad(_, pointer) => Bitvector32Term::MemoryLoad(
+            Bitvector32Term::MemoryLoad(_, pointer, kind) => Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::default()),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: erase_offset(&pointer.offset),
                 }),
+                *kind,
             ),
             Bitvector32Term::Add(left, right) => {
                 Bitvector32Term::Add(Box::new(erase_term(left)), Box::new(erase_term(right)))
@@ -990,7 +991,7 @@ pub(in crate::surface::proof) fn proposition_outer_load_memory(
 ) -> Option<&CMemory> {
     fn term_outer(term: &Bitvector32Term) -> Option<&CMemory> {
         match term {
-            Bitvector32Term::MemoryLoad(memory, _) => Some(memory),
+            Bitvector32Term::MemoryLoad(memory, _, _) => Some(memory),
             Bitvector32Term::Add(left, right)
             | Bitvector32Term::Subtract(left, right)
             | Bitvector32Term::Multiply(left, right)

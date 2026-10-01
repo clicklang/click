@@ -5,6 +5,7 @@
 //! certificate builder, diagnostic cursor, or smart-planning state.
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
+use crate::kernel::LoadKind;
 use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -918,7 +919,10 @@ fn memory_only_adds_named_cells(
             return Err("removed or rewrote an existing cell".into());
         };
         let value = after.cells.get(pointer).expect("added cell exists");
-        let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone());
+        let Some(kind) = LoadKind::of_value(&value) else {
+            return Err("added a cell no load reads".into());
+        };
+        let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
         if !cell_value_is_exactly_load(&value, &load, pointer) {
             return Err(describe_unnamed_cell_addition(
                 &base, pointer, &value, &load,
@@ -4510,14 +4514,14 @@ impl CheckedInterfaceLoadDefinition {
         else {
             return None;
         };
-        let (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(memory, pointer)) =
+        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             return None;
         };
-        let (defined_memory, defined_pointer) =
-            crate::kernel::registered_load_for_variable(variable)?;
-        (&defined_memory == memory && &defined_pointer == pointer.as_ref()).then(|| Self {
+        // The registered load, kind included, is the definition.
+        let defined = crate::kernel::registered_load_term_for_variable(variable)?;
+        (&defined == load).then(|| Self {
             proposition: proposition.clone(),
         })
     }
@@ -8945,6 +8949,7 @@ mod tests {
             let name = crate::kernel::canonical_form_of_load(
                 crate::kernel::intern_c_memory(before.clone()),
                 target.clone(),
+                crate::kernel::LoadKind::Bits32,
             );
             let after = before
                 .clone()
@@ -11494,12 +11499,20 @@ mod tests {
             block: "interface_definition".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let variable = crate::kernel::eval::load_variable_for_cell(&memory, &pointer);
+        let variable = crate::kernel::eval::load_variable_for_cell(
+            &memory,
+            &pointer,
+            crate::kernel::LoadKind::Bits32,
+        );
         let equation = |variable, memory, pointer| {
             Proposition::ConditionIs(
                 ConditionTerm::Bitvector32Equal(
                     Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::MemoryLoad(memory, Box::new(pointer))),
+                    Box::new(Bitvector32Term::MemoryLoad(
+                        memory,
+                        Box::new(pointer),
+                        crate::kernel::LoadKind::Bits32,
+                    )),
                 ),
                 true,
             )

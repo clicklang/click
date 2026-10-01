@@ -530,27 +530,25 @@ impl MemoryDagCell {
         }
     }
 
-    /// The concrete value the lookup pins down for a `bytes`-byte read at
+    /// The concrete value the lookup pins down for a `kind` read at
     /// `pointer`, when it pins one down.
     ///
-    /// `bytes` must be the width the walk was asked about. A stored value is
-    /// one by construction ([`write_supplies_read`]); a cell the stopping
-    /// snapshot materialized at this exact address answers only when it is
-    /// exactly as wide as the read, for the same reason: a cell of another
-    /// width holds other bytes than the read returns.
+    /// A stored value starts at the read's address by construction
+    /// ([`write_supplies_read`]); it, and a cell the stopping snapshot
+    /// materialized at this exact address, answer only when the read of
+    /// `kind` returns exactly that value ([`LoadKind::reads_value`]). A value
+    /// of another width holds other bytes than the read returns, and one of
+    /// the read's width but the other signedness is another number.
     pub(in crate::kernel) fn resolved_value(
         &self,
         pointer: &Pointer,
-        bytes: u32,
+        kind: LoadKind,
     ) -> Option<CValue> {
         match self {
-            Self::Stored { value, .. } => {
-                debug_assert_eq!(value.byte_width(), bytes);
-                (value.byte_width() == bytes).then(|| value.clone())
-            }
+            Self::Stored { value, .. } => kind.reads_value(value).then(|| value.clone()),
             Self::Unwritten { node, .. } => node
                 .known_value(pointer)
-                .filter(|value| value.byte_width() == bytes),
+                .filter(|value| kind.reads_value(value)),
         }
     }
 
@@ -916,10 +914,12 @@ fn range_structurally_covers_allocation(
 /// from a narrower one, so anything other than an exact match pins nothing;
 /// the read is then whatever the produced snapshot holds there.
 ///
-/// The read's width is the recorded access width at its address, since a
-/// load term carries no width or type. Signedness at one width is therefore
-/// not something this check can see: an `int8` value's term is sign-extended
-/// where a `uint8` read's is not.
+/// The walk is asked about an access width, the recorded one at the read's
+/// address, and this check decides on that width alone. The read's own kind,
+/// which a load term carries, is the second half and is
+/// [`MemoryDagCell::resolved_value`]'s: a write of the read's width but the
+/// other signedness stops the walk here and supplies nothing, because an
+/// `int8` value's term is sign-extended where a `uint8` read's is not.
 pub(in crate::kernel) fn write_supplies_read(
     write: &Pointer,
     value: &CValue,

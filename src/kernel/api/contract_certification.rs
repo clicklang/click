@@ -642,7 +642,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             // quantified index. Variables in the loaded address belong to
             // the base expression (for example the owner parameter), not to
             // that index.
-            Bitvector32Term::MemoryLoad(_, _) => {}
+            Bitvector32Term::MemoryLoad(_, _, _) => {}
             Bitvector32Term::PointerAddress(_) | Bitvector32Term::IntegerToMachine { .. } => {}
         }
     }
@@ -2549,10 +2549,10 @@ fn pointer_offsets_equal_with_resolved_atoms(
 fn load_forms_of<'a>(
     assumptions: &'a PureFactContext,
     term: &'a Bitvector32Term,
-) -> Vec<(&'a CMemory, &'a Pointer)> {
+) -> Vec<(&'a CMemory, &'a Pointer, LoadKind)> {
     let mut loads = Vec::new();
-    if let Bitvector32Term::MemoryLoad(memory, pointer) = term {
-        loads.push((&**memory, pointer.as_ref()));
+    if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = term {
+        loads.push((&**memory, pointer.as_ref(), *kind));
     }
     for (condition, value) in assumptions.condition_facts.iter() {
         if !*value {
@@ -2565,8 +2565,8 @@ fn load_forms_of<'a>(
             if fact_term.as_ref() != term {
                 continue;
             }
-            if let Bitvector32Term::MemoryLoad(memory, pointer) = fact_load.as_ref() {
-                loads.push((&**memory, pointer.as_ref()));
+            if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = fact_load.as_ref() {
+                loads.push((&**memory, pointer.as_ref(), *kind));
             }
         }
     }
@@ -2587,29 +2587,36 @@ fn certification_proves_equality_via_load_fact(
         return false;
     }
     let right_loads = load_forms_of(assumptions, right);
-    left_loads.iter().any(|(left_memory, left_pointer)| {
-        right_loads.iter().any(|(right_memory, right_pointer)| {
-            left_pointer.block == right_pointer.block
-                && pointer_offsets_equal_with_resolved_atoms(
-                    &left_pointer.offset,
-                    &right_pointer.offset,
-                    assumptions,
-                )
-                && [left_pointer, right_pointer].into_iter().any(|pointer| {
-                    crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                        &Bitvector32Term::MemoryLoad(
-                            (*left_memory).clone().into(),
-                            Box::new((*pointer).clone()),
-                        ),
-                        &Bitvector32Term::MemoryLoad(
-                            (*right_memory).clone().into(),
-                            Box::new((*pointer).clone()),
-                        ),
-                        assumptions,
-                    )
+    left_loads
+        .iter()
+        .any(|(left_memory, left_pointer, left_kind)| {
+            right_loads
+                .iter()
+                .any(|(right_memory, right_pointer, right_kind)| {
+                    left_kind == right_kind
+                        && left_pointer.block == right_pointer.block
+                        && pointer_offsets_equal_with_resolved_atoms(
+                            &left_pointer.offset,
+                            &right_pointer.offset,
+                            assumptions,
+                        )
+                        && [left_pointer, right_pointer].into_iter().any(|pointer| {
+                            crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                                &Bitvector32Term::MemoryLoad(
+                                    (*left_memory).clone().into(),
+                                    Box::new((*pointer).clone()),
+                                    *left_kind,
+                                ),
+                                &Bitvector32Term::MemoryLoad(
+                                    (*right_memory).clone().into(),
+                                    Box::new((*pointer).clone()),
+                                    *right_kind,
+                                ),
+                                assumptions,
+                            )
+                        })
                 })
         })
-    })
 }
 
 pub(crate) fn certification_proves_proposition(
@@ -2966,16 +2973,24 @@ fn names_of_one_cell_framed(
     else {
         return false;
     };
-    let (Some((left_memory, left_pointer)), Some((right_memory, right_pointer))) = (
-        crate::kernel::eval::registered_load_origin_for_variable(left_variable),
-        crate::kernel::eval::registered_load_origin_for_variable(right_variable),
+    let (Some(left), Some(right)) = (
+        crate::kernel::eval::registered_load_origin_term_for_variable(left_variable),
+        crate::kernel::eval::registered_load_origin_term_for_variable(right_variable),
     ) else {
         return false;
     };
+    let (
+        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+        Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+    ) = (&left, &right)
+    else {
+        return false;
+    };
     left_pointer == right_pointer
+        && left_kind == right_kind
         && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-            &Bitvector32Term::MemoryLoad(left_memory, Box::new(left_pointer)),
-            &Bitvector32Term::MemoryLoad(right_memory, Box::new(right_pointer)),
+            &left,
+            &right,
             assumptions,
         )
 }

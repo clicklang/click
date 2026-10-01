@@ -158,7 +158,7 @@ pub(super) fn fold_arithmetic(
 /// term is a load or a registered load variable.
 pub(super) fn load_key(term: &Bitvector32Term) -> Option<(u64, Bitvector32Term)> {
     let viewed = crate::kernel::eval::viewed_as_memory_load(term)?;
-    let Bitvector32Term::MemoryLoad(_, pointer) = &viewed else {
+    let Bitvector32Term::MemoryLoad(_, pointer, _) = &viewed else {
         return None;
     };
     Some((memory_blind_pointer_fingerprint(pointer), viewed))

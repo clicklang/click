@@ -6456,15 +6456,27 @@ pub(super) fn collect_loop_effect_check_obligations(
                             .ranges_proven_disjoint_from_pointer(mutable_ranges, pointer)
                 )
             });
+            // The cell is read at the kind it holds; a cell neither snapshot
+            // types stays a candidate.
+            let Some(kind) = after_state
+                .memory()
+                .known_value(pointer)
+                .or_else(|| before_state.memory().known_value(pointer))
+                .and_then(|value| LoadKind::of_value(&value))
+            else {
+                return true;
+            };
             !has_disjoint_effect_summary
                 || !explicit_atomic_equality_from_memory_derivations(
                     &Bitvector32Term::MemoryLoad(
                         before_state.memory().clone().into(),
                         Box::new(pointer.clone()),
+                        kind,
                     ),
                     &Bitvector32Term::MemoryLoad(
                         after_state.memory().clone().into(),
                         Box::new(pointer.clone()),
+                        kind,
                     ),
                     &effective_assumptions,
                 )

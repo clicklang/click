@@ -651,7 +651,11 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .clone()
         .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
     let load = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(intern_c_memory(memory.clone()), Box::new(cell.clone()))
+        Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory.clone()),
+            Box::new(cell.clone()),
+            crate::kernel::LoadKind::Bits32,
+        )
     };
     let fact = |memory: &CMemory| {
         Proposition::ConditionIs(
@@ -665,8 +669,9 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     assert_eq!(
         version_mismatch(&fact(&after), &fact(&entry)),
         Some((
-            // The fact spells a raw `MemoryLoad`, which carries no width, so
-            // the resource stands in the widest scalar access.
+            // The fact spells a raw `MemoryLoad`; the cell resource it reads
+            // stands for every read of that address, so it is the widest
+            // scalar access, which the load's own kind fits inside.
             OwnedResource::Cell {
                 pointer: cell.clone(),
                 bytes: super::widest_scalar_access_bytes(),
