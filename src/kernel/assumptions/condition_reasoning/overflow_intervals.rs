@@ -788,6 +788,31 @@ impl PureFactContext {
         result
     }
 
+    /// [`Self::signed_interval`] with each endpoint moved past the values an
+    /// exact fact says `term` is not: `0 <= x <= 3` with `x != 1`, `x != 2`
+    /// and `x != 3` is `[0, 0]`. Each step is one indexed lookup that matches
+    /// a distinct disequality, so the walk is bounded by those facts.
+    pub(in crate::kernel) fn signed_interval_past_exclusions(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, i64)> {
+        let (mut lower, mut upper) = self.signed_interval(term)?;
+        let excluded = |value: i64| {
+            crate::instrumentation::record_deterministic_work(1);
+            self.has_condition_fact(
+                ConditionTerm::equal(term.clone(), Bitvector32Term::Constant(value as i32 as u32)),
+                false,
+            )
+        };
+        while lower < upper && excluded(lower) {
+            lower += 1;
+        }
+        while lower < upper && excluded(upper) {
+            upper -= 1;
+        }
+        Some((lower, upper))
+    }
+
     /// The interval is reconstructed over the term's structure, so the walk
     /// is finite with no depth cut: each arithmetic node ranges its operands.
     fn signed_interval_uncached(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
