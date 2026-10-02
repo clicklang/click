@@ -81,7 +81,7 @@ pub(crate) fn contract_resource_condition_cases(
             return None;
         };
         if !path.obligations.iter().all(|obligation| {
-            certification_proves_proposition(assumptions, obligation.proposition())
+            crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
             return None;
         }
@@ -114,7 +114,7 @@ pub(crate) fn contract_resource_condition_cases(
             return None;
         };
         if !path.obligations.iter().all(|obligation| {
-            certification_proves_proposition(assumptions, obligation.proposition())
+            crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
         }) {
             return None;
         }
@@ -129,8 +129,8 @@ pub(crate) fn contract_resource_condition_cases(
         let mut next = Vec::new();
         for facts in cases {
             let case_assumptions = assumptions_with_propositions(assumptions, &facts);
-            if certification_proves_proposition(&case_assumptions, &guard)
-                || certification_proves_proposition(&case_assumptions, &negated)
+            if crate::kernel::PureFactContext::settles_exactly(&case_assumptions, &guard)
+                || crate::kernel::PureFactContext::settles_exactly(&case_assumptions, &negated)
             {
                 next.push(facts);
                 continue;
@@ -337,7 +337,7 @@ pub fn c_loadability_obligation_impossible_with_assumptions(
     match obligation {
         Proposition::Implies(premise, body) => {
             c_loadability_obligation_impossible_with_assumptions(body, assumptions)
-                && !certification_proves_proposition(
+                && !crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &negate_contract_case_proposition(premise),
                 )
@@ -2834,6 +2834,90 @@ fn certification_proves_equality_via_load_fact(
         })
 }
 
+/// Whether a universally quantified fact, instantiated at the terms of
+/// `condition`, states that condition with premises `premise_holds` accepts.
+/// The instantiation is read off the condition; nothing is searched for.
+pub(crate) fn condition_holds_by_instantiated_fact(
+    assumptions: &PureFactContext,
+    condition: &ConditionTerm,
+    value: bool,
+    premise_holds: &dyn Fn(&Proposition) -> bool,
+) -> bool {
+    crate::instrumentation::measure_operation(
+        "kernel",
+        "certification proposition",
+        "certification proof: quantified condition facts",
+        || {
+            assumptions.prop_facts.iter().any(|fact| {
+                assumptions
+                    .forall_instantiations_for_condition(fact, condition)
+                    .into_iter()
+                    .any(|instance| {
+                        let mut body = &instance;
+                        let mut premises = Vec::new();
+                        while let Proposition::Implies(premise, rest) = body {
+                            premises.push(premise.as_ref());
+                            body = rest;
+                        }
+                        let Proposition::ConditionIs(_, instance_value) = body else {
+                            return false;
+                        };
+                        *instance_value == value
+                            && c_condition_facts_equivalent_for_memory_resolution(
+                                body,
+                                &Proposition::ConditionIs(condition.clone(), value),
+                                assumptions,
+                            )
+                            && premises.into_iter().all(premise_holds)
+                    })
+            })
+        },
+    )
+}
+
+/// Whether a bare condition holds by the memory-resolution rules: the
+/// facts state it about the same values read at other snapshots, or the
+/// bounded order prover derives it. This is what `transport` checks.
+pub(crate) fn condition_holds_by_memory_resolution(
+    assumptions: &PureFactContext,
+    condition: &ConditionTerm,
+    value: bool,
+) -> bool {
+    match (condition, value) {
+        (ConditionTerm::Bitvector32Equal(left, right), true) => {
+            names_of_one_cell_framed(left, right, assumptions)
+                || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
+                || assumptions
+                    .has_anchored_bitvector_equality_fact_for_memory_resolution(left, right)
+                || assumptions.proves_order_condition_for_memory_resolution(
+                    &ConditionTerm::signed_less_equal(
+                        left.as_ref().clone(),
+                        right.as_ref().clone(),
+                    ),
+                    true,
+                ) && assumptions.proves_order_condition_for_memory_resolution(
+                    &ConditionTerm::signed_less_equal(
+                        right.as_ref().clone(),
+                        left.as_ref().clone(),
+                    ),
+                    true,
+                )
+        }
+        (ConditionTerm::PointerEqual(left, right), true) => {
+            pointers_proven_equal_for_memory_resolution(left, right, assumptions)
+                || assumptions.pointers_known_equal(left, right)
+        }
+        (ConditionTerm::PointerOffsetEqual(left, right), true) => {
+            pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
+                || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
+        }
+        _ => {
+            assumptions.proves_order_condition_for_memory_resolution(condition, value)
+                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, value)
+        }
+    }
+}
+
 pub(crate) fn certification_proves_proposition(
     assumptions: &PureFactContext,
     proposition: &Proposition,
@@ -2989,39 +3073,11 @@ pub(crate) fn certification_proves_proposition(
                 certification_proves_proposition(assumptions, &instantiated)
             })
         }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-            names_of_one_cell_framed(left, right, assumptions)
-                || int32_values_proven_equal_for_memory_resolution(left, right, assumptions)
-                || assumptions
-                    .has_anchored_bitvector_equality_fact_for_memory_resolution(left, right)
-                || assumptions.proves_order_condition_for_memory_resolution(
-                    &ConditionTerm::signed_less_equal(
-                        left.as_ref().clone(),
-                        right.as_ref().clone(),
-                    ),
-                    true,
-                ) && assumptions.proves_order_condition_for_memory_resolution(
-                    &ConditionTerm::signed_less_equal(
-                        right.as_ref().clone(),
-                        left.as_ref().clone(),
-                    ),
-                    true,
-                )
-        }
-        Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
-            pointers_proven_equal_for_memory_resolution(left, right, assumptions)
-                || assumptions.pointers_known_equal(left, right)
-        }
-        Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
-            pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
-                || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
-        }
         Proposition::Equal(Term::CValue(left), Term::CValue(right)) => {
             c_values_proven_equal_for_memory_resolution(left, right, assumptions)
         }
         Proposition::ConditionIs(condition, value) => {
-            assumptions.proves_order_condition_for_memory_resolution(condition, *value)
-                || assumptions.has_matching_condition_fact_for_memory_resolution(condition, *value)
+            condition_holds_by_memory_resolution(assumptions, condition, *value)
         }
         // A predicate is certified only as an exact assumed fact (above).
         Proposition::Predicate { .. } => false,
@@ -3081,38 +3137,9 @@ pub(crate) fn certification_proves_proposition(
     }
 
     if let Proposition::ConditionIs(condition, value) = proposition
-        && crate::instrumentation::measure_operation(
-            "kernel",
-            "certification proposition",
-            "certification proof: quantified condition facts",
-            || {
-                assumptions.prop_facts.iter().any(|fact| {
-                    assumptions
-                        .forall_instantiations_for_condition(fact, condition)
-                        .into_iter()
-                        .any(|instance| {
-                            let mut body = &instance;
-                            let mut premises = Vec::new();
-                            while let Proposition::Implies(premise, rest) = body {
-                                premises.push(premise.as_ref());
-                                body = rest;
-                            }
-                            let Proposition::ConditionIs(_, instance_value) = body else {
-                                return false;
-                            };
-                            instance_value == value
-                                && c_condition_facts_equivalent_for_memory_resolution(
-                                    body,
-                                    &Proposition::ConditionIs(condition.clone(), *value),
-                                    assumptions,
-                                )
-                                && premises.into_iter().all(|premise| {
-                                    certification_proves_proposition(assumptions, premise)
-                                })
-                        })
-                })
-            },
-        )
+        && condition_holds_by_instantiated_fact(assumptions, condition, *value, &|premise| {
+            certification_proves_proposition(assumptions, premise)
+        })
     {
         return true;
     }

@@ -1441,10 +1441,7 @@ impl CheckedResourceRewrite {
                 );
             }
             if !exposing
-                && !crate::kernel::api::contract_certification::certification_proves_proposition(
-                    assumptions,
-                    &path.proposition,
-                )
+                && !crate::kernel::PureFactContext::settles_exactly(assumptions, &path.proposition)
             {
                 return Err(format!(
                     "Requires {}",
@@ -2263,7 +2260,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
                 .owned_quantity_term()
                 .ok_or("population cleanup requires ownership")?;
             if !selected.has_proven_positive_quantity(assumptions)
-                || !crate::kernel::api::contract_certification::certification_proves_proposition(
+                || !crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &Proposition::ConditionIs(
                         crate::kernel::ConditionTerm::Bitvector32Equal(
@@ -2480,7 +2477,7 @@ inconsistently; it {detail}; this is a Click implementation error, not an invali
             for fact in population_facts {
                 if before_state.population_body_is_open(name, arguments, assumptions)
                     && fact.is_body_fact
-                    && !crate::kernel::api::contract_certification::certification_proves_proposition(
+                    && !crate::kernel::PureFactContext::settles_exactly(
                         assumptions,
                         &fact.proposition,
                     )
