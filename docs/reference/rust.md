@@ -38,7 +38,7 @@ writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
 exporter, refresh existing imports. Configuration schema 2 is unchanged; the
-typed artifact and lock now use schema 4.
+typed artifact and lock now use schema 5.
 
 ## Supported semantics
 
@@ -232,26 +232,44 @@ empty input and supports profiling, audit, and expanded-proof reverification.
 
 ## Slice iterator loops
 
-`for &byte in bytes` supports an immutable binding of type `&[u8]`.
+`for &byte in bytes`, `for byte in bytes`, and either pattern over
+`bytes.iter()` support an immutable binding of type `&[u8]`.
 The pinned compiler resolves `IntoIterator::into_iter` and `Iterator::next`;
 the exporter checks their identities and the compiler's `Option` match before
-lowering the loop. Each yielded shared reference is read once into the copied
-`u8` binding. The original Rust source stays unchanged.
+lowering the loop. The `.iter()` method must resolve to the standard core
+inherent slice method. Copied patterns read each yielded byte into a `u8`
+binding; reference patterns bind a shared `&u8` address whose dereferences
+require view authority. Shared-reference qualifiers survive local declarations.
+The original Rust source stays unchanged.
 
-The exported loop uses a native `usize` progress counter named
-`__rust_iter_index_LINE_COLUMN`, where the location identifies the `for`
-expression. Sidecars use that counter in shared loop invariants and a
-`bytes_len - counter` termination measure. Indexing retains full-width bounds,
-view authority, and signed-word memory limits; body arithmetic retains its
-panic checks. An immutable slice binding keeps the iterator's original pointer
-and length stable. Mutable bindings and mutable slices are rejected.
+The typed artifact retains a `SliceFor` operation with its receiver, yielded
+binding, and original body. Its checked implementation has an explicit cursor
+and remaining slice length, named `__rust_iter_LINE_COLUMN_cursor` and
+`__rust_iter_LINE_COLUMN_remaining` for the `for` expression's location.
+A successful `next()` saves the cursor as the yielded shared address
+(`__rust_iter_LINE_COLUMN_item`), advances the cursor, and reduces the remaining
+length before entering the Rust body. Copied patterns then read that address;
+reference patterns bind it directly. An exhausted iterator exits without a
+read or pointer advance, including for an empty slice.
+
+There is no generated processed-count or index variable. Sidecars choose their
+own properties of iterator state. The sum examples explicitly relate the cursor
+to the original slice and derive a processed prefix as original length minus
+remaining length; the remaining length also proves termination. This length is
+the iterator's remaining slice metadata, represented as `int32` under the shared
+memory model's checked `i32::MAX` length limit. Reads require view authority and
+body arithmetic retains its panic checks. Immutable slice bindings keep the
+original pointer and length stable; mutable bindings and slices are rejected.
 
 [`examples/rust-iterators/sum.rs`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.rs)
 and its sidecar prove the same exact byte sum as the `while` example for arbitrary
 bytes and lengths `0..=1000`. Verification, profiling, audit, and expanded-proof
-verification have regressions. Reference-valued bindings, array iteration,
-`.iter()`, `.chunks_exact()`, custom iterators, labels, `break`, and `continue`
-remain outside this subset.
+verification have regressions. The
+[reference iterator fixture](https://github.com/clicklang/click/blob/master/examples/rust-iter-references/sum.rs)
+proves the same sum using `for byte in bytes.iter()` and `*byte`. Missing views
+and attempts to write through yielded shared references are rejected.
+Array iteration, `.iter_mut()`, stored iterator locals, `.chunks_exact()`,
+custom iterators, labels, `break`, and `continue` remain outside this subset.
 
 ## Moves and drops
 

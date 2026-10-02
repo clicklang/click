@@ -1409,26 +1409,79 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     assert_cli(&p, &["verify"]);
 }
 
+fn assert_slice_iterator_artifact(p: &Project, by_reference: bool) {
+    let bytes = fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap();
+    let artifact: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(artifact["schema"], 5);
+    let iterator = &artifact["functions"][0]["body"][1];
+    assert_eq!(iterator["kind"], "slice_for");
+    assert_eq!(iterator["iterator"], "__rust_iter_3_5");
+    assert_eq!(iterator["by_reference"], by_reference);
+    assert_eq!(iterator["slice"]["name"], "bytes");
+    assert_eq!(iterator["binding"]["name"], "byte");
+    assert_eq!(iterator["body"].as_array().unwrap().len(), 1);
+    assert_eq!(iterator["body"][0]["target"]["name"], "total");
+    // The typed operation retains the source body, with no invented progress
+    // declaration, checked index expression, or post-body counter increment.
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(!text.contains("__rust_iter_index"));
+    assert!(!text.contains("\"kind\":\"usize\""));
+    assert!(!text.contains("\"kind\":\"index\""));
+}
+
+#[test]
+fn rust_empty_slice_iterator_needs_no_read_authority() {
+    for expression in ["bytes", "bytes.iter()"] {
+        let source = format!(
+            "pub fn empty(bytes: &[u8]) -> i32 {{ for byte in {expression} {{ let _value = *byte; }} 0 }}"
+        );
+        let p = Project::new(&source);
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = "verifying \"borrow.rs\"; int32 empty(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 0u64; ensures result == 0; } by { execute_until(statement(6)); loop { invariant __rust_iter_1_37_remaining == 0; decreases __rust_iter_1_37_remaining; preserve by { execute(); close_invariants(); } } execute(); simp(); }";
+        C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+        assert!(
+            C0VerificationSession::new_program_prepared(
+                &sidecar.replace("bytes_len == 0u64", "bytes_len == 1u64"),
+                &prepared
+            )
+            .is_err()
+        );
+    }
+}
+
 #[test]
 fn rust_slice_for_sum_verifies_and_expands() {
     let p = Project::new(include_str!("../examples/rust-iterators/sum.rs"));
     refresh_import(&p.config()).unwrap();
+    assert_slice_iterator_artifact(&p, false);
     let prepared = load_import(&p.config()).unwrap();
     let sidecar =
         include_str!("../examples/rust-iterators/sum.click").replace("sum.rs", "borrow.rs");
     C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let copied_iter = Project::new(
+        &include_str!("../examples/rust-iterators/sum.rs")
+            .replace("in bytes {", "in bytes.iter() {"),
+    );
+    refresh_import(&copied_iter.config()).unwrap();
+    let copied_prepared = load_import(&copied_iter.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &copied_prepared).unwrap();
     for invalid in [
         sidecar.replace(
             "ensures to_integer(result) == old(prefix",
             "ensures to_integer(result) + 1 == old(prefix",
         ),
         sidecar.replace(
-            "decreases bytes_len - __rust_iter_index_3_5;",
-            "decreases __rust_iter_index_3_5;",
+            "decreases __rust_iter_3_5_remaining;",
+            "decreases -__rust_iter_3_5_remaining;",
         ),
         sidecar.replace(
-            "invariant __rust_iter_index_3_5 <= bytes_len;",
-            "invariant __rust_iter_index_3_5 < bytes_len;",
+            "invariant 0 <= __rust_iter_3_5_remaining and __rust_iter_3_5_remaining <= (int32)(uint32)bytes_len;",
+            "invariant 0 <= __rust_iter_3_5_remaining and __rust_iter_3_5_remaining < (int32)(uint32)bytes_len;",
+        ),
+        sidecar.replace(
+            "invariant __rust_iter_3_5_cursor == bytes + ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining);",
+            "invariant __rust_iter_3_5_cursor == bytes + ((int32)(uint32)bytes_len - __rust_iter_3_5_remaining + 1);",
         ),
         sidecar.replace("requires bytes_len <= 1000u64;", ""),
     ] {
@@ -1444,8 +1497,11 @@ fn rust_slice_for_sum_verifies_and_expands() {
 #[test]
 fn rust_slice_for_rejects_unsupported_iteration() {
     for source in [
-        "pub fn bad(bytes: &[u8]) { for byte in bytes {} }",
-        "pub fn bad(bytes: &[u8]) { for &byte in bytes.iter() {} }",
+        "pub fn bad(bytes: &[u8]) { for byte in bytes.iter().rev() {} }",
+        "pub fn bad(bytes: &mut [u8]) { for byte in bytes.iter_mut() {} }",
+        "pub fn bad(bytes: &mut [u8]) { for byte in bytes.iter() {} }",
+        "pub fn bad(bytes: &[u8]) { let iter = bytes.iter(); for byte in iter {} }",
+        "pub fn bad(mut bytes: &[u8]) { for byte in bytes.iter() {} }",
         "pub fn bad(bytes: &mut [u8]) { for byte in bytes {} }",
         "pub fn bad(mut bytes: &[u8]) { for &byte in bytes {} }",
         "pub fn bad(bytes: &[u8]) { 'outer: for &byte in bytes {} }",
@@ -1456,9 +1512,51 @@ fn rust_slice_for_rejects_unsupported_iteration() {
         let p = Project::new(source);
         let error = refresh_import(&p.config()).unwrap_err();
         assert!(
-            error.contains("Rust for loops") || error.contains("break and continue"),
+            error.contains("Rust for loops")
+                || error.contains("break and continue")
+                || error.contains("unsupported Rust type `std::slice::Iter"),
             "{error}"
         );
         assert!(!error.contains("panicked"), "{error}");
     }
+}
+
+#[test]
+fn rust_slice_iter_reference_sum_verifies_and_expands() {
+    let source = include_str!("../examples/rust-iter-references/sum.rs");
+    let sidecar =
+        include_str!("../examples/rust-iter-references/sum.click").replace("sum.rs", "borrow.rs");
+    // Shared references from both the implicit slice iterator and .iter()
+    // have the same checked address and dereference semantics.
+    for source in [source.to_string(), source.replace("bytes.iter()", "bytes")] {
+        let p = Project::new(&source);
+        refresh_import(&p.config()).unwrap();
+        assert_slice_iterator_artifact(&p, true);
+        let prepared = load_import(&p.config()).unwrap();
+        C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+        for invalid in [
+            sidecar.replace(
+                "ensures to_integer(result) == old(prefix",
+                "ensures to_integer(result) + 1 == old(prefix",
+            ),
+            sidecar.replace("requires bytes_len <= 1000u64;", ""),
+            sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+            sidecar.replace(
+                "decreases __rust_iter_3_5_remaining;",
+                "decreases -__rust_iter_3_5_remaining;",
+            ),
+        ] {
+            assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        }
+        if source.contains(".iter()") {
+            fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+            assert_cli(&p, &["profile"]);
+            assert_cli(&p, &["audit"]);
+            assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
+            assert_cli(&p, &["verify"]);
+        }
+    }
+    let p = Project::new("pub fn bad(bytes: &[u8]) { for byte in bytes.iter() { *byte = 0; } }");
+    let error = refresh_import(&p.config()).unwrap_err();
+    assert!(error.contains("cannot assign"), "{error}");
 }
