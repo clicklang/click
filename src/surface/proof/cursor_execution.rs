@@ -4859,6 +4859,11 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
         CStatement::ForStep { step, .. } => describe_statement_head(step),
         CStatement::Declare { name, .. } => format!("declare {name}"),
         CStatement::DeclareAggregate { name, .. } => format!("declare aggregate {name}"),
+        CStatement::Assign { name, expression }
+            if crate::surface::diagnostics::is_call_result_temporary(name) =>
+        {
+            describe_c_expression(expression)
+        }
         CStatement::Assign { name, expression } => {
             format!("{name} = {}", describe_c_expression(expression))
         }
@@ -4866,19 +4871,28 @@ pub(super) fn describe_statement_head(statement: &CStatement) -> String {
             target,
             function_name,
             arguments,
-        } => format!(
-            "{target} = {function_name}({})",
-            arguments
-                .iter()
-                .map(describe_c_expression)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        } => {
+            let call = format!(
+                "{}({})",
+                crate::surface::diagnostics::describe_called_function(function_name),
+                arguments
+                    .iter()
+                    .map(describe_c_expression)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            if crate::surface::diagnostics::is_call_result_temporary(target) {
+                call
+            } else {
+                format!("{target} = {call}")
+            }
+        }
         CStatement::Call {
             function_name,
             arguments,
         } => format!(
-            "{function_name}({})",
+            "{}({})",
+            crate::surface::diagnostics::describe_called_function(function_name),
             arguments
                 .iter()
                 .map(describe_c_expression)

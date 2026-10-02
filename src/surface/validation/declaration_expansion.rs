@@ -178,6 +178,8 @@ fn matched_arm_child_slots(definition: &ResourceDefinition) -> BTreeMap<String, 
 pub(in crate::surface) fn expand_declared_resource_clauses(
     mut file: ClickFile,
 ) -> Result<ClickFile, ClickError> {
+    // A failure before the first declaration belongs to none of them.
+    crate::surface::clear_ambient_proof_source();
     let mut resource_definitions = file
         .resource_definitions()
         .iter()
@@ -320,6 +322,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
     }
 
     for theorem in &mut file.theorem_definitions {
+        crate::surface::enter_ambient_declaration(theorem.name());
         theorem.requires = theorem
             .requires
             .drain(..)
@@ -334,6 +337,7 @@ pub(in crate::surface) fn expand_declared_resource_clauses(
             .collect::<Result<Vec<_>, _>>()?;
     }
 
+    crate::surface::clear_ambient_proof_source();
     Ok(file)
 }
 
@@ -341,6 +345,7 @@ fn expand_declared_resources_in_function_block(
     function: &mut FunctionBlock,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(), ClickError> {
+    crate::surface::enter_ambient_declaration(function.signature().name());
     let declared_binders = function
         .requires
         .iter()
@@ -399,6 +404,7 @@ fn expand_declared_resource_definition(
     mut definition: ResourceDefinition,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceDefinition, ClickError> {
+    crate::surface::enter_ambient_declaration(definition.name());
     if !definition.resource_parameters.is_empty() && definition.fields().is_empty() {
         return Err(ClickError::new(
             "resource parameters currently require a resource with fields",

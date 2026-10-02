@@ -2301,7 +2301,7 @@ impl<'a> Proof<'a> {
                         message.push_str(&format!("\n  {mismatch}"));
                     }
                     let mut labels =
-                        crate::surface::proof_diagnostics::render::SnapshotLabels::default();
+                        crate::surface::proof_diagnostics::render::SnapshotLabels::ambient();
                     message.push_str(&format!(
                         "\n  the two spell alike but are different propositions; with each \
                          memory labelled they read\n  equality: {}\n  goal: {}",

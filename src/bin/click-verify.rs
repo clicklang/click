@@ -446,7 +446,8 @@ fn verify_changed_sidecar(
     }
     let (selected, reused) = if full_rebuild {
         (
-            c0_project_selected_proof_names(&project, &refs).map_err(click_message)?,
+            c0_project_selected_proof_names(&project, &refs)
+                .map_err(|error| located_click_message(error, sidecar, &project, 0))?,
             Vec::new(),
         )
     } else if let Some((baseline_click, baseline_sources)) =
@@ -464,7 +465,8 @@ fn verify_changed_sidecar(
         reasons
             .push("sidecar or one of its declared C sources is absent at the baseline".to_string());
         (
-            c0_project_selected_proof_names(&project, &refs).map_err(click_message)?,
+            c0_project_selected_proof_names(&project, &refs)
+                .map_err(|error| located_click_message(error, sidecar, &project, 0))?,
             Vec::new(),
         )
     };
@@ -485,7 +487,8 @@ fn verify_changed_sidecar(
     }
     let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
-        c0_project_summary(&project, &refs).map_err(click_message)?
+        c0_project_summary(&project, &refs)
+            .map_err(|error| located_click_message(error, sidecar, &project, 0))?
     };
     let verified_theorems = if full_rebuild {
         verify_c0_project(&project, &refs)
@@ -522,6 +525,66 @@ fn imported_project_rebuild_reason(project: &ClickProject) -> Option<&'static st
 
 fn click_message(error: click::surface::ClickError) -> String {
     error.concise_report()
+}
+
+/// Where the declaration a failure is about is written: the one the failure
+/// records, or else the last name its message quotes that the source
+/// declares. A check that fails outside the per-declaration pass still names
+/// what it refused (``resource `cell` has fields``, ``in theorem `t` ``), and
+/// the declaration it names is the source to show.
+fn failure_declaration_position(
+    error: &ClickError,
+    report: &str,
+    source: &str,
+) -> Option<click::surface::SourcePosition> {
+    let recorded = || {
+        error.proof_declaration().and_then(|declaration| {
+            click::surface::click_declaration_source_position(source, declaration)
+        })
+    };
+    // A proof failure records the declaration it arose in. A declaration
+    // check records only which declaration was being visited, which a check
+    // made between visits does not update, so what its message names wins.
+    if error.kind() == ClickErrorKind::Proof
+        && let Some(position) = recorded()
+    {
+        return Some(position);
+    }
+    report
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .filter(|quoted| {
+            !quoted.is_empty()
+                && quoted
+                    .chars()
+                    .all(|character| character.is_alphanumeric() || character == '_')
+        })
+        .find_map(|name| click::surface::click_declaration_source_position(source, name))
+        .or_else(recorded)
+}
+
+/// [`click_message`], followed by where the declaration the failure is about
+/// is written when the failure records one. A declaration that fails its
+/// checks is reported before any proof runs, so it has no tactic to show.
+fn located_click_message(
+    error: click::surface::ClickError,
+    sidecar: &Path,
+    project: &ClickProject,
+    line_offset: usize,
+) -> String {
+    let mut report = error.concise_report();
+    if let Some(source) = project.entry_source()
+        && let Some(position) = failure_declaration_position(&error, &report, source)
+        && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
+    {
+        report.push_str("\n\n");
+        report.push_str(&excerpt);
+    }
+    report
 }
 
 fn shell_word(value: &str) -> String {
@@ -576,11 +639,20 @@ fn proof_error_report(
                 .and_then(|claim| claim.split_once('.'))
                 .map(|(declaration, _)| declaration)
         });
-        if error.kind() == ClickErrorKind::Proof
+        if matches!(error.kind(), ClickErrorKind::Proof | ClickErrorKind::Type)
             && let Some(source) = project.entry_source()
-            && let Some(declaration) = declaration
-            && let Some(position) =
-                click::surface::click_declaration_source_position(source, declaration)
+            && let Some(position) = declaration
+                .filter(|_| error.kind() == ClickErrorKind::Proof)
+                .and_then(|declaration| {
+                    click::surface::click_declaration_source_position(source, declaration)
+                })
+                // A failure that names a C statement is located already; one
+                // that names nothing else shows the declaration it quotes.
+                .or_else(|| {
+                    (!report.contains("C statement at"))
+                        .then(|| failure_declaration_position(error, &report, source))
+                        .flatten()
+                })
             && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
         {
             context.push(excerpt);
@@ -1234,15 +1306,14 @@ fn verify_file_within_limits(
     let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
         match &inputs {
-            CInput::Bundle(sources) => {
-                c0_project_summary(&project, &source_refs(sources)).map_err(click_message)?
-            }
-            CInput::Prepared(imports) => {
-                c0_prepared_project_summary(&project, imports).map_err(click_message)?
-            }
-            CInput::PreparedProgram(import) => {
-                program_prepared_project_summary(&project, import).map_err(click_message)?
-            }
+            CInput::Bundle(sources) => c0_project_summary(&project, &source_refs(sources))
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::Prepared(imports) => c0_prepared_project_summary(&project, imports)
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::PreparedProgram(import) => program_prepared_project_summary(&project, import)
+                .map_err(|error| {
+                located_click_message(error, click_path, &project, line_offset)
+            })?,
         }
     };
     let (verified, successful_trace) = {
@@ -1414,15 +1485,14 @@ fn verify_location_within_limits(
     let summary = {
         let _phase = VerificationPhase::new("external dependency summary");
         match &inputs {
-            CInput::Bundle(sources) => {
-                c0_project_summary(&project, &source_refs(sources)).map_err(click_message)?
-            }
-            CInput::Prepared(imports) => {
-                c0_prepared_project_summary(&project, imports).map_err(click_message)?
-            }
-            CInput::PreparedProgram(import) => {
-                program_prepared_project_summary(&project, import).map_err(click_message)?
-            }
+            CInput::Bundle(sources) => c0_project_summary(&project, &source_refs(sources))
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::Prepared(imports) => c0_prepared_project_summary(&project, imports)
+                .map_err(|error| located_click_message(error, click_path, &project, line_offset))?,
+            CInput::PreparedProgram(import) => program_prepared_project_summary(&project, import)
+                .map_err(|error| {
+                located_click_message(error, click_path, &project, line_offset)
+            })?,
         }
     };
     let verified = {

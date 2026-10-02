@@ -2193,6 +2193,45 @@ pub(in crate::surface) fn describe_resource_clause(resource: &ResourceClause) ->
     }
 }
 
+/// The C spelling of a function-pointer type, read back from the kernel's
+/// packed signature identity: a leading one, then the return type and each
+/// parameter as a base-46 digit whose upper half marks a `const` pointee.
+fn describe_callback_signature(signature: crate::kernel::CallbackSignature) -> String {
+    const TYPES: [&str; 23] = [
+        "void", "int32", "uint8", "uint32", "int32*", "uint8*", "int32**", "uint8**", "int16",
+        "uint16", "int64", "uint64", "int16*", "uint16*", "uint32*", "int64*", "uint64*", "float",
+        "double", "bool", "void*", "int8", "int8*",
+    ];
+    let Ok(mut encoded) = signature.to_string().parse::<u128>() else {
+        return "a function pointer".to_string();
+    };
+    let throws = encoded & (1 << 79) != 0;
+    encoded &= !(1 << 79);
+    let mut digits = Vec::new();
+    while encoded > 0 {
+        digits.push((encoded % 46) as usize);
+        encoded /= 46;
+    }
+    // The digits were pushed least significant first: the sentinel is last
+    // and the return type is just before it.
+    if digits.len() < 2 || digits.pop() != Some(1) {
+        return "a function pointer of unspecified type".to_string();
+    }
+    let mut spelled = digits.into_iter().rev().map(|digit| {
+        if digit >= 23 {
+            format!("const {}", TYPES[digit - 23])
+        } else {
+            TYPES[digit].to_string()
+        }
+    });
+    let return_type = spelled.next().unwrap_or_default();
+    let parameters = spelled.collect::<Vec<_>>().join(", ");
+    format!(
+        "{return_type} (*)({parameters}){}",
+        if throws { " throwing int32" } else { "" }
+    )
+}
+
 pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
     match c_type {
         C0Type::Bool => "bool".to_string(),
@@ -2232,7 +2271,7 @@ pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
         C0Type::UInt64PointerPointer => "uint64**".to_string(),
         C0Type::Float32PointerPointer => "float**".to_string(),
         C0Type::Float64PointerPointer => "double**".to_string(),
-        C0Type::FunctionPointer(signature) => format!("function-pointer({signature})"),
+        C0Type::FunctionPointer(signature) => describe_callback_signature(signature),
         C0Type::PointerArray(element, length) => {
             format!("{}[{length}]", element.decayed_type_spelling())
         }

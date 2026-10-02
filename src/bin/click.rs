@@ -581,6 +581,40 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// A type error names the declaration it rejects, so the report shows
+    /// that declaration's line rather than no location at all.
+    #[test]
+    fn verify_locates_a_type_error_at_its_declaration() {
+        let directory =
+            std::env::temp_dir().join(format!("click-type-locations-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("apply.c"),
+            "int32 keep(int32 x) { return x; }\nint32 apply(int32 (*callback)(int32), int32 value) {\n    return callback(value);\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("apply.click");
+        fs::write(
+            &sidecar,
+            "verifying \"apply.c\";\n\ncontract int32 Binary(int32 left, int32 right) {\n    ensures result == left + right;\n}\n\nint32 keep(int32 x) {\n    ensures result == x;\n}\n\nint32 apply(int32 (*callback)(int32), int32 value) {\n    requires Binary(callback);\n}\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("expects int32 (*)(int32, int32), got int32 (*)(int32)"),
+            "{error}"
+        );
+        assert!(
+            error.contains("apply.click:11:1")
+                && error.contains("11 | int32 apply(int32 (*callback)(int32), int32 value) {"),
+            "{error}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn trace_shows_the_whole_failed_multiline_tactic() {
         let directory =

@@ -10,5 +10,5 @@ theorem bad(callback: int* (*)(int*)) executes callback(int* p) {
 ```
 
 ```expect
-fail: expects function-pointer
+fail: expects const int32* (*)(int32*), got int32* (*)(int32*)
 ```
