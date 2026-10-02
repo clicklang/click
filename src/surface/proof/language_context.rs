@@ -163,6 +163,10 @@ pub(in crate::surface::proof) struct ExecutionProofConstants {
     #[allow(dead_code)]
     pub(in crate::surface::proof) caller_source_owner: Option<CallerSourceOwnerId>,
     pub(in crate::surface::proof) function_entry_state: Option<CState>,
+    /// The entry this proof was built from, handed on to the theorems it
+    /// issues. `None` for a proof that is not a function's contract proof.
+    pub(in crate::surface::proof) entry_context:
+        Option<Arc<crate::surface::proof::ProofEntryContext>>,
     /// Immutable file-scoped lookup for exact ordinary callee source
     /// requirements. Descendant proof contexts share this Arc.
     #[allow(dead_code)]
@@ -185,6 +189,7 @@ impl Default for ExecutionProofConstants {
             caller_requirement_index: Arc::new(CallerRequirementIndex::default()),
             caller_source_owner: None,
             function_entry_state: None,
+            entry_context: None,
             function_source_registry: Arc::new(FunctionSourceRegistry::default()),
             grouped_contract: false,
             nested_tactic_capture: None,

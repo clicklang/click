@@ -382,6 +382,11 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         function_source_registry.resource_semantics_mode(),
     )
     .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+    let entry_context = Arc::new(ProofEntryContext {
+        state: state.clone(),
+        arguments: arguments.clone(),
+        pure_facts: pure_facts.clone(),
+    });
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
         function_block,
@@ -461,6 +466,7 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         caller_requirement_index: Arc::new(caller_requirement_index),
         caller_source_owner: Some(caller_source_owner),
         function_entry_state: Some(function_entry_state),
+        entry_context: Some(entry_context),
         function_source_registry,
         grouped_contract: false,
         invariant_body_context: None,
@@ -652,6 +658,11 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         function_source_registry.resource_semantics_mode(),
     )
     .map_err(|error| error.at_declaration(function_block.signature().name()))?;
+    let entry_context = Arc::new(ProofEntryContext {
+        state: state.clone(),
+        arguments: arguments.clone(),
+        pure_facts: pure_facts.clone(),
+    });
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
         function_block,
@@ -725,6 +736,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         caller_requirement_index: Arc::new(caller_requirement_index),
         caller_source_owner: Some(caller_source_owner),
         function_entry_state: Some(function_entry_state),
+        entry_context: Some(entry_context),
         function_source_registry,
         grouped_contract: true,
         invariant_body_context: None,
@@ -4938,6 +4950,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 &provisional_checked_execution,
                             ),
                             checked_proposition,
+                            entry_context: proof_context.constants.entry_context.clone(),
                         });
                     }
                     // Expansion prints what verification holds: the tactics come out

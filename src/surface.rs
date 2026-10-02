@@ -5663,6 +5663,9 @@ pub struct VerifiedCTheorem {
     pub(crate) checked_proposition: Option<CCheckedFunctionProposition>,
     pub(crate) frontier_loop_clauses: Vec<StructuralClause>,
     pub(crate) frontier_loop_rules: Vec<CVerifiedLoopRule>,
+    /// The entry the proof that issued this theorem was built from, shared
+    /// by every theorem of that proof.
+    pub(in crate::surface) entry_context: Option<std::sync::Arc<proof::ProofEntryContext>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
