@@ -20,6 +20,7 @@ const MODELED_REALLOC: &str = "realloc";
 fn error(message: impl Into<String>) -> CTerminationError {
     CTerminationError {
         message: message.into(),
+        function: None,
     }
 }
 
@@ -4269,6 +4270,38 @@ pub fn c_verified_function_termination_rules(
     declared_diverging: &BTreeSet<String>,
     diverging_contracts: &BTreeSet<String>,
 ) -> Result<CTerminationVerdicts, CTerminationError> {
+    // The function being decided, kept only to say where a failed check
+    // was: one name per function visited.
+    let deciding = std::cell::Cell::new(None);
+    termination_rules_recording_function(
+        partial_rules,
+        plan_entries,
+        verified_loop_rules,
+        inline_bodies,
+        heights,
+        assumed_terminating,
+        declared_diverging,
+        diverging_contracts,
+        &deciding,
+    )
+    .map_err(|mut error| {
+        error.function = deciding.get().map(str::to_owned);
+        error
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn termination_rules_recording_function<'a>(
+    partial_rules: &'a [CVerifiedFunctionRule],
+    plan_entries: &[CFunctionTerminationPlan],
+    verified_loop_rules: &BTreeMap<String, Vec<CVerifiedLoopRule>>,
+    inline_bodies: &[&'a CFunction],
+    heights: &BTreeMap<String, usize>,
+    assumed_terminating: &BTreeSet<String>,
+    declared_diverging: &BTreeSet<String>,
+    diverging_contracts: &BTreeSet<String>,
+    deciding: &std::cell::Cell<Option<&'a str>>,
+) -> Result<CTerminationVerdicts, CTerminationError> {
     let (functions, calls) = termination_call_graph(partial_rules, inline_bodies);
     let ruled = partial_rules
         .iter()
@@ -4318,6 +4351,7 @@ pub fn c_verified_function_termination_rules(
                 charge_termination_work(1);
                 let name = *name;
                 let function = functions[name];
+                deciding.set(Some(function.name()));
                 let mut refusal = None;
                 let mut recursive_callees = BTreeSet::<String>::new();
                 let diverging_objects = diverging_contract_objects(function, diverging_contracts);

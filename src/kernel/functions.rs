@@ -5513,6 +5513,23 @@ fn execute_verified_function_applications_with_suspension(
                 post_state.population_effects.creation.as_ref(),
             );
         }
+        return_state = match checked_returned_control_wrappers(
+            return_state,
+            &output_resources,
+            interface,
+            &effective_assumptions,
+        ) {
+            Ok(state) => state,
+            Err(error) => {
+                paths.push(CFunctionPath {
+                    outcome: CFunctionOutcome::RuntimeError(error),
+                    facts,
+                    obligations,
+                    loan_evidence: empty_checked_loan_evidence_sequence(),
+                });
+                continue;
+            }
+        };
         return_state.next_local_frame = post_state.next_local_frame;
         return_state.next_local_lifetime = post_state.next_local_lifetime;
         let outcome = CFunctionOutcome::Return {
@@ -5765,6 +5782,37 @@ fn source_load_snapshot_for_proposition(
         }
     }
     Ok(snapshot)
+}
+
+/// Register only the controls explicitly returned by this call. Custody and
+/// their bodies have already crossed the checked resource-transfer boundary.
+fn checked_returned_control_wrappers(
+    mut state: CState,
+    frontier: &ResourceContext,
+    interface: &CFunctionContractInterface,
+    assumptions: &PureFactContext,
+) -> Result<CState, CRuntimeError> {
+    if !state.uses_population_authority_semantics() {
+        return Ok(state);
+    }
+    for fact in frontier.facts() {
+        let CResourceFact::Own(CResource::Composite { name, .. }, _) = fact else {
+            continue;
+        };
+        let Some(definition) = interface.composite_resource_definition(name) else {
+            continue;
+        };
+        if definition
+            .contains()
+            .iter()
+            .any(|child| matches!(child.term(), CResourceTerm::PopulationAuthority { .. }))
+        {
+            state = state
+                .with_checked_current_control_wrapper(fact, definition, assumptions)
+                .map_err(CRuntimeError::FunctionContract)?;
+        }
+    }
+    Ok(state)
 }
 
 /// Retains only the transfer's explicit memory delta beside the persistent
@@ -29479,6 +29527,21 @@ fn function_outcome_from_body_with_resource_transfer(
         caller_state.population_effects.creation.as_ref(),
         state.population_effects.creation.as_ref(),
     );
+    return_state = match checked_returned_control_wrappers(
+        return_state,
+        &output_resources,
+        function.contract_interface(),
+        assumptions,
+    ) {
+        Ok(state) => state,
+        Err(error) => {
+            return Ok((
+                CFunctionOutcome::RuntimeError(error),
+                obligations,
+                loan_evidence,
+            ));
+        }
+    };
     return_state.next_local_frame = state.next_local_frame;
     return_state.next_local_lifetime = state.next_local_lifetime;
     Ok((

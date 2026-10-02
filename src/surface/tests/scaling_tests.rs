@@ -4020,9 +4020,9 @@ fn many_viewed_arrays(size: usize, owned: bool) -> (String, String) {
 /// explicit-separation veto first, which walks every separation: `N^3` at
 /// entry (1,542,282 units at `N = 32`, against 140,617 now).
 ///
-/// Two curves are pinned near-linear: the derived-fact coverage check, which
-/// now asks the range written against the fact's own base first, and the
-/// veto, which is now asked only of a pair another route covers. The total is
+/// The veto's curve is pinned near-linear: it is now asked only of a pair
+/// another route covers. Each `viewable` fact a proof starts from is one the
+/// contract entry states outright, so no coverage lookup runs for it. The total is
 /// held under a quadratic ceiling: installing borrowed inputs still asks
 /// every held view of the block once per view
 /// (`ResourceContext::view_occurrences_for_fact`, which must see every
@@ -4046,32 +4046,19 @@ fn contract_entry_with_many_views_beside_an_owner_is_not_cubic() {
         })
         .collect::<Vec<_>>();
 
-    let curve = |name: &str, require_reached: bool| {
+    let curve = |name: &str| {
         samples
             .iter()
-            .map(|sample| {
-                let work = sample.named_work.get(name).copied();
-                if require_reached {
-                    assert!(work.is_some(), "fixture did not reach {name}: {sample:?}");
-                }
-                ScalingSample {
-                    size: sample.size,
-                    work: work.unwrap_or(0),
-                    named_work: BTreeMap::new(),
-                }
+            .map(|sample| ScalingSample {
+                size: sample.size,
+                work: sample.named_work.get(name).copied().unwrap_or(0),
+                named_work: BTreeMap::new(),
             })
             .collect::<Vec<_>>()
     };
     assert_near_linear_scaling(
-        "derived entry fact resource check beside many views",
-        &curve("operation `derived fact resource check`", true),
-    );
-    assert_near_linear_scaling(
         "explicit-separation veto beside many views",
-        &curve(
-            "operation `memory range coverage: explicit separation`",
-            false,
-        ),
+        &curve("operation `memory range coverage: explicit separation`"),
     );
     // A quadratic curve quadruples per doubling and a cubic one multiplies
     // by eight; 4.5 separates them with room for fixed-cost noise.

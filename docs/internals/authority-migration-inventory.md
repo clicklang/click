@@ -99,13 +99,17 @@ than new syntax; reversed summands retain all domain checks. Kernel imports
 reject missing ownership, multiple selected inputs, and wrong pool identity.
 `authority_pool_control_init_nested.md` packages explicitly passed empty
 populations through standalone arbitrary-capacity initialization and a nested
-capacity-two call. Numerical unary batches compose with unit updates without
+capacity-two call. Both prove the ordinary `valid_pool` predicate after
+replacing storage with control; the caller also observes the current slot count.
+The checked rewrite and helper return authenticate only their explicit control
+frontier and preserve existing population identity, totals, and custody. An
+unowned wrapper or a wrapper without authenticated authority cannot supply
+count permission. Numerical unary batches compose with unit updates without
 per-unit iteration; tests reject overflow, insufficient custody, and use after
 lending authority. Zero quantities do not grant member rights.
 
 The original bounded-pool sidecar still selects legacy semantics. Its migration
-needs current count observations after storage/control wrapper replacement,
-multiple exact-member custody under an imported wildcard scope, symbolic batch
+needs multiple exact-member custody under an imported wildcard scope, symbolic batch
 forwarding, and the remaining resize/transfer/cleanup pipeline checks. The
 roadmap in `issues/authority-migration.md` records these as
 remaining dependencies; the new fixtures are partial progress, not evidence

@@ -5750,6 +5750,53 @@ struct ReportDetail {
     /// been checked: a contract that could not be set up at entry, or an
     /// `executes` theorem refused before its proof.
     declaration: Option<String>,
+    /// The written tactic being checked when a failure with no proof-step
+    /// site of its own arose: its claim and source occurrence.
+    source_tactic: Option<(String, Vec<usize>)>,
+}
+
+/// What the verifier is working on, for locating a failure that carries no
+/// site of its own. This is diagnostics only: nothing reads it to decide a
+/// proof.
+#[derive(Default)]
+struct AmbientProofSource {
+    declaration: Option<String>,
+    tactic: Option<(String, usize)>,
+}
+
+thread_local! {
+    static AMBIENT_PROOF_SOURCE: std::cell::RefCell<AmbientProofSource> =
+        std::cell::RefCell::new(AmbientProofSource::default());
+}
+
+/// Starts verifying the Click declaration `name`; no tactic of it has been
+/// addressed yet.
+pub(crate) fn enter_ambient_declaration(name: &str) {
+    AMBIENT_PROOF_SOURCE.with(|ambient| {
+        *ambient.borrow_mut() = AmbientProofSource {
+            declaration: Some(name.to_owned()),
+            tactic: None,
+        };
+    });
+}
+
+/// Records that `claim_label`'s source tactic `source_index` is being
+/// checked.
+pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize) {
+    AMBIENT_PROOF_SOURCE.with(|ambient| {
+        let mut ambient = ambient.borrow_mut();
+        if ambient
+            .tactic
+            .as_ref()
+            .is_none_or(|(claim, index)| claim != claim_label || *index != source_index)
+        {
+            ambient.tactic = Some((claim_label.to_owned(), source_index));
+        }
+    });
+}
+
+pub(crate) fn clear_ambient_proof_source() {
+    AMBIENT_PROOF_SOURCE.with(|ambient| *ambient.borrow_mut() = AmbientProofSource::default());
 }
 
 #[derive(Debug)]
@@ -7345,6 +7392,46 @@ impl ClickError {
     /// written.
     pub fn proof_declaration(&self) -> Option<&str> {
         self.report_detail.as_ref()?.declaration.as_deref()
+    }
+
+    /// The claim and source tactic path the terminal report excerpts: the
+    /// failing step's own site, or else the tactic that was being checked
+    /// when a failure with no site arose.
+    pub fn proof_source_site(&self) -> Option<(&str, &[usize])> {
+        if let (Some(claim), Some(path)) =
+            (self.proof_claim_label(), self.proof_source_tactic_path())
+        {
+            return Some((claim, path));
+        }
+        let (claim, path) = self.report_detail.as_ref()?.source_tactic.as_ref()?;
+        Some((claim, path))
+    }
+
+    /// Locates a proof failure that names no source by what the verifier
+    /// was working on: the tactic being checked, or else the declaration
+    /// being verified. A failure that already has a site keeps it.
+    pub(crate) fn located_by_ambient_source(mut self) -> Self {
+        if self.kind != ClickErrorKind::Proof
+            || self.proof_source_site().is_some()
+            || self.proof_declaration().is_some()
+        {
+            return self;
+        }
+        let (declaration, tactic) = AMBIENT_PROOF_SOURCE.with(|ambient| {
+            let ambient = ambient.borrow();
+            (ambient.declaration.clone(), ambient.tactic.clone())
+        });
+        if declaration.is_none() && tactic.is_none() {
+            return self;
+        }
+        let detail = std::sync::Arc::make_mut(self.report_detail.get_or_insert_default());
+        match tactic {
+            Some((claim, source_index)) => {
+                detail.source_tactic = Some((claim, vec![source_index]));
+            }
+            None => detail.declaration = declaration,
+        }
+        self
     }
 
     /// Records the Click declaration this failure is about. A failure

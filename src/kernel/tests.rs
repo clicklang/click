@@ -85,7 +85,6 @@ fn certify_contract_with_kernel_artifacts(
         state,
         function,
         arguments,
-        derived_entry_facts,
         environment,
         execution_semantics,
         mode,

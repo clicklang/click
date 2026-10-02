@@ -563,14 +563,28 @@ fn proof_error_report(
             context.push(excerpt);
         }
     }
-    // A contract that could not be set up at entry failed before any tactic
-    // or C statement, so the report shows the block that states it.
-    if let Some(source) = project.entry_source()
-        && let Some(function) = error.proof_declaration()
-        && let Some(position) = click::surface::click_declaration_source_position(source, function)
-        && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
+    if context.is_empty()
+        || !context
+            .iter()
+            .any(|line| line.starts_with("tactic@") || line.starts_with("  --> "))
     {
-        context.push(excerpt);
+        // No tactic of the proof could be shown. A failure that knows its
+        // declaration, or at least its claim, shows where that is written.
+        let declaration = error.proof_declaration().or_else(|| {
+            error
+                .proof_claim_label()
+                .and_then(|claim| claim.split_once('.'))
+                .map(|(declaration, _)| declaration)
+        });
+        if error.kind() == ClickErrorKind::Proof
+            && let Some(source) = project.entry_source()
+            && let Some(declaration) = declaration
+            && let Some(position) =
+                click::surface::click_declaration_source_position(source, declaration)
+            && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
+        {
+            context.push(excerpt);
+        }
     }
     if !context.is_empty() {
         report.push_str("\n\n");
@@ -711,8 +725,7 @@ fn proof_source_position(
     inputs: &CInput,
     source: &str,
 ) -> Option<click::surface::SourcePosition> {
-    let claim = error.proof_claim_label()?;
-    let path = error.proof_source_tactic_path()?;
+    let (claim, path) = error.proof_source_site()?;
     proof_source_position_for_path(claim, path, project, inputs, source)
 }
 

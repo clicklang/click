@@ -3805,6 +3805,7 @@ fn fold_composite_resources_on_outcome_with_facts(
         })?;
         let mut closing_view = false;
         let mut authority_closing_fact_state = None;
+        let mut authority_control_definition = None;
         let mut folded_representation_already_present = false;
         let mut folded_authority_occurrence = None;
         let authority_control_body = guard_state.uses_population_authority_semantics()
@@ -3901,6 +3902,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                             describe_resource_clause(resource)
                         ))
                     })?;
+                authority_control_definition = Some(definition.clone());
             } else if state.uses_population_authority_semantics() {
                 // An ordinary wrapper transfers its existing children without
                 // installing a legacy population ledger.
@@ -4422,6 +4424,16 @@ fn fold_composite_resources_on_outcome_with_facts(
             };
             folded_authority_occurrence = inserted_occurrence;
             post_state = post_state.with_resource_context(resources);
+            if let Some(definition) = authority_control_definition.as_ref() {
+                post_state = post_state
+                    .with_checked_current_control_wrapper(
+                        &abstract_resource,
+                        definition,
+                        &assumptions,
+                    )
+                    .map_err(ClickError::new)?;
+            }
+
             if let (Some(occurrence), Some(binding)) =
                 (folded_authority_occurrence, body_loan_dependency.clone())
             {

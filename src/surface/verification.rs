@@ -2119,7 +2119,29 @@ pub(in crate::surface) fn verify_c0_sources_with_environment(
     )
 }
 
+/// [`verify_c0_sources_in_context`], with a proof failure that names no
+/// source located by what was being verified when it arose.
 fn verify_c0_sources_with_context(
+    click_source: &str,
+    c_sources: &CSourceContext<'_>,
+    verification_target: Option<VerificationTarget>,
+    initial_function_environment: Option<CExecutionEnvironment>,
+    expansion_capture: Option<&mut ExpansionCapture>,
+    resolved_file: Option<ClickFile>,
+) -> Result<(Vec<VerifiedCTheorem>, CExecutionEnvironment), ClickError> {
+    crate::surface::clear_ambient_proof_source();
+    verify_c0_sources_in_context(
+        click_source,
+        c_sources,
+        verification_target,
+        initial_function_environment,
+        expansion_capture,
+        resolved_file,
+    )
+    .map_err(ClickError::located_by_ambient_source)
+}
+
+fn verify_c0_sources_in_context(
     click_source: &str,
     c_sources: &CSourceContext<'_>,
     verification_target: Option<VerificationTarget>,
@@ -2522,6 +2544,7 @@ fn verify_c0_sources_with_context(
     }
     let mut early_thread_termination_published = false;
     for function_block in ordered_function_blocks {
+        crate::surface::enter_ambient_declaration(function_block.signature().name());
         check_verification_deadline()?;
         // Load-variable origins are first-seen per verified function: an
         // origin minted while verifying an earlier function belongs to a
@@ -3225,7 +3248,6 @@ fn verify_c0_sources_with_context(
                             certification_state.clone(),
                             contract_function.clone(),
                             certification_arguments.clone(),
-                            certification_facts.into_vec(),
                             certification_function_environment,
                             if has_frontier_loop_rules {
                                 CExecutionSemantics::APPLY_VERIFIED_RULES
@@ -3441,6 +3463,8 @@ fn verify_c0_sources_with_context(
         }
         check_verification_deadline()?;
     }
+    // What follows is about the whole run, not the last function verified.
+    crate::surface::clear_ambient_proof_source();
 
     let assumed_unselected_names = unselected_function_names.clone().unwrap_or_default();
     if let Some(unselected) = unselected_function_names {
@@ -3499,7 +3523,15 @@ fn verify_c0_sources_with_context(
         &declared_diverging,
         &diverging_contracts,
     )
-    .map_err(|error| ClickError::new(format!("could not certify C termination: {error}")))?;
+    .map_err(|error| {
+        let located = ClickError::new(format!("could not certify C termination: {error}"));
+        match error.function() {
+            Some(function) => {
+                located.at_declaration(function.split_once('#').map_or(function, |(name, _)| name))
+            }
+            None => located,
+        }
+    })?;
     // An `extern` contract has no body to answer for its marker: the
     // declaration is the whole of what is known about it.
     let extern_names = external_and_user_function_blocks
@@ -3516,7 +3548,8 @@ fn verify_c0_sources_with_context(
         let name = name.split_once('#').map_or(name.as_str(), |(name, _)| name);
         return Err(ClickError::new(format!(
             "`{name}` is declared `diverges`, but every loop it runs is ranked and every call it makes descends; remove the marker"
-        )));
+        ))
+        .at_declaration(name));
     }
     // A function whose address is taken may be reached through any function
     // pointer, so it must return without going through one itself; otherwise
@@ -3543,7 +3576,8 @@ fn verify_c0_sources_with_context(
         };
         return Err(ClickError::new(format!(
             "could not certify termination for `{taker}`: it takes the address of `{callback}`, and a function reached through a function pointer must return without calling through one: {lacks}"
-        )));
+        ))
+        .at_declaration(&taker));
     }
     // A caller refused for its callee is a consequence, so a function refused
     // for a defect of its own is reported first when the run has one.
@@ -3568,7 +3602,8 @@ fn verify_c0_sources_with_context(
                 &declared_diverging,
                 unsuitable_callbacks.first(),
             )
-        )));
+        ))
+        .at_declaration(name));
     }
     function_environment =
         function_environment.with_verified_function_termination_rules(termination_rules);

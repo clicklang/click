@@ -3712,6 +3712,9 @@ impl CRecursionAnchor {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CTerminationError {
     pub(super) message: String,
+    /// The function whose termination was being decided when the check
+    /// failed, for a diagnostic to locate. It is not part of the verdict.
+    pub(super) function: Option<String>,
 }
 
 impl CVerifiedFunctionTerminationRule {
@@ -9093,8 +9096,10 @@ pub struct CFunctionContractExecution {
 ///
 /// Callers may retain and present this artifact, but cannot manufacture or
 /// alter its execution metadata. Before reusing its checked frontier,
-/// contract certification rebuilds the entry assumptions from the contract
-/// and proves each of this artifact's assumptions from them again.
+/// contract certification checks that the contract entry states each of this
+/// artifact's assumptions: the proof started from that entry, so the check
+/// is a lookup, and what it can refuse is an entry case the proof assumed
+/// without covering the others.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CCheckedFunctionExecution {
     pub(super) state: CState,

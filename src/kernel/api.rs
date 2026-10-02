@@ -116,11 +116,9 @@ mod algebraic_cases;
 pub(in crate::kernel) use algebraic_cases::algebraic_constructor_case_equations;
 pub use algebraic_cases::algebraic_constructor_cases;
 use contract_certification::{
-    c_function_contract_certification_assumptions,
     certification_proves_condition_from_verified_pure_implication,
-    certification_proves_context_free_forall, certification_proves_proposition,
-    contract_resource_condition_cases, prove_symbolic_c_function_verification_paths,
-    resources_certify_loadability,
+    certification_proves_proposition, contract_resource_condition_cases,
+    prove_symbolic_c_function_verification_paths, resources_certify_loadability,
 };
 
 pub fn int32(bits: impl Into<Bitvector32Term>) -> CValue {
@@ -5612,7 +5610,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
     state: CState,
     function: CFunction,
     arguments: Vec<CExpression>,
-    derived_entry_facts: Vec<Proposition>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
     mode: CFunctionContractExecutionMode,
@@ -5622,7 +5619,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts(
         state,
         function,
         arguments,
-        derived_entry_facts,
         environment,
         execution_semantics,
         mode,
@@ -5637,7 +5633,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     state: CState,
     function: CFunction,
     arguments: Vec<CExpression>,
-    derived_entry_facts: Vec<Proposition>,
     environment: CExecutionEnvironment,
     execution_semantics: CExecutionSemantics,
     mode: CFunctionContractExecutionMode,
@@ -5670,21 +5665,13 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         .iter()
         .map(|verified| verified.theorem.proposition().clone())
         .collect::<Vec<_>>();
-    let selection_assumptions =
-        assumptions_with_propositions(&PureFactContext::new(), &derived_entry_facts);
     let base_assumptions = match crate::instrumentation::measure_operation(
         function.name(),
         "contract certification",
         "contract assumptions",
         || {
-            c_function_contract_certification_assumptions(
-                &state,
-                &function,
-                &arguments,
-                PureFactContext::new(),
-                &selection_assumptions,
-                &pure_theorem_facts,
-            )
+            c_function_contract_entry(&state, &function, &arguments)
+                .map(CContractEntry::into_assumptions)
         },
     ) {
         Ok(assumptions) => assumptions,
@@ -5724,37 +5711,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
     let mut reuse_entry_resources = Vec::new();
     let mut reuse_context_facts = Vec::new();
     for case_facts in resource_condition_cases {
-        let case_seed = assumptions_with_propositions(&PureFactContext::new(), &case_facts);
-        let mut assumptions = match crate::instrumentation::measure_operation(
-            function.name(),
-            "contract certification",
-            "contract case assumptions",
-            || {
-                c_function_contract_certification_assumptions(
-                    &state,
-                    &function,
-                    &arguments,
-                    case_seed,
-                    &selection_assumptions,
-                    &pure_theorem_facts,
-                )
-            },
-        ) {
-            Ok(assumptions) => assumptions,
-            Err(reason) => {
-                if crate::instrumentation::enabled() {
-                    crate::instrumentation::emit(
-                        crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                            "exact certification rejected a resource-guard case for {}: {reason}",
-                            function.name()
-                        )),
-                    );
-                }
-                return CFunctionContractExecution::failed(format!(
-                    "in one resource-guard case of the contract entry, {reason}"
-                ));
-            }
-        };
+        // A resource-guard case assumes its guards beside the contract entry.
+        let assumptions = assumptions_with_propositions(&base_assumptions, &case_facts);
         let Some(mut entry_state) = c_function_entry_state(&state, &function, &arguments) else {
             return CFunctionContractExecution::failed(
                 "could not build the contract entry state from the call arguments".to_string(),
@@ -5764,6 +5722,9 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
             .composite_resource_definitions()
             .iter()
             .any(CCompositeResourceDefinition::is_recursive);
+        // With recursive definitions the caller state already holds the
+        // proof-directed projections. Expanding it globally would erase child
+        // composites and expose unrelated recursive branches, so it is kept.
         if !has_recursive_resources {
             let Some(entry_resources) = crate::instrumentation::measure_operation(
                 function.name(),
@@ -5792,182 +5753,6 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                         .to_string(),
                 );
             };
-            entry_state = entry_state.with_resource_context(entry_resources.clone());
-            assumptions = crate::instrumentation::measure_operation(
-                function.name(),
-                "contract certification",
-                "contract derived entry facts",
-                || {
-                    let mut derived_assumptions = assumptions;
-                    for fact in &derived_entry_facts {
-                        // Derived entry facts are predominantly loadability
-                        // witnesses. Check the exact entry resources first:
-                        // that is the narrow authority for those facts and
-                        // avoids asking the general proposition prover to
-                        // scan the growing contract context before the direct
-                        // resource check succeeds.
-                        let resource_certified = crate::instrumentation::measure_operation(
-                            function.name(),
-                            "contract certification",
-                            "derived fact resource check",
-                            || {
-                                resources_certify_loadability(
-                                    &entry_state,
-                                    &entry_resources,
-                                    fact,
-                                    &derived_assumptions,
-                                )
-                            },
-                        );
-                        let proposition_operation = match fact {
-                            Proposition::CMemoryLoadable { .. } => "derived proposition: viewable",
-                            Proposition::ConditionIs(_, _) => "derived proposition: condition",
-                            Proposition::CResourceSeparate { .. } => {
-                                "derived proposition: resource separate"
-                            }
-                            Proposition::CResourceContains { .. } => {
-                                "derived proposition: resource contains"
-                            }
-                            Proposition::ForAll { .. } => "derived proposition: forall",
-                            _ => "derived proposition: other",
-                        };
-                        let context_free_certified = !resource_certified
-                            && matches!(fact, Proposition::ForAll { .. })
-                            && (pure_theorem_facts.contains(fact)
-                                || crate::instrumentation::measure_operation(
-                                    function.name(),
-                                    "contract certification",
-                                    "derived forall context-free check",
-                                    || certification_proves_context_free_forall(fact),
-                                ));
-                        let theorem_predicate_certified = !resource_certified
-                            && !context_free_certified
-                            && certification_proves_predicate_from_verified_pure_implications(
-                                &derived_assumptions,
-                                &pure_theorem_facts,
-                                fact,
-                            );
-                        let proposition_certified = !resource_certified
-                            && !context_free_certified
-                            && !theorem_predicate_certified
-                            && crate::instrumentation::measure_operation(
-                                function.name(),
-                                "contract certification",
-                                proposition_operation,
-                                || certification_proves_proposition(&derived_assumptions, fact),
-                            );
-                        if !resource_certified {
-                            crate::instrumentation::measure_operation(
-                                function.name(),
-                                "contract certification",
-                                if context_free_certified
-                                    || theorem_predicate_certified
-                                    || proposition_certified
-                                {
-                                    "derived proposition result: proved"
-                                } else {
-                                    "derived proposition result: unproved"
-                                },
-                                || (),
-                            );
-                        }
-                        if resource_certified
-                            || context_free_certified
-                            || theorem_predicate_certified
-                            || proposition_certified
-                        {
-                            derived_assumptions = crate::instrumentation::measure_operation(
-                                function.name(),
-                                "contract certification",
-                                "derived fact insertion",
-                                || derived_assumptions.assume_proposition(fact.clone()),
-                            );
-                        }
-                    }
-                    derived_assumptions
-                },
-            );
-        } else {
-            // The caller state already contains the proof-directed
-            // recursive projections certified above. Preserve that
-            // targeted boundary; globally expanding it would erase child
-            // composites and expose unrelated recursive branches.
-            let mut entry_resources = entry_state.resources().clone();
-            for fact in &derived_entry_facts {
-                if assumptions.proves_exact(fact) {
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                    continue;
-                }
-                if certification_proves_predicate_from_verified_pure_implications(
-                    &assumptions,
-                    &pure_theorem_facts,
-                    fact,
-                ) {
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                    continue;
-                }
-                if let Proposition::CMemoryLoadable { base, bytes, .. } = &fact
-                    && let Some(bytes) = bytes.as_const()
-                {
-                    let projected = CResourceFact::view_memory(CMemoryRange::new(
-                        base.clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(1),
-                    ));
-                    if let Some(exposed) = expose_composite_resource_fact(
-                        &entry_resources,
-                        &projected,
-                        function.composite_resource_definitions(),
-                        entry_state.memory(),
-                        &assumptions,
-                    ) {
-                        entry_resources = exposed.unchecked_with_fact(projected);
-                        assumptions = assumptions.assume_proposition(fact.clone());
-                        continue;
-                    }
-                    if resource_context_has_structural_read(
-                        &entry_resources,
-                        base,
-                        bytes,
-                        &assumptions,
-                    ) {
-                        entry_resources = entry_resources.unchecked_with_fact(projected);
-                        assumptions = assumptions.assume_proposition(fact.clone());
-                        continue;
-                    }
-                }
-                if resources_certify_loadability(&entry_state, &entry_resources, fact, &assumptions)
-                {
-                    if let Proposition::CMemoryLoadable { base, .. } = &fact {
-                        entry_resources = entry_resources.unchecked_with_fact(
-                            CResourceFact::view_memory(CMemoryRange::new(
-                                base.clone(),
-                                Bitvector32Term::Constant(0),
-                                Bitvector32Term::Constant(1),
-                            )),
-                        );
-                    }
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                    continue;
-                }
-                let proves_fact = match &fact {
-                    Proposition::ConditionIs(condition, value) => {
-                        assumptions.proves_condition_exact_or_snapshot(condition, *value)
-                            || assumptions.decide(condition) == Some(*value)
-                    }
-                    Proposition::Not(body) => match body.as_ref() {
-                        Proposition::ConditionIs(condition, value) => {
-                            assumptions.proves_condition_exact_or_snapshot(condition, !*value)
-                                || assumptions.decide(condition) == Some(!*value)
-                        }
-                        _ => assumptions.proves_exact(fact),
-                    },
-                    _ => assumptions.proves_exact(fact),
-                };
-                if proves_fact {
-                    assumptions = assumptions.assume_proposition(fact.clone());
-                }
-            }
             entry_state = entry_state.with_resource_context(entry_resources);
         }
         let matches_execution_metadata_except_state = |checked: &CCheckedFunctionExecution| {
@@ -5981,31 +5766,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                 && !checked.execution.paths().is_empty()
                 && checked_loan_evidence_is_valid(checked, &function)
         };
-        // Contract requirements are lowered to their bodies, while a claim
-        // proof may assume the registered predicate identity itself. Each
-        // registered unfolding is definitional, so an identity whose
-        // instantiated body and side obligations the contract context proves
-        // is a renaming of an assumption the context already holds.
         let raw_entry_state = c_function_entry_state(&state, &function, &arguments);
         let mut reuse_assumptions = assumptions.clone();
-        if let Some(raw_entry_state) = raw_entry_state.as_ref() {
-            let mut budget = ExecutionBudget::for_new_execution();
-            for unfolding in function.predicate_unfoldings() {
-                let Some((predicate, body)) =
-                    contract_certification::instantiate_contract_predicate_unfolding(
-                        raw_entry_state,
-                        unfolding,
-                        &assumptions,
-                        &mut budget,
-                    )
-                else {
-                    continue;
-                };
-                if certification_proves_proposition(&assumptions, &body) {
-                    reuse_assumptions = reuse_assumptions.assume_proposition(predicate);
-                }
-            }
-        }
         // A claim proof opens entry composites and assumes the containment
         // and separation facts of their children. Derive those facts from the
         // kernel definitions at the contract entry state, expanding only the
@@ -6040,7 +5802,8 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             premise,
                             Proposition::CResourceContains { .. }
                                 | Proposition::CResourceSeparate { .. }
-                        ) && !reuse_assumptions.proves_exact(premise)
+                        ) && !(reuse_assumptions.proves_exact(premise)
+                            || reuse_assumptions.states_required_goal(premise))
                     })
                     .flat_map(|premise| match premise {
                         Proposition::CResourceContains { parent, .. } => vec![parent],
@@ -6090,6 +5853,14 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         let checked_premise_is_authorized =
             |_checked: &CCheckedFunctionExecution, premise: &Proposition| {
                 reuse_assumptions.proves_exact(premise)
+                    || reuse_assumptions.states_required_goal(premise)
+                    || matches!(premise, Proposition::CMemoryLoadable { .. })
+                        && resources_certify_loadability(
+                            &entry_state,
+                            entry_state.resources(),
+                            premise,
+                            &reuse_assumptions,
+                        )
             };
         let authorized = |checked: &CCheckedFunctionExecution| {
             checked
