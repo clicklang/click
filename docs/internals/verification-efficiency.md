@@ -212,9 +212,9 @@ charged to visible semantic output rather than hidden ambient state:
   setup and whole-function finalization build the entry facts' context once
   and extend it per path, and the implicit empty-effect check builds a
   path's context only when a write could reach storage that predates the
-  call. `executing_a_fan_out_stays_on_the_proof_in_near_linear_work` pins an
-  early-return fan-out to the checked `Proof`, where `execute()` builds no
-  path context of its own, and
+  call. `executing_a_fan_out_is_near_linear_in_its_length` pins `execute()`
+  on an early-return fan-out, where it builds no path context of its own,
+  and
   `call_ensure_lowering_is_linear_in_the_ensure_count` and
   `call_requirement_checking_is_linear_in_the_requirement_count` pin the
   builds of a call step (`context_rebuild_entries`).

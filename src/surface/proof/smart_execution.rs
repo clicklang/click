@@ -29,15 +29,32 @@ impl<'a> Proof<'a> {
         let mut advanced = false;
         let mut retried_requirements = BTreeSet::new();
         loop {
-            match proof.current_statement_index()? {
+            let region_start = match proof.current_statement_index()? {
                 Some(current) if current == target => break,
-                Some(current) if current < target => {}
-                Some(_) | None => return Ok(None),
-            }
+                Some(current) if current < target => current,
+                Some(current) => {
+                    return Err(self.step_error(format!(
+                        "`execute_until(statement({target}))` target is not reachable from the current execution path; execution moved the frontier to statement({current})"
+                    )));
+                }
+                None => {
+                    return Err(self.step_error(format!(
+                        "`execute_until(statement({target}))` reached function exit before its target"
+                    )));
+                }
+            };
             let next =
                 proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?;
             let Some(next) = next else {
-                return Ok(None);
+                // `execute_until` runs one path and does not split it: a
+                // frontier the bare step cannot take (an undecided C `if`)
+                // is refused with that step's own diagnostic.
+                return match proof.apply_step(ProofStep::Step) {
+                    Err(error) => Err(error),
+                    Ok(_) => Err(self.step_error(format!(
+                        "`execute_until(statement({target}))` could not advance statement({region_start})"
+                    ))),
+                };
             };
             retried_requirements.clear();
             for fact in next.added_facts() {

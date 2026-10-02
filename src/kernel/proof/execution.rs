@@ -5290,7 +5290,6 @@ pub(crate) struct ExecutionProofCore {
     pub(crate) function_entry: Option<Arc<CheckedFunctionEntry>>,
     pub(crate) frontier_loop_rules: PersistentSequence<CVerifiedLoopRule>,
     pub(crate) execution_abstraction: bool,
-    pub(crate) next_path_choice: usize,
     pub(crate) concrete_loop_execution: bool,
     /// Kernel theorems whose conclusions justify the facts a resource
     /// observation introduces (its count and quantity witnesses).
@@ -6591,7 +6590,6 @@ impl ExecutionProofCore {
             function_entry: None,
             frontier_loop_rules: Default::default(),
             execution_abstraction: false,
-            next_path_choice: 0,
             concrete_loop_execution: false,
             function_entry_derivations: Default::default(),
             region_invariants_close_requested: false,
