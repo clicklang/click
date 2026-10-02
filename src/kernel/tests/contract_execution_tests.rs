@@ -1862,11 +1862,11 @@ fn declared_exceptional_path_certifies_its_payload_postcondition() {
     assert_eq!(goals.len(), 1);
     assert!(
         matches!(
-            &goals[0].0,
+            goals[0].proposition(),
             Proposition::ConditionIs(ConditionTerm::Constant(true), true)
         ),
         "unexpected exceptional goal: {:?}",
-        goals[0].0
+        goals[0].proposition()
     );
 
     assert_eq!(

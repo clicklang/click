@@ -516,13 +516,47 @@ impl<'a> Proof<'a> {
 
     /// Focus a compiler-lowered contract claim with only the load facts
     /// produced by that lowering. The ambient outcome facts remain shared.
+    /// Focuses the kernel's goal for one contract claim, with the facts its
+    /// loads introduced. The obligation keeps the claim's identity, so the
+    /// proposition completed from it says which claim it closes.
+    pub(in crate::surface::proof) fn focus_kernel_claim_goal(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        surface: &ClickProposition,
+    ) -> Result<Self, ClickError> {
+        let focused = self.focus_bare_kernel_claim_goal(goal, surface)?;
+        focused.with_claim_lowering_facts(self, goal.facts())
+    }
+
+    /// [`Self::focus_kernel_claim_goal`] without the goal's lowering facts.
+    pub(in crate::surface::proof) fn focus_bare_kernel_claim_goal(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        surface: &ClickProposition,
+    ) -> Result<Self, ClickError> {
+        self.focus_fixed_state_goal_for_claim(
+            goal.proposition().clone(),
+            Some(surface.clone()),
+            Some(goal),
+        )
+    }
+
     pub(in crate::surface::proof) fn focus_lowered_outcome_claim(
         &self,
         goal: Proposition,
         lowering_facts: &[Proposition],
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
-        let mut focused = self.focus_fixed_state_goal_with_surface(goal, Some(surface.clone()))?;
+        let focused = self.focus_fixed_state_goal_with_surface(goal, Some(surface.clone()))?;
+        focused.with_claim_lowering_facts(self, lowering_facts)
+    }
+
+    fn with_claim_lowering_facts(
+        self,
+        origin: &Self,
+        lowering_facts: &[Proposition],
+    ) -> Result<Self, ClickError> {
+        let mut focused = self;
         let facts = lowering_facts
             .iter()
             .fold(focused.facts().clone(), |facts, fact| {
@@ -537,7 +571,7 @@ impl<'a> Proof<'a> {
                     .clone(),
                 facts,
             )
-            .map_err(|_| self.step_error("claim goal is no longer open"))?;
+            .map_err(|_| origin.step_error("claim goal is no longer open"))?;
         Ok(focused)
     }
 

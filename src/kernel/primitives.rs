@@ -3736,14 +3736,17 @@ pub struct CVerifiedFunctionContractClaim {
 }
 
 /// Kernel-checked evidence that a checked proof discharged one proposition at
-/// one exact function outcome. Contract finalization matches this evidence to
-/// the corresponding independently reconstructed path and contract claim;
-/// the language layer cannot retarget it by changing surface metadata.
+/// one exact function outcome. Contract finalization finds this evidence by
+/// the claim it closed and matches it to the path it was completed on.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CCheckedFunctionProposition {
     pub(super) function: CFunction,
     pub(super) specification: CFunctionSpecification,
     pub(super) proposition: Proposition,
+    /// The contract claim this proposition closed: the proof was opened
+    /// from the kernel's goal for that claim, which carries the claim's
+    /// identity through to here. `None` for any other proposition.
+    pub(super) claim: Option<CFunctionContractClaimTarget>,
 }
 
 impl CVerifiedFunctionContractClaim {

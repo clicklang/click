@@ -577,6 +577,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             goal.proposition().clone(),
             self.state.open_branches.root_branch().state.facts.clone(),
             goal.outcome.as_deref().map(|outcome| outcome.core.clone()),
+            goal.claim().cloned(),
         ))
     }
 
@@ -1049,15 +1050,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let ProofObligation::Proposition(goal) = &branch.obligation else {
             return None;
         };
-        let presentation = presentation(&goal.presentation);
-        let obligation = match goal.outcome.clone() {
-            Some(outcome) => super::PropositionObligation::at_outcome(
-                goal.proposition().clone(),
-                presentation,
-                outcome,
-            ),
-            None => super::PropositionObligation::new(goal.proposition().clone(), presentation),
-        };
+        let obligation = goal.with_presentation(presentation(&goal.presentation));
         Some(Self::new(
             ProofState {
                 locals: self.state.locals.clone(),
