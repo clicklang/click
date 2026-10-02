@@ -2881,6 +2881,7 @@ fn evaluate_entry_resource_context(
     let quantity_assumptions = match crate::kernel::quantified_resource_requirement_assumptions(
         &evaluation_state,
         &resource_specs,
+        &definitions,
         &assumptions,
         &mut budget,
     ) {

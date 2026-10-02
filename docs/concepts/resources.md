@@ -358,6 +358,17 @@ authority cannot justify it. At function entry the count is arbitrary,
 constrained by the control invariant and supplied preconditions; it is not zero.
 Contracts and proof expressions use the same checked rule.
 
+A resource quantity may read memory supplied by another required resource in
+that contract section. For example, `owns control(pool)` can supply the field
+read in `owns pool->capacity of slot(pool)` when its body owns the pool's
+memory, even while the control stays folded. Clause order does not matter.
+This read exposes neither the authority nor mutable memory ownership;
+changing the field still requires opening the control. Authority alone, or
+zero copies of a control, does not supply its memory. The
+[folded-quantity fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_control_quantity_read.md)
+checks both orders. This entry rule does not yet provide symbolic batch
+transfer through ordinary helper calls.
+
 Creating or consuming a reference requires exposed authority, and opening the
 control exposes its owned counter field. Updating both the field and the
 population by the same amount lets the proof restore the control invariant.

@@ -1336,6 +1336,7 @@ fn c_function_contract_entry_facts(
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         &entry_state,
         function.resource_requires(),
+        function.composite_resource_definitions(),
         &assumptions,
         &mut budget,
     ) {
