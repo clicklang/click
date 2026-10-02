@@ -2490,7 +2490,8 @@ pub(super) fn initial_claim_context_with_mode(
     // segment diagnostic is used only to enrich a kernel refusal, never to
     // authorize a clause independently.
     let entry_partition_facts;
-    (state, entry_partition_facts) = evaluate_entry_resource_context(
+    let entry_quantity_facts;
+    (state, entry_partition_facts, entry_quantity_facts) = evaluate_entry_resource_context(
         function_block,
         parsed_function,
         resource_environment,
@@ -2515,6 +2516,11 @@ pub(super) fn initial_claim_context_with_mode(
             entry_fact_origins.push(EntryFactOrigin::Derived);
         }
     }
+    // Quantity guards are checked implicit requirements. Append them directly:
+    // deduplicating each one by scanning all earlier facts makes a section
+    // with many quantified clauses quadratic. The fact context indexes them.
+    requirement_pure_facts.extend(entry_quantity_facts);
+    entry_fact_origins.resize(requirement_pure_facts.len(), EntryFactOrigin::Derived);
     // From here the entry facts only grow, so every context read of them
     // below extends one built context.
     let mut requirement_pure_facts = PureFactList::from(requirement_pure_facts);
@@ -2747,7 +2753,7 @@ fn evaluate_entry_resource_context(
     claim_label: &str,
     entry_resources: &ResourceContext,
     entry_memory: &CMemory,
-) -> Result<(CState, Vec<Proposition>), ClickError> {
+) -> Result<(CState, Vec<Proposition>, Vec<Proposition>), ClickError> {
     let (resource_specs, _) = crate::surface::verification::function_resource_summary(
         function_block,
         parsed_function,
@@ -2756,7 +2762,7 @@ fn evaluate_entry_resource_context(
         resource_environment,
     )?;
     if resource_specs.is_empty() {
-        return Ok((state, Vec::new()));
+        return Ok((state, Vec::new(), Vec::new()));
     }
 
     // The kernel evaluator resolves source parameter names through its local
@@ -2872,8 +2878,8 @@ fn evaluate_entry_resource_context(
             )));
         }
     };
-    for proposition in quantity_assumptions {
-        assumptions = assumptions.assume_proposition(proposition);
+    for proposition in &quantity_assumptions {
+        assumptions = assumptions.assume_proposition(proposition.clone());
     }
     let (evaluated, entry_clauses) =
         match crate::kernel::evaluate_function_resource_context_with_metadata(
@@ -2926,6 +2932,15 @@ fn evaluate_entry_resource_context(
     // not separate from its own owner. Contract certification derives the
     // same facts from the same clause list, so the two entry contexts agree.
     let entry_partition_facts = crate::kernel::contract_entry_partition_facts(&entry_clauses);
+    // Quantity guards are implicit requirements, just as they are in the
+    // kernel's certified entry. Retain them in the proof context as well;
+    // otherwise the checked boundary loses the very premise used above to
+    // admit a symbolic `owns n of ...` clause.
+    let entry_quantity_facts = if state.uses_population_authority_semantics() {
+        quantity_assumptions
+    } else {
+        Vec::new()
+    };
     let state = project_initial_composite_resource_cores(
         resource_environment,
         parsed_function.parameters(),
@@ -2937,7 +2952,7 @@ fn evaluate_entry_resource_context(
         predicate_environment,
         click_function_environment,
     )?;
-    Ok((state, entry_partition_facts))
+    Ok((state, entry_partition_facts, entry_quantity_facts))
 }
 
 fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
