@@ -307,14 +307,28 @@ pub(super) fn verify_execution_theorem(
         function_source_registry,
         tactics,
     )?;
-    let (mut state, arguments, facts, _) = initial_claim_context(
-        &block,
-        &parsed,
-        resources,
-        predicates,
-        functions,
-        theorem.name(),
-    )?;
+    // Certification starts from the entry the proof was built from.
+    let (mut state, arguments, facts) = match verified
+        .iter()
+        .find_map(|verified| verified.entry_context.clone())
+    {
+        Some(entry) => (
+            entry.state.clone(),
+            entry.arguments.clone(),
+            entry.pure_facts.clone(),
+        ),
+        None => {
+            let (state, arguments, facts, _) = initial_claim_context(
+                &block,
+                &parsed,
+                resources,
+                predicates,
+                functions,
+                theorem.name(),
+            )?;
+            (state, arguments, facts)
+        }
+    };
     // A stable-view proof artifact carries the exact caller state the checked
     // function-entry boundary accepted, including its loan ledger roots and
     // resource occurrence IDs. Certifying the one-call proof against an

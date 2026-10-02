@@ -2838,22 +2838,45 @@ fn verify_c0_sources_in_context(
                 function_block.with_bound_frontier_loop_clauses(&verified.frontier_loop_clauses)
             },
         );
-        let InitialClaimContext {
-            state: mut certification_state,
-            arguments: certification_arguments,
-            pure_facts: mut certification_facts,
-            ..
-        } = initial_claim_context_with_mode(
-            &certification_function_block,
-            parsed_function,
-            &resource_environment,
-            &predicate_environment,
-            &click_function_environment,
-            &format!("{}.contract certification", function_block.signature.name()),
-            None,
-            function_source_registry.resource_semantics_mode(),
-        )
-        .map_err(|error| error.at_declaration(function_block.signature.name()))?;
+        // Certification starts from the entry the proof was built from. A
+        // proof that bound frontier loop clauses is certified over the block
+        // carrying them, whose entry unfolds what those clauses name, so only
+        // that case builds an entry here.
+        let proof_entry = frontier_loop_artifacts
+            .is_none()
+            .then(|| {
+                function_verified
+                    .iter()
+                    .find_map(|verified| verified.entry_context.clone())
+            })
+            .flatten();
+        let (mut certification_state, certification_arguments, mut certification_facts) =
+            match proof_entry {
+                Some(entry) => (
+                    entry.state.clone(),
+                    entry.arguments.clone(),
+                    entry.pure_facts.clone(),
+                ),
+                None => {
+                    let InitialClaimContext {
+                        state,
+                        arguments,
+                        pure_facts,
+                        ..
+                    } = initial_claim_context_with_mode(
+                        &certification_function_block,
+                        parsed_function,
+                        &resource_environment,
+                        &predicate_environment,
+                        &click_function_environment,
+                        &format!("{}.contract certification", function_block.signature.name()),
+                        None,
+                        function_source_registry.resource_semantics_mode(),
+                    )
+                    .map_err(|error| error.at_declaration(function_block.signature.name()))?;
+                    (state, arguments, pure_facts)
+                }
+            };
         // Stable-view proof artifacts carry the exact caller state that the
         // checked function-entry boundary accepted. Reuse that state for
         // certification so resource occurrence IDs and loan ledger roots are
