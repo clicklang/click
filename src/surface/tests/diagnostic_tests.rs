@@ -871,7 +871,8 @@ int32 pick(struct node* node) {
 #[test]
 fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
     let call = crate::kernel::c_call("helper", Vec::new());
-    let message = super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2);
+    let message =
+        super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2, true);
 
     assert!(
         message.contains("Use `outcomes` at this point"),
@@ -883,6 +884,18 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
         message.contains("all\ncontract claims are closed"),
         "{message}"
     );
+}
+
+/// Two successors that both continue are an undecided branch inside an
+/// inlined callee. `outcomes` has a `returned` and a `threw` arm and no way to
+/// take either of those, so the refusal must not offer it.
+#[test]
+fn branch_split_step_diagnostic_does_not_offer_outcomes() {
+    let call = crate::kernel::c_call("helper", Vec::new());
+    let message =
+        super::diagnostics::describe_multiple_statement_successors_guidance(&call, 2, false);
+
+    assert!(message.is_empty(), "{message}");
 }
 
 /// The one-successor refusal used to print the `While` node with `Debug`,
