@@ -308,6 +308,28 @@ only in an exception-enabled normal-only profile (including borrowed trivial rec
 continues to reject them. Omitting `noexcept` does not itself declare a Click
 exception.
 
+The `return-call` fixtures add direct `return helper(...)` for matching signed
+or unsigned 32/64-bit and Boolean return types, including concrete function and
+method template instances. The typed `return_call` node retains the callee's
+Clang identity, typed arguments, result type, source span, and cleanup chain.
+Implicit calls on `this` retain the existing checked receiver interface; arbitrary
+pointer dispatch remains outside the slice. Lowering captures the result in a
+fresh local of its actual type before destroying automatic objects, then returns
+that captured value. The synthetic fee wrappers keep Bitcoin's direct method
+return-call shape and signed fast-path results; the full upstream wide fallback
+is still unsupported.
+
+Regressions prove arbitrary scalar forwarding, branch results, memory framing,
+Boolean and wide results before normal cleanup, and object-free normal/exceptional
+propagation. Caller proofs agree across verification, expansion/reverification,
+and retained audit. Artifact checks reject return-type mismatches, invalid call
+graphs, and missing or misordered cleanups. Uncaught return-call cleanup edges
+reuse the existing scalar exception lowering and have structural coverage;
+resource-bearing exceptional contracts and returns from guarded `try` regions
+remain outside the supported surface slice. Calls nested in value expressions
+or arguments, converted return-call results, and returned references or objects
+also remain unsupported.
+
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
 32/64-bit integer locals declared directly
 in the function body. Each local requires an initializer, which may be an
@@ -363,7 +385,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 25;
+its documented application invariant. The typed artifact schema is now 26;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,

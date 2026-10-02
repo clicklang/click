@@ -87,6 +87,16 @@ arguments and dependent selection. Both instantiated unsigned fee fast-path
 expressions verify concrete rounding cases, expansion and retained audit. These
 are synthetic prerequisites; no additional upstream fee proof is claimed.
 
+Direct return calls now support matching signed/unsigned 32/64-bit and Boolean
+results, including implicit `this` calls to concrete method template instances.
+The synthetic `FeeFrac` fast-path wrappers preserve Bitcoin's direct
+`return EvaluateFee<...>(at_size)` form. Regressions prove modular scalar
+forwarding, branches, caller framing, typed capture before normal destruction,
+and object-free exception propagation, with selected-caller expansion and audit.
+Call graph and cleanup validation remain explicit. Uncaught return-call cleanup
+edges have structural coverage; guarded `try` returns and resource-bearing
+exceptional contracts remain outside this slice.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -112,8 +122,9 @@ division, and a nonzero remainder. Concrete Boolean template instances and `if c
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
 cases. The selected upstream source still requires `__int128` helpers,
-assumption obligations, and direct return-call positions on this target.
-Those remain importer and arithmetic-model work;
+assumption obligations, and nested value-call arguments such as
+`Div(Mul(...), ...)` on this target. Those remain importer and arithmetic-model
+work;
 upstream `EvaluateFee` is not yet supported.
 
 Before implementing the upstream proof, freeze a small regression that
