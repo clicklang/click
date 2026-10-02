@@ -3712,6 +3712,9 @@ impl CRecursionAnchor {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CTerminationError {
     pub(super) message: String,
+    /// The function whose termination was being decided when the check
+    /// failed, for a diagnostic to locate. It is not part of the verdict.
+    pub(super) function: Option<String>,
 }
 
 impl CVerifiedFunctionTerminationRule {

@@ -54,18 +54,22 @@ pub(in crate::surface) fn verify_theorem_definitions(
     let mut verified = Vec::new();
     let mut theorem_environment = TheoremEnvironment::new(dependencies);
     for theorem in theorem_definitions {
+        crate::surface::enter_ambient_declaration(theorem.name());
         #[cfg(test)]
         PROVED_THEOREMS.with(|proved| proved.borrow_mut().push(theorem.name().to_string()));
         if theorem.executes.is_some() {
-            verified.push(verify_execution_theorem(
-                theorem,
-                predicate_environment,
-                click_function_environment,
-                &theorem_environment,
-                function_environment,
-                resource_environment,
-                function_source_registry.clone(),
-            )?);
+            verified.push(
+                verify_execution_theorem(
+                    theorem,
+                    predicate_environment,
+                    click_function_environment,
+                    &theorem_environment,
+                    function_environment,
+                    resource_environment,
+                    function_source_registry.clone(),
+                )
+                .map_err(ClickError::located_by_ambient_source)?,
+            );
             theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
             continue;
         }
@@ -93,13 +97,16 @@ pub(in crate::surface) fn verify_theorem_definitions(
                 symbolic.name = theorem.name().to_string();
                 &symbolic
             };
-            verified.extend(verify_concrete_theorem_definition(
-                checked,
-                predicate_environment,
-                click_function_environment,
-                &theorem_environment,
-                function_environment,
-            )?);
+            verified.extend(
+                verify_concrete_theorem_definition(
+                    checked,
+                    predicate_environment,
+                    click_function_environment,
+                    &theorem_environment,
+                    function_environment,
+                )
+                .map_err(ClickError::located_by_ambient_source)?,
+            );
         }
         theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
     }

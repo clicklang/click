@@ -1617,4 +1617,47 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
             "{error}"
         );
     }
+
+    /// A proof failure with no site of its own is located by what was being
+    /// verified: the written tactic being checked, or else the declaration.
+    #[test]
+    fn a_proof_failure_without_a_site_shows_the_tactic_or_the_declaration() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-ambient-failure-location-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "int32 leak() {\n    int32* item = malloc(4);\n    if (item == 0) {\n        return -1;\n    }\n    return 0;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\";\n\nint32 leak() {\n    ensures result == -1 or result == 0;\n} by {\n    execute();\n    simp();\n}\n",
+        )
+        .unwrap();
+        let leak = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(leak.contains("neither returned nor freed"), "{leak}");
+        assert!(leak.contains("\n\ntactic@7:\n  simp();"), "{leak}");
+
+        fs::write(
+            &sidecar,
+            "theorem unequal(left: int32, right: int32) {\n    ensures left == right;\n}\n",
+        )
+        .unwrap();
+        let theorem = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(
+            theorem.contains(&format!(
+                "\n  --> {}:1:1\n  1 | theorem unequal(left: int32, right: int32) {{\n",
+                sidecar.display()
+            )),
+            "{theorem}"
+        );
+    }
 }
