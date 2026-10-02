@@ -6215,6 +6215,17 @@ impl FunctionBlock {
         )
     }
 
+    /// The written clause, counted among the function's `ensures`, `owns`
+    /// and `produces` clauses, that ensure `index` came from. An aggregate
+    /// resource clause is flattened into one ensure per member, so several
+    /// ensures share the clause the author wrote and its one proof.
+    pub fn ensure_source_clause(&self, index: usize) -> usize {
+        self.ensure_source_clauses
+            .get(index)
+            .copied()
+            .unwrap_or(index)
+    }
+
     /// As [`Self::resource_requirement_positions`], for the resource
     /// `ensures` clauses.
     pub fn resource_ensure_positions(&self) -> Vec<(usize, usize)> {

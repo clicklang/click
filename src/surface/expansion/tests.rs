@@ -480,7 +480,13 @@ fn expand_top_level_tactic_for_test(
     let proof = match claim {
         CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
         CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-            find_claim_proof_span(&tokens, &function, claim)?
+            let file = parse_source_with_c_layouts(click_source, c_sources)?;
+            let function_block = file
+                .function_blocks()
+                .iter()
+                .find(|function| function.signature().name() == function_name)
+                .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+            find_claim_proof_span(&tokens, &function, function_block, claim)?
         }
     };
     let span = find_tactic_span(&tokens, &proof, tactic_index)?;

@@ -269,7 +269,7 @@ pub fn expand_c0_claim_source(
     let edit = if grouped || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_sources_at(click_source, c_sources, target.line, target.column)?;
@@ -322,7 +322,7 @@ fn expand_c0_project_claim_source(
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_project_at(project, c_sources, target.line, target.column)?;
@@ -373,7 +373,7 @@ fn expand_c0_prepared_project_claim_source(
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_prepared_project_at(project, imports, target.line, target.column)?;
@@ -422,7 +422,7 @@ fn expand_c0_prepared_claim_source(
     let edit = if grouped || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified =
@@ -785,7 +785,7 @@ fn expand_program_prepared_claim_source_context(
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = match project {
@@ -2248,9 +2248,10 @@ fn find_grouped_proof_span(
 fn find_claim_proof_span(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<Range<usize>, ClickError> {
-    match find_claim_proof_edit(tokens, function, claim)? {
+    match find_claim_proof_edit(tokens, function, function_block, claim)? {
         ProofSourceEdit::Explicit(span) => Ok(span),
         ProofSourceEdit::DefaultTerminator { .. } => Err(ClickError::new(format!(
             "selected {} uses a default proof and has no explicit source tactic",
@@ -2298,12 +2299,18 @@ impl ProofSourceEdit {
 fn find_claim_proof_edit(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<ProofSourceEdit, ClickError> {
     match claim {
-        CProofClaim::Ensure(index) => {
-            find_ensure_proof_edit(tokens, function.body_open, function.body_close, index)
-        }
+        // The source is searched by written clause; a flattened aggregate
+        // clause gives several ensures one written clause.
+        CProofClaim::Ensure(index) => find_ensure_proof_edit(
+            tokens,
+            function.body_open,
+            function.body_close,
+            function_block.ensure_source_clause(index),
+        ),
         CProofClaim::ExceptionalEnsure(index) => find_exceptional_ensure_proof_edit(
             tokens,
             function.body_open,
@@ -2977,7 +2984,7 @@ fn source_tactic_entries(
         }
         for (index, ensure) in function_block.ensures().iter().enumerate() {
             let claim = CProofClaim::Ensure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, claim)?;
+            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -2996,7 +3003,7 @@ fn source_tactic_entries(
         }
         for (index, ensure) in function_block.exceptional_ensures().iter().enumerate() {
             let claim = CProofClaim::ExceptionalEnsure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, claim)?;
+            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.exceptional_ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -3707,13 +3714,13 @@ fn c0_tactic_source_position_file(
         let fallback = match claim {
             CProofClaim::Grouped => tokens[function.body_close].span.start,
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_clause_offset(&tokens, &function, claim)?
+                find_claim_clause_offset(&tokens, &function, function_block, claim)?
             }
         };
         let proof_span = match claim {
             CProofClaim::Grouped => Some(find_grouped_proof_span(&tokens, &function)?),
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_proof_span(&tokens, &function, claim).ok()
+                find_claim_proof_span(&tokens, &function, function_block, claim).ok()
             }
         };
         return proof_source_position(
@@ -3774,9 +3781,10 @@ fn proof_source_position(
 fn find_claim_clause_offset(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<usize, ClickError> {
-    Ok(find_claim_proof_edit(tokens, function, claim)?.selector())
+    Ok(find_claim_proof_edit(tokens, function, function_block, claim)?.selector())
 }
 
 fn find_loop_phase_proof_span(

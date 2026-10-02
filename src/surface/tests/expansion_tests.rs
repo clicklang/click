@@ -697,6 +697,43 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
 }
 
+/// A `produces` clause naming a struct member is one ensure per field of
+/// that member, all sharing the proof the author wrote once. Every such
+/// claim resolves to that written clause: the locator used to count written
+/// clauses by claim index, so the later claims pointed past the last clause
+/// and `click audit` stopped with `could not locate source ensure 2`.
+#[test]
+fn flattened_aggregate_claims_resolve_to_their_written_clause() {
+    let (click_source, c_sources) = mdtest_sources("mdtests/struct_aggregate_resources.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
+    let written = click_source
+        .find("produces packet->inner by auto;")
+        .expect("the fixture states the aggregate clause");
+    let written = expansion::position_at_offset(&click_source, written);
+    let mut resolved = 0;
+    for site in sites
+        .iter()
+        .filter(|site| site.claim_label.starts_with("write_inner.ensures_"))
+    {
+        let position = expansion::c0_tactic_source_position(
+            &click_source,
+            &c_sources,
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap_or_else(|error| panic!("{}: {}", site.claim_label, error.message()));
+        if site.claim_label != "write_inner.ensures_0" {
+            assert_eq!(position.line, written.line, "{}", site.claim_label);
+            resolved += 1;
+        }
+    }
+    assert!(resolved >= 2, "the member should flatten to several claims");
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the

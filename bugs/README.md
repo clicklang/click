@@ -25,5 +25,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expanded proof no longer certifies termination](expansion-loses-termination-evidence.md)
 - [Expanded proof no longer certifies a `produces` claim](expansion-loses-produced-resource-claim.md)
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
-- [`click audit` cannot resolve an `ensures` source it inventoried](audit-cannot-resolve-ensures-source.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
