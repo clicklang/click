@@ -903,11 +903,12 @@ fn prepare_function_claim_path(
             .to_string()
             .into());
     };
-    let Some(mut entry_state) = c_function_entry_state(caller_state, function, arguments) else {
+    let Some(entry_state) = c_function_entry_state(caller_state, function, arguments) else {
         return Err("the function entry state cannot be reconstructed"
             .to_string()
             .into());
     };
+    let mut entry_state = contract_view_of_entry(entry_state, function, arguments);
     let mut budget = ExecutionBudget::beside_live_state();
     let (required_resources, checked_required_resources) =
         match evaluate_function_resource_context_with_metadata(
@@ -1963,8 +1964,10 @@ impl CClaimGoal {
 }
 
 /// The entry state as a contract reads it. A by-value aggregate parameter
-/// denotes the caller's argument object; the callee's copy of it is private
-/// storage the body may overwrite.
+/// denotes the image of the caller's argument, which nothing writes; the
+/// callee's copy of it is private storage the body may overwrite. A caller
+/// applying the contract reads the same thing: `bind_c_contract_arguments`
+/// copies the argument into a block of its own that no body runs against.
 fn contract_view_of_entry(
     mut entry_state: CState,
     function: &CFunction,
