@@ -666,10 +666,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_premise_list(output, premises, indent + 1);
             line(output, &prefix, "}");
         }
-        ProofTactic::SmartExecute
-        | ProofTactic::SmartExecuteAllPaths
-        | ProofTactic::ExecuteUntil(_)
-        | ProofTactic::Simp => unreachable!("certificate validation rejects this tactic"),
+        ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(_) | ProofTactic::Simp => {
+            unreachable!("certificate validation rejects this tactic")
+        }
     }
 }
 

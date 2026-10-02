@@ -1977,7 +1977,6 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn apply_planned_smart_execute(
         &self,
-        force_all_paths: bool,
         tactic_index: usize,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
@@ -2016,17 +2015,15 @@ impl<'a> Proof<'a> {
         let planning_start_facts = PureFactList::from_source(self.facts());
         planning_start_facts.context();
         let mut planning_facts = planning_start_facts.clone();
-        let direct_result = (!force_all_paths).then(|| {
-            execute_rest_from_frontier_position(
-                &mut planning,
-                &tactic_context,
-                &mut planning_facts,
-                Some(Construction {
-                    environments: construction_environments,
-                    sink: &mut sink,
-                }),
-            )
-        });
+        let direct_result = execute_rest_from_frontier_position(
+            &mut planning,
+            &tactic_context,
+            &mut planning_facts,
+            Some(Construction {
+                environments: construction_environments,
+                sink: &mut sink,
+            }),
+        );
         // A direct run may reach a verified loop summary successfully while
         // still discovering that the summary has no standalone surface form.
         // In that case the semantic plan is valid, but it cannot be retained
@@ -2034,7 +2031,7 @@ impl<'a> Proof<'a> {
         // bounded path planner, which records the loop body and its nested
         // branches as ordinary checked operations instead of emitting a
         // detached loop-summary certificate.
-        if direct_result.is_none_or(|result| result.is_err()) || sink.blocker.is_some() {
+        if direct_result.is_err() || sink.blocker.is_some() {
             planning = execution.clone();
             planning.planned_statement_transitions.clear();
             planning.surface_record.certificate_facts =

@@ -2028,7 +2028,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::StepContract(_)
             | ProofTactic::StepCall(_)
             | ProofTactic::SmartExecute
-            | ProofTactic::SmartExecuteAllPaths
             | ProofTactic::ExecuteUntil(_)
             | ProofTactic::ObserveResource(_)
             | ProofTactic::Iterated(_)
@@ -2052,7 +2051,6 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Mark(_) => "mark",
         ProofTactic::Step | ProofTactic::StepContract(_) | ProofTactic::StepCall(_) => "step",
         ProofTactic::SmartExecute => "execute",
-        ProofTactic::SmartExecuteAllPaths => "execute",
         ProofTactic::ExecuteUntil(_) => "execute_until",
         ProofTactic::UnfoldPredicate(_)
         | ProofTactic::UnfoldFunction(_)

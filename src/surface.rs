@@ -3029,7 +3029,6 @@ pub enum ProofTactic {
     StepContract(ContractApplication),
     StepCall(CallBinderTransport),
     SmartExecute,
-    SmartExecuteAllPaths,
     ExecuteUntil(CodeRegionRef),
     UnfoldPredicate(String),
     UnfoldFunction(ClickFunctionApplication),
@@ -4774,9 +4773,7 @@ impl ProofTactic {
             Self::InstantiateUsing { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ConstructResource(_) => TacticClass::Simple(SimpleTactic::ConstructResource),
-            Self::SmartExecute | Self::SmartExecuteAllPaths => {
-                TacticClass::Smart(SmartTacticKind::SmartExecute)
-            }
+            Self::SmartExecute => TacticClass::Smart(SmartTacticKind::SmartExecute),
             Self::ExecuteUntil(_) => TacticClass::Smart(SmartTacticKind::ExecuteUntil),
             Self::Simp => TacticClass::Smart(SmartTacticKind::Simp),
             Self::SimpUsing(_) => TacticClass::Smart(SmartTacticKind::Simp),

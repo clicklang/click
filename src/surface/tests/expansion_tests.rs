@@ -136,10 +136,7 @@ fn reordered_cstr_requirement_expands_without_planning_and_reverifies() {
     assert!(
         expanded.iter().all(|tactic| !matches!(
             tactic,
-            ProofTactic::SmartExecute
-                | ProofTactic::SmartExecuteAllPaths
-                | ProofTactic::ExecuteUntil(_)
-                | ProofTactic::Simp
+            ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(_) | ProofTactic::Simp
         )),
         "the top-level expansion must contain only retained simple tactics: {expanded:#?}"
     );
@@ -9417,10 +9414,8 @@ fn explicit_branch_arms_retain_terminal_execute_search() {
             "each terminal arm should begin with its checked entry and return steps: {arm:#?}"
         );
         assert!(
-            arm.iter().all(|tactic| !matches!(
-                tactic,
-                ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-            )),
+            arm.iter()
+                .all(|tactic| !matches!(tactic, ProofTactic::SmartExecute)),
             "terminal arm expansion must not retain smart execution: {arm:#?}"
         );
         assert!(
@@ -10124,10 +10119,7 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
         assert!(
             arm.iter().all(|tactic| !matches!(
                 tactic,
-                ProofTactic::SmartExecute
-                    | ProofTactic::SmartExecuteAllPaths
-                    | ProofTactic::ExecuteUntil(_)
-                    | ProofTactic::Simp
+                ProofTactic::SmartExecute | ProofTactic::ExecuteUntil(_) | ProofTactic::Simp
             )),
             "{name} arm expansion must contain only retained simple tactics: {arm:#?}"
         );
