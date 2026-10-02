@@ -28,14 +28,15 @@ use click::surface::{
     tactic_arm_containing_position, tactic_have_body_contains_position,
     tactic_line_has_multiple_starts, tactic_source_at_position, tactic_starts_on_line,
     verify_c0_prepared_project, verify_c0_prepared_project_at,
-    verify_c0_prepared_project_functions, verify_c0_project, verify_c0_project_at,
-    verify_c0_project_functions, verify_program_prepared_project,
-    verify_program_prepared_project_at, verifying_source_paths, with_proof_trace,
+    verify_c0_prepared_project_functions, verify_c0_prepared_project_theorem, verify_c0_project,
+    verify_c0_project_at, verify_c0_project_functions, verify_c0_project_theorem,
+    verify_program_prepared_project, verify_program_prepared_project_at, verifying_source_paths,
+    with_proof_trace,
 };
 
 const USAGE: &str = "\
 usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify --trace-proof <FUNCTION> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify --trace-proof <PROOF> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
        click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 
@@ -60,11 +61,12 @@ units on any machine under any load. `--time-limit` (default 10m) is only a
 wall-clock crash-containment bound for a hung or CPU-starved run; a run it
 stops says so, and that is not a verdict about the proof.
 
-`--trace-proof FUNCTION` verifies one C function and shows checked fact and
-resource changes on the path to the failing tactic, or an accepted path when
-the proof succeeds. `--trace-to` selects a written tactic by source line (and
-column when the line has several tactics) within the selected proof.
-Ordinary proof errors suggest this command with the failing function filled in.
+`--trace-proof PROOF` verifies one C function or one pure theorem of the
+sidecar, by name, and shows checked fact and resource changes on the path to
+the failing tactic, or an accepted path when the proof succeeds. `--trace-to`
+selects a written tactic by source line (and column when the line has several
+tactics) within the selected proof.
+Ordinary proof errors suggest this command with the failing proof filled in.
 
 `--allow-sorry` enables the dev-only `sorry` proof hole: a proof unit whose
 body is exactly `sorry();` is admitted without checking. This is purely a
@@ -221,7 +223,7 @@ fn parse_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Argume
             trace_proof = Some(
                 arguments
                     .next()
-                    .ok_or_else(|| format!("missing function after `--trace-proof`\n{USAGE}"))?,
+                    .ok_or_else(|| format!("missing proof name after `--trace-proof`\n{USAGE}"))?,
             );
         } else if parse_options && argument == "--trace-to" {
             if trace_to.is_some() {
@@ -732,18 +734,73 @@ fn proof_error_report(
         }
         return report;
     }
+    // The hint is printed only for a command that `--trace-proof` accepts:
+    // both resolve the name through `trace_unit`.
     if error.kind() == ClickErrorKind::Proof
-        && let Some(function) = error
+        && let Some((declaration, _)) = error
             .proof_claim_label()
             .and_then(|claim| claim.split_once('.'))
+        && let Ok(unit) = trace_unit(declaration, project, inputs)
     {
         report.push_str(&format!(
             "\n\nTo get a trace:\n  click verify --trace-proof {} {}",
-            shell_word(function.0),
+            shell_word(unit.name()),
             shell_word(&sidecar.display().to_string())
         ));
     }
     report
+}
+
+/// The one proof unit `--trace-proof` verifies and traces.
+enum TraceUnit {
+    Function(String),
+    Theorem(String),
+}
+
+impl TraceUnit {
+    fn name(&self) -> &str {
+        match self {
+            Self::Function(name) | Self::Theorem(name) => name,
+        }
+    }
+}
+
+/// Resolves a `--trace-proof` argument against the proofs the sidecar
+/// selects: a C function or an entry-module theorem, by name. Validation
+/// refuses a name declared as both, so the name alone identifies the proof.
+/// The error says why the name cannot be traced.
+fn trace_unit(
+    requested: &str,
+    project: &ClickProject,
+    inputs: &CInput,
+) -> Result<TraceUnit, String> {
+    let names = match inputs {
+        CInput::Bundle(sources) => c0_project_selected_proof_names(project, &source_refs(sources))
+            .map_err(click_message)?,
+        CInput::Prepared(imports) => {
+            c0_prepared_project_selected_proof_names(project, imports).map_err(click_message)?
+        }
+        CInput::PreparedProgram(_) => {
+            return Err(
+                "`--trace-proof` currently supports C sidecars, not typed compiler inputs".into(),
+            );
+        }
+    };
+    let selects = |kind: &str, name: &str| {
+        names.iter().any(|selected| {
+            selected
+                .strip_prefix(kind)
+                .and_then(|rest| rest.strip_prefix(':'))
+                == Some(name)
+        })
+    };
+    if selects("function", requested) {
+        Ok(TraceUnit::Function(requested.to_owned()))
+    } else if selects("theorem", requested) {
+        Ok(TraceUnit::Theorem(requested.to_owned()))
+    } else {
+        Err(format!("`{requested}` is not a selected proof"))
+    }
 }
 
 fn format_source_tactic(
@@ -1273,33 +1330,17 @@ fn verify_file_within_limits(
         inputs,
         mdtest,
     } = target;
-    if let Some(function) = trace_proof {
-        let names = match &inputs {
-            CInput::Bundle(sources) => {
-                c0_project_selected_proof_names(&project, &source_refs(sources))
-                    .map_err(click_message)?
-            }
-            CInput::Prepared(imports) => {
-                c0_prepared_project_selected_proof_names(&project, imports)
-                    .map_err(click_message)?
-            }
-            CInput::PreparedProgram(_) => {
-                return Err(
-                    "`--trace-proof` currently supports C sidecars, not typed compiler inputs"
-                        .into(),
-                );
-            }
-        };
-        if !names
-            .iter()
-            .any(|name| name == &format!("function:{function}"))
-        {
-            return Err(format!(
-                "`{function}` is not a selected proof in `{}`",
-                click_path.display()
-            ));
-        }
-    }
+    let trace_unit = trace_proof
+        .map(|requested| {
+            trace_unit(requested, &project, &inputs)
+                .map_err(|message| {
+                    format!(
+                        "{message} in `{}`; `--trace-proof` takes the name of a C function or theorem the sidecar proves",
+                        click_path.display()
+                    )
+                })
+        })
+        .transpose()?;
     let trace_target = trace_to
         .map(|target| resolve_trace_target(&click_source, line_offset, target))
         .transpose()?;
@@ -1317,12 +1358,18 @@ fn verify_file_within_limits(
         }
     };
     let (verified, successful_trace) = {
-        let run_selected = || match (&inputs, trace_proof) {
-            (CInput::Bundle(sources), Some(function)) => {
-                verify_c0_project_functions(&project, &source_refs(sources), [function.to_owned()])
+        let run_selected = || match (&inputs, &trace_unit) {
+            (CInput::Bundle(sources), Some(TraceUnit::Function(function))) => {
+                verify_c0_project_functions(&project, &source_refs(sources), [function.clone()])
             }
-            (CInput::Prepared(imports), Some(function)) => {
-                verify_c0_prepared_project_functions(&project, imports, [function.to_owned()])
+            (CInput::Prepared(imports), Some(TraceUnit::Function(function))) => {
+                verify_c0_prepared_project_functions(&project, imports, [function.clone()])
+            }
+            (CInput::Bundle(sources), Some(TraceUnit::Theorem(theorem))) => {
+                verify_c0_project_theorem(&project, &source_refs(sources), theorem)
+            }
+            (CInput::Prepared(imports), Some(TraceUnit::Theorem(theorem))) => {
+                verify_c0_prepared_project_theorem(&project, imports, theorem)
             }
             (CInput::PreparedProgram(_), Some(_)) => unreachable!(),
             (CInput::Bundle(sources), None) => verify_c0_project(&project, &source_refs(sources)),
@@ -1342,21 +1389,34 @@ fn verify_file_within_limits(
                 trace_target.as_ref(),
             )
         };
-        match trace_proof {
-            Some(function) => with_proof_trace(function, || {
+        match &trace_unit {
+            Some(unit) => with_proof_trace(unit.name(), || {
                 let verified = run_selected().map_err(report)?;
+                // The renderer asks for one step's location several times.
+                let located = RefCell::new(HashMap::<
+                    (String, Vec<usize>),
+                    Option<(String, click::surface::SourcePosition)>,
+                >::new());
                 let locate = |claim: &str, path: &[usize]| {
-                    let source = project.entry_source()?;
-                    let position =
-                        proof_source_position_for_path(claim, path, &project, &inputs, source)?;
-                    let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
-                    let line = position.line + line_offset;
-                    let label = if multiple {
-                        format!("tactic@{line}:{}", position.column)
-                    } else {
-                        format!("tactic@{line}")
-                    };
-                    Some((label, position))
+                    let key = (claim.to_owned(), path.to_vec());
+                    if let Some(cached) = located.borrow().get(&key) {
+                        return cached.clone();
+                    }
+                    let label = (|| {
+                        let source = project.entry_source()?;
+                        let position =
+                            proof_source_position_for_path(claim, path, &project, &inputs, source)?;
+                        let multiple = tactic_line_has_multiple_starts(source, &position).ok()?;
+                        let line = position.line + line_offset;
+                        let label = if multiple {
+                            format!("tactic@{line}:{}", position.column)
+                        } else {
+                            format!("tactic@{line}")
+                        };
+                        Some((label, position))
+                    })();
+                    located.borrow_mut().insert(key, label.clone());
+                    label
                 };
                 let arm = |claim: &str, path: &[usize], target: &click::surface::SourcePosition| {
                     let source = project.entry_source()?;

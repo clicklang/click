@@ -11,7 +11,7 @@ impl PureFactContext {
             Box::new(right.clone()),
         ))
     }
-    fn direct_bitvector_equality_evidence(
+    pub(in crate::kernel) fn direct_bitvector_equality_evidence(
         &self,
         left: &Bitvector32Term,
         right: &Bitvector32Term,
@@ -93,6 +93,20 @@ impl PureFactContext {
         )))
     }
 
+    fn indexed_exact_int32_constant(
+        &self,
+        term: &Bitvector32Term,
+    ) -> Option<(i64, Box<Proposition>)> {
+        self.exact_constant_equalities
+            .get(term)?
+            .keys()
+            .find_map(|condition| {
+                let source = Proposition::ConditionIs(condition.clone(), true);
+                let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
+                Some((value, Box::new(source)))
+            })
+    }
+
     fn signed_constant_evidence(
         &self,
         term: &Bitvector32Term,
@@ -100,12 +114,19 @@ impl PureFactContext {
         if let Some(value) = signed_bitvector_constant(term) {
             return Some((value, SignedConstantEvidence::Constant));
         }
+        if let Some((value, source)) = self.indexed_exact_int32_constant(term) {
+            return Some((value, SignedConstantEvidence::ExactEquality(source)));
+        }
         let variable = bitvector_variable(term)?;
         let mut lower: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         let mut upper: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         for (endpoint, other, strict, forward) in self.signed_order_bound_entries(term) {
             let source = self.exact_order_bound_source(&endpoint, &other, strict, forward)?;
+            let pinned = self.indexed_exact_int32_constant(&other);
+            let other_value = signed_bitvector_constant(&other)
+                .or_else(|| pinned.as_ref().map(|(value, _)| *value));
             let evidence = IndexedSignedOrderBoundEvidence {
+                other_equality: pinned.map(|(_, source)| source),
                 endpoint,
                 other: other.clone(),
                 strict,
@@ -113,7 +134,7 @@ impl PureFactContext {
                 source: Box::new(source),
             };
             if !forward
-                && let Some(bound) = signed_bitvector_constant(&other)
+                && let Some(bound) = other_value
                 && let Some(bound) = if strict {
                     bound.checked_add(1)
                 } else {
@@ -124,7 +145,7 @@ impl PureFactContext {
                 lower = Some((bound, evidence.clone()));
             }
             if forward
-                && let Some(bound) = signed_bitvector_constant(&other)
+                && let Some(bound) = other_value
                 && let Some(bound) = if strict {
                     bound.checked_sub(1)
                 } else {

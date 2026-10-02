@@ -366,8 +366,7 @@ This read exposes neither the authority nor mutable memory ownership;
 changing the field still requires opening the control. Authority alone, or
 zero copies of a control, does not supply its memory. The
 [folded-quantity fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_control_quantity_read.md)
-checks both orders. This entry rule does not yet provide symbolic batch
-transfer through ordinary helper calls.
+checks both orders. The quantity read itself does not transfer ownership.
 
 Creating or consuming a reference requires exposed authority, and opening the
 control exposes its owned counter field. Updating both the field and the
@@ -380,6 +379,22 @@ ownership, field access, or permission to create or consume members. Merely
 knowing that a pointer was freed does not establish an unrelated family’s
 count. The [cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_count_after_cleanup.md)
 checks this observation before and after free.
+
+An ordinary helper may borrow a folded control and an unchanged whole slot
+batch with `owns control(pool); owns pool->capacity of slot(pool);`. The
+helper must return both. Authority custody and batch custody move separately:
+receiving only one grants neither the other's ownership nor permission to
+consume members. A field-valued zero quantity moves no member rights. The
+[symbolic batch helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_helper.md)
+checks direct and nested calls. A cleanup helper can instead consume the
+control and complete entry-sized batch with `consumes`, retire its authority,
+and return ordinary storage with `produces object(pool)`. The
+[symbolic cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_symbolic_batch_cleanup_helper.md)
+checks direct, nested, and zero-sized calls. Call application consumes the
+checked entry quantity even when the helper changes the accounting field.
+Retired consumption evidence remains available to the certificate checker;
+it grants no live authority or member rights. Splitting batches and retiring
+additional authorities inside the same consumed control remain separate work.
 
 For an authority passed into a function, retirement checks both that its
 member custody has been consumed and that its authenticated global count is

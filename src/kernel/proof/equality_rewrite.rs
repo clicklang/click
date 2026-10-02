@@ -606,6 +606,14 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 return Err("`rewrite` algebraic equality does not occur in this goal".to_string());
             }
         };
+        if rewrite.refusal().is_some() {
+            // A refused scope or exhausted work leaves placeholders in the
+            // walker's result; it is not a rewritten goal.
+            return Err(
+                "`rewrite` cannot substitute this equality through a binder in the current goal"
+                    .to_string(),
+            );
+        }
         if !rewrite.changed {
             return Err("`rewrite` equality does not occur in the current goal".to_string());
         }
@@ -1554,7 +1562,19 @@ fn rewrite_atomic_proposition_by_exact_equality(
             | Bitvector32Term::ClickFunctionApplication { .. }
             | Bitvector32Term::AlgebraicMatch { .. }
             | Bitvector32Term::IntegerToMachine { .. } => {
-                super::term_rewrite::TermRewrite::for_bits(from, to).bits(term)
+                let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
+                let rewritten = rewrite.bits(term);
+                // The walker reports a scope it will not substitute through,
+                // or exhausted work, by setting a flag and handing back a
+                // placeholder constant. That placeholder is not a rewritten
+                // term: keeping it replaced an unfolded `match` by `0` and
+                // let `rewrite` close false goals. Declining an occurrence is
+                // always a sound substitution, so the term stays as it was.
+                if rewrite.refusal().is_some() {
+                    term.clone()
+                } else {
+                    rewritten
+                }
             }
             Bitvector32Term::Constant(_)
             | Bitvector32Term::Int64Constant(_)

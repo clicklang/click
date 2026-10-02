@@ -1151,6 +1151,49 @@ pub fn verify_program_prepared_project_at(
     })
 }
 
+/// Verifies only the entry module's pure theorem `theorem`. Theorems it
+/// cites remain interfaces, exactly as when a source location selects it.
+pub fn verify_c0_project_theorem(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
+/// [`verify_c0_project_theorem`] for compiler-prepared translation units.
+pub fn verify_c0_prepared_project_theorem(
+    project: &ClickProject,
+    imports: &[PreparedCImport],
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::prepared(imports).with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
 pub fn verify_c0_prepared_project_functions(
     project: &ClickProject,
     imports: &[PreparedCImport],
@@ -5276,6 +5319,12 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                             is_const: false,
                             ..
                         } => C0Type::Int32,
+                        crate::languages::cpp::CppType::Integer {
+                            bits: 64,
+                            signed: true,
+                            is_const: false,
+                            ..
+                        } => C0Type::Int64,
                         crate::languages::cpp::CppType::Pointer { pointee }
                             if matches!(
                                 pointee.as_ref(),
@@ -6826,7 +6875,7 @@ fn cpp_function_interface(
                 .with_pointee_constant(true))
             }
             crate::languages::cpp::CppType::LvalueReference { pointee } => {
-                let crate::languages::cpp::CppType::Record { name, .. } = pointee.as_ref() else {
+                let crate::languages::cpp::CppType::Record { name, is_const, .. } = pointee.as_ref() else {
                     return Err(ClickError::new(format!(
                         "C++ declaration `{}` parameter `{}` has an unsupported reference pointee",
                         source.declaration_id, parameter.name
@@ -6836,7 +6885,7 @@ fn cpp_function_interface(
                     C0Type::Int32Pointer,
                     parameter.name.clone(),
                     Some(name.clone()),
-                ))
+                ).with_pointee_constant(*is_const))
             }
             crate::languages::cpp::CppType::Pointer { pointee }
                 if matches!(

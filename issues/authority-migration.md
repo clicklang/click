@@ -292,8 +292,8 @@ all required operand domains, including reversed summands.
 `mdtests/authority_pool_control_init_nested.md` verifies standalone initialization
 with an arbitrary nonnegative capacity and a nested initialization at capacity
 two. Numerical batches now compose with unit exchanges in imported unary
-populations; zero has no member rights. Symbolic batches forwarded through
-another opaque helper still need support. These tests do not complete the
+populations; zero has no member rights. Symbolic batches created by initialization still need transport through
+another opaque helper. These tests do not complete the
 original bounded-pool migration.
 
 The two-object checkout/write/return sequence now has a reduced regression in
@@ -365,12 +365,28 @@ global zero instead of requiring a unit final release. Negative companions
 reject both an unspent batch and a nonzero global population with no locally
 owned members; writing capacity zero does not satisfy either obligation.
 
-The next small slice is symbolic batch helper transfer: pass cleanup's control
-and complete slot quantity through an ordinary helper contract, preserving the
-retirement evidence at return. Symbolic grow/shrink and two-pool transfer remain
-separate. The original bounded-pool project still uses legacy counting and is
-not migrated as a whole. The speculative cache repair remains removed; the
-checkout proofs required no count-model or authority change.
+Unchanged symbolic batches now round-trip through direct and nested ordinary
+helpers in `authority_symbolic_batch_helper.md`, using the folded control and
+`owns pool->capacity of slot(pool)`. The call ledger tracks batch custody
+independently of authority custody, rejects a different quantity and duplicate
+transfer, and refuses call completion with an unreturned batch. A zero-quantity
+companion checks that no member rights move; the missing-member companion
+rejects using a global count in place of owned fragments. Deterministic scaling
+coverage checks selected transfers with many unrelated populations. No new
+syntax or population transition is introduced by borrowing the batch.
+
+Single-population cleanup now applies its consumed symbolic-batch effect
+through ordinary direct and nested helper calls in
+`authority_symbolic_batch_cleanup_helper.md`, including zero-sized callers.
+The call uses the checked entry quantity, and retired consumption accounting
+survives return for certificate checking without conveying live rights. A
+negative companion rejects missing batch custody. The next small slice is
+retiring the additional already-empty authority in bounded-pool cleanup's
+consumed control; the reduced helper fixture covers only one authority. Keep
+batch splitting, symbolic grow/shrink, and two-pool transfer separate. The
+original bounded-pool project still uses legacy counting and is not migrated
+as a whole. The speculative cache repair remains removed; the checkout proofs
+required no count-model or authority change.
 Missing facts inside `open(...)` report `Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)

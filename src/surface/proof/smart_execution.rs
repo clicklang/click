@@ -934,4 +934,103 @@ impl<'a> Proof<'a> {
             premises,
         })
     }
+
+    /// The guarantees of a theorem application as the caller would write
+    /// them: each `ensures` of the applied theorem with the application's
+    /// arguments substituted for its parameters, in declaration order.
+    ///
+    /// This spells conclusions; it establishes nothing. The caller retains
+    /// one only after matching it against a fact the checked application
+    /// added, so an application this cannot spell yields no conclusions
+    /// rather than an error. A generic theorem is spelled only in a pure
+    /// theorem proof, where its type instance is inferred from the
+    /// arguments alone.
+    pub(in crate::surface::proof) fn theorem_application_surface_conclusions(
+        &self,
+        application: &TheoremApplication,
+    ) -> Vec<ClickProposition> {
+        let Ok(application) = self.resolve_theorem_application(application) else {
+            return Vec::new();
+        };
+        let theorem_environment = match self.context.as_ref() {
+            ProofContext::Pure(context) => context.theorem_environment,
+            ProofContext::FixedState(context) => context.theorem_environment,
+            ProofContext::Execution(context) => context.theorem_environment,
+        };
+        let Some(theorem) = theorem_environment.get(&application.name) else {
+            return Vec::new();
+        };
+        let theorem = if theorem.type_parameters().is_empty() {
+            theorem.clone()
+        } else {
+            let ProofContext::Pure(context) = self.context.as_ref() else {
+                return Vec::new();
+            };
+            let state = CState::new().with_memory(context.theorem_context.memory.clone());
+            let recorded_snapshots = RecordedSnapshots::new();
+            let algebraic_values = application
+                .arguments
+                .iter()
+                .flat_map(contract_expression_referenced_names)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .filter_map(|name| {
+                    self.local_algebraic_values()
+                        .get(&name)
+                        .cloned()
+                        .or_else(|| {
+                            context
+                                .structural_induction_setup
+                                .as_ref()?
+                                .algebraic_values
+                                .get(&name)
+                                .cloned()
+                        })
+                        .map(|value| (name, value))
+                })
+                .collect();
+            let application_context = TheoremApplicationContext {
+                values: &context.theorem_context.values,
+                array_refs: &context.theorem_context.array_refs,
+                algebraic_values: &algebraic_values,
+                pre_state: &state,
+                post_state: &state,
+                result: None,
+                recorded_snapshots: &recorded_snapshots,
+                integer_values: &context.theorem_context.integer_values,
+                pointer_element_widths: BTreeMap::new(),
+            };
+            let Ok(theorem) = instantiate_generic_theorem_application_definition(
+                theorem,
+                &application,
+                self.facts().assumptions(),
+                &application_context,
+                context.predicate_environment,
+                context.click_function_environment,
+            ) else {
+                return Vec::new();
+            };
+            theorem
+        };
+        if theorem.parameters().len() != application.arguments.len() {
+            return Vec::new();
+        }
+        let substitutions = theorem
+            .parameters()
+            .iter()
+            .map(FunctionParameter::name)
+            .map(str::to_string)
+            .zip(application.arguments.iter().cloned())
+            .collect::<BTreeMap<_, _>>();
+        theorem
+            .ensures()
+            .iter()
+            .filter_map(|ensure| match ensure.ensure() {
+                Ensure::Proposition(conclusion) => {
+                    substitute_click_proposition(conclusion, &substitutions).ok()
+                }
+                _ => None,
+            })
+            .collect()
+    }
 }

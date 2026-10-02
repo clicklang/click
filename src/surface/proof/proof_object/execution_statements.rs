@@ -1900,11 +1900,13 @@ impl<'a> Proof<'a> {
             claim_label,
             tactic_index,
         )?;
-        let CodeRegion::Statement(target_statement_index) = code_region else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute_until` expects a statement region"
-            )));
-        };
+        let target_statement_index = context
+            .constants
+            .source_layout
+            .execution_region_entry(code_region)
+            .map_err(|message| {
+                ClickError::new(format!("`{claim_label}` tactic {tactic_index}: {message}"))
+            })?;
         let (mut planning, mut planning_facts, mut sink) = {
             let view = self.execution_view()?;
             let mut planning = self.execution().cloned().ok_or_else(|| {

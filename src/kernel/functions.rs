@@ -2521,10 +2521,14 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
             ResourceFamily::Composite | ResourceFamily::PopulationAuthority
         )
     };
+    let protected = authority_mode_protected_families(interface);
     let admitted = |spec: &&CResourceSpec| {
         spec.role() == CResourceTransferRole::Borrow
             && spec.access() == CResourceAccessMode::Own
-            && spec.quantity() == &CResourceQuantity::One
+            && (spec.quantity() == &CResourceQuantity::One
+                || matches!(spec.term(), CResourceTerm::Composite { name, .. }
+                    if protected.contains(name.as_str())
+                        && authority_mode_member_quantity_admitted(interface, spec)))
             && spec.guard().is_none()
             && spec.resource_arguments().is_empty()
     };
@@ -2547,7 +2551,7 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
         && inputs
             .iter()
             .zip(outputs)
-            .all(|(left, right)| left.term() == right.term())
+            .all(|(left, right)| left.term() == right.term() && left.quantity() == right.quantity())
 }
 
 /// Direct population-like companions remain conserved. A control wrapper's
@@ -4893,12 +4897,6 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            if quantity.as_const() != Some(1) {
-                paths.push(resource_call_failure(
-                    "final release requires one exact member",
-                ));
-                continue;
-            }
             let description = ResourceDescription::new(
                 name,
                 arguments,
@@ -4916,17 +4914,35 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            let (spent, _) =
-                match events.checked_member_exchange(&pointer.pointer().block, &description, false)
-                {
-                    Ok(exchange) => exchange,
-                    Err(refusal) => {
-                        paths.push(resource_call_failure(&format!(
-                            "final release member transition refused: {refusal:?}"
-                        )));
-                        continue;
-                    }
-                };
+            // Entry field expressions can denote an empty batch even though
+            // the resource planner has already omitted its zero member rights.
+            let exchange_quantity = if !events.owns_imported_population_member(&description)
+                && crate::kernel::quantity_condition_holds(
+                    &effective_assumptions,
+                    ConditionTerm::Bitvector32Equal(
+                        quantity.clone(),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                ) {
+                Bitvector32Term::Constant(0)
+            } else {
+                *quantity
+            };
+            let (spent, _) = match events.checked_member_exchange_quantity(
+                &pointer.pointer().block,
+                &description,
+                false,
+                &exchange_quantity,
+                &effective_assumptions,
+            ) {
+                Ok(exchange) => exchange,
+                Err(refusal) => {
+                    paths.push(resource_call_failure(&format!(
+                        "final release member transition refused: {refusal:?}"
+                    )));
+                    continue;
+                }
+            };
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
