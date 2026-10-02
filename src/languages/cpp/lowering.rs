@@ -20,10 +20,10 @@ use super::{
 use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_function, c_greater_equal, c_if,
-    c_int32_literal, c_int64_literal, c_less_equal, c_parameter, c_pointer_offset_bytes, c_return,
-    c_seq, c_skip, c_try_catch_int32, c_try_catch_int32_with_cleanup, c_typed_load_with_source,
-    c_typed_store, c_variable,
+    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_equal, c_function, c_greater_equal,
+    c_if, c_int32_literal, c_int64_literal, c_less_equal, c_parameter, c_pointer_offset_bytes,
+    c_return, c_seq, c_skip, c_try_catch_int32, c_try_catch_int32_with_cleanup,
+    c_typed_load_with_source, c_typed_store, c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -111,8 +111,12 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
     };
     let body = context.lower_function_body(&source.body)?;
     let return_type = match &source.function_kind {
-        CppFunctionKind::Free if is_mutable_int32(&source.return_type) => CType::Int32,
-        CppFunctionKind::Free
+        CppFunctionKind::Free | CppFunctionKind::Method { .. }
+            if is_mutable_int32(&source.return_type) =>
+        {
+            CType::Int32
+        }
+        CppFunctionKind::Free | CppFunctionKind::Method { .. }
             if matches!(
                 source.return_type,
                 CppType::Boolean {
@@ -123,7 +127,12 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
         {
             CType::Bool
         }
-        CppFunctionKind::Free => {
+        CppFunctionKind::Free | CppFunctionKind::Method { .. }
+            if source.return_type == CppType::Void =>
+        {
+            CType::Void
+        }
+        CppFunctionKind::Free | CppFunctionKind::Method { .. } => {
             return Err(format!(
                 "C++ function `{}` has a return type outside direct lowering",
                 source.name
@@ -159,7 +168,11 @@ fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, St
         CppType::LvalueReference { pointee }
             if matches!(pointee.as_ref(), CppType::Record { .. }) =>
         {
-            Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
+            Ok(
+                c_parameter(parameter.name.clone(), CType::Int32Pointer).with_pointee_constant(
+                    matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }),
+                ),
+            )
         }
         CppType::Pointer { pointee } if is_mutable_int32(pointee) => {
             Ok(c_parameter(parameter.name.clone(), CType::Int32Pointer))
@@ -253,6 +266,7 @@ impl LoweringContext<'_> {
                     CppType::Record {
                         declaration_id,
                         name,
+                        ..
                     },
                     CppInitializer::Aggregate { fields, .. },
                 ) => {
@@ -296,6 +310,7 @@ impl LoweringContext<'_> {
                     CppType::Record {
                         declaration_id,
                         name,
+                        ..
                     },
                     CppInitializer::Constructor {
                         callee, arguments, ..
@@ -757,11 +772,20 @@ impl LoweringContext<'_> {
                 right,
                 value_type,
                 ..
-            } if is_mutable_int32(value_type) => {
+            } if is_mutable_int32(value_type) || is_mutable_int64(value_type) => {
                 let left = self.lower_expression(left)?;
                 let right = self.lower_expression(right)?;
                 Ok(c_add(left, right))
             }
+            CppExpression::Binary {
+                operator: CppBinaryOperator::Equal,
+                left,
+                right,
+                ..
+            } => Ok(c_cast(
+                c_equal(self.lower_expression(left)?, self.lower_expression(right)?),
+                CType::Bool,
+            )),
             CppExpression::Binary {
                 operator: CppBinaryOperator::LogicalAnd,
                 left,
@@ -868,6 +892,7 @@ impl LoweringContext<'_> {
         let CppType::Record {
             declaration_id,
             name,
+            ..
         } = record_type
         else {
             return Err(format!(
@@ -1054,6 +1079,8 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
     if is_mutable_int32(value_type) {
         Ok(CType::Int32)
+    } else if is_mutable_int64(value_type) {
+        Ok(CType::Int64)
     } else if is_mutable_int32_pointer(value_type) {
         Ok(CType::Int32Pointer)
     } else {

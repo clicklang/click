@@ -23,6 +23,78 @@ const COMMAND: &str =
     include_str!("../integrations/bitcoin-core-money-range/feerate-command.json.in");
 const SIDECAR: &str = include_str!("../integrations/bitcoin-core-money-range/MoneyRange.click");
 
+#[test]
+fn pinned_upstream_fee_frac_methods_reexport_and_verify() {
+    assert_eq!(
+        sha256(ARCHIVE),
+        "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
+    );
+    let root = std::env::temp_dir().join(format!("click-bitcoin-fee-frac-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let archive_path = root.join("input-closure.tar.gz");
+    fs::write(&archive_path, ARCHIVE).unwrap();
+    let result = Command::new("tar")
+        .args([
+            "-xzf",
+            archive_path.to_str().unwrap(),
+            "-C",
+            root.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    assert_eq!(
+        sha256(&fs::read(root.join("bitcoin-src/src/util/feefrac.h")).unwrap()),
+        "213a97d13eb82b34831466febcff24f4c20879603f36fc6edd894b89000f7ab9"
+    );
+    fs::create_dir_all(root.join("bitcoin-build/src")).unwrap();
+    let clang = pinned_clang();
+    let database = COMMAND
+        .replace("@ROOT@", root.to_str().unwrap())
+        .replace("@CLANGXX@", clang.to_str().unwrap())
+        .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]));
+    fs::write(root.join("compile_commands.json"), database).unwrap();
+    for (selected, name, source) in [
+        (
+            "FeeFrac::IsEmpty",
+            "FeeFracIsEmpty",
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click"),
+        ),
+        (
+            "FeeFrac::operator+=",
+            "FeeFracAdd",
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracAdd.click"),
+        ),
+        (
+            "FeeFrac::operator+=",
+            "FeeFracAddSelf",
+            include_str!("../integrations/bitcoin-core-money-range/FeeFracAddSelf.click"),
+        ),
+    ] {
+        let config = serde_json::json!({
+            "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
+            "exceptions": true, "rtti": true,
+            "exporter": std::env::var("CLICK_CPP_EXPORTER").unwrap(),
+            "compilation_database": "compile_commands.json", "working_directory": ".",
+            "source": "bitcoin-src/src/policy/feerate.cpp", "logical_source": "bitcoin-src/src/util/feefrac.h",
+            "dependencies": ["sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h", "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
+            "function": selected, "artifact": format!("{name}.click-cpp.json")
+        });
+        let config_path = root.join(format!("{name}.click.import.json"));
+        fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+        let sidecar = root.join(format!("{name}.click"));
+        fs::write(&sidecar, source).unwrap();
+        refresh_import(&config_path).unwrap_or_else(|error| panic!("{selected}: {error}"));
+        let import = load_import(&config_path).unwrap();
+        assert_eq!(import.export().preprocessor_files.len(), 320);
+        assert!(import.export().reachable_functions.is_empty());
+        let project = read_click_project(&sidecar, source).unwrap();
+        verify_program_prepared_project(&project, &import)
+            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
+    }
+    fs::remove_dir_all(root).unwrap();
+}
+
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
