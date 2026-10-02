@@ -54,6 +54,13 @@ theorem integer_add_bridge(left: int32, right: int32) {
     }
 }
 
+theorem integer_equality_bridge(left: int32, right: int32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right by {
+        apply(int32_equal_of_to_integer(left, right));
+    }
+}
+
 theorem integer_order_bridge(left: int32, right: int32) {
     requires left <= right;
     ensures to_integer(left) <= to_integer(right) by {

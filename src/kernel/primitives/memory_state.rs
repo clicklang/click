@@ -5494,6 +5494,18 @@ impl CState {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
+    /// Describe a selected control's declared authorities for exit checking.
+    /// Unlike opening its body, this grants no ownership or count observations.
+    pub(in crate::kernel) fn authority_wrapper_descriptions(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Vec<ResourceDescription>, String> {
+        self.authority_wrapper_candidates(selected, definition, assumptions, false)
+            .map(|(_, descriptions)| descriptions)
+    }
+
     /// Before a fold, require the exact body already owned. The certificate
     /// still checks the resulting exchange; this preflight only permits the
     /// surface tactic to avoid legacy counted-population bookkeeping.
