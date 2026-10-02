@@ -2829,7 +2829,8 @@ fn verify_c0_sources_with_context(
             &format!("{}.contract certification", function_block.signature.name()),
             None,
             function_source_registry.resource_semantics_mode(),
-        )?;
+        )
+        .map_err(|error| error.at_declaration(function_block.signature.name()))?;
         // Stable-view proof artifacts carry the exact caller state that the
         // checked function-entry boundary accepted. Reuse that state for
         // certification so resource occurrence IDs and loan ledger roots are
@@ -6823,10 +6824,12 @@ pub(in crate::surface) fn build_function_environment(
             &format!("{}.named contract", definition.name()),
         )
         .map_err(|error| {
-            error.with_context(format!(
-                "could not prepare named contract `{}`",
-                definition.name()
-            ))
+            error
+                .with_context(format!(
+                    "could not prepare named contract `{}`",
+                    definition.name()
+                ))
+                .at_declaration(definition.name())
         })?;
         let function = annotated_function(
             function_block,
@@ -6838,10 +6841,12 @@ pub(in crate::surface) fn build_function_environment(
             resource_environment,
         )
         .map_err(|error| {
-            error.with_context(format!(
-                "could not lower named contract `{}`",
-                definition.name()
-            ))
+            error
+                .with_context(format!(
+                    "could not lower named contract `{}`",
+                    definition.name()
+                ))
+                .at_declaration(definition.name())
         })?;
         let contract = CFunctionContract::new(definition.name(), function).ok_or_else(|| {
             ClickError::new(format!(

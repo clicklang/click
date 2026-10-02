@@ -380,7 +380,8 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         claim_label,
         Some(&caller_source_owner),
         function_source_registry.resource_semantics_mode(),
-    )?;
+    )
+    .map_err(|error| error.at_declaration(function_block.signature().name()))?;
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
         function_block,
@@ -632,7 +633,8 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         &proof_label,
         Some(&caller_source_owner),
         function_source_registry.resource_semantics_mode(),
-    )?;
+    )
+    .map_err(|error| error.at_declaration(function_block.signature().name()))?;
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
         function_block,
@@ -4116,7 +4118,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         )
                                                     })
                                                     .unwrap_or_default();
-                                                return Err(ClickError::new(format!(
+                                                return Err(direct_proof.step_error(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
                                                 )));
                                             };

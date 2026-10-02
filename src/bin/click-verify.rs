@@ -563,6 +563,15 @@ fn proof_error_report(
             context.push(excerpt);
         }
     }
+    // A contract that could not be set up at entry failed before any tactic
+    // or C statement, so the report shows the block that states it.
+    if let Some(source) = project.entry_source()
+        && let Some(function) = error.proof_declaration()
+        && let Some(position) = click::surface::click_declaration_source_position(source, function)
+        && let Some(excerpt) = source_excerpt(sidecar, source, &position, line_offset)
+    {
+        context.push(excerpt);
+    }
     if !context.is_empty() {
         report.push_str("\n\n");
         report.push_str(&context.join("\n"));
