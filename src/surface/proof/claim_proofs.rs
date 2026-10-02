@@ -492,8 +492,9 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         surface_propositions,
         PersistentSequence::default(),
     );
-    assert!(
-        initial.core.record_checked_function_entry(
+    initial
+        .core
+        .record_checked_function_entry(
             &function,
             &arguments,
             constants
@@ -502,7 +503,16 @@ pub(in crate::surface) fn prove_claim_by_tactics(
                 .expect("a function proof has a checked entry state"),
             assumptions_from_propositions(&pure_facts),
         )
-    );
+        .map_err(|error| {
+            ClickError::new(format!(
+                "could not check the function entry resources: {}",
+                crate::surface::diagnostics::describe_runtime_error(
+                    &error,
+                    parsed_function.parameters(),
+                    &arguments,
+                ),
+            ))
+        })?;
     // The checked drivers are tried in order: the structural driver owns
     // scopes and branches, and the flat driver owns linear proofs. A decline
     // tries the next checked driver; an error is terminal.
@@ -752,8 +762,9 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         surface_propositions,
         PersistentSequence::default(),
     );
-    assert!(
-        initial.core.record_checked_function_entry(
+    initial
+        .core
+        .record_checked_function_entry(
             &function,
             &arguments,
             constants
@@ -762,7 +773,16 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
                 .expect("a function proof has a checked entry state"),
             assumptions_from_propositions(&pure_facts),
         )
-    );
+        .map_err(|error| {
+            ClickError::new(format!(
+                "could not check the function entry resources: {}",
+                crate::surface::diagnostics::describe_runtime_error(
+                    &error,
+                    parsed_function.parameters(),
+                    &arguments,
+                ),
+            ))
+        })?;
     // Same order as the single-claim route: structural, then flat.
     // A decline recorded by an earlier claim's attempt, which another driver
     // then satisfied, must not colour this claim's diagnostic.

@@ -3235,10 +3235,17 @@ impl CheckedFunctionEntry {
         arguments: &[CExpression],
         expected_entry_state: &CState,
         assumptions: PureFactContext,
-    ) -> Option<Arc<Self>> {
-        let entry_state = crate::kernel::c_function_entry_state(caller_state, function, arguments)?;
+    ) -> Result<Arc<Self>, CRuntimeError> {
+        let entry_state = crate::kernel::c_function_entry_state(caller_state, function, arguments)
+            .ok_or_else(|| {
+                CRuntimeError::FunctionContract(
+                    "could not bind the function entry arguments".into(),
+                )
+            })?;
         if &entry_state != expected_entry_state {
-            return None;
+            return Err(CRuntimeError::FunctionContract(
+                "the checked function entry does not match the proof entry".into(),
+            ));
         }
         let function = Arc::new(function.clone());
         let boundary_transfer = if caller_state.uses_population_authority_semantics() {
@@ -3250,8 +3257,12 @@ impl CheckedFunctionEntry {
                     &assumptions,
                     &mut ExecutionBudget::beside_live_state(),
                 )
-                .ok()?
-                .ok()?,
+                .map_err(|limit| {
+                    CRuntimeError::FunctionContract(format!(
+                        "checking the function entry resource transfer stopped at {}",
+                        limit.describe(),
+                    ))
+                })??,
             )
         } else {
             None
@@ -3266,7 +3277,7 @@ impl CheckedFunctionEntry {
             relation_facts: None,
         };
         entry.relation_facts = entry.resource_relation_assumptions(&entry.assumptions);
-        Some(Arc::new(entry))
+        Ok(Arc::new(entry))
     }
 
     /// The facts the proof assumed at entry.
@@ -6623,24 +6634,24 @@ impl ExecutionProofCore {
         arguments: &[CExpression],
         expected_entry_state: &CState,
         assumptions: PureFactContext,
-    ) -> bool {
+    ) -> Result<(), CRuntimeError> {
         if !self.frontier.is_at_function_entry()
             || self.execution_evidence.len() != 1
             || !self.execution_evidence[0].is_empty()
         {
-            return false;
+            return Err(CRuntimeError::FunctionContract(
+                "function entry must be checked before executing its body".into(),
+            ));
         }
-        let Some(entry) = CheckedFunctionEntry::check(
+        let entry = CheckedFunctionEntry::check(
             &self.state,
             function,
             arguments,
             expected_entry_state,
             assumptions,
-        ) else {
-            return false;
-        };
+        )?;
         self.function_entry = Some(entry);
-        true
+        Ok(())
     }
 
     /// Records one statement theorem and the fact context it was proved
@@ -9367,7 +9378,10 @@ mod tests {
             ))),
         );
         let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
-        assert!(core.record_checked_function_entry(&function, &[], &state, PureFactContext::new()));
+        assert!(
+            core.record_checked_function_entry(&function, &[], &state, PureFactContext::new())
+                .is_ok()
+        );
         (core, value)
     }
 

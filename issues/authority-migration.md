@@ -335,9 +335,20 @@ No verifier or authority change was needed. The missing-slot helper regression
 pins rejection at call transfer; its current diagnostic is
 `population call transfer refused: MissingMembers`.
 
-The next small slice is cleanup through the two-authority control: first reduce
-reading a symbolic slot quantity from a folded control at a helper boundary,
-then prove zero-population retirement. Keep symbolic grow/shrink and two-pool
+The symbolic-quantity entry prerequisite now retains the nonnegative guard
+implicit in `owns n of slot(pool)` in the checked proof context. Previously,
+setup used that guard and then dropped it before checking the entry boundary,
+which could trigger an assertion. `authority_symbolic_quantity_entry.md`
+proves the direct authority contract without a redundant `requires 0 <= n`;
+its negative-call companion checks that the shared quantity guard still rejects
+a negative caller quantity using legacy call semantics. Checked entry failures
+now return a bounded diagnostic instead of asserting. This does not add
+symbolic batch transfer support.
+
+The next small slice is still cleanup through the two-authority control: reading
+a field-valued slot quantity from a folded control at a helper boundary,
+then proving zero-population retirement. The read-projection prototype is not
+part of this checkpoint. Keep symbolic grow/shrink and two-pool
 transfer separate. The original bounded-pool project still uses legacy
 counting and is not migrated as a whole. The speculative cache repair remains
 removed; these checkout proofs required no count-model or authority change.
