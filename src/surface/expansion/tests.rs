@@ -2559,3 +2559,16 @@ fn recursive_child_sibling_write_fold_expands_and_rechecks() {
     changed_sources[0].1 = changed_sources[0].1.replace("p->tag = 1", "p->left = 0");
     assert!(verify_c0_sources(&expanded, &crate::cli::source_refs(&changed_sources)).is_err());
 }
+
+/// A declaration is a name followed by `(` outside every brace. A use of the
+/// same name inside a body, even an earlier one, is not the declaration.
+#[test]
+fn a_declaration_position_skips_uses_inside_bodies() {
+    let source = "contract void Shape(int32* p) {\n    owns p[0..1];\n}\n\ntheorem uses() {\n    ensures Shape(&f) by { simp(); }\n}\n\n  int32 f(int32* p) {\n    ensures result == 0;\n}\n";
+    let position =
+        |name| click_declaration_source_position(source, name).map(|at| (at.line, at.column));
+    assert_eq!(position("Shape"), Some((1, 1)));
+    assert_eq!(position("uses"), Some((5, 1)));
+    assert_eq!(position("f"), Some((9, 3)));
+    assert_eq!(position("missing"), None);
+}

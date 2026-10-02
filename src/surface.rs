@@ -118,11 +118,12 @@ pub use expansion::{
     c0_prepared_tactic_source_position, c0_project_select_smart_tactic,
     c0_project_smart_tactic_source_sites, c0_project_tactic_source_position,
     c0_select_smart_tactic, c0_smart_tactic_source_sites, c0_tactic_source_position,
-    click_import_sites, expand_c0_claim_source, expand_c0_claim_source_by_label,
-    expand_c0_prepared_claim_source_by_label, expand_c0_prepared_project_claim_source_by_label,
-    expand_c0_prepared_project_tactic_source_at, expand_c0_prepared_tactic_source_at,
-    expand_c0_project_claim_source_by_label, expand_c0_project_tactic_source_at,
-    expand_c0_tactic_source_at, expand_program_prepared_claim_source_by_label,
+    click_declaration_source_position, click_import_sites, expand_c0_claim_source,
+    expand_c0_claim_source_by_label, expand_c0_prepared_claim_source_by_label,
+    expand_c0_prepared_project_claim_source_by_label, expand_c0_prepared_project_tactic_source_at,
+    expand_c0_prepared_tactic_source_at, expand_c0_project_claim_source_by_label,
+    expand_c0_project_tactic_source_at, expand_c0_tactic_source_at,
+    expand_program_prepared_claim_source_by_label,
     expand_program_prepared_project_claim_source_by_label,
     expand_program_prepared_project_tactic_source_at, expand_program_prepared_tactic_source_at,
     map_verifying_source_paths, nested_tactic_source_position,
@@ -5741,6 +5742,16 @@ pub enum ProofKind {
     LoopVerification,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct ReportDetail {
+    missing_tactic_requirement: Option<String>,
+    /// The Click declaration (a function block, named contract or theorem)
+    /// this failure is about, when no C statement has run and no tactic has
+    /// been checked: a contract that could not be set up at entry, or an
+    /// `executes` theorem refused before its proof.
+    declaration: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct ClickError {
     message: String,
@@ -5750,7 +5761,9 @@ pub struct ClickError {
     diagnostic: Option<std::sync::Arc<proof_diagnostics::ProofFailureDiagnostic>>,
     search_failures: Option<std::sync::Arc<Vec<proof_diagnostics::ProofSearchFailure>>>,
     unresolved_requirement: Option<std::sync::Arc<UnresolvedRequirement>>,
-    missing_tactic_requirement: Option<std::sync::Arc<String>>,
+    /// Report detail few errors carry, shared behind one pointer so the
+    /// error stays small enough to return by value.
+    report_detail: Option<std::sync::Arc<ReportDetail>>,
     /// The refused statement or condition has several checked successors
     /// that are cases told apart by their path facts. A simple tactic does
     /// not split on them; a planner that can split may take over.
@@ -6994,7 +7007,7 @@ impl ClickError {
             diagnostic: None,
             search_failures: None,
             unresolved_requirement: None,
-            missing_tactic_requirement: None,
+            report_detail: None,
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -7021,7 +7034,7 @@ impl ClickError {
             diagnostic: Some(std::sync::Arc::new(diagnostic)),
             search_failures: None,
             unresolved_requirement: None,
-            missing_tactic_requirement: None,
+            report_detail: None,
             path_case_split: None,
             timing_tactic: current_timing_tactic().map(Box::new),
         }
@@ -7134,8 +7147,7 @@ impl ClickError {
             });
         let (reason, proof_context) = split_proof_context(reason);
         let requirement_reason = self
-            .missing_tactic_requirement
-            .as_ref()
+            .missing_tactic_requirement()
             .map(|required| format!("requirement `{required}` not satisfied"));
         let reason = requirement_reason.as_deref().unwrap_or(reason);
         let (mut report, reason, certification_obligation) = if self.kind == ClickErrorKind::Proof
@@ -7199,7 +7211,7 @@ impl ClickError {
         if let Some(tactic) = self.failed_tactic {
             context.push(format!("tactic: {tactic}"));
         }
-        if let Some(required) = &self.missing_tactic_requirement {
+        if let Some(required) = self.missing_tactic_requirement() {
             context.push(format!("requires: {required}"));
         }
         if let Some(diagnostic) = &self.diagnostic
@@ -7208,7 +7220,7 @@ impl ClickError {
             let source_goal = state.source_goal();
             if let Some(goal) = &source_goal
                 && !certification_obligation
-                && self.missing_tactic_requirement.is_none()
+                && self.missing_tactic_requirement().is_none()
             {
                 context.push(format!("goal: {goal}"));
             }
@@ -7321,6 +7333,30 @@ impl ClickError {
     }
 
     /// The claim that supplied this proof failure's checked state, if any.
+    fn missing_tactic_requirement(&self) -> Option<&str> {
+        self.report_detail
+            .as_ref()?
+            .missing_tactic_requirement
+            .as_deref()
+    }
+
+    /// The Click declaration this failure is about, when it has no tactic
+    /// or C statement to name: the terminal report shows where it is
+    /// written.
+    pub fn proof_declaration(&self) -> Option<&str> {
+        self.report_detail.as_ref()?.declaration.as_deref()
+    }
+
+    /// Records the Click declaration this failure is about. A failure
+    /// already attributed keeps its declaration.
+    pub(crate) fn at_declaration(mut self, name: &str) -> Self {
+        let detail = std::sync::Arc::make_mut(self.report_detail.get_or_insert_default());
+        if detail.declaration.is_none() {
+            detail.declaration = Some(name.to_owned());
+        }
+        self
+    }
+
     pub fn proof_claim_label(&self) -> Option<&str> {
         self.diagnostic
             .as_ref()
@@ -7344,7 +7380,8 @@ impl ClickError {
     }
 
     pub(crate) fn with_missing_tactic_requirement(mut self, required: String) -> Self {
-        self.missing_tactic_requirement = Some(std::sync::Arc::new(required));
+        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default())
+            .missing_tactic_requirement = Some(required);
         self.rendered = std::sync::OnceLock::new();
         self
     }
@@ -7463,7 +7500,7 @@ impl ClickError {
             diagnostic: self.diagnostic,
             search_failures: self.search_failures,
             unresolved_requirement: self.unresolved_requirement,
-            missing_tactic_requirement: self.missing_tactic_requirement,
+            report_detail: self.report_detail,
             path_case_split: self.path_case_split,
             timing_tactic: self.timing_tactic,
         }
@@ -7496,7 +7533,7 @@ impl Clone for ClickError {
             diagnostic: self.diagnostic.clone(),
             search_failures: self.search_failures.clone(),
             unresolved_requirement: self.unresolved_requirement.clone(),
-            missing_tactic_requirement: self.missing_tactic_requirement.clone(),
+            report_detail: self.report_detail.clone(),
             path_case_split: self.path_case_split.clone(),
             timing_tactic: self.timing_tactic.clone(),
         }
@@ -7511,7 +7548,7 @@ impl PartialEq for ClickError {
             && self.diagnostic == other.diagnostic
             && self.search_failures == other.search_failures
             && self.unresolved_requirement == other.unresolved_requirement
-            && self.missing_tactic_requirement == other.missing_tactic_requirement
+            && self.report_detail == other.report_detail
             && self.path_case_split == other.path_case_split
             && self.timing_tactic == other.timing_tactic
     }

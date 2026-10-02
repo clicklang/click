@@ -1579,4 +1579,42 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
             "{command} on {family} reported a stack overflow: {error}"
         );
     }
+
+    /// A contract that cannot be set up at entry fails before any tactic or C
+    /// statement, so the report shows where the contract is written.
+    #[test]
+    fn a_contract_setup_failure_shows_the_contract_declaration() {
+        let directory = std::env::temp_dir().join(format!(
+            "click-setup-failure-location-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(
+            directory.join("f.c"),
+            "void release(int32 *x, int32 i, int32 j) {\n    return;\n}\n",
+        )
+        .unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\";\n\nvoid release(int32 *x, int32 i, int32 j) {\n    requires 0 <= i;\n    requires i <= j;\n    consumes x[0..(i + 1)];\n    consumes x[j..(j + 1)];\n} by {\n    execute();\n    simp();\n}\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(
+            error.starts_with("proof error:\n  `release.contract` setup failed\n"),
+            "{error}"
+        );
+        assert!(
+            error.contains(&format!(
+                "\n  --> {}:3:1\n  3 | void release(int32 *x, int32 i, int32 j) {{\n",
+                sidecar.display()
+            )),
+            "{error}"
+        );
+    }
 }
