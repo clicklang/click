@@ -1,89 +1,6 @@
 use super::*;
 use num_traits::ToPrimitive;
 
-/// Rewrites kernel-minted load variables back to their defining load terms,
-/// using the certified defining equations the canonicalizing loader pushed
-/// into the execution fact stream. Surface synthesis calls this before
-/// form a kernel fact, so a fact mentioning a minted variable writes as
-/// the loaded expression the source actually wrote.
-/// The pointer-level companion of [`resolve_minted_load_variables`]: rewrites
-/// kernel-minted load variables inside a pointer's offset using
-/// defining-shaped equations drawn from an assumption context. Range and
-/// containment provers call this on their query pointer so a minted address
-/// matches ranges still written through loads.
-pub(crate) fn resolve_minted_load_pointer(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Pointer {
-    let mut resolved = pointer.clone();
-    let mut defining = 0usize;
-    for fact in assumptions.prop_facts.iter() {
-        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = fact
-        else {
-            continue;
-        };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
-            (left.as_ref(), right.as_ref())
-        else {
-            continue;
-        };
-        defining += 1;
-        resolved.offset =
-            substitute_bitvector_variable_in_pointer_offset(&resolved.offset, *variable, load);
-    }
-    let _ = defining;
-    resolved
-}
-
-#[cfg(test)]
-mod alias_resolution_tests {
-    use super::*;
-
-    fn symbolic(identity: u64) -> Pointer {
-        Pointer {
-            block: PointerBlock::Symbolic(Variable(identity)),
-            offset: PointerOffsetTerm::Constant(0),
-        }
-    }
-
-    fn concrete(name: &str) -> Pointer {
-        Pointer {
-            block: PointerBlock::Concrete(name.to_string()),
-            offset: PointerOffsetTerm::Constant(0),
-        }
-    }
-
-    /// The hop reads the alias index under the pointer, so it finds the
-    /// equality whichever side named the symbolic pointer, ignores a false
-    /// one and a symbolic-to-symbolic one, and leaves a pointer with no
-    /// concrete alias alone.
-    #[test]
-    fn a_symbolic_pointer_resolves_through_its_indexed_alias() {
-        let havoc = symbolic(7);
-        let other = symbolic(8);
-        let object = concrete("node");
-        let assumptions = PureFactContext::default()
-            .assume_condition(
-                ConditionTerm::pointer_equal(other.clone(), havoc.clone()),
-                true,
-            )
-            .assume_condition(
-                ConditionTerm::pointer_equal(havoc.clone(), concrete("wrong")),
-                false,
-            )
-            .assume_condition(
-                ConditionTerm::pointer_equal(object.clone(), havoc.clone()),
-                true,
-            );
-        assert_eq!(resolve_symbolic_pointer_alias(&havoc, &assumptions), object);
-        assert_eq!(resolve_symbolic_pointer_alias(&other, &assumptions), other);
-        assert_eq!(
-            resolve_symbolic_pointer_alias(&object, &assumptions),
-            object
-        );
-    }
-}
-
 #[cfg(test)]
 mod resource_frame_substitution_tests {
     use super::*;
@@ -367,26 +284,6 @@ mod resource_frame_substitution_tests {
             CExpression::Value(CValue::pointer(replacement))
         );
     }
-}
-
-/// Rewrites a havoced symbolic pointer local through one explicit pointer
-/// equality. The equality is deliberately limited to an exact fact and one
-/// hop: resource lookup can use the concrete block's index without turning
-/// alias reasoning into an unbounded graph walk. The true pointer equalities
-/// naming this pointer are filed under it (`pointer_block_aliases`), so the
-/// hop is a keyed lookup rather than a scan of every condition fact.
-pub(crate) fn resolve_symbolic_pointer_alias(
-    pointer: &Pointer,
-    assumptions: &PureFactContext,
-) -> Pointer {
-    if !matches!(pointer.block, PointerBlock::Symbolic(_)) {
-        return pointer.clone();
-    }
-    assumptions
-        .exact_pointer_aliases(pointer)
-        .find(|alias| !matches!(alias.block, PointerBlock::Symbolic(_)))
-        .cloned()
-        .unwrap_or_else(|| pointer.clone())
 }
 
 /// Resolves load variables in a proposition through

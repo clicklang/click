@@ -1,15 +1,16 @@
 # Equality closure design
 
-Status: partial implementation, 2026-09-30. The trusted persistent graph
+Status: bounded resource lookup migration complete, 2026-10-02. The trusted persistent graph
 maintains affine pointer classes, offset and int32 congruence, and registered
 same-snapshot pointer and four-byte scalar loads. Selected normalization,
 transport, memory, resource-value, and range consumers query it. Ordinary C
 pointer loads still have a storage-relative representation; equality-aware
 resource indexing is implemented for selected consumers. Other theories
 described here remain possible future work.
-The repository's `issues/egraph.md` tracks only the P1 pointer-read and
-read/fold behavior needed by the rbtree proof. The wider design in this note
-is reference material, not additional P1 acceptance criteria.
+The seven resource lookup cleanup milestones are complete. The rbtree proof
+has its own remaining frontier; completing it is not an additional equality
+migration requirement. Wider theories in this note remain reference material,
+not new P1 acceptance criteria.
 
 ## Current interface and trust boundary
 
@@ -844,7 +845,7 @@ subranges, missing bounds and aliases, sibling isolation, view and owner
 suppliers, and zero quantity. A red-to-green regression rejects an ambiguous
 start bucket even when a hidden search could find a covering supplier;
 checker and persistent-index work remain flat across 16–1,024 same-base ranges.
-Storage and object consumers retain the separately tracked milestone-7 work.
+Storage and object consumers now use the indexed evidence described below.
 
 General read/write permission uses one shared classifier. Exact address/start
 payloads include eligible partial reads; physical interval hits select retained
@@ -947,6 +948,78 @@ owner; explicit fragment composition is measured separately
 over increasing selected input sizes. Symbolic-chain and ordered-residual
 regressions also measure work beside unrelated holdings.
 
+## Storage authority and object provenance
+
+The graph and these derived indexes are part of the **trusted kernel**.
+`owns_storage_access` uses the shared write candidate classifier and retains
+its selected occurrence and graph checkpoint. It checks positive ownership
+and the complete byte footprint with ordinary resource entailment; write
+candidate eligibility alone is insufficient. Allocation-retirement coverage
+uses this interface for concrete byte counts and shared fact support for
+symbolic footprints. Neither path scans a block for an owner.
+
+`memory_object_evidence` selects a retained nonempty footprint using the
+pointer's C object identity, separately from its raw address. Exact object
+payloads are maintained with resource deltas, including on raw explicit
+inputs. Published payloads follow typed object-class merges in the same
+private graph checkpoint. Known nonempty footprints select a witness directly;
+a unique symbolic candidate still requires ordinary nonemptiness and positive
+quantity checks. A cold miss refuses without walking equality history or
+publishing a context at lookup. Consuming an owner removes its witness only
+from the consuming resource fork. Address equality between different external
+objects does not merge their provenance identities or create storage authority.
+
+Pure composition provenance has a private `ObjectEvidenceSources` interface.
+It retains the first source context and its persistent indexes in constant
+work. Persistent checkpoints retain each admitted source lineage. Later
+admissions follow ancestor or sibling deltas to their common prefix, filter
+for inputs actually present in the admitted source, and never traverse the
+shared history. Independent sources add their explicitly supplied memory input
+once. Querying this evidence visits
+neither the ambient composition collection nor its resource inputs. Its
+backing context is private and cannot be consumed as resource authority.
+
+`EqualityGraph::storage_address` preserves the original address unless retained
+concrete evidence can name its storage coordinates. Exact typed address
+payloads retain original concrete inputs; affine classes retain a unique
+concrete block anchor. Both summaries follow persistent class merges. This
+handles transitive aliases and multiple external addresses sharing one raw
+address-space block. Generated representative projections never mint storage
+evidence. Ambiguous evidence, unsupported arithmetic, and arithmetic overflow
+leave the address unresolved. This query establishes no ownership, object
+provenance, lifetime, bounds, initialization, or writability. Mutex
+initialization and runtime storage havoc use it to identify the storage they
+subsequently check or affect. The shared alignment checker accepts this one
+checked concrete formation as well as its existing original formation evidence;
+mutex initialization no longer retries alignment on another pointer spelling.
+Explicit power-of-two alignment premises also supply one retained witness on
+an address class. Late equality merges keep the strongest original premise;
+lookup checks that premise directly instead of enumerating class members.
+This supports symbolic aliases as well as concrete storage coordinates.
+The formation rule retains any explicit alignment premise and still checks
+byte displacement, intrinsic alignment, and requested alignment. The existing
+single-premise arithmetic alignment certificate continues to encode only
+formation arithmetic; its evidence producer refuses a class witness whose
+supporting equalities that certificate cannot express. Ambient alignment
+checking does not label such incomplete evidence as a complete certificate.
+
+The old `storage_pointer_spellings`, one-hop
+`resolve_symbolic_pointer_alias`, premise-scanning `resolve_minted_load_pointer`,
+structural owned-byte span caches, and `memory_block_facts` supplier API are
+deleted. `memory_base_facts` was deleted in milestone 5. Remaining block-index
+visits apply effects or check all affected occurrences, rather than search
+for an implicit memory supplier. Explicit composition/publication and fragment
+inputs may be visited proportionally to their admitted input or produced delta.
+
+Regressions cover transitive ownership aliases, view-only and zero-quantity
+refusals, typed object identity versus raw address equality, empty footprints,
+consumed occurrences and persistent siblings, concrete storage anchors and
+ambiguous classes, and several external addresses mapped to distinct storage.
+Multi-size checks cover unrelated same-block footprints and composition
+sources, hits and misses, and growing alias histories. Existing initialization,
+retirement, composition-admission, and contract-projection scaling controls
+remain in force. The complete fixture gate verifies expansion and rechecking.
+
 ## Resource producer publication audit
 
 Milestone 1 of the repository's egraph issue is producer publication, not
@@ -1014,7 +1087,7 @@ scan cannot pass merely because the final lookup is cheap.
 
 Publication has an explicit producer policy. Publication alone does not
 complete candidate selection: the consumer migrations above establish bounded
-selection and refusal. Adjacent storage/object queries remain milestone 7.
+selection and refusal. Adjacent storage/object queries use the completed interfaces below.
 
 ## Checked pointer-read sources
 
@@ -1157,11 +1230,13 @@ constants in different sorts must not be merged at all.
 
 ## Migration and deletion
 
-The egraph issue (`issues/egraph.md` in the repository) now defines seven
-bounded resource lookup cleanup milestones, from producer publication and
-shared containment support through deletion of spelling retries and ambient supplier searches.
-The earlier pointer/load foundation is implemented; broader theory and tactic
-extensions remain outside this completion target. The historical non-green
+The seven bounded resource lookup cleanup milestones are complete: producer
+publication, shared containment and span support, general read/write permission,
+symbolic range reads, satisfaction/support/fragment consumption, and adjacent
+storage/object queries. Their named spelling retries and ambient supplier
+searches are deleted. The completed issue is removed from the open issue list.
+The pointer/load foundation is implemented; broader theory and tactic
+extensions require a concrete new use case. The historical non-green
 loaded-pointer trial is evidence about dependencies, not the implementation
 plan. Use isolated worktrees and integrate only coherent
 green commits. Preserve the original C regressions.

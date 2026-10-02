@@ -13991,19 +13991,19 @@ fn lent_owned_memory_covers_allocation(
     bytes: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
+    if let Some(bytes) = bytes.as_const()
+        && bytes > 0
+    {
+        return lent.owns_storage_access(base, bytes, assumptions);
+    }
     let allocation = CMemoryRange::new_with_element_width(
         base.clone(),
         Bitvector32Term::Constant(0),
         bytes.clone(),
         1,
     );
-    lent.memory_block_facts(&base.block).any(|fact| {
-        crate::instrumentation::record_deterministic_work(1);
-        fact.memory_own_range().is_some_and(|range| {
-            fact.has_proven_positive_quantity(assumptions)
-                && memory_range_covers(range, &allocation, assumptions)
-        })
-    })
+    lent.directly_supporting_fact(&CResourceFact::own_memory(allocation), assumptions)
+        .is_some()
 }
 
 fn apply_verified_heap_allocation_delta(

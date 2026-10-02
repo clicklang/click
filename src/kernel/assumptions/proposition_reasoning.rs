@@ -1299,7 +1299,7 @@ impl PureFactContext {
             Proposition::ConditionIs(condition, value) => condition
                 .as_pointer_alignment()
                 .and_then(|(pointer, alignment)| {
-                    self.pointer_alignment_decision(pointer, alignment)
+                    self.pointer_alignment_certificate_decision(pointer, alignment)
                 })
                 .filter(|(aligned, _)| aligned == value)
                 .map(|(_, premise)| {

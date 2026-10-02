@@ -57,6 +57,63 @@ impl Suppliers {
     }
 }
 
+/// Structural keys retain exact object evidence before graph publication.
+/// Updates charge one admitted resource delta; a cold lookup never attaches
+/// the input or enumerates facts to discover its object footprint.
+#[derive(Clone, Debug, Default)]
+pub(in crate::kernel::primitives) struct ObjectSuppliers {
+    nonempty: PersistentMap<Pointer, ResourceEntryIds>,
+    symbolic: PersistentMap<Pointer, ResourceEntryIds>,
+}
+impl ObjectSuppliers {
+    pub(in crate::kernel::primitives) fn update(
+        &mut self,
+        entry: ResourceEntryId,
+        insert: bool,
+        fact: &CResourceFact,
+    ) {
+        let Some(range) = fact.memory_range() else {
+            return;
+        };
+        let suppliers = if read_extent(fact).is_some() {
+            &mut self.nonempty
+        } else if RangeSupports::symbolic(range)
+            && fact
+                .owned_quantity_term()
+                .and_then(Bitvector32Term::as_const)
+                != Some(0)
+        {
+            &mut self.symbolic
+        } else {
+            return;
+        };
+        let object = range.base().object_identity();
+        let entries = suppliers.get(&object).cloned().unwrap_or_default();
+        let entries = if insert {
+            entries.with_value(entry)
+        } else {
+            entries.without_value(&entry)
+        };
+        if entries.is_empty() {
+            suppliers.remove(&object);
+        } else {
+            suppliers.insert(object, entries);
+        }
+    }
+    pub(in crate::kernel::primitives) fn supplier(
+        &self,
+        object: &Pointer,
+    ) -> Option<ResourceEntryId> {
+        self.nonempty
+            .get(object)
+            .and_then(|entries| entries.iter().next().copied())
+            .or_else(|| {
+                let entries = self.symbolic.get(object)?;
+                (entries.len() == 1).then(|| *entries.iter().next().expect("sole object witness"))
+            })
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct RangeSupports {
     footprints: Suppliers,
@@ -64,6 +121,9 @@ pub(super) struct RangeSupports {
     bases: Suppliers,
     owned_bases: Suppliers,
     read_starts: Suppliers,
+    nonempty_objects: Suppliers,
+    symbolic_objects: Suppliers,
+    object_classes: PersistentMap<Pointer, u64>,
 }
 impl RangeSupports {
     fn needs_base(range: &CMemoryRange) -> bool {
@@ -82,6 +142,14 @@ impl RangeSupports {
             graph.footprint_class(range);
         }
     }
+    pub(super) fn register_object(&mut self, range: &CMemoryRange, graph: &EqualityGraph) {
+        let object = range.base().object_identity();
+        if !self.object_classes.contains_key(&object)
+            && let Some(class) = graph.address_class(&object)
+        {
+            self.object_classes.insert(object, class);
+        }
+    }
     fn symbolic(range: &CMemoryRange) -> bool {
         range.start().as_const().is_none() || range.end().as_const().is_none()
     }
@@ -95,6 +163,23 @@ impl RangeSupports {
         let Some(range) = fact.memory_range() else {
             return;
         };
+        if let Some(class) = self
+            .object_classes
+            .get(&range.base().object_identity())
+            .copied()
+        {
+            let class = graph.address_class_root(class);
+            if read_extent(fact).is_some() {
+                self.nonempty_objects.update(entry, insert, class, graph);
+            } else if Self::symbolic(range)
+                && fact
+                    .owned_quantity_term()
+                    .and_then(Bitvector32Term::as_const)
+                    != Some(0)
+            {
+                self.symbolic_objects.update(entry, insert, class, graph);
+            }
+        }
         if Self::needs_base(range)
             && let Some(class) = graph.address_class(range.base())
         {
@@ -137,7 +222,19 @@ impl RangeSupports {
                 .or_else(|| self.bases.sole(class))
         }
     }
+    pub(super) fn object_supplier(&self, class: u64) -> Option<ResourceEntryId> {
+        // Known nonempty footprints need no candidate search. Unknown symbolic
+        // footprints are eligible only when uniquely selected; the consumer
+        // proves nonemptiness and object identity from the retained source.
+        self.nonempty_objects
+            .classes
+            .get(&class)
+            .and_then(|entries| entries.iter().next().copied())
+            .or_else(|| self.symbolic_objects.sole(class))
+    }
     pub(super) fn merge(&mut self, moved: u64, kept: u64) {
+        self.nonempty_objects.merge(moved, kept);
+        self.symbolic_objects.merge(moved, kept);
         self.read_starts.merge(moved, kept);
         self.bases.merge(moved, kept);
         self.owned_bases.merge(moved, kept);

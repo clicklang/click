@@ -57,6 +57,8 @@ mod int32_load_tests;
 mod int32_tests;
 #[cfg(test)]
 mod scaled_int32_tests;
+#[cfg(test)]
+mod storage_tests;
 pub(in crate::kernel) use inputs::InputKey;
 mod terms;
 
@@ -463,6 +465,10 @@ struct EqualityGraphState {
     // Weight includes application uses, so repeatedly joining a fresh block
     // to one with many parents never reindexes the large side.
     weights: crate::persistent::PersistentMap<PointerBlock, usize>,
+    // A storage coordinate is retained evidence, not the union-find root.
+    // None records an ambiguous class. Append-only merges cannot regain a
+    // unique anchor; no member enumeration is needed to answer a query.
+    storage_anchors: crate::persistent::PersistentMap<PointerBlock, Option<PointerBlock>>,
     loads: crate::persistent::PersistentMap<PointerBlock, LoadApplication>,
     uses: crate::persistent::PersistentMap<
         PointerBlock,
@@ -682,6 +688,26 @@ impl EqualityGraph {
         Some(merges)
     }
 
+    /// Retain an explicit alignment premise on its typed address class. Only
+    /// power-of-two alignments enter; merging keeps the strongest source in
+    /// constant work and never infers alignment from a pointee type.
+    pub(in crate::kernel) fn register_alignment(&self, pointer: &Pointer, alignment: u64) {
+        if !alignment.is_power_of_two() {
+            return;
+        }
+        self.address_class(pointer);
+        let mut state = self.state.lock().expect("equality graph");
+        let id = state.register_pointer_address(pointer);
+        state.terms.retain_alignment(id, alignment, pointer);
+    }
+
+    pub(in crate::kernel) fn alignment_witness(&self, pointer: &Pointer) -> Option<(u64, Pointer)> {
+        self.address_class(pointer)?;
+        let mut state = self.state.lock().expect("equality graph");
+        let id = state.register_pointer_address(pointer);
+        state.terms.alignment_witness(id)
+    }
+
     /// Typed address applications share the graph's offset closure. This is
     /// trusted index registration, not an additional premise or a new pointer
     /// representation. Only registered addresses are propagated by merges.
@@ -754,6 +780,58 @@ impl EqualityGraph {
             .lock()
             .expect("equality graph")
             .canonical(pointer)
+    }
+
+    /// Preserve the supplied address unless its class has one concrete storage
+    /// anchor. Re-expression uses the checked affine class relation, never an
+    /// arbitrary representative or an alias walk. This does not establish
+    /// object provenance, lifetime, bounds, ownership, or writability.
+    pub(in crate::kernel) fn storage_address(&self, pointer: &Pointer) -> Pointer {
+        if EqualityGraphState::is_storage_block(&pointer.block) {
+            return pointer.clone();
+        }
+        self.address_class(pointer);
+        let mut state = self.state.lock().expect("equality graph");
+        let address = state.register_pointer_address(pointer);
+        if let Some(mut storage) = state.terms.storage_address(address) {
+            if let Some(offset) =
+                AffineOffset::of(&storage.offset).and_then(|offset| offset.to_offset_term())
+            {
+                storage.offset = offset;
+            }
+            return storage;
+        }
+        let base = pointer.object_base();
+        if base != *pointer {
+            let id = state.register_pointer_address(&base);
+            if let Some(storage) = state.terms.storage_address(id)
+                && let Some(offset) = AffineOffset::of(&pointer.offset)
+                    .and_then(|offset| offset.checked_sub(&AffineOffset::of(&base.offset)?))
+                    .and_then(|delta| delta.checked_add(&AffineOffset::of(&storage.offset)?))
+                    .and_then(|offset| offset.to_offset_term())
+            {
+                return Pointer {
+                    block: storage.block,
+                    offset,
+                };
+            }
+        }
+        let Some(coordinate) = state.canonical(pointer) else {
+            return pointer.clone();
+        };
+        let Some(block) = state.storage_anchor(&coordinate.representative) else {
+            return pointer.clone();
+        };
+        let (root, delta) = state.find(&block);
+        if root != coordinate.representative {
+            return pointer.clone();
+        }
+        coordinate
+            .offset
+            .checked_sub(&delta)
+            .and_then(|offset| offset.to_offset_term())
+            .map(|offset| Pointer { block, offset })
+            .unwrap_or_else(|| pointer.clone())
     }
 
     /// Re-express one known address in a selected block's coordinates. This
@@ -1028,7 +1106,11 @@ impl EqualityGraph {
             }),
             _ => true,
         };
-        let address_changed = if left.block != right.block && needs_raw_addresses {
+        let address_changed = if left.block != right.block
+            && (needs_raw_addresses
+                || EqualityGraphState::is_storage_block(&left.block)
+                || EqualityGraphState::is_storage_block(&right.block))
+        {
             let left_address = state.register_pointer_address(left);
             let right_address = state.register_pointer_address(right);
             state
@@ -1040,6 +1122,15 @@ impl EqualityGraph {
         let offset_changed =
             left.block == right.block && state.terms.add_equality(&left.offset, &right.offset);
         let pointer_changed = state.close(vec![(left.clone(), right.clone())]);
+        if EqualityGraphState::is_storage_block(&left.block)
+            || EqualityGraphState::is_storage_block(&right.block)
+        {
+            let left_address = state.register_pointer_address(left);
+            let right_address = state.register_pointer_address(right);
+            state
+                .terms
+                .add_address_equality(left_address, right_address);
+        }
         let changed = address_changed || offset_changed || pointer_changed;
         if changed {
             state.remember_input(inputs::Input::Pointer(left.clone(), right.clone()));
@@ -1309,6 +1400,9 @@ impl EqualityGraphState {
         let (raw, new) = self
             .terms
             .address(pointer.block.clone(), pointer.offset.clone());
+        if Self::is_storage_block(&pointer.block) {
+            self.terms.retain_storage_address(raw, pointer);
+        }
         if new {
             self.weights
                 .insert(representative.clone(), self.weight(&representative) + 1);
@@ -1360,6 +1454,20 @@ impl EqualityGraphState {
         changed
     }
 
+    fn is_storage_block(block: &PointerBlock) -> bool {
+        matches!(
+            block,
+            PointerBlock::Heap(_) | PointerBlock::Temporary(_) | PointerBlock::StringLiteral { .. }
+        ) || matches!(block, PointerBlock::Concrete(name) if name != "null")
+    }
+
+    fn storage_anchor(&self, root: &PointerBlock) -> Option<PointerBlock> {
+        self.storage_anchors
+            .get(root)
+            .cloned()
+            .unwrap_or_else(|| Self::is_storage_block(root).then(|| root.clone()))
+    }
+
     fn relabel(
         &mut self,
         moved: PointerBlock,
@@ -1367,6 +1475,23 @@ impl EqualityGraphState {
         moved_from_kept: AffineOffset,
         equalities: &mut Vec<(Pointer, Pointer)>,
     ) -> bool {
+        let anchors = match (self.storage_anchor(&moved), self.storage_anchor(&kept)) {
+            (Some(left), Some(right)) if left == right => Some(left),
+            (Some(_), Some(_)) => None,
+            (left, right) => {
+                // An existing None is ambiguous, not an empty anchor set.
+                if self
+                    .storage_anchors
+                    .get(&moved)
+                    .is_some_and(Option::is_none)
+                    || self.storage_anchors.get(&kept).is_some_and(Option::is_none)
+                {
+                    None
+                } else {
+                    left.or(right)
+                }
+            }
+        };
         let mut deltas = vec![(moved.clone(), moved_from_kept.clone())];
         if let Some(members) = self.members.get(&moved) {
             for (member, delta) in members {
@@ -1376,6 +1501,16 @@ impl EqualityGraphState {
                 deltas.push((member.clone(), delta));
             }
         }
+        // Store a summary only for classes containing concrete evidence.
+        if anchors.is_some()
+            || self.storage_anchors.contains_key(&moved)
+            || self.storage_anchors.contains_key(&kept)
+            || Self::is_storage_block(&moved)
+            || Self::is_storage_block(&kept)
+        {
+            self.storage_anchors.insert(kept.clone(), anchors);
+        }
+        self.storage_anchors.remove(&moved);
         crate::instrumentation::record_deterministic_work(deltas.len());
         let mut kept_members = self.members.get(&kept).cloned().unwrap_or_default();
         self.weights

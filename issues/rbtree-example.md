@@ -60,9 +60,12 @@ its model identity now passes owned-cell consumption and fails instead at
 pointer argument does not match, while its model field does. A small no-write
 unfold/refold reduction reproduces this; refolding at the original pointer
 passes. The related `p->word` / `id->word` regression already passes.
-See [the reduced egraph recheck](egraph.md#reduced-rbtree-recheck-2026-09-29).
-The exact registration or snapshot-equality gap remains to be isolated;
-the earlier attribution to missing owned-cell lookup is superseded.
+That historical reduction now passes: checked child-read definitions retain
+their graph identity, and the later read-identity recheck accepts the immediate
+sibling refold. See the [checked pointer-read design](../docs/internals/equality-closure.md#checked-pointer-read-sources).
+The original frontier remains at statement 42; the next `step()` stops on two
+successors in the inlined rotation. The completed equality migration does not
+establish that those remaining rbtree leaves verify.
 
 The remaining C3b work after that gap: the empty-uncle leaves of the same
 combination (the text is the same after refolding the uncle as `Empty`), the

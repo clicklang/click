@@ -3473,3 +3473,43 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn resource_object_provenance_does_not_scan_same_raw_block() {
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(895_000 + id)),
+    };
+    let target = pointer(0);
+    let expression = c_less_equal(c_variable("pointer"), c_variable("pointer"));
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let assumptions = PureFactContext::new();
+        let mut resources = ResourceContext::new_with_equalities(&assumptions);
+        for id in 1..=size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(pointer(id), 0u32.into(), 4u32.into(), 1),
+            ));
+        }
+        resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+            CMemoryRange::new_with_element_width(target.clone(), 0u32.into(), 4u32.into(), 1),
+        ));
+        let state = CState::new()
+            .with_local("pointer", CValue::pointer(target.clone()))
+            .with_resource_context(resources);
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut budget = ExecutionBudget::for_c_expression(&expression);
+            evaluate_c_expression_paths(&state, &expression, &assumptions, &mut budget).unwrap()
+        });
+        assert!(
+            paths
+                .iter()
+                .all(|path| matches!(path.outcome, CExpressionOutcome::Value(_)))
+        );
+        samples.push(work);
+    }
+    assert!(
+        samples[3] <= samples[0] + 2000,
+        "provenance scanned the raw block: {samples:?}"
+    );
+}

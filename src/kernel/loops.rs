@@ -1288,10 +1288,7 @@ fn execute_modeled_pthread_mutex_paths(
                     // Every runtime transition may change the opaque representation.
                     // Only this checked path bypasses its ordinary-write reservation.
                     {
-                        let storage =
-                            super::primitives::storage_pointer_spellings(mutex.pointer(), &current)
-                                .pop()
-                                .expect("storage spelling");
+                        let storage = current.equality_graph.storage_address(mutex.pointer());
                         let footprint = CMemoryRange::new_with_element_width(
                             storage,
                             0u32.into(),

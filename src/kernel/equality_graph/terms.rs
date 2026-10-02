@@ -5,7 +5,7 @@
 //! merges. No arithmetic solving, cancellation, or injectivity runs here.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
-use super::{AffineOffset, MachineAtom, PointerBlock, PointerOffsetTerm, Variable};
+use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
@@ -103,6 +103,10 @@ pub(super) struct TermClasses {
     markers: PersistentMap<u64, Arc<()>>,
     address_uses: PersistentMap<PointerBlock, PersistentMap<u64, Arc<PointerOffsetTerm>>>,
     address_nodes: PersistentSet<u64>,
+    // Retained concrete address evidence follows typed class merges. This
+    // disambiguates parameters sharing the external address-space block.
+    storage_addresses: PersistentMap<u64, Option<Pointer>>,
+    alignment_witnesses: PersistentMap<u64, (u64, Pointer)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
     registered_int32_loads: PersistentSet<u64>,
@@ -188,6 +192,64 @@ impl TermClasses {
             self.address_uses.insert(block, uses);
         }
         (id, new)
+    }
+
+    /// Only original concrete address inputs carry storage evidence. Affine
+    /// projections into a representative's coordinates must never mint it.
+    pub(super) fn retain_storage_address(&mut self, id: u64, storage: &Pointer) {
+        let root = self.root(id);
+        let retained = match self.storage_addresses.get(&root) {
+            None => Some(storage.clone()),
+            Some(Some(previous)) if previous.block == storage.block => Some(previous.clone()),
+            _ => None,
+        };
+        self.storage_addresses.insert(root, retained);
+    }
+
+    pub(super) fn storage_address(&self, id: u64) -> Option<Pointer> {
+        self.storage_addresses
+            .get(&self.root(id))
+            .cloned()
+            .flatten()
+    }
+
+    fn merge_storage_addresses(&mut self, moved: u64, kept: u64) {
+        let merged = match (
+            self.storage_addresses.get(&moved).cloned(),
+            self.storage_addresses.get(&kept).cloned(),
+        ) {
+            (None, right) => right,
+            (left, None) => left,
+            (Some(Some(left)), Some(Some(right))) if left.block == right.block => Some(Some(right)),
+            _ => Some(None),
+        };
+        if let Some(merged) = merged {
+            self.storage_addresses.insert(kept, merged);
+        }
+        self.storage_addresses.remove(&moved);
+    }
+
+    pub(super) fn retain_alignment(&mut self, id: u64, alignment: u64, pointer: &Pointer) {
+        let root = self.root(id);
+        if self
+            .alignment_witnesses
+            .get(&root)
+            .is_none_or(|(old, _)| *old < alignment)
+        {
+            self.alignment_witnesses
+                .insert(root, (alignment, pointer.clone()));
+        }
+    }
+
+    pub(super) fn alignment_witness(&self, id: u64) -> Option<(u64, Pointer)> {
+        self.alignment_witnesses.get(&self.root(id)).cloned()
+    }
+
+    fn merge_alignment_witnesses(&mut self, moved: u64, kept: u64) {
+        if let Some((alignment, pointer)) = self.alignment_witnesses.get(&moved).cloned() {
+            self.retain_alignment(kept, alignment, &pointer);
+        }
+        self.alignment_witnesses.remove(&moved);
     }
 
     pub(super) fn footprint(&mut self, start: u64, end: u64) -> u64 {
@@ -718,6 +780,8 @@ impl TermClasses {
             }
             self.merge_affine_applications(moved, kept);
             let weight = self.weight(kept) + self.weight(moved);
+            self.merge_storage_addresses(moved, kept);
+            self.merge_alignment_witnesses(moved, kept);
             self.parents.insert(moved, kept);
             self.history = Some(Arc::new(MergeHistory {
                 depth: self.history.as_ref().map_or(1, |node| node.depth + 1),

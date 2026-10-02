@@ -9,7 +9,7 @@ mod cell_tests;
 mod projection_tests;
 mod read_intervals;
 pub(super) mod structural;
-mod symbolic;
+pub(super) mod symbolic;
 use read_intervals::ReadIntervals;
 
 use super::*;
@@ -580,6 +580,47 @@ impl MemoryAccessCandidates {
     }
 }
 
+/// Pure composition provenance is a derived source index, not a resource
+/// context that callers may consume. It retains its first source's persistent
+/// storage and adds only explicitly admitted source deltas thereafter.
+#[derive(Clone, Debug, Default)]
+pub(in crate::kernel) struct ObjectEvidenceSources {
+    resources: ResourceContext,
+    source_checkpoints: PersistentMap<usize, ResourceContext>,
+}
+impl ObjectEvidenceSources {
+    pub(in crate::kernel) fn admit(&mut self, source: &ResourceContext) {
+        // Retained contexts keep their origin allocation alive, so an address
+        // cannot be reused as another source's key during this proof context.
+        let origin = std::sync::Arc::as_ptr(&source.storage.origin) as usize;
+        let delta = self
+            .source_checkpoints
+            .get(&origin)
+            .and_then(|prior| source.changed_memory_inputs_from(prior));
+        if self.resources.is_empty() {
+            self.resources = source.clone();
+        } else if let Some(delta) = delta {
+            self.resources = self.resources.clone().unchecked_with_facts(delta);
+        } else {
+            // An independent admission adds its explicit memory input once;
+            // no later query visits this source or the ambient source list.
+            for fact in source.iter() {
+                if fact.memory_range().is_some() {
+                    self.resources = self.resources.clone().unchecked_with_fact(fact.clone());
+                }
+            }
+        }
+        self.source_checkpoints.insert(origin, source.clone());
+    }
+    pub(in crate::kernel) fn memory_object_evidence(
+        &self,
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Option<&CResourceFact> {
+        self.resources.memory_object_evidence(pointer, assumptions)
+    }
+}
+
 /// Explicit supplier occurrences and the graph checkpoint which selected them.
 /// Consumers cannot replace this evidence with a spelling from another fork.
 pub(super) struct MemoryFactCandidates {
@@ -1102,6 +1143,7 @@ impl ResourceContext {
                         && *insert
                         && let Some(range) = fact.memory_range()
                     {
+                        index.symbolic.register_object(range, &graph);
                         symbolic::RangeSupports::register(range, &graph);
                     }
                 }
@@ -1206,13 +1248,14 @@ impl ResourceContext {
     /// Full input registration belongs to publication or normalization, never
     /// a simple lookup. Finish registration before assigning class payloads.
     fn registered_memory_index(&self, graph: EqualityGraph) -> std::sync::Arc<PairedMemoryIndex> {
+        let mut symbolic = symbolic::RangeSupports::default();
         for (_, fact) in self.storage.facts.iter() {
             if let Some(range) = fact.memory_range() {
+                symbolic.register_object(range, &graph);
                 symbolic::RangeSupports::register(range, &graph);
             }
         }
         let mut points = AddressPoints::default();
-        let mut symbolic = symbolic::RangeSupports::default();
         let mut addresses = MemoryAddresses::default();
         for (entry, fact) in self.storage.facts.iter() {
             points.update(*entry, true, fact, &graph);
@@ -1578,6 +1621,34 @@ impl ResourceContext {
             return Some(MemoryAccessEntries::Prefixed(Some(first), entries));
         }
         Some(MemoryAccessEntries::Intervals(entries))
+    }
+
+    /// Retained footprint witnessing one C object. Object identity has its
+    /// own typed key: raw address equality between adjacent objects is not
+    /// provenance. Lookup never visits other members of an address/block class.
+    pub(in crate::kernel) fn memory_object_evidence(
+        &self,
+        pointer: &Pointer,
+        assumptions: &PureFactContext,
+    ) -> Option<&CResourceFact> {
+        let object = pointer.object_identity();
+        if let Some(entry) = self.storage.index.memory_objects.supplier(&object) {
+            crate::instrumentation::record_deterministic_work(1);
+            return self.storage.facts.get(&entry);
+        }
+        // Exact structural evidence is available on raw explicit inputs. A
+        // cold miss cannot have graph payloads and must not walk equality
+        // history to discover that; publication belongs to its producer.
+        self.memory_equalities
+            .lock()
+            .expect("memory equality index")
+            .published
+            .as_ref()?;
+        let index = self.pair_memory_equalities(assumptions, false, Some(&object));
+        let class = index.graph.address_class(&object)?;
+        let entry = index.symbolic.object_supplier(class)?;
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage.facts.get(&entry)
     }
 
     /// Select only suppliers at the explicit footprint, covering its start,

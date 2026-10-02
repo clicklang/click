@@ -1269,6 +1269,35 @@ impl PureFactContext {
         pointer: &Pointer,
         alignment: u64,
     ) -> Option<(bool, Option<Proposition>)> {
+        self.pointer_formation_alignment_decision(pointer, alignment, true)
+            .or_else(|| {
+                // One checked concrete formation, not an alias-member search.
+                // Equality is trusted kernel evidence; the formation rule still
+                // proves the alignment and retains any explicit base premise.
+                let storage = self.equality_graph.storage_address(pointer);
+                (storage != *pointer)
+                    .then(|| self.pointer_formation_alignment_decision(&storage, alignment, true))
+                    .flatten()
+            })
+    }
+
+    /// The existing single-premise alignment certificate encodes formation
+    /// arithmetic, not address-class equality. Do not cite a class witness as
+    /// though that restricted certificate also carried its equality support.
+    pub(in crate::kernel) fn pointer_alignment_certificate_decision(
+        &self,
+        pointer: &Pointer,
+        alignment: u64,
+    ) -> Option<(bool, Option<Proposition>)> {
+        self.pointer_formation_alignment_decision(pointer, alignment, false)
+    }
+
+    fn pointer_formation_alignment_decision(
+        &self,
+        pointer: &Pointer,
+        alignment: u64,
+        allow_class_witness: bool,
+    ) -> Option<(bool, Option<Proposition>)> {
         if !alignment.is_power_of_two() {
             return None;
         }
@@ -1307,6 +1336,16 @@ impl PureFactContext {
                 let mut probe = alignment;
                 while probe <= MAX_PROBED_ALIGNMENT {
                     let fact = ConditionTerm::pointer_aligned(base_pointer.clone(), probe);
+                    if self.exact_condition_value(&fact) == Some(true) {
+                        found = Some(Proposition::ConditionIs(fact, true));
+                        break 'candidates;
+                    }
+                    let witness = allow_class_witness
+                        .then(|| self.equality_graph.alignment_witness(&base_pointer))
+                        .flatten()
+                        .filter(|(known, _)| probe <= *known)
+                        .map(|(known, source)| ConditionTerm::pointer_aligned(source, known));
+                    let fact = witness.unwrap_or(fact);
                     if self.exact_condition_value(&fact) == Some(true) {
                         found = Some(Proposition::ConditionIs(fact, true));
                         break 'candidates;
@@ -1350,7 +1389,8 @@ impl PureFactContext {
         let condition =
             ConditionTerm::Bitvector64Equal(Box::new(left.clone()), Box::new(right.clone()));
         if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
-            let (aligned, premise) = self.pointer_alignment_decision(pointer, alignment)?;
+            let (aligned, premise) =
+                self.pointer_alignment_certificate_decision(pointer, alignment)?;
             if let Some(premise) = premise {
                 used.premises.push(premise);
             }

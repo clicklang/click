@@ -1252,23 +1252,25 @@ fn pointer_has_object_provenance_evidence(
 ) -> bool {
     let decide =
         |condition: ConditionTerm| decide_with_facts(assumptions, facts, &condition) == Some(true);
-    let contains_object = |resources: &ResourceContext| {
-        resources.memory_block_facts(&pointer.block).any(|fact| {
-            let Some(range) = fact.memory_range() else {
-                return false;
-            };
-            decide(pointer_object_identity_condition(pointer, range.base()))
-                && decide(ConditionTerm::signed_less_than(
-                    range.start().clone(),
-                    range.end().clone(),
-                ))
-        })
+    let establishes_object = |fact: &CResourceFact| {
+        let Some(range) = fact.memory_range() else {
+            return false;
+        };
+        (!fact.is_own() || fact.has_proven_positive_quantity(assumptions))
+            && decide(pointer_object_identity_condition(pointer, range.base()))
+            && decide(ConditionTerm::signed_less_than(
+                range.start().clone(),
+                range.end().clone(),
+            ))
     };
-    contains_object(state.resources())
+    state
+        .resources()
+        .memory_object_evidence(pointer, assumptions)
+        .is_some_and(establishes_object)
         || assumptions
-            .resource_compositions
-            .iter()
-            .any(contains_object)
+            .composition_object_resources
+            .memory_object_evidence(pointer, assumptions)
+            .is_some_and(establishes_object)
         || assumptions
             .memory_loadable_candidates_for_object(pointer)
             .any(|proposition| {
