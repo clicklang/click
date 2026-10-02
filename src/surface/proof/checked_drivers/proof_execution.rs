@@ -246,10 +246,7 @@ fn checked_execution_arm_tactics_end(
             flat_post_execution_tactic(&indexed.tactic)?;
             continue;
         }
-        if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             at_function_exit = true;
             continue;
         }
@@ -553,7 +550,6 @@ fn checked_linear_continuation_tactic(tactic: &ProofTactic) -> bool {
                 | ProofTactic::Have(_)
                 | ProofTactic::ExecuteUntil(_)
                 | ProofTactic::SmartExecute
-                | ProofTactic::SmartExecuteAllPaths
                 | ProofTactic::Loop(_)
         )
 }
@@ -831,20 +827,15 @@ fn advance_checked_linear_continuation<'a>(
                 Some(executed) => executed,
                 None => proof.apply_planned_execute_until(region, indexed.index)?,
             }
-        } else if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             match proof.try_linear_execute()? {
                 Some(executed) => executed,
                 None => {
                     // The planner fallback constructs the explicit checked
                     // operations through the same law the interpreter used.
-                    let force_all_paths =
-                        matches!(indexed.tactic, ProofTactic::SmartExecuteAllPaths);
                     // The planner's failure is the answer: it applies the
                     // same statement steps with nothing more to see.
-                    proof.apply_planned_smart_execute(force_all_paths, indexed.index)?
+                    proof.apply_planned_smart_execute(indexed.index)?
                 }
             }
         } else if let ProofTactic::Loop(clause) = &indexed.tactic {
@@ -2444,10 +2435,7 @@ fn advance_focused_execution_arm<'a>(
                 indexed.index,
                 indexed.source_index,
             )?
-        } else if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let mut retried_requirements = std::collections::BTreeSet::new();
             let Some(next) =
                 proof.try_focused_execute_to_exit_with_retries(&mut retried_requirements)?
@@ -3485,10 +3473,7 @@ fn advance_linear_open_scope<'a>(
             }
             continue;
         }
-        if matches!(
-            indexed.tactic,
-            ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths
-        ) {
+        if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let checkpoint = scope.checkpoint();
             let Some(executed) = scope.try_linear_execute()? else {
                 return decline();
@@ -4017,7 +4002,7 @@ fn post_exit_execution_tactic_error(tactic: &ProofTactic) -> Option<String> {
         ProofTactic::Step => "step()".to_string(),
         ProofTactic::StepContract(name) => format!("step({name})"),
         ProofTactic::StepCall(transport) => transport.to_string(),
-        ProofTactic::SmartExecute | ProofTactic::SmartExecuteAllPaths => "execute()".to_string(),
+        ProofTactic::SmartExecute => "execute()".to_string(),
         ProofTactic::ExecuteUntil(region) => format!(
             "execute_until({})",
             crate::surface::diagnostics::describe_code_region_ref(region)
