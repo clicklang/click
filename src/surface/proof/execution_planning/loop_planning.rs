@@ -134,9 +134,12 @@ struct InitializeScriptLayout<'a> {
     /// available to everything below.
     helpers: Vec<(usize, &'a ProofTactic)>,
     /// `Some` when the script names every declared invariant with its own
-    /// `have`, in declaration order: each entry is that `have`'s absolute
-    /// source index and the body it was written with.
-    invariant_bodies: Option<Vec<(usize, &'a SourceProof)>>,
+    /// `have`, in declaration order: each entry holds, for one invariant,
+    /// the absolute source index and written body of each `have` naming it.
+    /// An invariant owes its side conditions as goals of their own beside
+    /// its body, so it may be named once, with a body run for each goal, or
+    /// once per goal it owes, in the order they are owed.
+    invariant_bodies: Option<Vec<Vec<(usize, &'a SourceProof)>>>,
     /// The proof every invariant runs when the script does not name them
     /// individually.
     shared: SourceProof,
@@ -204,7 +207,11 @@ fn initialize_script_layout<'a>(
         .zip(&tactics[..helper_end])
         .collect::<Vec<_>>();
     let rest = &tactics[helper_end..];
-    let names_every_invariant = rest.len() >= invariant_items.len()
+    // One `have` per invariant, in declaration order, is read position by
+    // position: two invariants may state one proposition and each keeps its
+    // own body. Otherwise each invariant takes every consecutive `have`
+    // naming it, one per goal it owes.
+    let one_each = rest.len() >= invariant_items.len()
         && rest.iter().zip(invariant_items).all(|(tactic, item)| {
             matches!(tactic, ProofTactic::Have(have)
                     if &have.proposition == item.proposition())
@@ -212,23 +219,32 @@ fn initialize_script_layout<'a>(
         && rest[invariant_items.len()..]
             .iter()
             .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
-    let invariant_bodies = names_every_invariant.then(|| {
-        rest.iter()
-            .take(invariant_items.len())
-            .enumerate()
-            .map(|(index, tactic)| {
-                let ProofTactic::Have(have) = tactic else {
-                    unreachable!("the shape check accepted only `have` tactics")
-                };
-                (source_indices[helper_end + index], &have.proof)
-            })
-            .collect()
-    });
+    let mut grouped: Vec<Vec<(usize, &SourceProof)>> = Vec::new();
+    let mut consumed = 0;
+    for item in invariant_items {
+        let mut bodies = Vec::new();
+        while let Some(ProofTactic::Have(have)) = rest.get(consumed)
+            && &have.proposition == item.proposition()
+            && !(one_each && !bodies.is_empty())
+        {
+            bodies.push((source_indices[helper_end + consumed], &have.proof));
+            consumed += 1;
+        }
+        if bodies.is_empty() {
+            break;
+        }
+        grouped.push(bodies);
+    }
+    let names_every_invariant = grouped.len() == invariant_items.len()
+        && rest[consumed..]
+            .iter()
+            .all(|tactic| matches!(tactic, ProofTactic::Assumption | ProofTactic::Simp));
+    let invariant_bodies = names_every_invariant.then_some(grouped);
     // Only a `simp()` that stands for what is left of the phase is a
     // whole-phase closer. A `simp()` written before the steps it closes
     // would be one invariant's own proof, not the phase's.
     let closer_start = if names_every_invariant {
-        helper_end + invariant_items.len()
+        helper_end + consumed
     } else {
         tactics.len().saturating_sub(1)
     };
@@ -459,28 +475,24 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         .zip(entry_goals.declarations())
         .enumerate()
     {
-        let own_body = layout
+        let own_bodies = layout
             .invariant_bodies
             .as_ref()
-            .and_then(|bodies| bodies.get(invariant_index))
-            .copied();
+            .and_then(|bodies| bodies.get(invariant_index));
+        if let Some(bodies) = own_bodies
+            && bodies.len() != 1
+            && bodies.len() != goals.len()
+        {
+            return Err(ClickError::new(format!(
+                "loop {loop_index} invariant {invariant_index} owes {} entry goals but the `initialize` script names it {} times; name it once, or once per goal",
+                goals.len(),
+                bodies.len()
+            )));
+        }
+        // With one body the invariant's goals all run it; the timing label
+        // below describes that first body either way.
+        let own_body = own_bodies.and_then(|bodies| bodies.first()).copied();
         let invariant_proof = own_body.map_or(&layout.shared, |(_, body)| body);
-        // Where each written tactic of this invariant's proof sits: in the
-        // body of its own `have`, or at its own source index in the shared
-        // script.
-        let body_sites = invariant_proof.tactics().map(|tactics| match own_body {
-            Some((index, _)) => {
-                let have_site = phase_site.at_source_tactic(index);
-                (0..tactics.len())
-                    .map(|position| have_site.in_have_body(position))
-                    .collect::<Vec<_>>()
-            }
-            None => layout
-                .shared_source_indices
-                .iter()
-                .map(|&index| phase_site.at_source_tactic(index))
-                .collect(),
-        });
         let planned_step = timings_enabled.then(|| {
             ProofTactic::Have(ProofHave {
                 proposition: item.proposition().clone(),
@@ -497,7 +509,26 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 initialize_statement_index,
             )
         });
-        for obligation in goals {
+        for (goal_index, obligation) in goals.iter().enumerate() {
+            // The `have` written for this goal, when the invariant is named
+            // once per goal it owes.
+            let own_body = own_bodies
+                .and_then(|bodies| bodies.get(goal_index).or_else(|| bodies.first()))
+                .copied();
+            let invariant_proof = own_body.map_or(&layout.shared, |(_, body)| body);
+            let body_sites = invariant_proof.tactics().map(|tactics| match own_body {
+                Some((index, _)) => {
+                    let have_site = phase_site.at_source_tactic(index);
+                    (0..tactics.len())
+                        .map(|position| have_site.in_have_body(position))
+                        .collect::<Vec<_>>()
+                }
+                None => layout
+                    .shared_source_indices
+                    .iter()
+                    .map(|&index| phase_site.at_source_tactic(index))
+                    .collect(),
+            });
             let checkpoint = phase.checkpoint();
             let scope = phase.begin_loop_entry_goal(item.proposition().clone(), obligation)?;
             let body_checkpoint = scope.checkpoint();
