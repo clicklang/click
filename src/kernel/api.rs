@@ -6034,7 +6034,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             premise,
                             Proposition::CResourceContains { .. }
                                 | Proposition::CResourceSeparate { .. }
-                        ) && !certification_proves_proposition(&reuse_assumptions, premise)
+                        ) && !reuse_assumptions.proves_exact(premise)
                     })
                     .flat_map(|premise| match premise {
                         Proposition::CResourceContains { parent, .. } => vec![parent],
@@ -6083,7 +6083,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
         }
         let checked_premise_is_authorized =
             |_checked: &CCheckedFunctionExecution, premise: &Proposition| {
-                certification_proves_proposition(&reuse_assumptions, premise)
+                reuse_assumptions.proves_exact(premise)
             };
         let authorized = |checked: &CCheckedFunctionExecution| {
             checked
@@ -6355,17 +6355,16 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                     else {
                         continue;
                     };
-                    if certification_proves_proposition(
-                        &certification_assumptions,
-                        obligation.proposition(),
-                    ) || pure_theorem_facts.iter().any(|fact| {
-                        certification_proves_condition_from_verified_pure_implication(
-                            &certification_assumptions,
-                            fact,
-                            condition,
-                            *value,
-                        )
-                    }) {
+                    if certification_assumptions.proves_exact(obligation.proposition())
+                        || pure_theorem_facts.iter().any(|fact| {
+                            certification_proves_condition_from_verified_pure_implication(
+                                &certification_assumptions,
+                                fact,
+                                condition,
+                                *value,
+                            )
+                        })
+                    {
                         certification_assumptions = certification_assumptions
                             .assume_proposition(obligation.proposition().clone());
                     }
