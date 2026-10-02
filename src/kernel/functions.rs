@@ -14293,7 +14293,11 @@ fn apply_verified_heap_allocation_delta(
         output
             .facts()
             .iter()
-            .chain(preserved.facts().iter().filter(|_| authority_mode))
+            .chain(preserved.facts().iter().take(if authority_mode {
+                preserved.facts().len()
+            } else {
+                0
+            }))
     };
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
