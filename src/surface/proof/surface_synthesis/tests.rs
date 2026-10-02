@@ -2174,7 +2174,8 @@ fn a_local_indexes_only_addresses_formed_from_it() {
 /// sign-flipped operands. Its spelling is the unsigned comparison over the
 /// `uint32` local, never the bias `(-2147483648 ^ x) < -2147483644`, and it
 /// lowers back to the condition it was spelled from. An operand no `uint32`
-/// local names keeps the literal spelling.
+/// local names keeps the literal spelling in the source form, which a
+/// refusal prints as the unsigned comparison marked `(unsigned)`.
 #[test]
 fn unsigned_comparison_is_spelled_without_its_sign_bias() {
     let x = Bitvector32Term::Variable(Variable(300_000));
@@ -2213,7 +2214,15 @@ fn unsigned_comparison_is_spelled_without_its_sign_bias() {
     let synthesized = synthesize_surface_proposition(&fact, &[], &[], &signed)
         .expect("the literal spelling remains");
     assert!(
-        crate::surface::diagnostics::describe_click_proposition(&synthesized).contains('^'),
+        crate::surface::printing::source_click_proposition(&synthesized).contains('^'),
         "a signed local's name would make the comparison signed"
+    );
+    // A refusal reads the same form as the unsigned comparison it is, and
+    // marks it so it is not taken for the signed comparison of `y`.
+    assert_eq!(
+        crate::surface::diagnostics::with_refusal_spelling(|| {
+            crate::surface::diagnostics::describe_click_proposition(&synthesized)
+        }),
+        "y < 4 (unsigned)"
     );
 }

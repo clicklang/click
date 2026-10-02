@@ -3601,6 +3601,21 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             value,
             byte_width: actual_width,
         } if *actual_width == byte_width => Some(value.as_ref().clone()),
+        // An index widened to 64 bits before scaling (a `uint32` index, or
+        // an `int32` one on a wide address) is still the index the source
+        // wrote. The widening decides the address, not the element's name.
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width: actual_width,
+            ..
+        } if *actual_width == byte_width => Some(match value.as_ref() {
+            // These widenings keep the value, so the element is named by
+            // the narrow index, as a signed 32-bit index names it.
+            Bitvector32Term::Int64From32(narrow)
+            | Bitvector32Term::UInt64From32(narrow)
+            | Bitvector32Term::Int64FromUInt32(narrow) => narrow.as_ref().clone(),
+            wide => wide.clone(),
+        }),
         PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
@@ -3617,6 +3632,21 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
     }
 }
 
+/// A value of a narrow or unsigned type as a refusal spells it. A literal
+/// takes its type suffix (`5u32`), which is how the source writes one. A
+/// name or a compound expression is already a typed source term, and a
+/// suffix glued to it (`xu32`) would read as a different identifier.
+fn typed_literal_spelling(spelled: String, suffix: &str) -> String {
+    let magnitude = spelled.strip_prefix('-').unwrap_or(&spelled);
+    let literal = magnitude.starts_with(|first: char| first.is_ascii_digit())
+        && magnitude.parse::<f64>().is_ok();
+    if literal {
+        format!("{spelled}{suffix}")
+    } else {
+        spelled
+    }
+}
+
 pub(super) fn describe_c_value(
     value: &CValue,
     parameters: &[syntax::C0Parameter],
@@ -3624,65 +3654,47 @@ pub(super) fn describe_c_value(
 ) -> String {
     match value {
         CValue::Void => "void".to_string(),
-        CValue::Bool(value) => format!(
-            "{}bool",
-            describe_bitvector_with_context(value, parameters, arguments)
+        CValue::Bool(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "bool",
         ),
-        CValue::Int8(value) => {
-            format!(
-                "{}i8",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        CValue::Int16(value) => {
-            format!(
-                "{}i16",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
+        CValue::Int8(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i8",
+        ),
+        CValue::Int16(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i16",
+        ),
         CValue::Int32(value) => describe_bitvector_with_context(value, parameters, arguments),
-        CValue::UInt8(value) => {
-            format!(
-                "{}u8",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        CValue::UInt32(value) => {
-            format!(
-                "{}u32",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        CValue::UInt16(value) => {
-            format!(
-                "{}u16",
-                describe_bitvector_with_context(value, parameters, arguments)
-            )
-        }
-        // A 64-bit constant already carries its suffix.
-        CValue::Int64(value) => {
-            let inner = describe_bitvector_with_context(value, parameters, arguments);
-            if inner.ends_with("i64") {
-                inner
-            } else {
-                format!("{inner}i64")
-            }
-        }
-        CValue::UInt64(value) => {
-            let inner = describe_bitvector_with_context(value, parameters, arguments);
-            if inner.ends_with("u64") {
-                inner
-            } else {
-                format!("{inner}u64")
-            }
-        }
-        CValue::Float32(value) => format!(
-            "{}f32",
-            describe_bitvector_with_context(value, parameters, arguments)
+        CValue::UInt8(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u8",
         ),
-        CValue::Float64(value) => format!(
-            "{}f64",
-            describe_bitvector_with_context(value, parameters, arguments)
+        CValue::UInt32(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u32",
+        ),
+        CValue::UInt16(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u16",
+        ),
+        // A 64-bit constant already carries its suffix.
+        CValue::Int64(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "i64",
+        ),
+        CValue::UInt64(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "u64",
+        ),
+        CValue::Float32(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "f32",
+        ),
+        CValue::Float64(value) => typed_literal_spelling(
+            describe_bitvector_with_context(value, parameters, arguments),
+            "f64",
         ),
         CValue::Pointer(pointer) => describe_pointer(pointer, parameters, arguments),
     }
@@ -4429,6 +4441,85 @@ fn aligned_comparison_sugar<'a>(
         .then_some((pointer.as_ref(), alignment))
 }
 
+thread_local! {
+    /// Whether propositions are being spelled for a refusal a person reads,
+    /// rather than as Click source that must parse back.
+    static REFUSAL_SPELLING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Spells propositions inside `spell` for a refusal. The source form is
+/// what an expansion writes into a proof, so it keeps every term literal;
+/// a refusal may instead print a term as what it means, such as an
+/// unsigned order, in a form that is not Click source.
+pub(in crate::surface) fn with_refusal_spelling<T>(spell: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            REFUSAL_SPELLING.with(|mode| mode.set(self.0));
+        }
+    }
+    let _restore = Restore(REFUSAL_SPELLING.with(|mode| mode.replace(true)));
+    spell()
+}
+
+/// A 32-bit unsigned order written the way the kernel states it: the signed
+/// order of both operands with their sign bit flipped, a constant operand
+/// arriving already flipped. It is spelled as the unsigned comparison it
+/// means, marked `(unsigned)` as [`describe_unsigned_comparison`] marks the
+/// kernel form, so it never reads as the signed comparison of the same
+/// operands.
+fn unsigned_order_sugar(proposition: &ClickProposition) -> Option<String> {
+    const SIGN_BIT: &str = "-2147483648";
+    let ClickProposition::Comparison {
+        left,
+        operator,
+        right,
+    } = proposition
+    else {
+        return None;
+    };
+    if !matches!(
+        operator,
+        ComparisonOperator::LessThan
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::GreaterThan
+            | ComparisonOperator::GreaterEqual
+    ) {
+        return None;
+    }
+    let flipped = |expression: &ContractExpression| match expression {
+        ContractExpression::BitwiseXor(sign, value)
+            if describe_contract_expression(sign) == SIGN_BIT =>
+        {
+            Some(describe_contract_expression(value))
+        }
+        ContractExpression::BitwiseXor(value, sign)
+            if describe_contract_expression(sign) == SIGN_BIT =>
+        {
+            Some(describe_contract_expression(value))
+        }
+        _ => None,
+    };
+    let unflipped = |expression: &ContractExpression| {
+        flipped(expression).or_else(|| {
+            let constant = describe_contract_expression(expression)
+                .parse::<i64>()
+                .ok()?;
+            let bits = i32::try_from(constant).ok()? as u32;
+            Some((bits ^ 0x8000_0000).to_string())
+        })
+    };
+    // At least one side carries the flip itself; two bare constants are an
+    // ordinary signed comparison.
+    let (left, right) = match (flipped(left), flipped(right)) {
+        (Some(left), Some(right)) => (left, right),
+        (Some(left), None) => (left, unflipped(right)?),
+        (None, Some(right)) => (unflipped(left)?, right),
+        (None, None) => return None,
+    };
+    Some(format!("{left} {operator} {right} (unsigned)"))
+}
+
 pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> String {
     if let Some((pointer, alignment)) = aligned_sugar(proposition) {
         return format!("aligned({}, {alignment})", describe_c_expression(pointer));
@@ -4439,6 +4530,11 @@ pub(super) fn describe_click_proposition(proposition: &ClickProposition) -> Stri
             describe_snapshot_selector(selector),
             describe_c_expression(pointer)
         );
+    }
+    if REFUSAL_SPELLING.with(std::cell::Cell::get)
+        && let Some(unsigned) = unsigned_order_sugar(proposition)
+    {
+        return unsigned;
     }
     match proposition {
         ClickProposition::Comparison {

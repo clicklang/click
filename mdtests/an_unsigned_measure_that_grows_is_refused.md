@@ -35,5 +35,5 @@ int32 fill(uint32 x) {
 ```
 
 ```expect
-fail: `x < … (unsigned)` remained open; this loop declares `decreases`, so the bundle also has `0 <= x` at the back edge, `x` decreases at the back edge
+fail: `x < at(statement(1).entry, x) (unsigned)` remained open; this loop declares `decreases`, so the bundle also has `0 <= x` at the back edge, `x` decreases at the back edge
 ```

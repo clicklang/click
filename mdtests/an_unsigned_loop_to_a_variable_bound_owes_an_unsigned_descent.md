@@ -44,5 +44,5 @@ int32 count(uint32 n) {
 ```
 
 ```expect
-fail: `((n - …) - 1) < (n - …) (unsigned)` remained open; this loop declares `decreases`, so the bundle also has `0 <= n - x` at the back edge, `n - x` decreases at the back edge
+fail: `((n - at(statement(3).entry, x)) - 1) < (n - at(statement(3).entry, x)) (unsigned)` remained open; this loop declares `decreases`, so the bundle also has `0 <= n - x` at the back edge, `n - x` decreases at the back edge
 ```

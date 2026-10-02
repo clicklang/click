@@ -926,7 +926,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         let Obligation::Proposition(goal) = &branch.obligation else {
             return None;
         };
-        let source = crate::surface::printing::source_click_proposition(goal.surface.as_deref()?);
+        let surface = goal.surface.as_deref()?;
+        let source = crate::surface::diagnostics::with_refusal_spelling(|| {
+            crate::surface::printing::source_click_proposition(surface)
+        });
         (!source.contains("__click_")).then_some(source)
     }
 
