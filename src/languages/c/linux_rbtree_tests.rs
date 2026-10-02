@@ -5,7 +5,7 @@
 //! translation unit yet; the tests pin where it stops, so that progress and
 //! regressions both show up as a changed expectation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -23,6 +23,41 @@ use crate::source::SourcePosition;
 /// first declaration.
 const FIRST_REJECTION: &str =
     "././include/linux/compiler_types.h:172: expected union name, got `{`";
+
+/// The functions the dependency-closure projection of the pinned unit
+/// defines: every function in `lib/rbtree.c` and every inline helper they
+/// reach, by kernel identity.
+const PROJECTED_FUNCTIONS: &[&str] = &[
+    "____rb_erase_color#inline:lib/rbtree.c",
+    "__rb_change_child#inline:lib/rbtree.c",
+    "__rb_change_child_rcu#inline:lib/rbtree.c",
+    "__rb_erase_augmented#inline:lib/rbtree.c",
+    "__rb_erase_color",
+    "__rb_insert#inline:lib/rbtree.c",
+    "__rb_insert_augmented",
+    "__rb_rotate_set_parents#inline:lib/rbtree.c",
+    "dummy_copy#inline:lib/rbtree.c",
+    "dummy_propagate#inline:lib/rbtree.c",
+    "dummy_rotate#inline:lib/rbtree.c",
+    "rb_erase",
+    "rb_first",
+    "rb_first_postorder",
+    "rb_insert_color",
+    "rb_last",
+    "rb_left_deepest_node#inline:lib/rbtree.c",
+    "rb_next",
+    "rb_next_postorder",
+    "rb_prev",
+    "rb_red_parent#inline:lib/rbtree.c",
+    "rb_replace_node",
+    "rb_replace_node_rcu",
+    "rb_set_black#inline:lib/rbtree.c",
+    "rb_set_parent#inline:lib/rbtree.c",
+    "rb_set_parent_color#inline:lib/rbtree.c",
+];
+
+/// File-scope items the projection keeps and omits.
+const PROJECTED_ITEMS: (usize, usize) = (32, 2543);
 
 /// The existing compiler-import profile refuses the recorded kernel
 /// compiler arguments before it runs the compiler.
@@ -412,6 +447,44 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
     assert_eq!(
         error, FIRST_REJECTION,
         "the first rejection moved; update the pin and the inventory in issues/kernel-scale-preprocessing.md"
+    );
+
+    // The dependency-closure projection keeps the definitions in
+    // `lib/rbtree.c` and what they name; everything it keeps must parse.
+    let projection = super::projection::project_dependency_closure(&source, &map)
+        .expect("project the pinned translation unit");
+    let projected = projection.text.clone();
+    let projected_map = map.clone();
+    let unit = std::thread::Builder::new()
+        .stack_size(256 << 20)
+        .spawn(move || {
+            syntax::parse_translation_unit_for_import(&projected, "lib/rbtree.c", &projected_map)
+                .map(|unit| {
+                    unit.functions
+                        .iter()
+                        .map(|function| function.name().to_string())
+                        .collect::<BTreeSet<_>>()
+                })
+                .map_err(|error| error.to_string())
+        })
+        .expect("spawn the projected parse")
+        .join()
+        .expect("the projected parse finishes");
+    let functions = unit.unwrap_or_else(|error| {
+        panic!("the projected pinned translation unit no longer parses: {error}")
+    });
+    assert_eq!(
+        functions,
+        PROJECTED_FUNCTIONS
+            .iter()
+            .map(|name| name.to_string())
+            .collect::<BTreeSet<_>>(),
+        "the projected function inventory changed"
+    );
+    assert_eq!(
+        (projection.kept, projection.omitted),
+        PROJECTED_ITEMS,
+        "the projected declaration counts changed"
     );
 
     if let Some(path) = std::env::var_os(INVENTORY).filter(|path| !path.is_empty()) {

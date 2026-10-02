@@ -131,6 +131,11 @@ struct SourceConfig {
     path: String,
     args: Vec<String>,
     artifact: String,
+    /// `"dependency-closure"` imports only the declarations the unit's own
+    /// function definitions depend on; see `projection`. Omitted, the whole
+    /// translation unit is imported.
+    #[serde(default)]
+    projection: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -273,7 +278,17 @@ fn load_imports_inner(config_path: &Path) -> Result<Vec<PreparedCImport>, String
         }
         let text = std::str::from_utf8(&existing)
             .map_err(|e| format!("compiler output is not UTF-8: {e}"))?;
-        let (clean, map) = CSourceMap::decode(text)?;
+        let (mut clean, map) = CSourceMap::decode(text)?;
+        if source.projection.is_some() {
+            clean = super::projection::project_dependency_closure(&clean, &map)
+                .map_err(|reason| {
+                    format!(
+                        "dependency-closure projection of `{}`: {reason}",
+                        source.logical_source
+                    )
+                })?
+                .text;
+        }
         prepared.push(PreparedCImport {
             inner: Arc::new(PreparedInner {
                 target: config.c_target(),
@@ -781,6 +796,14 @@ fn validate_config(config: &Config, use_for: ConfigUse) -> Result<(), String> {
             ));
         }
         validate_args(&source.args, config.c_target())?;
+        if let Some(projection) = &source.projection
+            && projection != super::projection::DEPENDENCY_CLOSURE
+        {
+            return Err(format!(
+                "unsupported import projection `{projection}`; only `{}` is supported",
+                super::projection::DEPENDENCY_CLOSURE
+            ));
+        }
         let path = resolve_source(config, &source.path)?;
         let artifact = resolve_artifact(config, &source.artifact)?;
         reject_symlink_components(&artifact)?;

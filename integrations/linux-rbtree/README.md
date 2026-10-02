@@ -56,6 +56,9 @@ With it, the test checks three things:
 3. Click's C frontend rejects that artifact first at
    `././include/linux/compiler_types.h:172`, an anonymous union member in
    the artifact's first declaration.
+4. The dependency-closure projection that `rbtree.click.import.json`
+   selects keeps 32 file-scope declarations of 2,575, and the kept unit
+   parses and lowers as a whole. The test pins the 26 functions it defines.
 
 The recorded compiler is Ubuntu 24.04's `gcc-13` package, which is what the
 CI runners have. On a host with a different compiler the second test checks

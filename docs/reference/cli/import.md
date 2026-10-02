@@ -674,6 +674,41 @@ Compiler imports initially reject incremental `--changed-since` requests and
 do not use verification markers. Their proofs are checked through the same
 engine used for ordinary verification, profiling, audit, and expansion.
 
+## Dependency-closure projection
+
+A source entry may set `"projection": "dependency-closure"`. Click then
+imports only part of the locked artifact: every function definition written
+in the translation unit's own source file (the file the first line marker
+names), and, transitively, every file-scope declaration that defines a name a
+kept declaration mentions. That includes types, struct, union, and enum tags,
+enumeration constants, typedefs, objects, prototypes, and inline helpers.
+Everything kept is parsed, lowered, and checked as usual, so an unsupported
+construct inside the closure is still rejected with its original location.
+Declarations outside the closure are not parsed, and nothing is claimed about
+them.
+
+Two rules keep the omission checked rather than permissive:
+
+- An exact `extern typeof(f) f;` redeclaration is never needed to type a use
+  of `f`, because it repeats `f`'s own type with nothing added. The Linux
+  `EXPORT_SYMBOL` macro emits one per exported function, beside its export
+  storage and `.export_symbol` assembly, which nothing names. Export storage
+  and export assembly are therefore outside the claim.
+- If an omitted declaration carries the `constructor` or `destructor`
+  attribute, the projection is refused, because such a function runs
+  without being named.
+
+Every other declaration that defines a needed name is kept, including
+redeclarations that add attributes such as `weak`. Omitted declarations are
+blanked in place, so line numbers and original-source locations are
+unchanged. The option is part of the import configuration and therefore of
+the lock's identity.
+
+This is a bounded arrangement for importing one kernel translation unit
+whose headers declare far more than its functions use. It is not a general
+statement that omitted header declarations are harmless, and it does not
+validate them.
+
 ## Locations and trust boundary
 
 Structured compiler line markers preserve original filenames and line numbers

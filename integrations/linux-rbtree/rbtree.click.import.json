@@ -117,7 +117,8 @@
         "-DKBUILD_MODNAME=\"rbtree\"",
         "-D__KBUILD_MODNAME=kmod_rbtree"
       ],
-      "artifact": "rbtree.i"
+      "artifact": "rbtree.i",
+      "projection": "dependency-closure"
     }
   ]
 }

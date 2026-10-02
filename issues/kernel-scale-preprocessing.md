@@ -666,8 +666,19 @@ empty `memory` barrier assembly, and the store through a cast to a pointer
 cell that `WRITE_ONCE` expands to.
 
 Accepted means parsed and lowered declaration by declaration. No proof has
-run against these bodies, and the whole artifact still stops at its first
-unsupported declaration until the projection lands.
+run against these bodies.
+
+The dependency-closure projection (`docs/reference/cli/import.md`) is now
+implemented as an import option. On the pinned artifact it keeps 32 of the
+2,575 file-scope declarations, omits 2,543 including the twelve export
+triples, and the kept unit parses and lowers as a whole: 26 functions, the
+12 definitions in `lib/rbtree.c` that have external linkage plus 14
+translation-unit-local helpers from it and its two rbtree headers. The gate pins that inventory. The unprojected
+artifact still stops at `compiler_types.h:172`, and the gate pins that too.
+
+What remains before the sidecars can attach is the import route itself:
+`click import lock` still refuses the recorded compiler arguments, so there
+is no lock for the projected unit yet.
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as
 rejections.
