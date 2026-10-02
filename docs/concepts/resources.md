@@ -381,6 +381,16 @@ knowing that a pointer was freed does not establish an unrelated family’s
 count. The [cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_count_after_cleanup.md)
 checks this observation before and after free.
 
+For an authority passed into a function, retirement checks both that its
+member custody has been consumed and that its authenticated global count is
+zero. This applies to an already-empty population and to a fully consumed
+numeric or symbolic batch. Consuming only the members owned by the function
+is insufficient when the global population includes other members; writing
+an accounting field to zero does not consume those members. The
+[pool cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup.md)
+consumes the entry-capacity slot batch, checks the private-object population
+is empty, and retires both authorities while keeping the pool's C storage.
+
 Ordinary wrappers can package existing members with `contains R(p)` and later
 expose them with `unfold`; these transfers require no authority and do not
 change the population. A wrapper cannot create a missing child or bypass the

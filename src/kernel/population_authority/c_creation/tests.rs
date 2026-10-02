@@ -1961,6 +1961,118 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
 }
 
 #[test]
+fn imported_retirement_supports_empty_and_complete_numeric_populations() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    for quantity in [0, 1, 3, 2147483647] {
+        let events = CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &description,
+                quantity,
+                Some(Bitvector32Term::Constant(quantity)),
+                None,
+                None,
+            )
+            .unwrap();
+        let spent = if quantity == 0 {
+            events
+        } else {
+            events
+                .checked_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    &description,
+                    false,
+                    &Bitvector32Term::Constant(quantity),
+                    &PureFactContext::new(),
+                )
+                .unwrap()
+                .0
+        };
+        let (retired, _) = spent
+            .checked_retire_imported(&description, &PureFactContext::new())
+            .unwrap();
+        assert!(retired.checked_empty_population(&description));
+        assert!(!retired.owns_population_authority(&description));
+    }
+}
+
+#[test]
+fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(980_210));
+    let total = Bitvector32Term::Variable(Variable(980_211));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let held = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(total.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let total_zero = assumptions.clone().assume_condition(
+        crate::kernel::ConditionTerm::Bitvector32Equal(
+            Box::new(total.clone()),
+            Box::new(Bitvector32Term::Constant(0)),
+        ),
+        true,
+    );
+    assert_eq!(
+        held.check_imported_retirement(&description, &total_zero),
+        Err(CreationRefusal::OutstandingMembers)
+    );
+    let spent = held
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap()
+        .0;
+    assert_eq!(
+        spent.check_imported_retirement(&description, &assumptions),
+        Err(CreationRefusal::UnknownTotal)
+    );
+    let all_owned = assumptions.assume_condition(
+        crate::kernel::ConditionTerm::Bitvector32Equal(Box::new(total), Box::new(quantity)),
+        true,
+    );
+    let (retired, _) = spent
+        .checked_retire_imported(&description, &all_owned)
+        .unwrap();
+    assert!(retired.checked_empty_population(&description));
+    assert!(!retired.owns_population_authority(&description));
+    assert!(retired.observe_symbolic(&description).is_none());
+    assert_eq!(
+        retired.imported_member_delta_since_entry(&description),
+        spent.imported_member_delta_since_entry(&description),
+    );
+    assert!(
+        retired
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                true,
+                &Bitvector32Term::Constant(1),
+                &all_owned,
+            )
+            .is_err()
+    );
+    assert_eq!(
+        retired.check_imported_retirement(&description, &all_owned),
+        Err(CreationRefusal::MissingAuthority)
+    );
+}
+
+#[test]
 fn checked_empty_lookup_scales_over_unrelated_retired_populations() {
     let mut work = Vec::new();
     for size in [64_u64, 256, 1024] {

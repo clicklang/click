@@ -671,7 +671,7 @@ fn authority_final_release_helper_retires_population_and_allocation() {
     assert!(
         error
             .message()
-            .contains("Requires count(reference(...)) == 1"),
+            .contains("Requires count(reference(...)) == 0"),
         "{error:?}"
     );
 }
