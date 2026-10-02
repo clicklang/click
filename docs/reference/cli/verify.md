@@ -8,7 +8,7 @@ expansion.
 
 ```text
 usage: click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <sidecar.click|mdtest.md>[:<line>:<column>]
-       click verify --trace-proof <FUNCTION> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
+       click verify --trace-proof <PROOF> [--trace-to <LINE[:COLUMN]>] <sidecar.click|mdtest.md>
        click verify [--work-limit <UNITS>] [--time-limit <DURATION>] <project-directory|examples-directory>
        click verify --changed-since <REVISION> [--explain] <sidecar.click|directory>
 ```
@@ -67,8 +67,8 @@ rather than checking their proofs.
 | --- | --- |
 | `--work-limit UNITS` | Set the deterministic whole-run work budget independently for each selected sidecar, mdtest, or proof unit. The default is `50000000`. |
 | `--time-limit DURATION` | Set the wall-clock crash-containment bound independently for each selected sidecar, mdtest, or proof unit. The default is `10m`. This is not a verdict about the proof; see [Deterministic verdicts](#deterministic-verdicts). |
-| `--trace-proof FUNCTION` | Verify only this C function in one sidecar and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace output is bounded. |
-| `--trace-to LINE[:COLUMN]` | Focus `--trace-proof` on a written tactic at this source location, including in a successful proof; the tactic may sit inside a proof `match` arm or a loop's `preserve` body, whose trace is shown under the enclosing proof's path up to the `loop`. Without it, the trace follows the failing tactic. |
+| `--trace-proof PROOF` | Verify only this C function or pure theorem of one sidecar, selected by name, and, on a proof error, show checked steps on its failing path with added facts and changed resource counts. A sidecar cannot declare one name as both a C function and a theorem, so the name alone selects the proof. Theorems that the traced theorem cites stay assumptions, and no C function is verified for a theorem trace. If the script completes but contract certification fails, show the failed obligation and a bounded view of facts available to that check. Trace output is bounded. |
+| `--trace-to LINE[:COLUMN]` | Focus `--trace-proof` on a written tactic at this source location, including in a successful proof; the tactic may sit inside a proof `match` arm, an arm of a proof `if`, `cases` or `both`, or a loop's `preserve` body, whose trace is shown under the enclosing proof's path up to the `loop`. A target after a proof `if` or `cases` whose arms both check it is traced through the first arm. Without it, the trace follows the failing tactic. |
 | `--changed-since REVISION` | Select claims affected since a Git revision. Reuse requires a valid full-verification marker for the baseline and verifier binary. |
 | `--explain` | With `--changed-since`, print the incremental selection without verifying it. |
 | `--allow-sorry` | Dev-only debugging switch: admit proof units whose body is exactly `sorry();` without checking them. Admissions are reported loudly, never recorded in incremental baselines, and `click audit`, `click expand`, and `scripts/check.sh` never enable the flag. Cannot be combined with `--changed-since`. |
@@ -122,8 +122,10 @@ bound stops the run. A proof failure is a correctness
 result; repair it before using `click profile` unless unexpected slowness is
 itself the failure being investigated.
 
-When a proof error identifies a C function, the CLI suggests a rerun with
-`--trace-proof` and fills in the function and sidecar path. By default, the
+When a proof error identifies a C function or a pure theorem that the sidecar
+selects, the CLI suggests a rerun with `--trace-proof` and fills in the proof
+name and sidecar path. The suggestion is printed only when that command is
+accepted: `--trace-proof` resolves the name the same way. By default, the
 trace follows the path to the failing tactic; `--trace-to` can select a written
 tactic in a successful or failing proof. The ordinary error and the trace use
 the same formatted failure report, including the written tactic and its source
@@ -139,6 +141,12 @@ snapshots. It records up to
 2,048 checked steps and renders at most 64 KiB. The trace option requires one
 C sidecar file and cannot be combined with location or incremental selection,
 or `--allow-sorry`. A trace run does not record a full verification baseline.
+
+A theorem trace shows the same checked steps as a function trace. A theorem
+with several `ensures` clauses has one accepted path for each; a plain trace
+of a successful theorem shows the first, and `--trace-to` selects the clause
+whose proof contains the location. An imported theorem is an assumption of
+the importing sidecar, so trace it through the sidecar that declares it.
 
 ## Deterministic verdicts
 

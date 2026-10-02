@@ -125,7 +125,25 @@ fn plan_affine_from_selected_claims(
     int32_range_fallback: bool,
 ) -> Option<SignedArithmeticCertificate> {
     let mut planner = Planner::new(premises, claims, int32_range_fallback);
-    let conclusion = planner.affine_claim(expected, allow_weakening)?;
+    let conclusion = planner
+        .affine_claim(expected, allow_weakening)
+        .or_else(|| {
+            if expected.relation != SignedArithmeticRelation::Equal {
+                return None;
+            }
+            // Equality needs both signed directions. Plan each from the same
+            // explicitly selected facts, retaining equality substitutions as
+            // checked arithmetic nodes rather than importing a solver verdict.
+            let lower =
+                planner.affine_claim(&equality_direction(expected, false), allow_weakening)?;
+            let upper =
+                planner.affine_claim(&equality_direction(expected, true), allow_weakening)?;
+            planner.push(SignedArithmeticNode::EqualityFromBounds {
+                lower,
+                upper,
+                result: expected.clone(),
+            })
+        })?;
     Some(certificate(planner.nodes, conclusion))
 }
 
@@ -2521,6 +2539,29 @@ mod tests {
             Bitvector32Term::BitwiseXor(Box::new(constant(i32::MIN)), Box::new(term)),
             constant(-1073741825),
         )
+    }
+
+    #[test]
+    fn equality_from_bounds_through_a_pinned_constant_is_checked() {
+        let goal = proposition(
+            ConditionTerm::Bitvector32Equal(Box::new(var(1)), Box::new(var(2))),
+            true,
+        );
+        let premises = vec![
+            le(constant(0), var(1)),
+            le(var(1), var(2)),
+            proposition(
+                ConditionTerm::Bitvector32Equal(Box::new(var(2)), Box::new(constant(0))),
+                true,
+            ),
+        ];
+        let plan = check_plan(&goal, &premises);
+        for missing in 0..premises.len() {
+            let mut unavailable = premises.clone();
+            unavailable[missing] = le(constant(0), constant(1));
+            assert!(plan.check(&goal, &unavailable).is_err());
+            assert!(plan_signed_arithmetic_certificate(&goal, &unavailable).is_none());
+        }
     }
 
     #[test]

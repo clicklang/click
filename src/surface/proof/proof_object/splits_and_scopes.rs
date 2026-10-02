@@ -476,22 +476,27 @@ impl<'a> Proof<'a> {
             })
             .map_err(|message| self.step_error(message))?
             .into_parts();
-        Ok((
-            Self {
-                site: self.site.clone(),
-                context: self.context.clone(),
-                state,
-                node: Arc::new(ProofNode {
-                    parent: Some(self.node.clone()),
-                    step: None,
-                    focused_branch: self.focused_branch_id(),
-                    depth: self.node.depth,
-                    split_branches: ids.to_vec(),
-                }),
-            },
-            split,
+        let successor = Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: Arc::new(ProofNode {
+                parent: Some(self.node.clone()),
+                step: None,
+                focused_branch: self.focused_branch_id(),
+                depth: self.node.depth,
+                split_branches: ids.to_vec(),
+            }),
+        };
+        successor.record_trace_split(
+            &successor.node,
             ids,
-        ))
+            &[Vec::new(), Vec::new()],
+            "both",
+            ["left", "right"],
+            [None, None],
+        );
+        Ok((successor, split, ids))
     }
 
     pub(in crate::surface::proof) fn join_focused_both(
@@ -520,6 +525,23 @@ impl<'a> Proof<'a> {
         disjunction: ClickProposition,
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
         let kernel = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
+        // The trace shows the disjunct each arm assumes.
+        let traced_arms = crate::surface::proof_trace::enabled_for(self.claim_label()).then(|| {
+            let facts = match &kernel {
+                Proposition::Or(left, right) => {
+                    [vec![left.as_ref().clone()], vec![right.as_ref().clone()]]
+                }
+                _ => [Vec::new(), Vec::new()],
+            };
+            let sources = match &disjunction {
+                ClickProposition::Or(left, right) => [
+                    Some(crate::surface::printing::source_click_proposition(left)),
+                    Some(crate::surface::printing::source_click_proposition(right)),
+                ],
+                _ => [None, None],
+            };
+            (facts, sources)
+        });
         let (state, split, ids) = self
             .state
             .split_proposition_cases(kernel)
@@ -543,24 +565,31 @@ impl<'a> Proof<'a> {
                 }
             })?
             .into_parts();
-        Ok((
-            Self {
-                site: self.site.clone(),
-                context: self.context.clone(),
-                state,
-                // The marker records the split instance in provenance; its
-                // identity is what the join verifies (identity rule 3).
-                node: Arc::new(ProofNode {
-                    parent: Some(self.node.clone()),
-                    step: None,
-                    focused_branch: self.focused_branch_id(),
-                    depth: self.node.depth,
-                    split_branches: ids.to_vec(),
-                }),
-            },
-            split,
-            ids,
-        ))
+        let successor = Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            // The marker records the split instance in provenance; its
+            // identity is what the join verifies (identity rule 3).
+            node: Arc::new(ProofNode {
+                parent: Some(self.node.clone()),
+                step: None,
+                focused_branch: self.focused_branch_id(),
+                depth: self.node.depth,
+                split_branches: ids.to_vec(),
+            }),
+        };
+        if let Some((facts, sources)) = traced_arms {
+            successor.record_trace_split(
+                &successor.node,
+                ids,
+                &facts,
+                "cases",
+                ["left", "right"],
+                sources,
+            );
+        }
+        Ok((successor, split, ids))
     }
 
     /// Splits the focused branch proposition goal under a condition and its exact
@@ -574,6 +603,8 @@ impl<'a> Proof<'a> {
         let then_fact = self.lower_surface_proposition(&condition, "proof `if` condition")?;
         let else_surface = ClickProposition::Not(Box::new(condition.clone()));
         let else_fact = self.lower_surface_proposition(&else_surface, "proof `if` negation")?;
+        let traced_arms = crate::surface::proof_trace::enabled_for(self.claim_label())
+            .then(|| [vec![then_fact.clone()], vec![else_fact.clone()]]);
         let (state, split, ids) = self
             .state
             .split_proposition_if(then_fact, else_fact)
@@ -593,22 +624,36 @@ impl<'a> Proof<'a> {
                 }
             })?
             .into_parts();
-        Ok((
-            Self {
-                site: self.site.clone(),
-                context: self.context.clone(),
-                state,
-                node: Arc::new(ProofNode {
-                    parent: Some(self.node.clone()),
-                    step: None,
-                    focused_branch: self.focused_branch_id(),
-                    depth: self.node.depth,
-                    split_branches: ids.to_vec(),
-                }),
-            },
-            split,
-            ids,
-        ))
+        let successor = Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: Arc::new(ProofNode {
+                parent: Some(self.node.clone()),
+                step: None,
+                focused_branch: self.focused_branch_id(),
+                depth: self.node.depth,
+                split_branches: ids.to_vec(),
+            }),
+        };
+        if let Some(facts) = traced_arms {
+            successor.record_trace_split(
+                &successor.node,
+                ids,
+                &facts,
+                "if",
+                ["then", "else"],
+                [
+                    Some(crate::surface::printing::source_click_proposition(
+                        &condition,
+                    )),
+                    Some(crate::surface::printing::source_click_proposition(
+                        &else_surface,
+                    )),
+                ],
+            );
+        }
+        Ok((successor, split, ids))
     }
 
     /// Splits a proof path condition that exactly names the current C `if`

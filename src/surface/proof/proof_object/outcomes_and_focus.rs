@@ -882,16 +882,17 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("`execute_until` requires an execution proof"));
         };
-        let CodeRegion::Statement(statement_index) = resolve_code_region_ref(
+        let region = resolve_code_region_ref(
             context.function_block,
             region,
             context.claim_label,
             context.tactic_index,
-        )?
-        else {
-            return Err(self.step_error("`execute_until` expects a statement region"));
-        };
-        Ok(statement_index)
+        )?;
+        context
+            .constants
+            .source_layout
+            .execution_region_entry(region)
+            .map_err(|message| self.step_error(message))
     }
 
     /// Returns the current source-statement frontier for a checked execution

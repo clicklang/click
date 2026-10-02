@@ -13785,7 +13785,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             let completed = root.apply_step(ProofStep::Normalize).unwrap();
             take_checked_have_operations();
             let before = fact_node_allocations();
-            let retained = root.retain_completed_goal(&completed).unwrap();
+            let retained = root.retain_completed_goal(&completed, &[]).unwrap();
             allocations.push(fact_node_allocations() - before);
             assert_eq!(
                 take_checked_have_operations(),
@@ -13815,8 +13815,8 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             )
             .apply_step(ProofStep::Normalize)
             .unwrap();
-            assert!(root.retain_completed_goal(&other).is_err());
-            assert!(root.retain_completed_goal(&root).is_err());
+            assert!(root.retain_completed_goal(&other, &[]).is_err());
+            assert!(root.retain_completed_goal(&root, &[]).is_err());
         }
     }
     for pair in allocations.windows(2) {

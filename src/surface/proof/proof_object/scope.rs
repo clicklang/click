@@ -1062,9 +1062,18 @@ impl<'a> Proof<'a> {
     /// Retain a completed descendant of this focused proposition goal as a `have`.
     /// The checked descendant supplies the evidence; its certificate is only
     /// serialized provenance and is never executed again.
+    ///
+    /// `conclusions` are the completed application's other guarantees as the
+    /// caller would write them, in the order the application produced them.
+    /// An application adds every guarantee of its theorem, so each one the
+    /// completed step actually added is retained beside the goal as its own
+    /// `have` over the same body. Nothing is checked again: a conclusion is
+    /// published only when it is one of the facts the checked step reported
+    /// adding, matched in one ordered pass.
     pub(in crate::surface::proof) fn retain_completed_goal(
         &self,
         completed: &Self,
+        conclusions: &[ClickProposition],
     ) -> Result<Self, ClickError> {
         if !Arc::ptr_eq(&self.context, &completed.context)
             || self.focused_branch_id() != completed.focused_branch_id()
@@ -1102,7 +1111,7 @@ impl<'a> Proof<'a> {
                 vec![kernel],
             )
             .map_err(|_| self.step_error("application parent has no open goal"))?;
-        Ok(Self {
+        let mut retained = Self {
             site: self.site.clone(),
             context: self.context.clone(),
             state,
@@ -1110,12 +1119,62 @@ impl<'a> Proof<'a> {
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(ProofStep::Have {
                     proposition,
-                    proof: Box::new(body),
+                    proof: Box::new(body.clone()),
                 })),
                 focused_branch: self.focused_branch_id(),
                 depth: self.node.depth + 1,
                 split_branches: Vec::new(),
             }),
-        })
+        };
+
+        // The step reports its added facts in conclusion order, omitting any
+        // the context already held, so one forward pass pairs each written
+        // conclusion with the fact it produced.
+        let mut added = completed.state.added_facts().iter().peekable();
+        for conclusion in conclusions {
+            let Some(fact) = added.peek() else {
+                break;
+            };
+            let Ok(lowered) = self.lower_surface_proposition(conclusion, "retained application")
+            else {
+                continue;
+            };
+            if &lowered != *fact {
+                continue;
+            }
+            added.next();
+            if retained.facts().contains(&lowered) {
+                continue;
+            }
+            let branch = retained
+                .focused_branch()
+                .ok_or_else(|| self.step_error("application parent has no open branch"))?;
+            let state = retained
+                .state
+                .publish_checked_focused_transition(
+                    retained.focused_obligation().cloned().unwrap(),
+                    retained.facts().with_kernel_checked_fact(lowered.clone()),
+                    branch.state.execution.clone(),
+                    vec![lowered.clone()],
+                    vec![lowered],
+                )
+                .map_err(|_| self.step_error("application parent has no open goal"))?;
+            retained = Self {
+                site: retained.site.clone(),
+                context: retained.context.clone(),
+                state,
+                node: Arc::new(ProofNode {
+                    parent: Some(retained.node.clone()),
+                    step: Some(Arc::new(ProofStep::Have {
+                        proposition: conclusion.clone(),
+                        proof: Box::new(body.clone()),
+                    })),
+                    focused_branch: retained.focused_branch_id(),
+                    depth: retained.node.depth + 1,
+                    split_branches: Vec::new(),
+                }),
+            };
+        }
+        Ok(retained)
     }
 }

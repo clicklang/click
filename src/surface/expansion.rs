@@ -4174,6 +4174,26 @@ pub fn tactic_arm_containing_position(
         "branch" => find_branch_blocks(&tokens, &range)?,
         "if" => find_if_branch_blocks(&tokens, &range)?,
         "outcomes" => find_named_arm_blocks(&tokens, &range, "returned", "threw", "outcomes")?,
+        "cases" => find_cases_arm_blocks(&tokens, &range)?,
+        "both" => {
+            let left_open = start + 1;
+            if tokens.get(left_open).map(|token| token.text.as_str()) != Some("{") {
+                return Ok(None);
+            }
+            let left_close = matching_delimiter(&tokens, left_open, "{", "}")?;
+            let right_open = left_close + 2;
+            if tokens.get(left_close + 1).map(|token| token.text.as_str()) != Some("and")
+                || tokens.get(right_open).map(|token| token.text.as_str()) != Some("{")
+            {
+                return Ok(None);
+            }
+            (
+                left_open,
+                left_close,
+                right_open,
+                matching_delimiter(&tokens, right_open, "{", "}")?,
+            )
+        }
         _ => return Ok(None),
     };
     for (index, (open, close)) in [(blocks.0, blocks.1), (blocks.2, blocks.3)]
@@ -4255,6 +4275,22 @@ pub fn tactic_line_has_multiple_starts(
 /// trace target without requiring a column when the line is unambiguous.
 pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosition>, ClickError> {
     let tokens = scan_source_tokens(source)?;
+    // The line's byte range, found once: asking each tactic start for its
+    // line would rescan the source from the top for every tactic in it.
+    let mut line_starts = std::iter::once(0).chain(
+        source
+            .bytes()
+            .enumerate()
+            .filter_map(|(offset, byte)| (byte == b'\n').then_some(offset + 1)),
+    );
+    let Some(line_start) = line.checked_sub(1).and_then(|index| line_starts.nth(index)) else {
+        return Ok(Vec::new());
+    };
+    let line_end = line_starts.next().unwrap_or(source.len() + 1);
+    // The `then` block of a proof `if` and the arm blocks of `cases` follow
+    // a condition, not a keyword; they are found from the tactic that owns
+    // them, which the scan reaches first.
+    let mut arm_blocks = std::collections::BTreeSet::new();
     let mut starts = std::collections::BTreeSet::new();
     for (open, token) in tokens.iter().enumerate() {
         if token.text != "{" {
@@ -4265,15 +4301,16 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
         // two punctuation tokens `=` and `>`.
         let arm_block = open >= 2 && tokens[open - 2].text == "=" && tokens[open - 1].text == ">";
         let direct_proof_block = arm_block
-            || preceding
-                .is_some_and(|token| matches!(token.text.as_str(), "by" | "then" | "else" | "and"));
+            || preceding.is_some_and(|token| {
+                matches!(token.text.as_str(), "by" | "then" | "else" | "and" | "both")
+            });
         let open_tactic_block = preceding.is_some_and(|token| token.text == ")")
             && tokens[..open]
                 .iter()
                 .rev()
                 .take_while(|token| !matches!(token.text.as_str(), ";" | "{" | "}"))
                 .any(|token| token.text == "open");
-        if !direct_proof_block && !open_tactic_block {
+        if !direct_proof_block && !open_tactic_block && !arm_blocks.contains(&open) {
             continue;
         }
         let Ok(close) = matching_delimiter(&tokens, open, "{", "}") else {
@@ -4283,8 +4320,23 @@ pub fn tactic_starts_on_line(source: &str, line: usize) -> Result<Vec<SourcePosi
             continue;
         };
         for range in ranges {
+            match tokens[range.start].text.as_str() {
+                "if" => {
+                    if let Ok((then_open, ..)) = find_if_branch_blocks(&tokens, &range) {
+                        arm_blocks.insert(then_open);
+                    }
+                }
+                "cases" => {
+                    if let Ok((left_open, _, right_open, _)) =
+                        find_cases_arm_blocks(&tokens, &range)
+                    {
+                        arm_blocks.extend([left_open, right_open]);
+                    }
+                }
+                _ => {}
+            }
             let start = tokens[range.start].span.start;
-            if position_at_offset(source, start).line == line {
+            if (line_start..line_end).contains(&start) {
                 starts.insert(start);
             }
         }

@@ -192,7 +192,7 @@ impl Adapter<'_> {
             }
             _ => {
                 return Err(unsupported(
-                    "type (arrays, loops, raw pointers, and general generics remain later work)",
+                    "type (arrays, raw pointers, and general generics remain later work)",
                 ));
             }
         })
@@ -429,14 +429,29 @@ impl BodyAdapter<'_, '_> {
                 let no = data
                     .fallback
                     .ok_or_else(|| unsupported("exhaustive switch"))?;
-                T::If {
-                    condition: E::Binary {
+                let condition = if let a::ConstantExprKind::Bool(expected) = constant.kind() {
+                    if self.adapter.ty(value.ty())? != Type::Bool {
+                        return Err(unsupported("boolean switch type mismatch"));
+                    }
+                    let operand = self.operand(value)?;
+                    if *expected {
+                        operand
+                    } else {
+                        E::Not {
+                            value: Box::new(operand),
+                        }
+                    }
+                } else {
+                    E::Binary {
                         operator: "eq".into(),
                         left_type: self.adapter.ty(value.ty())?,
                         right_type: self.adapter.ty(constant.ty())?,
                         left: Box::new(self.operand(value)?),
                         right: Box::new(self.constant(constant)?),
-                    },
+                    }
+                };
+                T::If {
+                    condition,
                     then_target: branches[*yes].index(),
                     else_target: branches[no].index(),
                 }
@@ -725,8 +740,13 @@ pub(super) fn decode(
                     .name
                     .clone()
                     .ok_or_else(|| unsupported("unnamed parameter"))?
+            } else if local.index.index() != 0 {
+                local
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("__rust_mir_{}", local.index.index()))
             } else {
-                format!("__rust_mir_{}", local.index.index())
+                "__rust_mir_0".into()
             };
             if !local_names.insert(n.clone()) {
                 return Err(unsupported("local identity collision"));
@@ -802,6 +822,85 @@ mod tests {
     const ARTIFACT: &[u8] = include_bytes!("../../../design/charon-trial/trial.ullbc");
     const SOURCE: &[u8] = include_bytes!("../../../design/charon-trial/trial.rs");
     const CLAIM: &str = include_str!("../../../design/charon-trial/trial.click");
+
+    #[test]
+    fn charon_borrowed_loop_keeps_a_real_while_guard() {
+        let export = decode(
+            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.ullbc"),
+            "loop.rs",
+            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
+        )
+        .unwrap();
+        let (functions, _) = super::super::lowering::lower(&export).unwrap();
+        let function = functions
+            .iter()
+            .find(|f| f.name() == "guarded_walk")
+            .unwrap()
+            .to_kernel_function();
+        fn visit(statement: &crate::kernel::CStatement, guards: &mut Vec<String>) {
+            use crate::kernel::CStatement as C;
+            match statement {
+                C::Seq(a, b) => {
+                    visit(a, guards);
+                    visit(b, guards);
+                }
+                C::While {
+                    condition, body, ..
+                } => {
+                    guards.push(format!("{condition:?}"));
+                    visit(body, guards);
+                }
+                C::If {
+                    then_branch,
+                    else_branch,
+                    ..
+                } => {
+                    visit(then_branch, guards);
+                    visit(else_branch, guards);
+                }
+                C::Break => panic!("a reconstructed while must not add an artificial break"),
+                _ => {}
+            }
+        }
+        let mut guards = Vec::new();
+        visit(function.body(), &mut guards);
+        assert_eq!(guards, ["LessThan(Variable(\"i\"), Variable(\"n\"))"]);
+    }
+
+    #[test]
+    fn charon_borrowed_loop_rejects_missing_guard_cleanup() {
+        let mut export = decode(
+            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.ullbc"),
+            "loop.rs",
+            include_bytes!("../../../design/charon-trial/borrowed-loop/loop.rs"),
+        )
+        .unwrap();
+        let mir = export
+            .functions
+            .iter_mut()
+            .find(|f| f.name == "guarded_walk")
+            .unwrap()
+            .mir
+            .as_mut()
+            .unwrap();
+        let drop = mir
+            .blocks
+            .iter_mut()
+            .find(|b| matches!(b.terminator, T::Drop { .. }))
+            .unwrap();
+        let T::Drop { target, .. } = drop.terminator else {
+            unreachable!()
+        };
+        drop.terminator = T::Goto { target };
+        let prepared = super::super::import::prepared_for_test(export).unwrap();
+        assert!(
+            C0VerificationSession::new_program_prepared(
+                include_str!("../../../design/charon-trial/borrowed-loop/loop.click"),
+                &prepared
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn charon_trial_rejects_partial_or_incompatible_extraction() {

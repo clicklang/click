@@ -1126,7 +1126,12 @@ impl<'a> Proof<'a> {
                     surfaces.get(*lower)?.as_ref()?,
                     surfaces.get(*upper)?.as_ref()?,
                 )
-                .or_else(|| claim_surface(result)),
+                .or_else(|| claim_surface(result))
+                // Affine bounds may have different source groupings after
+                // equality substitution. The final goal supplies their
+                // equality spelling; the checker still validates both
+                // opposite claims and the stated result independently.
+                .or_else(|| (surfaces.len() == plan.conclusion).then(|| surface_goal.clone())),
                 SignedArithmeticNode::StrictFromDisequal { bound, result, .. } => {
                     integer_surface_strict_from_disequal(surfaces.get(*bound)?.as_ref()?)
                         .or_else(|| claim_surface(result))
@@ -5867,6 +5872,23 @@ impl<'a> Proof<'a> {
             })
             .or_else(|| plan_recorded_bitvector_equality_path(goal, derivation, premise_pairs))
             .or_else(|| {
+                if !derivation.is_int32_pinned_constant_equality() {
+                    return None;
+                }
+                let kernels = premise_pairs
+                    .iter()
+                    .map(|(premise, _)| premise.clone())
+                    .collect::<Vec<_>>();
+                let plan = plan_signed_arithmetic_certificate(goal, &kernels)?;
+                let certificate =
+                    self.signed_plan_to_surface_certificate(&plan, premise_pairs, surface_goal?)?;
+                Some(vec![ProofTactic::ArithmeticCertificate(
+                    ArithmeticCertificate {
+                        family: ArithmeticCertificateFamily::SignedInt32(certificate),
+                    },
+                )])
+            })
+            .or_else(|| {
                 plan_recorded_pointer_alignment(goal, derivation, premise_pairs, surface_goal?)
             })
             .or_else(|| plan_recorded_pointer_word(goal, derivation, premise_pairs, surface_goal?))
@@ -6594,6 +6616,10 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_if(&marker, split, ids, proof_if.condition.clone())?
                         .at_site(&sites[index]);
+                    // Both arms checked the tactics after the `if`; a trace
+                    // to one of those follows the first arm.
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Both(both) => {
@@ -6676,6 +6702,8 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_cases(&marker, split, ids, proof_cases.disjunction.clone())?
                         .at_site(&sites[index]);
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 tactic => {
@@ -6716,7 +6744,16 @@ impl<'a> Proof<'a> {
             if let Some(before) = before_application
                 && proof.focused_discharged()
             {
-                proof = before.retain_completed_goal(&proof)?;
+                // An application guarantees every conclusion of its theorem,
+                // not only the one that happened to be the goal.
+                let conclusions = match tactic {
+                    ProofTactic::ApplyTheorem(application)
+                    | ProofTactic::ApplyTheoremUsing { application, .. } => {
+                        before.theorem_application_surface_conclusions(application)
+                    }
+                    _ => Vec::new(),
+                };
+                proof = before.retain_completed_goal(&proof, &conclusions)?;
             }
             if let Some(capture) = nested_capture {
                 capture.finish(&proof);

@@ -806,6 +806,212 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
 }
 
 #[test]
+fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(940_130));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(quantity.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let zero_transfer = child
+        .transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &Bitvector32Term::Constant(0),
+            &assumptions,
+        )
+        .unwrap();
+    assert!(!zero_transfer.owns_population_member(&description));
+    assert!(!zero_transfer.owns_population_authority(&description));
+    assert!(
+        zero_transfer
+            .finish_call(&entry)
+            .unwrap()
+            .owns_population_member(&description)
+    );
+    let authority_only = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    assert!(authority_only.owns_population_authority(&description));
+    assert!(!authority_only.owns_population_member(&description));
+    assert_eq!(
+        authority_only
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &assumptions,
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingMembers
+    );
+    assert!(
+        authority_only
+            .return_to(&entry)
+            .owns_population_member(&description)
+    );
+    let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+    assert_eq!(
+        authority_only
+            .transfer_call_fact_quantity(&entry, &child, &description, false, &wrong, &assumptions,)
+            .unwrap_err(),
+        CreationRefusal::InvalidQuantity
+    );
+    let both = authority_only
+        .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &assumptions)
+        .unwrap();
+    assert!(both.owns_population_member(&description));
+    assert!(!both.return_to(&entry).owns_population_member(&description));
+    assert_eq!(
+        both.transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap_err(),
+        CreationRefusal::MissingMembers
+    );
+    let authority_returned = both
+        .transfer_call_fact(&child, &entry, &description, true)
+        .unwrap();
+    assert!(matches!(
+        authority_returned.finish_call(&entry),
+        Err(CreationRefusal::OutstandingOwnership)
+    ));
+    let all_returned = authority_returned
+        .transfer_call_fact_quantity(&child, &entry, &description, false, &quantity, &assumptions)
+        .unwrap()
+        .finish_call(&entry)
+        .unwrap();
+    assert!(all_returned.owns_population_authority(&description));
+    assert!(all_returned.owns_population_member(&description));
+    assert_eq!(
+        all_returned
+            .observe_symbolic(&description)
+            .unwrap()
+            .entry_count,
+        quantity
+    );
+    assert!(
+        all_returned
+            .imported_member_delta_since_entry(&description)
+            .is_none()
+    );
+    // Moving only the batch also grants no authority to consume it.
+    let child = all_returned.enter_call();
+    let batch_only = child
+        .transfer_call_fact_quantity(
+            &all_returned,
+            &child,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap();
+    assert!(batch_only.owns_population_member(&description));
+    assert!(!batch_only.owns_population_authority(&description));
+    assert_eq!(
+        batch_only
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                false,
+                &quantity,
+                &assumptions,
+            )
+            .unwrap_err(),
+        CreationRefusal::MissingAuthority
+    );
+}
+
+#[test]
+fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
+    let quantity = Bitvector32Term::Variable(Variable(940_131));
+    let description = member_description(PointerBlock::ExternalArgument);
+    let assumptions = PureFactContext::new();
+    let mut work = Vec::new();
+    for size in [16, 64, 256, 1024] {
+        let mut entry = CreationEvents::new();
+        for index in 0..size {
+            let unrelated = ResourceDescription::new(
+                format!("unrelated-{index}"),
+                description.arguments().to_vec().into(),
+                description.schema().clone(),
+            );
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &unrelated,
+                    0,
+                    Some(Bitvector32Term::Constant(0)),
+                    None,
+                    None,
+                )
+                .unwrap();
+        }
+        entry = entry
+            .import_opaque_contract_population_inner(
+                &description,
+                0,
+                Some(quantity.clone()),
+                Some(quantity.clone()),
+                None,
+            )
+            .unwrap();
+        let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            let child = entry.enter_call();
+            let held = child
+                .transfer_call_fact(&entry, &child, &description, true)
+                .unwrap()
+                .transfer_call_fact_quantity(
+                    &entry,
+                    &child,
+                    &description,
+                    false,
+                    &quantity,
+                    &assumptions,
+                )
+                .unwrap();
+            held.transfer_call_fact_quantity(
+                &child,
+                &entry,
+                &description,
+                false,
+                &quantity,
+                &assumptions,
+            )
+            .unwrap()
+            .transfer_call_fact(&child, &entry, &description, true)
+            .unwrap()
+            .finish_call(&entry)
+            .unwrap()
+        });
+        assert!(returned.owns_population_member(&description));
+        work.push(measured);
+    }
+    assert!(work[3] <= work[0] * 2 + 32, "{work:?}");
+}
+
+#[test]
 fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
     let first = member_description(PointerBlock::ExternalArgument);
     let second = ResourceDescription::new(
@@ -1773,7 +1979,7 @@ fn opaque_returned_authority_cannot_strand_members() {
 }
 
 #[test]
-fn opaque_symbolic_nested_transfer_is_explicitly_unsupported() {
+fn opaque_symbolic_nested_transfer_refuses_splitting_and_preserves_global_total() {
     let description = member_description(PointerBlock::ExternalArgument);
     let entry = CreationEvents::new()
         .import_opaque_contract_population_inner(
@@ -1785,20 +1991,34 @@ fn opaque_symbolic_nested_transfer_is_explicitly_unsupported() {
         )
         .unwrap();
     let child = entry.enter_call();
+    let authority_only = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
     assert_eq!(
-        child.transfer_call_fact(&entry, &child, &description, true),
+        authority_only.transfer_call_fact_quantity(
+            &entry,
+            &child,
+            &description,
+            false,
+            &Bitvector32Term::Constant(1),
+            &PureFactContext::new()
+        ),
         Err(CreationRefusal::InvalidQuantity)
     );
-    assert_eq!(
-        child.transfer_call_fact_quantity(
+    let both = authority_only
+        .transfer_call_fact_quantity(
             &entry,
             &child,
             &description,
             false,
             &Bitvector32Term::Constant(3),
-            &PureFactContext::new()
-        ),
-        Err(CreationRefusal::InvalidQuantity)
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert!(both.owns_population_member(&description));
+    assert_eq!(
+        both.observe_symbolic(&description).unwrap().entry_count,
+        Bitvector32Term::Constant(7)
     );
 }
 
@@ -3324,4 +3544,78 @@ mod wildcard_scope_tests {
             assert!(*work <= samples[0] + 8 * index, "{samples:?}");
         }
     }
+}
+
+#[test]
+fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(980_220));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(quantity.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let authority = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    let held = authority
+        .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &assumptions)
+        .unwrap();
+    let spent = held
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap()
+        .0;
+    assert_eq!(
+        spent.finish_call(&entry).unwrap_err(),
+        CreationRefusal::OutstandingOwnership
+    );
+    let retired = spent
+        .checked_retire_imported(&description, &assumptions)
+        .unwrap()
+        .0;
+    let returned = retired.finish_call(&entry).unwrap();
+    assert!(returned.retired_imported_authority_since(&entry, &description));
+    assert_eq!(
+        returned.imported_member_delta_since_entry(&description),
+        Some((false, quantity))
+    );
+    assert!(returned.checked_empty_population(&description));
+    assert!(!returned.owns_population_authority(&description));
+    assert!(!returned.owns_population_member(&description));
+    assert!(returned.observe_symbolic(&description).is_none());
+    assert!(
+        returned
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                true,
+                &Bitvector32Term::Constant(1),
+                &assumptions
+            )
+            .is_err()
+    );
+    assert_eq!(
+        returned
+            .checked_retire_imported(&description, &assumptions)
+            .unwrap_err(),
+        CreationRefusal::MissingAuthority
+    );
 }

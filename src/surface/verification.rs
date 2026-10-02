@@ -1151,6 +1151,49 @@ pub fn verify_program_prepared_project_at(
     })
 }
 
+/// Verifies only the entry module's pure theorem `theorem`. Theorems it
+/// cites remain interfaces, exactly as when a source location selects it.
+pub fn verify_c0_project_theorem(
+    project: &ClickProject,
+    c_sources: &[(&str, &str)],
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::bundle(c_sources).with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
+/// [`verify_c0_project_theorem`] for compiler-prepared translation units.
+pub fn verify_c0_prepared_project_theorem(
+    project: &ClickProject,
+    imports: &[PreparedCImport],
+    theorem: &str,
+) -> Result<Vec<VerifiedCTheorem>, ClickError> {
+    instrumentation::with_default_tactic_limits(|| {
+        let sources = CSourceContext::prepared(imports).with_click_project(project);
+        let file = resolve_click_project_context(project, &sources)?;
+        verify_c0_sources_with_context(
+            project.entry_source().expect("resolved entry source"),
+            &sources,
+            Some(VerificationTarget::Theorem(theorem.to_owned())),
+            None,
+            None,
+            Some(file),
+        )
+        .map(|(verified, _)| verified)
+    })
+}
+
 pub fn verify_c0_prepared_project_functions(
     project: &ClickProject,
     imports: &[PreparedCImport],
