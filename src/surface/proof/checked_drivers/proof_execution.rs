@@ -825,17 +825,18 @@ fn advance_checked_linear_continuation<'a>(
         } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
             match proof.try_linear_execute_until(region)? {
                 Some(executed) => executed,
-                None => proof.apply_planned_execute_until(region, indexed.index)?,
+                None => {
+                    return Err(proof
+                        .step_error("`execute_until` found no checked step from this frontier"));
+                }
             }
         } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             match proof.try_linear_execute()? {
                 Some(executed) => executed,
                 None => {
-                    // The planner fallback constructs the explicit checked
-                    // operations through the same law the interpreter used.
-                    // The planner's failure is the answer: it applies the
-                    // same statement steps with nothing more to see.
-                    proof.apply_planned_smart_execute(indexed.index)?
+                    return Err(proof.step_error(
+                        "`execute()` found no checked path from this frontier to function exit",
+                    ));
                 }
             }
         } else if let ProofTactic::Loop(clause) = &indexed.tactic {

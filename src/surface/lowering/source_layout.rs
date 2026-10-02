@@ -648,10 +648,6 @@ impl SourceExecutionLayout {
         self.data.sites.get(&index)
     }
 
-    pub(in crate::surface) fn statement_count(&self) -> usize {
-        self.data.statements.len()
-    }
-
     pub(in crate::surface) fn execution_region_entry(
         &self,
         region: CodeRegion,
@@ -945,7 +941,7 @@ mod source_execution_layout_tests {
         let cloned = layout.clone();
 
         assert!(std::sync::Arc::ptr_eq(&layout.data, &cloned.data));
-        assert_eq!(cloned.statement_count(), 4096);
+        assert_eq!(cloned.data.statements.len(), 4096);
         assert_eq!(
             cloned
                 .statement(4095)

@@ -194,8 +194,7 @@ and a preservation arm's certificate come from the `Proof` itself
 `path_certificate` for an unjoined case-split arm), and the certificate
 builder is only a planning call's construction sink, owned by the planning
 `Proof` method and handed to the executor with the construction environments
-as one `Construction` gate; a bounded execution gives each explored path its
-own sink and synthesizes them at the join. It lives only as the execution
+as one `Construction` gate. It lives only as the execution
 snapshot of a `Proof` goal: the checked drivers advance a `Proof`, and every
 source or generated proof tree is checked that way. The earlier interpreter
 that advanced this context as a parallel engine is gone; the snapshot owns the

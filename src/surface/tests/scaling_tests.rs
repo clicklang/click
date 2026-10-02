@@ -3961,7 +3961,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
 }
 
 /// `execute()` runs an early-return fan-out on the checked `Proof` in work
-/// near linear in its length, without entering the planner.
+/// near linear in its length.
 ///
 /// The main path of an early-return fan-out learns one condition per `if`,
 /// so its facts grow with its length. The function opens with a null check
@@ -3978,7 +3978,7 @@ fn call_requirement_checking_is_linear_in_the_requirement_count() {
 /// path, so they grow with the square of the path on either route (75, 159,
 /// 423, and 1335 entries here).
 #[test]
-fn executing_a_fan_out_stays_on_the_proof_in_near_linear_work() {
+fn executing_a_fan_out_is_near_linear_in_its_length() {
     std::thread::Builder::new()
         .name("fan-out-execute".into())
         .stack_size(64 << 20)
@@ -3989,18 +3989,12 @@ fn executing_a_fan_out_stays_on_the_proof_in_near_linear_work() {
             let mut execute = Vec::new();
             for returns in [4, 8, 16, 32] {
                 let c = early_return_fan_out(returns);
-                let before = crate::kernel::reasoning::path_facts::smart_planning_entries();
                 let (verified, sample) = scaling_sample(returns, || {
                     verify_c0_sources(click, &[("fan_out.c", c.as_str())])
                 });
                 verified.unwrap_or_else(|error| {
                     panic!("fan-out of {returns} returns failed: {}", error.message())
                 });
-                assert_eq!(
-                    crate::kernel::reasoning::path_facts::smart_planning_entries() - before,
-                    0,
-                    "`execute()` handed a fan-out of {returns} returns to the planner"
-                );
                 execute.push(ScalingSample {
                     size: returns,
                     work: *sample.named_work.get(EXECUTE).unwrap_or_else(|| {

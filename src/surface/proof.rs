@@ -146,15 +146,6 @@ pub(in crate::surface::proof) enum ConstructionEvidence {
         theorem: Theorem,
     },
     FinishCertifiedFactTransports(Vec<Proposition>),
-    CertifiedPathAssumption {
-        occurrence: usize,
-        condition: ClickProposition,
-        /// The spelling to use when `condition` does not lower to one of
-        /// `facts` at the recorded point.
-        fallback_condition: Option<ClickProposition>,
-        value: bool,
-        facts: Vec<Proposition>,
-    },
 }
 
 type NextTopLevelStatement = (CState, CState, CStatement, Option<CStatement>);

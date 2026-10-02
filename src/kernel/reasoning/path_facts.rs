@@ -1567,7 +1567,6 @@ pub(in crate::kernel) fn decide_with_facts(
 #[cfg(test)]
 thread_local! {
     static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static SMART_PLANNING_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Counts, in test builds, the entries a fact context built from a list
@@ -1602,27 +1601,6 @@ fn record_context_entries_for_tests(entries: usize) {
 #[cfg(test)]
 pub(crate) fn context_rebuild_entries() -> usize {
     CONTEXT_REBUILD_ENTRIES.with(std::cell::Cell::get)
-}
-
-/// How many times a smart planning tactic ([`SmartPlanningScope`]) has been
-/// entered on this thread: the executions the checked `Proof` search handed
-/// to the planner.
-#[cfg(test)]
-pub(crate) fn smart_planning_entries() -> usize {
-    SMART_PLANNING_ENTRIES.with(std::cell::Cell::get)
-}
-
-/// Marks, in test builds, one entry into a smart planning tactic, so a
-/// regression can assert that an execution stayed on the checked `Proof`.
-#[cfg(test)]
-pub(crate) struct SmartPlanningScope(());
-
-#[cfg(test)]
-impl SmartPlanningScope {
-    pub(crate) fn enter() -> Self {
-        SMART_PLANNING_ENTRIES.with(|count| count.set(count.get() + 1));
-        Self(())
-    }
 }
 
 pub(in crate::kernel) fn assumptions_with_path_context(

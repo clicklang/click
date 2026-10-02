@@ -144,15 +144,6 @@ fn describe_bounded_list<T>(items: &[T], mut describe: impl FnMut(&T) -> String)
     format!("[{}]", entries.join(", "))
 }
 
-/// Kernel propositions in the bounded proof-trace spelling, at most the
-/// diagnostic item limit of them.
-pub(super) fn describe_kernel_propositions(propositions: &[Proposition]) -> String {
-    describe_bounded_list(
-        propositions,
-        crate::surface::proof_diagnostics::render::render_proposition,
-    )
-}
-
 fn diagnostic_item_limit() -> usize {
     if std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some() {
         usize::MAX

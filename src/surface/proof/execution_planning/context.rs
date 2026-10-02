@@ -1396,12 +1396,6 @@ pub(in crate::surface::proof) enum LoopStepPolicy {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::surface::proof) enum BranchStepPolicy {
-    RequireProven,
-    Explore,
-}
-
-#[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum LoopPreservationSource {
     Automatic,
     ExecutionProof,

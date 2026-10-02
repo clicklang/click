@@ -2577,9 +2577,9 @@ impl<'a> Proof<'a> {
                 None
             }) else {
                 // A statement whose successors are path cases (a load's
-                // may-alias cases) splits the proof on the condition that
-                // tells them apart, as the planner does; each case runs to
-                // exit under its side of the condition.
+                // may-alias cases, a symbolic `switch`) splits the proof on
+                // the condition that tells them apart; each case runs to exit
+                // under its side of the condition.
                 return match proof.apply_step(ProofStep::Step) {
                     Err(error) if error.is_path_case_split() => {
                         let Some(condition) = error.path_case_condition() else {
@@ -2592,7 +2592,10 @@ impl<'a> Proof<'a> {
                             steps,
                         )
                     }
-                    _ => Ok(None),
+                    // The statement cannot run here in the whole proof
+                    // context; its refusal is the answer.
+                    Err(error) => Err(error),
+                    Ok(_) => Ok(None),
                 };
             };
             let mut advanced = split;
@@ -2772,55 +2775,6 @@ impl<'a> Proof<'a> {
         proof.apply_execution_steps_within(arm_enclosing, &steps[entry_steps..], true)
     }
 
-    pub(super) fn planned_execution_step_is_supported(step: &ProofStep) -> bool {
-        match step {
-            ProofStep::Have { .. }
-            | ProofStep::UnfoldPredicate(_)
-            | ProofStep::UnfoldFunction(_)
-            | ProofStep::TransportUsing { .. }
-            | ProofStep::Step => true,
-            ProofStep::If {
-                then_proof,
-                else_proof,
-                ..
-            } => {
-                !then_proof.steps().is_empty()
-                    && !else_proof.steps().is_empty()
-                    && then_proof
-                        .steps()
-                        .iter()
-                        .all(Self::planned_execution_step_is_supported)
-                    && else_proof
-                        .steps()
-                        .iter()
-                        .all(Self::planned_execution_step_is_supported)
-            }
-            _ => false,
-        }
-    }
-
-    pub(super) fn planned_execution_steps_contain_transition(steps: &[ProofStep]) -> bool {
-        steps.iter().any(|step| match step {
-            ProofStep::Step => true,
-            ProofStep::If {
-                then_proof,
-                else_proof,
-                ..
-            } => {
-                Self::planned_execution_steps_contain_transition(then_proof.steps())
-                    || Self::planned_execution_steps_contain_transition(else_proof.steps())
-            }
-            _ => false,
-        })
-    }
-
-    pub(super) fn apply_planned_execution_steps_inner(
-        &self,
-        steps: &[ProofStep],
-    ) -> Result<Self, ClickError> {
-        self.apply_execution_steps_within(&[], steps, false)
-    }
-
     /// Applies planner (or, with `expanded`, already-expanded) execution
     /// steps inside the bounded C `if` arms `enclosing` names, innermost
     /// last. A path runs to function exit, so an execution-advancing step
@@ -2866,24 +2820,6 @@ impl<'a> Proof<'a> {
             };
         }
         Ok(proof)
-    }
-
-    /// Applies one planner-selected whole-execution tree directly to this
-    /// Proof. The generated tree is only structured Surface input: Proof
-    /// validates each operation, owns every C split and join, and accepts the
-    /// result only when the checked execution has reached function exit.
-    pub(in crate::surface::proof) fn try_planned_execution_steps(
-        &self,
-        steps: &[ProofStep],
-    ) -> Result<Option<Self>, ClickError> {
-        if steps.is_empty()
-            || !steps.iter().all(Self::planned_execution_step_is_supported)
-            || !Self::planned_execution_steps_contain_transition(steps)
-        {
-            return Ok(None);
-        }
-        let proof = self.apply_planned_execution_steps_inner(steps)?;
-        Ok(proof.is_at_function_exit().then_some(proof))
     }
 
     /// Applies one planner (or, with `expanded`, already-expanded) `if`
