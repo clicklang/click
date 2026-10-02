@@ -326,17 +326,22 @@ count changes. All seven smart sites expand and reverify. Its companion
 `authority_pool_checkout_without_slot_rejected.md` rejects the unavailable-slot
 case with `Requires 1 <= count(pool_slot(pool))`.
 
-The next checkout slice is the ordinary helper boundary with that same
-contract. The existing reduced helper regression still explicitly requires
-`checked_out < 2147483647`; removing that requirement currently refuses the
-member transition with `InvalidQuantity`. First establish the needed call-site
-fact from the folded control or an explicit open/prove/close sequence. Do not
-weaken the contract or change C to make the transfer pass. Keep symbolic
-cleanup and two-pool transfer separate from this reduction. The original
-bounded-pool project still uses legacy counting and is not migrated as a whole.
-The speculative cache repair remains removed; these direct proofs required no
-count-model or authority change. Missing facts inside `open(...)` report
-`Requires f`.
+The original-bound checkout regression now also proves direct and nested
+ordinary helper calls. Their contracts retain the same control, slot/object
+consumption, member production, count deltas, and `valid_pool` claim, without
+`checked_out < 2147483647`. Each call's proof opens the control, proves count
+increment definedness from the available slot, and closes it before the C call.
+No verifier or authority change was needed. The missing-slot helper regression
+pins rejection at call transfer; its current diagnostic is
+`population call transfer refused: MissingMembers`.
+
+The next small slice is cleanup through the two-authority control: first reduce
+reading a symbolic slot quantity from a folded control at a helper boundary,
+then prove zero-population retirement. Keep symbolic grow/shrink and two-pool
+transfer separate. The original bounded-pool project still uses legacy
+counting and is not migrated as a whole. The speculative cache repair remains
+removed; these checkout proofs required no count-model or authority change.
+Missing facts inside `open(...)` report `Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
