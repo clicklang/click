@@ -212,7 +212,7 @@ Acceptance:
 The inspected projects offer complementary designs:
 
 - [Verus](https://github.com/verus-lang/verus/blob/main/source/CODE.md) translates
-  Rust HIR to its own VIR, then to a statement-oriented representation and
+  Rust HIR/THIR to its own VIR, then to a statement-oriented representation and
   assertion IR. Borrow its separation of compiler integration, semantic IR,
   and proof backend, and study its
   [mutable-reference interpretation](https://verus-lang.github.io/verus/guide/mutable-references.html).
@@ -228,12 +228,20 @@ The inspected projects offer complementary designs:
   functional models for proof assistants. Study the extraction and borrowing
   abstractions without replacing Click's existing memory and proof model.
 
-Start with composition regressions and a small extraction/normalization
-comparison, including an assessment of reusing Charon versus extending the
-pinned exporter. Evaluate compiler phase, drops, panic checks, source mapping,
-supported inputs, dependency locks, and translator trust; do not adopt another
-tool solely because its IR is called MIR-based. Charon's documented beta/API
-limitations must be part of a reuse decision. Then consolidate semantic
+The [2026-10-02 Charon assessment](../design/rust-charon-assessment.md) completes
+the initial extraction comparison. The pinned candidate extracts an owned guard
+combined with conversions, arrays, and borrowed iteration, rejects invalid
+borrowing/moves, keeps repeated arrays compact and CFG joins shared, and extracts
+the unchanged pinned adler2 path. This is extraction evidence, not checksum
+verification. Its newer compiler, per-body MIR phase provenance, library models,
+source/proof correspondence, and checked resource mapping remain adoption gates.
+
+Next, trial a narrow ULLBC adapter through the existing checked engine with
+positive and negative arithmetic/drop claims and verify/profile/audit/expand
+agreement, before switching production imports. Preserve source metadata and a
+Click-owned semantic boundary; do not rebuild rustc's HIR-to-MIR semantics just
+to retain syntax. Use the assessment's configuration rather than adopting an
+unaudited preset. Then consolidate semantic
 operations and identities, compact arrays, stable proof observations, and the
 model registry in reviewable increments. Extend checksum syntax on top of these
 boundaries rather than adding more incompatible paths. These are requirements
