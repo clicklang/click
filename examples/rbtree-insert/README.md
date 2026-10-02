@@ -10,7 +10,7 @@ proof. `rbtree_insert.frontier` contains the full insert contract and current
 proof attempt. The examples integration test selects that frontier separately
 and requires its bounded diagnostic to remain at the first unfinished
 black-uncle path (statement 52 of the loop body, `tmp = parent->rb_left`,
-with 35 `break`s and 4 `continue`s complete). A passing import-only
+with 67 `break`s and 4 `continue`s complete). A passing import-only
 entry therefore does not represent the insert proof as complete.
 
 The proof so far covers `initialize`, the root-blackening and black-parent
@@ -33,9 +33,17 @@ through `ctx_insert_case3_left_step`. Under a `Right` grandparent frame whose
 other child is a node, that child is unfolded before the step, so that
 `parent->rb_left == old` is decided, and refolded at its arm identity after
 it. The right-right frames are the mirror image, sixteen leaves through
-`ctx_insert_case3_right_step`. The two inner frame combinations, which rotate
-at the parent first (case 2), the body's end, the post-loop proof, and
-`rb_insert_color` remain.
+`ctx_insert_case3_right_step`.
+
+The cursor-`Right`, grandparent-`Left` frames rotate at the parent first
+(case 2) and then at the grandparent, on 32 leaves: the uncle, each of the
+cursor's two children (each `if (tmp)` writes one's parent word), and the
+great-grandparent's frame. The old parent and the grandparent are refolded as
+the cursor's two red children, the cursor as the new black subtree root, and
+the great-grandparent's frame at `node` as the loop's context;
+`ctx_insert_case2_left_exit_step` states the whole-tree facts on that shape.
+The mirrored cursor-`Left`, grandparent-`Right` frames, the body's end, the
+post-loop proof, and `rb_insert_color` remain.
 
 Run the normal full rbtree scope with:
 

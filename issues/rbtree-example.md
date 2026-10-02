@@ -636,8 +636,32 @@ Verify time of the frontier, release build, user seconds: 4.6 with 19
 `break`s and 7.0 with 35, measured together at load average 18, so about
 0.15 per leaf against 0.14 for chunk 2.
 
-**Chunk 5. Left-right combination.** Case 2's rotation at the parent, then
-case 3. Depends on 3 and 4.
+**Chunk 5. Left-right combination: landed 2026-10-02.** The cursor-`Right`,
+grandparent-`Left` combination with a black uncle runs case 2's rotation at
+the parent and then case 3 to the `break` on 32 leaves: the uncle (node or
+empty) times the cursor's left child (empty or a node, for the first
+`if (tmp)`) times its right child (for the second) times the
+great-grandparent's frame (`Top`, `Left`, `Right` with an empty or a node
+sibling). Each leaf refolds the old parent at
+`RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid))` before
+`parent = node`, the grandparent at
+`RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), uncle)`
+after `__rb_rotate_set_parents`, and the cursor over both as the new subtree
+root; the loop's context binder at the `break` is the great-grandparent's
+frame itself, refolded at `node`. `ctx_insert_case2_left_exit_step` supplied
+the three whole-tree facts and both children's black roots in the spelling
+the arm needed, so the model is unchanged. The frontier report stays at
+statement 52, `tmp = parent->rb_left`, now with 67 `break`s and 4
+`continue`s complete; `tests/examples.rs` pins it.
+
+The arm needed one tooling fix first, its own pull request: a `step()` in a
+`preserve` body was charged to the enclosing `loop`, whose single budget the
+sixteenth new leaf exhausted. Verify time of the frontier, release build,
+user seconds at load average 5 to 10: 7.1 with 35 `break`s, 11.3 with 51,
+14.9 with 67, so 0.26 and 0.22 per leaf for the two halves of this chunk
+against 0.15 for chunk 4's shorter leaves; counted work is 77,000 and 67,000
+units per leaf against 68,000. The marginal cost of same-shaped leaves does
+not grow with the size of the proof.
 
 **Chunk 6. Right-left combination.** The mirror of chunk 5. Depends on 5.
 
