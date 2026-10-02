@@ -6586,6 +6586,7 @@ enum Token {
     Minus,
     Arrow,
     Dot,
+    Ellipsis,
     MinusMinus,
     MinusEqual,
     LessThan,
@@ -6653,6 +6654,7 @@ impl Token {
             Self::Minus => "-",
             Self::Arrow => "->",
             Self::Dot => ".",
+            Self::Ellipsis => "...",
             Self::MinusMinus => "--",
             Self::MinusEqual => "-=",
             Self::LessThan => "<",
@@ -6897,6 +6899,10 @@ pub(crate) struct C0FunctionHeader {
     internal_linkage: bool,
     weak_linkage: bool,
     returns_twice: bool,
+    /// The prototype ends in `, ...`. Only body-less declarations carry
+    /// this; calls and address uses are refused because the variable
+    /// arguments have no model.
+    variadic: bool,
     parameters: Vec<C0Parameter>,
 }
 
@@ -6980,6 +6986,7 @@ fn function_headers_compatible(left: &C0FunctionHeader, right: &C0FunctionHeader
         && left.internal_linkage == right.internal_linkage
         && left.weak_linkage == right.weak_linkage
         && left.returns_twice == right.returns_twice
+        && left.variadic == right.variadic
         && left.name == right.name
         && left.parameters.len() == right.parameters.len()
         && left
@@ -7705,6 +7712,15 @@ impl Parser {
         if self
             .function_declarations
             .get(source_name)
+            .is_some_and(|header| header.variadic)
+        {
+            return Err(self.error_here(format!(
+                "variadic function `{source_name}` has no modeled variable-argument signature; function-address uses are not supported"
+            )));
+        }
+        if self
+            .function_declarations
+            .get(source_name)
             .is_some_and(|header| header.returns_twice)
         {
             return Err(self.error_here(format!(
@@ -8085,6 +8101,7 @@ impl Parser {
                 ));
             }
             if self.peek() == Some(&Token::LBrace) {
+                self.reject_variadic_definition(&header)?;
                 if header.weak_linkage || header.returns_twice {
                     return Err(self.error_here(
                         "weak or returns-twice function definitions need a control-flow and linkage model",
@@ -8184,6 +8201,7 @@ impl Parser {
                 ));
             }
             if self.peek() == Some(&Token::LBrace) {
+                self.reject_variadic_definition(&header)?;
                 if header.weak_linkage || header.returns_twice {
                     return Err(self.error_here(
                         "weak or returns-twice function definitions need a control-flow and linkage model",
@@ -8228,6 +8246,7 @@ impl Parser {
             self.consume_function_attributes()?;
         header.weak_linkage = prefix_weak || suffix_weak;
         header.returns_twice = prefix_returns_twice || suffix_returns_twice;
+        self.reject_variadic_definition(&header)?;
         if header.weak_linkage || header.returns_twice {
             return Err(self.error_here(
                 "weak or returns-twice function definitions need a control-flow and linkage model",
@@ -8333,6 +8352,18 @@ impl Parser {
         })
     }
 
+    /// A variadic body would read its variable arguments through `va_arg`,
+    /// which has no model. Only the body-less prototype is retained.
+    fn reject_variadic_definition(&self, header: &C0FunctionHeader) -> Result<(), C0SyntaxError> {
+        if header.variadic {
+            return Err(self.error_here(format!(
+                "variadic function definitions (`...`) are not supported in C0; only a body-less prototype of `{}` can be declared",
+                header.source_name
+            )));
+        }
+        Ok(())
+    }
+
     fn parse_function_header(
         &mut self,
         internal_linkage: bool,
@@ -8393,6 +8424,10 @@ impl Parser {
         self.expect(Token::LParen)?;
         self.push_scope();
         let parameters = self.parse_parameters()?;
+        let variadic = self.peek() == Some(&Token::Ellipsis);
+        if variadic {
+            self.position += 1;
+        }
         self.expect(Token::RParen)?;
         let name = if internal_linkage {
             self.inline_function_kernel_name(&source_name)
@@ -8410,6 +8445,7 @@ impl Parser {
             internal_linkage,
             weak_linkage: false,
             returns_twice: false,
+            variadic,
             parameters,
         })
     }
@@ -10508,6 +10544,17 @@ impl Parser {
         }
 
         loop {
+            // A trailing `...` is left for the caller: only a function
+            // prototype may consume it, so every other parameter list
+            // rejects it at its closing parenthesis.
+            if self.peek() == Some(&Token::Ellipsis) {
+                if parameters.is_empty() {
+                    return Err(self.error_here(
+                        "a variadic parameter list (`...`) requires a preceding named parameter",
+                    ));
+                }
+                return Ok(parameters);
+            }
             let parsed_type = self.parse_type()?;
             if parsed_type.union_name.is_some() && !parsed_type.c_type.is_pointer() {
                 return Err(self.error_here(
@@ -11095,6 +11142,11 @@ impl Parser {
         let mut parameters = Vec::new();
         if self.peek() != Some(&Token::RParen) {
             loop {
+                if self.peek() == Some(&Token::Ellipsis) {
+                    return Err(self.error_here(
+                        "variadic function-pointer signatures (`...`) are not supported in C0",
+                    ));
+                }
                 let parsed_type = self.parse_type()?;
                 if parsed_type.is_volatile {
                     return Err(self.error_here(
@@ -16741,6 +16793,31 @@ impl Parser {
         &mut self,
         function_name: Option<&str>,
     ) -> Result<Vec<C0Expression>, C0SyntaxError> {
+        // Every direct call, in statement or expression position, reaches
+        // its arguments through here, so the declarations whose calls have
+        // no model are refused at one place.
+        if let Some(source_name) = function_name
+            && !self
+                .variable_types
+                .contains_key(&self.resolve_name(source_name))
+            && let Some(header) = self.function_declarations.get(source_name)
+        {
+            if header.weak_linkage {
+                return Err(self.error_at_previous(format!(
+                    "weak function `{source_name}` may be absent; calls need an availability model"
+                )));
+            }
+            if header.returns_twice {
+                return Err(self.error_at_previous(format!(
+                    "returns-twice function `{source_name}` needs a checked control-flow model"
+                )));
+            }
+            if header.variadic {
+                return Err(self.error_at_previous(format!(
+                    "calls to variadic function `{source_name}` are not supported in C0; its variable arguments are not modeled"
+                )));
+            }
+        }
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() == Some(&Token::RParen) {
@@ -17590,30 +17667,6 @@ impl Parser {
                             ));
                         }
                     };
-                    if self
-                        .function_declarations
-                        .get(&source_name)
-                        .is_some_and(|header| header.weak_linkage)
-                    {
-                        return Err(self.error_at_position(
-                            call_position,
-                            format!(
-                                "weak function `{source_name}` may be absent; calls need an availability model"
-                            ),
-                        ));
-                    }
-                    if self
-                        .function_declarations
-                        .get(&source_name)
-                        .is_some_and(|header| header.returns_twice)
-                    {
-                        return Err(self.error_at_position(
-                            call_position,
-                            format!(
-                                "returns-twice function `{source_name}` needs a checked control-flow model"
-                            ),
-                        ));
-                    }
                     let arguments = self.parse_call_arguments(Some(&source_name))?;
                     if let Some(result) = self.parse_kernel_primitive_expression(
                         &source_name,
@@ -19437,10 +19490,10 @@ fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxE
         }
 
         if ch == '.' && chars.get(index + 1) == Some(&'.') && chars.get(index + 2) == Some(&'.') {
-            return Err(C0SyntaxError::at(
-                position,
-                "variadic parameter lists (`...`) are not supported in C0",
-            ));
+            tokens.push(Token::Ellipsis);
+            positions.push(position);
+            index += 3;
+            continue;
         }
 
         if is_ident_start(ch) {
@@ -19681,7 +19734,7 @@ fn token_source_width(token: &Token) -> Option<usize> {
         | Token::PercentEqual
         | Token::AmpEqual
         | Token::PipeEqual => 2,
-        Token::ShiftLeftEqual | Token::ShiftRightEqual => 3,
+        Token::Ellipsis | Token::ShiftLeftEqual | Token::ShiftRightEqual => 3,
     })
 }
 

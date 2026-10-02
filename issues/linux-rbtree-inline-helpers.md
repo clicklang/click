@@ -25,7 +25,9 @@ This is blocked on the remaining
 first importer milestone is landed, but the pinned expanded translation
 unit still needs its retained C semantics (`typeof`, statement
 expressions, branch-expectation builtins, and the export/assembly storage
-decisions inventoried in that issue's Stage 0). Importer, manifest, and
+decisions inventoried in that issue's Stage 0). Variadic prototypes such as
+`panic` are now retained as uncallable declarations; the next rejection in the
+pinned artifact has not been measured (see that issue's package 3 update). Importer, manifest, and
 general GNU-form work belongs to that issue, not this one.
 
 ## Violated invariant
