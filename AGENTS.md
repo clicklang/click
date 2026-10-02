@@ -108,21 +108,46 @@ reading output, but the verdict comes from an unpiped run. The default `cargo
 test --lib` is also not the gate: it passes while both proof-fixture gates
 fail.
 
-## Create issues only when the user explicitly asks
+## File bugs freely; create issues only when the user explicitly asks
 
-Do not create new issue files or new issue-list entries unless the user
-explicitly asks you to create or file issues. Discovering a bug, design gap,
-deferred task, or tooling blocker is not authorization to file one. Report
-the finding to the user instead; a general request to implement, investigate,
-or fix something does not implicitly authorize new issues. This rule also
-applies when another document recommends filing an issue.
+`bugs/` and `issues/` are different lists with different rules.
+
+**Bugs: file them without asking.** A bug is a defect in what Click already
+claims to do, with a reproduction. Humans and agents should file one whenever
+they find one and do not fix it in the same change:
+
+- the verifier accepts something false, or refuses something the
+  documentation or a neighbouring case says it supports;
+- a tool crashes, hangs, exceeds a budget without a prompt local failure, or
+  disagrees with another tool (`verify`, `expand`, `audit`, `profile`);
+- a diagnostic is inaccurate or misleading: it names the wrong construct,
+  suggests a command or syntax that is then rejected, or reports a cause
+  that is not the cause;
+- a diagnostic is a wall of text: repeated or unbounded raw internal state
+  where a bounded, actionable message belongs.
+
+File one kebab-case `.md` file per independent bug in `bugs/` plus a one-line
+entry in `bugs/README.md`. State the violated invariant, a small intended
+regression, and acceptance criteria, written so a fresh agent can act on the
+file alone. Reproduce it first: an observation that was seen once, or inferred
+from reading code, is reported to the user, not filed. Tell the user what was
+filed. Delete the file and its list line when the fix, its regression
+coverage, and any documentation land.
+
+**Issues: only the user approves them.** An issue is roadmap: a missing
+feature, a design gap, deferred work, a new milestone, or a change of
+direction. Do not create new issue files or new issue-list entries unless the
+user explicitly asks you to. Finding such a gap is not authorization to file
+one; report it to the user instead. A general request to implement,
+investigate, or fix something does not implicitly authorize new issues, and
+neither does another document that recommends filing one. Do not file
+roadmap work in `bugs/` to avoid this rule: when it is unclear whether
+something is a bug or an issue, report it to the user.
 
 When requested, create one kebab-case `.md` file per independent problem in
-`issues/` plus a one-line entry in `issues/README.md`. State the violated
-invariant, a small intended regression, and acceptance criteria, written so
-a fresh agent can act on the file alone without the conversation that
-produced it. Delete the file and its list line when the fix, its regression
-coverage, and any documentation land.
+`issues/` plus a one-line entry in `issues/README.md`, with the same three
+parts as a bug. Delete the file and its list line when the fix, its
+regression coverage, and any documentation land.
 
 ## Existing C is the verification boundary
 
@@ -172,7 +197,8 @@ and sufficient simple tactics are requirements.
 Reduce and fix the tooling problem before resuming feature work. If it cannot
 be fixed in the same coherent chunk, report the blocker and a proposed
 regression to the user, then restore the worktree to a green, check-in-ready
-checkpoint. Create an issue only if the user explicitly asks. Do not silently
+checkpoint. File it in `bugs/` when it is a bug; create an issue only if the user
+explicitly asks. Do not silently
 work around the problem, raise time limits, accept a slow successful run, or
 leave the only reproduction inside an
 unverified example.
