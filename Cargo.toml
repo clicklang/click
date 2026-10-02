@@ -19,6 +19,7 @@ name = "click"
 path = "src/bin/click.rs"
 
 [dependencies]
+charon = { git = "https://github.com/AeneasVerif/charon", rev = "5d6b812e5f77dbf3d7f66c21b9b57091f0e084cb", default-features = false }
 flate2 = "1"
 imbl = "7"
 libc = "0.2"
@@ -28,6 +29,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 tar = "0.4.45"
+tempfile = "3"
 
 # Keep filename/line backtraces without duplicating full type and variable
 # debug information in every worktree. The test profile inherits this setting.

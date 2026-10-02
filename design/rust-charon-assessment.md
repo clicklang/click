@@ -3,6 +3,11 @@
 Assessed on 2026-10-02. This is extraction evidence and an adoption proposal,
 not a new supported frontend or a checksum verification result.
 
+Follow-up: the [end-to-end adapter trial](charon-trial/README.md) connects the
+candidate to Click's existing checker for arithmetic and owned guard cleanup.
+It records a deliberately different MIR/transform selection and its trust
+boundary; the extraction measurements below retain their original configuration.
+
 ## Recommendation
 
 Charon is a credible foundation for Click's Rust extractor. A bounded live

@@ -236,9 +236,12 @@ the unchanged pinned adler2 path. This is extraction evidence, not checksum
 verification. Its newer compiler, per-body MIR phase provenance, library models,
 source/proof correspondence, and checked resource mapping remain adoption gates.
 
-Next, trial a narrow ULLBC adapter through the existing checked engine with
-positive and negative arithmetic/drop claims and verify/profile/audit/expand
-agreement, before switching production imports. Preserve source metadata and a
+The [end-to-end adapter trial](../design/charon-trial/README.md) now routes checked
+arithmetic and a restoring owned guard through ULLBC and the existing engine.
+Keep migration opt-in until the supported fixtures have equivalent coverage.
+Next compose a borrowed loop with a live guard, bring resolved conversions and
+compact arrays through the same adapter, and establish stable source/proof
+observations and scaling checks before switching production imports. Preserve source metadata and a
 Click-owned semantic boundary; do not rebuild rustc's HIR-to-MIR semantics just
 to retain syntax. Use the assessment's configuration rather than adopting an
 unaudited preset. Then consolidate semantic

@@ -7,6 +7,12 @@ checking. The exporter writes a typed JSON artifact; Click lowers that artifact 
 kernel execution vocabulary. Verification uses the same sidecars, tactics,
 certificates, and bounded engine as C and C++.
 
+An opt-in [Charon adapter trial](https://github.com/clicklang/click/blob/master/design/charon-trial/README.md) now routes
+checked arithmetic and owned guard cleanup through one ULLBC body representation
+and the same engine. It has a separate pinned compiler/profile and a narrower
+accepted subset. The sections below describe the existing default frontend;
+the trial is the migration path being evaluated before replacing that frontend.
+
 The working example is
 [`examples/basic-rust/borrow.rs`](https://github.com/clicklang/click/blob/master/examples/basic-rust/borrow.rs),
 with its

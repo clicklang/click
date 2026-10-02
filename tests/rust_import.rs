@@ -42,6 +42,129 @@ impl Drop for Project {
         let _ = fs::remove_dir_all(&self.root);
     }
 }
+
+const CHARON_SOURCE: &str = include_str!("../design/charon-trial/trial.rs");
+const CHARON_SIDECAR: &str = include_str!("../design/charon-trial/trial.click");
+fn charon_project() -> Project {
+    let p = Project::new(CHARON_SOURCE);
+    fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
+    fs::write(p.root.join("borrow.click"), CHARON_SIDECAR).unwrap();
+    fs::write(
+        p.config(),
+        include_bytes!("../design/charon-trial/trial.click.import.json"),
+    )
+    .unwrap();
+    fs::write(
+        p.root.join("trial.ullbc"),
+        include_bytes!("../design/charon-trial/trial.ullbc"),
+    )
+    .unwrap();
+    fs::write(
+        p.config().with_file_name("borrow.click.import.json.lock"),
+        include_bytes!("../design/charon-trial/trial.click.import.json.lock"),
+    )
+    .unwrap();
+    p
+}
+#[test]
+fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
+    let p = charon_project();
+    let prepared = load_import(&p.config()).unwrap();
+    assert!(
+        prepared
+            .export()
+            .functions
+            .iter()
+            .all(|f| f.mir.is_some() && f.body.is_empty())
+    );
+    C0VerificationSession::new_program_prepared(CHARON_SIDECAR, &prepared).unwrap();
+    for invalid in [
+        CHARON_SIDECAR.replace("result == x + 1", "result == x + 2"),
+        CHARON_SIDECAR.replace("    requires x < 65535;\n", ""),
+        CHARON_SIDECAR.replace(
+            "uint16 guarded_increment(uint16 x, int32* value, bool early) {\n    requires x < 65535;",
+            "uint16 guarded_increment(uint16 x, int32* value, bool early) {",
+        ),
+        CHARON_SIDECAR.replace("value[0] == old(value[0])", "value[0] == 7"),
+        CHARON_SIDECAR.replace("    owns value[0..1];\n", ""),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+#[test]
+fn charon_trial_cli_tools_and_expanded_certificate_agree() {
+    let p = charon_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    assert_cli(
+        &p,
+        &[
+            "expand",
+            "--claim",
+            "guarded_increment.contract",
+            "--in-place",
+        ],
+    );
+    assert_cli(&p, &["verify"]);
+}
+#[test]
+fn charon_trial_lock_rejects_source_and_profile_changes() {
+    let p = charon_project();
+    fs::write(
+        p.root.join("trial.rs"),
+        format!("{CHARON_SOURCE}\n// changed"),
+    )
+    .unwrap();
+    assert!(
+        load_import(&p.config())
+            .unwrap_err()
+            .contains("lock differs")
+    );
+    fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
+    let c = fs::read(p.config()).unwrap();
+    fs::write(
+        p.config(),
+        String::from_utf8(c)
+            .unwrap()
+            .replace("charon-trial", "other"),
+    )
+    .unwrap();
+    assert!(load_import(&p.config()).is_err());
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler; run explicitly after scripts/build-charon.sh"]
+fn charon_trial_live_refresh_and_compiler_rejections() {
+    let p = charon_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_SIDECAR, &prepared).unwrap();
+    for (source, expected) in [
+        (
+            include_str!("../design/borrow-probes/charon-borrow-rejected.rs"),
+            "E0506",
+        ),
+        (
+            include_str!("../design/borrow-probes/charon-move-rejected.rs"),
+            "E0382",
+        ),
+        ("pub fn unsupported(x: u64) -> u64 { x }", "integer width"),
+    ] {
+        fs::remove_file(p.root.join("trial.ullbc")).unwrap();
+        fs::write(p.root.join("trial.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(expected), "{error}");
+        assert!(!p.root.join("trial.ullbc").exists());
+        fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
 #[test]
 fn rust_typed_import_verifies_borrow_parent_reuse_and_field_frame() {
     let p = Project::new(SOURCE);

@@ -173,7 +173,11 @@ pub(super) fn lower(
                     value,
                 } if !records.contains_key(name.as_str()) => cx.assign(name, value)?,
                 S::Assign { target, value } => {
-                    c_typed_store(cx.address(target)?, cx.expr(value)?, cx.place_type(target)?)
+                    let (checks, value) = cx.prepared_expr(value)?;
+                    c_seq(
+                        checks,
+                        c_typed_store(cx.address(target)?, value, cx.place_type(target)?),
+                    )
                 }
                 S::Initialize {
                     target,
