@@ -1249,6 +1249,109 @@ fn condition_derivation_scales_near_linearly_with_unrelated_conditions() {
     }
 }
 
+/// A chain of order facts stated against the context's iteration order,
+/// beside unrelated facts. Premise selection indexes the context once and
+/// then walks only the chain, so its fact visits are the context plus the
+/// chain's own edges, however the links are ordered; growing the component
+/// by repeated passes cost the whole context once per link.
+#[test]
+fn condition_premise_selection_walks_a_reversed_chain_once() {
+    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+    use crate::surface::planning::proposition_search::{
+        condition_selection_visits, reset_condition_selection_visits,
+    };
+
+    let less = |left: u64, right: u64| {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(Bitvector32Term::Variable(Variable(left))),
+                Box::new(Bitvector32Term::Variable(Variable(right))),
+            ),
+            true,
+        )
+    };
+    let context = |links: usize, unrelated: usize, broken: Option<usize>, reversed: bool| {
+        let mut available = Vec::new();
+        for index in 0..unrelated {
+            available.push(Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(Bitvector32Term::Variable(Variable(441_000 + index as u64))),
+                    Box::new(Bitvector32Term::Constant(1_000 + index as u32)),
+                ),
+                true,
+            ));
+        }
+        let mut chain = (0..links)
+            .filter(|link| broken != Some(*link))
+            .map(|link| less(440_000 + link as u64, 440_001 + link as u64))
+            .collect::<Vec<_>>();
+        if reversed {
+            chain.reverse();
+        }
+        available.extend(chain);
+        available
+    };
+    const LINKS: usize = 3;
+    let goal = less(440_000, 440_000 + LINKS as u64);
+    let samples = [16usize, 32, 64, 128]
+        .into_iter()
+        .map(|unrelated| {
+            let mut visits = Vec::new();
+            let mut work = 0;
+            for reversed in [false, true] {
+                let available = context(LINKS, unrelated, None, reversed);
+                reset_condition_selection_visits();
+                let (derivation, units) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        search_condition_derivation(&goal, &available)
+                    });
+                let derivation = derivation
+                    .unwrap_or_else(|error| panic!("search failed: {}", error.message()))
+                    .expect("the chained order facts derive the goal");
+                // The certificate cites the chain and none of the unrelated
+                // facts.
+                assert_eq!(derivation.context_premises().len(), LINKS);
+                visits.push(condition_selection_visits());
+                work = work.max(units);
+            }
+            assert_eq!(
+                visits[0], visits[1],
+                "selection cost depends on the order the chain was stated in"
+            );
+            // A missing link leaves the goal underivable.
+            let broken = context(LINKS, unrelated, Some(1), true);
+            assert!(
+                search_condition_derivation(&goal, &broken)
+                    .unwrap_or_else(|error| panic!("search failed: {}", error.message()))
+                    .is_none()
+            );
+            (unrelated, visits[0], work)
+        })
+        .collect::<Vec<_>>();
+    // The search selects premises for a fixed number of trial contexts.
+    // Each added unrelated fact is visited once per selection that sees it,
+    // for the index, and never again while the chain is walked.
+    for pair in samples.windows(2) {
+        let added = pair[1].0 - pair[0].0;
+        let visits = pair[1].1 - pair[0].1;
+        assert_eq!(
+            visits % added,
+            0,
+            "selection visits are not linear: {samples:?}"
+        );
+        assert!(
+            visits / added <= 3,
+            "selection walked the context more than once per trial: {samples:?}"
+        );
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].2 <= pair[0].2.saturating_mul(3),
+            "chained condition derivation is superlinear: {samples:?}"
+        );
+    }
+}
+
 #[test]
 fn scaling_assertion_rejects_a_quadratic_curve() {
     let quadratic = [16, 32, 64, 128]
