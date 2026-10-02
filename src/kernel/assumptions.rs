@@ -907,7 +907,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
 /// The content-derived memo id of a fact set, never salted by a search
 /// attempt: the identity [`crate::kernel::reasoning::with_closure_failure_memo`]
 /// keys its negative answers by, so one closure's candidates share them.
-pub(super) fn unsalted_assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
+pub(crate) fn unsalted_assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
     memo_id_with_logical_reads(assumptions_memo_id(assumptions), assumptions)
 }
 

@@ -3788,6 +3788,11 @@ impl C0StructLayout {
                         field.offset_bytes,
                         field.c_type.to_kernel_type(),
                     )
+                    .with_array_shape(
+                        self.fields
+                            .get(&field.name)
+                            .and_then(|declared| declared.array_shape()),
+                    )
                 })
                 .collect(),
             self.aggregate_unions
