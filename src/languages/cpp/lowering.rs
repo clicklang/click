@@ -671,42 +671,54 @@ impl LoweringContext<'_> {
         &mut self,
         arguments: &[CppCallArgument],
     ) -> Result<(CStatement, Vec<CExpression>), String> {
-        if let [
-            CppCallArgument::Call {
+        let mut evaluation = c_skip();
+        let mut lowered = Vec::with_capacity(arguments.len());
+        for argument in arguments {
+            crate::instrumentation::record_deterministic_work(1);
+            if let CppCallArgument::Call {
                 callee,
                 arguments,
                 value_type,
                 ..
-            },
-        ] = arguments
-        {
-            let (prefix, arguments) = self.lower_return_call_arguments(arguments)?;
-            // Every call gets a distinct name, including calls in different
-            // branches with different scalar types. The source-name index
-            // avoids rescanning every source local for each nested capture.
-            let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
-            self.next_call_capture = self
-                .next_call_capture
-                .checked_add(1)
-                .ok_or("C++ nested call capture counter overflow")?;
-            loop {
-                crate::instrumentation::record_deterministic_work(1);
-                if !self.source_names.contains(capture.as_str()) {
-                    break;
-                }
-                capture.push('_');
+            } = argument
+            {
+                let (prefix, arguments) = self.lower_return_call_arguments(arguments)?;
+                let capture = self.fresh_call_capture()?;
+                evaluation = c_seq(
+                    evaluation,
+                    c_seq(
+                        prefix,
+                        c_seq(
+                            c_declare(capture.clone(), cpp_return_scalar_type(value_type)?),
+                            c_call_assign(capture.clone(), callee.name.clone(), arguments),
+                        ),
+                    ),
+                );
+                lowered.push(c_variable(capture));
+            } else {
+                // Schema validation admits only stable scalar siblings when a
+                // nested call is present. Their value is the same in every
+                // C++ argument order, so this evaluation order is faithful.
+                lowered.push(self.lower_call_argument(argument)?);
             }
-            let evaluation = c_seq(
-                prefix,
-                c_seq(
-                    c_declare(capture.clone(), cpp_return_scalar_type(value_type)?),
-                    c_call_assign(capture.clone(), callee.name.clone(), arguments),
-                ),
-            );
-            Ok((evaluation, vec![c_variable(capture)]))
-        } else {
-            Ok((c_skip(), self.lower_call_arguments(arguments)?))
         }
+        Ok((evaluation, lowered))
+    }
+
+    fn fresh_call_capture(&mut self) -> Result<String, String> {
+        let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
+        self.next_call_capture = self
+            .next_call_capture
+            .checked_add(1)
+            .ok_or("C++ nested call capture counter overflow")?;
+        loop {
+            crate::instrumentation::record_deterministic_work(1);
+            if !self.source_names.contains(capture.as_str()) {
+                break;
+            }
+            capture.push('_');
+        }
+        Ok(capture)
     }
 
     fn lower_call_arguments(

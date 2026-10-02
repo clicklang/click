@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 27;
+pub(crate) const EXPORT_SCHEMA: u32 = 28;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1767,15 +1767,19 @@ fn validate_nested_call(
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<(), String> {
-    if arguments
+    let nested_calls = arguments
         .iter()
-        .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
-        && arguments.len() != 1
+        .filter(|argument| matches!(argument, CppCallArgument::Call { .. }))
+        .count();
+    if nested_calls > 1
+        || (nested_calls == 1
+            && arguments.iter().any(|argument| match argument {
+                CppCallArgument::Call { .. } => false,
+                CppCallArgument::Value { value } => !stable_scalar_argument(value, places),
+                CppCallArgument::Reference { .. } => true,
+            }))
     {
-        return Err(
-            "nested C++ calls require exactly one value argument to preserve evaluation order"
-                .into(),
-        );
+        return Err("nested C++ call arguments require one call and stable scalar siblings to preserve evaluation order".into());
     }
     span.validate(logical_source)?;
     callee.span.validate(logical_source)?;
@@ -1786,6 +1790,27 @@ fn validate_nested_call(
         argument.validate(places, records, logical_source)?;
     }
     Ok(())
+}
+
+// A sibling must be total and invariant across the nested call. Scalar
+// locals and by-value parameters cannot have their address taken in this
+// profile. References, pointers, field reads and checked arithmetic do not
+// meet this condition, even when their expression syntax has no side effects.
+fn stable_scalar_argument(
+    expression: &CppExpression,
+    places: &BTreeMap<String, (String, CppType)>,
+) -> bool {
+    match expression {
+        CppExpression::IntegerLiteral { .. }
+        | CppExpression::CompilerConstant { .. }
+        | CppExpression::ConstantReference { .. } => true,
+        CppExpression::Load { place, .. } => matches!(
+            places.get(&place.declaration_id),
+            Some((_, CppType::Integer { .. } | CppType::Boolean { .. }))
+        ),
+        CppExpression::IntegralCast { value, .. } => stable_scalar_argument(value, places),
+        _ => false,
+    }
 }
 
 impl CppCallArgument {
@@ -3526,6 +3551,84 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         }
+    }
+
+    #[test]
+    fn nested_call_sibling_artifacts_require_stable_scalar_storage_and_total_expressions() {
+        let places = BTreeMap::from([
+            (
+                "scalar".into(),
+                ("scalar".into(), signed_integer(32, false)),
+            ),
+            (
+                "borrow".into(),
+                (
+                    "borrow".into(),
+                    CppType::LvalueReference {
+                        pointee: Box::new(signed_integer(32, false)),
+                    },
+                ),
+            ),
+        ]);
+        let load = |id: &str| CppExpression::Load {
+            place: CppPlaceReference {
+                declaration_id: id.into(),
+                name: id.into(),
+                span: cleanup_span(),
+            },
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        assert!(stable_scalar_argument(&load("scalar"), &places));
+        assert!(!stable_scalar_argument(&load("borrow"), &places));
+        let literal = CppExpression::IntegerLiteral {
+            value: "7".into(),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        assert!(stable_scalar_argument(&literal, &places));
+        assert!(!stable_scalar_argument(
+            &CppExpression::Binary {
+                operator: CppBinaryOperator::Add,
+                left: Box::new(literal.clone()),
+                right: Box::new(literal.clone()),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            },
+            &places
+        ));
+        let mut call = return_call();
+        let CppStatement::ReturnCall { arguments, .. } = &mut call else {
+            unreachable!()
+        };
+        arguments.push(CppCallArgument::Call {
+            callee: CppFunctionReference {
+                declaration_id: "inner".into(),
+                name: "inner".into(),
+                span: cleanup_span(),
+            },
+            arguments: vec![],
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        });
+        arguments.push(CppCallArgument::Value {
+            value: load("scalar"),
+        });
+        assert!(
+            call.validate(&places, &BTreeMap::new(), "fixture.cpp")
+                .is_ok()
+        );
+        let CppStatement::ReturnCall { arguments, .. } = &mut call else {
+            unreachable!()
+        };
+        arguments[1] = CppCallArgument::Value {
+            value: load("borrow"),
+        };
+        assert!(
+            call.validate(&places, &BTreeMap::new(), "fixture.cpp")
+                .unwrap_err()
+                .contains("evaluation order")
+        );
     }
 
     #[test]

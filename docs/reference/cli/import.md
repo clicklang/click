@@ -328,19 +328,35 @@ reuse the existing scalar exception lowering and have structural coverage;
 resource-bearing exceptional contracts and returns from guarded `try` regions
 remain outside the supported surface slice.
 
-A direct free-function return call also accepts a nested call as its sole value argument,
-including deeper chains such as `return echo(echo(echo(value)));`. Each nested
-result has its own checked, typed capture; an inner exception skips the outer
-call and uses the return's cleanup edge. Ordinary verification, selected-caller
+A direct free-function return call accepts one nested call argument, including
+chains such as `return echo(echo(echo(value)));`. Other arguments must be stable
+scalars: literals, locked compiler/constexpr constants, by-value scalar parameters
+or scalar locals, and supported integer/Boolean casts of these values. Their
+value cannot change across the nested call, and their evaluation is total, so
+all C++ argument orders agree. Namespace-scope signed-64 `constexpr` constants
+with internal linkage are accepted with or without explicit `static`, under the
+existing bounded constant-graph checks. Concrete Boolean template substitutions
+also retain their resolved constant value. Reference reads, dereferences, field reads,
+arithmetic, additional calls, and side effects in sibling arguments fail import.
+This restriction also applies when the nested call throws; no unsafe sibling
+operation can be hidden by selecting an argument order that skips it.
+
+Each nested result has a checked typed capture; an inner exception skips the
+outer call and uses the return's cleanup edge. Verification, selected-caller
 expansion/reverification, and retained audit cover all supported scalar types,
-fresh capture names, mixed-width branches, normal destruction, and object-free
-exception propagation. Name allocation has deterministic scaling coverage.
-Artifact validation checks every nested callee and capture type and rejects
-recursive graphs. Multiple arguments containing a nested call are rejected
-because their C++ evaluation order needs a broader model. Nesting in local
-initializers, general value expressions, converted call results, and returned
-references or objects remains unsupported. In particular, Bitcoin's
-`Div(Mul(...), ...)` still requires multiple-argument evaluation support.
+argument positions, casts, mixed-width branches, memory writes by the inner
+call, normal destruction, and object-free exception propagation. Name allocation
+and argument lowering have deterministic scaling coverage. Artifact validation
+checks every nested callee, capture type, and sibling storage type and rejects
+recursive graphs. Nesting in local initializers, general value expressions,
+converted call results, and returned references or objects remains unsupported.
+
+The synthetic fee fixture preserves `Div(Mul(fee, at_size), divisor, round_down)`
+and verifies concrete positive/negative rounding and exact division with
+64-bit helpers. It rejects hostile rounding claims, zero divisors, and unproved
+product bounds. This does not import upstream Bitcoin fee evaluation: its
+`__int128` and static helpers, `Assume` annotations, and field-reading sibling
+arguments still need support.
 
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
 32/64-bit integer locals declared directly
@@ -397,7 +413,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 27;
+its documented application invariant. The typed artifact schema is now 28;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
