@@ -1567,8 +1567,6 @@ pub(in crate::kernel) fn decide_with_facts(
 #[cfg(test)]
 thread_local! {
     static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static SMART_PLANNING_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    static SMART_PLANNING_CONTEXT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static SMART_PLANNING_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -1598,22 +1596,12 @@ pub(crate) fn count_uncharged_context_entries(_entries: usize) {
 #[cfg(test)]
 fn record_context_entries_for_tests(entries: usize) {
     CONTEXT_REBUILD_ENTRIES.with(|count| count.set(count.get() + entries));
-    if SMART_PLANNING_DEPTH.with(std::cell::Cell::get) > 0 {
-        SMART_PLANNING_CONTEXT_ENTRIES.with(|count| count.set(count.get() + entries));
-    }
 }
 
 /// The context entries built so far on this thread, charged or not.
 #[cfg(test)]
 pub(crate) fn context_rebuild_entries() -> usize {
     CONTEXT_REBUILD_ENTRIES.with(std::cell::Cell::get)
-}
-
-/// The context entries built so far on this thread inside a smart planning
-/// tactic ([`SmartPlanningScope`]).
-#[cfg(test)]
-pub(crate) fn smart_planning_context_entries() -> usize {
-    SMART_PLANNING_CONTEXT_ENTRIES.with(std::cell::Cell::get)
 }
 
 /// How many times a smart planning tactic ([`SmartPlanningScope`]) has been
@@ -1624,25 +1612,16 @@ pub(crate) fn smart_planning_entries() -> usize {
     SMART_PLANNING_ENTRIES.with(std::cell::Cell::get)
 }
 
-/// Marks, in test builds, the extent of one smart planning tactic, so a
-/// scaling regression can count the context entries planning builds apart
-/// from those of the checks around it.
+/// Marks, in test builds, one entry into a smart planning tactic, so a
+/// regression can assert that an execution stayed on the checked `Proof`.
 #[cfg(test)]
 pub(crate) struct SmartPlanningScope(());
 
 #[cfg(test)]
 impl SmartPlanningScope {
     pub(crate) fn enter() -> Self {
-        SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() + 1));
         SMART_PLANNING_ENTRIES.with(|count| count.set(count.get() + 1));
         Self(())
-    }
-}
-
-#[cfg(test)]
-impl Drop for SmartPlanningScope {
-    fn drop(&mut self) {
-        SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() - 1));
     }
 }
 

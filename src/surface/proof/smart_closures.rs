@@ -7195,9 +7195,6 @@ impl<'a> Proof<'a> {
             context.tactic_index,
             "smart step selection",
         )?;
-        if matches!(statement, CStatement::While { .. }) {
-            return Ok(None);
-        }
         if matches!(statement, CStatement::If { .. } | CStatement::Switch { .. }) {
             // A C `if` the context decides is one step into that arm; one it
             // cannot decide is a fork for the driver's branch handling. A

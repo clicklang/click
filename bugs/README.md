@@ -21,3 +21,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
 - [Connected-fact selection indexes the context once per context, not incrementally](connected-fact-selection-indexes-the-context-per-derivation.md)
+- [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)

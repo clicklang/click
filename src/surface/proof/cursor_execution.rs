@@ -811,6 +811,7 @@ fn execute_concrete_loop_head_step(
     current_state: CState,
     loop_statement: CStatement,
     remaining: Option<CStatement>,
+    context: Option<&PureFactContext>,
     mut construction: Option<Construction<'_>>,
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
@@ -947,7 +948,9 @@ fn execute_concrete_loop_head_step(
         &transition_label,
         prerequisite_policy,
         true,
-        None,
+        // A step decides the loop condition from the same whole proof
+        // context it runs every other statement in.
+        context,
     )?;
     if condition_transitions.len() != 1 {
         return Err(ClickError::new(format!(
@@ -2369,6 +2372,7 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state,
             source_statement,
             remaining,
+            context,
             construction.as_mut().map(Construction::reborrow),
         )?;
         return Ok(Vec::new());
@@ -2910,8 +2914,13 @@ fn execute_step_from_frontier_position_selecting_path(
                 .iter()
                 .map(PathCase::of_statement)
                 .collect::<Vec<_>>();
-            path_case_split_condition(&cases, available_pure_facts, &current_state, proof_context)
-                .map(|(_, condition)| condition)
+            path_case_split_condition(
+                &cases,
+                &|fact| available_pure_facts.contains(fact),
+                &current_state,
+                proof_context,
+            )
+            .map(|(_, condition)| condition)
         } else {
             None
         };
@@ -4308,6 +4317,23 @@ impl<'t> PathCase<'t> {
     }
 }
 
+/// The Click condition a proof-level case split separates a C condition's
+/// checked paths on first, when one has a spelling: the same choice the
+/// planner makes before a `branch` whose condition has more paths than arms.
+pub(super) fn condition_path_case_split_condition(
+    path_facts: &[&[Proposition]],
+    available: &dyn Fn(&Proposition) -> bool,
+    state: &CState,
+    proof_context: &ExecutionProofContext<'_>,
+) -> Option<ClickProposition> {
+    let cases = path_facts
+        .iter()
+        .map(|path_facts| PathCase { path_facts })
+        .collect::<Vec<_>>();
+    path_case_split_condition(&cases, available, state, proof_context)
+        .map(|(_, condition)| condition)
+}
+
 fn frontier_statement(
     execution: &ExecutionProofState,
     function: &CFunction,
@@ -4336,7 +4362,7 @@ fn frontier_statement(
 /// separates every case.
 fn path_case_split_condition(
     cases: &[PathCase<'_>],
-    available: &[Proposition],
+    available: &dyn Fn(&Proposition) -> bool,
     state: &CState,
     proof_context: &ExecutionProofContext<'_>,
 ) -> Option<(ConditionTerm, ClickProposition)> {
@@ -4355,9 +4381,9 @@ fn path_case_split_condition(
             let splits = [true, false]
                 .into_iter()
                 .all(|value| cases.iter().any(|case| decides(case, condition, value)));
-            let undecided = [true, false].into_iter().all(|value| {
-                !available.contains(&Proposition::ConditionIs(condition.clone(), value))
-            });
+            let undecided = [true, false]
+                .into_iter()
+                .all(|value| !available(&Proposition::ConditionIs(condition.clone(), value)));
             (splits && undecided).then_some(condition)
         })
         .collect::<Vec<_>>();
@@ -4450,7 +4476,7 @@ fn split_on_path_case_condition(
     let tactic_index = proof_context.tactic_index;
     let Some((condition, surface)) = path_case_split_condition(
         cases,
-        &frontier.pure_facts,
+        &|fact| frontier.pure_facts.contains(fact),
         &frontier.execution.core.state,
         proof_context,
     ) else {

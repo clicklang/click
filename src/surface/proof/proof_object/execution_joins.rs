@@ -226,15 +226,25 @@ impl<'a> Proof<'a> {
                     )
                 })
                 .collect::<String>();
-            return Err(self.step_error(format!(
+            let split_condition =
+                super::super::cursor_execution::condition_path_case_split_condition(
+                    &path_facts,
+                    &|fact| self.facts().contains(fact),
+                    &current_state,
+                    context,
+                );
+            let error = self.step_error(format!(
                 "`branch` cannot split the C `if` at statement({statement_index}): its condition `{}` is {value} along {} checked paths, and `branch` has one arm per truth value{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; in each case the condition has one path per arm. `execute()` makes this split itself.",
                 crate::surface::diagnostics::describe_c_expression(&condition),
                 transitions
                     .iter()
                     .filter(|transition| transition.is_true == value)
                     .count(),
-            ))
-            .with_path_case_split());
+            ));
+            return Err(match split_condition {
+                Some(condition) => error.with_path_case_condition(condition),
+                None => error.with_path_case_split(),
+            });
         }
         let mut arms: [Option<PreparedExecutionArm>; 2] = [None, None];
         for transition in transitions {
@@ -2467,18 +2477,44 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn try_focused_execute_to_exit(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_focused_execute_to_exit_within(Vec::new(), &mut BTreeSet::new())
+        self.try_focused_execute_to_exit_within(Vec::new(), &mut BTreeSet::new(), &mut 0)
     }
 
     /// Smart focused execution variant used by automatic execution callers.
     /// Retry identities belong to this one search and are threaded through
     /// nested branch arms, so a repeated refusal cannot grow an unbounded
     /// retained-have chain.
+    ///
+    /// `steps` counts the statement steps the owning `execute()` has taken,
+    /// across every nested arm: [`Self::charge_execute_step`] refuses the
+    /// search at its fixed budget.
     pub(in crate::surface::proof) fn try_focused_execute_to_exit_with_retries(
         &self,
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_focused_execute_to_exit_within(Vec::new(), retried_requirements)
+        self.try_focused_execute_to_exit_within(Vec::new(), retried_requirements, steps)
+    }
+
+    /// Charges one statement step of a smart `execute()` against its fixed
+    /// step budget. A loop the context decides is walked one iteration at a
+    /// time, so a loop that never exits must stop here, naming the statement
+    /// it stands at, rather than run until the work limit.
+    pub(in crate::surface::proof) fn charge_execute_step(
+        &self,
+        steps: &mut usize,
+    ) -> Result<(), ClickError> {
+        let limit = super::super::cursor_execution::BOUNDED_EXECUTE_STEP_LIMIT;
+        if *steps == limit {
+            let statement = self
+                .current_statement_index()?
+                .map_or_else(String::new, |index| format!(" at statement({index})"));
+            return Err(self.step_error(format!(
+                "`execute` exhausted its {limit}-step budget{statement}"
+            )));
+        }
+        *steps += 1;
+        Ok(())
     }
 
     /// The nested-branch execute-to-exit recursion. `enclosing` is the chain
@@ -2490,6 +2526,7 @@ impl<'a> Proof<'a> {
         &self,
         enclosing: Vec<&ExecutionSplit<'a>>,
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
     ) -> Result<Option<Self>, ClickError> {
         let mut proof = self.clone();
         let mut enclosing = enclosing;
@@ -2503,6 +2540,7 @@ impl<'a> Proof<'a> {
             if proof.is_at_function_exit() {
                 return Ok(Some(proof));
             }
+            proof.charge_execute_step(steps)?;
             if let Some(next) =
                 proof.try_smart_statement_step(ProofStep::Step, retried_requirements)?
             {
@@ -2516,11 +2554,22 @@ impl<'a> Proof<'a> {
                     .map(|(split, record)| (split, record, true))
             } else if proof.is_at_execution_branch()? {
                 // A condition with path cases needs a case split on their
-                // facts before a C `branch` applies; that split belongs to
-                // the planner, so this linear search declines.
+                // facts before a C `branch` applies: split the proof on the
+                // condition that tells them apart, and each case meets the
+                // same `if` again with one path per arm.
                 let (split, record) = match proof.split_focused_execution_branch() {
                     Ok(split) => split,
-                    Err(error) if error.is_path_case_split() => return Ok(None),
+                    Err(error) if error.is_path_case_split() => {
+                        let Some(condition) = error.path_case_condition() else {
+                            return Ok(None);
+                        };
+                        return proof.try_focused_execute_cases_to_exit(
+                            condition.clone(),
+                            &enclosing,
+                            retried_requirements,
+                            steps,
+                        );
+                    }
                     Err(error) => return Err(error),
                 };
                 Some((split, record, false))
@@ -2540,6 +2589,7 @@ impl<'a> Proof<'a> {
                             condition.clone(),
                             &enclosing,
                             retried_requirements,
+                            steps,
                         )
                     }
                     _ => Ok(None),
@@ -2554,7 +2604,11 @@ impl<'a> Proof<'a> {
                 arm_enclosing.push(&record);
                 let Some(next) = advanced
                     .focus_split_arm(&record, take_then)?
-                    .try_focused_execute_to_exit_within(arm_enclosing, retried_requirements)?
+                    .try_focused_execute_to_exit_within(
+                        arm_enclosing,
+                        retried_requirements,
+                        steps,
+                    )?
                 else {
                     return Ok(None);
                 };
@@ -2579,12 +2633,17 @@ impl<'a> Proof<'a> {
         condition: ClickProposition,
         enclosing: &[&ExecutionSplit<'a>],
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
+        steps: &mut usize,
     ) -> Result<Option<Self>, ClickError> {
         let (mut advanced, record) = self.split_focused_execution_if(condition)?;
         for take_then in [true, false] {
             let Some(next) = advanced
                 .focus_execution_if_arm(&record, take_then)?
-                .try_focused_execute_to_exit_within(enclosing.to_vec(), retried_requirements)?
+                .try_focused_execute_to_exit_within(
+                    enclosing.to_vec(),
+                    retried_requirements,
+                    steps,
+                )?
             else {
                 return Ok(None);
             };
