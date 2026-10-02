@@ -27,3 +27,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [`click audit` cannot resolve an `ensures` source it inventoried](audit-cannot-resolve-ensures-source.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
+- [Loop `break` exits that reach the same state in a different representation do not join](loop-exits-equal-up-to-representation-do-not-join.md)
