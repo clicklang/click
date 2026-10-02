@@ -1,28 +1,29 @@
-# Whole-path refusals don't name a C statement
+# Contract setup and callback refusals don't name a source location
 
 ## Violated invariant
 
-Every refusal about a C program should say where in the C it applies. PR #47
-added `C statement at file:line` plus the source text to refusals of a single
-step, but 16 kinds of failing output still have no location. They come from
-the kernel's per-path outcome, which doesn't record which statement it was
-on:
+Every refusal about a C program should say where in the source it applies.
+Refusals of a single step print `C statement at file:line` plus the source
+text, and so do refusals about a whole execution path: a leak or a mutex
+still initialized at a `return`, and a scope a `break` or `continue` leaves.
+Two kinds of failing output still have no location:
 
-- `path N: undefined behavior` from whole-path execution;
-- end-of-function leaks and unreleased mutex obligations;
-- contract setup failures;
+- contract setup failures, such as
+  `` `release.contract` setup failed: could not evaluate the contract entry resources ``;
 - callback theorems with no C body.
+
+Neither has a C statement to name. A setup failure is about the function's
+contract at entry, so the location to print is the C function's declaration
+or the contract clause the message already counts (`resource clause 1 of 2`).
 
 ## Intended regression
 
-Mdtests for a leak at a `return`, a mutex still held at the end of a function,
-and whole-path undefined behaviour, each pinning `C statement at f.c:LINE` and
-the statement text (the `return`, or the statement that caused the undefined
-behaviour).
+An mdtest for a contract setup failure that pins the location line and the
+source text it names, and one for a refused callback theorem.
 
 ## Acceptance criteria
 
-- Each per-path outcome carries the statement index it ended or failed at, as
-  a diagnostics-only site (like PR #47's `C0Site`): it must not affect
-  identity, interning, caching or work.
-- The refusals listed above print the location and source text.
+- A setup failure prints where the function or the failing clause is written.
+- A refused callback theorem prints where its declaration is written.
+- The location is diagnostics only: it must not affect identity, interning,
+  caching or work.
