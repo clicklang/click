@@ -844,6 +844,23 @@ Its old unknown-case search remains for milestone 5. General read/write callers
 and structural satisfaction still require milestones 4 and 6; this interface
 is the common support they will use, not a claim that all scans are gone.
 
+A prepared affine address bucket also retains all flat memory owner occurrences
+separately from views, regardless of whether their extent is concrete or their
+quantity is positive. After exact and concrete interval selection are unknown,
+`write_access_entries` may select a sole owner with symbolic bounds in a complete
+affine block. It checks cardinality without enumerating views or ambiguous owner
+sets. The existing checker then validates positive quantity, alignment, width,
+and bounds using the retained graph checkpoint. A failed selected-owner check
+is final. Resource deltas and graph block merges maintain this persistent summary;
+permission lookup never initializes it by traversing ambient resources.
+
+This fragment applies only to prepared inputs. Execution of the reduced alias
+store `q[i] = 7` with `p == q` and `owns p[1..n]` still reaches permission lookup
+with an unprepared input and fails. Its publication boundary remains separate
+work; unsupported permission queries still have the milestone-4 compatibility
+path. The deterministic regression measures both checker and persistent-index
+work beside increasing same-class symbolic views.
+
 ## Resource producer publication audit
 
 Milestone 1 of the repository's egraph issue is producer publication, not
