@@ -834,6 +834,22 @@ fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
     }
 }
 
+/// An element of a struct array keeps its subscript in an expanded proof.
+/// The parser used to keep only the element's byte address, so the expansion
+/// spelled `entries[0].x` as `(entries + (0 * 4))->x`, which lowers to a
+/// different term than the fact it was meant to rewrite with.
+#[test]
+fn struct_array_element_expands_with_its_subscript() {
+    let anchor = "ensures result == 19 by ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/data_only_translation_unit.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(expanded.contains("entries[0]"), "{expanded}");
+    assert!(!expanded.contains("(entries + "), "{expanded}");
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the

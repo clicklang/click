@@ -8683,7 +8683,7 @@ impl Parser {
                                     indexes.len()
                                 )));
                             }
-                            flatten_array_indices(indexes, &shape)
+                            flatten_array_indices(indexes.clone(), &shape)
                         } else {
                             index
                         };
@@ -8691,10 +8691,14 @@ impl Parser {
                             Box::new(offset),
                             Box::new(CExpression::Value(int32(element_width))),
                         );
-                        expression = ContractExpression::CFragment(CExpression::Add(
-                            Box::new(base),
-                            Box::new(stride),
-                        ));
+                        // Keep the subscripts as written beside the element
+                        // address, so the access prints back as `a[i]`
+                        // rather than as the byte arithmetic it lowers to.
+                        expression = ContractExpression::ArrayIndex {
+                            base: Box::new(expression),
+                            indexes,
+                            lowered: CExpression::Add(Box::new(base), Box::new(stride)),
+                        };
                         struct_array_element_width = None;
                     } else if let Some(shape) = struct_array_shape.take() {
                         let mut indexes =
