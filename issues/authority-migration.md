@@ -392,9 +392,18 @@ require retirement evidence for every authority in the consumed control. A
 kernel regression rejects leaving the second authority outstanding or retiring
 it with a nonzero global count and no locally owned members.
 
-The next small slice is integrating these proved cleanup contracts into the
-bounded-pool authority sidecar, keeping the existing C fixed. Keep batch
-splitting, symbolic grow/shrink, and two-pool transfer separate. The
+The first project-level companion now lives in
+`examples/bounded-pool-authority/pool_lifecycle.click`. It references the original
+bounded-pool C directly and proves arbitrary nonnegative initialization,
+cleanup, and the complete zero-capacity pipeline through ordinary contracts.
+Initialization explicitly receives storage and empty authorities; it cannot
+mint them for an external pointer. Cleanup returns ordinary memory after
+retiring both populations. The example gate includes this companion.
+
+The next small slice is integrating checkout/return into this companion and
+proving the original two-object pipeline through cleanup, using the focused
+proofs already established. Keep batch splitting, symbolic grow/shrink, and
+two-pool transfer separate. The
 original bounded-pool project still uses legacy counting and is not migrated
 as a whole. The speculative cache repair remains removed; the checkout proofs
 required no count-model or authority change.
