@@ -1,32 +1,42 @@
-# Some refused accesses name no source element
+# A by-value aggregate parameter's incoming storage has no source name
 
 ## Violated invariant
 
-A refusal must name what the user wrote, in source terms. A store or load
-through an index of any integer type is named as its element
-(`owns values[x..(x + 1)]`), and unsigned orders are spelled as unsigned
-comparisons. Some other accesses still print the placeholder
-`the pointer value at this program point` in place of a source spelling:
+A refusal must name what the user wrote, in source terms. An address reached
+through a pointer parameter is spelled through it: an element (`values[x]`),
+a struct member (`p->data[2]`, `p[i].y`), or a byte offset
+(`(char *)q + 1`). One address still prints the placeholder
+`the pointer value at this program point`: the storage a by-value aggregate
+argument arrives in.
 
-- a byte or narrower view inside a wider cell
-  (`memory mutates only at [the pointer value at this program point (1 bytes)]`,
-  `mdtests/a_byte_store_inside_a_wide_cell_is_not_framed.md`);
-- a field of a struct array element past its ownership
-  (`mdtests/a_heap_struct_array_element_field_store_past_its_ownership_is_refused.md`,
-  `mdtests/struct_byte_array_resource_range_rejects_neighbor.md`);
-- a load whose value is compared in a claim
-  (`left side evaluated to load(the pointer value at this program point)`,
-  `mdtests/aggregate_parameter_alias_mutation.md`,
-  `mdtests/a_signed_ensures_read_is_not_an_unsigned_body_read.md`).
+A parameter `struct packet input` is two objects. The callee's copy is a
+local the naming tables call `input`. The value it was copied from lives at
+an address the tables do not carry, so a claim that reads it prints
+
+```
+input->value == 5; left side evaluated to load(the pointer value at this program point), right side evaluated to 5
+```
+
+(`mdtests/aggregate_parameter_alias_mutation.md`,
+`mdtests/an_uncertified_claim_is_spelled_in_source_terms.md`,
+`mdtests/aggregate_parameter_pointee_expires.md`).
+
+A second leftover is an address named inside another address's index. The
+index is spelled without the naming tables, because naming a loaded index
+describes the cell it was loaded from, which can be the address being
+spelled. So a load nested in an index still prints the placeholder
+(`viewable(base=node[((load(the pointer value at this program point) + 2) - …)], bytes=8)`,
+`mdtests/contract_certification_reports_resource_error.md`), and an index a
+local names prints as `…` (`owns p[…].y`).
 
 ## Intended regression
 
-For each shape above, tighten its mdtest to pin the source spelling of the
-address (`(char *)q + 1`, `items[i].field`, `input->value`).
+Tighten those three mdtests to pin a spelling that names the parameter and
+says which object is meant, for example `the caller's input.value`.
 
 ## Acceptance criteria
 
-- No refusal of these shapes contains `the pointer value at this program
-  point`.
-- The spelling is the shortest one through the parameter or local the
-  address belongs to, as `describe_pointer` already chooses for elements.
+- The function entry records, for each by-value aggregate parameter, the
+  address its argument arrived at, so a diagnostic can name it.
+- No refusal contains `the pointer value at this program point` for an
+  address that belongs to a parameter.
