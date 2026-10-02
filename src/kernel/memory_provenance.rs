@@ -2010,8 +2010,29 @@ pub(in crate::kernel) fn typed_store_separated_ranges_evidence(
     ) {
         return None;
     }
+    // A single stated equality can give an opaque read the spelling used by
+    // the range index. Membership retains and checks that equality; this
+    // lookup grants neither a separation nor memory access on its own.
+    let resolved_write = assumptions
+        .exact_pointer_aliases(write)
+        .find(|alias| {
+            !matches!(
+                alias.block,
+                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+            )
+        })
+        .unwrap_or(write);
+    let resolved_load = assumptions
+        .exact_pointer_aliases(pointer)
+        .find(|alias| {
+            !matches!(
+                alias.block,
+                PointerBlock::Symbolic(_) | PointerBlock::FunctionSymbolic(_)
+            )
+        })
+        .unwrap_or(pointer);
     let stated = assumptions
-        .memory_separation_candidates(&write.block, &pointer.block)
+        .memory_separation_candidates(&resolved_write.block, &resolved_load.block)
         .find_map(|(proposition, left, right)| {
             if !matches!(
                 proposition,
@@ -5035,9 +5056,20 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             collect_pointer_offset_memories(left, memories);
             collect_pointer_offset_memories(right, memories);
         }
+        ConditionTerm::PointerEqual(left, right) => {
+            for pointer in [left, right] {
+                if let PointerBlock::Symbolic(variable) = &pointer.block
+                    && let Some((origin, _)) =
+                        crate::kernel::eval::registered_load_origin_for_variable(variable)
+                    && !memories.contains(&origin)
+                {
+                    memories.push(origin);
+                }
+                collect_pointer_offset_memories(&pointer.offset, memories);
+            }
+        }
         ConditionTerm::Constant(_)
         | ConditionTerm::Variable(_)
-        | ConditionTerm::PointerEqual(_, _)
         | ConditionTerm::IntegerLessThan(_, _)
         | ConditionTerm::IntegerLessEqual(_, _)
         | ConditionTerm::IntegerGreaterThan(_, _)
@@ -5290,14 +5322,8 @@ fn transport_framed_atomic_condition(
             transport_framed_atomic_pointer_offset(right, after, assumptions)?,
         ),
         ConditionTerm::PointerEqual(left, right) => ConditionTerm::pointer_equal(
-            Pointer {
-                block: left.block.clone(),
-                offset: transport_framed_atomic_pointer_offset(&left.offset, after, assumptions)?,
-            },
-            Pointer {
-                block: right.block.clone(),
-                offset: transport_framed_atomic_pointer_offset(&right.offset, after, assumptions)?,
-            },
+            transport_framed_atomic_pointer(left, after, assumptions)?,
+            transport_framed_atomic_pointer(right, after, assumptions)?,
         ),
         ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => return None,
         // Mathematical integers carry no snapshot-dependent loads, so this
@@ -5308,6 +5334,34 @@ fn transport_framed_atomic_condition(
         | ConditionTerm::IntegerGreaterEqual(_, _)
         | ConditionTerm::IntegerEqual(_, _)
         | ConditionTerm::IntegerNotEqual(_, _) => return None,
+    })
+}
+
+fn transport_framed_atomic_pointer(
+    pointer: &Pointer,
+    after: &CMemory,
+    assumptions: Option<(&PureFactContext, bool)>,
+) -> Option<Pointer> {
+    let block = if let PointerBlock::Symbolic(variable) = &pointer.block {
+        // An opaque pointer-typed read puts its load identity in the block,
+        // rather than in an offset within the storage object's provenance.
+        // Transport that identity using the same checked load-frame rule as
+        // scalar load variables. Ordinary symbolic pointers have no producer
+        // metadata and stay unchanged.
+        match transport_framed_atomic_bitvector(
+            &Bitvector32Term::Variable(*variable),
+            after,
+            assumptions,
+        )? {
+            Bitvector32Term::Variable(variable) => PointerBlock::Symbolic(variable),
+            _ => return None,
+        }
+    } else {
+        pointer.block.clone()
+    };
+    Some(Pointer {
+        block,
+        offset: transport_framed_atomic_pointer_offset(&pointer.offset, after, assumptions)?,
     })
 }
 
@@ -6555,4 +6609,106 @@ fn directly_matched_effect_endpoint(
     assumptions: &PureFactContext,
 ) -> bool {
     memories_directly_match_for_pointer_load(effect_side, side, pointer, assumptions)
+}
+
+#[cfg(test)]
+mod opaque_pointer_frame_tests {
+    use super::*;
+
+    fn setup() -> (Pointer, Pointer, Pointer, Proposition, Proposition) {
+        let field = Pointer {
+            block: PointerBlock::Concrete("local:opaque-frame".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let write = Pointer::symbolic(Variable(9_880_001));
+        let argument = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(128),
+        };
+        let alias = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(write.clone(), argument.clone()),
+            true,
+        );
+        let separation = Proposition::CResourceSeparate {
+            left: CResource::Memory(CMemoryRange::new_with_element_width(
+                field.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+                8,
+            )),
+            right: CResource::Memory(CMemoryRange::new_with_element_width(
+                argument.clone(),
+                Bitvector32Term::Constant(0),
+                Bitvector32Term::Constant(1),
+                4,
+            )),
+        };
+        (field, write, argument, alias, separation)
+    }
+
+    #[test]
+    fn aliased_store_frame_retains_and_rechecks_exact_alias_and_separation() {
+        let (field, write, _, alias, separation) = setup();
+        let assumptions = PureFactContext::new()
+            .assume_proposition(alias.clone())
+            .assume_proposition(separation.clone());
+        let step = CMemoryDerivation::Store {
+            base: intern_c_memory(CMemory::default()),
+            pointer: write.clone(),
+            value: CValue::Int32(Bitvector32Term::Constant(7)),
+        };
+        let proof = typed_store_separated_ranges_evidence(&write, &field, &assumptions)
+            .expect("one exact alias must select the stated range separation");
+        assert!(proof.checks(&step, &field, 8, &assumptions));
+        for missing in [alias, separation] {
+            assert!(!proof.checks(&step, &field, 8, &assumptions.without_exact_fact(&missing)));
+        }
+        let wrong_step = CMemoryDerivation::Store {
+            base: intern_c_memory(CMemory::default()),
+            pointer: field.clone(),
+            value: CValue::Int32(Bitvector32Term::Constant(7)),
+        };
+        assert!(!proof.checks(&wrong_step, &field, 8, &assumptions));
+    }
+
+    #[test]
+    fn opaque_pointer_transport_requires_unchanged_field_bytes() {
+        let (field, _, argument, _, separation) = setup();
+        let before = intern_c_memory(CMemory::default().with_block("local:opaque-frame", 8));
+        let read =
+            Bitvector32Term::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits32);
+        let variable = crate::kernel::eval::load_variable_for_term(&read)
+            .unwrap()
+            .0;
+        let pointer = Pointer::symbolic(variable);
+        let source = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(pointer.clone(), argument.clone()),
+            true,
+        );
+        let assumptions = PureFactContext::new()
+            .assume_proposition(source.clone())
+            .assume_proposition(separation.clone());
+        let after = before
+            .memory()
+            .clone()
+            .store(pointer, CValue::Int32(Bitvector32Term::Constant(7)));
+        let theorem = prove_c_condition_fact_transport(&source, &after, &assumptions)
+            .expect("unchanged pointer identity transports across an aliased store");
+        assert!(
+            c_condition_fact_transport_target_in_context(&theorem, &source, &assumptions).is_some()
+        );
+        assert!(
+            c_condition_fact_transport_target_in_context(
+                &theorem,
+                &source,
+                &assumptions.without_exact_fact(&separation)
+            )
+            .is_none()
+        );
+        let changed = before
+            .memory()
+            .clone()
+            .store(field, CValue::pointer(argument));
+        assert!(prove_c_condition_fact_transport(&source, &changed, &assumptions).is_none());
+    }
 }
