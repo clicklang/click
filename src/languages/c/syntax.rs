@@ -3698,6 +3698,7 @@ impl C0StructLayout {
         for (name, c_type, offset_bytes, byte_width) in fields {
             let (expected_width, expected_alignment) = match c_type {
                 C0Type::UInt8 => (1, 1),
+                C0Type::Int64 => (8, 8),
                 C0Type::UInt16 => (2, 2),
                 C0Type::Int32 | C0Type::UInt32 => (4, 4),
                 C0Type::Int32Pointer
