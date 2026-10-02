@@ -1078,7 +1078,14 @@ fn check_pure_structural_induction(
             branch_setup,
         );
         let mut search = super::attempt::search_scope("pure structural induction arm");
-        let attempted = match root.try_authoritative_linear_script(&prepared) {
+        // The `induct` tactic is source tactic 0 and the arms follow it in
+        // written order, each numbered through its own nested tactics.
+        let first_source_index = 1 + arms[..arm_index]
+            .iter()
+            .map(|earlier| super::source_tactic_count(&earlier.tactics))
+            .sum::<usize>();
+        let sites = claim_script_sites(&root, &prepared, first_source_index);
+        let attempted = match root.try_addressed_linear_script(&prepared, &sites, &mut None) {
             Ok(attempted) => attempted,
             Err(error) => return Err(error.with_search_failures(search.finish())),
         };
@@ -1090,6 +1097,7 @@ fn check_pure_structural_induction(
             return Err(error.with_search_failures(search.finish()));
         };
         search.succeed();
+        proof.record_accepted_trace(claim_label, completions.len());
         completions.push(proof.completed_proposition()?);
         checked_arms.push(ProofInductionArm {
             type_name: arm.type_name.clone(),
@@ -2098,6 +2106,27 @@ fn certificate_int32_rewrites(
         .collect()
 }
 
+/// Addresses each tactic of a theorem's claim-level script by its source
+/// tactic occurrence, in the flat pre-order numbering the source mapper,
+/// `click expand` and `click profile` share, so a failure or a trace step
+/// names the tactic the user wrote. `first` is the occurrence of
+/// `tactics[0]`.
+fn claim_script_sites(
+    root: &Proof<'_>,
+    tactics: &[ProofTactic],
+    first: usize,
+) -> Vec<ProofStepSite> {
+    let mut next = first;
+    tactics
+        .iter()
+        .map(|tactic| {
+            let site = root.site().at_source_tactic(next);
+            next += super::source_tactic_count(std::slice::from_ref(tactic));
+            site
+        })
+        .collect()
+}
+
 fn check_direct_pure_goal_with_proof(
     claim_label: &str,
     context: &PureTheoremContext,
@@ -2128,6 +2157,8 @@ fn check_direct_pure_goal_with_proof(
         return Err(root.simp_failure().with_search_failures(search.finish()));
     };
     search.succeed();
+    // A traced theorem keeps its accepted path, as a traced function does.
+    proof.record_accepted_trace(claim_label, 0);
     Ok((
         proof.completed_certificate()?,
         proof.completed_proposition()?,
@@ -2601,7 +2632,8 @@ fn check_pure_script_with_proof(
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
     let mut search = super::attempt::search_scope("pure theorem script");
     let mut declined = None;
-    let checked = match root.try_authoritative_linear_script_reporting(tactics, &mut declined) {
+    let sites = claim_script_sites(&root, tactics, 0);
+    let checked = match root.try_addressed_linear_script(tactics, &sites, &mut declined) {
         Ok(checked) => checked,
         Err(error) => return Err(error.with_search_failures(search.finish())),
     };
@@ -2622,6 +2654,8 @@ fn check_pure_script_with_proof(
             .with_search_failures(search.finish()));
     };
     search.succeed();
+    // A traced theorem keeps its accepted path, as a traced function does.
+    proof.record_accepted_trace(claim_label, 0);
     Ok((
         proof.completed_certificate()?,
         proof.completed_proposition()?,

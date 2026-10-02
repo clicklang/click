@@ -686,11 +686,18 @@ pub(super) fn describe_undecided_statement_successors(
     format!("undecided condition:\n{}\n", lines.join("\n"))
 }
 
+/// `outcomes` splits a call into its returning and its throwing edge, so it
+/// is offered only where the two successors are exactly those: `one_throws`
+/// says one of them is a `Throw`. Two successors that both continue are an
+/// undecided branch inside an inlined callee, which the case-split guidance
+/// above already answers; `outcomes` has no arm for either of them.
 pub(super) fn describe_multiple_statement_successors_guidance(
     statement: &CStatement,
     successor_count: usize,
+    one_throws: bool,
 ) -> String {
     if successor_count != 2
+        || !one_throws
         || !matches!(
             statement,
             CStatement::Call { .. } | CStatement::CallAssign { .. }

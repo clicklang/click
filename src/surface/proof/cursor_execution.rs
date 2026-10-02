@@ -2927,7 +2927,17 @@ fn execute_step_from_frontier_position_selecting_path(
             crate::surface::diagnostics::describe_c_statement_site(),
             describe_undecided_statement_successors(&transitions, parameters, arguments),
             case_split_guidance,
-            describe_multiple_statement_successors_guidance(&step_statement, transitions.len()),
+            describe_multiple_statement_successors_guidance(
+                &step_statement,
+                transitions.len(),
+                transitions
+                    .iter()
+                    .filter(|transition| {
+                        matches!(transition.outcome, CStatementOutcome::Throw { .. })
+                    })
+                    .count()
+                    == 1,
+            ),
             describe_proof_context(
                 &listed_context_pure_facts(available_pure_facts, context),
                 &current_resources,

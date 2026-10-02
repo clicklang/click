@@ -31,5 +31,5 @@ int nothing() {
 ```
 
 ```expect
-fail: proof tactic 1 > have body tactic 1: `simp` failed
+fail: tactic 0 > have body tactic 1: `simp` failed
 ```

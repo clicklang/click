@@ -11,5 +11,5 @@ theorem integer_forall_logical_have_false() {
 ```
 
 ```expect
-fail: proof tactic 2 > have body tactic 1: `simp` failed
+fail: tactic 1 > have body tactic 1: `simp` failed
 ```

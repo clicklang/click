@@ -1004,6 +1004,132 @@ int32 parent(int32 *a, int32 *b, int32 n, int32 i) {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    /// The command a failing theorem's report suggests is accepted, and a
+    /// theorem is traced like a function: checked steps at their written
+    /// lines up to the failing tactic, a `--trace-to` target in a passing
+    /// proof, and only the named theorem verified.
+    #[test]
+    fn trace_proof_accepts_a_pure_theorem() {
+        let directory =
+            std::env::temp_dir().join(format!("click-trace-theorem-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            r#"verifying "f.c";
+theorem good(x: int32, y: int32) {
+    requires x == y;
+    ensures y == x by {
+        have y == x by { simp(); }
+        assumption();
+    }
+}
+theorem bad(x: int32, y: int32) {
+    requires x == y;
+    ensures x == 0 by {
+        have y == x by { simp(); }
+        have x == 0 by { normalize(); }
+        assumption();
+    }
+}
+theorem arms(x: int32) {
+    ensures x == x by {
+        if x == 0 {
+            have x == 0 by { assumption(); }
+        } else {
+            have x != 0 by { assumption(); }
+        }
+        normalize();
+    }
+}
+int32 f() { ensures result == 2; } by { step(); simp(); }
+"#,
+        )
+        .unwrap();
+        let path = sidecar.display().to_string();
+        let trace = |arguments: &[&str]| {
+            entry(
+                ["verify", "--trace-proof"]
+                    .iter()
+                    .chain(arguments)
+                    .map(|argument| argument.to_string())
+                    .chain([path.clone()]),
+            )
+        };
+
+        let error = entry(["verify".to_string(), path.clone()]).unwrap_err();
+        assert!(error.contains("tactic@13:26:\n  normalize();"), "{error}");
+        let hint = error
+            .split_once("\n\nTo get a trace:\n  click ")
+            .expect("a failing theorem suggests a trace")
+            .1;
+        assert_eq!(hint, format!("verify --trace-proof bad {path}"));
+        // The suggested command, exactly as printed, is accepted.
+        let traced = entry(hint.split(' ').map(str::to_string)).unwrap_err();
+        assert!(!traced.contains("is not a selected proof"), "{traced}");
+        assert!(
+            traced.contains("\n\nproof trace (checked tactics and branch facts):\ntactic@12: have y == x\n  adds: y == x"),
+            "{traced}"
+        );
+        assert!(traced.contains("tactic@13:26:\n  normalize();"), "{traced}");
+        assert!(!traced.contains("tactic@14"), "{traced}");
+        assert!(!traced.contains("To get a trace:"), "{traced}");
+        assert!(traced.len() < 2_000, "{traced}");
+
+        // A passing theorem is traced without verifying `bad` or `f`, whose
+        // proofs fail.
+        trace(&["good"]).expect("only the named theorem is verified");
+        trace(&["good", "--trace-to", "6"]).expect("a written tactic of the theorem");
+        trace(&["good", "--trace-to", "5:26"]).expect("a tactic inside a `have` body");
+        let elsewhere = trace(&["good", "--trace-to", "12"]).unwrap_err();
+        assert!(
+            elsewhere.contains("tactic@12 has no recorded checked step on an accepted path"),
+            "{elsewhere}"
+        );
+        // Both arms of a proof `if`, and the tactic after it, are reachable.
+        trace(&["arms", "--trace-to", "20"]).expect("the then arm");
+        trace(&["arms", "--trace-to", "22"]).expect("the else arm");
+        trace(&["arms", "--trace-to", "24"]).expect("the tactic after the `if`");
+
+        let wrong = trace(&["missing"]).unwrap_err();
+        assert!(
+            wrong.contains("`missing` is not a selected proof in ")
+                && wrong.contains("takes the name of a C function or theorem"),
+            "{wrong}"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// The trace hint and `--trace-proof` resolve a name alike, which relies
+    /// on one name never being both a C function and a theorem.
+    #[test]
+    fn a_name_is_not_both_a_c_function_and_a_theorem() {
+        let directory =
+            std::env::temp_dir().join(format!("click-trace-name-kinds-{}", std::process::id()));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("f.c"), "int32 f() { return 1; }\n").unwrap();
+        let sidecar = directory.join("f.click");
+        fs::write(
+            &sidecar,
+            "verifying \"f.c\";\ntheorem f(x: int32) { ensures x == x by { normalize(); } }\nint32 f() { ensures result == 1; } by { step(); simp(); }\n",
+        )
+        .unwrap();
+        let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
+        assert!(
+            error.contains("`f` is defined as both a theorem and a C function spec"),
+            "{error}"
+        );
+        assert!(!error.contains("To get a trace:"), "{error}");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn trace_verifies_only_the_named_function() {
         let directory = std::env::temp_dir().join(format!(

@@ -6616,6 +6616,10 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_if(&marker, split, ids, proof_if.condition.clone())?
                         .at_site(&sites[index]);
+                    // Both arms checked the tactics after the `if`; a trace
+                    // to one of those follows the first arm.
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 ProofTactic::Both(both) => {
@@ -6698,6 +6702,8 @@ impl<'a> Proof<'a> {
                     proof = both_done
                         .join_focused_cases(&marker, split, ids, proof_cases.disjunction.clone())?
                         .at_site(&sites[index]);
+                    proof
+                        .note_trace_join_continuation_arm((index + 1 < tactics.len()).then_some(0));
                     return Ok(finish(proof, unfinished));
                 }
                 tactic => {
