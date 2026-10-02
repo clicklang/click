@@ -146,9 +146,9 @@ public:
         exception_behavior_(std::move(exception_behavior)), state_(state) {}
 
   bool VisitFunctionDecl(clang::FunctionDecl *declaration) {
-    if (!llvm::isa<clang::CXXMethodDecl>(declaration) &&
-        declaration->isThisDeclarationADefinition() &&
-        declaration->getNameAsString() == selected_name_ &&
+    if (declaration->isThisDeclarationADefinition() &&
+        (declaration->getNameAsString() == selected_name_ ||
+         declaration->getQualifiedNameAsString() == selected_name_) &&
         is_in_logical_source(declaration->getLocation())) {
       matches_.push_back(declaration);
     }
@@ -238,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 20;
+    artifact["schema"] = 21;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -285,6 +285,23 @@ private:
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
         llvm::dyn_cast<clang::CXXDestructorDecl>(declaration);
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(declaration);
+    const bool ordinary_method =
+        method != nullptr && constructor == nullptr && destructor == nullptr;
+    if (ordinary_method &&
+        (method->isStatic() || method->isVirtual() || method->isVolatile() ||
+         method->getRefQualifier() != clang::RQ_None || method->isDeleted() ||
+         method->isVariadic())) {
+      fail(method->getLocation(),
+           "supported C++ methods must be non-static, non-virtual, "
+           "non-volatile, non-deleted, unqualified, and non-variadic");
+      return std::nullopt;
+    }
+    if (constructor != nullptr &&
+        !validate_constructor(constructor,
+                              constructor->getParent()->getDefinition())) {
+      return std::nullopt;
+    }
     const auto *prototype =
         declaration->getType()->getAs<clang::FunctionProtoType>();
     if (prototype == nullptr) {
@@ -328,16 +345,25 @@ private:
       if (!return_type) {
         return std::nullopt;
       }
-      function_kind["kind"] = "free";
+      function_kind["kind"] = ordinary_method ? "method" : "free";
+      if (ordinary_method) {
+        const auto *record = method->getParent()->getDefinition();
+        if (record == nullptr || !remember_record(record))
+          return std::nullopt;
+        function_kind["record_declaration_id"] = declaration_id(record);
+        function_kind["record_name"] = record->getNameAsString();
+        function_kind["is_const"] = method->isConst();
+      }
     }
     llvm::json::Array parameters;
-    if (constructor != nullptr || destructor != nullptr) {
+    if (method != nullptr) {
       const auto *method = llvm::cast<clang::CXXMethodDecl>(declaration);
       const auto *record = method->getParent()->getDefinition();
       llvm::json::Object record_type;
       record_type["kind"] = "record";
       record_type["declaration_id"] = declaration_id(record);
       record_type["name"] = record->getNameAsString();
+      record_type["is_const"] = method->isConst();
       llvm::json::Object reference_type;
       reference_type["kind"] = "lvalue_reference";
       reference_type["pointee"] = std::move(record_type);
@@ -412,11 +438,12 @@ private:
 
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(declaration);
-    result["name"] = constructor == nullptr
-                         ? (destructor == nullptr
-                                ? declaration->getNameAsString()
-                                : destructor_name(destructor))
-                         : constructor_name(constructor);
+    result["name"] =
+        ordinary_method ? method_name(method)
+        : constructor == nullptr
+            ? (destructor == nullptr ? declaration->getNameAsString()
+                                     : destructor_name(destructor))
+            : constructor_name(constructor);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
@@ -442,7 +469,9 @@ private:
           reference->getPointeeType().isConstQualified() &&
           context_.getTypeSize(reference->getPointeeType()) == 64));
     const clang::CXXRecordDecl *record_reference = nullptr;
-    if (reference != nullptr && !reference->getPointeeType().hasQualifiers()) {
+    if (reference != nullptr &&
+        !reference->getPointeeType().isVolatileQualified() &&
+        !reference->getPointeeType().isRestrictQualified()) {
       if (const auto *record_type =
               reference->getPointeeType()->getAs<clang::RecordType>()) {
         record_reference = llvm::dyn_cast<clang::CXXRecordDecl>(
@@ -463,7 +492,9 @@ private:
     if (!int_reference && record_reference == nullptr &&
         !mutable_int_pointer && !by_value_bool) {
       fail(parameter->getLocation(),
-           "the supported C++ parameter must be a by-value bool, int&, const int&, const signed-64 reference, or mutable int* parameter, or a mutable simple-record reference parameter");
+           "the supported C++ parameter must be a by-value bool, int&, const "
+           "int&, const signed-64 reference, or mutable int* parameter, or a "
+           "mutable or const simple-record reference parameter");
       return std::nullopt;
     }
     if (record_reference != nullptr && !remember_record(record_reference)) {
@@ -504,6 +535,11 @@ private:
   std::optional<Json>
   lower_type(clang::QualType type, clang::SourceLocation location,
              const clang::TypedefNameDecl *source_alias = nullptr) {
+    if (type->isVoidType()) {
+      llvm::json::Object result;
+      result["kind"] = "void";
+      return Json(std::move(result));
+    }
     if (const auto *reference = type->getAs<clang::LValueReferenceType>()) {
       auto pointee =
           lower_type(reference->getPointeeType(), location, source_alias);
@@ -528,8 +564,8 @@ private:
     if (const auto *record_type = type->getAs<clang::RecordType>()) {
       const auto *record = llvm::dyn_cast<clang::CXXRecordDecl>(
           record_type->getDecl()->getDefinition());
-      if (type.hasQualifiers() || record == nullptr ||
-          !remember_record(record)) {
+      if (type.isVolatileQualified() || type.isRestrictQualified() ||
+          record == nullptr || !remember_record(record)) {
         if (record == nullptr && state_.error.empty()) {
           fail(location, "the supported C++ record type must be complete");
         } else if (type.hasQualifiers() && state_.error.empty()) {
@@ -542,6 +578,7 @@ private:
       result["kind"] = "record";
       result["declaration_id"] = declaration_id(record);
       result["name"] = record->getNameAsString();
+      result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
     if (context_.hasSameType(type.getUnqualifiedType(), context_.BoolTy)) {
@@ -663,7 +700,8 @@ private:
       return lower_call(call, function);
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
-      if (binary->getOpcode() != clang::BO_Assign) {
+      if (binary->getOpcode() != clang::BO_Assign &&
+          binary->getOpcode() != clang::BO_AddAssign) {
         fail(binary->getOperatorLoc(),
              "the first C++ slice supports only simple assignment statements");
         return std::nullopt;
@@ -674,6 +712,43 @@ private:
       }
       llvm::json::Object result;
       const clang::Expr *left = binary->getLHS()->IgnoreParens();
+      if (binary->getOpcode() == clang::BO_AddAssign) {
+        const auto *compound =
+            llvm::cast<clang::CompoundAssignOperator>(binary);
+        const auto *member = llvm::dyn_cast<clang::MemberExpr>(left);
+        if (member == nullptr ||
+            !context_.hasSameType(compound->getComputationLHSType(),
+                                  left->getType()) ||
+            !context_.hasSameType(compound->getComputationResultType(),
+                                  left->getType()) ||
+            !context_.hasSameType(binary->getRHS()->getType(),
+                                  left->getType()) ||
+            !left->getType()->isSignedIntegerType()) {
+          fail(binary->getOperatorLoc(),
+               "supported C++ += requires a direct signed integer field and "
+               "same-width operands");
+          return std::nullopt;
+        }
+        auto loaded = lower_member(member, function);
+        auto value_type = lower_type(left->getType(), left->getExprLoc());
+        auto sum_type = lower_type(left->getType(), left->getExprLoc());
+        if (!loaded || !value_type || !sum_type)
+          return std::nullopt;
+        llvm::json::Object load;
+        load["kind"] = "member_load";
+        load["object"] = std::move(loaded->object);
+        load["field"] = std::move(loaded->field);
+        load["value_type"] = std::move(*value_type);
+        load["span"] = span(left->getSourceRange());
+        llvm::json::Object sum;
+        sum["kind"] = "binary";
+        sum["operator"] = "add";
+        sum["left"] = std::move(load);
+        sum["right"] = std::move(*value);
+        sum["value_type"] = std::move(*sum_type);
+        sum["span"] = span(binary->getSourceRange());
+        value = Json(std::move(sum));
+      }
       if (const auto *member = llvm::dyn_cast<clang::MemberExpr>(left)) {
         auto lowered = lower_member(member, function);
         if (!lowered) {
@@ -930,6 +1005,13 @@ private:
                   record_type->getDecl()->getDefinition());
     const bool record_object =
         record != nullptr && !local->getType().hasQualifiers();
+    if (record_object && context_.getLangOpts().CXXExceptions &&
+        exception_behavior_ == "normal_only") {
+      fail(local->getLocation(),
+           "exception-enabled normal-only C++ supports borrowed records only, "
+           "not local object construction");
+      return std::nullopt;
+    }
     if (!mutable_int && !record_object) {
       fail(local->getLocation(),
            "the supported automatic C++ local must resolve to mutable int or one simple record object");
@@ -1290,10 +1372,31 @@ private:
            "the supported C++ slice requires a direct free-function call");
       return std::nullopt;
     }
-    if (llvm::isa<clang::CXXMethodDecl>(callee)) {
-      fail(call->getExprLoc(),
-           "C++ method calls are outside the supported direct-call slice");
-      return std::nullopt;
+    const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(callee);
+    const clang::Expr *receiver = nullptr;
+    unsigned argument_offset = 0;
+    if (method != nullptr) {
+      if (method->isStatic() || method->isVirtual() ||
+          llvm::isa<clang::CXXConstructorDecl>(method) ||
+          llvm::isa<clang::CXXDestructorDecl>(method)) {
+        fail(call->getExprLoc(), "unsupported C++ method dispatch");
+        return std::nullopt;
+      }
+      if (const auto *member_call =
+              llvm::dyn_cast<clang::CXXMemberCallExpr>(call)) {
+        receiver = member_call->getImplicitObjectArgument();
+      } else if (const auto *operator_call =
+                     llvm::dyn_cast<clang::CXXOperatorCallExpr>(call)) {
+        if (operator_call->getNumArgs() == 0)
+          return std::nullopt;
+        receiver = operator_call->getArg(0);
+        argument_offset = 1;
+      }
+      if (receiver == nullptr || receiver->getType()->isPointerType()) {
+        fail(call->getExprLoc(), "supported C++ method call requires a direct "
+                                 "record lvalue receiver");
+        return std::nullopt;
+      }
     }
     const clang::FunctionDecl *definition = callee->getDefinition();
     if (definition == nullptr) {
@@ -1308,16 +1411,26 @@ private:
            "the supported C++ call graph requires definitions in the selected file");
       return std::nullopt;
     }
-    if (call->getNumArgs() != definition->getNumParams()) {
+    if (call->getNumArgs() != definition->getNumParams() + argument_offset) {
       fail(call->getExprLoc(),
            "the supported C++ slice requires a call with one argument per parameter");
       return std::nullopt;
     }
 
     llvm::json::Array arguments;
-    for (unsigned index = 0; index < call->getNumArgs(); ++index) {
-      auto argument = lower_call_argument(call->getArg(index),
-                                          definition->getParamDecl(index), caller);
+    if (receiver != nullptr) {
+      auto place = lower_place_reference(receiver, caller);
+      if (!place)
+        return std::nullopt;
+      llvm::json::Object argument;
+      argument["kind"] = "reference";
+      argument["place"] = std::move(*place);
+      arguments.push_back(std::move(argument));
+    }
+    for (unsigned index = 0; index < definition->getNumParams(); ++index) {
+      auto argument =
+          lower_call_argument(call->getArg(index + argument_offset),
+                              definition->getParamDecl(index), caller);
       if (!argument) {
         return std::nullopt;
       }
@@ -1331,7 +1444,8 @@ private:
 
     llvm::json::Object reference;
     reference["declaration_id"] = declaration_id(definition);
-    reference["name"] = definition->getNameAsString();
+    reference["name"] =
+        method != nullptr ? method_name(method) : definition->getNameAsString();
     reference["span"] = span(call->getCallee()->getSourceRange());
 
     Json call_span = span(call->getSourceRange());
@@ -1697,12 +1811,15 @@ private:
     if (const auto *binary =
             llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() != clang::BO_Add &&
+          binary->getOpcode() != clang::BO_EQ &&
           binary->getOpcode() != clang::BO_Mul &&
           binary->getOpcode() != clang::BO_LE &&
           binary->getOpcode() != clang::BO_GE &&
           binary->getOpcode() != clang::BO_LAnd) {
         fail(binary->getOperatorLoc(),
-             "unsupported binary operator; this C++ slice supports int addition, checked constant multiplication, signed 64-bit <= and >=, and built-in bool && bool only");
+             "unsupported binary operator; this C++ slice supports same-width "
+             "signed addition and equality, checked constant multiplication, "
+             "signed 64-bit <= and >=, and built-in bool && bool only");
         return std::nullopt;
       }
       if (binary->getOpcode() == clang::BO_Mul && !allow_constant_multiply) {
@@ -1711,8 +1828,9 @@ private:
         return std::nullopt;
       }
       if (binary->getOpcode() == clang::BO_Add &&
-          !context_.hasSameType(binary->getType().getUnqualifiedType(),
-                                context_.IntTy)) {
+          !(binary->getType()->isSignedIntegerType() &&
+            (context_.getTypeSize(binary->getType()) == 32 ||
+             context_.getTypeSize(binary->getType()) == 64))) {
         fail(binary->getOperatorLoc(),
              "the supported C++ slice does not include pointer arithmetic");
         return std::nullopt;
@@ -1736,6 +1854,8 @@ private:
       result["kind"] = "binary";
       if (binary->getOpcode() == clang::BO_Add) {
         result["operator"] = "add";
+      } else if (binary->getOpcode() == clang::BO_EQ) {
+        result["operator"] = "equal";
       } else if (binary->getOpcode() == clang::BO_Mul) {
         result["operator"] = "multiply";
       } else if (binary->getOpcode() == clang::BO_LE) {
@@ -1764,7 +1884,8 @@ private:
       return false;
     }
     if (context_.getLangOpts().CXXExceptions &&
-        exception_behavior_ != "scalar_int32") {
+        exception_behavior_ != "scalar_int32" &&
+        !definition->hasTrivialDestructor()) {
       fail(definition->getLocation(),
            "the exception-enabled C++ profile is limited to an object-free "
            "normal-only graph");
@@ -1806,54 +1927,12 @@ private:
            "the supported C++ record must contain at least one field");
       return false;
     }
-    const clang::CXXConstructorDecl *supported_constructor = nullptr;
-    const clang::CXXDestructorDecl *supported_destructor = nullptr;
-    for (const clang::Decl *member : record->decls()) {
-      if (const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(member);
-          method != nullptr && !method->isImplicit()) {
-        if (const auto *constructor =
-                llvm::dyn_cast<clang::CXXConstructorDecl>(method)) {
-          if (supported_constructor != nullptr) {
-            fail(constructor->getLocation(),
-                 "the first constructor slice supports exactly one explicit constructor");
-            return false;
-          }
-          supported_constructor = constructor;
-        } else if (const auto *destructor =
-                       llvm::dyn_cast<clang::CXXDestructorDecl>(method)) {
-          if (supported_destructor != nullptr) {
-            fail(destructor->getLocation(),
-                 "the terminal-cleanup slice supports exactly one destructor");
-            return false;
-          }
-          supported_destructor = destructor;
-        } else {
-          fail(method->getLocation(),
-               "ordinary methods are outside the supported C++ object slice");
-          return false;
-        }
-      }
-      if (!member->isImplicit() && !llvm::isa<clang::FieldDecl>(member) &&
-          !llvm::isa<clang::CXXMethodDecl>(member) &&
-          !llvm::isa<clang::AccessSpecDecl>(member)) {
-        fail(member->getLocation(),
-             "nested declarations and static data members are outside the supported C++ record slice");
+    const clang::CXXDestructorDecl *supported_destructor =
+        record->getDestructor();
+    if (supported_destructor != nullptr &&
+        !supported_destructor->isImplicit()) {
+      if (!validate_destructor(supported_destructor, record))
         return false;
-      }
-    }
-    if (supported_constructor != nullptr &&
-        !validate_constructor(supported_constructor, record)) {
-      return false;
-    }
-    if (supported_destructor != nullptr) {
-      if (supported_constructor == nullptr) {
-        fail(supported_destructor->getLocation(),
-             "the terminal-cleanup slice requires a supported explicit constructor before a user-declared destructor");
-        return false;
-      }
-      if (!validate_destructor(supported_destructor, record)) {
-        return false;
-      }
     } else if (!record->isTriviallyCopyable() ||
                !record->hasTrivialDestructor()) {
       fail(record->getLocation(),
@@ -1865,7 +1944,8 @@ private:
       const auto *pointer = type->getAs<clang::PointerType>();
       const bool mutable_int =
           !type.hasQualifiers() &&
-          context_.hasSameType(type.getUnqualifiedType(), context_.IntTy);
+          (context_.hasSameType(type.getUnqualifiedType(), context_.IntTy) ||
+           (type->isSignedIntegerType() && context_.getTypeSize(type) == 64));
       const bool mutable_int_pointer =
           pointer != nullptr && !type.hasQualifiers() &&
           !pointer->getPointeeType().hasQualifiers() &&
@@ -1875,8 +1955,10 @@ private:
           field->isMutable() || field->hasInClassInitializer() ||
           field->getName().empty() ||
           (!mutable_int && !mutable_int_pointer)) {
-        fail(field->getLocation(),
-             "the supported C++ record fields must be named public mutable int or mutable int* fields without bit-fields");
+        fail(
+            field->getLocation(),
+            "the supported C++ record fields must be named public mutable int, "
+            "signed 64-bit integer, or mutable int* fields without bit-fields");
         return false;
       }
     }
@@ -1998,7 +2080,9 @@ private:
         fail(field->getLocation(), "supported C++ field layout is too large");
         return std::nullopt;
       }
-      auto value_type = lower_type(field->getType(), field->getLocation());
+      auto value_type =
+          lower_type(field->getType(), field->getLocation(),
+                     direct_source_alias(field->getTypeSourceInfo()));
       if (!value_type) {
         return std::nullopt;
       }
@@ -2081,7 +2165,8 @@ private:
     const bool supported_parameter =
         parameter != nullptr && parameter->getDeclContext() == function &&
         reference_type != nullptr &&
-        !reference_type->getPointeeType().hasQualifiers() &&
+        !reference_type->getPointeeType().isVolatileQualified() &&
+        !reference_type->getPointeeType().isRestrictQualified() &&
         base_record_type != nullptr &&
         base_record_type->getDecl()->getCanonicalDecl() ==
             record->getCanonicalDecl();
@@ -2094,13 +2179,13 @@ private:
             record->getCanonicalDecl();
     const bool supported_this =
         this_expression != nullptr && object_method != nullptr &&
-        (llvm::isa<clang::CXXConstructorDecl>(object_method) ||
-         llvm::isa<clang::CXXDestructorDecl>(object_method)) &&
+        !object_method->isStatic() &&
         object_method->getParent()->getCanonicalDecl() ==
             record->getCanonicalDecl();
     if (member->isArrow() && !supported_this) {
       fail(member->getOperatorLoc(),
-           "the first C++ object slice supports arrow access only for the current constructor or destructor object");
+           "the first C++ object slice supports arrow access only for the "
+           "current method, constructor, or destructor object");
       return std::nullopt;
     }
     if (!supported_parameter && !supported_local && !supported_this) {
@@ -2129,11 +2214,10 @@ private:
     expression = expression->IgnoreParenImpCasts();
     if (llvm::isa<clang::CXXThisExpr>(expression)) {
       const auto *method = llvm::dyn_cast<clang::CXXMethodDecl>(expected_function);
-      if (method == nullptr ||
-          (!llvm::isa<clang::CXXConstructorDecl>(method) &&
-           !llvm::isa<clang::CXXDestructorDecl>(method))) {
+      if (method == nullptr || method->isStatic()) {
         fail(expression->getExprLoc(),
-             "`this` is supported only inside a constructor or destructor body");
+             "`this` is supported only inside a method, constructor, or "
+             "destructor body");
         return std::nullopt;
       }
       llvm::json::Object result;
@@ -2183,6 +2267,19 @@ private:
 
   std::string object_self_id(const clang::CXXMethodDecl *method) {
     return declaration_id(method) + "@this";
+  }
+
+  std::string method_name(const clang::CXXMethodDecl *method) {
+    std::string name = method->getNameAsString();
+    if (method->isOverloadedOperator()) {
+      if (method->getOverloadedOperator() != clang::OO_PlusEqual) {
+        fail(method->getLocation(),
+             "the supported C++ operator method is operator+= only");
+        return {};
+      }
+      name = "operator_add_assign";
+    }
+    return method->getParent()->getNameAsString() + "_" + name;
   }
 
   std::string constructor_name(

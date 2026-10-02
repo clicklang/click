@@ -77,13 +77,14 @@ assembly are silently deleted to make an import pass.
 
 The preliminary C++ frontend boundary accepts one C++20 translation unit
 selected by exactly one entry in a JSON compilation database, with one
-selected free function and the uniquely named free-function definitions
+selected free function or ordinary method and the uniquely named definitions
 reachable from its supported direct call statements. In the baseline profile,
 exceptions are disabled and every selected or reachable function must declare
 `noexcept`. A second, deliberately smaller profile may retain the compilation
-command's enabled exception mode: free functions may omit `noexcept`, but the
-entire closed reachable graph must remain object-free and contain only Click's
-already checked normal-returning operations.
+command's enabled exception mode: free functions and ordinary methods may omit
+`noexcept`, but the closed reachable graph must contain only Click's checked
+normal-returning operations. This profile permits borrowed trivial records,
+while local object construction remains outside it.
 The selected definitions may be written in the `.cpp` translation unit or in
 one configured `.h` project header included by that translation unit. All
 lowered declarations and source spans must come from that one logical source.
@@ -100,7 +101,7 @@ Its baseline import configuration explicitly sets `"language": "c++"`, the
 standard to `c++20`, target to `x86_64-unknown-linux-gnu`, exceptions and RTTI to false,
 and paths for the pinned exporter, compilation database, working directory,
 `.cpp` translation unit, logical source, selected function, and semantic
-artifact. These booleans may also be true for an object-free, normal-only
+artifact. These booleans may also be true for a supported normal-only
 reachable graph; the observed Clang profile must match the configuration.
 `click import lock` executes the repository-owned Clang 19.1.7
 LibTooling exporter with that entry and records the database bytes, exact parsed
@@ -154,12 +155,13 @@ For a compilation command with exceptions enabled, the config instead sets
 `"exceptions": true`; the observed Clang profile must agree. The semantic
 artifact records `exception_behavior: "normal_only"` independently from each
 function's `declared_noexcept` value. This is not exception handling support:
-reachable `throw`, `try`/`catch`, unresolved calls, and every record/object use
-are rejected locally. Because the artifact contains the complete supported
+reachable `throw`, `try`/`catch`, unresolved calls, and local object construction
+are rejected locally. Borrowed references to the supported trivially destructible
+record may use its checked fields and ordinary methods. Because the artifact contains the complete supported
 direct-call closure and has no throwing operation, ordinary verification may
 check its normal behavior without inventing an exceptional proof outcome.
-An RTTI-enabled profile is similarly allowed only for the currently supported
-object-free graph; this does not add `typeid` or `dynamic_cast` semantics.
+An RTTI-enabled profile also permits those borrowed records; this does not add
+virtual dispatch, `typeid`, or `dynamic_cast` semantics.
 
 The separate `"exception_behavior": "scalar_int32"` config requires
 `"exceptions": true`. Its locked artifact may contain a source `throw` of a
@@ -300,7 +302,7 @@ retain their parameter identity, and all captured functions lower into the
 ordinary modular call environment. Each definition has its own sidecar
 contract and proof. The artifact rejects recursion, ambiguous reachable names,
 and missing definitions. Reachable functions that omit `noexcept` are accepted
-only in an exception-enabled, object-free profile; the baseline profile
+only in an exception-enabled normal-only profile (including borrowed trivial records); the baseline profile
 continues to reject them. Omitting `noexcept` does not itself declare a Click
 exception.
 
@@ -321,7 +323,7 @@ sidecar must provide ordinary memory authority. Removing that authority or
 claiming the wrong pointer-mediated memory effect fails verification.
 
 The `struct-member` fixture accepts one named, public, non-inheriting aggregate
-`struct` whose fields are mutable `int` or mutable `int*`. Clang supplies the
+`struct` whose fields are mutable `int`, signed 64-bit integers, or mutable `int*`. Clang supplies the
 record and field declaration identities plus the exact LP64 size, alignment,
 field offsets, and field widths. A function may receive an existing object by
 mutable reference and read or write those fields with `object.field`; a pointer
@@ -329,6 +331,36 @@ loaded from a field may use the already-supported checked dereference rules.
 The proof interface spells that reference as `struct Name*` and uses ordinary
 field resources such as `owns state->saved`. Click does not reconstruct the
 layout from C++ source or create a synthetic C body.
+
+The `value-methods` fixtures add non-static, non-virtual ordinary methods on
+that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
+`"function": "FeeFrac::operator+="`. The proof interface names them
+`FeeFrac_IsEmpty` and `FeeFrac_operator_add_assign`, with an explicit first
+parameter `self`. Const methods use `const struct FeeFrac* self`; const record
+reference parameters retain the same qualification. This restricts writes
+through that parameter without forbidding an alias through a mutable parameter.
+Unused member functions, constructors, templates, and nested declarations are
+not imported into the execution graph. Reachable definitions and the record's
+complete supported field layout are still checked. Overloaded proof names and
+reachable unsupported bodies fail import.
+
+Direct `object.method(...)`, `object.operator+=(...)`, and `object += other`
+calls bind that receiver to the selected declaration identity. Call arguments
+must be direct supported references or the existing value arguments; pointer
+receivers, virtual dispatch, other overloaded operators, and call results
+outside the existing scalar-local initializer slice remain unsupported.
+Same-width signed field `+=` and signed integer equality use checked loads,
+addition, and stores. Compound updates with side effects or mixed-width
+conversions remain unsupported. Overflow obligations apply to each field's
+width. The fixtures prove disjoint-object addition, self-addition with one set
+of field resources, and preservation of unrelated caller memory; they reject
+false claims and missing authority or overflow bounds.
+
+The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
+verifies these same properties for unchanged upstream `FeeFrac` methods under
+the real project profile. This does not prove the class's other methods or
+its documented application invariant. The typed artifact schema is now 21;
+previous artifacts require an explicit lock refresh.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one
@@ -408,7 +440,7 @@ conditional construction remain rejected.
 
 Copies and moves, default or partial aggregate initialization, multiple or
 more than two top-level destructible local objects, broader nested lifetimes,
-ordinary methods, inheritance, private fields, bit-fields, nested records, and
+virtual dispatch, inheritance, private fields, bit-fields, nested record values, and
 multiple record types remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported
