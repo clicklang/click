@@ -2200,6 +2200,11 @@ impl PureFactContext {
             }
             return None;
         }
+        if let Some(guards) = condition.nonnegative_division_bound_guards()
+            && guards.iter().all(|guard| self.decide(guard) == Some(true))
+        {
+            return Some(true);
+        }
         let (left, right, strict) = condition_as_order_fact(condition, true)?;
         let wide = |term: &Bitvector32Term| match term {
             Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),

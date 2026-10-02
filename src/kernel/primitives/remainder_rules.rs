@@ -4,6 +4,39 @@
 use super::{Bitvector32Term as B, ConditionTerm as C};
 
 impl C {
+    /// In the nonnegative signed-word range, both signed and unsigned
+    /// quotient/remainder results stay nonnegative and below the dividend.
+    /// The divisor must be strictly positive; no zero/negative case is used.
+    pub(crate) fn nonnegative_division_bound_guards(&self) -> Option<Vec<Self>> {
+        let (left, right) = match self {
+            C::Bitvector32SignedLessEqual(left, right) => (left, right),
+            C::Bitvector32SignedGreaterEqual(left, right) => (right, left),
+            _ => return None,
+        };
+        let (result, upper) = if left.as_const() == Some(0) {
+            (right.as_ref(), None)
+        } else {
+            (left.as_ref(), Some(right.as_ref()))
+        };
+        let (n, d) = match result {
+            B::Divide(n, d)
+            | B::UnsignedDivide(n, d)
+            | B::Remainder(n, d)
+            | B::UnsignedRemainder(n, d) => (n, d),
+            _ => return None,
+        };
+        let mut guards = vec![
+            C::signed_less_equal(B::Constant(0), n.as_ref().clone()),
+            C::signed_less_than(B::Constant(0), d.as_ref().clone()),
+        ];
+        if let Some(upper) = upper
+            && n.as_ref() != upper
+        {
+            guards.push(C::signed_less_equal(n.as_ref().clone(), upper.clone()));
+        }
+        Some(guards)
+    }
+
     pub(crate) fn uint64_remainder_bound_guard(&self) -> Option<Self> {
         let (left, right, strict) = match self {
             C::Bitvector64UnsignedLessEqual(a, b) => (a.as_ref(), b.as_ref(), false),
@@ -80,6 +113,108 @@ mod tests {
     use crate::kernel::Variable;
     use crate::kernel::proof::term_rewrite::TermRewrite;
     use std::collections::HashMap;
+
+    #[test]
+    fn quotient_and_remainder_bounds_need_every_signed_range_guard() {
+        let n = B::Variable(Variable(100));
+        let d = B::Variable(Variable(101));
+        for result in [
+            B::Divide(Box::new(n.clone()), Box::new(d.clone())),
+            B::UnsignedDivide(Box::new(n.clone()), Box::new(d.clone())),
+            B::Remainder(Box::new(n.clone()), Box::new(d.clone())),
+            B::UnsignedRemainder(Box::new(n.clone()), Box::new(d.clone())),
+        ] {
+            for goal in [
+                C::signed_less_equal(B::Constant(0), result.clone()),
+                C::signed_less_equal(result, B::Constant(65535)),
+            ] {
+                let guards = goal.nonnegative_division_bound_guards().unwrap();
+                let facts: HashMap<_, _> =
+                    guards.iter().cloned().map(|guard| (guard, true)).collect();
+                assert_eq!(
+                    TermRewrite::for_conditions(&facts).condition(&goal),
+                    C::Constant(true)
+                );
+                for omitted in &guards {
+                    let mut missing = facts.clone();
+                    missing.remove(omitted);
+                    assert_ne!(
+                        TermRewrite::for_conditions(&missing).condition(&goal),
+                        C::Constant(true)
+                    );
+                    missing.insert(omitted.clone(), false);
+                    assert_ne!(
+                        TermRewrite::for_conditions(&missing).condition(&goal),
+                        C::Constant(true)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn division_bound_lookup_ignores_unrelated_conditions() {
+        let n = B::Variable(Variable(100));
+        let d = B::Variable(Variable(101));
+        let goal = C::signed_less_equal(
+            B::UnsignedDivide(Box::new(n), Box::new(d)),
+            B::Constant(65535),
+        );
+        let mut measured = Vec::new();
+        for count in [0, 32, 128, 512] {
+            let mut facts: HashMap<_, _> = goal
+                .nonnegative_division_bound_guards()
+                .unwrap()
+                .into_iter()
+                .map(|guard| (guard, true))
+                .collect();
+            for i in 0..count {
+                facts.insert(
+                    C::equal(B::Variable(Variable(1000 + i)), B::Constant(i as u32)),
+                    true,
+                );
+            }
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                TermRewrite::for_conditions(&facts).condition(&goal)
+            });
+            assert_eq!(result, C::Constant(true));
+            measured.push(work);
+        }
+        assert!(
+            measured.iter().all(|work| *work == measured[0]),
+            "{measured:?}"
+        );
+    }
+
+    #[test]
+    fn division_bound_work_scales_with_its_selected_expression() {
+        let mut measured = Vec::new();
+        for count in [16, 32, 64, 128] {
+            let mut n = B::Variable(Variable(100));
+            for i in 0..count {
+                n = B::Add(Box::new(n), Box::new(B::Variable(Variable(1000 + i))));
+            }
+            let goal = C::signed_less_equal(
+                B::UnsignedDivide(Box::new(n), Box::new(B::Variable(Variable(101)))),
+                B::Constant(65535),
+            );
+            let facts: HashMap<_, _> = goal
+                .nonnegative_division_bound_guards()
+                .unwrap()
+                .into_iter()
+                .map(|guard| (guard, true))
+                .collect();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                TermRewrite::for_conditions(&facts).condition(&goal)
+            });
+            assert_eq!(result, C::Constant(true));
+            measured.push(work);
+        }
+        assert!(
+            measured.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+            "{measured:?}"
+        );
+    }
 
     #[test]
     fn remainder_rewrites_require_nonnegative_and_full_width_guards() {

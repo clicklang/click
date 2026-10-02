@@ -38,16 +38,16 @@ writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
 exporter, refresh existing imports. Configuration schema 2 is unchanged; the
-typed artifact and lock now use schema 7.
+typed artifact and lock now use schema 8.
 
 ## Supported semantics
 
-The scalar slice supports `i32`, `u8`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
+The scalar slice supports `i32`, `u8`, `u16`, `u32`, target-sized `usize`, booleans, unit returns, initialized scalar
 and reference locals, branches, direct calls within the selected file,
-references to `i32`, `u8`, and `u32`, and plain structs with those integers or reference fields, field
+references to `i32`, `u8`, `u16`, and `u32`, and plain structs with those integers or reference fields, field
 access, and local reborrowing of reference-backed places. Arithmetic supports addition,
 subtraction, multiplication, division, remainder, bitwise operations, comparisons,
-and boolean operations. Unsigned shifts support `u8`, `u32`, and `usize`; signed shifts
+and boolean operations. Unsigned shifts support `u8`, `u16`, `u32`, and `usize`; signed shifts
 remain unsupported. Integer `as` casts preserve Rust truncation and bit
 interpretation. Record
 size, alignment, and field offsets come from rustc for the selected target;
@@ -62,8 +62,8 @@ not prove a functional claim or panic freedom.
 Unsigned arithmetic has Rust's checked semantics: addition, subtraction, and
 multiplication require overflow freedom, and division/remainder require a
 nonzero divisor. A shift count must be nonnegative and less than the left
-operand's width (8, 32, or 64); shifting away high bits is allowed. Casts to `u8`
-retain the low eight bits. Checks follow operand evaluation order and respect
+operand's width (8, 16, 32, or 64); shifting away high bits is allowed. Casts to `u8` and `u16`
+retain the low eight and sixteen bits, respectively. Checks follow operand evaluation order and respect
 `&&`/`||` short circuiting. Compound assignments use the same operations.
 These obligations are checked during execution; C unsigned wrapping alone
 cannot establish Rust panic freedom.
@@ -299,6 +299,28 @@ proves the same sum using `for byte in bytes.iter()` and `*byte`. Missing views
 and attempts to write through yielded shared references are rejected.
 Array iteration, `.iter_mut()`, stored `Iter` locals, custom iterators,
 labels, `break`, and `continue` remain outside this subset.
+
+## Primitive unsigned conversions
+
+Calls such as `u32::from(byte)` and `<u32 as From<u16>>::from(half)` support
+compiler-resolved core `From` conversions between modeled unsigned scalar
+types (`u8`, `u16`, `u32`, `usize`) when the source width is no greater than
+the destination width. The exporter records a distinct `IntegerFrom` node;
+lowering preserves the value and evaluates its argument once in source order.
+These pinned standard-library primitive conversions are interpreted builtins;
+their library bodies are not imported. Matching a method's spelling alone does
+not authorize a conversion. User conversion implementations, `.into()`, bool
+conversions, and general trait dispatch remain unsupported. This support is
+in the scalar/reference exporter path; external conversion calls in owned-record
+MIR functions remain unsupported.
+
+`u16` has checked arithmetic, scalar references, and compiler-layout record
+fields with two-byte storage. It does not extend the supported fixed-array
+element or slice types. The
+[integer-conversion fixture](https://github.com/clicklang/click/tree/master/examples/rust-integer-conversions)
+checks shared reads, exclusive updates, preserved neighboring fields, and a
+fixed checksum-style accumulator boundary case. It does not verify arbitrary
+checksum updates or import adler2.
 
 ## Exact chunk iterators and remainder
 

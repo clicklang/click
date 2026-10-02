@@ -11,6 +11,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
     match t {
         Type::I32 => Ok(C0Type::Int32),
         Type::U8 => Ok(C0Type::UInt8),
+        Type::U16 => Ok(C0Type::UInt16),
         Type::U32 => Ok(C0Type::UInt32),
         Type::Usize => Ok(C0Type::UInt64),
         Type::Bool => Ok(C0Type::Bool),
@@ -18,6 +19,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::Reference { pointee, .. } => match pointee.as_ref() {
             Type::I32 | Type::Record { .. } => Ok(C0Type::Int32Pointer),
             Type::U8 => Ok(C0Type::UInt8Pointer),
+            Type::U16 => Ok(C0Type::UInt16Pointer),
             Type::U32 => Ok(C0Type::UInt32Pointer),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
@@ -33,16 +35,19 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
     }
 }
-// Rust `as u8` truncates, while the shared byte coercion requires a range
-// proof. Mask first and use the existing checked coercion on that byte value.
+// Rust narrow unsigned casts truncate; the shared coercion requires a range
+// proof. Mask first and use the existing checked coercion on that value.
 fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
-    if target == CType::UInt8 {
+    if matches!(target, CType::UInt8 | CType::UInt16) {
         c_cast(
             c_cast(
-                c_bitwise_and(c_cast(value, CType::UInt32), c_uint32_literal(255)),
+                c_bitwise_and(
+                    c_cast(value, CType::UInt32),
+                    c_uint32_literal(if target == CType::UInt8 { 255 } else { 65535 }),
+                ),
                 CType::Int32,
             ),
-            CType::UInt8,
+            target,
         )
     } else if target == CType::Int32 {
         // Rust narrowing retains the low word, then reinterprets its sign.
@@ -50,6 +55,19 @@ fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
     } else {
         c_cast(value, target)
     }
+}
+fn integer_from(value: CExpression, source: &Type, target: &Type) -> Result<CExpression, String> {
+    let width = |t: &Type| match t {
+        Type::U8 => Some(8),
+        Type::U16 => Some(16),
+        Type::U32 => Some(32),
+        Type::Usize => Some(64),
+        _ => None,
+    };
+    if !matches!((width(source), width(target)), (Some(a), Some(b)) if a <= b) {
+        return Err("integer From requires a supported lossless unsigned conversion".into());
+    }
+    Ok(c_cast(value, scalar_type(target)?.to_kernel_type()))
 }
 pub(crate) fn lower(export: &RustExport) -> Result<LoweredRust, String> {
     let mut layouts = BTreeMap::new();
@@ -124,7 +142,7 @@ fn lower_function(
 ) -> Result<C0Function, String> {
     if !matches!(
         f.return_type,
-        Type::I32 | Type::U8 | Type::U32 | Type::Usize | Type::Bool | Type::Unit
+        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Usize | Type::Bool | Type::Unit
     ) {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
@@ -418,7 +436,9 @@ impl Context<'_> {
                         | E::Boolean { .. }
                         | E::Local { .. }
                         | E::SliceLength { .. } => true,
-                        E::Not { value } | E::Cast { value, .. } => simple_guard(value),
+                        E::Not { value } | E::Cast { value, .. } | E::IntegerFrom { value, .. } => {
+                            simple_guard(value)
+                        }
                         E::Binary {
                             operator,
                             left,
@@ -938,22 +958,24 @@ impl Context<'_> {
                         );
                     }
                 }
-                if matches!(left_type, Type::U8 | Type::U32) {
+                if matches!(left_type, Type::U8 | Type::U16 | Type::U32) {
                     let l = c_cast(c_variable(&left_name), CType::UInt32);
                     let r = c_cast(c_variable(&right_name), CType::UInt32);
-                    let max = c_uint32_literal(if *left_type == Type::U8 {
-                        255
-                    } else {
-                        u32::MAX
-                    });
+                    let width = match left_type {
+                        Type::U8 => 8,
+                        Type::U16 => 16,
+                        _ => 32,
+                    };
+                    let maximum = match left_type {
+                        Type::U8 => 255,
+                        Type::U16 => 65535,
+                        _ => u32::MAX,
+                    };
+                    let max = c_uint32_literal(maximum);
                     let obligation = match operator.as_str() {
                         "add" => Some(c_less_equal(
                             c_add(c_cast(l, CType::Int64), c_cast(r, CType::Int64)),
-                            c_int64_literal(if *left_type == Type::U8 {
-                                255
-                            } else {
-                                u32::MAX as i64
-                            }),
+                            c_int64_literal(maximum as i64),
                         )),
                         "sub" => Some(c_greater_equal(l, r)),
                         "mul" => Some(c_or(
@@ -961,15 +983,9 @@ impl Context<'_> {
                             c_less_equal(l, c_divide(max, r)),
                         )),
                         "shl" | "shr" => Some(if *right_type == Type::Usize {
-                            c_less_than(
-                                c_variable(&right_name),
-                                c_uint64_literal(if *left_type == Type::U8 { 8 } else { 32 }),
-                            )
+                            c_less_than(c_variable(&right_name), c_uint64_literal(width))
                         } else {
-                            c_less_than(
-                                r,
-                                c_uint32_literal(if *left_type == Type::U8 { 8 } else { 32 }),
-                            )
+                            c_less_than(r, c_uint32_literal(width as u32))
                         }),
                         _ => None,
                     };
@@ -989,7 +1005,10 @@ impl Context<'_> {
                 };
                 Ok((prefix, self.expr(&expression)?))
             }
-            E::Not { value } | E::BitwiseNot { value, .. } | E::Cast { value, .. } => {
+            E::Not { value }
+            | E::BitwiseNot { value, .. }
+            | E::Cast { value, .. }
+            | E::IntegerFrom { value, .. } => {
                 let (prefix, value) = self.prepared_expr(value)?;
                 let value = match e {
                     E::Not { .. } => c_not(value),
@@ -1000,6 +1019,11 @@ impl Context<'_> {
                     E::Cast { value_type, .. } => {
                         rust_scalar_cast(value, scalar_type(value_type)?.to_kernel_type())
                     }
+                    E::IntegerFrom {
+                        source_type,
+                        value_type,
+                        ..
+                    } => integer_from(value, source_type, value_type)?,
                     _ => unreachable!(),
                 };
                 Ok((prefix, value))
@@ -1162,10 +1186,24 @@ impl Context<'_> {
                 Type::U8 => Ok(c_uint8_literal(
                     u8::try_from(*value).map_err(|_| "Rust u8 literal out of range")?,
                 )),
+                Type::U16 => Ok(c_cast(
+                    c_int32_literal(
+                        u16::try_from(*value).map_err(|_| "Rust u16 literal out of range")? as u32,
+                    ),
+                    CType::UInt16,
+                )),
                 Type::U32 => Ok(c_uint32_literal(*value)),
                 _ => Err("unsigned literal needs an unsigned Rust type".into()),
             },
             E::Boolean { value } => Ok(c_int32_literal(u32::from(*value))),
+            E::IntegerFrom {
+                value,
+                source_type,
+                value_type,
+            } => {
+                let value = self.expr(value)?;
+                integer_from(value, source_type, value_type)
+            }
             E::Local { name } => {
                 if !self.locals.contains(name) {
                     return Err(format!("unknown Rust local `{name}`"));
@@ -1212,19 +1250,24 @@ impl Context<'_> {
                 ..
             } => {
                 if matches!(operator.as_str(), "shl" | "shr")
-                    && !matches!(left_type, Type::U8 | Type::U32 | Type::Usize)
+                    && !matches!(left_type, Type::U8 | Type::U16 | Type::U32 | Type::Usize)
                 {
-                    return Err("Rust shifts currently require u8, u32 or usize operands".into());
+                    return Err(
+                        "Rust shifts currently require u8, u16, u32 or usize operands".into(),
+                    );
                 }
                 let mut l = self.expr(left)?;
                 let mut r = self.expr(right)?;
                 if matches!(operator.as_str(), "shl" | "shr") {
                     // The checked Rust guard has already excluded negative
                     // and oversized counts, independently of the RHS width.
-                    r = c_cast(r, CType::UInt32);
+                    // Valid Rust counts are below 64, so the narrowed count
+                    // is nonnegative even in the shared signed-word model.
+                    r = c_cast(c_cast(r, CType::UInt32), CType::Int32);
                 }
-                if *left_type == Type::U8 {
-                    // Rust does not promote u8 arithmetic to signed int32.
+                if matches!(left_type, Type::U8 | Type::U16) {
+                    // Rust narrow unsigned operations use unsigned words;
+                    // the checked result is coerced to its original width.
                     l = c_cast(l, CType::UInt32);
                 }
                 let result = match operator.as_str() {
@@ -1253,13 +1296,16 @@ impl Context<'_> {
                     "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or"
                 ) {
                     Ok(result)
-                } else if *left_type == Type::U8
+                } else if matches!(left_type, Type::U8 | Type::U16)
                     && matches!(operator.as_str(), "add" | "sub" | "mul" | "div" | "rem")
                 {
-                    // Checked byte arithmetic cannot discard bits. Its range
-                    // obligation permits an exact byte coercion; only casts,
+                    // Checked narrow arithmetic cannot discard bits. Its range
+                    // obligation permits an exact coercion; only casts,
                     // bitwise results and shifts need explicit truncation.
-                    Ok(c_cast(c_cast(result, CType::Int32), CType::UInt8))
+                    Ok(c_cast(
+                        c_cast(result, CType::Int32),
+                        scalar_type(left_type)?.to_kernel_type(),
+                    ))
                 } else {
                     Ok(rust_scalar_cast(
                         result,

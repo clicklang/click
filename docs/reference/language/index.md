@@ -2641,9 +2641,9 @@ spelling is unaffected. Explicit ranges such as
 Surface Click also has documented low-level memory reads for addresses that do
 not have a recoverable C source place:
 
-- `load_int32(pointer)` and `load_uint8(pointer)`
+- `load_int32(pointer)`, `load_uint8(pointer)`, and `load_uint16(pointer)`
 - `load_uint32(pointer)`, `load_int64(pointer)`, and `load_uint64(pointer)`
-- `load_int32_pointer(pointer)` and `load_uint8_pointer(pointer)`
+- `load_int32_pointer(pointer)`, `load_uint8_pointer(pointer)`, and `load_uint16_pointer(pointer)`
 - `byte_offset(pointer, bytes)`
 
 `address(pointer)` is the `uint64` integer representation of an object pointer

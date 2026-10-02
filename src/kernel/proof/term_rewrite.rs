@@ -3582,6 +3582,18 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
+        if let Some(guards) = result.nonnegative_division_bound_guards() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return ConditionTerm::Constant(true);
+            }
+        }
         if self.checked_work_exhausted() {
             ConditionTerm::Constant(false)
         } else if self.equality_graph.is_some_and(|graph| match &result {
