@@ -613,7 +613,8 @@ The gate pins the first rejection on each route:
   `'\001'` at `printk.h:21`; the artifact has no lexical rejection now.
 
 The inventory below was measured at the commit that accepted the kernel's
-`inline` attributes and unnamed prototype parameters, with
+`inline` attributes and unnamed prototype parameters, and its closure table
+again at the commit that accepted `static` non-inline functions, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
@@ -661,8 +662,7 @@ them and they are outside the claim. The other ten are:
 | `__rb_erase_augmented` | `conditional operator branches have incompatible types` | `rbtree_augmented.h:247` |
 | `__rb_insert` | the `compiletime_assert` declaration | `lib/rbtree.c:155` |
 | `____rb_erase_color` | the `compiletime_assert` declaration | `lib/rbtree.c:253` |
-| `rb_next`, `rb_prev` | `cannot discard const qualification from a pointer initializer` | `lib/rbtree.c:507`, `:539` |
-| `rb_left_deepest_node` | static non-inline function | `lib/rbtree.c:592` |
+| `rb_next`, `rb_prev`, `rb_left_deepest_node` | `cannot discard const qualification from a pointer initializer`, at `return (struct rb_node *)node;` with `node` a `const struct rb_node *` | `lib/rbtree.c:507`, `:539`, `:600` |
 | `rb_next_postorder`, `rb_first_postorder` | `expected a pointer to struct rb_node` | `lib/rbtree.c:615`, `:628` |
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as

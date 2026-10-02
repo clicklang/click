@@ -7655,6 +7655,44 @@ impl Parser {
         Ok(())
     }
 
+    /// Whether the `static` declaration at the cursor declares a function:
+    /// its first parenthesis outside an attribute directly follows the
+    /// declared name. `static int (*callback)(int);` declares an object, and
+    /// so does anything that reaches `=`, `[`, `;`, or `{` first.
+    fn static_function_declarator_ahead(&self) -> bool {
+        let mut offset = 1;
+        loop {
+            match self.peek_n(offset) {
+                Some(Token::Ident(name)) if name == "__attribute__" => {
+                    offset += 1;
+                    let mut depth = 0usize;
+                    loop {
+                        match self.peek_n(offset) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth = depth.saturating_sub(1);
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            None => return false,
+                            _ => {}
+                        }
+                        offset += 1;
+                    }
+                }
+                Some(Token::LParen) => {
+                    return matches!(self.peek_n(offset - 1), Some(Token::Ident(_)))
+                        && !self.is_type_start_at(offset - 1)
+                        && self.peek_n(offset + 1) != Some(&Token::Star);
+                }
+                Some(Token::Ident(_) | Token::Star) => {}
+                _ => return false,
+            }
+            offset += 1;
+        }
+    }
+
     fn file_static_kernel_name(&self, source_name: &str) -> String {
         format!(
             "{source_name}#file-static:{}",
@@ -8081,11 +8119,6 @@ impl Parser {
                     "inline function definitions require `static inline` or `static __always_inline` in this slice",
                 ));
             }
-            if is_static && !is_inline {
-                return Err(self.error_here(
-                    "file-scope static functions require `static inline` or `static __always_inline` in this slice",
-                ));
-            }
             if has_always_inline_attribute && !is_static {
                 return Err(self.error_here(format!(
                     "the GNU {} attribute requires `static inline` or `static __always_inline`",
@@ -8100,13 +8133,17 @@ impl Parser {
                         .unwrap_or_else(|| "end of input".to_string())
                 )));
             }
-            let mut header = self.parse_function_header(is_static && is_inline)?;
+            // A `static` function has internal linkage whether or not it is
+            // also `inline`; the two differ only in an optimization hint.
+            let mut header = self.parse_function_header(is_static)?;
             self.consume_function_asm_label(&mut header)?;
             let (has_trailing_always_inline_attribute, suffix_weak, suffix_returns_twice) =
                 self.consume_function_attributes()?;
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
-            if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
+            if (has_always_inline_attribute || has_trailing_always_inline_attribute)
+                && !(is_static && is_inline)
+            {
                 return Err(self.error_here(format!(
                     "the GNU {} attribute requires `static inline` or `static __always_inline`",
                     self.static_inline_attribute
@@ -8781,6 +8818,9 @@ impl Parser {
             {
                 break;
             } else if self.peek_ident() == Some("static") {
+                if !self.header_mode && self.static_function_declarator_ahead() {
+                    break;
+                }
                 self.parse_global_declaration()?;
             } else if self.peek_ident() == Some("typedef") {
                 self.parse_typedef_declaration()?;
