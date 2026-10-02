@@ -606,7 +606,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 return Err("`rewrite` algebraic equality does not occur in this goal".to_string());
             }
         };
-        if rewrite.unsupported_integer_scope || rewrite.integer_work_exhausted {
+        if rewrite.refusal().is_some() {
             // A refused scope or exhausted work leaves placeholders in the
             // walker's result; it is not a rewritten goal.
             return Err(
@@ -1570,7 +1570,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // term: keeping it replaced an unfolded `match` by `0` and
                 // let `rewrite` close false goals. Declining an occurrence is
                 // always a sound substitution, so the term stays as it was.
-                if rewrite.unsupported_integer_scope || rewrite.integer_work_exhausted {
+                if rewrite.refusal().is_some() {
                     term.clone()
                 } else {
                     rewritten
