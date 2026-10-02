@@ -571,7 +571,9 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("premise 0: old(st.total) < 100 => old(st.total) < 100;"),
+        claim.contains(
+            "premise 0: at(function.entry, st.total < 100) => at(function.entry, st.total < 100);"
+        ),
         "{expanded}"
     );
     assert!(

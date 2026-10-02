@@ -338,6 +338,23 @@ impl PureFactContext {
         if let Some((left, right, operator)) = wide_comparison {
             let left_constant = self.wide_constant_from_equalities(left);
             let right_constant = self.wide_constant_from_equalities(right);
+            // A constant outside the queried operand's signed interval cannot
+            // have the same bits. Consult only that operand's indexed facts;
+            // do not clone pointer or memory terms to try extra comparisons.
+            if operator == 8 {
+                let bounded = match (left_constant, right_constant) {
+                    (None, Some(value)) => self
+                        .int64_interval(left)
+                        .map(|bounds| (bounds, value as i64)),
+                    (Some(value), None) => self
+                        .int64_interval(right)
+                        .map(|bounds| (bounds, value as i64)),
+                    _ => None,
+                };
+                if bounded.is_some_and(|((lower, upper), value)| value < lower || value > upper) {
+                    return Some(false);
+                }
+            }
             if let (Some(left), Some(right)) = (left_constant, right_constant) {
                 return Some(match operator {
                     0 => (left as i64) < (right as i64),
@@ -1157,6 +1174,36 @@ impl PureFactContext {
             let mut value = match term {
                 Bitvector32Term::UInt64Constant(value) => Some(*value),
                 Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                Bitvector32Term::Int64Add(left, right)
+                | Bitvector32Term::Int64Subtract(left, right)
+                | Bitvector32Term::Int64Multiply(left, right)
+                | Bitvector32Term::Int64Divide(left, right)
+                | Bitvector32Term::Int64Remainder(left, right) => {
+                    evaluate(context, left, active, memo)
+                        .zip(evaluate(context, right, active, memo))
+                        .and_then(|(a, b)| {
+                            let (a, b) = (a as i64, b as i64);
+                            match term {
+                                Bitvector32Term::Int64Add(..) => a.checked_add(b),
+                                Bitvector32Term::Int64Subtract(..) => a.checked_sub(b),
+                                Bitvector32Term::Int64Multiply(..) => a.checked_mul(b),
+                                Bitvector32Term::Int64Divide(..) => a.checked_div(b),
+                                _ => a.checked_rem(b),
+                            }
+                            .map(|value| value as u64)
+                        })
+                }
+                Bitvector32Term::Int64From32(inner) | Bitvector32Term::Int64FromUInt32(inner) => {
+                    context
+                        .known_signed_constant_after_normalization(inner)
+                        .map(|a| {
+                            if matches!(term, Bitvector32Term::Int64From32(..)) {
+                                a as i32 as i64 as u64
+                            } else {
+                                u64::from(a as u32)
+                            }
+                        })
+                }
                 Bitvector32Term::UInt64Add(left, right) => evaluate(context, left, active, memo)
                     .zip(evaluate(context, right, active, memo))
                     .map(|(a, b)| a.wrapping_add(b)),

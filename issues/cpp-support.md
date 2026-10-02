@@ -37,6 +37,25 @@ authority, and missing overflow bounds. Artifact tests reject receiver
 qualification mismatches, const writes, const-to-mutable calls, and mixed-width
 addition. The existing Bitcoin archive and project flags remain unchanged.
 
+The arithmetic prerequisite also delivers signed scalar parameters/returns,
+64-bit locals and modular captures, checked signed `+`, `-`, `*`, `/`, `%`,
+negation and comparisons, explicit promotions, C++20 signed narrowing, and
+integer-to-Boolean conversion. Unchanged upstream `operator-=` is verified
+for distinct objects under half-range bounds and for self-aliasing across the
+entire signed range. A modular source caller frames unrelated memory.
+
+The `signed-arithmetic` fixture preserves Bitcoin's quotient/remainder
+correction expression with a signed 64-bit dividend and checks fourteen
+concrete rounding/boundary cases, both directions and signs, exact division,
+and signed extrema. It proves general quotient/remainder contracts and checks
+expansion, retained audit, hostile claims, zero divisors, and signed overflow.
+The shared kernel now discharges positive-divisor guards and bounded signed
+64-bit multiplication, folds signed wide arithmetic through indexed equalities,
+and handles self-subtraction. Regressions cover lazy evaluation of undefined
+constant division and fixed query work across unrelated fact populations.
+These arithmetic prerequisites do not prove the general rounding theorem or
+the upstream `__int128` path. The next milestone below remains open.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution

@@ -238,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 21;
+    artifact["schema"] = 22;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -341,7 +341,8 @@ private:
     } else {
       return_type =
           lower_type(declaration->getReturnType(),
-                     declaration->getReturnTypeSourceRange().getBegin());
+                     declaration->getReturnTypeSourceRange().getBegin(),
+                     direct_source_alias(declaration->getTypeSourceInfo()));
       if (!return_type) {
         return std::nullopt;
       }
@@ -484,15 +485,21 @@ private:
         !pointer->getPointeeType().hasQualifiers() &&
         context_.hasSameType(pointer->getPointeeType().getUnqualifiedType(),
                              context_.IntTy);
+    const bool by_value_integer =
+        !parameter->getType().hasQualifiers() &&
+        parameter->getType()->isSignedIntegerType() &&
+        (context_.getTypeSize(parameter->getType()) == 32 ||
+         context_.getTypeSize(parameter->getType()) == 64);
     const bool by_value_bool =
         reference == nullptr &&
         context_.hasSameType(parameter->getType().getUnqualifiedType(),
                              context_.BoolTy) &&
         !parameter->getType().isConstQualified();
-    if (!int_reference && record_reference == nullptr &&
-        !mutable_int_pointer && !by_value_bool) {
+    if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
+        !by_value_bool && !by_value_integer) {
       fail(parameter->getLocation(),
-           "the supported C++ parameter must be a by-value bool, int&, const "
+           "the supported C++ parameter must be a by-value bool or signed "
+           "32/64-bit integer, int&, const "
            "int&, const signed-64 reference, or mutable int* parameter, or a "
            "mutable or const simple-record reference parameter");
       return std::nullopt;
@@ -701,7 +708,8 @@ private:
     }
     if (const auto *binary = llvm::dyn_cast<clang::BinaryOperator>(statement)) {
       if (binary->getOpcode() != clang::BO_Assign &&
-          binary->getOpcode() != clang::BO_AddAssign) {
+          binary->getOpcode() != clang::BO_AddAssign &&
+          binary->getOpcode() != clang::BO_SubAssign) {
         fail(binary->getOperatorLoc(),
              "the first C++ slice supports only simple assignment statements");
         return std::nullopt;
@@ -712,7 +720,8 @@ private:
       }
       llvm::json::Object result;
       const clang::Expr *left = binary->getLHS()->IgnoreParens();
-      if (binary->getOpcode() == clang::BO_AddAssign) {
+      if (binary->getOpcode() == clang::BO_AddAssign ||
+          binary->getOpcode() == clang::BO_SubAssign) {
         const auto *compound =
             llvm::cast<clang::CompoundAssignOperator>(binary);
         const auto *member = llvm::dyn_cast<clang::MemberExpr>(left);
@@ -724,9 +733,9 @@ private:
             !context_.hasSameType(binary->getRHS()->getType(),
                                   left->getType()) ||
             !left->getType()->isSignedIntegerType()) {
-          fail(binary->getOperatorLoc(),
-               "supported C++ += requires a direct signed integer field and "
-               "same-width operands");
+          fail(binary->getOperatorLoc(), "supported C++ += and -= require a "
+                                         "direct signed integer field and "
+                                         "same-width operands");
           return std::nullopt;
         }
         auto loaded = lower_member(member, function);
@@ -742,7 +751,8 @@ private:
         load["span"] = span(left->getSourceRange());
         llvm::json::Object sum;
         sum["kind"] = "binary";
-        sum["operator"] = "add";
+        sum["operator"] =
+            binary->getOpcode() == clang::BO_AddAssign ? "add" : "subtract";
         sum["left"] = std::move(load);
         sum["right"] = std::move(*value);
         sum["value_type"] = std::move(*sum_type);
@@ -993,10 +1003,10 @@ private:
            "the supported C++ local must have automatic storage");
       return std::nullopt;
     }
-    const bool mutable_int =
-        context_.hasSameType(local->getType().getUnqualifiedType(),
-                             context_.IntTy) &&
-        !local->getType().isConstQualified();
+    const bool mutable_int = local->getType()->isSignedIntegerType() &&
+                             (context_.getTypeSize(local->getType()) == 32 ||
+                              context_.getTypeSize(local->getType()) == 64) &&
+                             !local->getType().hasQualifiers();
     const auto *record_type = local->getType()->getAs<clang::RecordType>();
     const auto *record =
         record_type == nullptr
@@ -1014,7 +1024,8 @@ private:
     }
     if (!mutable_int && !record_object) {
       fail(local->getLocation(),
-           "the supported automatic C++ local must resolve to mutable int or one simple record object");
+           "the supported automatic C++ local must resolve to mutable signed "
+           "32/64-bit integer or one simple record object");
       return std::nullopt;
     }
     if (!local->hasInit()) {
@@ -1163,6 +1174,13 @@ private:
       initializer["span"] = span(source_initializer->getSourceRange());
     } else if (const auto *call =
             llvm::dyn_cast<clang::CallExpr>(semantic_initializer)) {
+      if (call->getDirectCallee() == nullptr ||
+          !context_.hasSameType(call->getDirectCallee()->getReturnType(),
+                                local->getType())) {
+        fail(call->getExprLoc(),
+             "C++ call capture requires matching return and local types");
+        return std::nullopt;
+      }
       auto lowered = lower_call_operation(call, function);
       if (!lowered) {
         return std::nullopt;
@@ -1479,9 +1497,11 @@ private:
       result["value"] = std::move(*value);
       return Json(std::move(result));
     }
-    if (context_.hasSameType(parameter->getType().getUnqualifiedType(),
-                             context_.BoolTy) &&
-        !parameter->getType().isConstQualified()) {
+    if (!parameter->getType().hasQualifiers() &&
+        (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
+         (parameter->getType()->isSignedIntegerType() &&
+          (context_.getTypeSize(parameter->getType()) == 32 ||
+           context_.getTypeSize(parameter->getType()) == 64)))) {
       auto value = lower_expression(argument, caller);
       if (!value) {
         return std::nullopt;
@@ -1627,7 +1647,7 @@ private:
     auto value_type =
         lower_type(constant->getType(), constant->getLocation(),
                    direct_source_alias(constant->getTypeSourceInfo()));
-    auto lowered_initializer = lower_expression(initializer, function, true);
+    auto lowered_initializer = lower_expression(initializer, function);
     const clang::APValue *evaluated = constant->evaluateValue();
     if (!value_type || !lowered_initializer || evaluated == nullptr ||
         !evaluated->isInt()) {
@@ -1680,8 +1700,7 @@ private:
   }
 
   std::optional<Json> lower_expression(const clang::Expr *expression,
-                                       const clang::FunctionDecl *function,
-                                       bool allow_constant_multiply = false) {
+                                       const clang::FunctionDecl *function) {
     if (const auto *throw_expression =
             llvm::dyn_cast<clang::CXXThrowExpr>(expression)) {
       fail(throw_expression->getThrowLoc(),
@@ -1692,14 +1711,64 @@ private:
     }
     if (const auto *parentheses =
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
-      return lower_expression(parentheses->getSubExpr(), function,
-                              allow_constant_multiply);
+      return lower_expression(parentheses->getSubExpr(), function);
+    }
+    if (const auto *cast =
+            llvm::dyn_cast<clang::ExplicitCastExpr>(expression)) {
+      if (cast->getCastKind() == clang::CK_NoOp &&
+          context_.hasSameType(cast->getType(),
+                               cast->getSubExpr()->getType()) &&
+          (cast->getType()->isBooleanType() ||
+           (cast->getType()->isSignedIntegerType() &&
+            (context_.getTypeSize(cast->getType()) == 32 ||
+             context_.getTypeSize(cast->getType()) == 64)))) {
+        return lower_expression(cast->getSubExpr(), function);
+      }
+      if (cast->getCastKind() != clang::CK_IntegralCast &&
+          cast->getCastKind() != clang::CK_IntegralToBoolean &&
+          cast->getCastKind() != clang::CK_BooleanToSignedIntegral) {
+        fail(cast->getExprLoc(), "unsupported explicit C++ conversion");
+        return std::nullopt;
+      }
+      auto value = lower_expression(cast->getSubExpr(), function);
+      auto value_type = lower_type(cast->getType(), cast->getExprLoc());
+      if (!value || !value_type)
+        return std::nullopt;
+      llvm::json::Object result;
+      result["kind"] = "integral_cast";
+      result["value"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(cast->getSourceRange());
+      return Json(std::move(result));
+    }
+    if (const auto *unary = llvm::dyn_cast<clang::UnaryOperator>(expression);
+        unary != nullptr && unary->getOpcode() == clang::UO_Minus) {
+      auto value = lower_expression(unary->getSubExpr(), function);
+      auto value_type = lower_type(unary->getType(), unary->getExprLoc());
+      auto zero_type = lower_type(unary->getType(), unary->getExprLoc());
+      if (!value || !value_type || !zero_type ||
+          !unary->getType()->isSignedIntegerType())
+        return std::nullopt;
+      llvm::json::Object zero;
+      zero["kind"] = "integer_literal";
+      zero["value"] = "0";
+      zero["value_type"] = std::move(*zero_type);
+      zero["span"] = span(unary->getSourceRange());
+      llvm::json::Object result;
+      result["kind"] = "binary";
+      result["operator"] = "subtract";
+      result["left"] = std::move(zero);
+      result["right"] = std::move(*value);
+      result["value_type"] = std::move(*value_type);
+      result["span"] = span(unary->getSourceRange());
+      return Json(std::move(result));
     }
     if (const auto *cast =
             llvm::dyn_cast<clang::ImplicitCastExpr>(expression)) {
-      if (cast->getCastKind() == clang::CK_IntegralCast) {
-        auto value = lower_expression(cast->getSubExpr(), function,
-                                      allow_constant_multiply);
+      if (cast->getCastKind() == clang::CK_IntegralCast ||
+          cast->getCastKind() == clang::CK_IntegralToBoolean ||
+          cast->getCastKind() == clang::CK_BooleanToSignedIntegral) {
+        auto value = lower_expression(cast->getSubExpr(), function);
         auto value_type = lower_type(cast->getType(), cast->getExprLoc());
         if (!value || !value_type) {
           return std::nullopt;
@@ -1740,8 +1809,7 @@ private:
       } else if (const auto *dereference =
               llvm::dyn_cast<clang::UnaryOperator>(source);
           dereference != nullptr && dereference->getOpcode() == clang::UO_Deref) {
-        auto pointer = lower_expression(dereference->getSubExpr(), function,
-                                        allow_constant_multiply);
+        auto pointer = lower_expression(dereference->getSubExpr(), function);
         if (!pointer) {
           return std::nullopt;
         }
@@ -1811,41 +1879,38 @@ private:
     if (const auto *binary =
             llvm::dyn_cast<clang::BinaryOperator>(expression)) {
       if (binary->getOpcode() != clang::BO_Add &&
+          binary->getOpcode() != clang::BO_Sub &&
+          binary->getOpcode() != clang::BO_Div &&
+          binary->getOpcode() != clang::BO_Rem &&
+          binary->getOpcode() != clang::BO_LT &&
+          binary->getOpcode() != clang::BO_GT &&
           binary->getOpcode() != clang::BO_EQ &&
           binary->getOpcode() != clang::BO_Mul &&
           binary->getOpcode() != clang::BO_LE &&
           binary->getOpcode() != clang::BO_GE &&
           binary->getOpcode() != clang::BO_LAnd) {
         fail(binary->getOperatorLoc(),
-             "unsupported binary operator; this C++ slice supports same-width "
-             "signed addition and equality, checked constant multiplication, "
-             "signed 64-bit <= and >=, and built-in bool && bool only");
+             "unsupported binary operator; this C++ slice supports signed "
+             "32/64-bit arithmetic (+, -, *, /, %), same-width signed "
+             "comparisons, and built-in bool && bool only");
         return std::nullopt;
       }
-      if (binary->getOpcode() == clang::BO_Mul && !allow_constant_multiply) {
-        fail(binary->getOperatorLoc(),
-             "C++ multiplication is supported only in a checked constant initializer");
-        return std::nullopt;
+      if (binary->getOpcode() == clang::BO_Add ||
+          binary->getOpcode() == clang::BO_Sub ||
+          binary->getOpcode() == clang::BO_Mul ||
+          binary->getOpcode() == clang::BO_Div ||
+          binary->getOpcode() == clang::BO_Rem) {
+        if (!binary->getType()->isSignedIntegerType() ||
+            (context_.getTypeSize(binary->getType()) != 32 &&
+             context_.getTypeSize(binary->getType()) != 64)) {
+          fail(binary->getOperatorLoc(),
+               "C++ arithmetic requires signed 32/64-bit operands; pointer "
+               "arithmetic is unsupported");
+          return std::nullopt;
+        }
       }
-      if (binary->getOpcode() == clang::BO_Add &&
-          !(binary->getType()->isSignedIntegerType() &&
-            (context_.getTypeSize(binary->getType()) == 32 ||
-             context_.getTypeSize(binary->getType()) == 64))) {
-        fail(binary->getOperatorLoc(),
-             "the supported C++ slice does not include pointer arithmetic");
-        return std::nullopt;
-      }
-      if (binary->getOpcode() == clang::BO_Mul &&
-          (!binary->getType()->isSignedIntegerType() ||
-           context_.getTypeSize(binary->getType()) != 64)) {
-        fail(binary->getOperatorLoc(),
-             "supported C++ constant multiplication must produce signed 64-bit");
-        return std::nullopt;
-      }
-      auto left = lower_expression(binary->getLHS(), function,
-                                   allow_constant_multiply);
-      auto right = lower_expression(binary->getRHS(), function,
-                                    allow_constant_multiply);
+      auto left = lower_expression(binary->getLHS(), function);
+      auto right = lower_expression(binary->getRHS(), function);
       auto value_type = lower_type(binary->getType(), binary->getExprLoc());
       if (!left || !right || !value_type) {
         return std::nullopt;
@@ -1854,6 +1919,16 @@ private:
       result["kind"] = "binary";
       if (binary->getOpcode() == clang::BO_Add) {
         result["operator"] = "add";
+      } else if (binary->getOpcode() == clang::BO_Sub) {
+        result["operator"] = "subtract";
+      } else if (binary->getOpcode() == clang::BO_Div) {
+        result["operator"] = "divide";
+      } else if (binary->getOpcode() == clang::BO_Rem) {
+        result["operator"] = "remainder";
+      } else if (binary->getOpcode() == clang::BO_LT) {
+        result["operator"] = "less_than";
+      } else if (binary->getOpcode() == clang::BO_GT) {
+        result["operator"] = "greater_than";
       } else if (binary->getOpcode() == clang::BO_EQ) {
         result["operator"] = "equal";
       } else if (binary->getOpcode() == clang::BO_Mul) {
@@ -2272,12 +2347,15 @@ private:
   std::string method_name(const clang::CXXMethodDecl *method) {
     std::string name = method->getNameAsString();
     if (method->isOverloadedOperator()) {
-      if (method->getOverloadedOperator() != clang::OO_PlusEqual) {
-        fail(method->getLocation(),
-             "the supported C++ operator method is operator+= only");
+      if (method->getOverloadedOperator() != clang::OO_PlusEqual &&
+          method->getOverloadedOperator() != clang::OO_MinusEqual) {
+        fail(method->getLocation(), "the supported C++ operator methods are "
+                                    "operator+= and operator-= only");
         return {};
       }
-      name = "operator_add_assign";
+      name = method->getOverloadedOperator() == clang::OO_PlusEqual
+                 ? "operator_add_assign"
+                 : "operator_subtract_assign";
     }
     return method->getParent()->getNameAsString() + "_" + name;
   }

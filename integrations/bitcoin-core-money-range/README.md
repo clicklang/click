@@ -138,12 +138,12 @@ Linux binary verification.
 ## FeeFrac value methods
 
 The same unchanged input closure and real `feerate.cpp` compilation command
-also select `FeeFrac::IsEmpty()` and `FeeFrac::operator+=` from
+also select `FeeFrac::IsEmpty()`, `FeeFrac::operator+=`, and `FeeFrac::operator-=` from
 `src/util/feefrac.h`. Its SHA-256 is
 `213a97d13eb82b34831466febcff24f4c20879603f36fc6edd894b89000f7ab9`.
 No Bitcoin source, archive contents, or compiler flags were changed for these
 proofs. The gate checks the existing archive digest, header digest, and the
-320-file Clang inventory before verifying all three sidecars:
+320-file Clang inventory before verifying all five sidecars:
 
 - `FeeFracIsEmpty.click` proves the result is exactly `size == 0`, preserving
   both fields, without requiring the application's fee/size invariant.
@@ -152,6 +152,10 @@ proofs. The gate checks the existing archive digest, header digest, and the
   half its signed range, sufficient to keep both sums defined.
 - `FeeFracAddSelf.click` proves the alias case `self == other`, owning each
   field once and doubling it under the same half-range bounds.
+- `FeeFracSubtract.click` proves exact subtraction for distinct owned objects
+  and preserves the other object's fields, under the half-range input bounds.
+- `FeeFracSubtractSelf.click` proves both fields become zero for `self == other`
+  over their entire signed ranges, owning each field once without range bounds.
 
 After the full-checkout setup above, lock and verify each of these sidecars
 with the same commands used for `MoneyRange`. Their adjacent import configs
@@ -171,3 +175,12 @@ const-to-mutable argument conversion independently of Clang's source checks.
 
 These are bounded value-method proofs, not verification of all `FeeFrac`, fee
 rounding, `CFeeRate`, or Bitcoin Core.
+
+The [subtraction caller fixture](../../tests/fixtures/cpp-verification/subtract-methods/)
+checks that self-subtraction preserves unrelated caller memory. The
+[signed arithmetic fixtures](../../tests/fixtures/cpp-verification/signed-arithmetic/)
+check quotient/remainder contracts, overflow and zero-divisor rejection, C++20
+signed narrowing and Boolean conversion, and Bitcoin's correction expression
+for concrete rounding cases with a signed 64-bit dividend. They do not prove
+upstream `FeeFrac::Div` or `EvaluateFeeDown/Up`: this pinned compiler profile
+uses `__int128` for the former and a templated unsigned fast path for the latter.
