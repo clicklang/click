@@ -854,6 +854,8 @@ impl CreationEvents {
         &self,
         description: &ResourceDescription,
     ) -> Option<(bool, Bitvector32Term)> {
+        // Retirement preserves authenticated transition accounting. Reporting
+        // the spent batch here grants no live count read or member custody.
         let scope = self.governing_authority(description)?;
         let import = self.0.opaque_imports.get(&scope)?;
         if let Some(member) = import
@@ -871,7 +873,6 @@ impl CreationEvents {
         if (scope.population_arity().is_some()
             && import.wildcard_member.as_ref() != Some(description))
             || (scope.population_arity().is_none() && import.description != *description)
-            || import.retired_authority
             || import.authority_holder != self.0.opaque_actor
         {
             return None;
@@ -2808,13 +2809,14 @@ impl CreationEvents {
         Ok((after, evidence))
     }
 
-    /// Retire only after spending the local unit and independently proving
-    /// that its authenticated arbitrary global entry count was exactly one.
-    pub(in crate::kernel) fn checked_retire_imported(
+    /// Require both exhausted member custody and a proof that the current
+    /// authenticated global count is zero. Local exhaustion alone never
+    /// establishes that no other members exist.
+    pub(in crate::kernel) fn check_imported_retirement(
         &self,
         description: &ResourceDescription,
         assumptions: &PureFactContext,
-    ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
+    ) -> Result<(), CreationRefusal> {
         let import = self
             .0
             .opaque_imports
@@ -2823,16 +2825,46 @@ impl CreationEvents {
         if import.retired_authority || import.authority_holder != self.0.opaque_actor {
             return Err(CreationRefusal::MissingAuthority);
         }
-        if import.entry_owned_members != 1 || import.owned_members != 0 {
+        if import.owned_members != 0
+            || import
+                .symbolic_delta
+                .as_ref()
+                .map_or(import.entry_symbolic_members.is_some(), |(produce, _)| {
+                    *produce
+                })
+        {
             return Err(CreationRefusal::OutstandingMembers);
         }
-        let entry_count = import
-            .entry_count
-            .as_ref()
+        let symbolic = self
+            .observe_symbolic(description)
             .ok_or(CreationRefusal::UnknownTotal)?;
-        if !same_quantity(entry_count, &Bitvector32Term::Constant(1), assumptions) {
+        // With no remaining custody, the delta is the consumed batch (or
+        // the exhausted numeric inputs). Equality to that entry total is a
+        // direct zero proof; an explicit current-count-zero fact also works.
+        let consumed = symbolic
+            .symbolic_delta
+            .map(|(_, quantity)| quantity)
+            .unwrap_or(Bitvector32Term::Constant(symbolic.delta.unsigned_abs()));
+        let current = Bitvector32Term::subtract(symbolic.entry_count.clone(), consumed.clone());
+        if !same_quantity(&symbolic.entry_count, &consumed, assumptions)
+            && !same_quantity(&current, &Bitvector32Term::Constant(0), assumptions)
+        {
             return Err(CreationRefusal::UnknownTotal);
         }
+        Ok(())
+    }
+
+    pub(in crate::kernel) fn checked_retire_imported(
+        &self,
+        description: &ResourceDescription,
+        assumptions: &PureFactContext,
+    ) -> Result<(Self, CheckedPopulationAuthorityExchange), CreationRefusal> {
+        self.check_imported_retirement(description, assumptions)?;
+        let import = self
+            .0
+            .opaque_imports
+            .get(description)
+            .expect("checked import");
         let after = Self(Arc::new(Root {
             identity: fresh_identity(),
             entry_call: OnceLock::new(),

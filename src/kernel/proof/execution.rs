@@ -473,35 +473,11 @@ fn checks_population_authority_exchange(
             .population_effects
             .creation
             .as_ref()
-            .is_some_and(|events| {
-                events
-                    .observe_symbolic(description)
-                    .is_some_and(|symbolic| {
-                        symbolic.entry_owned_members == 1
-                            && symbolic.delta == -1
-                            && crate::kernel::quantity_condition_holds(
-                                assumptions,
-                                crate::kernel::ConditionTerm::Bitvector32Equal(
-                                    Box::new(symbolic.entry_count),
-                                    Box::new(crate::kernel::Bitvector32Term::Constant(1)),
-                                ),
-                            )
-                    })
-            });
-    if !establish
-        && anchor.block == crate::kernel::PointerBlock::ExternalArgument
-        && before
-            .population_effects
-            .creation
-            .as_ref()
-            .is_some_and(|events| events.observe_symbolic(description).is_some())
-        && !imported_retirement
-    {
-        return Err(format!(
-            "Requires count({}(...)) == 1 and consumes {}(...) before authority retirement",
-            description.family(),
-            description.family(),
-        ));
+            .is_some_and(|events| events.recognizes_imported_population(description));
+    if imported_retirement {
+        before.population_effects.creation.as_ref().expect("imported population")
+            .check_imported_retirement(description, assumptions)
+            .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
     }
     if !imported_retirement
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
