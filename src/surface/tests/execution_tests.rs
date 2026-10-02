@@ -1846,3 +1846,54 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
         "the continuation's `step` and `have` must be timed at their source sites: {timed:?}"
     );
 }
+
+/// `execute()` runs a symbolic `switch` on the checked `Proof` itself: the
+/// statement's arms are path cases, split on the condition that tells them
+/// apart, and no arm is handed to the planner.
+#[test]
+fn execute_splits_a_symbolic_switch_without_the_planner() {
+    let c_source = r#"
+        int32 switch_break(int32 kind) {
+            int32 result = 0;
+            switch (kind) {
+                case 0:
+                    result = 10;
+                    break;
+                case 1:
+                    result = 20;
+                    break;
+                default:
+                    result = 30;
+                    break;
+            }
+            return result;
+        }
+    "#;
+    let click_source = r#"
+        verifying "switch_break.c";
+
+        int32 switch_break(int32 kind) {
+            ensures result == 10 or result == 20 or result == 30;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    // The whole verification runs on one thread, so the counter it reads is
+    // that thread's own; the stack is sized for an unoptimized build.
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let before = crate::kernel::reasoning::path_facts::smart_planning_entries();
+            verify_c0_sources(click_source, &[("switch_break.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+            assert_eq!(
+                crate::kernel::reasoning::path_facts::smart_planning_entries() - before,
+                0,
+                "`execute()` handed a symbolic `switch` to the planner"
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
