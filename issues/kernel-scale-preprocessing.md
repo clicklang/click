@@ -564,43 +564,125 @@ compiler binary identities, and 222 concrete dependency hashes are recorded in
 Two preprocessing runs in an environment cleared to the recorded allowlist
 produced identical bytes: 637,604 bytes, 16,371 lines, 1,552 line markers, SHA-256
 `19a1f6aee08bc6b0b4e5c0f8959cf986da569547a227db2241974b5e446173e7`.
-Line-marker filenames are not the dependency inventory. The live source/build
-tree is `/tmp/click-linux-pinned`; captured output is
-`/tmp/rbtree-v6.8.12-controlled-a.i`. The evidence JSON is an investigation
+Line-marker filenames are not the dependency inventory. The source/build
+tree and captured output lived under `/tmp` on the capturing machine; the
+checked-in closure described below replaces them. The evidence JSON is an investigation
 record, not a validated importer lock or a complete toolchain distribution.
 
-The first ordinary parser rejection after decoding only structured line markers
-is `include/linux/panic.h:12`, the variadic declaration of `panic`. Further
-retained forms include `_Generic`, attributes, anonymous aggregates, and
-effectful x86 assembly. Concrete examples include `cli` in
-`arch/x86/include/asm/irqflags.h:37`, and export-generated pointer storage plus
-`.export_symbol` assembly at `lib/rbtree.c:415` (and eleven further exports).
-Neither disabling interrupts nor allocating export storage qualifies as harmless
-metadata. The actual compiler vector also includes options such as
+The first rejection Stage 0 recorded was `include/linux/panic.h:12`, the
+variadic declaration of `panic`. That came from the C tokenizer, which then
+rejected any `...` in the artifact before parsing began, so it located the
+first `...` and said nothing about the declarations before it. Body-less
+variadic prototypes are now retained as uncallable declarations
+(`docs/reference/language/c0.md`, `mdtests/c_variadic_*.md`).
+
+The actual compiler vector includes options such as
 `-ftrivial-auto-var-init=zero`, `-fshort-wchar`, and `-fno-strict-overflow` that
 require explicit target-policy review. Do not remove those options to make the
-kernel input fit the first importer profile.
+kernel input fit the first importer profile. Neither disabling interrupts
+(`cli` in `arch/x86/include/asm/irqflags.h:37`) nor allocating export storage
+qualifies as harmless metadata.
 
-Package 3 update, 2026-10-02: body-less variadic prototypes are now retained as
-declarations, so the `panic` declaration's `...` no longer rejects the import.
-Calls to a variadic function, uses of its address, variadic definitions,
-variadic function-pointer signatures, and a fixed-arity redeclaration are
-rejected with located diagnostics; no variable-argument semantics were added
-(`docs/reference/language/c0.md`; regressions `mdtests/c_variadic_*.md` and
-`imported_variadic_prototype_is_retained_without_becoming_callable`). The same
-change refuses statement-position calls to weak and returns-twice functions,
-which previously reached an `extern` contract.
+### Pinned closure and measured frontier, 2026-10-02
 
-The recorded `panic.h:12` rejection came from the C tokenizer, which rejected
-any `...` in the whole artifact before parsing began. It was therefore the
-first `...` in the artifact, not evidence that the declarations before it
-parse. The first parser rejection in the pinned artifact is not known and must
-be measured again. That measurement needs the pinned tree and capture, which
-existed only under `/tmp` on the capturing machine. The evidence JSON records
-the archive, configuration, compiler vector, and hashes, but not how the host
-build tools (kconfig's lexer and parser generators and objtool's dependencies)
-were provisioned, so the capture is not yet reproducible from this repository
-alone. The fixture-provisioning decision required after Stage 0 is still open.
+The capture was reproduced on a second machine from the release archive. The
+input closure is checked in at `integrations/linux-rbtree/` with its
+provenance, and two library tests gate it
+(`src/languages/c/linux_rbtree_tests.rs`). Preprocessing the extracted closure
+alone yields the recorded 637,604 bytes and SHA-256. Three corrections to the
+Stage 0 record:
+
+- The compilation reads 224 files, not 222. Stage 0 took its list from
+  Kbuild's dependency file, from which Kbuild removes
+  `include/generated/autoconf.h`, and it did not list `lib/rbtree.c`.
+- The reproduced `.config` does not hash to the recorded `config_sha256`. The
+  compilation does not read `.config`; the object and the preprocessed output
+  match. What Stage 0 hashed is unknown.
+- The kernel build needs `flex`, `bison`, and libelf headers on the host.
+
+The gate pins the first rejection on each route:
+
+- Import route: `click import lock` refuses the recorded arguments, first
+  `-fmacro-prefix-map=./=`. The profile accepts only `-D`, `-U`, `-I`,
+  `-isystem`, and `-include`; 83 of the recorded arguments are other options.
+  The importer also does not allowlist `HOME`.
+- C frontend, on the reproduced artifact: `./include/linux/printk.h:21`,
+  `character literals must contain exactly one byte` (the octal escape
+  `'\001'`). This is again lexical. It is the only declaration with a lexical
+  rejection, but it is not the first unsupported declaration.
+
+The inventory below was measured at the commit that added the fixture, with
+`CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
+declaration is parsed after the accepted ones before it; a rejected one is
+blanked. A declaration reports only its first rejection, and a declaration
+that needs a rejected one is rejected too, so the counts include cascades.
+
+The artifact has 2,575 file-scope declarations from 138 files. The frontend
+accepts 758 and rejects 1,817:
+
+| Count | First rejection | Notes |
+| ---: | --- | --- |
+| 1,320 | function attribute `__gnu_inline__` | first at `compiler.h:220`; the kernel's `inline` expands to `inline __attribute__((__gnu_inline__)) __attribute__((__unused__)) __attribute__((no_instrument_function))` on every inline helper |
+| 91 | unknown type name | `__signed__` 4 (first at `uapi/asm-generic/int-ll64.h:20`); the rest cascade from it and from rejected typedefs: `u64` 38, `s32` 9, `__u64` 8, `va_list`, `__builtin_va_list`, `u128`, callback typedefs |
+| 61 | unsupported file-scope object form | includes the twelve `extern typeof(fn) fn;` export redeclarations |
+| 54 | declarator form (`expected type ..., got (` or `;`) | function-pointer declarators 49, others 5 |
+| 53 | other function attributes | `__format__` 25, `section` 14, `__externally_visible__` 4, `__error__` 4, `nocf_check` 2, `__alloc_size__` 2, `__malloc__` 1, `no_instrument_function` 1 |
+| 53 | unknown or embedded struct | cascades |
+| 52 | unnamed prototype parameter | includes the eight in `rbtree.h:39`-`51` |
+| 33 | file-scope form (`expected function declaration`) | file-scope `asm(...)` 12 (the exports), `_Static_assert` 9, empty declaration 3, `__extension__` 2, `register ... asm("rsp")` 1, cascades 6 |
+| 27 | declarator tail (`expected ;` and similar) | attribute between type and declarator 13 (the export pointers), bitfields 4, array bounds with arithmetic or `sizeof` 8, others 2 |
+| 12 | function-pointer typedef name | |
+| 11 | anonymous `union` or `struct` member | first at `compiler_types.h:172`, the first unsupported declaration in the artifact |
+| 10 | undeclared identifier | cascades from rejected rbtree definitions |
+| 6 | struct attribute `packed` | |
+| 5 | empty struct | |
+| 29 | fourteen further forms, at most five each | enum parameters and returns, deeper `const`, struct arrays, function-pointer objects, const discarding, and the octal character literal |
+
+A scratch experiment that ignored every unknown function attribute, and
+landed nothing, still rejected 1,357 declarations. The next layer inside the
+inline bodies is: inline `asm` statements (70), `__builtin_constant_p` (57),
+`__builtin_bswap16`/`32` and `__builtin_mul_overflow` (8), block-scope
+function declarations with attributes from `compiletime_assert` (14), and
+aggregate, cast, and sequencing forms the checked subset rejects. Most of the
+rest are cascades from `atomic_long_t`, `atomic64_t`, and the fixed-width
+typedef chain.
+
+Most of that graph is not rbtree. A token-level estimate of the declarations
+that `lib/rbtree.c` transitively names finds 80: the 58 in `lib/rbtree.c`, 20
+in `rbtree.h`, `rbtree_augmented.h`, and `rbtree_types.h`, the `false`/`true`
+enumeration in `stddef.h`, and the `uintptr_t` typedef in
+`types.h`. The estimate is heuristic and was not checked by a compiler. Of
+those 80, 15 are accepted today. Within them the distinct rejections are:
+
+1. The `__gnu_inline__`, `__unused__`, and `no_instrument_function`
+   attributes on every inline helper.
+2. Unnamed parameters in the eight `rbtree.h` prototypes.
+3. Per export, three declarations: `extern typeof(fn) fn;`, a `static void *`
+   with `__used__` and `__section__(".discard.addressable")` initialized to
+   the function's address, and a file-scope `asm` that emits the
+   `.export_symbol` record. There are twelve exports. This needs the owner's
+   decision.
+4. Block-scope `extern void f(void)` declarations with `__noreturn__` and
+   `__error__`, from `compiletime_assert` inside `WRITE_ONCE`.
+5. `__builtin_constant_p`, from `rcu_assign_pointer`
+   (`rbtree_augmented.h:207`).
+6. `conditional operator branches have incompatible types` in
+   `__rb_erase_augmented` (`rbtree_augmented.h:223`).
+7. `cannot discard const qualification from a pointer initializer` in
+   `rb_next` and `rb_prev` (`lib/rbtree.c:507`, `:539`), and
+   `expected a pointer to struct rb_node` in the postorder functions
+   (`:615`, `:628`).
+8. The static non-inline function `rb_left_deepest_node` (`lib/rbtree.c:592`).
+
+Items 4 to 6 were seen only with the attributes ignored in the scratch
+experiment, and each declaration may hide further rejections behind its
+first. `typeof`, statement expressions, and `__builtin_expect` did not appear
+as rejections.
+
+Whether Click must model all 2,575 declarations, or may import a checked
+dependency closure of the functions it verifies, is the decision that sets
+the size of package 3. It is open, as are the export and assembly
+representation and the compiler-option policy.
 
 The earlier `/tmp/linux-6.8.12` tree and `/tmp/rbtree-6.8.12.i` combined upstream
 sources with host-generated headers and failed compiler validation. They are

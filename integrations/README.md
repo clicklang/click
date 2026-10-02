@@ -16,6 +16,12 @@ does not imply support for an entire project or build.
   configuration, source and toolchain provenance, and a hermetic gate fixture.
   It does not claim to verify other Bitcoin Core functions or a binary.
 
+## Not yet verified
+
+- [Linux v6.8.12 `lib/rbtree.c`](linux-rbtree/README.md): the pinned input
+  closure of one real compilation and a gate that pins where Click's import
+  of it stops today. It makes no verification claim.
+
 The Linux rbtree work is not yet an upstream integration: its
 [model](../examples/rbtree-model/README.md) is verified, but the
 [insert example](../examples/rbtree-insert/README.md) explicitly keeps the

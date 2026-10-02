@@ -10,4 +10,6 @@ pub mod target;
 pub mod thread_runtime;
 
 #[cfg(test)]
+mod linux_rbtree_tests;
+#[cfg(test)]
 mod tests;

@@ -95,6 +95,17 @@ provisioning Linux on every development host. The checked result includes the
 locked import identity and the runtime assumption; it does not validate a
 native pthread implementation.
 
+The pinned Linux `lib/rbtree.c` input closure in `integrations/linux-rbtree/`
+is a negative gate fixture, checked by the library tests in
+`src/languages/c/linux_rbtree_tests.rs`. The closure's archive and member
+hashes are checked on every host. Reproducing the preprocessed artifact and
+pinning the first rejection need the recorded GCC, identified by the hashes
+of its driver and `cc1`; Ubuntu 24.04's GCC 13 package is that compiler. On
+another compiler that part reports `linux-rbtree: NOT CHECKED` and passes,
+unless `CLICK_LINUX_RBTREE_REQUIRE_TOOLCHAIN=1` is set. When a C frontend
+change moves the pinned rejection, update the pin and the inventory in
+`issues/kernel-scale-preprocessing.md` in the same change.
+
 The Linux fixtures cover compiler conditional selection, token pasting and
 macro rescanning, contextual headers, configured dependencies, refresh after
 an optional header appears, stale configs, artifact tampering, import identity,
