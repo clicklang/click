@@ -528,7 +528,9 @@ Click: those remain in Click's frontend and independent kernel checker.
 The captured Linux 6.8.12 rbtree translation unit is not yet supported by this
 first profile. Its full header graph includes unsupported C forms, effectful
 assembly, storage-producing exports, and additional compiler options. The
-kernel capture records those gaps; it is not a passing verification fixture.
+pinned input closure in `integrations/linux-rbtree/` is a negative gate
+fixture: it reproduces the preprocessed artifact and pins the first rejection
+on each route. It is not a passing verification fixture.
 
 ## Options and exit status
 

@@ -61,35 +61,3 @@ pub(super) fn structural_unfold_tactic_names(function_block: &FunctionBlock) -> 
     }
     names
 }
-
-pub(super) fn bounded_execution_tactic_candidates(
-    claim: &FunctionClaimRef<'_>,
-) -> Vec<Vec<ProofTactic>> {
-    match claim {
-        FunctionClaimRef::Ensure(_, _) | FunctionClaimRef::ExceptionalEnsure(_, _) => {
-            vec![vec![ProofTactic::SmartExecuteAllPaths, ProofTactic::Simp]]
-        }
-    }
-}
-
-pub(super) fn auto_loop_verification_tactic_candidates(
-    function_block: &FunctionBlock,
-    claim: &FunctionClaimRef<'_>,
-) -> Vec<Vec<ProofTactic>> {
-    if !function_block
-        .structural_clauses()
-        .iter()
-        .any(|clause| matches!(clause.region(), CodeRegion::Loop(_)))
-    {
-        return Vec::new();
-    }
-    let base = vec![ProofTactic::SmartExecute];
-
-    match claim {
-        FunctionClaimRef::Ensure(_, _) | FunctionClaimRef::ExceptionalEnsure(_, _) => {
-            let mut simp = base;
-            simp.push(ProofTactic::Simp);
-            vec![simp]
-        }
-    }
-}

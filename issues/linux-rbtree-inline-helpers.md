@@ -21,14 +21,17 @@ called helpers). Treating them as unverified declarations would move the
 core algorithm outside the proof.
 
 This is blocked on the remaining
-[kernel-scale-preprocessing](kernel-scale-preprocessing.md) packages: the
-first importer milestone is landed, but the pinned expanded translation
-unit still needs its retained C semantics (`typeof`, statement
-expressions, branch-expectation builtins, and the export/assembly storage
-decisions inventoried in that issue's Stage 0). Variadic prototypes such as
-`panic` are now retained as uncallable declarations; the next rejection in the
-pinned artifact has not been measured (see that issue's package 3 update). Importer, manifest, and
-general GNU-form work belongs to that issue, not this one.
+[kernel-scale-preprocessing](kernel-scale-preprocessing.md) packages. The
+first importer milestone is landed and the pinned input closure is checked in
+at `integrations/linux-rbtree/`, but the pinned translation unit does not
+import yet. `typeof`, statement expressions, and `__builtin_expect` are
+already modeled and are not what stops it. The measured rejections inside
+the rbtree declarations are the kernel's `inline` attributes, unnamed
+prototype parameters, the export declarations and assembly,
+`compiletime_assert`'s block-scope declarations, `__builtin_constant_p`, a
+few const and conditional-type forms, and one static non-inline function;
+that issue lists them with locations. Importer, manifest, and general
+GNU-form work belongs to that issue, not this one.
 
 ## Violated invariant
 
