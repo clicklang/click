@@ -10,8 +10,10 @@ coverage switch and no generated processed count.
 The trial is narrower than the existing frontend. It accepts `i32`, `u8`, `u16`,
 `u32`, bools, scalar/reference locals and fields, flat structs, direct local
 calls, scalar casts, comparisons, checked addition/subtraction/multiplication,
-acyclic branches, disjoint natural while loops, whole-value moves, and precise drops. Arrays, slices,
-general traits/generics, nested owned fields, and returned references are not
+unsigned division/remainder, shifts and bitwise operations,
+acyclic branches, nested natural while loops, whole-value moves, precise drops,
+resolved unsigned `From` conversions, the scalar arrays, byte slices, and shared exact-chunk protocol described below.
+General traits/generics, nested owned fields, and returned references are not
 enabled by this adapter yet. Extraction coverage in the
 [assessment](../rust-charon-assessment.md) is broader than checked coverage here.
 
@@ -75,8 +77,11 @@ cargo nextest run --test rust_import --run-ignored only -E 'test(charon_borrowed
 ```
 
 The adapter recognizes single-entry natural while regions with one conditional
-header and one normal exit. Body diamonds and sequential loops are supported;
-nested or overlapping cycles, irreducible entries, and extra exits are rejected.
+header and one normal exit. Body diamonds, sequential loops, and nested loops are supported;
+irreducible entries and extra exits are rejected. Inner regions are validated
+and collapsed before their parents, with indexed predecessors and union-find
+membership. Deterministic regressions at nesting depths 8, 32, and 128 check
+linear analysis work and emitted size.
 Headers accept total scalar copies, literals, comparisons, and boolean negation.
 Memory reads, calls, arithmetic, borrows, and ownership changes in a header are
 rejected. Header assignments execute on every taken iteration and once after
@@ -91,6 +96,200 @@ Read and write authority still comes from the shared resource rules.
 The zero-iteration proof retains its exact constant equality and both signed
 bounds, then emits a checked arithmetic certificate. Removing any of those
 premises invalidates the proof.
+
+## Resolved conversions and compact scalar arrays
+
+[`conversions-arrays/arrays.rs`](conversions-arrays/arrays.rs) combines
+`u32::from(x)` with a repeated array, a whole-array copy, and a restoring owned
+guard. Other contracts cover a million-element repeated array and its copy,
+explicit element initialization and mutation, a truncating `as` cast, and a
+zero-length initializer whose function call still executes exactly once.
+
+```sh
+cargo run --bin click -- import lock design/charon-trial/conversions-arrays/arrays.click
+cargo run --bin click -- verify design/charon-trial/conversions-arrays/arrays.click
+cargo nextest run --test rust_import --run-ignored only -E 'test(charon_arrays_live_refresh_and_rejected_source_shapes)'
+```
+
+`unsigned-from-v1` requires a compiler-resolved external standard-library `From`
+trait implementation, the matching method and signature, and compatible unsigned
+source/destination widths among `u8`, `u16`, `u32`, and target-width `usize`.
+Narrowing conversions and lookalikes fail closed. `as` continues to use Rust's
+truncating scalar-cast semantics. Compiler-generated two-phase mutable call
+borrows use the same exclusive reference interpretation as ordinary mutable
+borrows; source borrow checking still runs.
+
+`compact-uniform-scalar-array-v1` supports local `i32`/`u8`/`u32` arrays with
+concrete lengths and byte extents at most `INT32_MAX`. Repeated initialization
+stores one evaluated value in one typed run. A complete uniform initialized
+array can be copied into fresh complete local storage in one checked operation;
+subsequent source writes cannot change that copy. Explicit element lists use
+ordinary typed stores, with work proportional to their written source. Index
+reads and writes retain full-width bounds obligations.
+
+Bulk operations check complete destination write authority, source read
+authority, initialization, type, extent, and fresh storage. Empty arrays access
+no bytes. Lengths 8, 1024, and 1,000,000 have the same emitted statement count,
+zero generated aggregate fields, and bounded deterministic verification work.
+The source fixture and negative claims also run through verification, profiling,
+auditing, expansion, and expanded-certificate rechecking.
+
+General snapshot copies, copies after an element override, whole-array
+reassignment, by-value array parameters/returns, array fields and nested arrays
+remain outside the compact-array increment. Unsupported
+bulk source/storage shapes produce a bounded checked execution failure; they are
+never assumed uniform. Fixed indices in this fixture are constant-folded by the
+compiler, while Click independently checks their normalized bounds. Iterator
+models remain adoption gates.
+
+## Byte-slice checkpoint
+
+[`slices/slices.rs`](slices/slices.rs) and its [sidecar](slices/slices.click)
+exercise shared/mutable byte-slice parameters, `.len()`, dynamic reads/writes,
+local reborrows and local calls, plus a restoring guard and unsigned conversion.
+The named interpretation `byte-slice-metadata-v1` represents each slice as its
+qualified data pointer and full-width `usize` length. Reborrows require both
+components to originate from the same typed slice; shared access cannot be
+strengthened to mutable access. Compiler-resolved `SliceLen` declarations are
+checked for identity, signature, generic arguments, safety, and argument types.
+No byte resource is required just to read metadata, including length zero and
+`u64::MAX`; deterministic metadata proof work stays bounded across those sizes.
+
+Charon's selected fallible-operation reconstruction also removes index panic
+branches. Each ULLBC typed index therefore becomes an independently checked
+full-width bounds obligation. Click checks the signed memory-model extent before
+narrowing an offset and requires views/ownership for reads/writes. Missing bounds,
+missing authority, out-of-bounds and high-bit indices, false results and false
+restoration claims are rejected. Cross-width guard framing uses explicit proved
+signed-index bounds derived from the `usize` preconditions. Verification,
+profiling, auditing, expansion, and expanded-certificate rechecking share the
+same engine.
+
+Subslices/split operations, general iterators,
+slice fields/returns, and non-byte slices are not yet accepted by this adapter.
+Other remaining ULLBC assertions are rejected rather than discarded. The default
+frontend's broader slice and iterator coverage remains a migration parity gate.
+
+## Stored exact-chunk checkpoint
+
+[`chunks/chunks.rs`](chunks/chunks.rs) and its [sidecar](chunks/chunks.click)
+import stored shared `ChunksExact<u8>` iterators, a saved remainder, whole-value
+moves, owned `IntoIterator`, typed `next`/`Option` matching, and a natural loop.
+The loop reads both ends of each four-byte chunk. Its contract proves termination,
+that the cursor reaches the fixed remainder without gaps, and preservation of
+every input byte for lengths zero through 1000. A generic constructor contract
+proves the remainder length for every nonzero target-width size and supported
+input length. Separate probes check an explicit `next` match and a tail byte.
+
+```sh
+cargo run --bin click -- import lock design/charon-trial/chunks/chunks.click
+cargo run --bin click -- verify design/charon-trial/chunks/chunks.click
+cargo nextest run --test rust_import --run-ignored only -E 'test(charon_chunks_live_refresh_and_rejected_protocols)'
+```
+
+`shared-byte-chunks-exact-v1` checks external standard-library declarations,
+trait/implementation identities, generic receiver and result types, safe method
+signatures, and exact `Option` tags/projections. The iterator has a cursor,
+remaining complete-byte length, full-width size, fixed tail pointer/length, and
+checked move liveness. The option has a tag and qualified slice metadata; its
+payload requires `Some`. No processed count is generated. Normalization separates
+the assessed `next` dispatch into a pure state guard and two edge-local state
+transitions, preserving the final `None` call. Extra dispatch effects or incoming
+edges fail closed. Predecessors and reference roots are indexed once; output and
+charged normalization work grow linearly with the number of protocol instances.
+
+The model uses existing checked assignments, assertions, branches, and loops.
+It creates no read/write authority. Zero chunk sizes fail the panic obligation;
+input lengths must fit the signed memory model before offsets are narrowed.
+Oversized full-width sizes produce no chunks and preserve the entire remainder.
+Regressions cover empty input, exact multiples, short tails, explicit `Some` and
+`None`, missing bounds/authority, false byte/result claims, missing construction,
+and duplicate moves. Metadata proof work stays bounded across lengths zero, 8,
+1024, and one million. Verification, profiling, auditing, expansion, and expanded
+certificate rechecking use the same engine. The live compiler regression rejects
+writes through shared chunks, reuse after an owned move, and unmodeled protocols.
+
+This increment accepts the assessed owned-loop and explicit-match shapes.
+Borrowed `for` loops, mutable chunks, general iterator adapters,
+iterator parameters/returns, and non-byte elements remain migration gates.
+The current fixture uses internal local/state names and statement selectors for
+its preservation proof; stable source/proof observations still need a separate
+interface. The nested iterator checkpoint below now exercises that composition.
+
+## Nested chunks and byte-array coercions
+
+[`nested/nested.rs`](nested/nested.rs) and its [sidecar](nested/nested.click)
+compose a stored outer four-byte chunk iterator with inner two-byte iterators.
+For an eight-byte input, the contract proves termination, checks both reads in
+all four inner chunks, and preserves every original byte. Each iterator has its
+own cursor, remaining length, size, tail, and move liveness; there is no generated
+processed count. The proof uses a checked reusable offset lemma and expanded
+certificates. Compiler locals with duplicate names (including nested `iter`
+temporaries) receive collision-free names derived from their local IDs. Unique
+source names and parameter names remain available.
+
+`byte-array-unsize-v1` accepts typed shared/mutable byte-array reference casts to
+byte-slice references. It checks concrete length metadata against the source
+array extent, argument/destination types and mutability, and the signed memory
+extent. Lifetime IDs may change during coercion; normalized reference types
+ignore these IDs, while rustc still checks source borrow legality. The coercion
+uses existing array storage and slice metadata and creates no memory authority.
+Contracts check length, mutable writes, dynamic reads, empty arrays and lengths
+8, 1024, and one million. Nonempty metadata verification work stays constant
+across these lengths; the empty-storage case has a separate deterministic bound.
+Mismatched metadata/types, out-of-bounds reads, false byte/result claims and
+shared writes are rejected. General unsizing, non-byte slices and symbolic
+extents remain outside this model.
+
+```sh
+cargo run --bin click -- import lock design/charon-trial/nested/nested.click
+cargo run --bin click -- verify design/charon-trial/nested/nested.click
+cargo nextest run --test rust_import --run-ignored only -E 'test(charon_nested_live_refresh_and_rejected_array_borrows)'
+```
+
+Ordinary verification, profiling, auditing, expansion and expanded-certificate
+rechecking exercise this checkpoint. The nested proof is a fixed-length
+composition regression; importing the unchanged checksum loop and proving its
+arithmetic are still separate adoption gates. Source/proof observations still
+need a stable interface before making Charon the default.
+
+## Checksum arithmetic checkpoint
+
+[`arithmetic/arithmetic.rs`](arithmetic/arithmetic.rs) retains the existing
+unsigned arithmetic regression source unchanged and adds width and panic probes.
+Its [sidecar](arithmetic/arithmetic.click) proves the exact remainder modulo
+65521, shift/OR checksum packing, lossless byte accumulation, narrow truncation,
+unsigned division/remainder, complements, masks, full-width shifts and guarded
+division. These are operator regressions, not a verification of Adler-32.
+
+`unsigned-checksum-operators-v1` accepts compiler-typed `Div`, `Rem`, `Shl` and
+`Shr` with `Panic` mode for unsigned `u8`, `u16`, `u32` and `usize`, plus bitwise
+AND/OR/XOR and complement at those widths. Division/remainder and binary bitwise
+operations require matching operand types. Shift counts retain their original
+integer type and width; the shared checked evaluator validates the full-width
+bounds before constructing the shift term. Negative, width-sized, high-bit and
+maximum-width counts fail the Rust panic obligation. Left shifts may discard
+value bits, as Rust requires. Division/remainder by zero are rejected, including
+when the operands occupy only eight or sixteen bits.
+
+The selected reconstruction converts the assessed compiler checks into typed
+panic-mode operations. Click reintroduces and checks those obligations using the
+existing Rust lowering and kernel. Wrap/UB modes, wrapping-method calls and signed
+division/shifts remain rejected by this adapter. A conditional division probe
+checks that an untaken division needs no nonzero premise. False reductions,
+incorrect packing and overflow claims are rejected. Verification, profiling,
+auditing, expansion and expanded-certificate rechecking exercise the same model;
+a matching default-frontend regression checks shared shift-count lowering.
+
+```sh
+cargo run --bin click -- import lock design/charon-trial/arithmetic/arithmetic.click
+cargo run --bin click -- verify design/charon-trial/arithmetic/arithmetic.click
+cargo nextest run --test rust_import --run-ignored only -E 'test(charon_checksum_arithmetic_live_refresh_and_rejected_modes)'
+```
+
+The unchanged adler2 path still needs array fields, array/shared-element
+iteration, resolved custom operators and crate-level import coverage. Continue
+those checkpoints before claiming checksum verification or changing the default.
 
 ## Profile, locks, and trust
 
@@ -111,10 +310,11 @@ outside the accepted slice. Precise drops and ULLBC are required. No preset,
 index-to-call, operation-to-call, or borrow-check bypass is enabled.
 
 The one newly selected transform, `reconstruct_fallible_operations`, replaces
-the overflow tuple/assert pattern with a panic-on-overflow operation. This loses
+the overflow tuple/assert pattern with a panic-on-overflow operation and
+removes index panic checks in favor of typed index projections. This loses
 unwind detail, which the abort profile excludes. The adapter accepts only the
-assessed operators and overflow modes; Click reintroduces their checked range
-obligations. Neither wrapping nor unchecked arithmetic receives checked Rust
+assessed operators and overflow modes; Click reintroduces their checked
+arithmetic range and index bounds obligations. Neither wrapping nor unchecked arithmetic receives checked Rust
 semantics accidentally. Charon clears consumed rustc arguments in its serialized
 options, so the refresh-owned envelope separately records the exact compiler
 flags and checked compiler identity.
@@ -132,8 +332,9 @@ The trusted compiler/extractor/adapter establishes correspondence with Rust;
 the shared checker establishes the claims and rejects forged resource transfers.
 rustc still establishes source borrow legality. Live loan graphs are not added
 by this increment. The normalized CFG temporarily uses the existing internal
-Rust vocabulary and local names. This trial does not complete the planned stable
-proof-observation interface or compact array/kernel work.
+Rust vocabulary and local names. The compact scalar-array operation is shared kernel vocabulary. This trial
+does not complete the stable proof-observation interface or general array-copy
+coverage.
 
 ## Migration decision
 
@@ -144,5 +345,10 @@ equivalent coverage, named library models, stable source/proof observations, and
 scaling evidence. Extend the single ULLBC adapter rather than adding a fallback
 to the legacy exporter per function. The borrowed-loop checkpoint now composes
 a live restoring guard with checked
-iteration and termination. Next bring conversions and compact arrays through the
-same boundary before switching the default and retiring legacy extraction.
+iteration and termination. The conversions/arrays checkpoint composes resolved
+unsigned conversion, repeated initialization, uniform copy, indexing, and owned
+cleanup. The byte-slice checkpoint carries full-width metadata, dynamic bounds,
+reborrows and local calls through that same boundary. Stored exact-chunk state,
+owned moves, typed Option dispatch and remainder now pass through it as well.
+Nested iterator composition and byte-array coercions now pass through it too.
+Next import the unchanged checksum loop and establish supported-fixture parity before switching the default and retiring legacy extraction.

@@ -14,11 +14,19 @@ pub(super) fn lower(
     let mut live = BTreeMap::new();
     let mut declarations = c_skip();
     for (index, local) in mir.locals.iter().enumerate() {
+        if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
+            declarations = c_seq(
+                declarations,
+                cx.chunk_storage(&local.name, local.value_type == Type::ChunkOption)?,
+            );
+            continue;
+        }
         if !cx.locals.insert(local.name.clone()) {
             return Err("duplicate MIR local identity".into());
         }
         let statement = match &local.value_type {
             Type::Unit => c_skip(),
+            Type::Reference { pointee, .. } if **pointee == Type::ChunkIterator => c_skip(),
             Type::Record { name } => {
                 cx.owned_locals.insert(local.name.clone());
                 let flag = format!("__rust_owned_live_{index}");
@@ -41,6 +49,64 @@ pub(super) fn lower(
                                 .ok_or("missing owned record layout")?
                                 .to_kernel_aggregate_layout(),
                         ),
+                    ),
+                )
+            }
+            Type::ByteSlice { mutable } => {
+                let length = format!("{}_len", local.name);
+                if !cx.locals.insert(length.clone()) {
+                    return Err("MIR slice local length collision".into());
+                }
+                cx.slices
+                    .insert(local.name.clone(), (length.clone(), !mutable));
+                c_seq(
+                    c_declare_with_all_qualifiers(
+                        &local.name,
+                        CType::UInt8Pointer,
+                        false,
+                        false,
+                        false,
+                        !mutable,
+                    ),
+                    c_declare(length, CType::UInt64),
+                )
+            }
+            Type::Reference { mutable, pointee }
+                if matches!(pointee.as_ref(), Type::Array { .. }) =>
+            {
+                let Type::Array { element, length } = pointee.as_ref() else {
+                    unreachable!()
+                };
+                let element = scalar_type(element)?.to_kernel_type();
+                cx.arrays
+                    .insert(local.name.clone(), (*length, element, !mutable));
+                c_declare_with_all_qualifiers(
+                    &local.name,
+                    scalar_type(&local.value_type)?.to_kernel_type(),
+                    false,
+                    false,
+                    false,
+                    !mutable,
+                )
+            }
+            Type::Array { element, length } => {
+                let element = scalar_type(element)?.to_kernel_type();
+                if !matches!(element, CType::Int32 | CType::UInt8 | CType::UInt32)
+                    || *length > i32::MAX as u64 / u64::from(element.byte_width())
+                {
+                    return Err(
+                        "compact arrays require i32/u8/u32 elements and signed-word storage".into(),
+                    );
+                }
+                cx.local_arrays.insert(local.name.clone());
+                cx.arrays
+                    .insert(local.name.clone(), (*length, element, false));
+                c_begin_aggregate_construction(
+                    local.name.clone(),
+                    CAggregateLayout::new(
+                        *length as u32 * element.byte_width(),
+                        element.byte_width(),
+                        vec![],
                     ),
                 )
             }
@@ -103,6 +169,9 @@ pub(super) fn lower(
                     Some(_) => {
                         return Err("destructor body missing from prepared Rust input".into());
                     }
+                    None if cx.mir_chunk_iterators.contains(local) => {
+                        c_assign(format!("{local}_live"), c_int32_literal(0))
+                    }
                     None => c_skip(),
                 };
                 c_seq(
@@ -135,15 +204,70 @@ pub(super) fn lower(
         let mut statements = c_skip();
         for s in &mir.blocks[block].statements {
             let statement = match s {
+                S::ChunkInitialize {
+                    target,
+                    slice,
+                    size,
+                } => cx.chunk_initialize_mir(target, slice, size)?,
+                S::ChunkMove { target, source } => cx.chunk_move(target, source)?,
+                S::ChunkNext { iterator, option } => cx.chunk_next(iterator, option)?,
+                S::Assign {
+                    target: E::Local { name },
+                    value,
+                } if cx.local_arrays.contains(name) => {
+                    let (length, element, _) = cx.arrays[name];
+                    let pointer = cx.array_pointer(name)?;
+                    match value {
+                        E::Array { .. } => cx.assign_array(pointer, element, length, value)?,
+                        E::Repeat {
+                            value,
+                            length: count,
+                        } if *count == length => {
+                            let (checks, value) = cx.prepared_expr(value)?;
+                            c_seq(
+                                checks,
+                                c_initialize_scalar_array(
+                                    pointer,
+                                    value,
+                                    element,
+                                    length as u32,
+                                    false,
+                                ),
+                            )
+                        }
+                        E::Repeat { .. } => {
+                            return Err("array repeat length disagrees with destination".into());
+                        }
+                        value => {
+                            let (source, count, source_element) = cx.indexed_parts(value)?;
+                            if count != c_uint64_literal(length) || source_element != element {
+                                return Err("array copy type disagrees with destination".into());
+                            }
+                            c_initialize_scalar_array(pointer, source, element, length as u32, true)
+                        }
+                    }
+                }
                 S::Assign {
                     target: E::Local { name },
                     value,
                 } if !records.contains_key(name.as_str()) => cx.assign(name, value)?,
                 S::Assign { target, value } => {
-                    let (checks, value) = cx.prepared_expr(value)?;
+                    let (mut checks, mut value) = cx.prepared_expr(value)?;
+                    if matches!(target, E::Index { .. }) {
+                        let value_type = match cx.place_type(target)? {
+                            CType::UInt8 => Type::U8,
+                            CType::UInt32 => Type::U32,
+                            CType::Int32 => Type::I32,
+                            _ => return Err("unsupported Rust indexed assignment type".into()),
+                        };
+                        let (capture, name) = cx.capture_operand(value, &value_type)?;
+                        checks = c_seq(checks, capture);
+                        value = c_variable(name);
+                    }
+                    let (target_checks, address) = cx.prepared_address(target)?;
                     c_seq(
-                        checks,
-                        c_typed_store(cx.address(target)?, value, cx.place_type(target)?),
+                        c_seq(checks, target_checks),
+                        c_typed_store(address, value, cx.place_type(target)?),
                     )
                 }
                 S::Initialize {
@@ -228,6 +352,9 @@ pub(super) fn lower(
                         } else {
                             c_assign(flag, c_int32_literal(0))
                         }
+                    }
+                    None if cx.mir_chunk_iterators.contains(local) => {
+                        c_assign(format!("{local}_live"), c_int32_literal(0))
                     }
                     None => c_skip(),
                 },
@@ -392,11 +519,19 @@ fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
                 pending.push(left);
                 pending.push(right);
             }
+            E::Index { slice, index } => {
+                pending.push(slice);
+                pending.push(index);
+            }
+            E::Array { elements } => pending.extend(elements),
+            E::Repeat { value, .. } => pending.push(value),
             E::Not { value }
             | E::BitwiseNot { value, .. }
             | E::Cast { value, .. }
             | E::IntegerFrom { value, .. } => pending.push(value),
             E::Borrow { place, .. } => pending.push(place),
+            E::SliceLength { slice } => pending.push(slice),
+            E::ArrayToSlice { array, .. } => pending.push(array),
             E::Deref { reference, .. } => pending.push(reference),
             E::Field { base, .. } => pending.push(base),
             E::Call { arguments, .. } => pending.extend(arguments),
@@ -536,6 +671,8 @@ mod tests {
             let functions = BTreeMap::new();
             let mut cx = Context {
                 chunk_iterators: BTreeSet::new(),
+                mir_chunk_iterators: BTreeSet::new(),
+                chunk_options: BTreeSet::new(),
                 local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),

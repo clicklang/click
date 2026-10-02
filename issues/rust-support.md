@@ -244,8 +244,51 @@ It rejects unsupported CFG exits/entries and effectful guards; scaling checks
 cover sequential loops and diamonds. Shared pointer framing retains exact alias
 and separation premises, rather than inferring provenance from local storage.
 Keep migration opt-in until the supported fixtures have equivalent coverage.
-Next bring resolved conversions and compact arrays through the same adapter, and establish stable source/proof
-observations and scaling checks before switching production imports. Preserve source metadata and a
+The conversions/arrays checkpoint now composes a resolved `u32::from` call,
+repeated initialization, uniform whole-array copy, and restoring `Drop` guard.
+Its shared compact initialization operation checks authority and initialization;
+8-, 1024-, and million-element arrays retain bounded node count, storage, and
+deterministic proof work. Empty initializer calls execute once. General snapshot
+copies, copies after element overrides, and whole-array reassignment remain
+migration work. The byte-slice checkpoint now carries shared/mutable parameters,
+full-width length metadata, dynamic read/write bounds, reborrows and local calls
+through ULLBC, including restoring guard cleanup. `byte-slice-metadata-v1` checks
+compiler-resolved length calls and paired pointer/length origins; typed indices
+restore panic obligations removed by Charon's selected transform. Missing bounds
+and authority, high-bit indices, and false cleanup claims are rejected. Metadata
+work remains bounded for empty, small, million-byte and maximum-width lengths;
+proof tools recheck the same certificates. Subslices, returned slices and slice
+fields remain parity work. The stored exact-chunk checkpoint now
+imports shared byte iterators, fixed remainders, owned moves, `IntoIterator`,
+typed `next`/Option dispatch and natural loops through ULLBC. Checked liveness
+rejects missing construction and duplicate moves; payload extraction requires
+`Some`. The fixed-source loop proves that chunks reach the tail without gaps
+and preserve the original bytes, including zero iterations. Full-width sizes,
+empty/exact/short boundaries, permission failures, explicit matches and proof-tool
+agreement have regressions; metadata work stays bounded across input lengths and
+protocol normalization is indexed with linear scaling coverage. The named model
+`shared-byte-chunks-exact-v1` is lock-bound. The nested checkpoint now composes
+outer four-byte and inner two-byte iterators, proving termination, both byte
+reads, and preservation for an eight-byte input. Nested natural regions have
+linear analysis/emission scaling regressions at depths 8, 32, and 128; extra
+exits and irreducible entries remain rejected. Duplicate compiler temporary
+names have distinct identities without renaming the Rust source.
+`byte-array-unsize-v1` checks concrete extent metadata, normalized reference types
+and mutability, with compiler borrow checking and existing memory authority.
+Shared/mutable coercions, dynamic indexing, empty and million-byte arrays,
+negative metadata/type cases and proof-tool agreement have regressions.
+The arithmetic checkpoint now accepts typed panic-mode unsigned division,
+remainder and shifts, plus bitwise AND/OR/XOR and complement. The original
+unsigned regression functions import unchanged, including reduction modulo
+65521 and checksum packing. Width, zero-divisor, negative/oversized/high-bit
+shift, unsupported mode and false-result regressions exercise the shared checked
+engine. Shift counts preserve their source width through shared lowering, with
+matching Charon and default-frontend proofs. `unsigned-checksum-operators-v1` is
+lock-bound. Next add array fields, array/shared-element iteration and resolved
+custom operators for the unchanged checksum path, broaden iterator composition
+proofs, and cover borrowed loops. Stable observations and broader iterator parity remain gates.
+Establish stable source/proof observations and equivalent coverage before
+switching production imports. Preserve source metadata and a
 Click-owned semantic boundary; do not rebuild rustc's HIR-to-MIR semantics just
 to retain syntax. Use the assessment's configuration rather than adopting an
 unaudited preset. Then consolidate semantic

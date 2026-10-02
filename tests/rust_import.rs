@@ -66,6 +66,620 @@ fn charon_project() -> Project {
     .unwrap();
     p
 }
+const CHARON_ARITHMETIC_SOURCE: &str =
+    include_str!("../design/charon-trial/arithmetic/arithmetic.rs");
+const CHARON_ARITHMETIC_SIDECAR: &str =
+    include_str!("../design/charon-trial/arithmetic/arithmetic.click");
+fn charon_arithmetic_project() -> Project {
+    let p = Project::new(CHARON_ARITHMETIC_SOURCE);
+    for (name, bytes) in [
+        ("arithmetic.rs", CHARON_ARITHMETIC_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_ARITHMETIC_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/arithmetic/arithmetic.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "arithmetic.ullbc",
+            include_bytes!("../design/charon-trial/arithmetic/arithmetic.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/arithmetic/arithmetic.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
+    let p = charon_arithmetic_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, &prepared).unwrap();
+    for claim in [
+        "uint32 reduce(uint32 value) { requires value == 4294967295u32; ensures result == 224u32; }",
+        "uint64 wide_quotient(uint64 value, uint64 divisor) { requires value == 18446744073709551615u64; requires divisor == 1u64; ensures result == 18446744073709551615u64; }",
+        "uint64 wide_left(uint64 value, uint64 count) { requires value == 18446744073709551615u64; requires count == 1u64; ensures result == 18446744073709551614u64; }",
+        "uint64 wide_right(uint64 value, uint64 count) { requires value == 18446744073709551615u64; requires count == 63u64; ensures result == 1u64; }",
+        "uint16 word_right(uint16 value, uint64 count) { requires value == 65535; requires count == 15u64; ensures result == 1; }",
+        "uint8 shifted_byte(uint8 value, uint32 count) { requires value == 128; requires count == 1u32; ensures result == 0; }",
+        "uint32 conditional_divide(uint32 value, uint32 divisor, bool skip) { requires skip != 0; requires divisor == 0u32; ensures result == 0u32; }",
+    ] {
+        let claim = format!("verifying \"arithmetic.rs\"; {claim} by {{ execute(); simp(); }}");
+        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+    }
+    for invalid in [
+        CHARON_ARITHMETIC_SIDECAR.replace("requires sum <= 4294967040u32;", ""),
+        CHARON_ARITHMETIC_SIDECAR.replace("requires count < 8u32;", "requires count == 8u32;"),
+        CHARON_ARITHMETIC_SIDECAR.replace("requires count < 64u64;", "requires count == 64u64;"),
+        CHARON_ARITHMETIC_SIDECAR.replace(
+            "requires 0 <= count and count < 32;",
+            "requires count == -1;",
+        ),
+        CHARON_ARITHMETIC_SIDECAR.replace("requires divisor != 0u32;", "requires divisor == 0u32;"),
+        CHARON_ARITHMETIC_SIDECAR.replace("requires divisor != 0u64;", "requires divisor == 0u64;"),
+        CHARON_ARITHMETIC_SIDECAR.replace("value % 65521u32", "value % 65519u32"),
+        CHARON_ARITHMETIC_SIDECAR.replace("((high << 16) | low)", "((high << 15) | low)"),
+    ] {
+        assert_ne!(invalid, CHARON_ARITHMETIC_SIDECAR);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    for count in [64u64, 4294967296, u64::MAX] {
+        let claim = format!(
+            "verifying \"arithmetic.rs\"; uint64 wide_left(uint64 value, uint64 count) {{ requires value == 0u64; requires count == {count}u64; ensures result == 0u64; }} by {{ execute(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&claim, &prepared)
+            .err()
+            .expect("invalid shift accepted");
+        assert!(
+            error.message().contains("Rust shl panic check"),
+            "{}",
+            error.message()
+        );
+    }
+}
+#[test]
+fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
+    let p = charon_arithmetic_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "reduce.contract",
+        "pack.contract",
+        "wide_left.contract",
+        "signed_count.contract",
+        "conditional_divide.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+fn rust_and_charon_unsigned_shifts_preserve_full_width_counts() {
+    let p = Project::new(CHARON_ARITHMETIC_SOURCE);
+    refresh_import(&p.config()).unwrap();
+    let sidecar = CHARON_ARITHMETIC_SIDECAR.replace("arithmetic.rs", "borrow.rs");
+    C0VerificationSession::new_program_prepared(&sidecar, &load_import(&p.config()).unwrap())
+        .unwrap();
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_checksum_arithmetic_live_refresh_and_rejected_modes() {
+    let p = charon_arithmetic_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_ARITHMETIC_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for source in [
+        "pub fn bad(x:u32, count:u32)->u32 { x.wrapping_shl(count) }",
+        "pub fn bad(x:u32, count:u32)->u32 { x.wrapping_shr(count) }",
+        "pub fn bad(x:i32, count:u32)->i32 { x << count }",
+        "pub fn bad(x:i32, divisor:i32)->i32 { x / divisor }",
+    ] {
+        fs::remove_file(p.root.join("arithmetic.ullbc")).unwrap();
+        fs::write(p.root.join("arithmetic.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains("Charon trial does not support"), "{error}");
+        assert!(!p.root.join("arithmetic.ullbc").exists());
+        fs::write(p.root.join("arithmetic.rs"), CHARON_ARITHMETIC_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
+
+const CHARON_NESTED_SOURCE: &str = include_str!("../design/charon-trial/nested/nested.rs");
+const CHARON_NESTED_SIDECAR: &str = include_str!("../design/charon-trial/nested/nested.click");
+fn charon_nested_project() -> Project {
+    let p = Project::new(CHARON_NESTED_SOURCE);
+    for (name, bytes) in [
+        ("nested.rs", CHARON_NESTED_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_NESTED_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/nested/nested.click.import.json").as_slice(),
+        ),
+        (
+            "nested.ullbc",
+            include_bytes!("../design/charon-trial/nested/nested.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/nested/nested.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_nested_chunks_and_array_slices_check_bytes_bounds_and_claims() {
+    let p = charon_nested_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_NESTED_SIDECAR, &prepared).unwrap();
+    for invalid in [
+        CHARON_NESTED_SIDECAR.replace("ensures result == 8u64;", "ensures result == 7u64;"),
+        CHARON_NESTED_SIDECAR.replace("ensures result == 9;", "ensures result == 7;"),
+        CHARON_NESTED_SIDECAR.replace("requires index < 8u64;", "requires index == 8u64;"),
+        CHARON_NESTED_SIDECAR.replace("ensures result == 7;", "ensures result == 9;"),
+        CHARON_NESTED_SIDECAR.replace("views bytes[0..8];", ""),
+        CHARON_NESTED_SIDECAR.replace("bytes[k] == old(bytes[k])", "bytes[k] == 7"),
+    ] {
+        assert_ne!(invalid, CHARON_NESTED_SIDECAR);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+#[test]
+fn charon_nested_cli_tools_recheck_expanded_certificates() {
+    let p = charon_nested_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "nested.contract",
+        "array_len.contract",
+        "array_mut.contract",
+        "array_read.contract",
+        "large_array_len.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_nested_live_refresh_and_rejected_array_borrows() {
+    let p = charon_nested_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_NESTED_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for (source, diagnostic) in [
+        (
+            "pub fn bad()->u8 { let mut bytes=[7u8;8]; let slice:&[u8]=&bytes; bytes[0]=9; slice[0] }",
+            "E0506",
+        ),
+        (
+            "pub fn bad()->u8 { let bytes=[7u8;8]; let slice:&[u8]=&bytes; slice[0]=9; slice[0] }",
+            "E0594",
+        ),
+        (
+            "pub fn bad()->usize { let bytes=[7u16;8]; let slice:&[u16]=&bytes; slice.len() }",
+            "Charon trial does not support",
+        ),
+        (
+            "pub fn bad(n:i32) { let mut i=0; while i<n { let mut j=0; while j<n { if j==2 { break; } j+=1; } i+=1; } }",
+            "extra exit",
+        ),
+    ] {
+        fs::remove_file(p.root.join("nested.ullbc")).unwrap();
+        fs::write(p.root.join("nested.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!p.root.join("nested.ullbc").exists());
+        fs::write(p.root.join("nested.rs"), CHARON_NESTED_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
+
+const CHARON_CHUNK_SOURCE: &str = include_str!("../design/charon-trial/chunks/chunks.rs");
+const CHARON_CHUNK_SIDECAR: &str = include_str!("../design/charon-trial/chunks/chunks.click");
+fn charon_chunk_project() -> Project {
+    let p = Project::new(CHARON_CHUNK_SOURCE);
+    for (name, bytes) in [
+        ("chunks.rs", CHARON_CHUNK_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_CHUNK_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/chunks/chunks.click.import.json").as_slice(),
+        ),
+        (
+            "chunks.ullbc",
+            include_bytes!("../design/charon-trial/chunks/chunks.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/chunks/chunks.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_chunks_check_boundaries_authority_and_false_claims() {
+    let p = charon_chunk_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_CHUNK_SIDECAR, &prepared).unwrap();
+    for (length, size) in [
+        (0u64, 4u64),
+        (4, 4),
+        (7, 4),
+        (8, 4),
+        (3, 4),
+        (7, u64::MAX),
+        (7, 4294967296),
+    ] {
+        let claim = format!(
+            "verifying \"chunks.rs\"; uint64 tail(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            length % size
+        );
+        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+    }
+    for length in [0u64, 3, 4, 7, 8] {
+        let result = if length < 4 { 0 } else { 4 };
+        let claim = format!(
+            "verifying \"chunks.rs\"; uint64 next_len(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; ensures result == {result}u64; }} by {{ execute(); simp(); }}"
+        );
+        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+    }
+    for length in [1u64, 3, 5, 7] {
+        let offset = length - length % 4;
+        let claim = format!(
+            "verifying \"chunks.rs\"; uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have ((int32)(uint32)(bytes_len - bytes_len % 4u64)) == {offset} by {{ rewrite(bytes_len == {length}u64); simp(); }} execute(); simp(); }}"
+        );
+        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+    }
+    for invalid in [
+        CHARON_CHUNK_SIDECAR.replace("requires size != 0u64;", "requires size == 0u64;"),
+        CHARON_CHUNK_SIDECAR.replace(
+            "ensures result == bytes_len % size;",
+            "ensures result == bytes_len;",
+        ),
+        CHARON_CHUNK_SIDECAR.replace("    requires bytes_len <= 2147483647u64;\n", ""),
+        CHARON_CHUNK_SIDECAR.replace("    views bytes[0..(int32)(uint32)bytes_len];\n", ""),
+        CHARON_CHUNK_SIDECAR.replace("requires bytes_len == 7u64;", "requires bytes_len == 8u64;"),
+        CHARON_CHUNK_SIDECAR.replace("ensures result == old(bytes[4]);", "ensures result == 7;"),
+    ] {
+        assert_ne!(invalid, CHARON_CHUNK_SIDECAR);
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {invalid}"
+        );
+    }
+}
+#[test]
+fn charon_chunk_cli_tools_recheck_expanded_certificates() {
+    let p = charon_chunk_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "tail.contract",
+        "walk.contract",
+        "next_len.contract",
+        "tail_byte.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_chunks_live_refresh_and_rejected_protocols() {
+    let p = charon_chunk_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_CHUNK_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for (source, diagnostic) in [
+        (
+            "pub fn bad(x:&[u8]) { let chunks=x.chunks_exact(4); for chunk in chunks { chunk[0]=7; } }",
+            "E0594",
+        ),
+        (
+            "pub fn bad(x:&[u8])->usize { let chunks=x.chunks_exact(4); for chunk in chunks { let a=chunk[0]; } chunks.remainder().len() }",
+            "E0382",
+        ),
+        (
+            "pub fn bad(x:&[u16])->usize { x.chunks_exact(4).remainder().len() }",
+            "Charon trial does not support",
+        ),
+        (
+            "pub fn bad(x:&[u8]) { for chunk in x.chunks_exact(4).rev() { let a=chunk[0]; } }",
+            "Charon trial does not support",
+        ),
+    ] {
+        fs::remove_file(p.root.join("chunks.ullbc")).unwrap();
+        fs::write(p.root.join("chunks.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!p.root.join("chunks.ullbc").exists());
+        fs::write(p.root.join("chunks.rs"), CHARON_CHUNK_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
+
+const CHARON_SLICE_SOURCE: &str = include_str!("../design/charon-trial/slices/slices.rs");
+const CHARON_SLICE_SIDECAR: &str = include_str!("../design/charon-trial/slices/slices.click");
+fn charon_slice_project() -> Project {
+    let p = Project::new(CHARON_SLICE_SOURCE);
+    for (name, bytes) in [
+        ("slices.rs", CHARON_SLICE_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_SLICE_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/slices/slices.click.import.json").as_slice(),
+        ),
+        (
+            "slices.ullbc",
+            include_bytes!("../design/charon-trial/slices/slices.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!("../design/charon-trial/slices/slices.click.import.json.lock")
+                .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_slices_preserve_metadata_permissions_and_cleanup() {
+    let p = charon_slice_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_SLICE_SIDECAR, &prepared).unwrap();
+    for invalid in [
+        CHARON_SLICE_SIDECAR.replace("ensures result == bytes_len;", "ensures result == 0;"),
+        CHARON_SLICE_SIDECAR.replace("ensures result == value;", "ensures result == value + 1;"),
+        CHARON_SLICE_SIDECAR.replace(
+            "ensures value[0] == old(value[0]);",
+            "ensures value[0] == 7;",
+        ),
+        CHARON_SLICE_SIDECAR.replace("    requires index < bytes_len;\n", ""),
+        CHARON_SLICE_SIDECAR.replace(
+            "    requires index < bytes_len;",
+            "    requires index == bytes_len;",
+        ),
+        CHARON_SLICE_SIDECAR.replace(
+            "    requires index < bytes_len;",
+            "    requires index == 4294967296u64;",
+        ),
+        CHARON_SLICE_SIDECAR.replace("    requires bytes_len <= 2147483647u64;\n", ""),
+        CHARON_SLICE_SIDECAR.replace("    views bytes[0..(int32)(uint32)bytes_len];\n", ""),
+        CHARON_SLICE_SIDECAR.replace("    owns bytes[0..(int32)(uint32)bytes_len];\n", ""),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {invalid}"
+        );
+    }
+    // Contract owns/views composition already establishes byte separation.
+    let composed = CHARON_SLICE_SIDECAR.replace(
+        "    requires separate(memory(value[0..1]), memory(bytes[0..(int32)(uint32)bytes_len]));\n",
+        "",
+    );
+    C0VerificationSession::new_program_prepared(&composed, &prepared).unwrap();
+    // Metadata alone requires no memory resource, including empty and very large slices.
+    for length in [0u64, 8, 1024, 1_000_000, u64::MAX] {
+        let claim = format!(
+            "verifying \"slices.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len) {{ requires bytes_len == {length}u64; ensures result == {length}u64; }} by {{ execute(); simp(); }}"
+        );
+        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+    }
+}
+#[test]
+fn charon_slice_failure_does_not_suggest_unsupported_trace() {
+    let p = charon_slice_project();
+    fs::write(
+        p.root.join("borrow.click"),
+        CHARON_SLICE_SIDECAR.replace("ensures result == bytes_len;", "ensures result == 0;"),
+    )
+    .unwrap();
+    let output = p.cli(&["verify"]);
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("proof error:"), "{error}");
+    assert!(!error.contains("--trace-proof"), "{error}");
+}
+#[test]
+fn charon_slice_cli_tools_recheck_expanded_certificates() {
+    let p = charon_slice_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "length.contract",
+        "write_read.contract",
+        "guarded_read.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_slices_live_refresh_and_borrow_checking() {
+    let p = charon_slice_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_SLICE_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for (source, diagnostic) in [
+        ("pub fn bad(x:&[u8]) { x[0]=7; }", "E0594"),
+        (
+            "pub fn bad(x:&mut [u8]) -> u8 { let y=&mut *x; x[0]=7; y[0] }",
+            "E0503",
+        ),
+        (
+            "pub fn bad(x:&[u16])->usize { x.len() }",
+            "slice elements other than u8",
+        ),
+    ] {
+        fs::remove_file(p.root.join("slices.ullbc")).unwrap();
+        fs::write(p.root.join("slices.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!p.root.join("slices.ullbc").exists());
+        fs::write(p.root.join("slices.rs"), CHARON_SLICE_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
+
+const CHARON_ARRAY_SOURCE: &str =
+    include_str!("../design/charon-trial/conversions-arrays/arrays.rs");
+const CHARON_ARRAY_SIDECAR: &str =
+    include_str!("../design/charon-trial/conversions-arrays/arrays.click");
+fn charon_array_project() -> Project {
+    let p = Project::new(CHARON_ARRAY_SOURCE);
+    for (name, bytes) in [
+        ("arrays.rs", CHARON_ARRAY_SOURCE.as_bytes()),
+        ("borrow.click", CHARON_ARRAY_SIDECAR.as_bytes()),
+        (
+            "borrow.click.import.json",
+            include_bytes!("../design/charon-trial/conversions-arrays/arrays.click.import.json")
+                .as_slice(),
+        ),
+        (
+            "arrays.ullbc",
+            include_bytes!("../design/charon-trial/conversions-arrays/arrays.ullbc").as_slice(),
+        ),
+        (
+            "borrow.click.import.json.lock",
+            include_bytes!(
+                "../design/charon-trial/conversions-arrays/arrays.click.import.json.lock"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(p.root.join(name), bytes).unwrap();
+    }
+    p
+}
+#[test]
+fn charon_arrays_compose_with_resolved_conversion_and_drop() {
+    let p = charon_array_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_ARRAY_SIDECAR, &prepared).unwrap();
+    for invalid in [
+        CHARON_ARRAY_SIDECAR.replace("ensures result == x;", "ensures result == x + 1;"),
+        CHARON_ARRAY_SIDECAR.replace("value[0] == old(value[0]);", "value[0] == 7;"),
+        CHARON_ARRAY_SIDECAR.replace("ensures result == 7;", "ensures result == 8;"),
+        CHARON_ARRAY_SIDECAR.replace("ensures result == 9;", "ensures result == 2;"),
+        CHARON_ARRAY_SIDECAR.replace("ensures result == 1;", "ensures result == 257;"),
+        CHARON_ARRAY_SIDECAR.replace(
+            "value[0] == old(value[0]) + 1;",
+            "value[0] == old(value[0]);",
+        ),
+        CHARON_ARRAY_SIDECAR.replace("    owns value[0..1];\n", ""),
+        CHARON_ARRAY_SIDECAR.replace("    requires value[0] < 2147483647;\n", ""),
+    ] {
+        assert!(
+            C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+            "accepted {invalid}"
+        );
+    }
+}
+#[test]
+fn charon_array_cli_tools_recheck_expanded_certificates() {
+    let p = charon_array_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    for claim in [
+        "guarded_array.contract",
+        "large_array.contract",
+        "empty_array.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_arrays_live_refresh_and_rejected_source_shapes() {
+    let p = charon_array_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(
+        CHARON_ARRAY_SIDECAR,
+        &load_import(&p.config()).unwrap(),
+    )
+    .unwrap();
+    for (source, diagnostic) in [
+        ("pub fn bad(x:u32)->u8 { u8::from(x) }", "E0277"),
+        (
+            "struct Fake; impl Fake { fn from(x:u16)->u32 { x as u32 } } pub fn bad(x:u16)->u32 { Fake::from(x) }",
+            "nested or disambiguated source items",
+        ),
+        ("pub fn bad()->u16 { let x=[7u16;4]; x[0] }", "i32/u8/u32"),
+        (
+            "pub fn bad()->u32 { let x=[7u32;536870912]; x[0] }",
+            "signed-word storage",
+        ),
+    ] {
+        fs::remove_file(p.root.join("arrays.ullbc")).unwrap();
+        fs::write(p.root.join("arrays.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!p.root.join("arrays.ullbc").exists());
+        fs::write(p.root.join("arrays.rs"), CHARON_ARRAY_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
+
 const CHARON_LOOP_SOURCE: &str = include_str!("../design/charon-trial/borrowed-loop/loop.rs");
 const CHARON_LOOP_SIDECAR: &str = include_str!("../design/charon-trial/borrowed-loop/loop.click");
 fn charon_loop_project() -> Project {
@@ -151,10 +765,21 @@ fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
     let prepared = load_import(&p.config()).unwrap();
     C0VerificationSession::new_program_prepared(CHARON_LOOP_SIDECAR, &prepared).unwrap();
     for (source, diagnostic) in [
-        (CHARON_LOOP_SOURCE.replace("        *slot = i;", "        *value = 0;\n        *slot = i;"), "E0506"),
-        ("pub fn bad(n:i32) { let mut i=0; while i<n { let mut j=0; while j<n { j+=1; } i+=1; } }".into(), "overlapping MIR loops"),
-        ("pub fn bad(n:i32) { let mut i=0; while i<n { if i==2 { break; } i+=1; } }".into(), "extra exit"),
-        ("pub fn bad(n:&i32) { let mut i=0; while i<*n { i+=1; } }".into(), "pure scalar"),
+        (
+            CHARON_LOOP_SOURCE.replace(
+                "        *slot = i;",
+                "        *value = 0;\n        *slot = i;",
+            ),
+            "E0506",
+        ),
+        (
+            "pub fn bad(n:i32) { let mut i=0; while i<n { if i==2 { break; } i+=1; } }".into(),
+            "extra exit",
+        ),
+        (
+            "pub fn bad(n:&i32) { let mut i=0; while i<*n { i+=1; } }".into(),
+            "pure scalar",
+        ),
     ] {
         fs::remove_file(p.root.join("loop.ullbc")).unwrap();
         fs::write(p.root.join("loop.rs"), source).unwrap();
