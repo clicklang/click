@@ -30052,8 +30052,34 @@ fn contract_exit_outcome_with_boundary_transfer(
                 .is_some_and(|(before, after)| {
                     if final_release {
                         expected_description.as_ref().is_some_and(|description| {
-                            after.spent_imported_member_since(before, description)
-                                && after.retired_imported_authority_since(before, description)
+                            let consumed = if expected_quantity.as_ref().and_then(|q| q.as_const())
+                                == Some(1)
+                            {
+                                after.spent_imported_member_since(before, description)
+                            } else {
+                                expected_quantity.as_ref().is_some_and(|expected| {
+                                    after
+                                        .imported_member_delta_since_entry(description)
+                                        .is_some_and(|(produce, actual)| {
+                                            (!produce
+                                                || crate::kernel::quantity_condition_holds(
+                                                    assumptions,
+                                                    ConditionTerm::Bitvector32Equal(
+                                                        Box::new(actual.clone()),
+                                                        Box::new(Bitvector32Term::Constant(0)),
+                                                    ),
+                                                ))
+                                                && crate::kernel::quantity_condition_holds(
+                                                    assumptions,
+                                                    ConditionTerm::Bitvector32Equal(
+                                                        Box::new(actual),
+                                                        Box::new(expected.clone()),
+                                                    ),
+                                                )
+                                        })
+                                })
+                            };
+                            consumed && after.retired_imported_authority_since(before, description)
                         })
                     } else if let (Some(description), Some(expected_quantity)) =
                         (expected_description.as_ref(), expected_quantity.as_ref())

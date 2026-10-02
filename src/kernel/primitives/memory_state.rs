@@ -5891,29 +5891,15 @@ impl CState {
             .ok_or("authority mode has no creation history")?;
         let imported_retirement = !establish
             && anchor.block == PointerBlock::ExternalArgument
-            && events
-                .observe_symbolic(description)
-                .is_some_and(|symbolic| {
-                    symbolic.entry_owned_members == 1
-                        && symbolic.delta == -1
-                        && super::super::quantity_condition_holds(
-                            assumptions,
-                            ConditionTerm::Bitvector32Equal(
-                                Box::new(symbolic.entry_count),
-                                Box::new(Bitvector32Term::Constant(1)),
-                            ),
-                        )
-                });
-        if !establish
-            && anchor.block == PointerBlock::ExternalArgument
-            && events.observe_symbolic(description).is_some()
-            && !imported_retirement
-        {
-            return Err(format!(
-                "Requires count({}(...)) == 1 and consumes {}(...) before authority retirement",
-                description.family(),
-                description.family(),
-            ));
+            && self
+                .population_effects
+                .creation
+                .as_ref()
+                .is_some_and(|events| events.recognizes_imported_population(description));
+        if imported_retirement {
+            self.population_effects.creation.as_ref().expect("imported population")
+                .check_imported_retirement(description, assumptions)
+                .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
         }
         if !imported_retirement
             && (anchor.offset != PointerOffsetTerm::Constant(0)

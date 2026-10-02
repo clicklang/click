@@ -355,13 +355,22 @@ The same quantity setup is used by source entry, certified entry, and derived
 loop-frame setup. Deterministic regressions cover many quantity clauses and
 unrelated resource definitions; definition lookup is indexed.
 
-The next small slice is direct cleanup through the two-authority control:
-consume the owned full slot population, restore capacity zero, and prove
-zero-population retirement. Symbolic batch helper transfer remains separate;
-this checkpoint covers quantity reads at entry, not that transfer. Keep
-symbolic grow/shrink and two-pool transfer separate. The original bounded-pool project still uses legacy
-counting and is not migrated as a whole. The speculative cache repair remains
-removed; these checkout proofs required no count-model or authority change.
+Direct cleanup now has an authority regression in
+`authority_pool_control_cleanup.md`, using `pool_destroy.c` verbatim. It
+consumes the arbitrary entry-capacity slot batch, restores capacity zero,
+checks the private-object population is empty, retires both authorities, and
+returns ordinary pool storage. Zero-capacity cleanup uses the same proof.
+Imported retirement now checks exhausted member custody and a proven current
+global zero instead of requiring a unit final release. Negative companions
+reject both an unspent batch and a nonzero global population with no locally
+owned members; writing capacity zero does not satisfy either obligation.
+
+The next small slice is symbolic batch helper transfer: pass cleanup's control
+and complete slot quantity through an ordinary helper contract, preserving the
+retirement evidence at return. Symbolic grow/shrink and two-pool transfer remain
+separate. The original bounded-pool project still uses legacy counting and is
+not migrated as a whole. The speculative cache repair remains removed; the
+checkout proofs required no count-model or authority change.
 Missing facts inside `open(...)` report `Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
