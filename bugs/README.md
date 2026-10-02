@@ -10,9 +10,7 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 
 - [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
 - [`auto` expansion re-verifies against a callee with no verified clause](auto-expansion-loses-callee-contract-clauses.md)
-- [Expanded `simp` in a loop `initialize` leaves the invariant entry goal open](loop-initialize-expansion-does-not-close-entry-goal.md)
 - [Expanded `simp` in a loop `initialize` emits an arithmetic step the checker rejects](loop-initialize-expansion-emits-rejected-arithmetic-certificate.md)
-- [Expanded `simp` in a loop `initialize` emits a tactic after one that closed the goal](loop-initialize-expansion-continues-after-closing-tactic.md)
 - [Expansion loses the facts a later call precondition needs](expansion-drops-call-precondition-evidence.md)
 - [Expanded proofs about file-scope and static objects do not re-verify](expanded-static-object-proofs-do-not-reverify.md)
 - [Expansion of a by-value struct copy emits a `have` that lowers to zero paths](expansion-emits-have-that-lowers-to-no-path.md)

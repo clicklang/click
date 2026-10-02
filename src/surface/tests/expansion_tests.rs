@@ -715,6 +715,33 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
     }
 }
 
+/// A `simp()` closing an `initialize` script that several invariants share
+/// expands to one step per invariant, each holding the whole script. Those
+/// steps stand for the tactics written before the closer too, so the rewrite
+/// replaces from the first of them: left in place, the leading `unfold` ran
+/// before every generated step and the phase no longer closed its goal.
+#[test]
+fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
+    let anchor = "initialize by { unfold(head(box)); ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/loop_decreases_pure_expression.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(
+        expanded.contains("initialize by { have 0 <= box[0] by {"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("have head(box) == box[0] by {"),
+        "{expanded}"
+    );
+    assert!(
+        !expanded.contains("initialize by { unfold(head(box)); have"),
+        "{expanded}"
+    );
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the

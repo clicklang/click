@@ -1388,9 +1388,9 @@ fn expand_c0_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
@@ -1625,9 +1625,9 @@ fn expand_program_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
@@ -1758,9 +1758,9 @@ fn expand_c0_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
@@ -2542,6 +2542,40 @@ struct LocatedSourceTactic {
     /// tactic.
     nested: Vec<usize>,
     edit: TacticSourceEdit,
+    /// Where each claim-level tactic of this site starts in the source, by
+    /// source index: an expansion that stands for a run of tactics ending at
+    /// the selected one replaces from an earlier one of these.
+    sibling_starts: Vec<(usize, usize)>,
+}
+
+thread_local! {
+    /// The claim-level source index an expansion replaces from, when the
+    /// recorded tactics stand for more than the selected tactic.
+    static EXPANSION_REPLACES_FROM: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Records that the expansion captured for the selected tactic also stands
+/// for the tactics written before it, back to `source_index`. A closer of a
+/// loop phase shared by several invariants expands to one step per
+/// invariant, each holding the whole shared script; the written tactics
+/// before the closer are part of what it replaces.
+pub(in crate::surface) fn note_expansion_replaces_from(source_index: usize) {
+    EXPANSION_REPLACES_FROM.with(|from| from.set(Some(source_index)));
+}
+
+impl LocatedSourceTactic {
+    /// `span` widened back to the tactic a recorded
+    /// [`note_expansion_replaces_from`] names, if any.
+    fn replaced_span(&self, span: Range<usize>) -> Range<usize> {
+        let Some(from) = EXPANSION_REPLACES_FROM.with(std::cell::Cell::take) else {
+            return span;
+        };
+        self.sibling_starts
+            .iter()
+            .find(|(source_index, start)| *source_index == from && *start < span.start)
+            .map_or(span.clone(), |(_, start)| *start..span.end)
+    }
 }
 
 /// One written tactic in the span-indexed side table that source selection
@@ -2882,8 +2916,25 @@ fn locate_source_tactic_file(
         None => select_source_tactic_entry(click_source, &entries, line, Some(column))
             .map_err(|error| error.into_click_error(line, Some(column)))?,
     };
+    // A stale note from an earlier expansion on this thread must not widen
+    // this one.
+    EXPANSION_REPLACES_FROM.with(|from| from.set(None));
     match &entry.selection {
-        EntrySelection::Located(located) => Ok(located.clone()),
+        EntrySelection::Located(located) => {
+            let mut located = located.clone();
+            located.sibling_starts = entries
+                .iter()
+                .filter_map(|entry| match &entry.selection {
+                    EntrySelection::Located(sibling)
+                        if sibling.site == located.site && sibling.nested.is_empty() =>
+                    {
+                        Some((sibling.source_index, entry.span.start))
+                    }
+                    _ => None,
+                })
+                .collect();
+            Ok(located)
+        }
         EntrySelection::Unaddressable(reason) => Err(ClickError::new(reason.clone())),
     }
 }
@@ -3036,6 +3087,7 @@ fn proof_tactic_entries(
             source_index: 0,
             nested: Vec::new(),
             edit: TacticSourceEdit::WholeProof(edit.clone()),
+            sibling_starts: Vec::new(),
         }),
     };
     let omitted_proof_span = || match edit {
@@ -3090,6 +3142,7 @@ fn proof_tactic_entries(
                         source_index,
                         nested: Vec::new(),
                         edit,
+                        sibling_starts: Vec::new(),
                     }),
                 };
                 entries.push(entry.clone());
@@ -3248,6 +3301,7 @@ fn block_tactic_entries(
                 source_index,
                 nested: path.clone(),
                 edit: TacticSourceEdit::Partial(span.clone()),
+                sibling_starts: Vec::new(),
             }),
         };
         entries.push(entry.clone());
