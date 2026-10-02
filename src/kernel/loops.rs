@@ -2862,37 +2862,47 @@ fn join_loop_exit_paths(
         .fold(exits[0].loan_evidence.clone(), |sequence, exit| {
             concat_checked_loan_evidence(&sequence, &exit.loan_evidence)
         });
-    let shared = first_facts
-        .iter()
-        .filter(|fact| {
-            exits[1..].iter().all(|exit| {
-                exit.stated
-                    .iter()
-                    .any(|other| other.proposition() == fact.proposition())
-            })
-        })
-        .cloned()
+    // Each exit's facts are indexed once and the first exit's are looked up
+    // in every index, so the common prefix costs the exits' facts and a
+    // logarithmic lookup each, not every fact against every other exit's.
+    crate::instrumentation::record_deterministic_work(
+        exits
+            .iter()
+            .map(|exit| exit.stated.len() + exit.disjunct.len())
+            .sum(),
+    );
+    let in_every_exit = positions_in_every_set(
+        first_facts.iter().map(ExecutionPureFact::proposition),
+        exits[1..]
+            .iter()
+            .map(|exit| exit.stated.iter().map(ExecutionPureFact::proposition)),
+    );
+    let shared = in_every_exit
+        .into_iter()
+        .map(|position| first_facts[position].clone())
         .collect::<Vec<_>>();
+    let shared_propositions = shared
+        .iter()
+        .map(ExecutionPureFact::proposition)
+        .collect::<BTreeSet<_>>();
     let own_facts = exits
         .iter()
         .map(|exit| {
             exit.disjunct
                 .iter()
-                .filter(|proposition| {
-                    !shared
-                        .iter()
-                        .any(|common| common.proposition() == *proposition)
-                })
+                .filter(|proposition| !shared_propositions.contains(proposition))
                 .cloned()
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    drop(shared_propositions);
     // Short-circuit paths refine one another: the second conjunct's exit also
     // states the first conjunct true, which the first exit states false. A
     // conjunct another disjunct contradicts is dropped, which only weakens
     // that disjunct and so keeps the disjunction true, and turns
     // `!a | (a & !b)` into the `!a | !b` a proof can name.
     let mut facts = shared;
+    facts.extend(facts_every_exit_restates(&exits, &facts));
     if let Some(disjunction) = guard_path_disjunction(&own_facts) {
         facts.push(ExecutionPureFact::new(disjunction));
     }
@@ -2907,6 +2917,76 @@ fn join_loop_exit_paths(
     Some((facts, obligations, loan_evidence))
 }
 
+/// The facts every exit states about the successor's merged binder names.
+///
+/// Where the exits hold a binder at different values, the join gives the
+/// successor one fresh name for it, and each exit's [`LoopExitFacts::restated`]
+/// is that exit's own facts with its value for the binder replaced by that
+/// name. On each exit path the fresh name equals the exit's value (that is
+/// the equation the exit contributes to the disjunction), so a restated fact
+/// holds on the path that stated the original. A proposition that every exit
+/// restates identically therefore holds on every path into the successor,
+/// and is kept as an ordinary fact. Nothing is kept that some exit did not
+/// state: an exit that restates nothing empties the result.
+///
+/// Identity is of kernel propositions, so two exits that spell a fact with
+/// the same words about different symbols (an arm binding of each exit's own
+/// arm, say) do not agree, and a name only one exit has cannot survive.
+///
+/// Nothing is searched or re-proved: each kept fact was checked where its
+/// exit stated it. Each exit's restated facts are indexed once and the first
+/// exit's are looked up in each index, so the work is the restated facts
+/// times a logarithmic lookup, not exits squared.
+fn facts_every_exit_restates(
+    exits: &[LoopExitFacts],
+    already_shared: &[ExecutionPureFact],
+) -> Vec<ExecutionPureFact> {
+    let Some((first, others)) = exits.split_first() else {
+        return Vec::new();
+    };
+    if first.restated.is_empty() || others.iter().any(|exit| exit.restated.is_empty()) {
+        return Vec::new();
+    }
+    crate::instrumentation::record_deterministic_work(
+        exits.iter().map(|exit| exit.restated.len()).sum(),
+    );
+    let shared = already_shared
+        .iter()
+        .map(ExecutionPureFact::proposition)
+        .collect::<BTreeSet<_>>();
+    let mut kept = BTreeSet::new();
+    positions_in_every_set(
+        first.restated.iter(),
+        others.iter().map(|exit| exit.restated.iter()),
+    )
+    .into_iter()
+    .map(|position| &first.restated[position])
+    .filter(|proposition| !shared.contains(proposition) && kept.insert(*proposition))
+    .map(|proposition| ExecutionPureFact::new(proposition.clone()))
+    .collect()
+}
+
+/// The positions of the `first` items that every one of `others` also holds,
+/// in `first`'s order.
+///
+/// Each of `others` is indexed once and each `first` item is looked up in
+/// the indexes until one lacks it, so the comparisons are the items times a
+/// logarithm of one set's size. Nothing compares one exit's facts with every
+/// other exit's.
+fn positions_in_every_set<'a, T: Ord + 'a>(
+    first: impl Iterator<Item = &'a T>,
+    others: impl Iterator<Item = impl Iterator<Item = &'a T>>,
+) -> Vec<usize> {
+    let indexes = others
+        .map(|items| items.collect::<BTreeSet<_>>())
+        .collect::<Vec<_>>();
+    first
+        .enumerate()
+        .filter(|(_, item)| indexes.iter().all(|index| index.contains(item)))
+        .map(|(position, _)| position)
+        .collect()
+}
+
 /// One exit's contribution to a loop's join.
 ///
 /// `stated` is what that path actually holds, and the join's common prefix is
@@ -2919,6 +2999,10 @@ fn join_loop_exit_paths(
 struct LoopExitFacts {
     stated: Vec<ExecutionPureFact>,
     disjunct: Vec<Proposition>,
+    /// The stated facts that mention this exit's value for a binder the join
+    /// renamed, with that value replaced by the successor's name; see
+    /// [`facts_every_exit_restates`].
+    restated: Vec<Proposition>,
     obligations: Vec<ProofObligation>,
     loan_evidence: CheckedLoanCallEvidenceSequence,
 }
@@ -2937,6 +3021,7 @@ impl LoopExitFacts {
                 .map(|fact| fact.proposition().clone())
                 .collect(),
             stated: facts,
+            restated: Vec::new(),
             obligations,
             loan_evidence,
         }
@@ -3057,6 +3142,206 @@ fn retained_loop_invariant_declarations<'a, T: Ord + 'a>(
         .enumerate()
         .filter(|(_, proposition)| emitted.contains(proposition))
         .collect()
+}
+
+#[cfg(test)]
+mod loop_exit_resource_agreement_tests {
+    use super::*;
+
+    fn range(block: &str) -> CMemoryRange {
+        CMemoryRange::new_with_element_width(
+            Pointer {
+                block: PointerBlock::Concrete(block.to_string()),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Constant(1),
+            4,
+        )
+    }
+
+    fn view(block: &str) -> CResourceFact {
+        CResourceFact::View(CResource::Memory(range(block)))
+    }
+
+    fn own(block: &str) -> CResourceFact {
+        CResourceFact::own(CResource::Memory(range(block)))
+    }
+
+    fn token(quantity: u32) -> CResourceFact {
+        CResourceFact::Own(
+            CResource::Token {
+                name: "ticket".to_string(),
+                arguments: Vec::new().into(),
+            },
+            Box::new(Bitvector32Term::Constant(quantity)),
+        )
+    }
+
+    fn context(facts: impl IntoIterator<Item = CResourceFact>) -> ResourceContext {
+        ResourceContext::new().unchecked_with_facts(facts)
+    }
+
+    /// A view held twice is the view held once, and nothing else about two
+    /// exits' resources is looked through: a permission one exit lacks, a
+    /// view against ownership, another range, and another owned quantity
+    /// each keep the exits apart.
+    #[test]
+    fn exits_agree_on_resources_only_up_to_a_view_held_twice() {
+        let assumptions = PureFactContext::new();
+        let agree = |left: &ResourceContext, right: &ResourceContext| {
+            loop_exit_resources_agree(left, right, &assumptions)
+                && loop_exit_resources_agree(right, left, &assumptions)
+        };
+        let once = context([view("a"), own("b")]);
+        let twice = context([view("a"), view("a"), own("b")]);
+        assert!(once != twice);
+        assert!(agree(&once, &twice));
+
+        // A permission only one exit holds.
+        assert!(!agree(&once, &context([own("b")])));
+        // A view where the other exit owns.
+        assert!(!agree(&once, &context([own("a"), own("b")])));
+        // The same shape over another range.
+        assert!(!agree(&once, &context([view("c"), own("b")])));
+        // Ownership only one exit holds.
+        assert!(!agree(&once, &context([view("a")])));
+        // Different owned quantities of one resource.
+        assert!(!agree(&context([token(1)]), &context([token(2)])));
+        assert!(!agree(&context([token(1)]), &context([token(1), token(1)])));
+    }
+}
+
+#[cfg(test)]
+mod loop_exit_shared_fact_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    fn fact(variable: u64, value: i64) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::Bitvector32Equal(
+                Box::new(Bitvector32Term::Variable(Variable(variable))),
+                Box::new(Bitvector32Term::Constant(value as _)),
+            ),
+            true,
+        )
+    }
+
+    fn exit(restated: Vec<Proposition>) -> LoopExitFacts {
+        LoopExitFacts {
+            stated: Vec::new(),
+            disjunct: Vec::new(),
+            restated,
+            obligations: Vec::new(),
+            loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
+        }
+    }
+
+    fn kept(exits: &[LoopExitFacts]) -> Vec<Proposition> {
+        facts_every_exit_restates(exits, &[])
+            .into_iter()
+            .map(|fact| fact.proposition().clone())
+            .collect()
+    }
+
+    /// A fact is kept only when every exit restates that very proposition.
+    #[test]
+    fn only_a_fact_every_exit_restates_is_kept() {
+        let merged = 7_000_001;
+        // Every exit restates it: kept once, in the first exit's order.
+        assert_eq!(
+            kept(&[
+                exit(vec![fact(merged, 1), fact(merged, 2), fact(merged, 1)]),
+                exit(vec![fact(merged, 2), fact(merged, 1)]),
+                exit(vec![fact(merged, 1), fact(merged, 2), fact(merged, 3)]),
+            ]),
+            vec![fact(merged, 1), fact(merged, 2)],
+        );
+        // All but one exit restate it.
+        assert!(
+            kept(&[
+                exit(vec![fact(merged, 1)]),
+                exit(vec![fact(merged, 1)]),
+                exit(vec![fact(merged, 2)]),
+            ])
+            .is_empty()
+        );
+        // An exit that restates nothing keeps nothing, whichever it is.
+        assert!(kept(&[exit(vec![fact(merged, 1)]), exit(Vec::new())]).is_empty());
+        assert!(kept(&[exit(Vec::new()), exit(vec![fact(merged, 1)])]).is_empty());
+        // The same words about different symbols are different facts: each
+        // exit's own name for something (an arm binding, say) is not shared.
+        assert!(
+            kept(&[
+                exit(vec![fact(7_000_010, 1)]),
+                exit(vec![fact(7_000_011, 1)]),
+            ])
+            .is_empty()
+        );
+        // A fact the exits already share as stated is not added again.
+        let shared = [ExecutionPureFact::new(fact(merged, 1))];
+        assert!(
+            facts_every_exit_restates(
+                &[exit(vec![fact(merged, 1)]), exit(vec![fact(merged, 1)])],
+                &shared,
+            )
+            .is_empty()
+        );
+    }
+
+    /// The intersection is one indexing pass per exit and one lookup pass
+    /// over the first exit's facts: its comparisons grow with the exits
+    /// times the facts times a logarithm, along either axis, and never with
+    /// the square of either.
+    #[test]
+    fn facts_in_every_exit_cost_exits_times_facts() {
+        #[derive(Eq)]
+        struct Counted<'a>(usize, &'a Cell<usize>);
+        impl PartialEq for Counted<'_> {
+            fn eq(&self, other: &Self) -> bool {
+                self.cmp(other).is_eq()
+            }
+        }
+        impl PartialOrd for Counted<'_> {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for Counted<'_> {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                self.1.set(self.1.get() + 1);
+                self.0.cmp(&other.0)
+            }
+        }
+        for (exits, facts) in [
+            (4usize, 64usize),
+            (16, 64),
+            (64, 64),
+            (256, 64),
+            (8, 16),
+            (8, 64),
+            (8, 256),
+            (8, 1024),
+        ] {
+            let comparisons = Cell::new(0);
+            let sets = (0..exits)
+                .map(|_| {
+                    (0..facts)
+                        .rev()
+                        .map(|fact| Counted(fact, &comparisons))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let positions =
+                positions_in_every_set(sets[0].iter(), sets[1..].iter().map(|set| set.iter()));
+            assert_eq!(positions.len(), facts);
+            assert!(
+                comparisons.get() <= 4 * exits * facts * (facts.ilog2() as usize + 1),
+                "{exits} exits of {facts} facts: {} comparisons",
+                comparisons.get()
+            );
+        }
+    }
 }
 
 #[cfg(test)]
@@ -3231,6 +3516,11 @@ fn abstract_loop_exit_states(
 struct LoopExitRestatement {
     equations: Vec<Proposition>,
     renamings: Vec<(Variable, Bitvector32Term)>,
+    /// For each binder argument or field of algebraic sort that the join
+    /// renamed: the term this exit held there, and the successor's name.
+    /// The held value is a term, not only a symbol: one exit may hold the
+    /// head's own model variable and another a constructor it folded.
+    replacements: Vec<(AlgebraicTerm, AlgebraicTerm)>,
 }
 
 impl LoopExitRestatement {
@@ -3263,6 +3553,31 @@ impl LoopExitRestatement {
             resource_value_term(fresh),
             resource_value_term(held),
         ));
+        if let (AlgebraicValue::Algebraic(fresh), AlgebraicValue::Algebraic(held)) = (fresh, held) {
+            self.replacements.push((held.clone(), fresh.clone()));
+        }
+    }
+
+    /// One stated fact with this exit's value for each renamed binder
+    /// replaced by the successor's name, or `None` when the fact mentions no
+    /// such value. Every occurrence is replaced, which is the one choice that
+    /// lets two exits arrive at the same proposition; the result holds on
+    /// this path because the name equals the value here.
+    fn restated_about_merged_binders(&self, proposition: &Proposition) -> Option<Proposition> {
+        let mut restated = None;
+        for (held, fresh) in &self.replacements {
+            let current = restated.as_ref().unwrap_or(proposition);
+            let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::new(held, fresh);
+            let rewritten = rewrite.proposition(current);
+            // A refused walk hands back a placeholder, not a rewritten fact.
+            if rewrite.refusal().is_some() {
+                return None;
+            }
+            if rewrite.changed {
+                restated = Some(rewritten);
+            }
+        }
+        restated
     }
 
     /// This exit's contribution to the join: what it states, and the same
@@ -3283,6 +3598,14 @@ impl LoopExitRestatement {
         if self.renamings.is_empty() && self.equations.is_empty() {
             return LoopExitFacts::unabstracted(facts, obligations, loan_evidence);
         }
+        let restated = if self.replacements.is_empty() {
+            Vec::new()
+        } else {
+            facts
+                .iter()
+                .filter_map(|fact| self.restated_about_merged_binders(fact.proposition()))
+                .collect()
+        };
         let rename = |proposition: &Proposition| {
             self.renamings
                 .iter()
@@ -3307,6 +3630,7 @@ impl LoopExitRestatement {
         LoopExitFacts {
             stated: facts,
             disjunct,
+            restated,
             obligations,
             loan_evidence,
         }
@@ -3813,6 +4137,18 @@ fn loop_exit_residual_difference(
     loop_exit_state_difference(&witness, &seated, assumptions)
 }
 
+/// Whether two exits hold the same resources: structurally, or after each
+/// context is normalized once. Normalization merges only descriptions the
+/// resource algebra says are one authority, so a view against none, a view
+/// against an owner, or two owned quantities stay different.
+fn loop_exit_resources_agree(
+    left: &ResourceContext,
+    right: &ResourceContext,
+    assumptions: &PureFactContext,
+) -> bool {
+    left == right || left.clone().normalized(assumptions) == right.clone().normalized(assumptions)
+}
+
 /// What two loop exit states disagree about, named for a refusal.
 ///
 /// Two components are compared by what they mean rather than by how the
@@ -3842,9 +4178,8 @@ fn loop_exit_state_difference(
         return None;
     }
     let same_memory = left.memory().same_contents_as(right.memory());
-    let same_resources = left.resources() == right.resources()
-        || left.resources().clone().normalized(assumptions)
-            == right.resources().clone().normalized(assumptions);
+    let same_resources =
+        loop_exit_resources_agree(left.resources(), right.resources(), assumptions);
     if same_memory || same_resources {
         // The fields are assigned directly: the setters also refresh what
         // they mirror elsewhere in the state, and nothing but the component

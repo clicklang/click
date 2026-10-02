@@ -5184,3 +5184,85 @@ fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
         "loop exit work over C branches must be near linear in the exits: {branches:?}"
     );
 }
+
+/// A `while (true)` left first by a `break` that never opens the binder and
+/// then by `exit_count` `break`s that each write the binder's cell and fold
+/// it back at the same constructor. The join builds its successor from the
+/// first exit, which holds its view of the cell once; every writing exit
+/// holds that view twice, so each of them reaches the join's normalized
+/// comparison rather than the structural one.
+fn loop_with_break_exits_project(exit_count: usize) -> (String, String) {
+    let mut c_source = String::from(
+        "struct node { int32 shade; };\n\nvoid paint(struct node* p, int32 flag) {\n    while (true) {\n        if (flag == 0) {\n            break;\n        }\n",
+    );
+    for exit in 1..exit_count {
+        c_source.push_str(&format!(
+            "        if (flag == {exit}) {{\n            p->shade = 1;\n            break;\n        }}\n"
+        ));
+    }
+    c_source.push_str("        p->shade = 1;\n        break;\n    }\n}\n");
+
+    let mut click_source = String::from(
+        "verifying \"exits.c\";\n\nspec enum Color { Red, Black }\n\nresource painted(p: struct node*) {\n    field color: Color;\n    match color {\n        Color::Red => { owns p->shade; fact p->shade == 0; },\n        Color::Black => { owns p->shade; fact p->shade == 1; },\n    }\n}\n\nvoid paint(struct node* p, int32 flag) {\n    owns c: painted(p);\n    requires c.color == Color::Black;\n} by {\n    loop {\n        decreases 0;\n        owns c: painted(p);\n        invariant c.color == Color::Black;\n\n        preserve by {\nif flag == 0 {\nstep();\nstep();\n} else {\n",
+    );
+    let writing_exit = |click_source: &mut String, skipped: usize| {
+        click_source.push_str("unfold(c);\n");
+        // Each `if` the path did not take is two steps; the caller adds the
+        // taken `if`, when there is one, to `skipped`'s count.
+        for _ in 0..skipped {
+            click_source.push_str("step();\n");
+        }
+        click_source
+            .push_str("step();\nlet c = fold(painted(p), { color: Color::Black });\nstep();\n");
+    };
+    for exit in 1..exit_count {
+        click_source.push_str(&format!("if flag == {exit} {{\n"));
+        writing_exit(&mut click_source, 2 * exit + 1);
+        click_source.push_str("} else {\n");
+    }
+    writing_exit(&mut click_source, 2 * exit_count);
+    for _ in 0..exit_count {
+        click_source.push_str("}\n");
+    }
+    click_source.push_str("        }\n    }\n    step();\n    simp();\n}\n");
+    (c_source, click_source)
+}
+
+/// The exit join does one pass over the exits. The body's own steps are
+/// charged to themselves and necessarily grow with the square of the exit
+/// count here (the `k`th exit is `k` tests deep), so the measure is the
+/// `loop` tactic's own work, which is where the join is charged.
+#[test]
+fn loop_exit_join_scales_near_linearly_with_the_number_of_exits() {
+    // The proof nests one `if` per exit, deeper than a test thread's stack.
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(loop_exit_join_scaling_on_this_thread)
+        .expect("the scaling thread starts")
+        .join()
+        .expect("the scaling thread finishes");
+}
+
+fn loop_exit_join_scaling_on_this_thread() {
+    let samples = [3, 6, 12, 24]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = loop_with_break_exits_project(size);
+            let (verified, mut sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("exits.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!("{size}-exit loop fixture failed: {}", error.message())
+            });
+            sample.work = sample
+                .named_work
+                .iter()
+                .filter(|(name, _)| name.contains("tactic `loop`"))
+                .map(|(_, work)| *work)
+                .sum();
+            assert!(sample.work > 0, "the loop tactic's work was not measured");
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("loop exits joined", &samples);
+}

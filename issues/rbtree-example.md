@@ -706,14 +706,15 @@ scalar variable targets, including the unchanged `rb_next` guard.
 model, on the verbatim body. Not finished (2026-10-02). `mdtests/rb_next.md`
 has the unchanged body with `RB_EMPTY_NODE` and the successor contract, runs
 the descent to its `return` and the ascent loop through its back edge and its
-three `break` exits, with `decreases t;` and `decreases c;`, and stops at the
-first claim after the ascent loop: what every exit stated about the frame's
-model is not available after the join (the "Loop exits" finding above,
-reduced in `mdtests/loop_break_exit_algebraic_equation_is_not_exported.md`).
-Behind it is `bugs/function-match-arm-rejects-contradiction-after-have.md`.
-Remaining once both close: the post-loop section (match the frame, fold the
-produced instances at `parent`), whose lemmas are already in the fixture and
-whose proof text has not been checked. The descent's postconditions are
+three `break` exits, with `decreases t;` and `decreases c;`. The exit join
+now keeps a fact every exit restates about the frame's merged model
+(`mdtests/loop_break_exit_keeps_a_fact_every_exit_restates.md`), so the first
+claim after the loop holds, and the fixture stops at its last `simp()`,
+before the post-loop section. Next is
+`bugs/function-match-arm-rejects-contradiction-after-have.md`, which that
+section needs; then the section itself (match the frame, fold the produced
+instances at `parent`), whose lemmas are already in the fixture and whose
+proof text has not been checked. The descent's postconditions are
 certified only on a cut body, `mdtests/rb_next_descent.md`, which goes when
 `rb_next.md` passes. The parameter is declared without `const`
 (`mdtests/rb_next_const_signature.md`).

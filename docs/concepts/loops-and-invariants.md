@@ -443,7 +443,25 @@ function with a local and an exit that did not are refused
 
 What every exit states survives the join as an ordinary fact, so a claim that
 does not distinguish the exits needs nothing special
-(`mdtests/loop_break_exit_refold_join.md`). A claim that does distinguish them
+(`mdtests/loop_break_exit_refold_join.md`).
+
+That includes a fact each exit states about its own value for a binder the
+join renamed. The join restates every exit's facts with that exit's value,
+as a term, replaced by the successor's name: an exit that holds `x` at
+`Cell::Missing` and states `Cell::Missing == old(x.model)`, and one that holds
+it at `Cell::Red(identity)` and states `Cell::Red(identity) == old(x.model)`,
+both restate `x.model == old(x.model)` about the successor. On each exit's
+path the name equals that exit's value, so the restated fact holds on that
+path, and a fact every exit restates identically holds whichever exit was
+taken. It is kept as an ordinary fact
+(`mdtests/loop_break_exit_keeps_a_fact_every_exit_restates.md`). Nothing is
+searched for or proved again: a fact one exit does not state is not kept
+(`mdtests/loop_break_exit_fact_one_exit_does_not_state_is_dropped.md`), and a
+fact about another binder is not restated about the renamed one
+(`mdtests/loop_break_exit_fact_about_another_binder_is_not_restated.md`).
+Identity is of the kernel's propositions, so two exits that spell a fact
+alike about their own arm bindings state different facts, and neither is
+kept. A claim that does distinguish them
 is read off the exported disjunction with `cases`:
 
 <!-- verified-example: mdtests/loop_break_exit_binder_model_join.md -->

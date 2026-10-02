@@ -153,17 +153,19 @@ and
 ## Where it stops
 
 After the loop the proof needs what every exit stated, beginning with
-`plug(c.model, t.model) == plug(old(c.model), old(t.model))`. None of it is
-available. The exits hold the frame at different terms, `Top` untouched and
-`Left(..)` refolded, so the join gives the frame's model a fresh name; what
-each exit stated about its own frame is not restated about that name, and the
-exported disjunction cannot be written for `cases`, because a `Left` exit's
-frame carries arm bindings the proof after the loop cannot spell
-([`loop_break_exit_algebraic_equation_is_not_exported.md`](loop_break_exit_algebraic_equation_is_not_exported.md)).
-That is the `expect` line below, and the open "Loop exits" finding of
-[`issues/rbtree-example.md`](../issues/rbtree-example.md).
+`plug(c.model, t.model) == plug(old(c.model), old(t.model))`. The exits hold
+the frame at different terms, `Top` untouched and `Left(..)` refolded, so the
+join gives the frame's model a fresh name. Each exit stated the claim about
+its own frame, and the join restates every exit's facts about the name that
+replaced it and keeps those all exits restate identically
+([`loop_break_exit_keeps_a_fact_every_exit_restates.md`](loop_break_exit_keeps_a_fact_every_exit_restates.md)),
+so the claim is a fact after the loop and the `have` below it closes.
 
-What is left once that is repaired is short, and its lemmas are already here:
+The proof then stops at its last `simp()`, which is the `expect` line below:
+the produced instances are not folded yet, because the post-loop section has
+not been written.
+
+What is left is short, and its lemmas are already here:
 match the frame, fold the produced instances at `parent`, and close. Under
 `Top` the result is null and the tree comes back as `Remainder::Whole`; under
 `Left` the result is the frame's node, with `rb_inorder_adjacent_above` and
@@ -2470,5 +2472,5 @@ struct rb_node* rb_next(struct rb_node* node) {
 ```
 
 ```expect
-fail: could not establish `plug(c.model, t.model) == plug(old(c.model), old(t.model))`
+fail: `rb_next.contract` path 1 left `rb_next.ensures_0` unproved
 ```
