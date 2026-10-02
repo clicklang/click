@@ -893,6 +893,10 @@ theorem cstr_len_has_terminator(bytes: uint8[], len: int32) {
     }
 }
 
+extern int32 __click_constant_p_unknown() {
+    ensures result == 0 or result == 1;
+}
+
 extern uint8* memcpy(uint8 destination[], uint8 source[], int32 bytes) {
     requires 0 <= bytes;
     requires viewable(source[0..bytes]);

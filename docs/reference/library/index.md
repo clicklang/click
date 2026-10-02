@@ -2038,6 +2038,23 @@ These declarations cover the narrow byte-oriented libc slice supported by C0.
 They are body-less assumptions: callers must satisfy their requirements, and
 Click does not verify an implementation of the external function.
 
+### `__click_constant_p_unknown`
+
+```click
+extern int32 __click_constant_p_unknown() {
+    ensures result == 0 or result == 1;
+}
+```
+
+**Meaning:** The value of the GNU builtin `__builtin_constant_p`, which the C
+frontend lowers to a call of this function. Whether the compiler folds the
+builtin's operand to a constant depends on optimization, so nothing is known
+about the result beyond its being 0 or 1, and a proof covers both.
+
+**Kind:** external C contract. The declaration is an explicit verification assumption.
+
+**Verified use:** [`mdtests/c_builtin_constant_p.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_constant_p.md) checks that a claim must hold for both values.
+
 ### `memcpy`
 
 ```click

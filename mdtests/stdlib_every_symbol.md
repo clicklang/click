@@ -12,6 +12,10 @@ by `authority_mode_establishes_and_retires_empty_stack_population` in
 The external catalog symbols `memcpy`, `memcmp`, `memset`, and `strlen` are
 verified in `mdtests/stdlib_external_contracts.md`.
 
+The external catalog symbol `__click_constant_p_unknown`, the value of the C
+builtin `__builtin_constant_p`, is verified in
+[`c_builtin_constant_p.md`](c_builtin_constant_p.md).
+
 The modeled-runtime resource `mutex_guard` is verified in
 [`mutex_guard_resource_body.md`](mutex_guard_resource_body.md) and
 [`mutex_guard_conditional_body.md`](mutex_guard_conditional_body.md).

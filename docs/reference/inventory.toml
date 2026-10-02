@@ -2514,6 +2514,10 @@ id = "stdlib.theorem.cstr_len_has_terminator"
 path = "reference/library/index.md#cstr_len_has_terminator"
 
 [[item]]
+id = "stdlib.extern.__click_constant_p_unknown"
+path = "reference/library/index.md#__click_constant_p_unknown"
+
+[[item]]
 id = "stdlib.extern.memcpy"
 path = "reference/library/index.md#memcpy"
 

@@ -614,7 +614,8 @@ The gate pins the first rejection on each route:
 
 The inventory below was measured at the commit that accepted the kernel's
 `inline` attributes and unnamed prototype parameters, and its closure table
-again at the commit that let explicit casts drop `const`, with
+again at the commit that accepted `compiletime_assert`, `__builtin_constant_p`,
+and the empty barrier assembly, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
@@ -653,21 +654,29 @@ three declarations each: `extern typeof(fn) fn;`, a `static void *` with
 `__used__` and `__section__(".discard.addressable")` initialized to the
 function's address, and a file-scope `asm` that emits the `.export_symbol`
 record. No verified function depends on them, so the projection excludes
-them and they are outside the claim. The other five are:
+them and they are outside the claim. The other five are `__rb_change_child`,
+`__rb_change_child_rcu`, `__rb_erase_augmented`, `__rb_insert`, and
+`____rb_erase_color`, and all five now stop at the same form, the store that
+`WRITE_ONCE` expands to:
 
-| Declaration | First rejection | At |
-| --- | --- | --- |
-| `__rb_change_child` | block-scope `extern` declaration with `__noreturn__` and `__error__`, from `compiletime_assert` inside `WRITE_ONCE` | `rbtree_augmented.h:200` |
-| `__rb_change_child_rcu` | `__builtin_constant_p`, from `rcu_assign_pointer`; the same body also holds the `barrier()` assembly `__asm__ __volatile__("": : :"memory")` | `rbtree_augmented.h:213` |
-| `__rb_erase_augmented` | the chained assignment `tmp->__rb_parent_color = pc = node->__rb_parent_color;`, refused as `an assignment expression and an unsequenced operand read` | `rbtree_augmented.h:251` |
-| `__rb_insert` | the `compiletime_assert` declaration | `lib/rbtree.c:155` |
-| `____rb_erase_color` | the `compiletime_assert` declaration | `lib/rbtree.c:253` |
+```c
+do { *(volatile typeof(parent->rb_left) *)&(parent->rb_left) = (new); } while (0);
+```
 
-`rb_next`, `rb_prev`, `rb_left_deepest_node`, `rb_next_postorder`, and
-`rb_first_postorder` are accepted since explicit casts may drop `const` and a
-conditional with a null pointer constant takes the pointer's type. The
-chained assignment surfaced only after `__rb_erase_augmented` got past that
-conditional; each remaining declaration may likewise hide more.
+It is refused as `aggregate copies require a struct value source`. A store
+through a cast to a pointer to a struct pointer is refused that way with or
+without `volatile` or `typeof` (`*(struct node **)&parent->left = new;`).
+
+Forms already accepted on the way here: explicit casts that drop `const`,
+conditionals with a null pointer constant, chained simple assignments,
+`compiletime_assert`'s block-scope `error` declaration with its unreachable
+call, `sizeof(expression)`, `__builtin_constant_p` as an unknown 0 or 1, and
+the empty `memory` barrier assembly. Each surfaced only after the one before
+it was accepted, so the remaining declarations may hide more.
+
+One defect found on the way is filed in `bugs/`: a `do { ... } while (0)`
+whose body assigns a parameter or stores through one fails without a loop
+annotation, and every expanded kernel statement macro is such a loop.
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as
 rejections.
