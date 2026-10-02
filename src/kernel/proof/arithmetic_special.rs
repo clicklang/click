@@ -105,6 +105,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 pending.push(right);
             }
             Bitvector32Term::Int64FromUInt32(value)
+            | Bitvector32Term::UInt32From64(value)
             | Bitvector32Term::Float32Negate(value)
             | Bitvector32Term::Float64Negate(value) => pending.push(value),
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
@@ -259,7 +260,8 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
-            (Bitvector32Term::Int64FromUInt32(left), Bitvector32Term::Int64FromUInt32(right)) => {
+            (Bitvector32Term::Int64FromUInt32(left), Bitvector32Term::Int64FromUInt32(right))
+            | (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
                 pending.push((left, right));
             }
             (Bitvector32Term::Constant(left), Bitvector32Term::Constant(right)) => {
@@ -1092,13 +1094,12 @@ fn scalar_bounds(premises: &[&Proposition]) -> Option<BTreeMap<Bitvector32Term, 
             }
             _ => return None,
         };
-        if !matches!(
-            left,
-            Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_)
-        ) || !matches!(
-            right,
-            Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_)
-        ) {
+        // These bounds are over signed words. A native-width or floating
+        // operation cannot supply a signed-word interval merely by being
+        // embedded in a syntactically signed comparison.
+        if super::signed_arithmetic::SignedArithmeticAtom::from_term(left).is_none()
+            || super::signed_arithmetic::SignedArithmeticAtom::from_term(right).is_none()
+        {
             return None;
         }
         let left_constant = scalar(left);
@@ -1196,7 +1197,18 @@ fn pointer_translation(
                 .copied()
                 .unwrap_or((SIGNED_MIN, SIGNED_MAX)),
         ),
-        _ => None,
+        // A compound operand remains opaque. Only an explicitly cited bound
+        // supplies its interval; do not recursively infer or scan for one.
+        _ => {
+            let payload = bitvector_payload(value)?;
+            let comparisons = (usize::BITS - bounds.len().max(1).leading_zeros()) as usize;
+            if crate::instrumentation::deadline_exceeded_with_work(
+                payload.saturating_mul(comparisons).max(1),
+            ) {
+                return None;
+            }
+            bounds.get(value).copied()
+        }
     };
     let sum_is_defined = |x: &Bitvector32Term, y: &Bitvector32Term| {
         let (Some((xmin, xmax)), Some((ymin, ymax))) = (atom_range(x), atom_range(y)) else {
@@ -2815,6 +2827,86 @@ mod tests {
             Err(SpecialArithmeticCheckError::NodeResultMismatch(0))
                 | Err(SpecialArithmeticCheckError::InvalidPremise(_))
         ));
+    }
+
+    #[test]
+    fn pointer_scalar_bounds_do_not_admit_native_width_operations() {
+        let wide = Bitvector32Term::UInt64Add(
+            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(1))),
+            Box::new(Bitvector32Term::UInt64Constant(1)),
+        );
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessThan(
+                Box::new(wide),
+                Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+            ),
+            true,
+        );
+        assert!(scalar_bounds(&[&bound]).is_none());
+    }
+
+    #[test]
+    fn computed_index_translation_checks_bounds_and_scales_with_payload() {
+        let mut previous = None;
+        for size in [2usize, 8, 32, 96] {
+            let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
+            let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
+            let mut index = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(
+                crate::kernel::Variable(1),
+            )));
+            for _ in 0..size {
+                index = Bitvector32Term::Subtract(
+                    Box::new(index),
+                    Box::new(Bitvector32Term::Constant(0)),
+                );
+            }
+            let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(index.clone())));
+            let bound = Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedLessThan(
+                    Box::new(index.clone()),
+                    Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+                ),
+                true,
+            );
+            let goal = pointer_eq(
+                add(p, PointerOffsetTerm::Constant(4)),
+                add(
+                    arr,
+                    scaled(Bitvector32Term::Add(
+                        Box::new(index),
+                        Box::new(Bitvector32Term::Constant(1)),
+                    )),
+                ),
+            );
+            let certificate = SpecialArithmeticCertificate {
+                nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                    relation: 0,
+                    bounds: vec![1],
+                    result: goal.clone(),
+                }],
+                conclusion: 0,
+            };
+            let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
+                certificate.check(&goal, &[relation.clone(), bound]).is_ok()
+            });
+            assert!(valid, "computed index of size {size}");
+            if let Some((previous_size, previous_work)) = previous {
+                assert!(
+                    work <= previous_work * (size / previous_size) + 40,
+                    "{size}: {work} after {previous_work}"
+                );
+            }
+            previous = Some((size, work));
+            let no_bound = SpecialArithmeticCertificate {
+                nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                    relation: 0,
+                    bounds: vec![],
+                    result: goal.clone(),
+                }],
+                conclusion: 0,
+            };
+            assert!(no_bound.check(&goal, &[relation]).is_err());
+        }
     }
 
     #[test]

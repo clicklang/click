@@ -466,7 +466,7 @@ impl<'tcx> BodyExporter<'tcx> {
         Ok(out)
     }
     // Recognize the pinned compiler's for desugaring, never user call names.
-    // Copied bytes and shared byte references use the same checked progress.
+    // Copied bytes and shared byte references retain the standard next protocol.
     fn slice_for(
         &mut self,
         e: &hir::Expr<'tcx>,
@@ -597,14 +597,11 @@ impl<'tcx> BodyExporter<'tcx> {
         };
         let slice = self.expr(slice)?;
         let location = span(self.tcx, e.span);
-        let index = format!("__rust_iter_index_{}_{}", location.line, location.column);
-        if !self.names.insert(index.clone()) {
+        let iterator = format!("__rust_iter_{}_{}", location.line, location.column);
+        if !self.names.insert(iterator.clone()) {
             return Err("duplicate Rust iterator identity".into());
         }
-        let byte = self.bind(binding, false)?;
-        let local = Expression::Local {
-            name: index.clone(),
-        };
+        let name = self.bind(binding, false)?;
         let value_type = if reference {
             Type::Reference {
                 mutable: false,
@@ -613,59 +610,17 @@ impl<'tcx> BodyExporter<'tcx> {
         } else {
             Type::U8
         };
-        let element = Expression::Index {
-            slice: Box::new(slice.clone()),
-            index: Box::new(local.clone()),
-        };
-        let initializer = if reference {
-            Expression::Borrow {
-                place: Box::new(element),
-                value_type: value_type.clone(),
-            }
-        } else {
-            element
-        };
-        let mut body = vec![Statement::Declare {
-            place: Place {
-                name: byte,
+        let mut statements = vec![Statement::SliceFor {
+            iterator,
+            slice,
+            binding: Place {
+                name,
                 value_type,
                 span: span(self.tcx, binding.span),
             },
-            initializer,
+            by_reference: reference,
+            body: self.statement(some.body, false)?,
         }];
-        body.extend(self.statement(some.body, false)?);
-        body.push(Statement::Assign {
-            target: local.clone(),
-            value: Expression::Binary {
-                operator: "add".into(),
-                left_type: Type::Usize,
-                right_type: Type::Usize,
-                left: Box::new(local.clone()),
-                right: Box::new(Expression::UsizeInteger { value: 1 }),
-            },
-        });
-        let mut statements = vec![
-            Statement::Declare {
-                place: Place {
-                    name: index,
-                    value_type: Type::Usize,
-                    span: location,
-                },
-                initializer: Expression::UsizeInteger { value: 0 },
-            },
-            Statement::While {
-                condition: Expression::Binary {
-                    operator: "lt".into(),
-                    left_type: Type::Usize,
-                    right_type: Type::Usize,
-                    left: Box::new(local),
-                    right: Box::new(Expression::SliceLength {
-                        slice: Box::new(slice),
-                    }),
-                },
-                body,
-            },
-        ];
         if tail_return {
             statements.push(Statement::Return { value: None });
         }

@@ -257,6 +257,13 @@ impl Context<'_> {
     }
     fn statement(&mut self, s: &S) -> Result<CStatement, String> {
         match s {
+            S::SliceFor {
+                iterator,
+                slice,
+                binding,
+                by_reference,
+                body,
+            } => self.slice_for(iterator, slice, binding, *by_reference, body),
             S::Declare { place, initializer } => {
                 if !self.locals.insert(place.name.clone()) {
                     return Err("duplicate Rust local identity".into());
@@ -464,6 +471,118 @@ impl Context<'_> {
                 Ok(c_seq(checks, c_call(function, arguments)))
             }
         }
+    }
+    // Semantic slice-iterator state: cursor plus remaining slice length.
+    // The signed length is the shared memory model's checked representation,
+    // not a generated count of processed elements.
+    fn slice_for(
+        &mut self,
+        iterator: &str,
+        slice: &E,
+        binding: &super::schema::Place,
+        by_reference: bool,
+        body: &[S],
+    ) -> Result<CStatement, String> {
+        let (pointer, length) = self.slice_parts(slice)?;
+        let cursor = format!("{iterator}_cursor");
+        let remaining = format!("{iterator}_remaining");
+        let item = format!("{iterator}_item");
+        for name in [&cursor, &remaining, &item, &binding.name] {
+            if !self.locals.insert(name.clone()) {
+                return Err("Rust iterator state identity collision".into());
+            }
+        }
+        let expected = if by_reference {
+            Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U8),
+            }
+        } else {
+            Type::U8
+        };
+        if binding.value_type != expected {
+            return Err("Rust iterator yielded binding type mismatch".into());
+        }
+        let declaration = c_declare_with_all_qualifiers(
+            &binding.name,
+            scalar_type(&binding.value_type)?.to_kernel_type(),
+            false,
+            false,
+            false,
+            by_reference,
+        );
+        // Save Some's shared address before advancing. Copy patterns likewise
+        // read that address before the source body; None does neither operation.
+        let yielded = if by_reference {
+            c_variable(&item)
+        } else {
+            let occurrence = self.next_load;
+            self.next_load = self
+                .next_load
+                .checked_add(1)
+                .ok_or("Rust load identity exhausted")?;
+            c_typed_load_with_source(
+                c_variable(&item),
+                CType::UInt8,
+                Some(LoadSourceId {
+                    owner: LoadSourceOwnerId {
+                        source_unit: self.source.into(),
+                        function: self.function.into(),
+                    },
+                    occurrence,
+                }),
+            )
+        };
+        let next = c_seq(
+            c_declare_with_all_qualifiers(&item, CType::UInt8Pointer, false, false, false, true),
+            c_seq(
+                c_assign(&item, c_variable(&cursor)),
+                c_seq(
+                    c_assign(&cursor, c_add(c_variable(&cursor), c_int32_literal(1))),
+                    c_seq(
+                        c_assign(
+                            &remaining,
+                            c_subtract(c_variable(&remaining), c_int32_literal(1)),
+                        ),
+                        c_seq(declaration, c_assign(&binding.name, yielded)),
+                    ),
+                ),
+            ),
+        );
+        let source_body = self.body(body)?;
+        Ok(c_seq(
+            c_labeled_assert(
+                c_less_equal(length.clone(), c_uint64_literal(i32::MAX as u64)),
+                "Rust iterator memory-model length bound",
+            ),
+            c_seq(
+                c_declare_with_all_qualifiers(
+                    &cursor,
+                    CType::UInt8Pointer,
+                    false,
+                    false,
+                    false,
+                    true,
+                ),
+                c_seq(
+                    c_assign(&cursor, pointer),
+                    c_seq(
+                        c_declare(&remaining, CType::Int32),
+                        c_seq(
+                            c_assign(
+                                &remaining,
+                                c_cast(c_cast(length, CType::UInt32), CType::Int32),
+                            ),
+                            c_while(
+                                c_not(c_equal(c_variable(&remaining), c_int32_literal(0))),
+                                Vec::new(),
+                                c_seq(next, source_body),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ))
     }
     fn assign(&mut self, name: &str, e: &E) -> Result<CStatement, String> {
         if !self.locals.contains(name) {

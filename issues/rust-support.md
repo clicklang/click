@@ -142,7 +142,9 @@ This is synthetic functional accumulation; the pinned checksum libraries
 remain unverified.
 The [slice iterator fixture](../examples/rust-iterators/README.md) proves the
 same sum with unchanged `for &byte in bytes` source, using compiler-resolved
-iterator calls, copied byte bindings, checked indexing, and shared loop rules.
+iterator calls, copied byte bindings, explicit cursor/remaining-slice state, and
+shared loop rules. No processed count is generated; its prefix invariant is
+authored in the sidecar.
 The [reference iterator fixture](../examples/rust-iter-references/README.md)
 proves the same sum with `for byte in bytes.iter()` and shared-reference
 dereferences. Direct slices and `.iter()` support both copied and reference

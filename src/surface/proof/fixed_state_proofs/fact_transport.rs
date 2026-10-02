@@ -1092,6 +1092,25 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     after: Option<&CMemory>,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A checked read at a computed address includes its address-definedness
+    // obligations. Prove every target leaf from the same selected facts;
+    // those obligations must not prevent transport of the read itself.
+    if matches!(target, Proposition::And(_, _)) {
+        let mut pending = vec![target];
+        while let Some(leaf) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Proposition::And(left, right) = leaf {
+                pending.push(right);
+                pending.push(left);
+            } else if !assumptions.proves_exact(leaf)
+                && !crate::kernel::proposition_holds_without_facts(leaf)
+                && !certified_fact_transport_reaches(source, leaf, after, assumptions)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
     let equivalent = |left: &Proposition, right: &Proposition| {
         left == right
             || crate::kernel::c_condition_facts_equivalent_for_memory_resolution(
@@ -1254,6 +1273,74 @@ fn holds_without_facts_under_binders(proposition: &Proposition) -> bool {
 #[cfg(test)]
 mod path_condition_tests {
     use super::*;
+
+    #[test]
+    fn compound_read_transport_requires_every_address_guard_and_range() {
+        let memory = CMemory::new();
+        let base = Pointer {
+            block: "bytes".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: Bitvector32Term::Constant(1),
+        };
+        let guard = Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedSubtractOverflows(
+                Box::new(Bitvector32Term::Variable(Variable(7))),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            false,
+        );
+        let target = Proposition::And(Box::new(guard.clone()), Box::new(source.clone()));
+        let facts = PureFactContext::new().assume_proposition(source.clone());
+        assert!(!certified_fact_transport_reaches(
+            &source, &target, None, &facts
+        ));
+        let facts = facts.assume_proposition(guard.clone());
+        assert!(certified_fact_transport_reaches(
+            &source, &target, None, &facts
+        ));
+        let wider = Proposition::CMemoryLoadable {
+            memory,
+            base,
+            bytes: Bitvector32Term::Constant(2),
+        };
+        let invalid = Proposition::And(Box::new(guard), Box::new(wider));
+        assert!(!certified_fact_transport_reaches(
+            &source, &invalid, None, &facts
+        ));
+    }
+
+    #[test]
+    fn compound_transport_target_work_scales_with_explicit_leaves() {
+        let source = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let facts = PureFactContext::new().assume_proposition(source.clone());
+        let mut previous = 0;
+        for size in [16, 64, 256, 1024] {
+            let mut level = vec![source.clone(); size];
+            while level.len() > 1 {
+                level = level
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|pair| {
+                        Proposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                    })
+                    .collect();
+            }
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                certified_fact_transport_reaches(&source, &level[0], None, &facts)
+            });
+            assert!(proved);
+            assert!(work >= size);
+            if previous > 0 {
+                assert!(work <= 4 * previous + 4, "{size}: {work} after {previous}");
+            }
+            previous = work;
+        }
+    }
 
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {
