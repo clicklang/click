@@ -239,7 +239,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 27;
+    artifact["schema"] = 28;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -1441,6 +1441,43 @@ private:
     return false;
   }
 
+  bool stable_scalar_argument(const clang::Expr *expression,
+                              const clang::FunctionDecl *caller) const {
+    expression = expression->IgnoreParens();
+    if (const auto *substitution =
+            llvm::dyn_cast<clang::SubstNonTypeTemplateParmExpr>(expression))
+      return stable_scalar_argument(substitution->getReplacement(), caller);
+    if (const auto *cast = llvm::dyn_cast<clang::CastExpr>(expression)) {
+      switch (cast->getCastKind()) {
+      case clang::CK_LValueToRValue:
+      case clang::CK_IntegralCast:
+      case clang::CK_IntegralToBoolean:
+      case clang::CK_NoOp:
+        return stable_scalar_argument(cast->getSubExpr(), caller);
+      default:
+        return false;
+      }
+    }
+    if (llvm::isa<clang::IntegerLiteral>(expression) ||
+        llvm::isa<clang::CXXBoolLiteralExpr>(expression) ||
+        llvm::isa<clang::UnaryExprOrTypeTraitExpr>(expression))
+      return true;
+    if (const auto *call = llvm::dyn_cast<clang::CallExpr>(expression))
+      return is_numeric_limits_max_call(call);
+    if (const auto *reference =
+            llvm::dyn_cast<clang::DeclRefExpr>(expression)) {
+      const auto *variable =
+          llvm::dyn_cast<clang::VarDecl>(reference->getDecl());
+      return variable != nullptr && variable->getType()->isIntegerType() &&
+             !variable->getType().isVolatileQualified() &&
+             (variable->isConstexpr() ||
+              (variable->getDeclContext() == caller &&
+               (llvm::isa<clang::ParmVarDecl>(variable) ||
+                (variable->hasLocalStorage() && !variable->isStaticLocal()))));
+    }
+    return false;
+  }
+
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
                        const clang::FunctionDecl *caller,
@@ -1498,6 +1535,39 @@ private:
       return std::nullopt;
     }
 
+    if (allow_nested) {
+      unsigned nested_calls = 0;
+      for (unsigned index = argument_offset; index < call->getNumArgs();
+           ++index) {
+        const auto *nested = llvm::dyn_cast<clang::CallExpr>(
+            call->getArg(index)->IgnoreParens());
+        if (nested != nullptr && !is_numeric_limits_max_call(nested))
+          ++nested_calls;
+      }
+      if (nested_calls > 1 || (nested_calls != 0 && method != nullptr)) {
+        fail(call->getExprLoc(),
+             "nested C++ call arguments require one call and stable scalar "
+             "siblings to preserve evaluation order");
+        return std::nullopt;
+      }
+      if (nested_calls == 1) {
+        for (unsigned index = argument_offset; index < call->getNumArgs();
+             ++index) {
+          const auto *argument = call->getArg(index);
+          const auto *nested =
+              llvm::dyn_cast<clang::CallExpr>(argument->IgnoreParens());
+          if (nested != nullptr && !is_numeric_limits_max_call(nested))
+            continue;
+          if (!stable_scalar_argument(argument, caller)) {
+            fail(argument->getExprLoc(),
+                 "nested C++ call arguments require one call and stable scalar "
+                 "siblings to preserve evaluation order");
+            return std::nullopt;
+          }
+        }
+      }
+    }
+
     llvm::json::Array arguments;
     if (receiver != nullptr) {
       auto place = lower_place_reference(receiver, caller);
@@ -1515,12 +1585,12 @@ private:
       std::optional<Json> argument;
       if (allow_nested && nested != nullptr &&
           !is_numeric_limits_max_call(nested)) {
-        if (method != nullptr || definition->getNumParams() != 1 ||
+        if (method != nullptr ||
             definition->getParamDecl(index)->getType()->isReferenceType() ||
             !context_.hasSameType(source_argument->getType(),
                                   definition->getParamDecl(index)->getType())) {
           fail(source_argument->getExprLoc(),
-               "nested C++ calls require exactly one matching scalar value "
+               "nested C++ calls require a matching scalar value "
                "argument to preserve evaluation order");
           return std::nullopt;
         }
@@ -1674,11 +1744,16 @@ private:
            "reachable C++ constants must be declared in the selected source");
       return false;
     }
+    const bool internal_namespace_constant =
+        definition->getDeclContext()->isFileContext() &&
+        definition->getFormalLinkage() == clang::Linkage::Internal;
     if (!definition->isConstexpr() ||
-        definition->getStorageClass() != clang::SC_Static ||
+        (definition->getStorageClass() != clang::SC_Static &&
+         !internal_namespace_constant) ||
         !definition->hasGlobalStorage()) {
       fail(definition->getLocation(),
-           "reachable C++ constants must be namespace-scope static constexpr declarations");
+           "reachable C++ constants must be namespace-scope static constexpr "
+           "or internal-linkage constexpr declarations");
       return false;
     }
     const clang::QualType type = definition->getType();

@@ -97,14 +97,21 @@ Call graph and cleanup validation remain explicit. Uncaught return-call cleanup
 edges have structural coverage; guarded `try` returns and resource-bearing
 exceptional contracts remain outside this slice.
 
-Nested scalar calls now support a sole value argument in a direct free-function return call,
-including deeper chains. Typed captures preserve evaluation order, inner
-exceptions skip outer calls, and normal cleanup follows the final capture.
-Regressions cover all scalar widths and signedness, Boolean results, source-name
-collisions and scaling, mixed-width branches, hostile claims, selected-caller
-expansion and audit, and nested
-callee/type/cycle validation. Multiple-argument nesting remains unsupported;
-this does not yet import Bitcoin's `Div(Mul(...), ...)` form.
+Nested scalar calls now support one call argument in a direct free-function
+return call, including deeper chains and multiple stable scalar siblings.
+By-value scalar parameters/locals, literals, locked constants, and supported
+integer/Boolean casts are stable and total, so all argument orders agree even
+when the inner call writes memory or throws. Memory-reading siblings, arithmetic,
+multiple nested calls, and sibling side effects remain explicit errors. Typed
+captures preserve normal cleanup and inner exceptions skip outer calls.
+Regressions cover widths/signedness, Boolean results, each argument position,
+casts, source-name collisions, mixed-width branches, hostile claims, and
+selected-caller expansion and audit. Name allocation and argument lowering have
+deterministic scaling regressions. The synthetic 64-bit fee fixture preserves
+`Div(Mul(...), divisor, round_down)` and proves concrete positive/negative rounding
+and exact division, including concrete Boolean template wrappers; zero divisors
+and unproved product bounds are rejected.
+This does not yet import Bitcoin's wide helper path or field-reading siblings.
 
 ## Required invariant
 
@@ -130,11 +137,10 @@ and prove the documented rounding direction, including negative fees, exact
 division, and a nonzero remainder. Concrete Boolean template instances and `if constexpr` now have prerequisite
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
-cases. The selected upstream source still requires `__int128` helpers,
-assumption obligations, and multiple-argument nested value calls such as
-`Div(Mul(...), ...)` on this target. Those remain importer and arithmetic-model
-work;
-upstream `EvaluateFee` is not yet supported.
+cases. The selected upstream source still requires `__int128`, static scalar helpers,
+assumption obligations, and argument-order support for field-reading siblings
+in `Div(Mul(...), size, RoundDown)` on this target. Stable scalar sibling arguments
+are now supported; upstream `EvaluateFee` is not yet supported.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false
