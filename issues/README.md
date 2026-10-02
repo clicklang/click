@@ -97,7 +97,7 @@ Specification and proof:
 
 - [Verify the Linux rbtree example on the recursive structure models](rbtree-example.md)
 
-## P2: after launch (17)
+## P2: after launch (18)
 
 - [Make `step` simple across a call precondition](simplify-step.md)
 - [Reject `result` inside entry snapshots](result-accepted-in-entry-snapshots.md)
@@ -120,6 +120,10 @@ C language coverage:
 - [Resolve linked initializers in their defining file](linked-initializer-private-names.md)
 - [Model concurrency and atomics](concurrency-and-atomics.md)
 - [Model signed eight-bit integers](signed-byte-integers.md)
+
+Additional languages:
+
+- [Extend C++ support toward Bitcoin Core](cpp-support.md)
 
 Semantics and reasoning:
 
