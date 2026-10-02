@@ -317,15 +317,26 @@ transports `defined(counter + 1)` to `defined(count(...) + 1)`. Its two smart
 sites expand and reverify. `authority_count_defined_at_max_rejected.md` checks
 that the same control cannot justify an increment at `2147483647`.
 
-This does not finish checkout: the reduced pool regression still states
-`checked_out < 2147483647`. The next source-proof slice must derive increment
-safety from the available slot and control invariant, then use the explicit
-transport above. Preserve the original `pool_checkout.c`, all original output
-claims, and existing authority fixtures. Do not add an extra counter-bound
-precondition or reinstate the speculative cache repair. That repair broke four
-fixtures and was removed; the minimal reproduction now proves with existing
-tactics, so it does not justify a count-model redesign. Missing facts inside
-`open(...)` report `Requires f`.
+`authority_pool_checkout_original_bound.md` now verifies the original
+`pool_checkout.c` verbatim under authority semantics. It derives increment
+safety from one available slot, the nonnegative counter, and the defined
+capacity invariant; no extra counter-bound requirement is added. The proof
+preserves `valid_pool` and checks the counter, capacity, and both population
+count changes. All seven smart sites expand and reverify. Its companion
+`authority_pool_checkout_without_slot_rejected.md` rejects the unavailable-slot
+case with `Requires 1 <= count(pool_slot(pool))`.
+
+The next checkout slice is the ordinary helper boundary with that same
+contract. The existing reduced helper regression still explicitly requires
+`checked_out < 2147483647`; removing that requirement currently refuses the
+member transition with `InvalidQuantity`. First establish the needed call-site
+fact from the folded control or an explicit open/prove/close sequence. Do not
+weaken the contract or change C to make the transfer pass. Keep symbolic
+cleanup and two-pool transfer separate from this reduction. The original
+bounded-pool project still uses legacy counting and is not migrated as a whole.
+The speculative cache repair remains removed; these direct proofs required no
+count-model or authority change. Missing facts inside `open(...)` report
+`Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
