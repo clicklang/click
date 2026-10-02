@@ -55,6 +55,7 @@ verifying "../bounded-pool/pool_destroy.c";
 verifying "../bounded-pool/pool_zero_pipeline.c";
 verifying "../bounded-pool/pool_checkout.c";
 verifying "../bounded-pool/pool_return.c";
+verifying "../bounded-pool/pool_pipeline.c";
 void pool_init(struct pool* pool, int32 capacity) {
     consumes pool_storage(pool);
     requires 0 <= capacity;
@@ -261,5 +262,41 @@ void pool_return(struct pool* pool, struct object* object) {
             normalize();
         }
     }
+    execute(); unfold(valid_pool); simp();
+}
+
+void pool_pipeline(struct pool* pool, struct object* first, struct object* second) {
+    consumes pool_storage(pool);
+    requires count(pool_slot(pool)) == 0;
+    requires count(pool_object(pool, _)) == 0;
+    owns object(first);
+    owns object(second);
+    produces object(pool);
+    ensures pool->checked_out == 0;
+    ensures pool->capacity == 0;
+    ensures count(pool_slot(pool)) == 0;
+    ensures count(pool_object(pool, _)) == 0;
+    ensures first->value == 11;
+    ensures second->value == 22;
+    ensures valid_pool(pool);
+} by {
+    step();
+    have count(pool_object(pool, _)) == 0 by simp;
+    have defined(count(pool_object(pool, _)) + 1) by simp;
+    step();
+    have count(pool_object(pool, _)) == 1 by simp;
+    have defined(count(pool_object(pool, _)) + 1) by simp;
+    step();
+    open(pool_object(pool, first)) { step(); }
+    open(pool_object(pool, second)) { step(); }
+    have count(pool_object(pool, second)) == 1 by simp;
+    step();
+    have count(pool_object(pool, first)) == 1 by simp;
+    step();
+    unfold(pool_control(pool));
+    have pool->capacity == count(pool_slot(pool)) by simp;
+    have count(pool_object(pool, _)) == 0 by simp;
+    fold(pool_control(pool));
+    step();
     execute(); unfold(valid_pool); simp();
 }

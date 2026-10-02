@@ -400,8 +400,14 @@ local absence alone does not establish emptiness. The
 [pool cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup_helper.md)
 checks direct, nested, and zero-capacity calls using the original pool cleanup
 C. The caller unfolds and refolds the control to establish the required
-conservation and empty-population facts before calling cleanup. Splitting
-batches remains separate work.
+conservation and empty-population facts before calling cleanup. A caller
+holding a concrete numerical batch can pass it to an entry field-valued
+quantity when an available equality identifies that field with the sender's
+complete held batch. The equality moves only those existing members;
+it cannot substitute a global count for custody or permit consumption without
+authority. The [field-quantity cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_cleanup_field_quantity.md)
+checks two owned slots passed as the cleanup helper's entry capacity.
+Splitting batches remains separate work.
 
 For an authority passed into a function, retirement checks both that its
 member custody has been consumed and that its authenticated global count is

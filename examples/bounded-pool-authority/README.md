@@ -2,8 +2,8 @@
 
 This is the first project-level authority checkpoint for the bounded pool.
 The sidecar references the C files in `../bounded-pool` directly; no C source
-is copied or changed. It proves `pool_init`, `pool_destroy`, `pool_checkout`, `pool_return`, and
-the existing `pool_zero_pipeline`.
+is copied or changed. It proves initialization, checkout, return,
+and cleanup, plus the original zero-capacity and two-object pipelines.
 
 `pool_storage(pool)` owns pool memory and both population authorities.
 Initialization takes that resource explicitly, requires both populations to
@@ -30,10 +30,13 @@ helpers borrow the control and preserve its conservation invariant. Their
 integer bounds follow from that invariant and the supplied member or slot;
 checkout needs no additional counter-bound precondition.
 
-The full two-object pipeline remains the next integration checkpoint. Its
-checkout, private writes, and returns verify, but applying final cleanup to
-the returned slot batch currently fails with `MissingMembers`. The failed
-pipeline is not part of this verified companion.
+The full two-object pipeline initializes two slots, checks out both objects,
+writes their private values while the pool control stays closed, returns the
+objects in reverse order, and cleans up. Its contract returns ordinary pool
+and object memory, preserves the written values, and proves both populations
+are empty. Cleanup selects the two returned slots by its entry-capacity field;
+a checked equality relates that field to the caller's numerical batch. This
+uses the existing contract and proof syntax.
 
 The other bounded-pool pipelines, including resize and transfer, remain in
 the original project during migration. Focused authority

@@ -36,6 +36,23 @@ fn same_quantity(
         )
 }
 
+/// Interpret a field-valued request as the sender's complete numerical batch
+/// only with a recorded equality. The number comes from checked custody;
+/// neither a global count nor a bound can supply missing member rights.
+fn numerical_batch_quantity(
+    quantity: &Bitvector32Term,
+    held: u32,
+    assumptions: &PureFactContext,
+) -> Option<u32> {
+    quantity.as_const().or_else(|| {
+        (assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(held),
+        )) == Some(true))
+        .then_some(held)
+    })
+}
+
 struct Root {
     identity: u64,
     /// Stable rechecking of the same function-entry transition. Authority-mode C
@@ -1574,6 +1591,27 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
+        // A helper may select the complete numerical batch by an entry field
+        // rather than a literal. Keep the symbolic-batch path unchanged.
+        let numerical = (!produce && quantity.as_const().is_none())
+            .then(|| self.0.opaque_imports.get(description))
+            .flatten()
+            .filter(|import| {
+                import.entry_symbolic_members.is_none() && import.symbolic_delta.is_none()
+            })
+            .and_then(|import| {
+                numerical_batch_quantity(
+                    quantity,
+                    import
+                        .member_holders
+                        .get(&self.0.opaque_actor)
+                        .copied()
+                        .unwrap_or(0),
+                    assumptions,
+                )
+            })
+            .map(Bitvector32Term::Constant);
+        let quantity = numerical.as_ref().unwrap_or(quantity);
         if quantity.as_const() == Some(1) {
             return self.checked_member_exchange_with_context(
                 block,
@@ -2241,13 +2279,37 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
+        let scope = self.governing_authority(description);
+        let numerical = (!authority_fact && quantity.as_const().is_none())
+            .then(|| {
+                scope
+                    .as_ref()
+                    .and_then(|scope| self.0.opaque_imports.get(scope))
+            })
+            .flatten()
+            .filter(|import| {
+                import.entry_symbolic_members.is_none() && import.symbolic_delta.is_none()
+            })
+            .and_then(|import| {
+                numerical_batch_quantity(
+                    quantity,
+                    import
+                        .member_holders
+                        .get(&from.0.opaque_actor)
+                        .copied()
+                        .unwrap_or(0),
+                    assumptions,
+                )
+            })
+            .map(Bitvector32Term::Constant);
+        let quantity = numerical.as_ref().unwrap_or(quantity);
         // Zero ownership transports no member capability, including when a
         // checked contract equality establishes that a field-valued quantity
         // is zero. It cannot move the authority or justify a unit operation.
         if !authority_fact && same_quantity(quantity, &Bitvector32Term::Constant(0), assumptions) {
             return Ok(self.clone());
         }
-        if let Some(scope) = self.governing_authority(description)
+        if let Some(scope) = scope
             && let Some(import) = self.0.opaque_imports.get(&scope)
         {
             if import.wildcard_member.is_some()

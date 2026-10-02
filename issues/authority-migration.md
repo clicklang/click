@@ -406,11 +406,20 @@ return restores that memory unchanged and produces a slot. Both preserve the
 folded control's invariant, deriving arithmetic safety from conservation.
 These reuse the focused proofs without changing C or the authority model.
 
-The next small slice is the final cleanup call in the original two-object
-pipeline. Checkout, private writes, and both returns verify, but the cleanup
-call rejects its returned slot batch with `MissingMembers`. Reduce that
-specific call-transfer gap before adding the full pipeline to the companion.
-Keep batch splitting, symbolic grow/shrink, and two-pool transfer separate.
+The companion now verifies the original two-object pipeline through cleanup:
+initialization, two checkouts, private writes under closed pool control, reverse
+returns, and retirement of both populations. It returns ordinary memory,
+preserves the written values, and proves both counts zero. No C changes or
+surface additions were needed. `authority_pool_cleanup_field_quantity.md`
+reduces the final call: the caller owns two slots, while cleanup consumes an
+entry field equal to two. The ledger accepts a recorded equality to the
+sender's complete numerical batch, then checks ordinary custody and authority.
+Kernel regressions reject absent/mismatched custody, repeated spending, and
+consumption without authority; deterministic work stays bounded over growing
+batch sizes and unrelated fact sets.
+
+The next slices are batch splitting and symbolic grow/shrink, before two-pool
+transfer. Keep these separate from this complete fixed-capacity lifecycle.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.
 Missing facts inside `open(...)` report `Requires f`.
