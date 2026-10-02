@@ -4442,6 +4442,45 @@ fn recording_condition_evidence_checks_it_decides_the_frontier() {
 }
 
 #[test]
+fn condition_evidence_cannot_decide_a_do_while_before_its_body() {
+    // `do { return 1; } while (0); return 0;` runs its body first. Evidence
+    // that decides the loop's `0` at the head would select the tail and
+    // skip the body, so the proof object refuses it: at a `do`-`while`
+    // head the next statement is the body's first.
+    let function = c_function(
+        CType::Int32,
+        "runs_body",
+        Vec::new(),
+        c_seq(
+            crate::kernel::c_do_while(c_int32_literal(0), c_return(c_int32_literal(1))),
+            c_return(c_int32_literal(0)),
+        ),
+    );
+    let entry_state = c_function_entry_state(&CState::new(), &function, &[])
+        .expect("a parameterless function binds its entry state");
+    let mut core = crate::kernel::proof::ExecutionProofCore::at_entry(
+        CState::new(),
+        crate::kernel::proof::ExecutionFrontier::default(),
+    );
+    assert_eq!(
+        core.record_condition_transition(
+            &function,
+            &[],
+            Theorem::new(Proposition::CConditionEvaluates {
+                state: entry_state,
+                condition: c_int32_literal(0),
+                outcome: crate::kernel::CConditionOutcome::Value(false),
+            }),
+            PureFactContext::new(),
+            &[],
+            &[],
+        )
+        .map_err(|refusal| refusal.reason),
+        Err("condition evidence does not decide the frontier's next `if` or `while`")
+    );
+}
+
+#[test]
 fn recorded_evidence_reaches_the_theorem_outcome_not_the_driver_state() {
     // The proof object validates its chain from the theorems alone: the
     // next theorem must start from the state the recorded evidence

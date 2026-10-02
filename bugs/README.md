@@ -27,3 +27,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [A loop proof's certificate merge costs uncounted work that grows faster than the proof](loop-proof-certificate-merge-costs-uncounted-superlinear-work.md)
 - [Expanded `simp` emits an `assumption` that matches no goal](simp-expansion-assumption-matches-no-goal.md)
 - [`do { ... } while (0)` over a parameter or its memory fails with an internal evidence error](do-while-zero-over-parameter-state-fails-with-internal-evidence-error.md)
+- [An error in the standard library is reported against the user's module](standard-library-error-names-the-user-module.md)

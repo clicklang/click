@@ -797,6 +797,55 @@ fn execute_concrete_loop_head_step(
                 },
             );
         }
+        // Entering the body records no evidence of its own. When the loop is
+        // the first thing this trace executes, the proof object would start
+        // matching evidence from the frontier position set below, which
+        // holds the body alone, and would find no loop head left when the
+        // condition is decided. A `Skip` theorem consumes nothing and makes
+        // the proof object start from the source as it stands here, loop
+        // included, so its own `do`-`while` rule performs the descent.
+        if execution.core.evidence_state.is_none() {
+            let transition_label =
+                format!("`{claim_label}` tactic {tactic_index}: `{tactic_name}`");
+            let mut next_opaque_call = execution.core.next_opaque_call;
+            let mut next_kernel_variable = execution.core.kernel_variable_mark();
+            let (transitions, _) = certified_statement_transitions(
+                &current_state,
+                available_pure_facts,
+                &CStatement::Skip,
+                proof_context.function_environment,
+                Some(proof_context.predicate_environment),
+                CExecutionSemantics::APPLY_VERIFIED_RULES,
+                &transition_label,
+                &mut next_opaque_call,
+                &mut next_kernel_variable,
+                StatementPrerequisitePolicy::Retained,
+                StatementFactTransportPolicy::None,
+                None,
+            )?;
+            let [transition] = transitions.as_slice() else {
+                return Err(ClickError::new(format!(
+                    "{transition_label} could not certify the entry of loop({loop_index})"
+                )));
+            };
+            execution
+                .core
+                .record_statement_transition_with_loan_evidence(
+                    function,
+                    arguments,
+                    transition.theorem.clone(),
+                    transition.context.clone(),
+                    &transition.execution_facts,
+                    &transition.obligations,
+                    &transition.loan_evidence,
+                )
+                .map_err(|refusal| {
+                    ClickError::new(format!(
+                        "{transition_label} recorded loop entry evidence the proof object rejected: {}",
+                        describe_evidence_refusal(&refusal, parameters, arguments)
+                    ))
+                })?;
+        }
         let loop_head = match remaining {
             Some(remaining) => c_seq(loop_head, remaining),
             None => loop_head,
