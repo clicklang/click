@@ -698,9 +698,17 @@ a subtree and `ctx_at(child, root)` for the frame above it.
   `mdtests/rb_ascent_parent_link_guard.md` are the same ascent under
   `rb_next`'s short-circuit guard, the second reading the parent's link through
   the folded frame.
-- `mdtests/rb_next_conjunctive_guard.md`: the verbatim `rb_next` ascent guard,
-  pinned as unsupported. Its `while ((parent = rb_parent(node)) && ...)` uses
-  an assignment expression, which the supported C0 subset does not parse.
+- `mdtests/rb_next.md`: the unchanged Linux `rb_next` with its successor
+  contract. The descent and the ascent loop are written out, each with a
+  checked structural measure, and the proof stops at the first claim after the
+  ascent's `break` exits; the fixture pins that frontier.
+  `mdtests/rb_next_descent.md` certifies the descent's postconditions on the
+  body cut after the descent's `return`, with
+  `mdtests/rb_next_descent_rejects_a_dropped_context.md` as its negative;
+  `mdtests/rb_next_conjunctive_guard.md` keeps the guard's own refusal for a
+  proof that never opens the entry node; and
+  `mdtests/rb_next_const_signature.md` keeps the `const` signature Linux
+  declares, which C0 refuses at the cast that returns the node.
 - `mdtests/rb_augment_callbacks_table.md` and the neighboring
   `rb_augment_callbacks_helper*.md` fixtures: the augmented-rbtree callback
   suite as a const table of function pointers, with the effect and ownership

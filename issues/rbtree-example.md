@@ -680,9 +680,20 @@ assignment-expression parser/lowering prerequisite is delivered for simple
 scalar variable targets, including the unchanged `rb_next` guard.
 
 **Chunk 8. `rb_next`.** The complete descent and ascent on the node-keyed
-model, on the verbatim body. The unchanged regression currently stops at the
-first descent branch because `rb_at(node)` is folded and no view of
-`node->rb_right` has yet been published.
+model, on the verbatim body. Not finished (2026-10-02). `mdtests/rb_next.md`
+has the unchanged body with `RB_EMPTY_NODE` and the successor contract, runs
+the descent to its `return` and the ascent loop through its back edge and its
+three `break` exits, with `decreases t;` and `decreases c;`, and stops at the
+first claim after the ascent loop: what every exit stated about the frame's
+model is not available after the join (the "Loop exits" finding above,
+reduced in `mdtests/loop_break_exit_algebraic_equation_is_not_exported.md`).
+Behind it is `bugs/function-match-arm-rejects-contradiction-after-have.md`.
+Remaining once both close: the post-loop section (match the frame, fold the
+produced instances at `parent`), whose lemmas are already in the fixture and
+whose proof text has not been checked. The descent's postconditions are
+certified only on a cut body, `mdtests/rb_next_descent.md`, which goes when
+`rb_next.md` passes. The parameter is declared without `const`
+(`mdtests/rb_next_const_signature.md`).
 
 **Chunk 9. `rb_prev`.** The mirror of chunk 8. Depends on 8.
 
