@@ -424,19 +424,18 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
-    /// Runs bare theorem-application search on the scope's current checked
-    /// body and retains only the accepted explicit theorem step. Function-exit
-    /// applications remain outcome-local ordered-finalization operations.
-    pub(in crate::surface::proof) fn try_theorem_application(
+    /// Checks an explicit theorem application on the scope's current body.
+    /// Preserve a missing-premise diagnostic instead of treating the written
+    /// application as a search miss. Function-exit applications remain
+    /// outcome-local ordered-finalization operations.
+    pub(in crate::surface::proof) fn apply_theorem_application(
         &self,
         application: &TheoremApplication,
     ) -> Result<Option<Self>, ClickError> {
         if self.body.is_at_function_exit() {
             return Ok(None);
         }
-        let Some(body) = self.body.try_theorem_application(application)? else {
-            return Ok(None);
-        };
+        let body = self.body.apply_theorem_application(application)?;
         let mut next = self.clone();
         if matches!(self.structure.as_ref(), ProofScopeStructure::Open { .. }) {
             for fact in body.added_facts() {
