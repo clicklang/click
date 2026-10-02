@@ -904,7 +904,7 @@ fn advance_checked_linear_continuation<'a>(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn try_check_flat_function_proof<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -952,7 +952,7 @@ pub(in crate::surface::proof) fn try_check_flat_function_proof<'a>(
 #[allow(clippy::too_many_arguments)]
 fn try_check_flat_function_proof_inner<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -978,7 +978,7 @@ fn try_check_flat_function_proof_inner<'a>(
         claim_label,
         tactics[0].index,
         execution.clone(),
-        pure_facts.to_vec(),
+        pure_facts.clone(),
         constants.clone(),
         function_block,
         function,
@@ -1034,7 +1034,7 @@ fn try_check_flat_function_proof_inner<'a>(
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -1082,7 +1082,7 @@ pub(in crate::surface::proof) fn try_check_structural_function_proof<'a>(
 #[allow(clippy::too_many_arguments)]
 fn try_check_structural_function_proof_inner<'a>(
     execution: &ExecutionProofState,
-    pure_facts: &[Proposition],
+    pure_facts: &PureFactList,
     constants: &ExecutionProofConstants,
     program: &InternalProofNode,
     generated_by_source_index: Option<usize>,
@@ -1106,7 +1106,7 @@ fn try_check_structural_function_proof_inner<'a>(
             ClickError::new(format!("`{claim_label}` has no structural proof tactics"))
         })?,
         execution.clone(),
-        pure_facts.to_vec(),
+        pure_facts.clone(),
         constants.clone(),
         function_block,
         function,

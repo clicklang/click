@@ -1808,7 +1808,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -9502,7 +9502,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants::default(),
             function_block,
             &function,
@@ -9616,7 +9616,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants::default(),
             function_block,
             &function,
@@ -9728,7 +9728,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants::default(),
             function_block,
             &function,
@@ -9860,7 +9860,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -10266,7 +10266,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -10467,7 +10467,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -10622,7 +10622,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
                     checks: checks.clone(),
@@ -10746,7 +10746,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
                     SurfacePropositionMap::default(),
                     PersistentSequence::default(),
                 ),
-                (0..size).map(indexed_fact).collect(),
+                (0..size).map(indexed_fact).collect::<Vec<_>>(),
                 ExecutionProofConstants::default(),
                 function_block,
                 &function,
@@ -10897,7 +10897,7 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
                     checks: checks.clone(),
@@ -11120,7 +11120,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -11333,7 +11333,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -11724,7 +11724,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -12079,7 +12079,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 proof_site: Some(ProofSite::FunctionClaim {
@@ -12383,7 +12383,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -12939,7 +12939,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -13213,7 +13213,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         .expect("explicit branch proof should build");
     let checked = crate::surface::proof::checked_drivers::try_check_structural_function_proof(
         root.execution().unwrap(),
-        &[],
+        &PureFactList::default(),
         &constants,
         &program,
         None,
@@ -13562,7 +13562,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -13960,7 +13960,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
                 SurfacePropositionMap::default(),
                 PersistentSequence::default(),
             ),
-            (0..size).map(indexed_fact).collect(),
+            (0..size).map(indexed_fact).collect::<Vec<_>>(),
             ExecutionProofConstants {
                 source_layout: SourceExecutionLayout::new(parsed_function.body()),
                 ..ExecutionProofConstants::default()
@@ -14048,4 +14048,50 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             root.focused_outcome_snapshot().unwrap()
         );
     }
+}
+
+#[test]
+fn execution_entry_retains_prepared_symbolic_write_selection() {
+    let click_file = crate::surface::parse(
+        r#"
+        void put(int32* p, int32 i, int32 n) {
+            requires 1 <= i;
+            requires i < n;
+            owns p[1..n];
+        }
+    "#,
+    )
+    .unwrap();
+    let function =
+        syntax::parse_function("void put(int32* p, int32 i, int32 n) { p[i] = 7; }").unwrap();
+    let (state, _, facts, _) = initial_claim_context(
+        &click_file.function_blocks()[0],
+        &function,
+        &ResourceEnvironment::new(click_file.resource_definitions()),
+        &PredicateEnvironment::new(&[]),
+        &ClickFunctionEnvironment::new(click_file.click_function_definitions()),
+        "symbolic write entry",
+    )
+    .unwrap();
+    let owner = state
+        .resources()
+        .facts()
+        .iter()
+        .find_map(CResourceFact::memory_own_range)
+        .expect("the written ownership clause remains live")
+        .clone();
+    let assumptions = facts.context();
+    let root_facts = ProofFacts::from_source(&facts);
+    assert!(
+        state
+            .resources()
+            .memory_write_selection_is_known_for_test(&owner, root_facts.assumptions()),
+        "proof root construction must preserve entry publication"
+    );
+    assert!(
+        state
+            .resources()
+            .memory_write_selection_is_known_for_test(&owner, &assumptions),
+        "execution must retain prepared selection in its final entry context"
+    );
 }
