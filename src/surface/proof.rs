@@ -2900,10 +2900,7 @@ fn evaluate_entry_resource_context(
                         &assumptions,
                     )
                 {
-                    return Err(ClickError::new(format!(
-                        "`{claim_label}` setup failed: {}",
-                        surface_error.message()
-                    )));
+                    return Err(surface_error.with_context(format!("`{claim_label}` setup failed")));
                 }
                 return Err(ClickError::new(format!(
                     "`{claim_label}` setup failed: could not evaluate the contract entry resources: {}",

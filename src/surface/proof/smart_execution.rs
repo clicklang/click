@@ -292,7 +292,7 @@ impl<'a> Proof<'a> {
                 "{description} has no explicit surface-premise certificate: {}",
                 last_error
                     .as_ref()
-                    .map(|error| error.message())
+                    .map(|error| error.raw_summary())
                     .unwrap_or("no candidate was checked")
             )));
         };
@@ -586,7 +586,7 @@ impl<'a> Proof<'a> {
         self.apply_step(step).map_err(|error| {
             self.step_error(format!(
                 "theorem search selected a simple candidate that Proof rejected: {}",
-                error.message()
+                error.raw_summary()
             ))
         })
     }
@@ -786,7 +786,7 @@ impl<'a> Proof<'a> {
                         crate::surface::proof_diagnostics::render::render_proposition(&requirement),
                         snapshot_surface_error
                             .as_ref()
-                            .map(|error| format!(": {}", error.message()))
+                            .map(|error| format!(": {}", error.raw_summary()))
                             .unwrap_or_default(),
                     ))
                 })?;

@@ -14095,3 +14095,15 @@ fn execution_entry_retains_prepared_symbolic_write_selection() {
         "execution must retain prepared selection in its final entry context"
     );
 }
+
+/// A generated tactic carries `usize::MAX` for its source index. A site asked
+/// to address it names no written tactic, so the diagnostic falls back to the
+/// checked-step count instead of printing the sentinel as a tactic number.
+#[test]
+fn a_generated_tactic_is_not_addressed_as_a_source_tactic() {
+    let written = ProofStepSite::default().at_source_tactic(3);
+    assert_eq!(written.path().as_deref(), Some("tactic 3"));
+    let generated = written.at_source_tactic(usize::MAX);
+    assert_eq!(generated.path(), None);
+    assert_eq!(generated.source_tactic_path(), None);
+}

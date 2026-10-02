@@ -1392,7 +1392,7 @@ fn close_claim_directly_from_outcome<'a>(
             check_verification_deadline()?;
             return failure(format!(
                 "could not lower the claim goal: {}",
-                error.message()
+                error.raw_summary()
             ));
         }
     };
@@ -1404,7 +1404,7 @@ fn close_claim_directly_from_outcome<'a>(
                 return failure(format!(
                     "rewrite `{}` did not apply: {}",
                     describe_click_proposition(equality),
-                    error.message()
+                    error.raw_summary()
                 ));
             }
         };
@@ -3693,7 +3693,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                             check_verification_deadline()?;
                                             if let Some(error) = last_error {
                                                 first_error.get_or_insert_with(|| {
-                                                    error.message().to_string()
+                                                    error.raw_summary().to_string()
                                                 });
                                             }
                                         }
@@ -3773,7 +3773,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                         Err(error) => {
                                             pending_resource_transition_error =
-                                                Some(error.message().to_string());
+                                                Some(error.raw_summary().to_string());
                                         }
                                     }
                                 }
@@ -3925,7 +3925,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     format!("\nRequires produces {}", crate::surface::validation::describe_resource_clause(resource))
                                                 };
                                                 ClickError::new(format!(
-                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}{requirement}", error.message()
+                                                    "`{proof_label}` path {path_index} left `{claim_label}` unproved; use `simp()` after establishing the facts and resources it needs (claim index {claim_index})\nlast closing attempt:\n{}{requirement}", error.raw_summary()
                                                 ))
                                             })?;
                                             direct_resource_evidence.insert(*claim_index, checked);
@@ -4104,7 +4104,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         click_function_environment,
                                                     )?
                                                     .err()
-                                                    .map(|reason| format!("\n{}", reason.message()))
+                                                    .map(|reason| format!("\n{}", reason.raw_summary()))
                                                     .unwrap_or_default(),
                                                     None => String::new(),
                                                 };
@@ -4336,7 +4336,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         predicate_environment,
                                         click_function_environment,
                                     )? {
-                                        reasons.push(reason.message().to_owned());
+                                        reasons.push(reason.raw_summary().to_owned());
                                     }
                                 }
                                 if let Some(error) = &pending_resource_transition_error {

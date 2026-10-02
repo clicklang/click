@@ -66,7 +66,7 @@ pub(in crate::surface::proof) fn take_region_depth_decline() -> bool {
 /// terminal diagnostic.
 #[track_caller]
 fn decline_operation<T>(operation: String, reason: &ClickError) -> Result<Option<T>, ClickError> {
-    let reason = reason.message();
+    let reason = reason.raw_summary();
     let reason = reason.split("\nproof context:").next().unwrap_or(reason);
     DECLINED_OPERATION.with(|declined| {
         *declined.borrow_mut() = Some(format!("{operation} was refused: {}", reason.trim()));

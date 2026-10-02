@@ -80,7 +80,17 @@ pub(in crate::surface::proof) struct ProofStepSite {
 impl ProofStepSite {
     /// The same site addressing the claim's `index`th source tactic
     /// occurrence.
+    ///
+    /// A generated tactic carries `usize::MAX` in place of a source index:
+    /// nobody wrote it, so the site addresses no written tactic.
     pub(in crate::surface::proof) fn at_source_tactic(&self, index: usize) -> Self {
+        if index == usize::MAX {
+            return Self {
+                enclosing: self.enclosing.clone(),
+                block: self.block,
+                position: None,
+            };
+        }
         self.with_position(ProofStepPosition::SourceTactic(index))
     }
 

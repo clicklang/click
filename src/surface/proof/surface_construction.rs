@@ -205,7 +205,7 @@ fn checked_surface_fact_in_state_with_assumptions(
         Err(error) => Err(ClickError::new(format!(
             "synthesized Click fact could not be lowered at this proof state\n  Click: `{}`\n  error: {}\n  kernel: `{}`",
             crate::surface::diagnostics::describe_click_proposition(&candidate),
-            error.message(),
+            error.raw_summary(),
             crate::surface::proof_diagnostics::render::render_proposition(kernel),
         ))),
     }
@@ -881,7 +881,7 @@ pub(super) fn append_proof_step_for_operation(
     if let Err(error) = check_verification_deadline() {
         construction
             .proof_certificate_builder
-            .block(error.message());
+            .block(error.raw_summary());
         return;
     }
     match (surface_tactic, internal_operation) {
@@ -1016,7 +1016,7 @@ pub(super) fn append_proof_step_for_operation(
                     {
                         construction.proof_certificate_builder.block(format!(
                             "public opaque-call result fact has no stable surface form: {}",
-                            error.message()
+                            error.raw_summary()
                         ));
                         continue;
                     }
@@ -1277,7 +1277,7 @@ pub(super) fn append_proof_step_for_operation(
                             .extend(certificate.steps().iter().cloned()),
                         Err(error) => construction
                             .proof_certificate_builder
-                            .block(error.message()),
+                            .block(error.raw_summary()),
                     }
                     surface_available.push(fact);
                 }
@@ -1337,7 +1337,7 @@ pub(super) fn append_proof_step_for_operation(
                         {
                             construction.proof_certificate_builder.block(format!(
                                 "could not record a loop invariant for its surface certificate: {}",
-                                error.message()
+                                error.raw_summary()
                             ));
                             return;
                         }
@@ -1359,7 +1359,7 @@ pub(super) fn append_proof_step_for_operation(
                                 .extend(certificate.steps().iter().cloned()),
                             Err(error) => construction
                                 .proof_certificate_builder
-                                .block(error.message()),
+                                .block(error.raw_summary()),
                         }
                         surface_available.push(fact);
                     }
@@ -1471,7 +1471,7 @@ pub(super) fn append_proof_step_for_operation(
                 Ok(_) => "a detached loop-summary certificate has no surface form; use a frontier-local `loop { ... }` tactic".to_string(),
                 Err(error) => format!(
                     "could not express a loop-summary premise at the current proof state: {}",
-                    error.message()
+                    error.raw_summary()
                 ),
             });
         }
@@ -1649,7 +1649,7 @@ pub(super) fn append_proof_step_for_operation(
                     {
                         construction.proof_certificate_builder.block(format!(
                             "could not retain the certified fact transport target form: {}",
-                            error.message()
+                            error.raw_summary()
                         ));
                     }
                 }
@@ -1684,7 +1684,7 @@ pub(super) fn append_proof_step_for_operation(
                             {
                                 construction.proof_certificate_builder.block(format!(
                                     "could not retain the certified fact transport target form: {}",
-                                    error.message()
+                                    error.raw_summary()
                                 ));
                             }
                         }
@@ -1718,7 +1718,7 @@ pub(super) fn append_proof_step_for_operation(
                                 {
                                     construction.proof_certificate_builder.block(format!(
                                         "could not retain the statement-attached fact transport form: {}",
-                                        record_error.message()
+                                        record_error.raw_summary()
                                     ));
                                 }
                             } else {
@@ -1797,7 +1797,7 @@ pub(super) fn append_proof_step_for_operation(
                         refusal = format!(
                             "could not lower the certified path condition `{}`: {}",
                             describe_click_proposition(&surface_fact),
-                            error.message()
+                            error.raw_summary()
                         );
                     }
                 }
@@ -1812,7 +1812,7 @@ pub(super) fn append_proof_step_for_operation(
             {
                 construction.proof_certificate_builder.block(format!(
                     "could not retain the certified path-condition form: {}",
-                    error.message()
+                    error.raw_summary()
                 ));
                 return;
             }
@@ -1978,10 +1978,7 @@ pub(super) fn surface_simp_plan_proof(
                 click_function_environment,
             )
             .map_err(|error| {
-                ClickError::new(format!(
-                    "could not lower the planned smart proof certificate: {}",
-                    error.message()
-                ))
+                error.with_context("could not lower the planned smart proof certificate")
             })?;
             proof
         }

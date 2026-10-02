@@ -648,7 +648,7 @@ fn resolve_generic_theorem_application(
         format!(
             "generic theorem instance `{}` failed verification: {}",
             concrete.name(),
-            error.message()
+            error.raw_summary()
         )
     });
     theorem_environment.finish_generic_instance_verification(concrete.name(), result.is_ok());

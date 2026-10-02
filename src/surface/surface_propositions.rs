@@ -1202,7 +1202,7 @@ impl SurfacePropositionMap {
                     last_mismatch = Some(format!(
                         "`{}` -> {}",
                         crate::surface::diagnostics::describe_click_proposition(surface),
-                        error.message()
+                        error.raw_summary()
                     ))
                 }
             }

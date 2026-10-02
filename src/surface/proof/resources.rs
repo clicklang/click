@@ -1961,7 +1961,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         return Ok(());
     }
     let parent = lower_resource_clause_at_state(resource, parameters, arguments, fact_state)
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| error.raw_summary().to_string())?;
     let parent_subject = resource_clause_subject(resource);
     let mut owned_children = Vec::new();
     for contained in composite_body.contains() {
@@ -1978,7 +1978,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                 )
             })?;
         let lowered = lower_resource_clause_at_state(&contained, parameters, arguments, fact_state)
-            .map_err(|error| error.message().to_string())?;
+            .map_err(|error| error.raw_summary().to_string())?;
         if let Some(child) = lowered.owned_resource() {
             let child_subject = resource_clause_subject(&contained);
             surface_propositions
@@ -1992,7 +1992,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         child: child.clone(),
                     },
                 )
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
             owned_children.push((child.clone(), child_subject));
         }
         let (ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment)) = &contained
@@ -2001,7 +2001,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         };
         if let Some(kernel) =
             resource_clause_loadable_prop_at_state(&contained, parameters, arguments, fact_state)
-                .map_err(|error| error.message().to_string())?
+                .map_err(|error| error.raw_summary().to_string())?
         {
             surface_propositions
                 .record_lowering(
@@ -2010,7 +2010,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                     },
                     &kernel,
                 )
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
         }
     }
     for left_index in 0..owned_children.len() {
@@ -2027,7 +2027,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                         right: right.clone(),
                     },
                 )
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
         }
     }
     for (index, kernel) in &instantiated.declared {
@@ -2045,7 +2045,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         })?;
         surface_propositions
             .record_lowering(&surface, kernel)
-            .map_err(|error| error.message().to_string())?;
+            .map_err(|error| error.raw_summary().to_string())?;
     }
     Ok(())
 }
@@ -2111,7 +2111,7 @@ pub(super) fn record_initial_composite_surface_facts(
     let result = (|| {
         let mut substitutions =
             resource_argument_substitutions(definition, resource, "initial resource projection", 0)
-                .map_err(|error| error.message().to_string())?;
+                .map_err(|error| error.raw_summary().to_string())?;
         extend_substitutions_with_witnesses(
             &mut substitutions,
             definition,
@@ -2126,7 +2126,7 @@ pub(super) fn record_initial_composite_surface_facts(
             click_function_environment,
             None,
         )
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| error.raw_summary().to_string())?;
         let Some(true) = try_select_composite_resource_body(
             definition,
             &substitutions,
@@ -2161,7 +2161,7 @@ pub(super) fn record_initial_composite_surface_facts(
             if available_pure_facts.contains(&kernel) {
                 surface_propositions
                     .record_lowering(&surface, &kernel)
-                    .map_err(|error| error.message().to_string())?;
+                    .map_err(|error| error.raw_summary().to_string())?;
             }
         }
         Ok(())
@@ -2579,7 +2579,7 @@ fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
                 "could not project resource `{}` contained `{}` viewability: {}",
                 definition.name(),
                 describe_resource_clause(&contained),
-                error.message()
+                error.raw_summary()
             )
         })?;
     }
@@ -2781,7 +2781,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
                 format!(
                     "could not lower resource `{name}` contained `{}`: {}\n  {}",
                     describe_resource_clause(&contained),
-                    error.message(),
+                    error.raw_summary(),
                     describe_available_facts(&[], resources.facts(), parameters, arguments, &[])
                 )
             })?;
@@ -2858,7 +2858,7 @@ fn resource_value_substitutions_with_witnesses(
             predicate_environment,
             click_function_environment,
         )
-        .map_err(|error| error.message().to_string())?;
+        .map_err(|error| error.raw_summary().to_string())?;
         &owned_definitions
     };
     let fact = CResourceFact::own(CResource::Composite {

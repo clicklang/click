@@ -2401,9 +2401,8 @@ fn verify_c0_sources_with_context(
             function_source_registry.clone(),
         )
         .map_err(|error| {
-            file.entry_module().map_or(error.clone(), |identity| {
-                ClickError::new(format!("{identity}: {}", error.message()))
-            })
+            file.entry_module()
+                .map_or(error.clone(), |identity| error.with_context(identity))
         })?;
         let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
         let mut theorem_certification_authorities =
@@ -6824,10 +6823,9 @@ pub(in crate::surface) fn build_function_environment(
             &format!("{}.named contract", definition.name()),
         )
         .map_err(|error| {
-            ClickError::new(format!(
-                "could not prepare named contract `{}`: {}",
-                definition.name(),
-                error.message()
+            error.with_context(format!(
+                "could not prepare named contract `{}`",
+                definition.name()
             ))
         })?;
         let function = annotated_function(
@@ -6840,10 +6838,9 @@ pub(in crate::surface) fn build_function_environment(
             resource_environment,
         )
         .map_err(|error| {
-            ClickError::new(format!(
-                "could not lower named contract `{}`: {}",
-                definition.name(),
-                error.message()
+            error.with_context(format!(
+                "could not lower named contract `{}`",
+                definition.name()
             ))
         })?;
         let contract = CFunctionContract::new(definition.name(), function).ok_or_else(|| {

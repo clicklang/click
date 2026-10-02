@@ -13,4 +13,3 @@ coverage, and documentation land.
 - [A refused store through a widened unsigned index doesn't name the element](store-refusal-through-unsigned-index-names-no-element.md)
 - [Whole-path refusals don't name a C statement](whole-path-refusals-lack-a-statement-location.md)
 - [`simp` and `arithmetic()` treat sign-bit-flipped unsigned values as opaque](unsigned-order-arithmetic-in-closers.md)
-- [A ranked loop whose body branches loses its decrease member](branching-loop-body-ranking-member-not-certified.md)
