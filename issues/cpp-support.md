@@ -56,6 +56,22 @@ constant division and fixed query work across unrelated fact populations.
 These arithmetic prerequisites do not prove the general rounding theorem or
 the upstream `__int128` path. The next milestone below remains open.
 
+Unsigned scalar support now delivers by-value 32/64-bit parameters, returns,
+locals and modular captures, wrapping arithmetic, comparisons, division/remainder
+and the supported mixed conversions. Uint64-to-int64 reinterpretation remains
+explicitly unsupported; unsigned references and record fields are outside this
+slice. The fast-path fixture preserves both unsigned fee expressions but returns
+the intermediate, so it is not a proof of upstream `EvaluateFee`.
+
+The unchanged `GetSizeOfCompactSize` in the pinned `serialize.h` is proved for
+all uint64 inputs in four disjoint ranges (encoded lengths 1, 3, 5, 9). Its
+`sizeof` and static constexpr `numeric_limits::max()` calls are pinned-Clang
+compiler constants with retained source spans and locked input closure.
+Ordinary verification, expansion/reverification, retained audit and hostile
+length claims agree. Full-width unsigned constant bounds use the queried
+endpoint's index, with fixed-work regressions over unrelated fact populations.
+This establishes encoded length, not byte serialization or parsing.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -78,8 +94,8 @@ Select unchanged `FeeFrac::EvaluateFeeDown/Up` and their instantiated helpers
 from this pinned release. State input bounds that make the result representable
 and prove the documented rounding direction, including negative fees, exact
 division, and a nonzero remainder. The selected source uses templated
-`EvaluateFee`, `if constexpr`, signed/unsigned arithmetic and conversion,
-division/remainder, and `__int128` helpers on this target. Those are further
+`EvaluateFee`, `if constexpr`, general unsigned-to-signed-64 conversion, and
+`__int128` helpers on this target. Those are further
 importer and arithmetic-model work; the delivered method slice does not yet
 support them.
 

@@ -238,7 +238,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 22;
+    artifact["schema"] = 23;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -487,7 +487,7 @@ private:
                              context_.IntTy);
     const bool by_value_integer =
         !parameter->getType().hasQualifiers() &&
-        parameter->getType()->isSignedIntegerType() &&
+        parameter->getType()->isIntegerType() &&
         (context_.getTypeSize(parameter->getType()) == 32 ||
          context_.getTypeSize(parameter->getType()) == 64);
     const bool by_value_bool =
@@ -498,7 +498,8 @@ private:
     if (!int_reference && record_reference == nullptr && !mutable_int_pointer &&
         !by_value_bool && !by_value_integer) {
       fail(parameter->getLocation(),
-           "the supported C++ parameter must be a by-value bool or signed "
+           "the supported C++ parameter must be a by-value bool or "
+           "signed/unsigned "
            "32/64-bit integer, int&, const "
            "int&, const signed-64 reference, or mutable int* parameter, or a "
            "mutable or const simple-record reference parameter");
@@ -595,10 +596,11 @@ private:
       result["is_const"] = type.isConstQualified();
       return Json(std::move(result));
     }
-    if (!context_.hasSameType(type.getUnqualifiedType(), context_.IntTy) &&
-        !(type->isSignedIntegerType() && context_.getTypeSize(type) == 64)) {
-      fail(location,
-           "the supported C++ slice supports bool, int, signed 64-bit integers, references to those integers, mutable int*, and one simple record-reference type");
+    if (!type->isIntegerType() || (context_.getTypeSize(type) != 32 &&
+                                   context_.getTypeSize(type) != 64)) {
+      fail(location, "the supported C++ slice supports bool, signed/unsigned "
+                     "32/64-bit integers, selected signed references, mutable "
+                     "int*, and one simple record-reference type");
       return std::nullopt;
     }
     llvm::json::Object result;
@@ -1003,7 +1005,7 @@ private:
            "the supported C++ local must have automatic storage");
       return std::nullopt;
     }
-    const bool mutable_int = local->getType()->isSignedIntegerType() &&
+    const bool mutable_int = local->getType()->isIntegerType() &&
                              (context_.getTypeSize(local->getType()) == 32 ||
                               context_.getTypeSize(local->getType()) == 64) &&
                              !local->getType().hasQualifiers();
@@ -1024,7 +1026,8 @@ private:
     }
     if (!mutable_int && !record_object) {
       fail(local->getLocation(),
-           "the supported automatic C++ local must resolve to mutable signed "
+           "the supported automatic C++ local must resolve to mutable "
+           "signed/unsigned "
            "32/64-bit integer or one simple record object");
       return std::nullopt;
     }
@@ -1499,7 +1502,7 @@ private:
     }
     if (!parameter->getType().hasQualifiers() &&
         (context_.hasSameType(parameter->getType(), context_.BoolTy) ||
-         (parameter->getType()->isSignedIntegerType() &&
+         (parameter->getType()->isIntegerType() &&
           (context_.getTypeSize(parameter->getType()) == 32 ||
            context_.getTypeSize(parameter->getType()) == 64)))) {
       auto value = lower_expression(argument, caller);
@@ -1709,6 +1712,52 @@ private:
                : "throw expressions are outside the normal-only C++ profile");
       return std::nullopt;
     }
+    // Closed compile-time operations are evaluated by the pinned Clang profile,
+    // and retain their source span as distinct compiler_constant artifact
+    // nodes. Runtime calls are not folded or skipped by this narrow allowlist.
+    const clang::Expr *candidate = expression->IgnoreParenImpCasts();
+    const auto *trait =
+        llvm::dyn_cast<clang::UnaryExprOrTypeTraitExpr>(candidate);
+    const auto *constant_call = llvm::dyn_cast<clang::CallExpr>(candidate);
+    const auto *constant_method =
+        constant_call == nullptr ? nullptr
+                                 : llvm::dyn_cast_or_null<clang::CXXMethodDecl>(
+                                       constant_call->getDirectCallee());
+    const bool limits_max =
+        constant_method != nullptr && constant_method->isStatic() &&
+        constant_method->isConstexpr() && constant_call->getNumArgs() == 0 &&
+        constant_method->getNameAsString() == "max" &&
+        constant_method->getParent()->getNameAsString() == "numeric_limits" &&
+        constant_method->getParent()->getQualifiedNameAsString().rfind(
+            "std::numeric_limits", 0) == 0;
+    if ((trait != nullptr && trait->getKind() == clang::UETT_SizeOf) ||
+        limits_max) {
+      if (expression->getType()->isIntegerType() &&
+          (context_.getTypeSize(expression->getType()) == 32 ||
+           context_.getTypeSize(expression->getType()) == 64) &&
+          expression->isCXX11ConstantExpr(context_)) {
+        clang::Expr::EvalResult evaluated;
+        if (expression->EvaluateAsInt(evaluated, context_,
+                                      clang::Expr::SE_NoSideEffects,
+                                      /*InConstantContext=*/false)) {
+          auto value_type =
+              lower_type(expression->getType(), expression->getExprLoc());
+          if (!value_type)
+            return std::nullopt;
+          llvm::SmallString<32> value;
+          evaluated.Val.getInt().toString(value, 10);
+          llvm::json::Object result;
+          result["kind"] = "compiler_constant";
+          result["value"] = value.str().str();
+          result["value_type"] = std::move(*value_type);
+          result["span"] = span(expression->getSourceRange());
+          return Json(std::move(result));
+        }
+      }
+      fail(expression->getExprLoc(),
+           "unsupported C++ compiler constant type or evaluation");
+      return std::nullopt;
+    }
     if (const auto *parentheses =
             llvm::dyn_cast<clang::ParenExpr>(expression)) {
       return lower_expression(parentheses->getSubExpr(), function);
@@ -1719,7 +1768,7 @@ private:
           context_.hasSameType(cast->getType(),
                                cast->getSubExpr()->getType()) &&
           (cast->getType()->isBooleanType() ||
-           (cast->getType()->isSignedIntegerType() &&
+           (cast->getType()->isIntegerType() &&
             (context_.getTypeSize(cast->getType()) == 32 ||
              context_.getTypeSize(cast->getType()) == 64)))) {
         return lower_expression(cast->getSubExpr(), function);
@@ -1747,7 +1796,7 @@ private:
       auto value_type = lower_type(unary->getType(), unary->getExprLoc());
       auto zero_type = lower_type(unary->getType(), unary->getExprLoc());
       if (!value || !value_type || !zero_type ||
-          !unary->getType()->isSignedIntegerType())
+          !unary->getType()->isIntegerType())
         return std::nullopt;
       llvm::json::Object zero;
       zero["kind"] = "integer_literal";
@@ -1868,7 +1917,8 @@ private:
         return std::nullopt;
       }
       llvm::SmallString<32> value;
-      literal->getValue().toString(value, 10, true);
+      literal->getValue().toString(value, 10,
+                                   literal->getType()->isSignedIntegerType());
       llvm::json::Object result;
       result["kind"] = "integer_literal";
       result["value"] = value.str().str();
@@ -1890,7 +1940,8 @@ private:
           binary->getOpcode() != clang::BO_GE &&
           binary->getOpcode() != clang::BO_LAnd) {
         fail(binary->getOperatorLoc(),
-             "unsupported binary operator; this C++ slice supports signed "
+             "unsupported binary operator; this C++ slice supports "
+             "signed/unsigned "
              "32/64-bit arithmetic (+, -, *, /, %), same-width signed "
              "comparisons, and built-in bool && bool only");
         return std::nullopt;
@@ -1900,11 +1951,12 @@ private:
           binary->getOpcode() == clang::BO_Mul ||
           binary->getOpcode() == clang::BO_Div ||
           binary->getOpcode() == clang::BO_Rem) {
-        if (!binary->getType()->isSignedIntegerType() ||
+        if (!binary->getType()->isIntegerType() ||
             (context_.getTypeSize(binary->getType()) != 32 &&
              context_.getTypeSize(binary->getType()) != 64)) {
           fail(binary->getOperatorLoc(),
-               "C++ arithmetic requires signed 32/64-bit operands; pointer "
+               "C++ arithmetic requires signed/unsigned 32/64-bit operands; "
+               "pointer "
                "arithmetic is unsupported");
           return std::nullopt;
         }

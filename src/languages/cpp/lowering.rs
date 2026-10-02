@@ -24,7 +24,7 @@ use crate::kernel::{
     c_greater_equal, c_greater_than, c_if, c_int32_literal, c_int64_literal, c_less_equal,
     c_less_than, c_multiply, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq,
     c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup,
-    c_typed_load_with_source, c_typed_store, c_variable,
+    c_typed_load_with_source, c_typed_store, c_uint32_literal, c_uint64_literal, c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -113,7 +113,14 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
     let body = context.lower_function_body(&source.body)?;
     let return_type = match &source.function_kind {
         CppFunctionKind::Free | CppFunctionKind::Method { .. }
-            if is_mutable_int32(&source.return_type) || is_mutable_int64(&source.return_type) =>
+            if matches!(
+                source.return_type,
+                CppType::Integer {
+                    bits: 32 | 64,
+                    is_const: false,
+                    ..
+                }
+            ) =>
         {
             cpp_scalar_kernel_type(&source.return_type)?
         }
@@ -641,21 +648,21 @@ impl LoweringContext<'_> {
         match expression {
             CppExpression::IntegerLiteral {
                 value, value_type, ..
-            } if is_mutable_int32(value_type) => {
-                let value = value
-                    .parse::<i32>()
-                    .map_err(|_| format!("unsupported C++ integer literal `{value}`"))?;
-                Ok(c_int32_literal(value as u32))
             }
-            CppExpression::IntegerLiteral {
+            | CppExpression::CompilerConstant {
                 value, value_type, ..
-            } if is_mutable_int64(value_type) => {
-                let value = value
-                    .parse::<i64>()
-                    .map_err(|_| format!("unsupported C++ integer literal `{value}`"))?;
-                Ok(c_int64_literal(value))
+            } => {
+                let error = || format!("unsupported C++ integer constant `{value}`");
+                Ok(match cpp_scalar_kernel_type(value_type)? {
+                    CType::Int32 => {
+                        c_int32_literal(value.parse::<i32>().map_err(|_| error())? as u32)
+                    }
+                    CType::Int64 => c_int64_literal(value.parse::<i64>().map_err(|_| error())?),
+                    CType::UInt32 => c_uint32_literal(value.parse::<u32>().map_err(|_| error())?),
+                    CType::UInt64 => c_uint64_literal(value.parse::<u64>().map_err(|_| error())?),
+                    _ => return Err(error()),
+                })
             }
-            CppExpression::IntegerLiteral { .. } => Err("unsupported C++ literal type".into()),
             CppExpression::ConstantReference { constant, .. } => {
                 let resolved = self
                     .constants
@@ -787,7 +794,9 @@ impl LoweringContext<'_> {
                 // C++20 signed narrowing is congruent modulo 2^32. The shared
                 // unsigned conversion truncates bits; int32 then reinterprets them.
                 Ok(
-                    if is_mutable_int64(value.value_type()) && is_mutable_int32(value_type) {
+                    if matches!(value.value_type(), CppType::Integer { bits: 64, .. })
+                        && is_mutable_int32(value_type)
+                    {
                         c_cast(c_cast(value_expression, CType::UInt32), CType::Int32)
                     } else {
                         c_cast(value_expression, target)
@@ -1062,14 +1071,33 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
-    if is_mutable_int32(value_type) {
-        Ok(CType::Int32)
-    } else if is_mutable_int64(value_type) {
-        Ok(CType::Int64)
-    } else if is_mutable_int32_pointer(value_type) {
-        Ok(CType::Int32Pointer)
-    } else {
-        Err("C++ record field is outside mutable `int`/`int*` lowering".into())
+    match value_type {
+        CppType::Integer {
+            bits: 32,
+            signed: true,
+            is_const: false,
+            ..
+        } => Ok(CType::Int32),
+        CppType::Integer {
+            bits: 64,
+            signed: true,
+            is_const: false,
+            ..
+        } => Ok(CType::Int64),
+        CppType::Integer {
+            bits: 32,
+            signed: false,
+            is_const: false,
+            ..
+        } => Ok(CType::UInt32),
+        CppType::Integer {
+            bits: 64,
+            signed: false,
+            is_const: false,
+            ..
+        } => Ok(CType::UInt64),
+        _ if is_mutable_int32_pointer(value_type) => Ok(CType::Int32Pointer),
+        _ => Err("unsupported C++ scalar kernel type".into()),
     }
 }
 

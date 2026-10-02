@@ -184,3 +184,29 @@ signed narrowing and Boolean conversion, and Bitcoin's correction expression
 for concrete rounding cases with a signed 64-bit dividend. They do not prove
 upstream `FeeFrac::Div` or `EvaluateFeeDown/Up`: this pinned compiler profile
 uses `__int128` for the former and a templated unsigned fast path for the latter.
+
+
+## CompactSize encoded length
+
+The same pinned v31.1 archive and unchanged `feerate.cpp` compilation command
+select `GetSizeOfCompactSize` in `src/serialize.h` (SHA-256
+`87a273aa8cb9aeea82cd8038bb85284a5782c8abc35f8c826eb60f1a01e06775`).
+The 320-file input closure and compiler flags remain unchanged. Four sidecars
+cover all uint64 values:
+
+| Sidecar | Input range | Encoded length |
+| --- | --- | --- |
+| `CompactSize1.click` | 0 through 252 | 1 byte |
+| `CompactSize3.click` | 253 through 65,535 | 3 bytes |
+| `CompactSize5.click` | 65,536 through 4,294,967,295 | 5 bytes |
+| `CompactSize9.click` | 4,294,967,296 through UINT64_MAX | 9 bytes |
+
+Use the same lock/verify setup described above. Their configs pin unsigned
+`uint64_t` aliases to `bits/stdint-uintn.h` and `bits/types.h` in the hermetic
+sysroot. Pinned Clang evaluates the helper's `sizeof` and constexpr
+`std::numeric_limits::max()` expressions; artifacts retain their source spans
+as distinct compiler constants and lock the entire preprocessor input closure.
+This is part of the compiler trust boundary, not a standard-library proof.
+The gate checks ordinary verification, expansion/reverification, retained audit,
+and false length claims for each range. It does not prove serialization bytes,
+parsing, or round trips.
