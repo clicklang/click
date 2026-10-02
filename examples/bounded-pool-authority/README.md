@@ -3,7 +3,8 @@
 This is the first project-level authority checkpoint for the bounded pool.
 The sidecar references the C files in `../bounded-pool` directly; no C source
 is copied or changed. It proves initialization, checkout, return,
-and cleanup, plus the original zero-capacity and two-object pipelines.
+shrink, and cleanup, plus the original zero-capacity, two-object, and resize
+pipelines.
 
 `pool_storage(pool)` owns pool memory and both population authorities.
 Initialization takes that resource explicitly, requires both populations to
@@ -38,7 +39,14 @@ are empty. Cleanup selects the two returned slots by its entry-capacity field;
 a checked equality relates that field to the caller's numerical batch. This
 uses the existing contract and proof syntax.
 
-The other bounded-pool pipelines, including resize and transfer, remain in
-the original project during migration. Focused authority
-fixtures already cover several of their prerequisites; integrate them in
-separate green checkpoints.
+`pool_shrink` consumes an arbitrary nonnegative owned slot quantity, including
+zero, while preserving checked-out members and the capacity invariant. It does
+not require ownership of the global population's remaining slots. Ordinary
+arithmetic lemmas establish the remaining sum's bounds and conservation;
+`int32_equal_of_to_integer` transports the resulting mathematical equality back
+to machine values. The unchanged resize pipeline initializes one slot, shrinks
+it through a helper call, and retires both empty populations.
+
+Grow and transfer remain in the original project during migration. Focused
+authority fixtures already cover several of their prerequisites; integrate
+them in separate green checkpoints.

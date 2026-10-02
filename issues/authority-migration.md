@@ -418,8 +418,16 @@ Kernel regressions reject absent/mismatched custody, repeated spending, and
 consumption without authority; deterministic work stays bounded over growing
 batch sizes and unrelated fact sets.
 
-The next slices are batch splitting and symbolic grow/shrink, before two-pool
-transfer. Keep these separate from this complete fixed-capacity lifecycle.
+The companion also verifies the original `pool_shrink` with arbitrary amount
+and entry totals, including zero reduction, and the original resize pipeline
+through ordinary helper calls and cleanup. Shrink consumes only its supplied
+batch and preserves checked-out members and the global remainder. Ordinary
+source arithmetic lemmas restore the capacity invariant; the general prelude
+bridge `int32_equal_of_to_integer` identifies machine values from equal signed
+mathematical observations. No population or authority rule changed.
+
+The next slices are symbolic growth and then two-pool transfer. Keep additional
+batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.
 Missing facts inside `open(...)` report `Requires f`.

@@ -8066,6 +8066,29 @@ pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector
     ))
 }
 
+/// Signed int32 observation is injective: two equal mathematical values
+/// have the same 32-bit pattern. No overflow premise or conversion back is
+/// needed, since every signed int32 pattern has one exact Integer value.
+pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
+            .expect("every int32 bit pattern has a mathematical interpretation")
+    };
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                observe(left.clone()).into(),
+                observe(right.clone()).into(),
+            ),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(left, right),
+            true,
+        )),
+    ))
+}
+
 /// Exact mathematical observation of a defined signed 32-bit subtraction.
 pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
     prove_int32_operation_to_integer(left, right, true)

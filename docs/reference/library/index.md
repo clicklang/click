@@ -1132,6 +1132,25 @@ The definedness premise excludes overflow; the equality is not unconditional.
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
 
+### `int32_equal_of_to_integer`
+
+```click
+theorem int32_equal_of_to_integer(left: int32, right: int32) {
+    requires to_integer(left) == to_integer(right);
+    ensures left == right;
+}
+```
+
+The signed `int32` observation is injective: equal mathematical observations
+identify the same machine value. This bridge needs the exact equality premise;
+an order comparison or an observation of a different carrier is insufficient.
+It introduces no conversion back to a machine value and needs no overflow
+premise. Use it after checked machine-to-`Integer` arithmetic bridges when
+restoring a machine-valued invariant.
+
+**Verified use:** [`mdtests/int32_equality_from_integer_observations.md`](https://github.com/clicklang/click/blob/master/mdtests/int32_equality_from_integer_observations.md),
+[`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md).
+
 ### `int32_less_equal_to_integer`
 
 ```click
