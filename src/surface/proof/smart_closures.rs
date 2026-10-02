@@ -268,6 +268,26 @@ fn signed_surface_terms_equal(
             | (
                 crate::kernel::Bitvector32Term::BitwiseXor(left, right),
                 crate::kernel::Bitvector32Term::BitwiseXor(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Add(left, right),
+                crate::kernel::Bitvector32Term::UInt64Add(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Subtract(left, right),
+                crate::kernel::Bitvector32Term::UInt64Subtract(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Multiply(left, right),
+                crate::kernel::Bitvector32Term::UInt64Multiply(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Divide(left, right),
+                crate::kernel::Bitvector32Term::UInt64Divide(other_left, other_right),
+            )
+            | (
+                crate::kernel::Bitvector32Term::UInt64Remainder(left, right),
+                crate::kernel::Bitvector32Term::UInt64Remainder(other_left, other_right),
             ) => {
                 pending.push((left, other_left));
                 pending.push((right, other_right));

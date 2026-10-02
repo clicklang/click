@@ -97,6 +97,9 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             | Bitvector32Term::Float64Binary { left, right, .. }
             | Bitvector32Term::UInt64Add(left, right)
             | Bitvector32Term::UInt64Subtract(left, right)
+            | Bitvector32Term::UInt64Multiply(left, right)
+            | Bitvector32Term::UInt64Divide(left, right)
+            | Bitvector32Term::UInt64Remainder(left, right)
             | Bitvector32Term::UInt64BitwiseAnd(left, right)
             | Bitvector32Term::UInt64BitwiseOr(left, right)
             | Bitvector32Term::BitwiseAnd(left, right)
@@ -307,6 +310,18 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             | (
                 Bitvector32Term::UInt64Subtract(left_first, left_second),
                 Bitvector32Term::UInt64Subtract(right_first, right_second),
+            )
+            | (
+                Bitvector32Term::UInt64Multiply(left_first, left_second),
+                Bitvector32Term::UInt64Multiply(right_first, right_second),
+            )
+            | (
+                Bitvector32Term::UInt64Divide(left_first, left_second),
+                Bitvector32Term::UInt64Divide(right_first, right_second),
+            )
+            | (
+                Bitvector32Term::UInt64Remainder(left_first, left_second),
+                Bitvector32Term::UInt64Remainder(right_first, right_second),
             )
             | (
                 Bitvector32Term::UInt64BitwiseAnd(left_first, left_second),
@@ -2907,6 +2922,46 @@ mod tests {
             };
             assert!(no_bound.check(&goal, &[relation]).is_err());
         }
+    }
+
+    #[test]
+    fn narrowed_chunk_offset_translation_requires_the_named_bound() {
+        let n = Bitvector32Term::Variable(crate::kernel::Variable(1));
+        let index = Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
+            n.clone(),
+            Bitvector32Term::uint64_remainder(n, Bitvector32Term::UInt64Constant(4)),
+        ));
+        let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
+        let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
+        let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(index.clone())));
+        let goal = pointer_eq(
+            add(p, PointerOffsetTerm::Constant(4)),
+            add(
+                arr,
+                scaled(Bitvector32Term::add(
+                    index.clone(),
+                    Bitvector32Term::Constant(1),
+                )),
+            ),
+        );
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::signed_less_than(index, Bitvector32Term::Constant(i32::MAX as u32)),
+            true,
+        );
+        let certificate = |bounds| SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::PointerTranslation {
+                relation: 0,
+                bounds,
+                result: goal.clone(),
+            }],
+            conclusion: 0,
+        };
+        assert!(
+            certificate(vec![1])
+                .check(&goal, &[relation.clone(), bound])
+                .is_ok()
+        );
+        assert!(certificate(vec![]).check(&goal, &[relation]).is_err());
     }
 
     #[test]

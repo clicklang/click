@@ -2188,6 +2188,7 @@ impl PureFactContext {
         if let Some(guard) = condition
             .uint64_successor_guard()
             .or_else(|| condition.uint64_subtraction_guard())
+            .or_else(|| condition.uint64_remainder_bound_guard())
             && self.decide(&guard) == Some(true)
         {
             return Some(true);

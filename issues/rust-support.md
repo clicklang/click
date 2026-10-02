@@ -150,7 +150,19 @@ proves the same sum with `for byte in bytes.iter()` and shared-reference
 dereferences. Direct slices and `.iter()` support both copied and reference
 bindings, with read authority and shared-reference write rejection regressions.
 Only immutable shared byte-slice bindings are supported; mutable iteration,
-stored iterators, chunk iterators, and iterator control flow remain outstanding.
+stored byte iterators, and iterator control flow remain outstanding.
+Shared byte-slice `chunks_exact` now supports stored and direct iterators,
+consuming loops and loops borrowing the iterator mutably, shared subslice
+bindings, and a fixed `remainder` before or after consumption. Explicit cursor,
+remaining complete-byte length, chunk size, and tail state model the iterator;
+no processed count is generated. The
+[exact-chunk fixture](../examples/rust-chunks-exact/README.md) proves that the
+chunks reach the tail without gaps and preserve every input byte for arbitrary
+inputs of length `0..=1000`. Empty inputs, exact multiples, short tails,
+full-width oversized chunks, one evaluation of the size, nested loops, shared
+write rejection, zero-size panic rejection, and checked expansion have
+regressions. Mutable chunks, iterator copies/adapters, and explicit `next`
+remain outstanding; this fixture does not verify adler2.
 Shared byte-slice `split_at` now supports two plain local tuple bindings,
 full-width panic bounds, and an explicit signed-word pointer-offset limit.
 Both slice lengths and reads through variable split points have regressions,

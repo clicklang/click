@@ -520,6 +520,7 @@ mod tests {
             let records = BTreeMap::new();
             let functions = BTreeMap::new();
             let mut cx = Context {
+                chunk_iterators: BTreeSet::new(),
                 local_arrays: BTreeSet::new(),
                 arrays: BTreeMap::new(),
                 owned_locals: BTreeSet::new(),

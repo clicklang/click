@@ -1,5 +1,6 @@
 use super::schema::{Expression as E, Function, Record, RustExport, Statement as S, Type};
 mod arrays;
+mod chunks;
 mod moves;
 use crate::kernel::*;
 use crate::languages::c::syntax::{C0Function, C0Parameter, C0StructLayout, C0Type};
@@ -186,6 +187,7 @@ fn lower_function(
             .push(c_parameter(&p.name, c_type.to_kernel_type()).with_pointee_constant(constant));
     }
     let mut cx = Context {
+        chunk_iterators: BTreeSet::new(),
         local_arrays: BTreeSet::new(),
         owned_locals: BTreeSet::new(),
         slices,
@@ -232,6 +234,7 @@ fn lower_function(
     )
 }
 struct Context<'a> {
+    chunk_iterators: BTreeSet<String>,
     local_arrays: BTreeSet<String>,
     owned_locals: BTreeSet<String>,
     slices: BTreeMap<String, (String, bool)>,
@@ -257,6 +260,16 @@ impl Context<'_> {
     }
     fn statement(&mut self, s: &S) -> Result<CStatement, String> {
         match s {
+            S::ChunkDeclare {
+                iterator,
+                slice,
+                size,
+            } => self.chunk_declare(iterator, slice, size),
+            S::ChunkFor {
+                iterator,
+                binding,
+                body,
+            } => self.chunk_for(iterator, binding, body),
             S::SliceSplit {
                 slice,
                 midpoint,
@@ -995,6 +1008,15 @@ impl Context<'_> {
         }
     }
     fn slice_parts(&self, e: &E) -> Result<(CExpression, CExpression), String> {
+        if let E::ChunkRemainder { iterator } = e {
+            if !self.chunk_iterators.contains(iterator) {
+                return Err("unknown Rust chunk iterator".into());
+            }
+            return Ok((
+                c_variable(format!("{iterator}_tail")),
+                c_variable(format!("{iterator}_tail_len")),
+            ));
+        }
         if let E::ArrayToSlice { array, mutable } = e {
             let (pointer, length, element) = self.indexed_parts(array)?;
             if element != CType::UInt8 {
@@ -1126,7 +1148,7 @@ impl Context<'_> {
     }
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
-            E::ArrayToSlice { .. } => {
+            E::ChunkRemainder { .. } | E::ArrayToSlice { .. } => {
                 Err("Rust slices require pointer-plus-length preparation".into())
             }
             E::Array { .. } | E::Repeat { .. } => {

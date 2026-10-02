@@ -5,7 +5,7 @@ self-contained, with inline C and `.click` blocks. Prefer copying a nearby
 mdtest instead of inventing syntax from memory.
 
 Larger example projects live directly under `examples/`. They contain ordinary
-`.c` or `.cpp` files and `.click` sidecars, and are verified by
+`.c`, `.cpp`, or `.rs` files and `.click` sidecars, and are verified by
 `tests/examples.rs`.
 
 `examples/basic-cpp/` is the first C++ example project. Its small reference
@@ -14,6 +14,10 @@ restores the referenced value after either return path; a modular caller
 starting with 41 proves the helper returns 7 or 9 while restoring 41. The
 project's README gives the pinned compiler-import setup and ordinary
 verification commands.
+
+`examples/rust-chunks-exact/` verifies stored shared byte-chunk iteration and
+its fixed remainder. The proof tracks the cursor and remaining complete range
+without a generated processed count; chunk reads use the original byte views.
 
 `examples/multifile-registry/` specifies a registry across four C translation
 units and two headers. It covers shared updates, independent same-named private

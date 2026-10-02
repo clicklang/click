@@ -159,6 +159,7 @@ struct BodyExporter<'tcx> {
     locals: BTreeMap<u32, String>,
     names: BTreeSet<String>,
     immutable: BTreeSet<u32>,
+    chunk_iterators: BTreeSet<String>,
 }
 fn indexed_type(t: &Type) -> bool {
     matches!(t, Type::ByteSlice { .. } | Type::Array { .. })
@@ -271,6 +272,13 @@ impl<'tcx> BodyExporter<'tcx> {
                 }),
                 _ => Err(self.error(e, "only resolved local values are supported")),
             },
+            hir::ExprKind::MethodCall(_, receiver, [], _)
+                if self.is_chunk_method(e, "remainder") =>
+            {
+                Ok(Expression::ChunkRemainder {
+                    iterator: self.chunk_local(receiver)?,
+                })
+            }
             hir::ExprKind::MethodCall(_, receiver, args, _) => {
                 if self.typeck.type_dependent_def_id(e.hir_id)
                     != self.tcx.lang_items().slice_len_fn()
@@ -441,6 +449,11 @@ impl<'tcx> BodyExporter<'tcx> {
                     let init = local
                         .init
                         .ok_or("uninitialized locals outside Rust slice")?;
+                    if self.is_slice_method(init, "chunks_exact") {
+                        let name = self.bind(local.pat, false)?;
+                        out.push(self.chunk_declare(name, init)?);
+                        continue;
+                    }
                     if self.is_slice_method(init, "split_at") {
                         out.push(self.slice_split(local.pat, init)?);
                         continue;
@@ -492,6 +505,79 @@ impl<'tcx> BodyExporter<'tcx> {
                     .kind(),
                 ty::Slice(_)
             )
+    }
+    fn is_chunk_type(&self, t: ty::Ty<'tcx>) -> bool {
+        matches!(t.kind(), ty::Adt(def, args)
+            if !def.did().is_local()
+                && self.tcx.crate_name(def.did().krate).as_str() == "core"
+                && self.tcx.item_name(def.did()).as_str() == "ChunksExact"
+                && args.types().next().is_some_and(|t| matches!(t.kind(), ty::Uint(ty::UintTy::U8))))
+    }
+    fn is_chunk_method(&self, e: &hir::Expr<'tcx>, name: &str) -> bool {
+        let Some(method) = self.typeck.type_dependent_def_id(e.hir_id) else {
+            return false;
+        };
+        let implementation = self.tcx.parent(method);
+        !method.is_local()
+            && self.tcx.crate_name(method.krate).as_str() == "core"
+            && self.tcx.item_name(method).as_str() == name
+            && matches!(
+                self.tcx.def_kind(implementation),
+                hir::def::DefKind::Impl { of_trait: false }
+            )
+            && matches!(self.tcx.type_of(implementation).instantiate_identity().skip_norm_wip().kind(),
+                ty::Adt(def, _) if !def.did().is_local()
+                    && self.tcx.crate_name(def.did().krate).as_str() == "core"
+                    && self.tcx.item_name(def.did()).as_str() == "ChunksExact")
+    }
+    fn chunk_local(&self, e: &hir::Expr<'tcx>) -> Result<String, String> {
+        let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = e.kind else {
+            return Err(self.error(e, "chunk iteration requires a stored ChunksExact local"));
+        };
+        let Res::Local(id) = path.res else {
+            return Err(self.error(e, "chunk iteration requires a stored ChunksExact local"));
+        };
+        let name = self
+            .locals
+            .get(&id.local_id.as_u32())
+            .ok_or("unknown chunk iterator local")?;
+        if !self.chunk_iterators.contains(name) || !self.is_chunk_type(self.typeck.expr_ty(e)) {
+            return Err(self.error(e, "chunk iteration requires a stored ChunksExact local"));
+        }
+        Ok(name.clone())
+    }
+    fn chunk_declare(
+        &mut self,
+        iterator: String,
+        e: &hir::Expr<'tcx>,
+    ) -> Result<Statement, String> {
+        let hir::ExprKind::MethodCall(_, receiver, [size], _) = e.kind else {
+            return Err(self.error(e, "chunks_exact requires one usize size"));
+        };
+        if !self.is_slice_method(e, "chunks_exact")
+            || export_type(self.tcx, self.typeck.expr_ty(receiver))?
+                != (Type::ByteSlice { mutable: false })
+            || !self.is_chunk_type(self.typeck.expr_ty(e))
+            || export_type(self.tcx, self.typeck.expr_ty(size))? != Type::Usize
+        {
+            return Err(self.error(
+                e,
+                "chunks_exact requires a shared byte slice and usize size",
+            ));
+        }
+        let slice = self.expr(receiver)?;
+        if !matches!(
+            slice,
+            Expression::Local { .. } | Expression::ChunkRemainder { .. }
+        ) {
+            return Err(self.error(e, "chunks_exact requires a shared byte-slice local"));
+        }
+        self.chunk_iterators.insert(iterator.clone());
+        Ok(Statement::ChunkDeclare {
+            iterator,
+            slice,
+            size: self.expr(size)?,
+        })
     }
     fn slice_split(
         &mut self,
@@ -549,9 +635,8 @@ impl<'tcx> BodyExporter<'tcx> {
         e: &hir::Expr<'tcx>,
         tail_return: bool,
     ) -> Result<Vec<Statement>, String> {
-        let bad = || {
-            self.error(e, "Rust for loops currently require a shared byte-slice iterator over an immutable binding")
-        };
+        let diagnostic = self.error(e, "Rust for loops currently require a shared byte-slice iterator over an immutable binding");
+        let bad = || diagnostic.clone();
         let hir::ExprKind::Match(input, [outer], hir::MatchSource::ForLoopDesugar) = e.kind else {
             return Err(bad());
         };
@@ -565,25 +650,45 @@ impl<'tcx> BodyExporter<'tcx> {
         {
             return Err(bad());
         }
-        let slice = if let hir::ExprKind::MethodCall(_, receiver, [], _) = slice.kind {
-            // `iter` has no lang item. Check the resolved core inherent slice
-            // method, including its impl self type, rather than source spelling.
-            if !self.is_slice_method(slice, "iter") {
+        let mut chunk_declaration = None;
+        let mut chunk_iterator = None;
+        let slice = if self.is_slice_method(slice, "chunks_exact") {
+            let location = span(self.tcx, e.span);
+            let iterator = format!("__rust_iter_{}_{}", location.line, location.column);
+            if !self.names.insert(iterator.clone()) {
                 return Err(bad());
             }
-            receiver
+            chunk_declaration = Some(self.chunk_declare(iterator.clone(), slice)?);
+            chunk_iterator = Some(iterator);
+            slice
+        } else if let hir::ExprKind::AddrOf(hir::BorrowKind::Ref, hir::Mutability::Mut, iter) =
+            slice.kind
+        {
+            chunk_iterator = Some(self.chunk_local(iter)?);
+            slice
+        } else if self.is_chunk_type(self.typeck.expr_ty(slice)) {
+            chunk_iterator = Some(self.chunk_local(slice)?);
+            slice
         } else {
+            let slice = if let hir::ExprKind::MethodCall(_, receiver, [], _) = slice.kind {
+                if !self.is_slice_method(slice, "iter") {
+                    return Err(bad());
+                }
+                receiver
+            } else {
+                slice
+            };
+            let hir::ExprKind::Path(hir::QPath::Resolved(_, source)) = slice.kind else {
+                return Err(bad());
+            };
+            if !matches!(source.res, Res::Local(id) if self.immutable.contains(&id.local_id.as_u32()))
+                || export_type(self.tcx, self.typeck.expr_ty(slice))?
+                    != (Type::ByteSlice { mutable: false })
+            {
+                return Err(bad());
+            }
             slice
         };
-        let hir::ExprKind::Path(hir::QPath::Resolved(_, source)) = slice.kind else {
-            return Err(bad());
-        };
-        if !matches!(source.res, Res::Local(id) if self.immutable.contains(&id.local_id.as_u32()))
-            || export_type(self.tcx, self.typeck.expr_ty(slice))?
-                != (Type::ByteSlice { mutable: false })
-        {
-            return Err(bad());
-        }
         let hir::PatKind::Binding(_, iterator_id, _, None) = outer.pat.kind else {
             return Err(bad());
         };
@@ -635,6 +740,32 @@ impl<'tcx> BodyExporter<'tcx> {
             || block.expr.is_some()
         {
             return Err(bad());
+        }
+        if let Some(iterator) = chunk_iterator {
+            if export_type(self.tcx, self.typeck.pat_ty(field.pat))?
+                != (Type::ByteSlice { mutable: false })
+            {
+                return Err(bad());
+            }
+            let binding = Place {
+                name: self.bind(field.pat, false)?,
+                value_type: Type::ByteSlice { mutable: false },
+                span: span(self.tcx, field.pat.span),
+            };
+            let body = self.statement(some.body, false)?;
+            let mut statements = Vec::new();
+            if let Some(declaration) = chunk_declaration {
+                statements.push(declaration);
+            }
+            statements.push(Statement::ChunkFor {
+                iterator,
+                binding,
+                body,
+            });
+            if tail_return {
+                statements.push(Statement::Return { value: None });
+            }
+            return Ok(statements);
         }
         let (binding, reference) = match field.pat.kind {
             hir::PatKind::Ref(binding, hir::Pinnedness::Not, hir::Mutability::Not)
@@ -846,6 +977,7 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
             locals: BTreeMap::new(),
             names: BTreeSet::new(),
             immutable: BTreeSet::new(),
+            chunk_iterators: BTreeSet::new(),
         };
         let parameters = body
             .params

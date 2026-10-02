@@ -288,6 +288,8 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
             | Bitvector32Term::UInt64Add(left, right)
             | Bitvector32Term::UInt64Subtract(left, right)
             | Bitvector32Term::UInt64Multiply(left, right)
+            | Bitvector32Term::UInt64Divide(left, right)
+            | Bitvector32Term::UInt64Remainder(left, right)
             | Bitvector32Term::UInt64BitwiseAnd(left, right)
             | Bitvector32Term::UInt64BitwiseOr(left, right)
             | Bitvector32Term::Float32Binary { left, right, .. }
@@ -540,6 +542,8 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
             | Bitvector32Term::UInt64Add(left, right)
             | Bitvector32Term::UInt64Subtract(left, right)
             | Bitvector32Term::UInt64Multiply(left, right)
+            | Bitvector32Term::UInt64Divide(left, right)
+            | Bitvector32Term::UInt64Remainder(left, right)
             | Bitvector32Term::UInt64BitwiseAnd(left, right)
             | Bitvector32Term::UInt64BitwiseOr(left, right) => {
                 pending.push(left);
