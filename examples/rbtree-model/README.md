@@ -589,6 +589,34 @@ root is black, which the C proof needs to refold the sibling after
 `ctx_consistent_swap`. `rb_reparent_parent_is` says a reparented tree names
 its new parent.
 
+### Case 2 as one step
+
+Linux's case 2 rotates at the parent and falls through into case 3 in the same
+iteration, with `parent = node` and `node` unchanged. `ctx_insert_case2_left_step`
+and `ctx_insert_case2_right_step` describe the state between the two rotations.
+Their hypotheses are the case-3 step's four, at the inner frame shape (a `Right`
+frame inside a `Left` frame, or the mirror). Their conclusions are stated on the
+outer shape the case-3 code then sees, where the focus is the old parent, red,
+holding its outer child and the cursor's reparented inner child, and its frame
+is the old cursor, red, whose other child is the cursor's outer child: the
+in-order sequence equals the inner two-frame one, the focus is `is_rb`, the
+two-frame `ctx_rb` holds at the focus's black height, the two-frame `plug` is
+parent consistent, and the reparented child's root is black, which the C proof
+needs to refold it after `rb_set_parent_color(tmp, parent, RB_BLACK)`. The
+second, third, and fourth are exactly the hypotheses of `ctx_insert_case3_*_step`
+with `parent` and `cursor` exchanged; the uncle's black root carries over
+unchanged.
+
+`ctx_insert_case2_left_exit_step` and `ctx_insert_case2_right_exit_step` chain
+the two steps. The C loop owns its instances at `node`, and after both
+rotations `node` is the root of the rotated subtree, so the context the loop
+hands back at this `break` is `up2` itself, not a frame above the cursor.
+The exit theorems state the three whole-tree facts on `plug(up2, ...)` at the
+explicit rotated subtree (the cursor, black, over the old parent and the old
+grandparent, both red), and the black roots of both of the cursor's children.
+They are also the check that the case-2 step's conclusions satisfy the case-3
+step's hypotheses.
+
 ## Standard library
 
 The example adds `list_tail` locally rather than to `stdlib/prelude.click`; it
