@@ -1913,6 +1913,26 @@ pub(super) fn function_claims(function_block: &FunctionBlock) -> Vec<FunctionCla
         .collect()
 }
 
+/// The entry a function proof was built from, kept with the theorems the
+/// proof issues so that certifying the contract starts from the same entry
+/// instead of building it again.
+#[derive(Clone, Debug)]
+pub(in crate::surface) struct ProofEntryContext {
+    pub(in crate::surface) state: CState,
+    pub(in crate::surface) arguments: Vec<CExpression>,
+    pub(in crate::surface) pure_facts: PureFactList,
+}
+
+impl PartialEq for ProofEntryContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+            && self.arguments == other.arguments
+            && *self.pure_facts == *other.pure_facts
+    }
+}
+
+impl Eq for ProofEntryContext {}
+
 pub(super) struct InitialClaimContext {
     pub(super) state: CState,
     pub(super) arguments: Vec<CExpression>,
