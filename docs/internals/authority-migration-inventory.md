@@ -108,8 +108,22 @@ count permission. Numerical unary batches compose with unit updates without
 per-unit iteration; tests reject overflow, insufficient custody, and use after
 lending authority. Zero quantities do not grant member rights.
 
+`authority_pool_control_two_members.md` initializes an external pool, checks out
+both private objects, writes 11/22 with control closed, and returns them in the
+opposite order. Its final slot quantity is two. Exact member custody and call
+memoization are indexed by identity; borrowing one member does not borrow its
+neighbor. For a deterministic positive exclusive memory footprint, equal
+arguments cannot describe two live instances, so its owned exact count is one.
+A remembered exact absence is invalidated by a subsequent unresolved birth;
+an empty whole population entails every exact count is zero. Empty-body
+families keep their existing conservative rule. Kernel tests cover wrong
+members, double spend, absence invalidation and multi-size custody scaling.
+An aliased second birth is rejected by a source regression. Constant ownership
+quantities are now observed from an indexed tally without merging or duplicating
+retained occurrences; views contribute no units and arithmetic never wraps.
+
 The original bounded-pool sidecar still selects legacy semantics. Its migration
-needs multiple exact-member custody under an imported wildcard scope, symbolic batch
+needs symbolic batch
 forwarding, and the remaining resize/transfer/cleanup pipeline checks. The
 roadmap in `issues/authority-migration.md` records these as
 remaining dependencies; the new fixtures are partial progress, not evidence

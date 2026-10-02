@@ -5027,13 +5027,27 @@ fn execute_verified_function_applications_with_suspension(
                     paths.push(resource_call_failure("Requires live base storage for R(p)"));
                     continue 'arguments;
                 }
-                let (next, _) = match events.checked_member_exchange_quantity(
-                    &anchor.block,
-                    &description,
-                    produce,
-                    quantity,
-                    &effective_assumptions,
-                ) {
+                let exchange = if interface
+                    .composite_resource_definition(name)
+                    .is_some_and(CCompositeResourceDefinition::has_fixed_exclusive_memory)
+                {
+                    events.checked_exclusive_member_exchange_quantity(
+                        &anchor.block,
+                        &description,
+                        produce,
+                        quantity,
+                        &effective_assumptions,
+                    )
+                } else {
+                    events.checked_member_exchange_quantity(
+                        &anchor.block,
+                        &description,
+                        produce,
+                        quantity,
+                        &effective_assumptions,
+                    )
+                };
+                let (next, _) = match exchange {
                     Ok(exchange) => exchange,
                     Err(refusal) => {
                         paths.push(resource_call_failure(&format!(

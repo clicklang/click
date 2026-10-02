@@ -473,6 +473,17 @@ impl ResourceContextIndex {
         result.exact = insert_resource_index_entry(&result.exact, fact.clone(), entry);
         result.by_resource =
             insert_resource_index_entry(&result.by_resource, fact.resource().clone(), entry);
+        if let Some(amount) = numeric_population_owned_units(fact) {
+            let prior = result
+                .numeric_owned_units
+                .get(fact.resource())
+                .copied()
+                .unwrap_or((0, 0));
+            result.numeric_owned_units.insert(
+                fact.resource().clone(),
+                (prior.0 + u128::from(amount), prior.1 + 1),
+            );
+        }
         if matches!(
             fact.resource(),
             CResource::PopulationAuthority(_)
@@ -663,6 +674,27 @@ impl ResourceContextIndex {
         result.exact = remove_resource_index_entry(&result.exact, fact, entry);
         result.by_resource =
             remove_resource_index_entry(&result.by_resource, fact.resource(), entry);
+        if let Some(amount) = numeric_population_owned_units(fact) {
+            let prior = result
+                .numeric_owned_units
+                .get(fact.resource())
+                .copied()
+                .expect("numeric units indexed");
+            let remaining = (
+                prior
+                    .0
+                    .checked_sub(u128::from(amount))
+                    .expect("numeric units conserved"),
+                prior.1 - 1,
+            );
+            if remaining.1 == 0 {
+                result.numeric_owned_units.remove(fact.resource());
+            } else {
+                result
+                    .numeric_owned_units
+                    .insert(fact.resource().clone(), remaining);
+            }
+        }
         if matches!(
             fact.resource(),
             CResource::PopulationAuthority(_)
@@ -5028,6 +5060,28 @@ impl ResourceContext {
                 return true;
             }
         }
+        if let Some(required) = numeric_population_owned_units(fact) {
+            let (units, entries) = self
+                .storage
+                .index
+                .numeric_owned_units
+                .get(fact.resource())
+                .copied()
+                .unwrap_or((0, 0));
+            if units >= u128::from(required) {
+                return true;
+            }
+            // If every possible support is already in this constant tally,
+            // failure is exact too. Symbolic quantities and proved aliases
+            // keep the existing proof-aware entailment route below.
+            if self
+                .direct_match_candidate_positions(fact)
+                .map_or(0, |candidates| candidates.len())
+                == entries
+            {
+                return false;
+            }
+        }
         if crate::instrumentation::measure_operation(
             "kernel",
             "resource satisfaction",
@@ -6588,6 +6642,23 @@ pub(in crate::kernel) fn population_quantity_sum(
     .then(|| Bitvector32Term::add(left.clone(), right.clone()))
 }
 
+/// Only families with ordinary unit quantities participate. A memory share,
+/// an acquisition, or an authority cannot be added into a population unit.
+fn numeric_population_owned_units(fact: &CResourceFact) -> Option<u32> {
+    let CResourceFact::Own(resource, quantity) = fact else {
+        return None;
+    };
+    if !matches!(
+        resource,
+        CResource::Composite { .. } | CResource::Token { .. }
+    ) {
+        return None;
+    }
+    quantity
+        .as_const()
+        .filter(|q| *q > 0 && *q <= i32::MAX as u32)
+}
+
 fn resource_quantity_is_zero(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
     quantity.as_const() == Some(0)
         || assumptions.proves_exact(&Proposition::ConditionIs(
@@ -6627,6 +6698,61 @@ mod zero_quantity_graph_tests {
             },
             quantity,
         )
+    }
+
+    #[test]
+    fn separately_retained_units_entail_their_exact_quantity() {
+        let assumptions = PureFactContext::new();
+        let one = required(Bitvector32Term::Constant(1));
+        let two = required(Bitvector32Term::Constant(2));
+        let three = required(Bitvector32Term::Constant(3));
+        let context = ResourceContext::new().unchecked_with_facts([one.clone(), one.clone()]);
+        assert!(context.satisfies_fact(&two, &assumptions));
+        assert!(!context.satisfies_fact(&three, &assumptions));
+        let after = context.clone().without_exact_representation(&one).unwrap();
+        assert!(!after.satisfies_fact(&two, &assumptions));
+        assert!(
+            context
+                .without_fact_incrementally(&two, &assumptions)
+                .unwrap()
+                .is_empty()
+        );
+        let views = ResourceContext::new()
+            .unchecked_with_facts([CResourceFact::View(one.resource().clone()), one.clone()]);
+        assert!(!views.satisfies_fact(&two, &assumptions));
+        let large = required(Bitvector32Term::Constant(2_000_000_000));
+        let oversized = ResourceContext::new().unchecked_with_facts([large.clone(), large]);
+        assert!(oversized.satisfies_fact(&two, &assumptions));
+        assert!(oversized.satisfies_fact(
+            &required(Bitvector32Term::Constant(i32::MAX as u32)),
+            &assumptions,
+        ));
+    }
+
+    #[test]
+    fn quantity_query_work_is_indexed_over_separately_retained_units() {
+        let assumptions = PureFactContext::new();
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let context = ResourceContext::new()
+                .unchecked_with_facts((0..size).map(|_| required(Bitvector32Term::Constant(1))));
+            let ((), work) = crate::persistent::measure_persistent_work(|| {
+                assert!(
+                    context
+                        .satisfies_fact(&required(Bitvector32Term::Constant(size)), &assumptions)
+                );
+                assert!(
+                    !context.satisfies_fact(
+                        &required(Bitvector32Term::Constant(size + 1)),
+                        &assumptions
+                    )
+                );
+            });
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 16 * index, "{samples:?}");
+        }
     }
 
     #[test]

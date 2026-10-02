@@ -6202,14 +6202,24 @@ impl CState {
                 .try_compose_with_facts_delaying_normalization(body.iter().cloned(), assumptions)
                 .map_err(|error| format!("member body ownership refused: {error:?}"))?
         };
-        let (history, evidence) = events
-            .checked_member_exchange_quantity(
+        let exchange = if definition.has_fixed_exclusive_memory() {
+            events.checked_exclusive_member_exchange_quantity(
                 &anchor.block,
                 &description,
                 produce,
                 quantity,
                 assumptions,
             )
+        } else {
+            events.checked_member_exchange_quantity(
+                &anchor.block,
+                &description,
+                produce,
+                quantity,
+                assumptions,
+            )
+        };
+        let (history, evidence) = exchange
             .map_err(|error| {
                 if produce && governing.population_arity().is_some()
                     && events.observe_symbolic(&governing).is_some()
