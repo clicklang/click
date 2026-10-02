@@ -91,6 +91,26 @@ Indexed domain-query scaling is checked beside unrelated facts. Support is
 limited to one/two authorities at the same anchor with a field-free control;
 the bounded-pool sidecar and general wrapper/batch support remain separate.
 
+`authority_pool_control_return_full.md` adds direct and nested return, with an
+exact concrete input member imported alongside its folded control. Both count
+invariants and the ordinary `valid_pool(pool)` predicate are restored, private
+memory is returned, and a caller retains a neighboring slot. Its signed-sum proof uses ordinary arithmetic lemmas rather
+than new syntax; reversed summands retain all domain checks. Kernel imports
+reject missing ownership, multiple selected inputs, and wrong pool identity.
+`authority_pool_control_init_nested.md` packages explicitly passed empty
+populations through standalone arbitrary-capacity initialization and a nested
+capacity-two call. Numerical unary batches compose with unit updates without
+per-unit iteration; tests reject overflow, insufficient custody, and use after
+lending authority. Zero quantities do not grant member rights.
+
+The original bounded-pool sidecar still selects legacy semantics. Its migration
+needs current count observations after storage/control wrapper replacement,
+multiple exact-member custody under an imported wildcard scope, symbolic batch
+forwarding, and the remaining resize/transfer/cleanup pipeline checks. The
+roadmap in `issues/authority-migration.md` records these as
+remaining dependencies; the new fixtures are partial progress, not evidence
+that the original pipeline has migrated.
+
 The following commands, run from the repository root, find the checked-in consumers when this inventory is updated. Review matches in context: C functions named `count`, prose mentioning quantities, and Rust variables named `count` are not population observations. The mdtest list is intentionally grouped below by proof dependency rather than by every syntactic occurrence.
 
 ```sh

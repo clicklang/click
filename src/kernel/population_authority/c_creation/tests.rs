@@ -616,10 +616,135 @@ fn observable_unary_import_preserves_arbitrary_count_and_current_custody() {
 }
 
 #[test]
+fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_observable_contract_population(&description, 0)
+        .unwrap();
+    let initial = entry.observe_symbolic(&description).unwrap();
+    let empty = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::equal(
+            initial.entry_count.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let exchange = |state: &CreationEvents, produce, amount, facts: &PureFactContext| {
+        state.checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            produce,
+            &Bitvector32Term::Constant(amount),
+            facts,
+        )
+    };
+    assert!(matches!(
+        exchange(&entry, true, 2, &PureFactContext::new()),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+    let two = exchange(&entry, true, 2, &empty).unwrap().0;
+    assert_eq!(two.observe_symbolic(&description).unwrap().delta, 2);
+    assert_eq!(
+        two.observe_symbolic(&description).unwrap().entry_count,
+        initial.entry_count
+    );
+    let one = exchange(&two, false, 1, &empty).unwrap().0;
+    assert_eq!(one.observe_symbolic(&description).unwrap().delta, 1);
+    assert!(matches!(
+        exchange(&one, false, 2, &empty),
+        Err(CreationRefusal::MissingMembers)
+    ));
+    let none = exchange(&one, false, 1, &empty).unwrap().0;
+    assert!(!none.owns_population_member(&description));
+    let zero = exchange(&none, true, 0, &empty).unwrap().0;
+    assert_eq!(zero.observe_symbolic(&description).unwrap().delta, 0);
+    assert!(!zero.owns_population_member(&description));
+    let zero = exchange(&zero, false, 0, &empty).unwrap().0;
+    assert!(!zero.owns_population_member(&description));
+    let max = exchange(&entry, true, i32::MAX as u32, &empty).unwrap().0;
+    assert!(matches!(
+        exchange(&max, true, 2, &empty),
+        Err(CreationRefusal::InvalidQuantity)
+    ));
+    let literal_empty = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(Bitvector32Term::Constant(0)),
+            None,
+            None,
+        )
+        .unwrap();
+    let literal_two = exchange(&literal_empty, true, 2, &PureFactContext::new())
+        .unwrap()
+        .0;
+    let literal_one = exchange(&literal_two, false, 1, &PureFactContext::new())
+        .unwrap()
+        .0;
+    assert_eq!(literal_one.observe_symbolic(&description).unwrap().delta, 1);
+    let helper = entry.enter_call();
+    let lent = two
+        .transfer_call_fact(&entry, &helper, &description, true)
+        .unwrap();
+    // A caller that lent its authority cannot perform even a zero exchange.
+    assert!(matches!(
+        exchange(&lent, true, 0, &empty),
+        Err(CreationRefusal::MissingAuthority)
+    ));
+}
+
+#[test]
+fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let entry = CreationEvents::new()
+        .import_observable_contract_population(&description, 0)
+        .unwrap();
+    let facts = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::equal(
+            entry.observe_symbolic(&description).unwrap().entry_count,
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let measurements = [2, 64, 1024, 65536].map(|amount| {
+        let (after, work) = crate::persistent::measure_persistent_work(|| {
+            entry
+                .checked_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    &description,
+                    true,
+                    &Bitvector32Term::Constant(amount),
+                    &facts,
+                )
+                .unwrap()
+                .0
+        });
+        assert_eq!(
+            after.observe_symbolic(&description).unwrap().delta,
+            amount as i32
+        );
+        work
+    });
+    assert!(measurements[0] > 0, "{measurements:?}");
+    assert!(
+        measurements.iter().all(|work| *work == measurements[0]),
+        "{measurements:?}"
+    );
+}
+
+#[test]
 fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     let description = member_description(PointerBlock::ExternalArgument);
-    let quantity = Bitvector32Term::Constant(5);
-    let assumptions = PureFactContext::new();
+    // Keep this a genuinely symbolic batch: fixed numerical batches now
+    // compose with unit exchanges, covered by the separate numerical test.
+    let quantity = Bitvector32Term::Variable(Variable(940_120));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
     let held = CreationEvents::new()
         .import_opaque_contract_population_inner(
             &description,
@@ -938,6 +1063,94 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
             .checked_authority_wrapper_body(&selected, &definition, &PureFactContext::new())
             .is_err()
     );
+    // A selected wildcard member is authenticated against both the exact
+    // input custody and the contained scope; its total remains arbitrary.
+    let scope = components
+        .iter()
+        .find(|(scope, _)| scope.population_arity().is_some())
+        .unwrap()
+        .0
+        .clone();
+    let member = ResourceDescription::new(
+        scope.family().into(),
+        vec![scope.arguments()[0].clone(), int32(7).into()].into(),
+        scope.schema().clone(),
+    );
+    let fact = CResourceFact::own(CResource::Composite {
+        name: member.family().into(),
+        arguments: member.arguments().to_vec().into(),
+    });
+    let selected_state = state
+        .clone()
+        .with_resource_context(state.resources().clone().unchecked_with_fact(fact.clone()));
+    let members = BTreeMap::from([(scope.clone(), vec![fact.clone()])]);
+    let selected_import = entry
+        .import_checked_control_wrapper_with_members(
+            &selected_state,
+            &selected,
+            &definition,
+            &PureFactContext::new(),
+            &members,
+        )
+        .unwrap();
+    assert!(selected_import.owns_imported_population_member(&member));
+    assert_eq!(
+        selected_import
+            .observe_symbolic(&scope)
+            .unwrap()
+            .entry_owned_members,
+        1
+    );
+    assert!(
+        entry
+            .import_checked_control_wrapper_with_members(
+                &state,
+                &selected,
+                &definition,
+                &PureFactContext::new(),
+                &members,
+            )
+            .is_err(),
+        "a supplied member map cannot invent ownership"
+    );
+    let duplicated = BTreeMap::from([(scope.clone(), vec![fact.clone(), fact])]);
+    assert!(
+        entry
+            .import_checked_control_wrapper_with_members(
+                &selected_state,
+                &selected,
+                &definition,
+                &PureFactContext::new(),
+                &duplicated,
+            )
+            .is_err()
+    );
+    let mut wrong_args = member.arguments().to_vec();
+    wrong_args[0] = CValue::pointer(Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(912),
+    })
+    .into();
+    let wrong = CResourceFact::own(CResource::Composite {
+        name: member.family().into(),
+        arguments: wrong_args.into(),
+    });
+    let wrong_state = state
+        .clone()
+        .with_resource_context(state.resources().clone().unchecked_with_fact(wrong.clone()));
+    assert!(
+        entry
+            .import_checked_control_wrapper_with_members(
+                &wrong_state,
+                &selected,
+                &definition,
+                &PureFactContext::new(),
+                &BTreeMap::from([(scope, vec![wrong])]),
+            )
+            .is_err(),
+        "an owned member of another pool cannot seed this scope"
+    );
+
     definition.contains[2] = definition.contains[1].clone();
     assert!(
         entry
