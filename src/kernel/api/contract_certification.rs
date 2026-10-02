@@ -965,18 +965,216 @@ fn format_loan_operation(operation: crate::kernel::LoanRefusalOperation) -> &'st
     }
 }
 
+/// Where one fact of a function's contract entry comes from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CContractEntryFactOrigin {
+    /// The `0 or 1` range of a `_Bool` parameter.
+    BoolRange,
+    /// The type range of a narrow integer parameter.
+    NarrowRange,
+    /// A fact the lowering of `requires` clause `index` produced beside it.
+    RequirementLowering(usize),
+    /// The lowered `requires` clause `index` itself.
+    Requirement(usize),
+    /// A bound on a counted population at entry.
+    PopulationCount,
+    /// A declared resource quantity.
+    ResourceQuantity,
+    /// Disjointness of the transferred and the borrowed entry clauses.
+    Partition,
+    /// A guard that a stated memory range's extent is well formed.
+    Extent,
+    /// Loadability of a stated clause range at the entry memory.
+    ClauseLoadable,
+    /// A declared fact of a composite resource the entry holds, at any depth.
+    CompositeDefinition,
+    /// A declared fact of a tracked population.
+    PopulationFact,
+    /// A verification condition of a lowered `requires` clause.
+    RequirementObligation,
+    /// A relation the expanded entry resources state: separation, containment.
+    Observable,
+    /// The facts of the instance arm the requirements select.
+    Publication,
+    /// The identity of a registered predicate whose body the entry holds.
+    PredicateIdentity,
+    /// A fact of `requires` clause `index` where that clause is the body of
+    /// a registered predicate: what the predicate says once unfolded.
+    PredicateBody(usize),
+}
+
+/// One fact a function may assume at entry, with where it comes from.
+#[derive(Clone, Debug)]
+pub struct CContractEntryFact {
+    origin: CContractEntryFactOrigin,
+    proposition: Proposition,
+}
+
+impl CContractEntryFact {
+    pub fn origin(&self) -> CContractEntryFactOrigin {
+        self.origin
+    }
+
+    pub fn proposition(&self) -> &Proposition {
+        &self.proposition
+    }
+}
+
+struct ContractEntryFactLog(Vec<CContractEntryFact>);
+
+impl ContractEntryFactLog {
+    /// Assumes `proposition` and records it with its origin.
+    fn assume(
+        &mut self,
+        assumptions: PureFactContext,
+        origin: CContractEntryFactOrigin,
+        proposition: Proposition,
+    ) -> PureFactContext {
+        self.0.push(CContractEntryFact {
+            origin,
+            proposition: proposition.clone(),
+        });
+        assumptions.assume_proposition(proposition)
+    }
+}
+
+/// What a function may assume at its entry, built once from its contract.
+///
+/// The facts are the kernel's lowering of the contract at the entry state:
+/// each `requires` clause, the ranges of its parameters, and what its entry
+/// resources state. A caller applying the function's rule discharges this
+/// same lowering, so a body proved from these facts is proved from what its
+/// callers establish.
+#[derive(Clone, Debug)]
+pub struct CContractEntry {
+    assumptions: PureFactContext,
+    facts: Vec<CContractEntryFact>,
+    /// The propositions of `facts`, for membership.
+    stated: BTreeSet<Proposition>,
+    /// The entry state holding the contract's expanded entry resources.
+    resource_state: CState,
+}
+
+impl CContractEntry {
+    /// The entry facts in the order the contract yields them.
+    pub fn facts(&self) -> &[CContractEntryFact] {
+        &self.facts
+    }
+
+    /// The entry facts as one context.
+    pub(super) fn into_assumptions(self) -> PureFactContext {
+        self.assumptions
+    }
+
+    /// Whether the entry states `proposition`: it is one of the entry facts,
+    /// a conjunction or resource composition of them, or one of them up to
+    /// the names of its bound variables. A lookup, never a search.
+    pub fn states(&self, proposition: &Proposition) -> bool {
+        self.stated.contains(proposition)
+            || self.assumptions.proves_exact(proposition)
+            || self.assumptions.states_required_goal(proposition)
+            || self.resources_supply(proposition)
+    }
+
+    /// Whether `proposition` is the loadability of memory the entry's
+    /// resources hold.
+    fn resources_supply(&self, proposition: &Proposition) -> bool {
+        matches!(proposition, Proposition::CMemoryLoadable { .. })
+            && resources_certify_loadability(
+                &self.resource_state,
+                self.resource_state.resources(),
+                proposition,
+                &self.assumptions,
+            )
+    }
+}
+
+/// Builds the contract entry of `function` called with `arguments` at
+/// `caller_state`, or says why the contract has none.
+pub fn c_function_contract_entry(
+    caller_state: &CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+) -> Result<CContractEntry, String> {
+    let (assumptions, facts, resource_state) =
+        c_function_contract_entry_facts(caller_state, function, arguments)?;
+    let predicate_bodies = function
+        .contract_requires()
+        .iter()
+        .map(|requirement| {
+            function
+                .predicate_unfoldings()
+                .iter()
+                .any(|unfolding| unfolding.body() == requirement)
+        })
+        .collect::<Vec<_>>();
+    let facts = facts
+        .into_iter()
+        .map(|mut fact| {
+            if let CContractEntryFactOrigin::Requirement(index)
+            | CContractEntryFactOrigin::RequirementLowering(index) = fact.origin
+                && predicate_bodies.get(index) == Some(&true)
+            {
+                fact.origin = CContractEntryFactOrigin::PredicateBody(index);
+            }
+            fact
+        })
+        .collect();
+    let mut entry_facts = ContractEntryFactLog(facts);
+    // A `requires` clause that names a registered predicate is lowered to
+    // the predicate's body. Each registered unfolding is definitional, so an
+    // identity whose instantiated body and side obligations the entry proves
+    // holds with it, and is the form a proof names.
+    let mut identities = Vec::new();
+    if let Some(entry_state) = c_function_entry_state(caller_state, function, arguments) {
+        let mut budget = ExecutionBudget::for_new_execution();
+        for unfolding in function.predicate_unfoldings() {
+            let Some((predicate, body)) = instantiate_contract_predicate_unfolding(
+                &entry_state,
+                unfolding,
+                &assumptions,
+                &mut budget,
+            ) else {
+                continue;
+            };
+            if certification_proves_proposition(&assumptions, &body) {
+                identities.push(predicate);
+            }
+        }
+    }
+    let assumptions = identities
+        .into_iter()
+        .fold(assumptions, |assumptions, identity| {
+            entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::PredicateIdentity,
+                identity,
+            )
+        });
+    let stated = entry_facts
+        .0
+        .iter()
+        .map(|fact| fact.proposition.clone())
+        .collect();
+    Ok(CContractEntry {
+        assumptions,
+        facts: entry_facts.0,
+        stated,
+        resource_state,
+    })
+}
+
 /// Builds the assumptions an exact contract certification runs under, or says
 /// why it could not. The failure text is reported to the user: certification
 /// with no paths and no reason is a dead end for whoever wrote the contract,
 /// so every exit below names what stopped it.
-pub(super) fn c_function_contract_certification_assumptions(
+fn c_function_contract_entry_facts(
     caller_state: &CState,
     function: &CFunction,
     arguments: &[CExpression],
-    mut assumptions: PureFactContext,
-    selection_assumptions: &PureFactContext,
-    authorized_theorem_facts: &[Proposition],
-) -> Result<PureFactContext, String> {
+) -> Result<(PureFactContext, Vec<CContractEntryFact>, CState), String> {
+    let mut assumptions = PureFactContext::new();
+    let mut entry_facts = ContractEntryFactLog(Vec::new());
     if let Some(message) =
         crate::kernel::functions::guard_contract_refusal(function.contract_interface())
     {
@@ -1023,46 +1221,6 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
         };
     }
-    // Resource-backed loadability is authoritative only after the exact
-    // entry resource context has been expanded. Keep the expansion as a
-    // capability check here; the propositions it produces are still added
-    // below through the ordinary requirement/resource certification path.
-    let entry_resources_for_authority = if entry_state.uses_population_authority_semantics() {
-        super::super::functions::expand_all_composite_resource_facts_at_state(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            &entry_state,
-            &assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts(
-            entry_state.resources(),
-            function.composite_resource_definitions(),
-            entry_state.memory(),
-            &assumptions,
-        )
-    }
-    .unwrap_or_else(|| entry_state.resources().clone());
-    // Selection facts are the entry facts the proof ran under, built by the
-    // proof side (`initial_claim_context_with_mode`). They are not reused as
-    // given: two kinds are admitted here, each established again at this
-    // entry state, a loadability the entry resources supply and a quantified
-    // predicate implication that is an authorized theorem. The rest are
-    // rebuilt below from the contract, which repeats the proof side's work.
-    for fact in selection_assumptions.prop_facts.iter() {
-        let loadability_authorized = matches!(fact, Proposition::CMemoryLoadable { .. })
-            && resources_certify_loadability(
-                &entry_state,
-                &entry_resources_for_authority,
-                fact,
-                &assumptions,
-            );
-        let theorem_authorized =
-            quantified_predicate_implication_fact(fact) && authorized_theorem_facts.contains(fact);
-        if loadability_authorized || theorem_authorized {
-            assumptions = assumptions.assume_proposition(fact.clone());
-        }
-    }
     // A `_Bool` parameter holds `0` or `1`. Its entry value is a normalized
     // conditional over those constants, so the range disjunction is
     // context-free true; `c_bool_range_fact` checks that shape.
@@ -1071,7 +1229,8 @@ pub(super) fn c_function_contract_certification_assumptions(
             && let CExpression::Value(value) = argument
             && let Some(fact) = c_bool_range_fact(value)
         {
-            assumptions = assumptions.assume_proposition(fact);
+            assumptions =
+                entry_facts.assume(assumptions, CContractEntryFactOrigin::BoolRange, fact);
         }
     }
     // A narrow integer parameter holds a value of its type: the argument was
@@ -1081,7 +1240,8 @@ pub(super) fn c_function_contract_certification_assumptions(
             && let Some(facts) = c_narrow_integer_range_facts(value)
         {
             for fact in facts {
-                assumptions = assumptions.assume_proposition(fact);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::NarrowRange, fact);
             }
         }
     }
@@ -1119,11 +1279,9 @@ pub(super) fn c_function_contract_certification_assumptions(
         let path = if let [path] = paths.as_slice() {
             path
         } else {
-            let selection_context =
-                assumptions_with_propositions(&assumptions, &selection_assumptions.pure_facts());
             let proposition_matches = paths
                 .iter()
-                .filter(|path| selection_context.proves_exact(&path.proposition))
+                .filter(|path| assumptions.proves_exact(&path.proposition))
                 .collect::<Vec<_>>();
             if let [path] = proposition_matches.as_slice() {
                 *path
@@ -1132,7 +1290,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                     .iter()
                     .filter(|path| {
                         !assumptions_with_propositions(
-                            &selection_context,
+                            &assumptions,
                             &path
                                 .facts
                                 .iter()
@@ -1146,7 +1304,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                     if crate::instrumentation::enabled() {
                         crate::instrumentation::emit(
                             crate::instrumentation::VerificationEvent::Diagnostic(format!(
-                                "contract requirement for {} lowered to {} paths; {} matched the selected surface facts and {} remained consistent",
+                                "contract requirement for {} lowered to {} paths; {} are already stated and {} remained consistent",
                                 function.name(),
                                 paths.len(),
                                 proposition_matches.len(),
@@ -1155,9 +1313,8 @@ pub(super) fn c_function_contract_certification_assumptions(
                         );
                     }
                     return Err(format!(
-                        "`requires` clause {} lowered to {} paths, of which {} matched the \
-                         selected facts and {} stayed consistent; certification needs exactly \
-                         one",
+                        "`requires` clause {} lowered to {} paths, of which {} are already \
+                         stated and {} stayed consistent; the contract entry needs exactly one",
                         requirement_index + 1,
                         paths.len(),
                         proposition_matches.len(),
@@ -1173,22 +1330,34 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
         }
         for fact in &path.facts {
-            assumptions = assumptions.assume_proposition(fact.proposition().clone());
+            assumptions = entry_facts.assume(
+                assumptions,
+                CContractEntryFactOrigin::RequirementLowering(requirement_index),
+                fact.proposition().clone(),
+            );
         }
-        assumptions = assumptions.assume_proposition(path.proposition.clone());
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Requirement(requirement_index),
+            path.proposition.clone(),
+        );
     }
     // Counted populations are nonnegative by construction. Quantified entry
     // resource clauses may use a count-related C expression before the
     // required resource context itself has been evaluated, so make this
     // representation invariant explicit first.
     for population in entry_state.counted_populations.iter() {
-        assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(0),
-                population.count.clone(),
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::PopulationCount,
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(
+                    Bitvector32Term::Constant(0),
+                    population.count.clone(),
+                ),
+                true,
             ),
-            true,
-        ));
+        );
     }
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         &entry_state,
@@ -1213,7 +1382,11 @@ pub(super) fn c_function_contract_certification_assumptions(
         }
     };
     for proposition in quantity_assumptions {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::ResourceQuantity,
+            proposition,
+        );
     }
     let (required_resources, required_entry_clauses) =
         match evaluate_function_resource_context_with_metadata(
@@ -1238,15 +1411,14 @@ pub(super) fn c_function_contract_certification_assumptions(
             }
         };
     // The entry partition: a transferred clause and a borrowed `views`
-    // clause of this contract denote disjoint memory. It is computed here a
-    // second time from `function.resource_requires()`; the proof side
-    // computes the same facts from the same clause list
-    // (`evaluate_entry_resource_context`), as it does the `viewable` entry
-    // facts above. `functions::contract_entry_partition_facts` carries the rule
+    // clause of this contract denote disjoint memory. The proof side spells
+    // the same facts from the same clause list
+    // (`evaluate_entry_resource_context`) and keeps the ones this entry
+    // states. `functions::contract_entry_partition_facts` carries the rule
     // and its soundness argument; the fail-closed call-site planner is what
     // discharges the claim, so a caller owes nothing extra for it.
     for fact in crate::kernel::contract_entry_partition_facts(&required_entry_clauses) {
-        assumptions = assumptions.assume_proposition(fact);
+        assumptions = entry_facts.assume(assumptions, CContractEntryFactOrigin::Partition, fact);
     }
     // Each clause states its own range, and the proof side holds each one as
     // written: its byte-count guards and its loadability at entry. The
@@ -1275,7 +1447,8 @@ pub(super) fn c_function_contract_certification_assumptions(
             if guard_is_false {
                 well_formed = false;
             } else {
-                assumptions = assumptions.assume_proposition(guard);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
             }
         }
         // A range its own guards refute states no memory to read.
@@ -1283,16 +1456,20 @@ pub(super) fn c_function_contract_certification_assumptions(
             continue;
         }
         let width = range.element_width();
-        assumptions = assumptions.assume_proposition(Proposition::CMemoryLoadable {
-            memory: entry_state.memory().clone(),
-            base: range
-                .base()
-                .offset_by_elements(range.start().clone(), width),
-            bytes: Bitvector32Term::multiply(
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                Bitvector32Term::Constant(width),
-            ),
-        });
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::ClauseLoadable,
+            Proposition::CMemoryLoadable {
+                memory: entry_state.memory().clone(),
+                base: range
+                    .base()
+                    .offset_by_elements(range.start().clone(), width),
+                bytes: Bitvector32Term::multiply(
+                    Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
+                    Bitvector32Term::Constant(width),
+                ),
+            },
+        );
     }
     for fact in required_resources.facts() {
         // Owned ranges carry their byte-count guards exactly as viewed ranges
@@ -1309,25 +1486,20 @@ pub(super) fn c_function_contract_certification_assumptions(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions = assumptions.assume_proposition(guard);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
             }
         }
     }
-    let expanded = if entry_state.uses_population_authority_semantics() {
+    // A declared fact may read a tracked population (`count(...)`), which
+    // only the entry state holds, so the facts are evaluated at the state.
+    let expanded =
         super::super::functions::expand_all_composite_resource_facts_and_propositions_at_state(
             &required_resources,
             function.composite_resource_definitions(),
             &entry_state,
             &assumptions,
-        )
-    } else {
-        expand_all_composite_resource_facts_and_propositions(
-            &required_resources,
-            function.composite_resource_definitions(),
-            entry_state.memory(),
-            &assumptions,
-        )
-    };
+        );
     let (expanded_resources, resource_definition_facts) = expanded.ok_or_else(|| {
         "could not evaluate the composite resource facts required at the contract entry".to_string()
     })?;
@@ -1347,12 +1519,17 @@ pub(super) fn c_function_contract_certification_assumptions(
                 _ => false,
             };
             if !guard_is_false {
-                assumptions = assumptions.assume_proposition(guard);
+                assumptions =
+                    entry_facts.assume(assumptions, CContractEntryFactOrigin::Extent, guard);
             }
         }
     }
     for proposition in resource_definition_facts {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::CompositeDefinition,
+            proposition,
+        );
     }
     let population_facts = evaluate_resource_population_fact_propositions(
         &required_resources,
@@ -1365,7 +1542,11 @@ pub(super) fn c_function_contract_certification_assumptions(
         "could not evaluate the tracked populations of the contract entry resources".to_string()
     })?;
     for fact in population_facts {
-        assumptions = assumptions.assume_proposition(fact.proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::PopulationFact,
+            fact.proposition,
+        );
     }
     let expanded_required_resources = (if entry_state.uses_population_authority_semantics() {
         super::super::functions::expand_all_composite_resource_facts_at_state(
@@ -1494,10 +1675,14 @@ pub(super) fn c_function_contract_certification_assumptions(
         let Some(count) = entry_state.counted_population(name, arguments) else {
             continue;
         };
-        assumptions = assumptions.assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
-            true,
-        ));
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::PopulationCount,
+            Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(quantity.clone(), count.clone()),
+                true,
+            ),
+        );
     }
     if !requirement_obligations.iter().all(|obligation| {
         // Definedness travels with the assumption. A heap-dependent
@@ -1542,7 +1727,11 @@ pub(super) fn c_function_contract_certification_assumptions(
         );
     }
     for obligation in requirement_obligations {
-        assumptions = assumptions.assume_proposition(obligation.proposition().clone());
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::RequirementObligation,
+            obligation.proposition().clone(),
+        );
     }
     let observable_facts = entry_resources
         .observable_facts(&assumptions)
@@ -1561,13 +1750,16 @@ pub(super) fn c_function_contract_certification_assumptions(
             format!("the contract entry resources are not a valid context: {detail}")
         })?;
     for proposition in observable_facts {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Observable,
+            proposition,
+        );
     }
     entry_state = entry_state.with_resource_context(entry_resources.clone());
     // The contract-entry publication: the arms the requirements refute and
-    // the facts of the arm they leave. Contract lowering publishes exactly
-    // this to the checked execution; it is computed a second time here so the
-    // two entry contexts agree.
+    // the facts of the arm they leave, which a proof starts from as part of
+    // the entry.
     let publication = crate::kernel::publish_instance_arms(
         &entry_resources,
         function.composite_resource_definitions(),
@@ -1579,9 +1771,13 @@ pub(super) fn c_function_contract_certification_assumptions(
         .into_iter()
         .chain(publication.arm_facts)
     {
-        assumptions = assumptions.assume_proposition(proposition);
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Publication,
+            proposition,
+        );
     }
-    Ok(assumptions)
+    Ok((assumptions, entry_facts.0, entry_state))
 }
 
 pub(super) fn instantiate_contract_predicate_unfolding(
@@ -2915,60 +3111,6 @@ pub(crate) fn certification_proves_proposition(
     false
 }
 
-/// Instantiates an explicitly selected pure theorem whose one pointer binder
-/// relates named contract predicates.
-///
-/// The caller supplies only authorities for theorem names that the surface
-/// proof actually applied. Work is therefore proportional to that explicit
-/// certificate input, not to ambient facts or project-wide contracts.
-pub(super) fn certification_proves_predicate_from_verified_pure_implications(
-    assumptions: &PureFactContext,
-    verified_facts: &[Proposition],
-    target: &Proposition,
-) -> bool {
-    let Proposition::Predicate {
-        arguments: target_arguments,
-        ..
-    } = target
-    else {
-        return false;
-    };
-    let Some(target_pointer) = target_arguments.iter().find_map(|argument| match argument {
-        Term::CValue(CValue::Pointer(pointer)) if pointer.pointer().block.is_function() => {
-            Some(pointer)
-        }
-        _ => None,
-    }) else {
-        return false;
-    };
-    verified_facts.iter().any(|fact| {
-        let Proposition::ForAll {
-            var,
-            sort: Sort::CPointer(pointer_type),
-            body,
-            ..
-        } = fact
-        else {
-            return false;
-        };
-        if pointer_type != &target_pointer.c_type() {
-            return false;
-        }
-        let instantiated =
-            substitute_pointer_variable_in_proposition(body, *var, target_pointer.pointer());
-        let mut conclusion = &instantiated;
-        let mut premises = Vec::new();
-        while let Proposition::Implies(premise, rest) = conclusion {
-            premises.push(premise.as_ref());
-            conclusion = rest;
-        }
-        conclusion == target
-            && premises
-                .into_iter()
-                .all(|premise| certification_proves_proposition(assumptions, premise))
-    })
-}
-
 /// Two load variables for one address are equal when the cell is framed
 /// across the effects between the snapshots they were read from: the
 /// bounded, memoized unchanged-load check over recorded derivations and
@@ -3151,75 +3293,6 @@ pub(super) fn certification_proves_condition_from_verified_pure_implication(
         let premise = substitute_bitvector_variables_in_proposition(&premise, &substitutions);
         certification_proves_proposition(assumptions, &premise)
     })
-}
-
-thread_local! {
-    /// Closed quantified facts already proved from the empty context on this
-    /// thread. Scoped to one `VerificationSession`: the proofs may consult
-    /// per-session tables (the load-variable registry, memory provenance), so
-    /// an entry must not outlive the session that established it.
-    static CONTEXT_FREE_FORALL_PROVED: std::cell::RefCell<BTreeSet<Proposition>> =
-        const { std::cell::RefCell::new(BTreeSet::new()) };
-}
-
-/// Forgets every context-free proved fact; `VerificationSession::enter`
-/// calls this alongside the other per-session tables.
-pub(crate) fn clear_context_free_forall_cache() {
-    CONTEXT_FREE_FORALL_PROVED.with(|proved| proved.borrow_mut().clear());
-}
-
-#[cfg(test)]
-pub(crate) fn context_free_forall_cache_len() -> usize {
-    CONTEXT_FREE_FORALL_PROVED.with(|proved| proved.borrow().len())
-}
-
-/// Reuses a closed quantified fact only after the kernel has proved it from
-/// previously proved closed quantified facts. Contract certification sees
-/// the same ordered global theorem facts once per function; this cache keeps
-/// their proof independent of every function entry state. Failures are never
-/// cached because a bounded proof attempt may have observed the active
-/// deadline.
-pub(in crate::kernel) fn certification_proves_context_free_forall(
-    proposition: &Proposition,
-) -> bool {
-    if !matches!(proposition, Proposition::ForAll { .. }) {
-        return false;
-    }
-    if CONTEXT_FREE_FORALL_PROVED.with(|proved| proved.borrow().contains(proposition)) {
-        return true;
-    }
-    let proved_facts = CONTEXT_FREE_FORALL_PROVED
-        .with(|proved| proved.borrow().iter().cloned().collect::<Vec<_>>());
-    let closed_assumptions = assumptions_with_propositions(&PureFactContext::new(), &proved_facts);
-    let proved = certification_proves_proposition(&closed_assumptions, proposition);
-    if proved && crate::instrumentation::exceeded_verification_limit_context().is_none() {
-        CONTEXT_FREE_FORALL_PROVED.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            if cache.len() >= 128 {
-                cache.pop_first();
-            }
-            cache.insert(proposition.clone());
-        });
-    }
-    proved
-}
-
-/// True for a closed universally-quantified implication chain that concludes
-/// in an opaque predicate — the shape of a surface-verified theorem fact.
-fn quantified_predicate_implication_fact(fact: &Proposition) -> bool {
-    let mut body = fact;
-    let mut binders = 0usize;
-    while let Proposition::ForAll { body: inner, .. } = body {
-        binders += 1;
-        body = inner.as_ref();
-    }
-    if binders == 0 {
-        return false;
-    }
-    while let Proposition::Implies(_, rest) = body {
-        body = rest.as_ref();
-    }
-    matches!(body, Proposition::Predicate { .. })
 }
 
 pub(super) fn resources_certify_loadability(
