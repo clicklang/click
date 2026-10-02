@@ -38,7 +38,7 @@ writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
 exporter, refresh existing imports. Configuration schema 2 is unchanged; the
-typed artifact and lock now use schema 5.
+typed artifact and lock now use schema 6.
 
 ## Supported semantics
 
@@ -119,10 +119,39 @@ uint8 read(const uint8* bytes, uint64 bytes_len, uint64 index) {
 
 The length bound reflects the current signed-word memory-range model; it does
 not truncate Rust slice metadata. `.len()` alone needs no byte resource and
-preserves larger 64-bit lengths. Slice returns, subslices,
+preserves larger 64-bit lengths. Slice returns, general range subscripts,
 indexed compound assignment, other slice element types, and slices in owned-value
 MIR functions remain unsupported. Normal numeric contract casts now include
 `(int32)`, `(uint32)`, and `(uint64)`.
+
+## Shared slice splitting
+
+The standard shared byte-slice method supports local destructuring:
+`let (left, right) = bytes.split_at(mid)`. The exporter checks the resolved
+core slice method and retains a `SliceSplit` operation. The receiver must be
+a local `&[u8]`; both tuple elements must be plain bindings. General tuple
+values, wildcard patterns, direct array receivers, mutable slice receivers,
+and `split_at_mut` remain unsupported.
+
+The receiver's pointer and length are captured before evaluating the midpoint,
+which is evaluated once. Execution checks `mid <= bytes_len` at the full
+64-bit `usize` width. The left slice keeps the original pointer and length
+`mid`; the right starts at `bytes + mid` and has length `bytes_len - mid`.
+No bytes are copied and no write authority is created. Subsequent reads use
+the original input's `views` authority; the compiler rejects writes through
+either shared result. Both results work with existing slice aliases,
+indexing, `.len()`, and direct slice calls.
+
+Pointer formation currently requires a checked `mid <= INT32_MAX` bound,
+before narrowing the offset into the shared memory model. The original and
+result lengths retain all 64 bits: metadata-only contracts can use larger
+lengths when the midpoint fits. Splitting at zero or at the length is valid,
+including an empty input; reading an empty result still fails its index check.
+
+The [split fixture](https://github.com/clicklang/click/tree/master/examples/rust-split-at)
+proves both result lengths and reads through each slice for variable split
+points. Its regressions cover endpoints, full-width lengths and invalid split
+indices, missing read authority, false values, and expanded proofs.
 
 ## Fixed arrays, copies, and checked indexing
 

@@ -1,0 +1,38 @@
+verifying "split.rs";
+
+uint64 left_length(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+    requires mid <= bytes_len;
+    requires mid <= 2147483647u64;
+    ensures result == mid;
+} by { execute(); simp(); }
+
+uint64 right_length(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+    requires mid <= bytes_len;
+    requires mid <= 2147483647u64;
+    ensures result == bytes_len - mid;
+} by { execute(); simp(); }
+
+uint8 left_first(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+    requires bytes_len <= 2147483647u64;
+    requires mid <= bytes_len;
+    requires 0u64 < mid;
+    views bytes[0..(int32)(uint32)bytes_len];
+    ensures result == bytes[0];
+} by {
+    have mid <= 2147483647u64 by { normalize() using { mid <= bytes_len; bytes_len <= 2147483647u64; } }
+    have 0 < (int32)(uint32)mid by { simp() using { 0u64 < mid; mid <= 2147483647u64; } }
+    have ((int32)(uint32)mid) <= (int32)(uint32)bytes_len by { simp() using { mid <= bytes_len; bytes_len <= 2147483647u64; } }
+    have 1 <= (int32)(uint32)bytes_len by { arithmetic() using { 0 < (int32)(uint32)mid; ((int32)(uint32)mid) <= (int32)(uint32)bytes_len; } }
+    execute(); simp();
+}
+
+uint8 right_first(const uint8* bytes, uint64 bytes_len, uint64 mid) {
+    requires bytes_len <= 2147483647u64;
+    requires mid < bytes_len;
+    views bytes[0..(int32)(uint32)bytes_len];
+    ensures result == bytes[(int32)(uint32)mid];
+} by {
+    have 0u64 < bytes_len - mid by { normalize() using { mid < bytes_len; } }
+    have ((int32)(uint32)mid) < (int32)(uint32)bytes_len by { simp() using { mid < bytes_len; bytes_len <= 2147483647u64; } }
+    execute(); simp();
+}
