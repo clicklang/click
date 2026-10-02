@@ -1123,9 +1123,7 @@ pub(super) fn c_function_contract_certification_assumptions(
                 assumptions_with_propositions(&assumptions, &selection_assumptions.pure_facts());
             let proposition_matches = paths
                 .iter()
-                .filter(|path| {
-                    certification_proves_proposition(&selection_context, &path.proposition)
-                })
+                .filter(|path| selection_context.proves_exact(&path.proposition))
                 .collect::<Vec<_>>();
             if let [path] = proposition_matches.as_slice() {
                 *path
@@ -1518,7 +1516,7 @@ pub(super) fn c_function_contract_certification_assumptions(
             return true;
         }
 
-        certification_proves_proposition(&assumptions, obligation.proposition())
+        assumptions.proves_exact(obligation.proposition())
             || resources_certify_loadability(
                 &entry_state,
                 &entry_resources,
@@ -1603,7 +1601,7 @@ pub(super) fn instantiate_contract_predicate_unfolding(
     predicate_obligations
         .iter()
         .chain(&body_obligations)
-        .all(|obligation| certification_proves_proposition(assumptions, obligation))
+        .all(|obligation| assumptions.proves_exact(obligation))
         .then_some((predicate, body))
 }
 

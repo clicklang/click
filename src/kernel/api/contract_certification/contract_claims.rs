@@ -1294,7 +1294,7 @@ fn prepare_function_claim_path(
             if post_execution_population_obligation(obligation) {
                 return false;
             }
-            !certification_proves_proposition(&assumptions, obligation.proposition())
+            !assumptions.proves_exact(obligation.proposition())
                 && !loadable_covered_by_fact(&assumptions, obligation.proposition())
                 && !forall_loadable_covered_by_fact(&assumptions, obligation.proposition())
         }) {
@@ -1423,7 +1423,7 @@ fn prepare_function_claim_path(
                 .iter()
                 .chain(&body_obligations)
                 .all(|obligation| {
-                    certification_proves_proposition(&assumptions, obligation)
+                    assumptions.proves_exact(obligation)
                         || contract_endpoints_certify_loadability(
                             &entry_state,
                             &entry_resources,
@@ -1435,7 +1435,7 @@ fn prepare_function_claim_path(
                         || loadable_covered_by_fact(&assumptions, obligation)
                         || forall_loadable_covered_by_fact(&assumptions, obligation)
                 });
-        let predicate_holds = certification_proves_proposition(&assumptions, &predicate);
+        let predicate_holds = assumptions.proves_exact(&predicate);
         if obligations_hold && predicate_holds {
             assumptions = assumptions.assume_proposition(body);
         }
@@ -1444,7 +1444,7 @@ fn prepare_function_claim_path(
         if post_execution_population_obligation(obligation) {
             return false;
         }
-        let proved = certification_proves_proposition(&assumptions, obligation.proposition())
+        let proved = assumptions.proves_exact(obligation.proposition())
             || loadable_covered_by_fact(&assumptions, obligation.proposition())
             || forall_loadable_covered_by_fact(&assumptions, obligation.proposition())
             || contract_endpoints_certify_loadability(
@@ -1625,7 +1625,7 @@ fn function_claim_holds_on_prepared_path(
                     }
 
                     proof.specification.requires().iter().all(|requirement| {
-                        certification_proves_proposition(assumptions, requirement)
+                        assumptions.proves_exact(requirement)
                             || match requirement {
                                 Proposition::CResourceComposition(required) => {
                                     resource_context_definitionally_contains(
@@ -1640,34 +1640,31 @@ fn function_claim_holds_on_prepared_path(
                                     function.predicate_unfoldings().iter().any(|unfolding| {
                                         let mut budget = ExecutionBudget::beside_live_state();
                                         let Some((
-                                            predicate,
-                                            predicate_obligations,
-                                            body,
-                                            body_obligations,
-                                        )) = instantiate_contract_predicate_unfolding_with_obligations(
-                                            entry_state,
-                                            None,
-                                            unfolding,
-                                            assumptions,
-                                            &mut budget,
-                                        )
-                                        else {
-                                            return false;
-                                        };
+                                        predicate,
+                                        predicate_obligations,
+                                        body,
+                                        body_obligations,
+                                    )) = instantiate_contract_predicate_unfolding_with_obligations(
+                                        entry_state,
+                                        None,
+                                        unfolding,
+                                        assumptions,
+                                        &mut budget,
+                                    )
+                                    else {
+                                        return false;
+                                    };
                                         predicate == *requirement
                                             && predicate_obligations
                                                 .iter()
                                                 .chain(&body_obligations)
                                                 .all(|obligation| {
-                                                    certification_proves_proposition(
-                                                        assumptions,
-                                                        obligation,
-                                                    )
+                                                    assumptions.proves_exact(obligation)
                                                 })
-                                            && certification_proves_proposition(assumptions, &body)
+                                            && assumptions.proves_exact(&body)
                                     })
                                 }
-                                _ => certification_proves_proposition(assumptions, requirement),
+                                _ => false,
                             }
                     })
                 };
@@ -1713,7 +1710,7 @@ fn function_claim_holds_on_prepared_path(
                         return false;
                     };
                     predicate_obligations.iter().all(|obligation| {
-                        certification_proves_proposition(assumptions, obligation)
+                        assumptions.proves_exact(obligation)
                             || contract_endpoints_certify_loadability(
                                 entry_state,
                                 entry_resources,
@@ -1722,8 +1719,7 @@ fn function_claim_holds_on_prepared_path(
                                 obligation,
                                 assumptions,
                             )
-                    }) && (completion_certifies(&predicate)
-                        || certification_proves_proposition(assumptions, &predicate))
+                    }) && (completion_certifies(&predicate) || assumptions.proves_exact(&predicate))
                 });
             if registered_predicate_ensure_holds {
                 return true;
@@ -1788,10 +1784,7 @@ fn function_claim_holds_on_prepared_path(
                                 assumptions,
                                 obligation.proposition(),
                             )
-                            || certification_proves_proposition(
-                                assumptions,
-                                obligation.proposition(),
-                            )
+                            || assumptions.proves_exact(obligation.proposition())
                     };
                     path.obligations.iter().all(obligation_holds)
                 },
