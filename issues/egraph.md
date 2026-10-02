@@ -165,13 +165,26 @@ this list.
    removes that traversal. Controls cover missing equality/bounds, endpoints,
    access width, view-only authority, nonpositive quantities, and owner deltas.
 
-   The C reduction `q[i] = 7` with checked `p == q`, `1 <= i`, `i < n`,
-   and `owns p[1..n]` still fails ordinary verification. Instrumentation confirmed
-   that execution reaches write permission with an **unprepared** resource
-   index, so this new prepared fragment is unavailable there. Retain this
-   unchanged-source reduction when fixing execution's publication boundary;
-   do not publish ambient resources inside permission lookup or claim this
-   slice fixes C alias stores. General retry deletion remains unfinished.
+   **Execution publication slice:** selected function-entry resources now
+   publish once against the final exported pure context, after provisional
+   clause evaluation and entry-fact construction. Both proof drivers retain
+   that context through root construction instead of converting to a vector
+   and rebuilding a disconnected graph. `ProofFacts::from_source` builds its
+   own selected-fact indexes while sharing a cached source's trusted graph.
+   A red regression checks known indexed write selection at entry and after
+   root conversion; a deterministic test at 16, 64, 256, and 1,024 facts checks
+   that cached root conversion readmits no pure history. The same-base symbolic
+   store verifies, expands, and rechecks, with missing-bound and view-only
+   controls. No permission lookup publishes ambient input.
+
+   The unchanged C reduction `q[i] = 7` with checked `p == q`, `1 <= i`,
+   `i < n`, and `owns p[1..n]` still fails ordinary verification. Instrumentation
+   now confirms a **prepared** index at its write permission lookup. The
+   remaining refusal asks for bounds on the relative address `((q + i) - p)`;
+   publication alone does not establish those bounds through the existing
+   candidate/coverage interface. Keep this reduction for the next narrow
+   address-alignment slice, without changing C or adding alias-spelling
+   searches. General retry deletion remains unfinished.
 5. **Delete symbolic-range read searches.** Migrate
    `memory_state::resource_context_has_symbolic_range_read`. Remove its
    exact-base-then-whole-context retry. Reuse the symbolic supplier evidence

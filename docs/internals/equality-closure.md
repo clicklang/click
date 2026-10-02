@@ -854,12 +854,23 @@ and bounds using the retained graph checkpoint. A failed selected-owner check
 is final. Resource deltas and graph block merges maintain this persistent summary;
 permission lookup never initializes it by traversing ambient resources.
 
-This fragment applies only to prepared inputs. Execution of the reduced alias
-store `q[i] = 7` with `p == q` and `owns p[1..n]` still reaches permission lookup
-with an unprepared input and fails. Its publication boundary remains separate
-work; unsupported permission queries still have the milestone-4 compatibility
-path. The deterministic regression measures both checker and persistent-index
-work beside increasing same-class symbolic views.
+This fragment applies only to prepared inputs. Function-entry construction
+publishes its selected resources against the final exported pure context, once
+after provisional clause evaluation and entry-fact construction. Both proof
+drivers retain that context through `ProofFacts::from_source`: selected-fact
+indexes are built at the root, while the source's trusted graph is shared.
+A source with no cached context builds one once. Root conversion must not erase
+the lineage by converting a cached source to a plain proposition vector.
+Deterministic regressions check indexed entry selection and graph sharing with
+zero pure-history readmission over increasing root sizes. A same-base symbolic
+store expands and independently rechecks, including authority/bounds controls.
+
+The unchanged reduced alias store `q[i] = 7` with `p == q` and `owns p[1..n]`
+now reaches permission lookup with a prepared input but still fails its relative
+address bounds check. Aligning that access through the shared candidate/coverage
+interface remains separate work. Unsupported permission queries still have the
+milestone-4 compatibility path. The symbolic-owner regression measures both
+checker and persistent-index work beside increasing same-class symbolic views.
 
 ## Resource producer publication audit
 
