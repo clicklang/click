@@ -668,24 +668,6 @@ impl PureFactContext {
             })
     }
 
-    /// Resolves both sides to known constants through equality facts (with
-    /// per-load snapshot bridging) and compares them. Deterministic and
-    /// bounded: the resolution walk carries its own visited set and consults
-    /// no fuel, so certification may use it.
-    pub(in crate::kernel) fn constants_known_equal_after_normalization(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        let Some(left) = self.signed_constant_after_equality_normalization(left) else {
-            return false;
-        };
-        let Some(right) = self.signed_constant_after_equality_normalization(right) else {
-            return false;
-        };
-        left == right
-    }
-
     /// The unique constant this term resolves to through equality facts
     /// (with per-load snapshot bridging), if any. Bounded and fuel-free.
     pub(in crate::kernel) fn known_signed_constant_after_normalization(
@@ -693,33 +675,6 @@ impl PureFactContext {
         term: &Bitvector32Term,
     ) -> Option<i64> {
         self.signed_constant_after_equality_normalization(term)
-    }
-
-    /// Decides a signed comparison whose sides both resolve to known
-    /// constants through equality facts (with per-load snapshot bridging).
-    /// Bounded and fuel-free, so certification may use it.
-    pub(in crate::kernel) fn signed_comparison_by_constant_normalization(
-        &self,
-        condition: &ConditionTerm,
-    ) -> Option<bool> {
-        let (left, right, compare): (_, _, fn(i64, i64) -> bool) = match condition {
-            ConditionTerm::Bitvector32SignedLessThan(left, right) => {
-                (left, right, |left, right| left < right)
-            }
-            ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
-                (left, right, |left, right| left <= right)
-            }
-            ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
-                (left, right, |left, right| left > right)
-            }
-            ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
-                (left, right, |left, right| left >= right)
-            }
-            _ => return None,
-        };
-        let left = self.signed_constant_after_equality_normalization(left)?;
-        let right = self.signed_constant_after_equality_normalization(right)?;
-        Some(compare(left, right))
     }
 
     fn order_path_connection_for_simp(

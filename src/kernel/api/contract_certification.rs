@@ -468,32 +468,6 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
     covered
 }
 
-/// Certifies that `proposition` is false: a condition is refuted by
-/// certifying its other polarity, a negation by certifying its body, a
-/// conjunction by refuting a conjunct, a disjunction by refuting both
-/// disjuncts, and anything else by an exact assumed negation.
-fn certification_refutes_proposition(
-    assumptions: &PureFactContext,
-    proposition: &Proposition,
-) -> bool {
-    match proposition {
-        Proposition::ConditionIs(condition, value) => certification_proves_proposition(
-            assumptions,
-            &Proposition::ConditionIs(condition.clone(), !*value),
-        ),
-        Proposition::Not(body) => certification_proves_proposition(assumptions, body),
-        Proposition::And(left, right) => {
-            certification_refutes_proposition(assumptions, left)
-                || certification_refutes_proposition(assumptions, right)
-        }
-        Proposition::Or(left, right) => {
-            certification_refutes_proposition(assumptions, left)
-                && certification_refutes_proposition(assumptions, right)
-        }
-        _ => assumptions.proves_exact(&Proposition::Not(Box::new(proposition.clone()))),
-    }
-}
-
 /// Certifies `left <= right` by the exact rules: two constants compare,
 /// an exact assumed fact, or the bounded order prover.
 fn certification_proves_signed_le(
@@ -727,7 +701,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                     let premises_hold = premises.iter().all(|premise| {
                         !crate::kernel::assumptions::reasoning_interrupted()
                             && matches!(premise, Proposition::ConditionIs(_, _))
-                            && certification_proves_proposition(assumptions, premise)
+                            && PureFactContext::settles_exactly(assumptions, premise)
                     });
                     premises_hold
                         && match conclusion {
@@ -797,7 +771,7 @@ fn certification_proves_exists_obligation_from_facts(
         let mut goals = Vec::new();
         proposition_conjuncts(body, &mut goals);
         goals.iter().all(|goal| {
-            certification_proves_proposition(&witness_assumptions, goal)
+            PureFactContext::settles_exactly(&witness_assumptions, goal)
                 || loadable_covered_by_fact(&witness_assumptions, goal)
                 // Nested existentials recurse: the inner obligation matches
                 // an inner assumed existential the same way.
@@ -1137,7 +1111,7 @@ pub fn c_function_contract_entry(
             ) else {
                 continue;
             };
-            if certification_proves_proposition(&assumptions, &body) {
+            if PureFactContext::settles_exactly(&assumptions, &body) {
                 identities.push(predicate);
             }
         }
@@ -2447,183 +2421,6 @@ pub(crate) fn propositions_alpha_equivalent(left: &Proposition, right: &Proposit
     }
 }
 
-/// Collects one-point-rule witness candidates for an existential body: any
-/// conjunct shaped `var == term` (on either side) pins the bound variable to
-/// `term`, provided `term` does not itself mention the variable.
-fn exists_equality_witness_candidates(
-    var: Variable,
-    body: &Proposition,
-    candidates: &mut Vec<Bitvector32Term>,
-) {
-    match body {
-        Proposition::And(left, right) => {
-            exists_equality_witness_candidates(var, left, candidates);
-            exists_equality_witness_candidates(var, right, candidates);
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
-            let bound = Bitvector32Term::Variable(var);
-            for (side, other) in [(left, right), (right, left)] {
-                let mentions_var = crate::kernel::reasoning::substitute_bitvector_variable(
-                    other,
-                    var,
-                    &Bitvector32Term::Constant(0),
-                ) != **other;
-                if **side == bound && !mentions_var {
-                    candidates.push((**other).clone());
-                }
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Proves an order condition against a constant by removing an additive
-/// constant shift from the term side, when the assumptions prove the shifted
-/// addition overflow-free (the executing code already checked it). For
-/// example `x + 1 > 0` becomes `x >= 0` under `!AddOverflows(x, 1)`.
-fn shifted_order_condition_proven(
-    assumptions: &PureFactContext,
-    condition: &ConditionTerm,
-    value: bool,
-) -> bool {
-    if !value {
-        return false;
-    }
-    // Normalize to `left OP right` with OP in {<, <=}.
-    let (left, right, strict) = match condition {
-        ConditionTerm::Bitvector32SignedLessThan(left, right) => (left, right, true),
-        ConditionTerm::Bitvector32SignedLessEqual(left, right) => (left, right, false),
-        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => (right, left, true),
-        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (right, left, false),
-        _ => return false,
-    };
-    let overflow_free = |base: &Bitvector32Term, shift: u32| {
-        // Any exact strict signed upper bound on `base` keeps `base + 1`
-        // below overflow: the bound itself is an int32 and therefore at
-        // most INT_MAX. This is the same direct increment certificate the
-        // executor uses for `x < capacity` before evaluating `x + 1`.
-        if shift == 1 && assumptions.has_exact_strict_upper_bound(base) {
-            return true;
-        }
-        let exact = assumptions.proves_exact(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(base.clone()),
-                Box::new(Bitvector32Term::Constant(shift)),
-            ),
-            false,
-        )) || assumptions.proves_exact(&Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(
-                Box::new(Bitvector32Term::Constant(shift)),
-                Box::new(base.clone()),
-            ),
-            false,
-        ));
-        if exact {
-            return true;
-        }
-        // A recorded overflow fact may write the operand through loads at a
-        // different snapshot; compare canonically.
-        let canonical_base = canonicalize_atomic_loads(base);
-        let recorded = assumptions.condition_facts.iter().any(|(condition, value)| {
-            !*value
-                && match condition {
-                    ConditionTerm::Bitvector32SignedAddOverflows(left, right) => {
-                        (matches!(right.as_ref(), Bitvector32Term::Constant(c) if *c == shift)
-                            && canonicalize_atomic_loads(left) == canonical_base)
-                            || (matches!(left.as_ref(), Bitvector32Term::Constant(c) if *c == shift)
-                                && canonicalize_atomic_loads(right) == canonical_base)
-                    }
-                    _ => false,
-                }
-        });
-        if recorded {
-            return true;
-        }
-        // Overflow-freedom also follows from a proven bound keeping the
-        // shifted sum inside the signed range.
-        let signed_shift = shift as i32;
-        if signed_shift > 0 {
-            let le_bound = Bitvector32Term::Constant((i32::MAX - signed_shift) as u32);
-            let le = ConditionTerm::signed_less_equal(base.clone(), le_bound);
-            let lt_bound = Bitvector32Term::Constant((i32::MAX - signed_shift + 1) as u32);
-            let lt = ConditionTerm::signed_less_than(base.clone(), lt_bound);
-            assumptions.proves_exact(&Proposition::ConditionIs(le.clone(), true))
-                || assumptions.proves_order_condition_for_memory_resolution(&le, true)
-                || assumptions.proves_exact(&Proposition::ConditionIs(lt.clone(), true))
-                || assumptions.proves_order_condition_for_memory_resolution(&lt, true)
-        } else if signed_shift < 0 {
-            let bound = Bitvector32Term::Constant((i32::MIN - signed_shift) as u32);
-            let condition = ConditionTerm::signed_less_equal(bound, base.clone());
-            assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
-                || assumptions.proves_order_condition_for_memory_resolution(&condition, true)
-        } else {
-            true
-        }
-    };
-    // `a + 1 <= b` follows from `a < b` for any terms when `a + 1` is
-    // provably overflow-free; this converts a strict requirement into the
-    // non-strict form a successor produces.
-    if !strict {
-        let (base, shift) = split_additive_constant(left);
-        if shift == 1 {
-            // `a < b` alone implies both that `a + 1` cannot overflow
-            // (`a < b <= i32::MAX`) and the goal `a + 1 <= b`.
-            let strict_form = ConditionTerm::signed_less_than(base, right.as_ref().clone());
-            if certification_proves_proposition(
-                assumptions,
-                &Proposition::ConditionIs(strict_form, true),
-            ) {
-                return true;
-            }
-        }
-    }
-    let shifted = match (left.as_ref(), right.as_ref()) {
-        (shifted_term, Bitvector32Term::Constant(bound)) => {
-            let (base, shift) = split_additive_constant(shifted_term);
-            if shift == 0 || !overflow_free(&base, shift) {
-                return false;
-            }
-            let Some(new_bound) = (*bound as i32).checked_sub(shift as i32) else {
-                return false;
-            };
-            (base, Bitvector32Term::Constant(new_bound as u32), false)
-        }
-        (Bitvector32Term::Constant(bound), shifted_term) => {
-            let (base, shift) = split_additive_constant(shifted_term);
-            if shift == 0 || !overflow_free(&base, shift) {
-                return false;
-            }
-            let Some(new_bound) = (*bound as i32).checked_sub(shift as i32) else {
-                return false;
-            };
-            (Bitvector32Term::Constant(new_bound as u32), base, true)
-        }
-        _ => return false,
-    };
-    let (new_left, new_right, constant_on_left) = shifted;
-    let condition = match (strict, constant_on_left) {
-        (true, false) | (true, true) => ConditionTerm::signed_less_than(new_left, new_right),
-        (false, _) => ConditionTerm::signed_less_equal(new_left, new_right),
-    };
-    certification_proves_proposition(assumptions, &Proposition::ConditionIs(condition, true))
-}
-
-/// Compares two range folds up to renaming of their bound accumulator and
-/// item variables; bound variables are freshened per lowering pass.
-///
-/// Renaming the right fold's binders to the left fold's and comparing the two
-/// bodies syntactically is not that comparison. Substituting `right_acc :=
-/// left_acc` into the right body merges the right body's *free* occurrences of
-/// `left_acc` with the left body's *bound* ones, so a fold that returns its
-/// initial value and a fold that returns the enclosing accumulator compare
-/// equal whenever the two happen to share an id — which fold binder names,
-/// hashed into a shared id space, readily do. The kernel's snapshot-aware
-/// alpha identity keeps bound and free occurrences apart by construction, so
-/// ask it instead.
-fn range_folds_alpha_equivalent(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
-    crate::kernel::proof::fact_keys::bitvector_folds_alpha_equivalent(left, right) == Some(true)
-}
-
 /// Splits both offsets into non-constant atoms plus a constant shift,
 /// resolves atoms whose scaled values equality facts pin to a constant, and
 /// requires the remaining atoms to match pairwise. Runs the bounded constant
@@ -2759,81 +2556,6 @@ fn pointer_offsets_equal_with_resolved_atoms(
     right_atoms.is_empty()
 }
 
-/// The load terms a term denotes: the term itself when it is a load,
-/// plus every load one equality fact away.
-fn load_forms_of<'a>(
-    assumptions: &'a PureFactContext,
-    term: &'a Bitvector32Term,
-) -> Vec<(&'a CMemory, &'a Pointer, LoadKind)> {
-    let mut loads = Vec::new();
-    if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = term {
-        loads.push((&**memory, pointer.as_ref(), *kind));
-    }
-    for (condition, value) in assumptions.condition_facts.iter() {
-        if !*value {
-            continue;
-        }
-        let ConditionTerm::Bitvector32Equal(fact_left, fact_right) = condition else {
-            continue;
-        };
-        for (fact_term, fact_load) in [(fact_left, fact_right), (fact_right, fact_left)] {
-            if fact_term.as_ref() != term {
-                continue;
-            }
-            if let Bitvector32Term::MemoryLoad(memory, pointer, kind) = fact_load.as_ref() {
-                loads.push((&**memory, pointer.as_ref(), *kind));
-            }
-        }
-    }
-    loads
-}
-
-/// Certifies an equality by resolving each side to a load term (itself,
-/// or one equality fact away) and proving some pair of forms denotes one
-/// framed cell: same block, offsets equal with constant-resolved atoms, and
-/// the loaded cell provably unchanged between the two snapshots.
-fn certification_proves_equality_via_load_fact(
-    assumptions: &PureFactContext,
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-) -> bool {
-    let left_loads = load_forms_of(assumptions, left);
-    if left_loads.is_empty() {
-        return false;
-    }
-    let right_loads = load_forms_of(assumptions, right);
-    left_loads
-        .iter()
-        .any(|(left_memory, left_pointer, left_kind)| {
-            right_loads
-                .iter()
-                .any(|(right_memory, right_pointer, right_kind)| {
-                    left_kind == right_kind
-                        && left_pointer.block == right_pointer.block
-                        && pointer_offsets_equal_with_resolved_atoms(
-                            &left_pointer.offset,
-                            &right_pointer.offset,
-                            assumptions,
-                        )
-                        && [left_pointer, right_pointer].into_iter().any(|pointer| {
-                            crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                                &Bitvector32Term::MemoryLoad(
-                                    (*left_memory).clone().into(),
-                                    Box::new((*pointer).clone()),
-                                    *left_kind,
-                                ),
-                                &Bitvector32Term::MemoryLoad(
-                                    (*right_memory).clone().into(),
-                                    Box::new((*pointer).clone()),
-                                    *right_kind,
-                                ),
-                                assumptions,
-                            )
-                        })
-                })
-        })
-}
-
 /// Whether a universally quantified fact, instantiated at the terms of
 /// `condition`, states that condition with premises `premise_holds` accepts.
 /// The instantiation is read off the condition; nothing is searched for.
@@ -2918,235 +2640,6 @@ pub(crate) fn condition_holds_by_memory_resolution(
     }
 }
 
-pub(crate) fn certification_proves_proposition(
-    assumptions: &PureFactContext,
-    proposition: &Proposition,
-) -> bool {
-    if assumptions.proves_exact(proposition) {
-        return true;
-    }
-    if matches!(
-        proposition,
-        Proposition::ForAll { .. } | Proposition::Exists { .. } | Proposition::Implies(..)
-    ) && assumptions.states_required_goal(proposition)
-    {
-        // Contract lowering freshens binders independently of proof facts.
-        // Use the checked, typed alpha-identity index for every quantified
-        // sort, including algebraic path witnesses. This recognizes an
-        // established quantified fact, including a conditional one whose
-        // antecedent also has fresh binders; it never invents a witness.
-        return true;
-    }
-    let directly_proven = match proposition {
-        // Initialization evidence follows the same checked memory edges used
-        // by typed reads; value equality alone cannot establish it.
-        Proposition::CMemoryReadDefined {
-            memory,
-            pointer,
-            value_type,
-        } => assumptions.proves_memory_read_defined(memory, pointer, *value_type),
-        // Order conditions use the deterministic bounded order prover; the
-        // fuel-dependent simp decision procedure stays out of certification.
-        Proposition::ConditionIs(condition, value)
-            if assumptions.proves_order_condition_for_memory_resolution(condition, *value) =>
-        {
-            true
-        }
-        Proposition::ConditionIs(condition, value)
-            if shifted_order_condition_proven(assumptions, condition, *value) =>
-        {
-            true
-        }
-        // `defined(value + 1)` lowers to this exact non-overflow condition.
-        // Contract certification deliberately avoids the fuel-dependent simp
-        // solver, so apply the same narrow named rule as the surface proof:
-        // one indexed `value < INT32_MAX` fact is sufficient.
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32SignedAddOverflows(value, amount),
-            false,
-        ) if amount.as_ref() == &Bitvector32Term::Constant(1)
-            && has_exact_strict_increment_max_bound(assumptions, value) =>
-        {
-            true
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if range_folds_alpha_equivalent(left, right) =>
-        {
-            true
-        }
-        // A definedness condition is certified by the exact overflow rules:
-        // the operands' signed intervals from the context's order facts.
-        Proposition::ConditionIs(
-            condition @ (ConditionTerm::Bitvector32SignedAddOverflows(..)
-            | ConditionTerm::Bitvector32SignedSubtractOverflows(..)
-            | ConditionTerm::Bitvector32SignedMultiplyOverflows(..)),
-            value,
-        ) if assumptions.decide_from_overflow_facts(condition) == Some(*value) => true,
-        // Both sides resolve to one known constant through equality facts
-        // and per-load snapshot bridging (deterministic and fuel-free).
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if assumptions.constants_known_equal_after_normalization(left, right) =>
-        {
-            true
-        }
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if assumptions
-                .exact_signed_intervals_equal(left, right)
-                .is_some_and(|equal| equal) =>
-        {
-            true
-        }
-        // A signed comparison whose sides both resolve to known constants
-        // through equality facts and per-load snapshot bridging.
-        Proposition::ConditionIs(condition, value)
-            if assumptions
-                .signed_comparison_by_constant_normalization(condition)
-                .is_some_and(|known| known == *value) =>
-        {
-            true
-        }
-        // One side equals a recorded load term by an equality fact and
-        // the two loads denote the same framed cell.
-        Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
-            if certification_proves_equality_via_load_fact(assumptions, left, right) =>
-        {
-            true
-        }
-        Proposition::And(left, right) => {
-            certification_proves_proposition(assumptions, left)
-                && certification_proves_proposition(assumptions, right)
-        }
-        Proposition::Or(left, right) => {
-            certification_proves_proposition(assumptions, left)
-                || certification_proves_proposition(assumptions, right)
-        }
-        Proposition::Exists {
-            var,
-            sort: sort @ (Sort::CInt32 | Sort::Bitvector32 | Sort::CPointer(_)),
-            body,
-            ..
-        } => {
-            // An assumed existential proves the goal up to renaming of the
-            // bound variable; bound variables are freshened per lowering
-            // pass, so exact matching alone would never fire.
-            let alpha_matched = assumptions.prop_facts.iter().any(|fact| {
-                let Proposition::Exists {
-                    var: fact_var,
-                    sort: fact_sort,
-                    body: fact_body,
-                    ..
-                } = fact
-                else {
-                    return false;
-                };
-                if fact_sort != sort {
-                    return false;
-                }
-                let (renamed, goal_body) =
-                    freshen_proposition_bodies(sort, *fact_var, fact_body, *var, body);
-                if propositions_alpha_equivalent(&renamed, &goal_body) {
-                    return true;
-                }
-                // Weakening under the binder: an existential of a
-                // conjunction proves the existential of any subset of its
-                // conjuncts.
-                let mut fact_conjuncts = Vec::new();
-                proposition_conjuncts(&renamed, &mut fact_conjuncts);
-                let mut goal_conjuncts = Vec::new();
-                proposition_conjuncts(&goal_body, &mut goal_conjuncts);
-                goal_conjuncts.iter().all(|goal| {
-                    fact_conjuncts
-                        .iter()
-                        .any(|fact| propositions_alpha_equivalent(fact, goal))
-                })
-            });
-            if alpha_matched {
-                return true;
-            }
-            // One-point rule: `P[t/x]` proves `exists x. P` when a conjunct
-            // pins `x` to a witness term `t`.
-            let mut candidates = Vec::new();
-            exists_equality_witness_candidates(*var, body, &mut candidates);
-            candidates.into_iter().any(|witness| {
-                let instantiated =
-                    substitute_bitvector_variable_in_proposition(body, *var, &witness);
-                certification_proves_proposition(assumptions, &instantiated)
-            })
-        }
-        Proposition::Equal(Term::CValue(left), Term::CValue(right)) => {
-            c_values_proven_equal_for_memory_resolution(left, right, assumptions)
-        }
-        Proposition::ConditionIs(condition, value) => {
-            condition_holds_by_memory_resolution(assumptions, condition, *value)
-        }
-        // A predicate is certified only as an exact assumed fact (above).
-        Proposition::Predicate { .. } => false,
-        // Resource separation: the indexed rule over separation facts,
-        // compositions, and constant bounds.
-        Proposition::CResourceSeparate { left, right } => {
-            assumptions.proves_resource_separate(left, right)
-        }
-        // Loadability: the resource-and-fact rule the loadable prover is.
-        Proposition::CMemoryLoadable {
-            memory,
-            base,
-            bytes,
-        } => assumptions.proves_memory_loadable(memory, base, bytes),
-        // An implication is certified by refuting its premise or by
-        // certifying its conclusion under the premise.
-        Proposition::Implies(premise, conclusion) => {
-            certification_refutes_proposition(assumptions, premise)
-                || certification_proves_proposition(
-                    &assumptions
-                        .clone()
-                        .assume_proposition(premise.as_ref().clone()),
-                    conclusion,
-                )
-        }
-        // Introduce an arbitrary fresh identity while retaining the entire
-        // ambient context. Its private origin prevents capture even when an
-        // ambient fact uses the same numeric ID, and nested introductions
-        // receive distinct identities.
-        Proposition::ForAll {
-            var,
-            sort: Sort::CInt32 | Sort::Bitvector32,
-            body,
-            ..
-        } => {
-            if crate::kernel::proposition_has_free_bitvector_variable(body, *var) {
-                let Some(witness) = Variable::allocate_fresh() else {
-                    return false;
-                };
-                let introduced = crate::kernel::substitute_int32_variable_in_proposition(
-                    body,
-                    *var,
-                    Bitvector32Term::Variable(witness),
-                );
-                certification_proves_proposition(assumptions, &introduced)
-            } else {
-                certification_proves_proposition(assumptions, body)
-            }
-        }
-        // Everything else is certified only as an exact assumed fact
-        // (above): a containment fact, a resource composition, a negation,
-        // a memory disjointness.
-        _ => false,
-    };
-    if directly_proven {
-        return true;
-    }
-
-    if let Proposition::ConditionIs(condition, value) = proposition
-        && condition_holds_by_instantiated_fact(assumptions, condition, *value, &|premise| {
-            certification_proves_proposition(assumptions, premise)
-        })
-    {
-        return true;
-    }
-
-    false
-}
-
 /// Two load variables for one address are equal when the cell is framed
 /// across the effects between the snapshots they were read from: the
 /// bounded, memoized unchanged-load check over recorded derivations and
@@ -3181,33 +2674,6 @@ fn names_of_one_cell_framed(
             &right,
             assumptions,
         )
-}
-
-fn has_exact_strict_increment_max_bound(
-    assumptions: &PureFactContext,
-    value: &Bitvector32Term,
-) -> bool {
-    let int_max = Bitvector32Term::Constant(i32::MAX as u32);
-    [
-        (
-            ConditionTerm::signed_less_than(value.clone(), int_max.clone()),
-            true,
-        ),
-        (
-            ConditionTerm::signed_greater_than(int_max.clone(), value.clone()),
-            true,
-        ),
-        (
-            ConditionTerm::signed_less_equal(int_max.clone(), value.clone()),
-            false,
-        ),
-        (
-            ConditionTerm::signed_greater_equal(value.clone(), int_max),
-            false,
-        ),
-    ]
-    .into_iter()
-    .any(|(condition, expected)| assumptions.exact_condition_value(&condition) == Some(expected))
 }
 
 fn match_quantified_int32_term(
@@ -3327,7 +2793,7 @@ pub(super) fn certification_proves_condition_from_verified_pure_implication(
     }
     premises.into_iter().all(|premise| {
         let premise = substitute_bitvector_variables_in_proposition(&premise, &substitutions);
-        certification_proves_proposition(assumptions, &premise)
+        PureFactContext::settles_exactly(assumptions, &premise)
     })
 }
 

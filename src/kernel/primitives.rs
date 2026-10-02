@@ -9087,7 +9087,7 @@ pub struct CFunctionContractExecution {
     /// needs them beside it to see which range the premise fell outside.
     pub(super) reuse_entry_resources: Vec<CResourceFact>,
     /// The pure facts of the contract context that premise was refused in:
-    /// what the certification prover had to derive it from.
+    /// what it was checked against.
     pub(super) reuse_context_facts: Vec<Proposition>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,
     /// How this certification ran the function's loops. Under
