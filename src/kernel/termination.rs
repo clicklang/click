@@ -446,6 +446,7 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
             | CStatement::Store { .. }
             | CStatement::TypedStore { .. }
             | CStatement::CopyAggregate { .. }
+            | CStatement::InitializeScalarArray { .. }
             | CStatement::Update { .. } => Ok(paths),
             CStatement::Declare { name, .. } | CStatement::DeclareAggregate { name, .. } => {
                 Ok(forget(name, paths))
@@ -1103,7 +1104,10 @@ fn statement_takes_address_of(statement: &CStatement, name: &str) -> bool {
         CStatement::Store { pointer, value } | CStatement::TypedStore { pointer, value, .. } => {
             escapes(pointer) || escapes(value)
         }
-        CStatement::CopyAggregate { target, source, .. } => escapes(target) || escapes(source),
+        CStatement::CopyAggregate { target, source, .. }
+        | CStatement::InitializeScalarArray { target, source, .. } => {
+            escapes(target) || escapes(source)
+        }
         CStatement::Update {
             target, operand, ..
         } => escapes(target) || escapes(operand),
@@ -1395,6 +1399,7 @@ fn statement_calls(statement: &CStatement, calls: &mut BTreeSet<String>) {
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => {}
     }
 }
@@ -1452,7 +1457,8 @@ fn statement_declared_variables(statement: &CStatement, names: &mut BTreeSet<Str
         | CStatement::Return(_)
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
-        | CStatement::CopyAggregate { .. } => {}
+        | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. } => {}
     }
 }
 
@@ -1719,7 +1725,8 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
             | CStatement::HeapFree { .. }
             | CStatement::Store { .. }
             | CStatement::TypedStore { .. }
-            | CStatement::CopyAggregate { .. } => Ok(lower_bounds),
+            | CStatement::CopyAggregate { .. }
+            | CStatement::InitializeScalarArray { .. } => Ok(lower_bounds),
             CStatement::Assign { name, .. } if name == measure => Err(error(format!(
                 "termination measure `{measure}` is reassigned; this first implementation requires an unchanged function parameter"
             ))),
@@ -2868,6 +2875,7 @@ fn loop_at_index<'a>(
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => None,
     }
 }
@@ -3174,6 +3182,7 @@ fn collect_loops<'a>(statement: &'a CStatement, loops: &mut Vec<&'a CStatement>)
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => {}
     }
 }
@@ -3439,6 +3448,7 @@ fn check_loops(
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => Ok(()),
     }
 }
@@ -3616,7 +3626,8 @@ fn statement_function_addresses(statement: &CStatement, taken: &mut BTreeSet<Str
             visit(pointer);
             visit(value);
         }
-        CStatement::CopyAggregate { target, source, .. } => {
+        CStatement::CopyAggregate { target, source, .. }
+        | CStatement::InitializeScalarArray { target, source, .. } => {
             visit(target);
             visit(source);
         }
@@ -3969,6 +3980,7 @@ pub(super) fn statement_calls_function(statement: &CStatement, callee: &str) -> 
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => false,
     }
 }
@@ -4049,6 +4061,7 @@ fn self_call_loop_indices(
         | CStatement::Store { .. }
         | CStatement::TypedStore { .. }
         | CStatement::CopyAggregate { .. }
+        | CStatement::InitializeScalarArray { .. }
         | CStatement::Update { .. } => {}
     }
 }
