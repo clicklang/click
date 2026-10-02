@@ -6716,7 +6716,16 @@ impl<'a> Proof<'a> {
             if let Some(before) = before_application
                 && proof.focused_discharged()
             {
-                proof = before.retain_completed_goal(&proof)?;
+                // An application guarantees every conclusion of its theorem,
+                // not only the one that happened to be the goal.
+                let conclusions = match tactic {
+                    ProofTactic::ApplyTheorem(application)
+                    | ProofTactic::ApplyTheoremUsing { application, .. } => {
+                        before.theorem_application_surface_conclusions(application)
+                    }
+                    _ => Vec::new(),
+                };
+                proof = before.retain_completed_goal(&proof, &conclusions)?;
             }
             if let Some(capture) = nested_capture {
                 capture.finish(&proof);
