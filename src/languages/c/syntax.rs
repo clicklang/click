@@ -2353,8 +2353,20 @@ fn integer_type_bits(c_type: C0Type) -> Option<u32> {
     }
 }
 
+/// C's null pointer constant: the integer constant `0`, or that constant
+/// cast to `void *`.
 fn is_null_pointer_constant(expression: &C0Expression) -> bool {
-    matches!(expression, C0Expression::Int32Literal(0))
+    match expression {
+        C0Expression::Int32Literal(0) => true,
+        C0Expression::Cast {
+            expression,
+            c_type: C0Type::VoidPointer,
+            pointee_constant: false,
+            pointee_volatile: false,
+            ..
+        } => matches!(**expression, C0Expression::Int32Literal(0)),
+        _ => false,
+    }
 }
 
 fn conditional_expression_type(
@@ -2699,10 +2711,14 @@ pub enum C0Expression {
         /// This is the qualifier in `T * volatile *`, not volatility of the
         /// storage designated by `T *`.
         pointee_volatile: bool,
-        /// Const qualification of the storage reached by this pointer. An
-        /// unqualified cast retains the source view; a qualified destination
-        /// adds a read-only view without changing pointer identity.
+        /// Const qualification of the storage reached by this pointer. A
+        /// qualified destination adds a read-only view without changing
+        /// pointer identity.
         pointee_constant: bool,
+        /// A cast written in the source: its result has exactly the
+        /// destination's pointee qualification, so it may drop `const`. A
+        /// cast inserted by the parser keeps the source view instead.
+        explicit_qualification: bool,
     },
     Conditional {
         condition: Box<C0Expression>,
@@ -4616,13 +4632,21 @@ impl C0Expression {
                 struct_name,
                 pointee_volatile,
                 pointee_constant,
-            } => crate::kernel::c_cast_with_pointee_qualifiers_and_struct(
-                expression.to_kernel_expression(),
-                c_type.to_kernel_type(),
-                *pointee_volatile,
-                *pointee_constant,
-                struct_name.clone(),
-            ),
+                explicit_qualification,
+            } => {
+                let cast = if *explicit_qualification {
+                    crate::kernel::c_source_cast_with_pointee_qualifiers_and_struct
+                } else {
+                    crate::kernel::c_cast_with_pointee_qualifiers_and_struct
+                };
+                cast(
+                    expression.to_kernel_expression(),
+                    c_type.to_kernel_type(),
+                    *pointee_volatile,
+                    *pointee_constant,
+                    struct_name.clone(),
+                )
+            }
             Self::Conditional {
                 condition,
                 then_branch,
@@ -7472,8 +7496,12 @@ impl Parser {
             C0Expression::Cast {
                 expression,
                 pointee_constant,
+                explicit_qualification,
                 ..
-            } => self.expression_pointee_is_constant(expression) || *pointee_constant,
+            } => {
+                *pointee_constant
+                    || (!*explicit_qualification && self.expression_pointee_is_constant(expression))
+            }
             C0Expression::Conditional {
                 then_branch,
                 else_branch,
@@ -11851,6 +11879,7 @@ impl Parser {
                 struct_name: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }
         } else {
             expression
@@ -16284,6 +16313,7 @@ impl Parser {
                 struct_name,
                 pointee_volatile,
                 pointee_constant,
+                explicit_qualification,
             } => {
                 let (prefix, expression) = self.lower_expression_calls(*expression)?;
                 Ok((
@@ -16294,6 +16324,7 @@ impl Parser {
                         struct_name,
                         pointee_volatile,
                         pointee_constant,
+                        explicit_qualification,
                     },
                 ))
             }
@@ -16861,6 +16892,17 @@ impl Parser {
         {
             return Err(self.error_here("conditional operator branches have incompatible types"));
         }
+        // Pointers to different struct types share a kernel pointer type
+        // but are not compatible C types.
+        if let (Some(then_pointee), Some(else_pointee)) = (
+            self.struct_pointer_name(&then_branch),
+            self.struct_pointer_name(&else_branch),
+        ) && then_pointee != else_pointee
+        {
+            return Err(self.error_here(format!(
+                "conditional operator branches have incompatible types `struct {then_pointee} *` and `struct {else_pointee} *`"
+            )));
+        }
         let then_branch = if let Some(common_type) = common_type {
             self.coerce_conditional_branch(then_branch, common_type)
         } else {
@@ -16886,6 +16928,15 @@ impl Parser {
         let Some(expression_type) = self.source_expression_type(&expression) else {
             return expression;
         };
+        // With a pointer as the other operand, a null pointer constant is
+        // converted to that pointer type; the null pointer is the same
+        // value at every pointer type.
+        if common_type.is_object_pointer()
+            && expression_type != common_type
+            && is_null_pointer_constant(&expression)
+        {
+            return C0Expression::Int32Literal(0);
+        }
         if expression_type == common_type
             || !is_arithmetic_type(expression_type)
             || !is_arithmetic_type(common_type)
@@ -16898,6 +16949,7 @@ impl Parser {
             struct_name: None,
             pointee_volatile: false,
             pointee_constant: false,
+            explicit_qualification: false,
         }
     }
 
@@ -17323,6 +17375,7 @@ impl Parser {
             struct_name: None,
             pointee_volatile: false,
             pointee_constant: false,
+            explicit_qualification: false,
         };
         let byte_offset = C0Expression::Multiply(
             Box::new(offset),
@@ -17406,6 +17459,7 @@ impl Parser {
             struct_name,
             pointee_volatile: volatile_pointer_object_cast,
             pointee_constant: parsed_type.pointee_constant,
+            explicit_qualification: c_type.is_pointer(),
         })
     }
 
@@ -17990,6 +18044,7 @@ impl Parser {
                                 struct_name: None,
                                 pointee_volatile: false,
                                 pointee_constant: false,
+                                explicit_qualification: false,
                             };
                             let offset = C0Expression::Multiply(
                                 Box::new(first_index),
@@ -18288,6 +18343,19 @@ impl Parser {
             } if c_type.is_pointer() => self.struct_pointer_name(expression),
             C0Expression::Add(left, _) | C0Expression::Subtract(left, _) => {
                 self.struct_pointer_name(left)
+            }
+            // `parse_conditional` has already required the two branches to
+            // agree, with a null pointer constant taking the other's type.
+            C0Expression::Conditional {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if is_null_pointer_constant(then_branch) {
+                    self.struct_pointer_name(else_branch)
+                } else {
+                    self.struct_pointer_name(then_branch)
+                }
             }
             _ => None,
         }

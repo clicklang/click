@@ -4,20 +4,18 @@ Linux declares `rb_next(const struct rb_node *node)` and returns the node its
 descent reached as `(struct rb_node *)node`. The cast is how C says the caller
 may write through a pointer the function itself only read through.
 
-C0 keeps a pointer's qualification across an explicit cast: a cast to a
-supported unqualified pointer type retains the source pointer's const metadata,
-so the `return` is an implicit removal of `const` and the translation unit is
-refused before any proof is read. The rule is documented in
-[the C0 reference](../docs/reference/language/c0.md), and
-[`const_pointer_cast.md`](const_pointer_cast.md) and
-[`const_pointer_cast_write_rejected.md`](const_pointer_cast_write_rejected.md)
+As in C, the result of an explicit cast has exactly the destination's pointee
+qualification, so the unchanged signature and body are accepted. The rule is
+documented in [the C0 reference](../docs/reference/language/c0.md);
+[`c_const_cast_owned_write.md`](c_const_cast_owned_write.md) and
+[`c_const_cast_storage_writes_rejected.md`](c_const_cast_storage_writes_rejected.md)
 are its own regressions.
 
-[`rb_next.md`](rb_next.md) therefore declares the parameter as
-`struct rb_node *node` and leaves every statement of the body as Linux writes
-it. This fixture keeps the unchanged signature as the regression for that
-translation: it becomes a positive when an explicit cast may remove a
-qualifier, and `rb_next.md` takes the `const` back then.
+[`rb_next.md`](rb_next.md) still declares the parameter as
+`struct rb_node *node`. Its proof was written against that signature and does
+not go through unchanged with the `const` one, so this fixture pins only that
+the unchanged translation unit is accepted. `rb_next.md` takes the `const`
+back when its proof is adjusted.
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H
@@ -77,5 +75,5 @@ verifying "rb_next_const_signature.c";
 ```
 
 ```expect
-fail: cannot discard const qualification
+pass
 ```

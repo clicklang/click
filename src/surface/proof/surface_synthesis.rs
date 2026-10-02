@@ -147,6 +147,7 @@ fn struct_owners(
                 pointee_struct: Some(struct_name.clone()),
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             },
             pointer: base.clone(),
             layout: layout.clone(),
@@ -2579,6 +2580,7 @@ fn synthesize_surface_bitvector(
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::MemoryLoad(memory, kernel_pointer, kind) => {
@@ -2776,6 +2778,7 @@ fn synthesize_surface_bitvector(
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::UInt64From32(value)
@@ -2796,6 +2799,7 @@ fn synthesize_surface_bitvector(
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::UInt32From64(value) => {
@@ -2814,6 +2818,7 @@ fn synthesize_surface_bitvector(
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
+                explicit_qualification: false,
             }))
         }
         Bitvector32Term::Int64Add(left, right) => {

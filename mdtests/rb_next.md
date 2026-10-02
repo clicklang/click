@@ -15,10 +15,10 @@ descent's `return`, where they are.
 The C body is Linux `lib/rbtree.c`'s `rb_next` unchanged, with the two macros
 it uses, `rb_parent` and `RB_EMPTY_NODE`, as `include/linux/rbtree.h` writes
 them. One thing is translated: the parameter is `struct rb_node *node` rather
-than `const struct rb_node *node`. Linux returns `(struct rb_node *)node` from
-the descent, and C0 keeps a pointer's const qualification across an explicit
-cast, so the unchanged signature does not parse;
-[`rb_next_const_signature.md`](rb_next_const_signature.md) pins that refusal.
+than `const struct rb_node *node`. The unchanged signature is accepted
+([`rb_next_const_signature.md`](rb_next_const_signature.md) pins that), but
+this proof was written against the unqualified one and does not go through
+unchanged with `const`, so the translation stays until the proof is adjusted.
 Dropping the qualifier changes no statement of the body.
 
 ## The model and the resources

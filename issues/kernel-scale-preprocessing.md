@@ -614,7 +614,7 @@ The gate pins the first rejection on each route:
 
 The inventory below was measured at the commit that accepted the kernel's
 `inline` attributes and unnamed prototype parameters, and its closure table
-again at the commit that accepted `static` non-inline functions, with
+again at the commit that let explicit casts drop `const`, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
@@ -647,23 +647,27 @@ Most of that graph is not rbtree. A token-level estimate of the declarations
 that `lib/rbtree.c` transitively names finds 80: the 58 in `lib/rbtree.c`, 20
 in `rbtree.h`, `rbtree_augmented.h`, and `rbtree_types.h`, the `false`/`true`
 enumeration in `stddef.h`, and the `uintptr_t` typedef in `types.h`. The
-estimate is heuristic and was not checked by a compiler. Of those 80, 34 are
-accepted today and 46 are rejected. 36 of the 46 are the twelve exports,
+estimate is heuristic and was not checked by a compiler. Of those 80, 39 are
+accepted today and 41 are rejected. 36 of the 41 are the twelve exports,
 three declarations each: `extern typeof(fn) fn;`, a `static void *` with
 `__used__` and `__section__(".discard.addressable")` initialized to the
 function's address, and a file-scope `asm` that emits the `.export_symbol`
 record. No verified function depends on them, so the projection excludes
-them and they are outside the claim. The other ten are:
+them and they are outside the claim. The other five are:
 
 | Declaration | First rejection | At |
 | --- | --- | --- |
 | `__rb_change_child` | block-scope `extern` declaration with `__noreturn__` and `__error__`, from `compiletime_assert` inside `WRITE_ONCE` | `rbtree_augmented.h:200` |
 | `__rb_change_child_rcu` | `__builtin_constant_p`, from `rcu_assign_pointer`; the same body also holds the `barrier()` assembly `__asm__ __volatile__("": : :"memory")` | `rbtree_augmented.h:213` |
-| `__rb_erase_augmented` | `conditional operator branches have incompatible types` | `rbtree_augmented.h:247` |
+| `__rb_erase_augmented` | the chained assignment `tmp->__rb_parent_color = pc = node->__rb_parent_color;`, refused as `an assignment expression and an unsequenced operand read` | `rbtree_augmented.h:251` |
 | `__rb_insert` | the `compiletime_assert` declaration | `lib/rbtree.c:155` |
 | `____rb_erase_color` | the `compiletime_assert` declaration | `lib/rbtree.c:253` |
-| `rb_next`, `rb_prev`, `rb_left_deepest_node` | `cannot discard const qualification from a pointer initializer`, at `return (struct rb_node *)node;` with `node` a `const struct rb_node *` | `lib/rbtree.c:507`, `:539`, `:600` |
-| `rb_next_postorder`, `rb_first_postorder` | `expected a pointer to struct rb_node` | `lib/rbtree.c:615`, `:628` |
+
+`rb_next`, `rb_prev`, `rb_left_deepest_node`, `rb_next_postorder`, and
+`rb_first_postorder` are accepted since explicit casts may drop `const` and a
+conditional with a null pointer constant takes the pointer's type. The
+chained assignment surfaced only after `__rb_erase_augmented` got past that
+conditional; each remaining declaration may likewise hide more.
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as
 rejections.

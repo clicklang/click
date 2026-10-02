@@ -42,6 +42,7 @@ fn struct_pointer_arithmetic_through_uint64_cast_uses_layout_width() {
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,
+        explicit_qualification: false,
     };
     let lowered = lowerer
         .lower_c_fragment_to_spec(&cast, &context)

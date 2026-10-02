@@ -64,6 +64,7 @@ fn substitute_c_expression_variables(
             pointee_struct,
             pointee_volatile,
             pointee_constant,
+            explicit_qualification,
         } => Cast {
             expression: unary(body),
             target_type: *target_type,
@@ -71,6 +72,7 @@ fn substitute_c_expression_variables(
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
+            explicit_qualification: *explicit_qualification,
         },
         FloatClassification {
             expression: body,
