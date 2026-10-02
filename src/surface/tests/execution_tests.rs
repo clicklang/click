@@ -1984,3 +1984,88 @@ fn execute_branches_on_a_pending_allocation_without_the_planner() {
         .join()
         .unwrap();
 }
+
+/// A loop the proof context decides at every iteration runs as ordinary
+/// checked statement steps, so `execute()` stays on the checked `Proof`
+/// without the planner. The bound is symbolic and fixed by a `requires`: the
+/// loop head reads the whole proof context, as every other step does.
+#[test]
+fn execute_steps_a_concrete_loop_without_the_planner() {
+    let c_source = r#"
+        int32 count_to(int32 n) {
+            int32 i = 0;
+            while (i < n) {
+                i++;
+            }
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "count.c";
+
+        int32 count_to(int32 n) {
+            requires n == 3;
+            ensures result == 3;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let before = crate::kernel::reasoning::path_facts::smart_planning_entries();
+            verify_c0_sources(click_source, &[("count.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+            assert_eq!(
+                crate::kernel::reasoning::path_facts::smart_planning_entries() - before,
+                0,
+                "`execute()` handed a concrete loop to the planner"
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+/// `execute()` walks a decided loop one checked step at a time on the
+/// `Proof`, so a loop that never exits must exhaust a fixed step budget and
+/// name the statement it stands at, rather than run until the work limit.
+#[test]
+fn execute_stops_a_loop_that_never_exits_at_its_step_budget() {
+    let c_source = r#"
+        int32 spin() {
+            int32 i = 0;
+            while (1) {
+                i = 0;
+            }
+            return i;
+        }
+    "#;
+    let click_source = r#"
+        verifying "spin.c";
+
+        int32 spin() {
+            ensures result == 0;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let error = verify_c0_sources(click_source, &[("spin.c", c_source)])
+                .expect_err("a loop that never exits has no function exit to reach");
+            assert!(
+                error
+                    .message()
+                    .contains("`execute` exhausted its 10000-step budget at statement("),
+                "expected the step budget refusal, got: {}",
+                error.message()
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

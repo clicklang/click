@@ -811,6 +811,7 @@ fn execute_concrete_loop_head_step(
     current_state: CState,
     loop_statement: CStatement,
     remaining: Option<CStatement>,
+    context: Option<&PureFactContext>,
     mut construction: Option<Construction<'_>>,
 ) -> Result<(), ClickError> {
     let function_block = proof_context.function_block;
@@ -947,7 +948,9 @@ fn execute_concrete_loop_head_step(
         &transition_label,
         prerequisite_policy,
         true,
-        None,
+        // A step decides the loop condition from the same whole proof
+        // context it runs every other statement in.
+        context,
     )?;
     if condition_transitions.len() != 1 {
         return Err(ClickError::new(format!(
@@ -2369,6 +2372,7 @@ fn execute_step_from_frontier_position_selecting_path(
             current_state,
             source_statement,
             remaining,
+            context,
             construction.as_mut().map(Construction::reborrow),
         )?;
         return Ok(Vec::new());

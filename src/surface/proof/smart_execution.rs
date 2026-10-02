@@ -80,7 +80,9 @@ impl<'a> Proof<'a> {
         // identity.  The set follows this immutable search, rather than a
         // process-global cache, so unrelated proofs cannot affect it.
         let mut retried_requirements = BTreeSet::new();
+        let mut steps = 0;
         while !proof.is_at_function_exit() {
+            proof.charge_execute_step(&mut steps)?;
             let next = if let Some(next) =
                 proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)?
             {
@@ -89,8 +91,10 @@ impl<'a> Proof<'a> {
                 // A structural frontier (a C branch, a call's outcomes, or a
                 // statement such as a `switch` whose successors are path
                 // cases) runs to exit through the focused split recursion.
-                let Some(next) =
-                    proof.try_focused_execute_to_exit_with_retries(&mut retried_requirements)?
+                let Some(next) = proof.try_focused_execute_to_exit_with_retries(
+                    &mut retried_requirements,
+                    &mut steps,
+                )?
                 else {
                     return Ok(None);
                 };

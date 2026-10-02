@@ -2437,8 +2437,8 @@ fn advance_focused_execution_arm<'a>(
             )?
         } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let mut retried_requirements = std::collections::BTreeSet::new();
-            let Some(next) =
-                proof.try_focused_execute_to_exit_with_retries(&mut retried_requirements)?
+            let Some(next) = proof
+                .try_focused_execute_to_exit_with_retries(&mut retried_requirements, &mut 0)?
             else {
                 return decline();
             };
