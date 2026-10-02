@@ -351,6 +351,36 @@ fn goto_slice_rejects_unknown_backward_duplicate_and_unsupported_targets() {
 }
 
 #[test]
+fn imported_variadic_prototype_is_retained_without_becoming_callable() {
+    let prototype = "# 1 \"include/linux/report.h\" 1\nvoid report(const char *format, ...);\n# 1 \"lib/tu.c\" 2\n";
+    let (source, map) = provenance::CSourceMap::decode(&format!(
+        "{prototype}int32 keep(int32 x) {{ return x; }}\n"
+    ))
+    .expect("line markers should decode");
+    let unit = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+        Ok(unit) => unit,
+        Err(error) => panic!("variadic prototype should import: {error}"),
+    };
+    assert!(unit.function_declarations.contains_key("report"));
+    assert_eq!(unit.functions.len(), 1);
+
+    let (source, map) = provenance::CSourceMap::decode(&format!(
+        "{prototype}void run(void) {{\n    report(\"x\");\n}}\n"
+    ))
+    .expect("line markers should decode");
+    let error = match syntax::parse_translation_unit_for_import(&source, "tu.c", &map) {
+        Ok(_) => panic!("a variadic call has no model"),
+        Err(error) => error,
+    };
+    let rendered = error.to_string();
+    assert!(rendered.contains("lib/tu.c:2"), "{rendered}");
+    assert!(
+        rendered.contains("calls to variadic function `report`"),
+        "{rendered}"
+    );
+}
+
+#[test]
 fn imported_parser_errors_keep_original_header_location() {
     let (source, map) = provenance::CSourceMap::decode(
         "# 1 \"generated/header.h\" 1\nint32 broken(int32 x) { return x + ...; }\n",
@@ -11046,6 +11076,8 @@ fn c0_weak_function_declaration_requires_availability_before_use() {
 
     for body in [
         "int32 caller(void) { return optional(); }",
+        "int32 caller(void) { optional(); return 0; }",
+        "int32 caller(void) { (void)optional(); return 0; }",
         "int32 caller(void) { return optional != 0; }",
     ] {
         let error = syntax::parse_functions(&format!("{declaration} {body}"))

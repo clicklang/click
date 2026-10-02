@@ -120,6 +120,12 @@ value. These contracts still describe
 only the supported C0 types; `void *` dereference or ownership, `size_t`,
 overlap semantics, and unbounded string viewability remain outside the model.
 
+A body-less variadic prototype such as `int report(const char *format, ...);`
+is retained as a declaration only. Click has no model of variable arguments,
+so calls to such a function, uses of its address, variadic definitions, and
+variadic function-pointer signatures are rejected with a located diagnostic;
+an `extern` contract does not make the function callable.
+
 A verifying source may contain multiple function definitions and compatible
 forward prototypes. Project-local quoted includes such as
 `#include "include/types.h"` are resolved relative to the including source when
