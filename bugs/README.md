@@ -8,7 +8,7 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
-- [Expansion loses the facts a later call precondition needs](expansion-drops-call-precondition-evidence.md)
+- [A retained verification session cannot re-verify a caller it already verified](retained-session-cannot-reverify-a-verified-caller.md)
 - [Expanded proofs about file-scope and static objects do not re-verify](expanded-static-object-proofs-do-not-reverify.md)
 - [Expansion of a by-value struct copy emits a `have` that lowers to zero paths](expansion-emits-have-that-lowers-to-no-path.md)
 - [Expanded `simp` emits an `assumption` that matches no goal](simp-expansion-assumption-matches-no-goal.md)
