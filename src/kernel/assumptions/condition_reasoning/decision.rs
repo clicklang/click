@@ -309,6 +309,9 @@ impl PureFactContext {
         if let Some(value) = condition.reflexive_value() {
             return Some(value);
         }
+        if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
+            return Some(value);
+        }
         if let Some(value) = self.decide_small_uint64_index_order(condition) {
             return Some(value);
         }

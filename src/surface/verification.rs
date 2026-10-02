@@ -6818,6 +6818,18 @@ fn cpp_function_interface(
             is_const: false,
             ..
         } => C0Type::Int64,
+        crate::languages::cpp::CppType::Integer {
+            bits: 32,
+            signed: false,
+            is_const: false,
+            ..
+        } => C0Type::UInt32,
+        crate::languages::cpp::CppType::Integer {
+            bits: 64,
+            signed: false,
+            is_const: false,
+            ..
+        } => C0Type::UInt64,
         crate::languages::cpp::CppType::Boolean {
             bits: 8,
             is_const: false,
@@ -6833,7 +6845,7 @@ fn cpp_function_interface(
         .parameters
         .iter()
         .map(|parameter| match &parameter.value_type {
-            crate::languages::cpp::CppType::Integer { bits, signed: true, is_const: false, .. } if *bits == 32 || *bits == 64 => Ok(syntax::C0Parameter::new(if *bits == 32 { C0Type::Int32 } else { C0Type::Int64 }, parameter.name.clone(), None)),
+            crate::languages::cpp::CppType::Integer { bits, signed, is_const: false, .. } if *bits == 32 || *bits == 64 => Ok(syntax::C0Parameter::new(match (*bits, *signed) { (32,true) => C0Type::Int32, (64,true) => C0Type::Int64, (32,false) => C0Type::UInt32, _ => C0Type::UInt64 }, parameter.name.clone(), None)),
             crate::languages::cpp::CppType::Boolean {
                 bits: 8,
                 is_const: false,

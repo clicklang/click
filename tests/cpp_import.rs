@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 22);
+    assert_eq!(prepared.export().schema, 23);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1652,7 +1652,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1767,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1878,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1939,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +1985,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2611,7 +2611,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2689,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2807,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2945,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3047,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3147,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3436,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3622,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3719,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 22);
+    assert_eq!(import.export().schema, 23);
     let destructor = import
         .export()
         .reachable_functions
@@ -4400,7 +4400,7 @@ fn cpp_pointer_slice_rejects_arithmetic_null_multilevel_and_pointer_locals() {
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("bump_reference.cpp:2"), "{error}");
     assert!(
-        error.contains("must resolve to mutable signed 32/64-bit integer"),
+        error.contains("must resolve to mutable signed/unsigned 32/64-bit integer"),
         "{error}"
     );
     assert!(!project.artifact().exists());
@@ -4748,7 +4748,7 @@ fn cpp_scalar_locals_reject_uninitialized_reference_and_nested_declarations() {
     let error = refresh_import(&project.config()).unwrap_err();
     assert!(error.contains("relay_value.cpp:2"), "{error}");
     assert!(
-        error.contains("must resolve to mutable signed 32/64-bit integer"),
+        error.contains("must resolve to mutable signed/unsigned 32/64-bit integer"),
         "{error}"
     );
     assert!(!project.artifact().exists());
@@ -5214,14 +5214,17 @@ fn subtraction_method_self_aliasing_is_defined_without_bounds_and_frames_caller_
 }
 
 #[test]
-fn signed_arithmetic_profile_rejects_unsigned_and_wide_integer_semantics() {
+fn arithmetic_profile_rejects_narrow_and_wide_integer_semantics() {
     for source in [
         "__int128 wide(__int128 n) noexcept { return n / 3; }",
-        "unsigned long wide(unsigned long n) noexcept { return n / 3; }",
+        "unsigned short wide(unsigned short n) noexcept { return n / 3; }",
     ] {
         let project = Project::with_fixture("arithmetic.cpp", "wide", source);
         let error = refresh_import(&project.config()).unwrap_err();
-        assert!(error.contains("signed 64-bit integers"), "{error}");
+        assert!(
+            error.contains("signed/unsigned 32/64-bit integers"),
+            "{error}"
+        );
         assert!(!project.artifact().exists());
     }
 }
@@ -5253,4 +5256,284 @@ fn signed_scalar_return_and_parameters_retain_locked_header_aliases() {
         &import,
         include_str!("fixtures/cpp-verification/signed-arithmetic/quotient.click"),
     );
+}
+
+const UNSIGNED_ARITHMETIC_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/unsigned-arithmetic/arithmetic.cpp");
+
+#[test]
+fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
+    for (name, params, requires, result_type, expected) in [
+        ("maximum", "", "", "uint64", "18446744073709551615u64"),
+        (
+            "mixed",
+            "int64 a, uint32 b",
+            "requires a == -1i64; requires b == 1u32;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "mixed",
+            "int64 a, uint32 b",
+            "requires a == -1i64; requires b == 1u32;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "add64",
+            "uint64 a, uint64 b",
+            "requires a == 18446744073709551615u64; requires b == 1u64;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "sub64",
+            "uint64 a, uint64 b",
+            "requires a == 0u64; requires b == 1u64;",
+            "uint64",
+            "18446744073709551615u64",
+        ),
+        (
+            "mul64",
+            "uint64 a, uint64 b",
+            "requires a == 9223372036854775808u64; requires b == 2u64;",
+            "uint64",
+            "0u64",
+        ),
+        (
+            "div64",
+            "uint64 a, uint64 b",
+            "requires a == 18446744073709551615u64; requires b == 2u64;",
+            "uint64",
+            "9223372036854775807u64",
+        ),
+        (
+            "rem64",
+            "uint64 a, uint64 b",
+            "requires a == 18446744073709551615u64; requires b == 2u64;",
+            "uint64",
+            "1u64",
+        ),
+        (
+            "neg64",
+            "uint64 a",
+            "requires a == 1u64;",
+            "uint64",
+            "18446744073709551615u64",
+        ),
+        (
+            "add32",
+            "uint32 a, uint32 b",
+            "requires a == 4294967295u32; requires b == 1u32;",
+            "uint32",
+            "0u32",
+        ),
+        (
+            "signed_to_unsigned",
+            "int32 a",
+            "requires a == -1;",
+            "uint64",
+            "18446744073709551615u64",
+        ),
+        (
+            "narrow_unsigned",
+            "int64 a",
+            "requires a == -1i64;",
+            "uint32",
+            "4294967295u32",
+        ),
+        (
+            "narrow_signed",
+            "uint64 a",
+            "requires a == 18446744073709551615u64;",
+            "int32",
+            "-1",
+        ),
+        (
+            "widen_unsigned",
+            "uint32 a",
+            "requires a == 4294967295u32;",
+            "int64",
+            "4294967295i64",
+        ),
+        (
+            "truth",
+            "uint64 a",
+            "requires a == 4294967296u64;",
+            "bool",
+            "1",
+        ),
+    ] {
+        let project = Project::with_fixture("unsigned.cpp", name, UNSIGNED_ARITHMETIC_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"unsigned.cpp\";\n{result_type} {name}({params}) {{ {requires} ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn unsigned_modular_calls_frame_unrelated_memory_and_reject_false_wrap_claims() {
+    let project = Project::with_fixture("unsigned.cpp", "relay", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "unsigned.cpp";
+uint64 add64(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
+uint64 relay(uint64 a, uint64 b, int32* untouched) {
+ owns untouched[0..1];
+ ensures result == a + b;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+    let project = Project::with_fixture("unsigned.cpp", "add64", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "unsigned.cpp";
+uint64 add64(uint64 a, uint64 b) {
+ requires a == 18446744073709551615u64; requires b == 1u64;
+ ensures result == 1u64;
+} by { execute(); simp(); }
+"#;
+    fs::write(project.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(
+        error.message().contains("unclosed goal"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn unsigned_division_rejects_zero_and_unsigned_to_signed64_is_explicitly_unsupported() {
+    for name in ["div64", "rem64"] {
+        let project = Project::with_fixture("unsigned.cpp", name, UNSIGNED_ARITHMETIC_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"unsigned.cpp\"; uint64 {name}(uint64 a, uint64 b) {{ requires b == 0u64; ensures result == 0u64; }} by {{ execute(); simp(); }}"
+        );
+        fs::write(project.directory.join("bad.click"), &source).unwrap();
+        let parsed = read_click_project(&project.directory.join("bad.click"), &source).unwrap();
+        let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+        assert!(
+            error.message().contains("division by zero"),
+            "{}",
+            error.message()
+        );
+    }
+    let project = Project::with_fixture(
+        "unsigned.cpp",
+        "bad",
+        "long bad(unsigned long a) noexcept { return static_cast<long>(a); }",
+    );
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("uint64-to-int64 reinterpretation"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn compiler_constants_retain_their_origin_and_reject_runtime_calls() {
+    let project = Project::with_fixture(
+        "constants.cpp",
+        "size",
+        "unsigned int size() noexcept { return sizeof(unsigned long) + sizeof(unsigned short); }",
+    );
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert!(
+        fs::read_to_string(project.artifact())
+            .unwrap()
+            .contains("compiler_constant")
+    );
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"constants.cpp\"; uint32 size() { ensures result == 10u32; } by { execute(); simp(); }",
+    );
+    let project = Project::with_fixture(
+        "constants.cpp",
+        "size",
+        "unsigned long runtime() noexcept; unsigned long size() noexcept { return runtime(); }",
+    );
+    assert!(refresh_import(&project.config()).is_err());
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn unsigned_positive_divisor_contract_expands_and_reverifies() {
+    let project = Project::with_fixture("unsigned.cpp", "div64", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"unsigned.cpp\"; uint64 div64(uint64 a, uint64 b) { requires b > 0u64; ensures result == a / b; } by { execute(); simp(); }",
+    );
+}
+
+#[test]
+fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
+    // Exact fast-path expressions from EvaluateFee; return the unsigned
+    // intermediate. The upstream uint64-to-int64 return cast is still unsupported.
+    let cpp = include_str!("fixtures/cpp-verification/unsigned-arithmetic/fee_fast_path.cpp");
+    for (name, up) in [("down", false), ("up", true)] {
+        let project = Project::with_fixture("fast_path.cpp", name, cpp);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        for (fee, at_size, size) in [
+            (0i64, 0i32, 1i32),
+            (7, 3, 5),
+            (8, 3, 6),
+            (8589934591, 2147483647, 2147483647),
+        ] {
+            let numerator = fee as u64 * at_size as u64;
+            let expected = if up {
+                numerator.div_ceil(size as u64)
+            } else {
+                numerator / size as u64
+            };
+            let proof = format!(
+                "verifying \"fast_path.cpp\"; uint64 {name}(int64 fee, int32 at_size, int32 size) {{ requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64; }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &proof);
+        }
+    }
+}
+
+#[test]
+fn mixed_unsigned_return_preserves_signed_intermediate_overflow() {
+    let project = Project::with_fixture("unsigned.cpp", "mixed", UNSIGNED_ARITHMETIC_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = "verifying \"unsigned.cpp\"; uint64 mixed(int64 a, uint32 b) { requires a == 9223372036854775807i64; requires b == 4294967295u32; ensures result == 0u64; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn compiler_constant_calls_preserve_runtime_constant_evaluation_context() {
+    // A constexpr function can distinguish constant evaluation from a runtime
+    // call. The exporter must fold the latter meaning in an imported body.
+    let cpp = "namespace std { template<class T> struct numeric_limits { static constexpr unsigned long max() noexcept { return __builtin_is_constant_evaluated() ? 1UL : 2UL; } }; } unsigned long probe() noexcept { return std::numeric_limits<unsigned long>::max(); }";
+    let project = Project::with_fixture("constant_context.cpp", "probe", cpp);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 2u64; } by { execute(); simp(); }",
+    );
+    let bad = "verifying \"constant_context.cpp\"; uint64 probe() { ensures result == 1u64; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), bad).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), bad).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
 }

@@ -2163,6 +2163,112 @@ pub(in crate::kernel) fn condition_as_uint64_order_fact(
 }
 
 impl PureFactContext {
+    /// Strengthen a constant bound using only the queried nonconstant endpoint's
+    /// index. Never walk a shared constant's incident edges or unrelated facts.
+    pub(super) fn decide_uint64_constant_order_bounds(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        let (left, right, mut operator) = match condition {
+            ConditionTerm::Bitvector64UnsignedLessThan(a, b) => (a, b, 0),
+            ConditionTerm::Bitvector64UnsignedLessEqual(a, b) => (a, b, 1),
+            ConditionTerm::Bitvector64UnsignedGreaterThan(a, b) => (a, b, 2),
+            ConditionTerm::Bitvector64UnsignedGreaterEqual(a, b) => (a, b, 3),
+            ConditionTerm::Bitvector64Equal(a, b) => (a, b, 4),
+            _ => return None,
+        };
+        let (term, limit) = if let Some(limit) = right.uint64_as_const() {
+            (left.as_ref(), limit)
+        } else {
+            let limit = left.uint64_as_const()?;
+            operator = match operator {
+                0 => 2,
+                1 => 3,
+                2 => 0,
+                3 => 1,
+                _ => 4,
+            };
+            (right.as_ref(), limit)
+        };
+        let bounds = self.uint64_order_bounds.get(term)?;
+        for (endpoint, other, strict, upper) in bounds.keys() {
+            crate::instrumentation::record_deterministic_work(1);
+            let Some(bound) = self.wide_constant_from_equalities(other) else {
+                continue;
+            };
+            let bound = if *strict {
+                if *upper {
+                    bound.checked_sub(1)
+                } else {
+                    bound.checked_add(1)
+                }
+            } else {
+                Some(bound)
+            };
+            let Some(bound) = bound else {
+                continue;
+            };
+            let answer = match (operator, *upper) {
+                (0, true) if bound < limit => Some(true),
+                (1, true) if bound <= limit => Some(true),
+                (2, true) if bound <= limit => Some(false),
+                (3, true) if bound < limit => Some(false),
+                (0, false) if bound >= limit => Some(false),
+                (1, false) if bound > limit => Some(false),
+                (2, false) if bound > limit => Some(true),
+                (3, false) if bound >= limit => Some(true),
+                (4, true) if bound < limit => Some(false),
+                (4, false) if bound > limit => Some(false),
+                _ => None,
+            };
+            let Some(answer) = answer else {
+                continue;
+            };
+            let (a, b) = if *upper {
+                (endpoint.clone(), other.clone())
+            } else {
+                (other.clone(), endpoint.clone())
+            };
+            // The index normalizes negated/reversed comparisons. Recover an
+            // actual source fact through four exact lookups so expansion cites
+            // the premise that was held, including its original truth value.
+            let candidates = if *strict {
+                [
+                    (ConditionTerm::uint64_less_than(a.clone(), b.clone()), true),
+                    (
+                        ConditionTerm::uint64_greater_than(b.clone(), a.clone()),
+                        true,
+                    ),
+                    (
+                        ConditionTerm::uint64_greater_equal(a.clone(), b.clone()),
+                        false,
+                    ),
+                    (ConditionTerm::uint64_less_equal(b, a), false),
+                ]
+            } else {
+                [
+                    (ConditionTerm::uint64_less_equal(a.clone(), b.clone()), true),
+                    (
+                        ConditionTerm::uint64_greater_equal(b.clone(), a.clone()),
+                        true,
+                    ),
+                    (
+                        ConditionTerm::uint64_greater_than(a.clone(), b.clone()),
+                        false,
+                    ),
+                    (ConditionTerm::uint64_less_than(b, a), false),
+                ]
+            };
+            if candidates
+                .iter()
+                .any(|(fact, value)| self.exact_condition_value(fact) == Some(*value))
+            {
+                return Some(answer);
+            }
+        }
+        None
+    }
+
     /// Follow only upper edges in the operand's indexed uint64 order graph.
     /// Each node is visited once; unrelated facts are never read.
     fn uint64_small_upper_bound(&self, term: &Bitvector32Term) -> Option<u64> {
@@ -2280,6 +2386,85 @@ impl PureFactContext {
 #[cfg(test)]
 mod slice_index_tests {
     use super::*;
+
+    #[test]
+    fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {
+        let n = Bitvector32Term::Variable(Variable(998001));
+        let c = Bitvector32Term::UInt64Constant;
+        let mut work_counts = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut facts = PureFactContext::new();
+            for i in 0..size {
+                // Shared endpoints exercise the dangerous constant-index shape.
+                facts = facts.assume_condition(
+                    ConditionTerm::uint64_less_than(
+                        c(0),
+                        Bitvector32Term::Variable(Variable(999000 + i)),
+                    ),
+                    true,
+                );
+            }
+            facts = facts.assume_condition(
+                ConditionTerm::uint64_greater_than(n.clone(), c(4294967295)),
+                true,
+            );
+            let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
+                [
+                    facts.decide(&ConditionTerm::uint64_less_than(n.clone(), c(253))),
+                    facts.decide(&ConditionTerm::uint64_less_equal(n.clone(), c(65535))),
+                    facts.decide(&ConditionTerm::uint64_less_than(c(0), n.clone())),
+                    facts.decide(&ConditionTerm::uint64_equal(n.clone(), c(0))),
+                ]
+            });
+            assert_eq!(answers, [Some(false), Some(false), Some(true), Some(false)]);
+            work_counts.push(work);
+        }
+        assert!(work_counts[0] > 0);
+        assert!(
+            work_counts.iter().all(|work| *work == work_counts[0]),
+            "{work_counts:?}"
+        );
+        for bound in [
+            0,
+            253,
+            65535,
+            4294967295,
+            i64::MAX as u64,
+            i64::MAX as u64 + 1,
+            u64::MAX,
+        ] {
+            let facts = PureFactContext::new()
+                .assume_condition(ConditionTerm::uint64_less_equal(n.clone(), c(bound)), true);
+            assert_eq!(
+                facts.decide(&ConditionTerm::uint64_greater_than(n.clone(), c(bound))),
+                Some(false)
+            );
+            if bound < u64::MAX {
+                assert_eq!(
+                    facts.decide(&ConditionTerm::uint64_less_than(n.clone(), c(bound + 1))),
+                    Some(true)
+                );
+                assert_eq!(
+                    facts.decide(&ConditionTerm::uint64_equal(n.clone(), c(bound + 1))),
+                    Some(false)
+                );
+            }
+            assert_ne!(
+                facts.decide(&ConditionTerm::uint64_less_than(n.clone(), c(bound))),
+                Some(true)
+            );
+        }
+        let negative = PureFactContext::new()
+            .assume_condition(ConditionTerm::uint64_less_equal(n.clone(), c(65535)), false);
+        assert_eq!(
+            negative.decide(&ConditionTerm::uint64_less_than(n.clone(), c(253))),
+            Some(false)
+        );
+        assert_eq!(
+            PureFactContext::new().decide(&ConditionTerm::uint64_less_than(n, c(253))),
+            None
+        );
+    }
 
     #[test]
     fn uint64_constant_lower_bound_survives_checked_narrowing() {
