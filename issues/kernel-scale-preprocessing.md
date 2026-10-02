@@ -614,8 +614,7 @@ The gate pins the first rejection on each route:
 
 The inventory below was measured at the commit that accepted the kernel's
 `inline` attributes and unnamed prototype parameters, and its closure table
-again at the commit that accepted `compiletime_assert`, `__builtin_constant_p`,
-and the empty barrier assembly, with
+again at the commit that accepted the `WRITE_ONCE` store, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
@@ -648,35 +647,27 @@ Most of that graph is not rbtree. A token-level estimate of the declarations
 that `lib/rbtree.c` transitively names finds 80: the 58 in `lib/rbtree.c`, 20
 in `rbtree.h`, `rbtree_augmented.h`, and `rbtree_types.h`, the `false`/`true`
 enumeration in `stddef.h`, and the `uintptr_t` typedef in `types.h`. The
-estimate is heuristic and was not checked by a compiler. Of those 80, 39 are
-accepted today and 41 are rejected. 36 of the 41 are the twelve exports,
-three declarations each: `extern typeof(fn) fn;`, a `static void *` with
+estimate is heuristic and was not checked by a compiler. Of those 80, 44 are
+accepted today: every type, prototype, inline helper, and function
+definition of the rbtree code. The 36 rejected are the twelve exports, three
+declarations each: `extern typeof(fn) fn;`, a `static void *` with
 `__used__` and `__section__(".discard.addressable")` initialized to the
 function's address, and a file-scope `asm` that emits the `.export_symbol`
 record. No verified function depends on them, so the projection excludes
-them and they are outside the claim. The other five are `__rb_change_child`,
-`__rb_change_child_rcu`, `__rb_erase_augmented`, `__rb_insert`, and
-`____rb_erase_color`, and all five now stop at the same form, the store that
-`WRITE_ONCE` expands to:
+them and they are outside the claim.
 
-```c
-do { *(volatile typeof(parent->rb_left) *)&(parent->rb_left) = (new); } while (0);
-```
-
-It is refused as `aggregate copies require a struct value source`. A store
-through a cast to a pointer to a struct pointer is refused that way with or
-without `volatile` or `typeof` (`*(struct node **)&parent->left = new;`).
-
-Forms already accepted on the way here: explicit casts that drop `const`,
+Forms accepted on the way here, each of which surfaced only after the one
+before it was accepted: the kernel's `inline` attributes, unnamed prototype
+parameters, `static` non-inline functions, explicit casts that drop `const`,
 conditionals with a null pointer constant, chained simple assignments,
 `compiletime_assert`'s block-scope `error` declaration with its unreachable
-call, `sizeof(expression)`, `__builtin_constant_p` as an unknown 0 or 1, and
-the empty `memory` barrier assembly. Each surfaced only after the one before
-it was accepted, so the remaining declarations may hide more.
+call, `sizeof(expression)`, `__builtin_constant_p` as an unknown 0 or 1, the
+empty `memory` barrier assembly, and the store through a cast to a pointer
+cell that `WRITE_ONCE` expands to.
 
-One defect found on the way is filed in `bugs/`: a `do { ... } while (0)`
-whose body assigns a parameter or stores through one fails without a loop
-annotation, and every expanded kernel statement macro is such a loop.
+Accepted means parsed and lowered declaration by declaration. No proof has
+run against these bodies, and the whole artifact still stops at its first
+unsupported declaration until the projection lands.
 
 `typeof`, statement expressions, and `__builtin_expect` do not appear as
 rejections.

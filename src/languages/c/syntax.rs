@@ -18579,10 +18579,20 @@ impl Parser {
                 C0Expression::Variable(name) => self.variable_struct_values.get(name).cloned(),
                 _ => None,
             },
+            // The tag names what a one-level struct pointer points to. A cast
+            // to `struct T **` points to a pointer cell, not to a struct.
             C0Expression::Cast {
                 struct_name: Some(struct_name),
+                c_type,
                 ..
-            } => Some(struct_name.clone()),
+            } if !c_type.pointee_type().is_some_and(C0Type::is_pointer) => {
+                Some(struct_name.clone())
+            }
+            C0Expression::Cast { c_type, .. }
+                if c_type.pointee_type().is_some_and(C0Type::is_pointer) =>
+            {
+                None
+            }
             // A cast to another pointer type keeps the struct identity of
             // the pointer underneath; a cast to an integer does not, so an
             // `(unsigned long)p + 1` is integer arithmetic, not scaled
@@ -18694,6 +18704,11 @@ impl Parser {
             },
             C0Expression::SequentialRead { struct_name, .. }
             | C0Expression::SequentialWrite { struct_name, .. } => struct_name.clone(),
+            C0Expression::Cast {
+                struct_name: Some(struct_name),
+                c_type,
+                ..
+            } if c_type.pointee_type().is_some_and(C0Type::is_pointer) => Some(struct_name.clone()),
             C0Expression::Cast { expression, .. } => self.struct_pointer_pointer_name(expression),
             C0Expression::Add(left, _) | C0Expression::Subtract(left, _) => {
                 self.struct_pointer_pointer_name(left)

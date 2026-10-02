@@ -415,7 +415,15 @@ fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
     );
 
     if let Some(path) = std::env::var_os(INVENTORY).filter(|path| !path.is_empty()) {
-        fs::write(path, rejection_inventory(&source, &map)).expect("write the inventory");
+        // The parser recurses on nested statements, and the expanded kernel
+        // bodies nest deeply enough to overflow a default test stack.
+        let inventory = std::thread::Builder::new()
+            .stack_size(256 << 20)
+            .spawn(move || rejection_inventory(&source, &map))
+            .expect("spawn the inventory thread")
+            .join()
+            .expect("the inventory thread finishes");
+        fs::write(path, inventory).expect("write the inventory");
     }
 }
 
