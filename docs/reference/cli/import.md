@@ -363,7 +363,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 23;
+its documented application invariant. The typed artifact schema is now 24;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
@@ -385,8 +385,8 @@ negative dividends, exact division, zero, signed extrema, and the largest
 positive int32 divisor, together with expansion and retained audit sessions.
 These are concrete rounding cases, not a general rounding theorem. General
 quotient/remainder contracts and a modular caller with unrelated memory also
-verify. Bitcoin's actual rounding helper uses `__int128`; wider integers,
-the needed template specializations remain unsupported.
+verify. Bitcoin's actual rounding helper uses `__int128`; wider integers
+remain unsupported.
 
 Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
 same-type arithmetic/comparisons now use the common unsigned kernel types.
@@ -412,12 +412,50 @@ positions. These produce distinct `compiler_constant` nodes with a checked
 32/64-bit value/type and the original source span. The exporter preserves runtime
 expression semantics under the pinned target and locked preprocessor input
 closure. Standard-library semantics remain part of the trusted compiler input.
-Runtime calls, general constexpr calls, unsigned namespace constants,
-and local call-capture initializer forms outside the ordinary call slice remain
-unsupported. The unchanged Bitcoin `GetSizeOfCompactSize` proof covers every
+Runtime calls are never folded by this allowlist. General constexpr calls in
+runtime expression positions, unsigned namespace constants, and local
+call-capture initializer forms outside the ordinary call slice remain unsupported. The unchanged Bitcoin `GetSizeOfCompactSize` proof covers every
 uint64 input in four disjoint ranges, checks expansion and retained audit, and
 rejects false encoded-length claims. It proves encoded length, not serialized
 bytes or a round trip.
+
+Concrete function-template instances are supported when reached through an
+ordinary selected caller and their instantiated operations fit the existing
+profile. Boolean value arguments and unqualified builtin `bool`, `int`,
+`unsigned int`, `long`, `unsigned long`, `long long`, and `unsigned long long`
+type arguments are accepted. Each instance keeps its distinct Clang USR.
+Sidecar names append argument tokens in order, such as `choose__bool_true`,
+`identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
+canonical builtin token; equal-width types such as `long` and `long long`
+retain different names. Name collisions remain explicit import errors.
+
+For `if constexpr`, pinned Clang chooses the instantiated arm in constant
+evaluation context. The artifact retains an ordinary constant Boolean `if`,
+the selected arm, an empty discarded arm, and the original statement and
+condition spans. The condition uses a distinct `compiler_constant` under a
+Boolean conversion. Discarded code contributes no runtime calls, accesses,
+or cleanup. A selected unsupported arm fails import. Ordinary `if` statements
+continue to import both arms. Return validation checks the reachable arm of a
+closed constant Boolean condition and both arms of an unknown condition.
+
+The `template-instances` fixture checks modular callers, receiver authority,
+framing, false contracts, same-width type identities, Boolean substitution,
+constant-evaluation context, and unsupported arguments. Its instantiated fee
+fast paths retain the unsigned expressions and cover both rounding directions
+with expansion/reverification and retained audit. They remain synthetic
+prerequisite proofs, not verification of upstream `EvaluateFee`. Selecting a
+dependent template pattern, packs, other non-type arguments, class templates,
+qualified or non-scalar type arguments, and calls in unsupported expression
+positions remain outside this slice. Template substitution and constexpr
+selection are trusted compiler operations under the locked input profile;
+selected function implementations still require verified sidecar contracts.
+
+The shared signed-64 reasoning rules also verify `x + z` and `x - z` across
+the full signed range when a modular helper establishes `z == 0`. They retain
+the equality's proof provenance, read only the queried operands' fact indexes,
+and strip chains of zero additions through borrowed operands. Deterministic
+regressions check unrelated fact populations and increasing expression depth;
+the C `int64_returned_zero_identity` fixture covers the common kernel path.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one

@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 23);
+    assert_eq!(prepared.export().schema, 24);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1652,7 +1652,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1767,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1878,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1939,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +1985,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2611,7 +2611,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2689,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2807,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2945,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3047,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3147,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3436,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3622,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3719,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 23);
+    assert_eq!(import.export().schema, 24);
     let destructor = import
         .export()
         .reachable_functions
@@ -5536,4 +5536,265 @@ fn compiler_constant_calls_preserve_runtime_constant_evaluation_context() {
     fs::write(project.directory.join("bad.click"), bad).unwrap();
     let parsed = read_click_project(&project.directory.join("bad.click"), bad).unwrap();
     assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+const TEMPLATE_INSTANCE_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/template-instances/instances.cpp");
+
+#[test]
+fn concrete_template_instances_have_distinct_identities_and_modular_contracts() {
+    let project = Project::with_fixture("instances.cpp", "both", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helpers = &import.export().reachable_functions;
+    assert_eq!(helpers.len(), 2);
+    assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
+    assert_eq!(helpers[0].name, "choose__bool_true");
+    assert_eq!(helpers[1].name, "choose__bool_false");
+    for (helper, chosen_then) in [(&helpers[0], true), (&helpers[1], false)] {
+        let CppStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+            span,
+        } = &helper.body[0]
+        else {
+            panic!("constexpr selection must retain its conditional span");
+        };
+        assert_eq!(span.file, "instances.cpp");
+        assert_eq!(span.start_line, 4);
+        assert_eq!(then_branch.is_empty(), !chosen_then);
+        assert_eq!(else_branch.is_empty(), chosen_then);
+        let CppExpression::IntegralCast { value, .. } = condition else {
+            panic!("typed Boolean selection")
+        };
+        assert!(matches!(
+            value.as_ref(),
+            CppExpression::CompilerConstant { .. }
+        ));
+    }
+    let sidecar = r#"verifying "instances.cpp";
+int32 choose__bool_true(int32 a, int32 b) {
+ requires a >= -1073741824; requires a <= 1073741823;
+ ensures result == a; ensures result >= -1073741824; ensures result <= 1073741823;
+} by { execute(); simp(); }
+int32 choose__bool_false(int32 a, int32 b) {
+ requires b >= -1073741824; requires b <= 1073741823;
+ ensures result == b; ensures result >= -1073741824; ensures result <= 1073741823;
+} by { execute(); simp(); }
+int32 both(int32 a, int32 b, int32* untouched) {
+ requires a >= -1073741824; requires a <= 1073741823;
+ requires b >= -1073741824; requires b <= 1073741823;
+ owns untouched[0..1];
+ ensures result == a + b;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace("ensures result == b;", "ensures result == a;");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn concrete_scalar_type_template_instances_preserve_width_and_signedness() {
+    let project = Project::with_fixture("instances.cpp", "widths", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().reachable_functions[0].name, "identity__int");
+    assert_eq!(
+        import.export().reachable_functions[1].name,
+        "identity__unsigned_long"
+    );
+    let sidecar = r#"verifying "instances.cpp";
+int32 identity__int(int32 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity__unsigned_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 widths(int32 a, uint64 b) {
+ requires a == 1; requires b == 18446744073709551615u64;
+ ensures result == 0u64;
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+}
+
+#[test]
+fn concrete_member_template_instances_preserve_receiver_authority() {
+    let project = Project::with_fixture("instances.cpp", "member", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let sidecar = r#"verifying "instances.cpp";
+int64 Value_select__bool_true(const struct Value* self) {
+ views self->fee;
+ ensures result == self->fee;
+ ensures self->fee == old(self->fee);
+} by { execute(); simp(); }
+int64 Value_select__bool_false(const struct Value* self) {
+ views self->fee;
+ ensures result == 0i64;
+ ensures self->fee == old(self->fee);
+} by { execute(); simp(); }
+int64 member(const struct Value* value) {
+ owns value->fee;
+ ensures result == value->fee;
+ ensures value->fee == old(value->fee);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let hostile = sidecar.replace(" owns value->fee;", "");
+    fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+    assert!(verify_program_prepared_project(&parsed, &import).is_err());
+}
+
+#[test]
+fn constexpr_discards_only_the_compiler_selected_arm() {
+    let project = Project::with_fixture("instances.cpp", "accepted", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    assert_eq!(import.export().reachable_functions.len(), 1);
+    let sidecar = r#"verifying "instances.cpp";
+int32 bounded__bool_true(int32 value) { ensures result == value; } by { execute(); simp(); }
+int32 accepted(int32 value) { ensures result == value; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, sidecar);
+    let rejected = Project::with_fixture("instances.cpp", "rejected", TEMPLATE_INSTANCE_SOURCE);
+    let error = refresh_import(&rejected.config()).unwrap_err();
+    assert!(
+        error.contains("unsupported") || error.contains("reachable"),
+        "{error}"
+    );
+    assert!(!rejected.artifact().exists());
+}
+
+#[test]
+fn template_type_identity_does_not_merge_equal_width_cpp_types() {
+    let project = Project::with_fixture("instances.cpp", "exact_types", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let helpers = &import.export().reachable_functions;
+    assert_eq!(helpers[0].name, "identity__unsigned_long");
+    assert_eq!(helpers[1].name, "identity__unsigned_long_long");
+    assert_ne!(helpers[0].declaration_id, helpers[1].declaration_id);
+    let source = r#"verifying "instances.cpp";
+uint64 identity__unsigned_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 identity__unsigned_long_long(uint64 value) { ensures result == value; } by { execute(); simp(); }
+uint64 exact_types(uint64 a, uint64 b) { ensures result == a + b; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+}
+
+#[test]
+fn constexpr_conditions_use_constant_context_and_allow_absent_else() {
+    for (selected, params, expected) in [
+        ("constant_context", "", "1"),
+        ("discarded_without_else", "int32 value", "value"),
+    ] {
+        let project = Project::with_fixture("instances.cpp", selected, TEMPLATE_INSTANCE_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        assert!(import.export().reachable_functions.is_empty());
+        let source = format!(
+            "verifying \"instances.cpp\"; int32 {selected}({params}) {{ ensures result == {expected}; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+    let project = Project::with_fixture("instances.cpp", "runtime_if", TEMPLATE_INSTANCE_SOURCE);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(error.contains("unsupported expression"), "{error}");
+    assert!(!project.artifact().exists());
+}
+
+#[test]
+fn substituted_boolean_template_arguments_are_typed_values() {
+    let project = Project::with_fixture("instances.cpp", "get_flag", TEMPLATE_INSTANCE_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "instances.cpp";
+int32 flag__bool_true() { ensures result == 1; } by { execute(); simp(); }
+int32 get_flag() { ensures result == 1; } by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+}
+
+#[test]
+fn unsupported_template_arguments_and_dependent_selection_fail_explicitly() {
+    for (selected, source, diagnostic) in [
+        (
+            "call",
+            "template<int N> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<1>(value); return result; }",
+            "template arguments require Boolean",
+        ),
+        (
+            "call",
+            "template<class T> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<int*>(value); return result; }",
+            "template type arguments require",
+        ),
+        (
+            "call",
+            "template<class... T> int f(int value) noexcept { return value; } int call(int value) noexcept { int result = f<int>(value); return result; }",
+            "template arguments require Boolean",
+        ),
+        (
+            "f",
+            "template<bool B> int f(int value) noexcept { return value; }",
+            "dependent template pattern",
+        ),
+    ] {
+        let project = Project::with_fixture("unsupported.cpp", selected, source);
+        let error = refresh_import(&project.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!project.artifact().exists());
+    }
+}
+
+#[test]
+fn instantiated_fee_fast_paths_preserve_both_rounding_expressions() {
+    for (fee, at_size, size) in [
+        (0u64, 1u64, 3u64),
+        (7, 2, 3),
+        (8, 2, 4),
+        (8589934591, 2147483647, 2147483647),
+    ] {
+        for (selected, instance, expected) in [
+            ("fee_down", "fee_fast_path__bool_true", fee * at_size / size),
+            (
+                "fee_up",
+                "fee_fast_path__bool_false",
+                (fee * at_size).div_ceil(size),
+            ),
+        ] {
+            let project =
+                Project::with_fixture("instances.cpp", selected, TEMPLATE_INSTANCE_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let contract = format!(
+                "requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}u64;"
+            );
+            let source = format!(
+                "verifying \"instances.cpp\"; uint64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }} uint64 {selected}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &source);
+            let hostile = source.replace(
+                &format!("result == {expected}u64"),
+                &format!("result == {}u64", expected + 1),
+            );
+            fs::write(project.directory.join("bad.click"), &hostile).unwrap();
+            let parsed =
+                read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+    }
+}
+
+#[test]
+fn class_template_instances_remain_explicitly_unsupported() {
+    let source = "template<class T> struct Box { int value; }; int call(const Box<int>& box) noexcept { return box.value; }";
+    let project = Project::with_fixture("unsupported.cpp", "call", source);
+    let error = refresh_import(&project.config()).unwrap_err();
+    assert!(
+        error.contains("class template instances are unsupported"),
+        "{error}"
+    );
+    assert!(!project.artifact().exists());
 }

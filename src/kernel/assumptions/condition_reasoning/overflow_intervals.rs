@@ -262,9 +262,12 @@ impl PureFactContext {
                 self.signed_addition_interval_nonoverflow(left, right)
             }
             ConditionTerm::Bitvector64SignedAddOverflows(left, right) => {
+                // An unbounded int64 still has its full-width value range.
+                // This discharges x + zero (including a returned zero) without
+                // inventing tighter bounds or assuming the inner operations fit.
                 crate::kernel::primitives::int64_add_interval_fits(
-                    self.int64_interval(left),
-                    self.int64_interval(right),
+                    Some(self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX))),
+                    Some(self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX))),
                 )
                 .then_some(false)
             }
@@ -277,8 +280,8 @@ impl PureFactContext {
                     return Some(false);
                 }
                 crate::kernel::primitives::int64_subtract_interval_fits(
-                    self.int64_interval(left),
-                    self.int64_interval(right),
+                    Some(self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX))),
+                    Some(self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX))),
                 )
                 .then_some(false)
             }
@@ -1960,5 +1963,140 @@ mod tests {
                 true,
             );
         assert_eq!(int32_bounded.decide(&add), None);
+    }
+    #[test]
+    fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
+        let x = Bitvector32Term::Variable(Variable(96_001));
+        let zero = Bitvector32Term::Variable(Variable(96_002));
+        let constant = Bitvector32Term::Int64Constant;
+        let mut baseline_work = None;
+        for population in [8u64, 32, 128, 512] {
+            let mut facts = PureFactContext::new()
+                .assume_condition(ConditionTerm::int64_equal(zero.clone(), constant(0)), true);
+            for i in 0..population {
+                facts = facts.assume_condition(
+                    ConditionTerm::int64_signed_less_equal(
+                        Bitvector32Term::Variable(Variable(97_000 + i)),
+                        constant(100),
+                    ),
+                    true,
+                );
+            }
+            let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
+                [
+                    facts.decide(&ConditionTerm::int64_signed_add_overflows(
+                        x.clone(),
+                        zero.clone(),
+                    )),
+                    facts.decide(&ConditionTerm::int64_signed_add_overflows(
+                        zero.clone(),
+                        x.clone(),
+                    )),
+                    facts.decide(&ConditionTerm::int64_signed_subtract_overflows(
+                        x.clone(),
+                        zero.clone(),
+                    )),
+                    facts.decide(&ConditionTerm::int64_equal(
+                        Bitvector32Term::int64_add(x.clone(), zero.clone()),
+                        x.clone(),
+                    )),
+                    facts.decide(&ConditionTerm::int64_equal(
+                        Bitvector32Term::int64_subtract(x.clone(), zero.clone()),
+                        x.clone(),
+                    )),
+                ]
+            });
+            assert_eq!(
+                answers,
+                [
+                    Some(false),
+                    Some(false),
+                    Some(false),
+                    Some(true),
+                    Some(true)
+                ]
+            );
+            assert!(work > 0);
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_equal(
+                    Bitvector32Term::int64_add(x.clone(), constant(1)),
+                    x.clone()
+                )),
+                None
+            );
+            if let Some(baseline) = baseline_work {
+                assert_eq!(work, baseline);
+            } else {
+                baseline_work = Some(work);
+            }
+            // An unknown nonzero addend/subtrahend can still overflow.
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_signed_add_overflows(
+                    x.clone(),
+                    constant(1)
+                )),
+                None
+            );
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_signed_subtract_overflows(
+                    x.clone(),
+                    constant(1)
+                )),
+                None
+            );
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_signed_subtract_overflows(
+                    zero.clone(),
+                    x.clone()
+                )),
+                None
+            );
+        }
+        for edge in [i64::MIN, i64::MAX] {
+            let facts = PureFactContext::new()
+                .assume_condition(ConditionTerm::int64_equal(zero.clone(), constant(0)), true);
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_signed_add_overflows(
+                    constant(edge),
+                    zero.clone()
+                )),
+                Some(false)
+            );
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_signed_subtract_overflows(
+                    constant(edge),
+                    zero.clone()
+                )),
+                Some(false)
+            );
+        }
+    }
+    #[test]
+    fn int64_zero_identity_chains_scale_with_the_queried_term() {
+        let x = Bitvector32Term::Variable(Variable(98_001));
+        let zero = Bitvector32Term::Variable(Variable(98_002));
+        let facts = PureFactContext::new().assume_condition(
+            ConditionTerm::int64_equal(zero.clone(), Bitvector32Term::Int64Constant(0)),
+            true,
+        );
+        let mut previous = None;
+        for depth in [8usize, 32, 128, 512] {
+            let mut term = x.clone();
+            for _ in 0..depth {
+                term = Bitvector32Term::int64_add(term, zero.clone());
+            }
+            let query = ConditionTerm::int64_equal(term, x.clone());
+            let (answer, work) =
+                crate::instrumentation::measure_deterministic_work(|| facts.decide(&query));
+            assert_eq!(answer, Some(true));
+            assert!(work > 0);
+            if let Some((old_depth, old_work)) = previous {
+                assert!(
+                    work <= old_work * depth / old_depth + 32,
+                    "{depth}: {work}, previous {old_work}"
+                );
+            }
+            previous = Some((depth, work));
+        }
     }
 }

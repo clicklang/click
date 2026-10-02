@@ -339,6 +339,19 @@ impl PureFactContext {
             _ => None,
         };
         if let Some((left, right, operator)) = wide_comparison {
+            if operator == 8 {
+                let left_base = self.int64_additive_identity_base(left);
+                let right_base = self.int64_additive_identity_base(right);
+                if (!std::ptr::eq(left_base, left.as_ref())
+                    || !std::ptr::eq(right_base, right.as_ref()))
+                    && let Some(answer) = self.decide(&ConditionTerm::int64_equal(
+                        left_base.clone(),
+                        right_base.clone(),
+                    ))
+                {
+                    return Some(answer);
+                }
+            }
             let left_constant = self.wide_constant_from_equalities(left);
             let right_constant = self.wide_constant_from_equalities(right);
             // A constant outside the queried operand's signed interval cannot
@@ -1147,6 +1160,35 @@ impl PureFactContext {
             }
         }
         None
+    }
+
+    /// Strip signed additive identities through borrowed operands. A chain of
+    /// zeros costs one indexed query per node and is cloned only after the
+    /// walk, rather than cloning every remaining subtree at every step.
+    fn int64_additive_identity_base<'a>(
+        &self,
+        mut term: &'a Bitvector32Term,
+    ) -> &'a Bitvector32Term {
+        loop {
+            term = match term {
+                Bitvector32Term::Int64Add(a, b)
+                    if self.wide_constant_from_equalities(b) == Some(0) =>
+                {
+                    a
+                }
+                Bitvector32Term::Int64Add(a, b)
+                    if self.wide_constant_from_equalities(a) == Some(0) =>
+                {
+                    b
+                }
+                Bitvector32Term::Int64Subtract(a, b)
+                    if self.wide_constant_from_equalities(b) == Some(0) =>
+                {
+                    a
+                }
+                _ => return term,
+            };
+        }
     }
 
     pub(in crate::kernel) fn wide_constant_from_equalities(
