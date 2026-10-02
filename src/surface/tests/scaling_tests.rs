@@ -1352,6 +1352,233 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
     }
 }
 
+/// One loadability goal beside growing numbers of loadability facts about
+/// other objects. Source selection reads the goal's own block from the
+/// kernel's index, so it examines the same candidates at every size; a scan
+/// of the whole family visited every unrelated fact and tried each one.
+#[test]
+fn loadable_candidate_selection_ignores_facts_about_other_objects() {
+    use crate::kernel::{
+        Bitvector32Term, CMemory, Pointer, PointerOffsetTerm, Proposition, PureFactContext,
+        Variable,
+    };
+    use crate::surface::planning::proposition_search::{
+        PropositionSearch, candidate_visits, reset_candidate_visits,
+    };
+
+    let memory = CMemory::new();
+    let at = |block: &str, element: u32| {
+        Pointer {
+            block: block.into(),
+            offset: PointerOffsetTerm::Variable(Variable(450_000)),
+        }
+        .offset_by_bytes(4 * element)
+    };
+    let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
+        memory: memory.clone(),
+        base,
+        bytes: Bitvector32Term::Constant(bytes),
+    };
+    // (sources stated about the goal's object, goal, premises the
+    // certificate must cite; none when the goal must stay unproved)
+    let cases = [
+        (
+            "one covering range",
+            vec![loadable(at("goal", 0), 16)],
+            loadable(at("goal", 1), 4),
+            Some(1),
+        ),
+        (
+            "two adjacent ranges",
+            vec![loadable(at("goal", 0), 8), loadable(at("goal", 2), 8)],
+            loadable(at("goal", 0), 16),
+            Some(2),
+        ),
+        (
+            "a gap between ranges",
+            vec![loadable(at("goal", 0), 8), loadable(at("goal", 3), 4)],
+            loadable(at("goal", 0), 16),
+            None,
+        ),
+    ];
+    for (name, sources, goal, cited) in cases {
+        let samples = [16usize, 32, 64, 128]
+            .into_iter()
+            .map(|unrelated| {
+                let mut context = PureFactContext::new();
+                for index in 0..unrelated {
+                    // The same shape as a real source, about another object.
+                    context =
+                        context.assume_proposition(loadable(at(&format!("other{index}"), 0), 16));
+                }
+                for source in &sources {
+                    context = context.assume_proposition(source.clone());
+                }
+                reset_candidate_visits();
+                let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.derive_atomic_proposition(&goal)
+                });
+                match cited {
+                    Some(cited) => {
+                        let derivation =
+                            derivation.unwrap_or_else(|| panic!("{name}: goal not derived"));
+                        assert_eq!(
+                            derivation.context_premises().len(),
+                            cited,
+                            "{name}: the certificate names its source facts"
+                        );
+                    }
+                    None => assert!(derivation.is_none(), "{name}: goal derived"),
+                }
+                (unrelated, candidate_visits(), work)
+            })
+            .collect::<Vec<_>>();
+        for pair in samples.windows(2) {
+            assert_eq!(
+                pair[0].1, pair[1].1,
+                "{name}: candidate visits grew with unrelated facts: {samples:?}"
+            );
+            assert!(
+                pair[1].2 <= pair[0].2.saturating_mul(3),
+                "{name}: derivation work is superlinear: {samples:?}"
+            );
+        }
+        assert!(samples[0].1 <= 2 * sources.len(), "{name}: {samples:?}");
+    }
+
+    // Unrelated ranges of the goal's own block are candidates, but only as
+    // single sources: a goal no pair concatenates to is refused without
+    // trying every pair of them.
+    let samples = [16u32, 32, 64, 128]
+        .into_iter()
+        .map(|unrelated| {
+            let mut context = PureFactContext::new()
+                .assume_proposition(loadable(at("goal", 0), 8))
+                .assume_proposition(loadable(at("goal", 3), 4));
+            for index in 0..unrelated {
+                context = context.assume_proposition(loadable(at("goal", 1_000 + 8 * index), 4));
+            }
+            let goal = loadable(at("goal", 0), 16);
+            let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.derive_atomic_proposition(&goal)
+            });
+            assert!(derivation.is_none());
+            (unrelated, work)
+        })
+        .collect::<Vec<_>>();
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1.saturating_mul(3),
+            "same-block refusal is superlinear: {samples:?}"
+        );
+    }
+}
+
+/// Read-defined and separation goals try the sources indexed for the goal
+/// before the rest of their family: a goal those sources justify examines
+/// the same candidates however many unrelated facts of the family exist.
+#[test]
+fn read_defined_and_separation_selection_try_indexed_sources_first() {
+    use crate::kernel::{
+        Bitvector32Term, CMemory, CMemoryRange, CResource, CType, ConditionTerm, Pointer,
+        PointerOffsetTerm, Proposition, PureFactContext, Variable,
+    };
+    use crate::surface::planning::proposition_search::{
+        PropositionSearch, candidate_visits, reset_candidate_visits,
+    };
+
+    let memory = CMemory::new().with_block("goal", 64);
+    let read_defined = |pointer: Pointer| Proposition::CMemoryReadDefined {
+        memory: memory.clone(),
+        pointer,
+        value_type: CType::Int32,
+    };
+    let at = |block: String, variable: u64| Pointer {
+        block: block.as_str().into(),
+        offset: PointerOffsetTerm::Variable(Variable(variable)),
+    };
+    let range = |base: Pointer, start: u32, end: u32| {
+        CResource::Memory(CMemoryRange::new(
+            base,
+            Bitvector32Term::Constant(start),
+            Bitvector32Term::Constant(end),
+        ))
+    };
+    let separate =
+        |block: String, variable: u64, start: u32, end: u32| Proposition::CResourceSeparate {
+            left: range(at(block.clone(), variable), start, end),
+            right: range(at(block, variable + 1), start, end),
+        };
+    let address = Pointer {
+        block: "goal".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let alias = Pointer::symbolic(Variable(460_000));
+    let cases: [(
+        &str,
+        Vec<Proposition>,
+        Proposition,
+        &dyn Fn(usize) -> Proposition,
+    ); 2] = [
+        (
+            "a read defined at an alias",
+            vec![
+                read_defined(address.clone()),
+                Proposition::ConditionIs(
+                    ConditionTerm::pointer_equal(alias.clone(), address),
+                    true,
+                ),
+            ],
+            read_defined(alias),
+            &|index| {
+                read_defined(Pointer {
+                    block: format!("other{index}").as_str().into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                })
+            },
+        ),
+        (
+            "a separation of contained ranges",
+            vec![separate("goal".to_string(), 461_000, 0, 4)],
+            separate("goal".to_string(), 461_000, 1, 2),
+            &|index| separate(format!("other{index}"), 462_000 + 2 * index as u64, 0, 4),
+        ),
+    ];
+    for (name, sources, goal, unrelated_fact) in cases {
+        let samples = [16usize, 32, 64, 128]
+            .into_iter()
+            .map(|unrelated| {
+                let mut context = PureFactContext::new();
+                for index in 0..unrelated {
+                    context = context.assume_proposition(unrelated_fact(index));
+                }
+                for source in &sources {
+                    context = context.assume_proposition(source.clone());
+                }
+                reset_candidate_visits();
+                let derivation = context
+                    .derive_atomic_proposition(&goal)
+                    .unwrap_or_else(|| panic!("{name}: goal not derived"));
+                assert!(
+                    derivation
+                        .context_premises()
+                        .iter()
+                        .all(|premise| sources.contains(premise)),
+                    "{name}: the certificate cites an unrelated fact"
+                );
+                (unrelated, candidate_visits())
+            })
+            .collect::<Vec<_>>();
+        for pair in samples.windows(2) {
+            assert_eq!(
+                pair[0].1, pair[1].1,
+                "{name}: candidate visits grew with unrelated facts: {samples:?}"
+            );
+        }
+        assert!(samples[0].1 >= 1, "{name}: the indexed route was not taken");
+    }
+}
+
 #[test]
 fn scaling_assertion_rejects_a_quadratic_curve() {
     let quadratic = [16, 32, 64, 128]
