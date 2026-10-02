@@ -116,6 +116,7 @@ pub(in crate::kernel) struct SymbolicPopulationCount {
 /// pointer or family named by that one operation.
 #[derive(Clone, Eq, Ord, PartialEq, PartialOrd)]
 enum CEvent {
+    Control(CResourceFact),
     Pending(PointerBlock),
     Resolve(PointerBlock, Option<PointerBlock>),
     Created(PointerBlock),
@@ -648,6 +649,93 @@ impl CreationEvents {
                     .authority
                     .holder_owns_authority(self.0.invocation, population)
             })
+    }
+
+    /// Attach the current checked wrapper to existing imported authorities.
+    /// This changes no identity, cardinality, custody, or creation rights.
+    pub(in crate::kernel) fn checked_current_control_wrapper(
+        &self,
+        state: &CState,
+        selected: &CResourceFact,
+        definition: &CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        if state.population_effects.creation.as_ref() != Some(self) {
+            return Err("control registration requires the current creation ledger".into());
+        }
+        let (children, _) =
+            state.checked_authority_wrapper_body(selected, definition, assumptions)?;
+        let descriptions = children
+            .iter()
+            .filter_map(|child| match child.resource() {
+                CResource::PopulationAuthority(description) => Some(description.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let mut changed = false;
+        for description in &descriptions {
+            if let Some(import) = self.0.opaque_imports.get(description) {
+                changed |= !import
+                    .control
+                    .as_ref()
+                    .is_some_and(|(fact, body)| fact == selected && body.as_ref() == definition);
+            }
+        }
+        if !changed {
+            return Ok(self.clone());
+        }
+        let next = self.memoized_c_event(CEvent::Control(selected.clone()), || {
+            let mut imports = self.0.opaque_imports.clone();
+            let body = Arc::new(definition.clone());
+            for description in &descriptions {
+                if let Some(import) = imports.get(description).cloned() {
+                    imports.insert(
+                        description.clone(),
+                        OpaqueImport {
+                            control: Some((selected.clone(), body.clone())),
+                            ..import
+                        },
+                    );
+                }
+            }
+            Self(Arc::new(Root {
+                identity: fresh_identity(),
+                entry_call: OnceLock::new(),
+                proof_entry: OnceLock::new(),
+                transfers: Mutex::new(BTreeMap::new()),
+                returns: Mutex::new(BTreeMap::new()),
+                c_events: Mutex::new(BTreeMap::new()),
+                invocation: self.0.invocation,
+                opaque_actor: self.0.opaque_actor,
+                pending: self.0.pending.clone(),
+                creators: self.0.creators.clone(),
+                anchors: self.0.anchors.clone(),
+                authority: self.0.authority.clone(),
+                scopes: self.0.scopes.clone(),
+                exact_members: self.0.exact_members.clone(),
+                symbolic_batches: self.0.symbolic_batches.clone(),
+                symbolic_holders: self.0.symbolic_holders.clone(),
+                tainted: self.0.tainted.clone(),
+                opaque_imports: imports,
+                opaque_holders: self.0.opaque_holders.clone(),
+                opaque_transfers: Mutex::new(BTreeMap::new()),
+                opaque_entry_counts: Mutex::new(BTreeMap::new()),
+                empty_populations: self.0.empty_populations.clone(),
+            }))
+        });
+        // The cache key names one explicit resource. A different declaration
+        // with that name must not inherit the first declaration's evidence.
+        for description in descriptions {
+            if let Some(import) = next.0.opaque_imports.get(&description)
+                && !import
+                    .control
+                    .as_ref()
+                    .is_some_and(|(fact, body)| fact == selected && body.as_ref() == definition)
+            {
+                return Err("control registration changed its checked declaration".into());
+            }
+        }
+        Ok(next)
     }
 
     /// Count shorthand uses the same checked body opening as explicit

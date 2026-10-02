@@ -26,6 +26,11 @@ resource control(pool: struct pool*) {
     fact pool->checked_out == count(item(pool, _));
     fact pool->capacity == pool->checked_out + count(slot(pool));
 }
+predicate valid_pool(pool: struct pool*) {
+    0 <= pool->checked_out and
+    pool->checked_out == count(item(pool, _)) and
+    pool->capacity == pool->checked_out + count(slot(pool))
+}
 verifying "pool_init_control.c";
 void initialize(struct pool* pool, int32 amount) {
     consumes storage(pool);
@@ -35,12 +40,13 @@ void initialize(struct pool* pool, int32 amount) {
     produces control(pool);
     produces amount of slot(pool);
     ensures pool->capacity == amount;
+    ensures valid_pool(pool);
 } by {
     unfold(storage(pool));
     step(); step();
     fold(amount of slot(pool));
     fold(control(pool));
-    execute(); simp();
+    execute(); unfold(valid_pool); simp();
 }
 void forward(struct pool* pool) {
     consumes storage(pool);
@@ -49,7 +55,9 @@ void forward(struct pool* pool) {
     produces control(pool);
     produces 2 of slot(pool);
     ensures pool->capacity == 2;
-} by { execute(); simp(); }
+    ensures valid_pool(pool);
+    ensures count(slot(pool)) == 2;
+} by { execute(); unfold(valid_pool); simp(); }
 ```
 
 ```expect

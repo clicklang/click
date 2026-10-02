@@ -5438,6 +5438,23 @@ impl CState {
         Ok(next)
     }
 
+    pub(crate) fn with_checked_current_control_wrapper(
+        &self,
+        selected: &CResourceFact,
+        definition: &super::super::CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        let events = self
+            .population_effects
+            .creation
+            .as_ref()
+            .ok_or("control registration requires authority mode")?
+            .checked_current_control_wrapper(self, selected, definition, assumptions)?;
+        let mut next = self.clone();
+        Arc::make_mut(&mut next.population_effects).creation = Some(events);
+        Ok(next)
+    }
+
     /// Contract lowering may name an established real population or the one
     /// opaque population explicitly imported from a standalone proof's entry.
     pub(crate) fn recognizes_population_authority(

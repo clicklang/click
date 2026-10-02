@@ -296,16 +296,10 @@ populations; zero has no member rights. Symbolic batches forwarded through
 another opaque helper still need support. These tests do not complete the
 original bounded-pool migration.
 
-The attempted original sidecar exposed two further dependencies before the
+The attempted original sidecar exposed the following dependency before the
 pipeline can migrate. Keep the original sidecar on its existing verification
 path until these regressions pass:
 
-- **Current control observations after wrapper replacement.** Initialize from
-  an owned empty `pool_storage(pool)`, return `pool_control(pool)` containing
-  the same two authorities, and prove the original `valid_pool(pool)` predicate
-  over their current counts. Authenticate the current wrapper rather than
-  using its entry wrapper or dropping count-dependent claims. Preserve the
-  distinction between historical and current observations.
 - **Multiple identified members under imported authority.** A pipeline whose
   pool is an external argument checks out two different private objects and
   returns each. The current opaque wildcard import represents one selected
