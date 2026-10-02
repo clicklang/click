@@ -29,3 +29,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Loop `break` exits that reach the same state in a different representation do not join](loop-exits-equal-up-to-representation-do-not-join.md)
 - [Connected-fact selection indexes the context once per context, not incrementally](connected-fact-selection-indexes-the-context-per-derivation.md)
 - [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
+- [A loop proof's path certificates cost uncounted work that grows faster than the proof](loop-proof-path-certificates-cost-uncounted-superlinear-work.md)
