@@ -188,8 +188,15 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
         read_verifying_sources(&path, &source).expect("the unchanged insert C bundle should load");
     let project = read_click_project_at_root(&path, &source, &root.join("examples"))
         .expect("the insert frontier should resolve the shared model");
-    let error = click::surface::verify_c0_project(&project, &source_refs(&c_sources))
-        .expect_err("the insert proof frontier is deliberately unfinished");
+    // Like every other verification here, this runs on a harness verifier
+    // thread: the proof is deep enough to overflow the default test stack.
+    let error = limits::spawn(
+        "frontier verifier",
+        "click-frontier".to_string(),
+        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+    )
+    .unwrap_or_else(|error| panic!("{error}"))
+    .expect_err("the insert proof frontier is deliberately unfinished");
     // The uncle-red `continue`s are complete on every frame combination,
     // and six of the black-uncle case-3 rotation `break`s on the
     // left-left frames. The first unfinished path is the case-3 rotation
