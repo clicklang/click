@@ -4,10 +4,12 @@ This is the consumer inventory for `issues/authority-migration.md`, not a specif
 
 The authority-mode companion in `examples/bounded-pool-authority` references
 unchanged C in the original project. It verifies initialization, checkout,
-return, cleanup, and shrink, plus the original zero-capacity, two-object, and
+return, cleanup, growth, and shrink, plus the original zero-capacity, two-object, and
 resize pipelines. Shrink consumes a symbolic owned slot quantity under the
 control's authority while preserving the global remainder and checked-out
-members. Growth and two-pool transfer are not yet migrated.
+members. Growth produces only its requested slot quantity under the existing
+control, preserves both populations' old members, and checks signed capacity
+bounds. Two-pool transfer is not yet migrated.
 
 ## Discovery boundary
 

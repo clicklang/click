@@ -1150,53 +1150,58 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
 }
 
 #[test]
-fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
-    let quantity = Bitvector32Term::Variable(Variable(940_131));
+fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() {
     let description = member_description(PointerBlock::ExternalArgument);
-    let assumptions = PureFactContext::new();
-    let mut work = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        let mut entry = CreationEvents::new();
-        for index in 0..size {
-            let unrelated = ResourceDescription::new(
-                format!("unrelated-{index}"),
-                description.arguments().to_vec().into(),
-                description.schema().clone(),
-            );
-            entry = entry
-                .import_opaque_contract_population_inner(
-                    &unrelated,
-                    0,
-                    Some(Bitvector32Term::Constant(0)),
-                    None,
-                    None,
-                )
-                .unwrap();
-        }
-        entry = entry
-            .import_opaque_contract_population_inner(
-                &description,
-                0,
-                Some(quantity.clone()),
-                Some(quantity.clone()),
-                None,
-            )
-            .unwrap();
-        let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
-            let child = entry.enter_call();
-            let held = child
-                .transfer_call_fact(&entry, &child, &description, true)
-                .unwrap()
-                .transfer_call_fact_quantity(
-                    &entry,
-                    &child,
-                    &description,
-                    false,
-                    &quantity,
-                    &assumptions,
-                )
-                .unwrap();
-            held.transfer_call_fact_quantity(
+    let entry_count = Bitvector32Term::Variable(Variable(940_132));
+    let quantity = Bitvector32Term::Variable(Variable(940_133));
+    let assumptions = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_add_overflows(entry_count.clone(), quantity.clone()),
+            false,
+        );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(entry_count.clone()),
+            None,
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let authorized = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    let (born, _) = authorized
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            true,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap();
+    assert!(born.owns_population_member(&description));
+    let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+    assert_eq!(born.transfer_call_fact_quantity(
+        &child, &entry, &description, false, &wrong, &assumptions,
+    ).unwrap_err(), CreationRefusal::InvalidQuantity);
+    let returned = born
+        .transfer_call_fact_quantity(&child, &entry, &description, false, &quantity, &assumptions)
+        .unwrap();
+    assert!(!returned.owns_population_member(&description));
+    assert!(
+        returned
+            .return_to(&entry)
+            .owns_population_member(&description)
+    );
+    assert_eq!(
+        returned
+            .transfer_call_fact_quantity(
                 &child,
                 &entry,
                 &description,
@@ -1204,16 +1209,113 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                 &quantity,
                 &assumptions,
             )
-            .unwrap()
-            .transfer_call_fact(&child, &entry, &description, true)
-            .unwrap()
-            .finish_call(&entry)
-            .unwrap()
-        });
-        assert!(returned.owns_population_member(&description));
-        work.push(measured);
+            .unwrap_err(),
+        CreationRefusal::MissingMembers
+    );
+    assert!(matches!(
+        returned.finish_call(&entry),
+        Err(CreationRefusal::OutstandingOwnership)
+    ));
+    let finished = returned
+        .transfer_call_fact(&child, &entry, &description, true)
+        .unwrap()
+        .finish_call(&entry)
+        .unwrap();
+    assert!(finished.owns_population_member(&description));
+    assert!(finished.owns_population_authority(&description));
+    let observed = finished.observe_symbolic(&description).unwrap();
+    assert_eq!(observed.entry_count, entry_count);
+    assert_eq!(observed.symbolic_delta, Some((true, quantity)));
+}
+
+#[test]
+fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
+    let quantity = Bitvector32Term::Variable(Variable(940_131));
+    let description = member_description(PointerBlock::ExternalArgument);
+    let assumptions = PureFactContext::new().assume_condition(
+        ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+        true,
+    );
+    for born_batch in [false, true] {
+        let mut work = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut entry = CreationEvents::new();
+            for index in 0..size {
+                let unrelated = ResourceDescription::new(
+                    format!("unrelated-{index}"),
+                    description.arguments().to_vec().into(),
+                    description.schema().clone(),
+                );
+                entry = entry
+                    .import_opaque_contract_population_inner(
+                        &unrelated,
+                        0,
+                        Some(Bitvector32Term::Constant(0)),
+                        None,
+                        None,
+                    )
+                    .unwrap();
+            }
+            entry = entry
+                .import_opaque_contract_population_inner(
+                    &description,
+                    0,
+                    Some(if born_batch {
+                        Bitvector32Term::Constant(0)
+                    } else {
+                        quantity.clone()
+                    }),
+                    (!born_batch).then(|| quantity.clone()),
+                    None,
+                )
+                .unwrap();
+            let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                let child = entry.enter_call();
+                let authority = child
+                    .transfer_call_fact(&entry, &child, &description, true)
+                    .unwrap();
+                let held = if born_batch {
+                    authority
+                        .checked_member_exchange_quantity(
+                            &PointerBlock::ExternalArgument,
+                            &description,
+                            true,
+                            &quantity,
+                            &assumptions,
+                        )
+                        .unwrap()
+                        .0
+                } else {
+                    authority
+                        .transfer_call_fact_quantity(
+                            &entry,
+                            &child,
+                            &description,
+                            false,
+                            &quantity,
+                            &assumptions,
+                        )
+                        .unwrap()
+                };
+                held.transfer_call_fact_quantity(
+                    &child,
+                    &entry,
+                    &description,
+                    false,
+                    &quantity,
+                    &assumptions,
+                )
+                .unwrap()
+                .transfer_call_fact(&child, &entry, &description, true)
+                .unwrap()
+                .finish_call(&entry)
+                .unwrap()
+            });
+            assert!(returned.owns_population_member(&description));
+            work.push(measured);
+        }
+        assert!(work[3] <= work[0] * 2 + 32, "born={born_batch}: {work:?}");
     }
-    assert!(work[3] <= work[0] * 2 + 32, "{work:?}");
 }
 
 #[test]

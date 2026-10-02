@@ -150,6 +150,140 @@ theorem pool_shrink_conservation(capacity: int32, used: int32, available: int32,
         assumption();
     }
 }
+theorem pool_grow_slots_defined(capacity: int32, used: int32, available: int32, amount: int32) {
+    requires 0 <= used;
+    requires 0 <= available;
+    requires 0 <= amount;
+    requires capacity == used + available;
+    requires defined(used + available);
+    requires defined(capacity + amount);
+    ensures defined(available + amount) by {
+        apply(int32_add_to_integer(used, available)) using { defined(used + available); }
+        have to_integer(capacity) == to_integer(used) + to_integer(available) by {
+            rewrite(capacity == used + available); assumption();
+        }
+        apply(int32_add_to_integer(capacity, amount)) using { defined(capacity + amount); }
+        have capacity + amount <= 2147483647 by simp;
+        have to_integer(capacity + amount) <= 2147483647 by {
+            apply(int32_less_equal_to_integer(capacity + amount, 2147483647)) using { capacity + amount <= 2147483647; }
+            simp();
+        }
+        have 0 <= to_integer(used) by {
+            apply(int32_less_equal_to_integer(0, used)) using { 0 <= used; } simp();
+        }
+        have to_integer(available) + to_integer(amount) <= 2147483647 by {
+            arithmetic_certificate {
+                premise 0: to_integer(capacity) == to_integer(used) + to_integer(available) => to_integer(capacity) == to_integer(used) + to_integer(available);
+                scale 0 by -1 => -to_integer(capacity) == -to_integer(used) - to_integer(available);
+                eq_to_le 1 => -to_integer(capacity) <= -to_integer(used) - to_integer(available);
+                premise 1: to_integer(capacity + amount) == to_integer(capacity) + to_integer(amount) => to_integer(capacity + amount) == to_integer(capacity) + to_integer(amount);
+                scale 3 by -1 => -to_integer(capacity + amount) == -to_integer(capacity) - to_integer(amount);
+                eq_to_le 4 => -to_integer(capacity + amount) <= -to_integer(capacity) - to_integer(amount);
+                add 2, 5 => -to_integer(capacity + amount) <= -to_integer(used) - to_integer(available) - to_integer(amount);
+                premise 2: to_integer(capacity + amount) <= 2147483647 => to_integer(capacity + amount) <= 2147483647;
+                add 6, 7 => 0 <= 2147483647 - to_integer(used) - to_integer(available) - to_integer(amount);
+                premise 3: 0 <= to_integer(used) => 0 <= to_integer(used);
+                add 8, 9 => 0 <= 2147483647 - to_integer(available) - to_integer(amount);
+                conclusion 10;
+            }
+        }
+        have 0 <= to_integer(available) by {
+            apply(int32_less_equal_to_integer(0, available)) using { 0 <= available; } simp();
+        }
+        have 0 <= to_integer(amount) by {
+            apply(int32_less_equal_to_integer(0, amount)) using { 0 <= amount; } simp();
+        }
+        have to_integer(available) + to_integer(amount) >= -2147483648 by {
+            arithmetic() using { 0 <= to_integer(available); 0 <= to_integer(amount); }
+        }
+        apply(int32_add_defined_by_integer_bounds(available, amount)) using {
+            to_integer(available) + to_integer(amount) >= -2147483648;
+            to_integer(available) + to_integer(amount) <= 2147483647;
+        }
+        simp();
+    }
+}
+theorem pool_grow_conservation(capacity: int32, used: int32, available: int32, amount: int32) {
+    requires 0 <= used;
+    requires 0 <= available;
+    requires 0 <= amount;
+    requires capacity == used + available;
+    requires defined(used + available);
+    requires defined(capacity + amount);
+    ensures defined(used + (available + amount)) and
+        capacity + amount == used + (available + amount) by {
+        apply(pool_grow_slots_defined(capacity, used, available, amount)) using {
+            0 <= used; 0 <= available; 0 <= amount;
+            capacity == used + available; defined(used + available); defined(capacity + amount);
+        }
+        have defined(available + amount) by simp;
+        apply(int32_add_to_integer(used, available)) using { defined(used + available); }
+        have to_integer(capacity) == to_integer(used) + to_integer(available) by {
+            rewrite(capacity == used + available); assumption();
+        }
+        apply(int32_add_to_integer(capacity, amount)) using { defined(capacity + amount); }
+        apply(int32_add_to_integer(available, amount)) using { defined(available + amount); }
+        have to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount) by {
+            arithmetic_certificate {
+                premise 0: to_integer(capacity) == to_integer(used) + to_integer(available) => to_integer(capacity) == to_integer(used) + to_integer(available);
+                premise 1: to_integer(capacity + amount) == to_integer(capacity) + to_integer(amount) => to_integer(capacity + amount) == to_integer(capacity) + to_integer(amount);
+                add 0, 1 => to_integer(capacity + amount) == to_integer(used) + to_integer(available) + to_integer(amount);
+                premise 2: to_integer(available + amount) == to_integer(available) + to_integer(amount) => to_integer(available + amount) == to_integer(available) + to_integer(amount);
+                scale 3 by -1 => to_integer(available) + to_integer(amount) == to_integer(available + amount);
+                add 2, 4 => to_integer(capacity + amount) == to_integer(used) + to_integer(available + amount);
+                scale 5 by -1 => to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount);
+                conclusion 6;
+            }
+        }
+        have capacity + amount <= 2147483647 by simp;
+        have -2147483648 <= capacity + amount by simp;
+        have to_integer(capacity + amount) <= 2147483647 by {
+            apply(int32_less_equal_to_integer(capacity + amount, 2147483647)) using { capacity + amount <= 2147483647; } simp();
+        }
+        have -2147483648 <= to_integer(capacity + amount) by {
+            apply(int32_less_equal_to_integer(-2147483648, capacity + amount)) using { -2147483648 <= capacity + amount; } simp();
+        }
+        have to_integer(used) + to_integer(available + amount) >= -2147483648 by {
+            arithmetic_certificate {
+                premise 0: to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount) => to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount);
+                scale 0 by -1 => to_integer(capacity + amount) == to_integer(used) + to_integer(available + amount);
+                eq_to_le 1 => to_integer(capacity + amount) <= to_integer(used) + to_integer(available + amount);
+                premise 1: -2147483648 <= to_integer(capacity + amount) => -2147483648 <= to_integer(capacity + amount);
+                add 2, 3 => -2147483648 <= to_integer(used) + to_integer(available + amount);
+                conclusion 4;
+            }
+        }
+        have to_integer(used) + to_integer(available + amount) <= 2147483647 by {
+            arithmetic_certificate {
+                premise 0: to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount) => to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount);
+                eq_to_le 0 => to_integer(used) + to_integer(available + amount) <= to_integer(capacity + amount);
+                premise 1: to_integer(capacity + amount) <= 2147483647 => to_integer(capacity + amount) <= 2147483647;
+                add 1, 2 => to_integer(used) + to_integer(available + amount) <= 2147483647;
+                conclusion 3;
+            }
+        }
+        apply(int32_add_defined_by_integer_bounds(used, available + amount)) using {
+            to_integer(used) + to_integer(available + amount) >= -2147483648;
+            to_integer(used) + to_integer(available + amount) <= 2147483647;
+        }
+        have defined(used + (available + amount)) by simp;
+        apply(int32_add_to_integer(used, available + amount)) using { defined(used + (available + amount)); }
+        have to_integer(capacity + amount) == to_integer(used + (available + amount)) by {
+            arithmetic_certificate {
+                premise 0: to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount) => to_integer(used) + to_integer(available + amount) == to_integer(capacity + amount);
+                scale 0 by -1 => to_integer(capacity + amount) == to_integer(used) + to_integer(available + amount);
+                premise 1: to_integer(used + (available + amount)) == to_integer(used) + to_integer(available + amount) => to_integer(used + (available + amount)) == to_integer(used) + to_integer(available + amount);
+                scale 2 by -1 => to_integer(used) + to_integer(available + amount) == to_integer(used + (available + amount));
+                add 1, 3 => to_integer(capacity + amount) == to_integer(used + (available + amount));
+                conclusion 4;
+            }
+        }
+        apply(int32_equal_of_to_integer(capacity + amount, used + (available + amount))) using {
+            to_integer(capacity + amount) == to_integer(used + (available + amount));
+        }
+        split();
+    }
+}
 predicate valid_pool(pool: struct pool*) {
     0 <= pool->checked_out and
     pool->checked_out == count(pool_object(pool, _)) and
@@ -161,6 +295,7 @@ verifying "../bounded-pool/pool_zero_pipeline.c";
 verifying "../bounded-pool/pool_checkout.c";
 verifying "../bounded-pool/pool_return.c";
 verifying "../bounded-pool/pool_pipeline.c";
+verifying "../bounded-pool/pool_grow.c";
 verifying "../bounded-pool/pool_shrink.c";
 verifying "../bounded-pool/pool_resize_pipeline.c";
 void pool_init(struct pool* pool, int32 capacity) {
@@ -471,5 +606,46 @@ void pool_resize_pipeline(struct pool* pool) {
     have count(pool_object(pool, _)) == 0 by simp;
     fold(pool_control(pool));
     step();
+    execute(); unfold(valid_pool); simp();
+}
+
+void pool_grow(struct pool* pool, int32 amount) {
+    owns pool_control(pool);
+    requires 0 <= amount;
+    requires defined(pool->capacity + amount);
+    produces amount of pool_slot(pool);
+    ensures pool->capacity == old(pool->capacity) + amount;
+    ensures pool->checked_out == old(pool->checked_out);
+    ensures count(pool_slot(pool)) == old(count(pool_slot(pool))) + amount;
+    ensures count(pool_object(pool, _)) == old(count(pool_object(pool, _)));
+    ensures valid_pool(pool);
+} by {
+    open(pool_control(pool)) {
+        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have 0 <= count(pool_slot(pool)) by simp;
+        apply(pool_grow_slots_defined(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
+            0 <= pool->checked_out; 0 <= count(pool_slot(pool)); 0 <= amount;
+            pool->capacity == pool->checked_out + count(pool_slot(pool));
+            defined(pool->checked_out + count(pool_slot(pool))); defined(pool->capacity + amount);
+        }
+        have defined(count(pool_slot(pool)) + amount) by simp;
+        apply(pool_grow_conservation(pool->capacity, pool->checked_out, count(pool_slot(pool)), amount)) using {
+            0 <= pool->checked_out; 0 <= count(pool_slot(pool)); 0 <= amount;
+            pool->capacity == pool->checked_out + count(pool_slot(pool));
+            defined(pool->checked_out + count(pool_slot(pool))); defined(pool->capacity + amount);
+        }
+        step();
+        fold(amount of pool_slot(pool));
+        have pool->capacity == old(pool->capacity) + amount by simp;
+        have pool->checked_out == old(pool->checked_out) by simp;
+        have count(pool_slot(pool)) == old(count(pool_slot(pool))) + amount by simp;
+        have defined(pool->checked_out + count(pool_slot(pool))) by simp;
+        have pool->capacity == pool->checked_out + count(pool_slot(pool)) by {
+            rewrite(pool->capacity == old(pool->capacity) + amount);
+            rewrite(pool->checked_out == old(pool->checked_out));
+            rewrite(count(pool_slot(pool)) == old(count(pool_slot(pool))) + amount);
+            assumption();
+        }
+    }
     execute(); unfold(valid_pool); simp();
 }

@@ -3,7 +3,7 @@
 This is the first project-level authority checkpoint for the bounded pool.
 The sidecar references the C files in `../bounded-pool` directly; no C source
 is copied or changed. It proves initialization, checkout, return,
-shrink, and cleanup, plus the original zero-capacity, two-object, and resize
+growth, shrink, and cleanup, plus the original zero-capacity, two-object, and resize
 pipelines.
 
 `pool_storage(pool)` owns pool memory and both population authorities.
@@ -47,6 +47,13 @@ arithmetic lemmas establish the remaining sum's bounds and conservation;
 to machine values. The unchanged resize pipeline initializes one slot, shrinks
 it through a helper call, and retires both empty populations.
 
-Grow and transfer remain in the original project during migration. Focused
+`pool_grow` produces an arbitrary nonnegative slot quantity while preserving
+checked-out members and all existing slots. Its only arithmetic precondition
+is the original C addition's definedness; the control invariant supplies the
+bounds for both population growth and invariant restoration. Zero growth has
+no member effect. Focused regressions reject capacity overflow and slot
+creation without matching authority.
+
+Transfer remains in the original project during migration. Focused
 authority fixtures already cover several of their prerequisites; integrate
 them in separate green checkpoints.

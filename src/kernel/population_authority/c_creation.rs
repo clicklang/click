@@ -1062,17 +1062,23 @@ impl CreationEvents {
             .opaque_imports
             .get(description)
             .ok_or(CreationRefusal::MissingAuthority)?;
-        // Transfer an unchanged whole symbolic batch; splitting or transporting
-        // a batch after a population update remains outside this checkpoint.
-        let symbolic_batch = !authority_fact && import.entry_symbolic_members.is_some();
+        // Whole symbolic custody can be an unchanged input batch or the exact
+        // batch just born under this authority. Moving it changes only its
+        // holder, never the population delta or an outstanding owner's rights.
+        let symbolic_quantity = if import.symbolic_delta.is_none() {
+            import.entry_symbolic_members.as_ref()
+        } else if import.entry_symbolic_members.is_none() {
+            import
+                .symbolic_delta
+                .as_ref()
+                .filter(|(produce, _)| *produce)
+                .map(|(_, quantity)| quantity)
+        } else {
+            None
+        };
+        let symbolic_batch = !authority_fact && symbolic_quantity.is_some();
         let quantity = if symbolic_batch {
-            if import.symbolic_delta.is_some()
-                || !same_quantity(
-                    import.entry_symbolic_members.as_ref().unwrap(),
-                    quantity,
-                    assumptions,
-                )
-            {
+            if !same_quantity(symbolic_quantity.unwrap(), quantity, assumptions) {
                 return Err(CreationRefusal::InvalidQuantity);
             }
             // Numeric batches are bounded by i32::MAX. This disjoint cache tag

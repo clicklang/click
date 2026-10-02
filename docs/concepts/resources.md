@@ -407,7 +407,15 @@ complete held batch. The equality moves only those existing members;
 it cannot substitute a global count for custody or permit consumption without
 authority. The [field-quantity cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_cleanup_field_quantity.md)
 checks two owned slots passed as the cleanup helper's entry capacity.
-Splitting batches remains separate work.
+A helper that creates a fresh symbolic quantity can return that exact whole
+batch with `produces amount of slot(pool)`. The transfer changes batch custody
+without changing the already-checked population delta or moving preexisting
+members. It requires the actual born quantity and its current holder; returning
+a different quantity or spending the transfer twice is rejected. The
+[growth helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_grow_helper.md)
+checks this boundary with arbitrary entry totals and nonnegative growth. The
+caller establishes the count addition's definedness from the control before
+calling. Splitting batches remains separate work.
 
 For an authority passed into a function, retirement checks both that its
 member custody has been consumed and that its authenticated global count is
@@ -441,8 +449,9 @@ the initializer’s empty-population precondition. Click does not assume zero
 or read an uninitialized field to obtain that count. The
 [initialization fixture](https://github.com/clicklang/click/blob/master/mdtests/population_initialized_cleanup.md)
 checks that the initializer still produces its first reference.
-Standalone symbolic batch exchange is supported, but symbolic nested transfers
-are not yet supported on this migration path.
+Standalone symbolic batch exchange and whole-batch helper custody are supported.
+Composing additional population changes with an already-updated symbolic batch
+remains separate work.
 
 For a field-free family with several arguments, one authority can govern all
 members sharing a concrete storage anchor:

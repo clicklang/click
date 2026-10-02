@@ -426,7 +426,16 @@ source arithmetic lemmas restore the capacity invariant; the general prelude
 bridge `int32_equal_of_to_integer` identifies machine values from equal signed
 mathematical observations. No population or authority rule changed.
 
-The next slices are symbolic growth and then two-pool transfer. Keep additional
+The original symbolic `pool_grow` also verifies. It uses existing population
+birth operations and ordinary source arithmetic certificates, preserving
+checked-out members and all old slots without a new authority rule. Zero
+amounts are admitted; focused regressions reject missing authority and C
+capacity overflow. A helper can return its exact freshly born symbolic batch;
+the checked transfer preserves the count delta and outstanding population.
+Independent kernel tests reject wrong quantities and double transfer, and
+multi-size work checks cover both entry and freshly born batches.
+
+The next slice is two-pool transfer. Keep additional
 batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.
