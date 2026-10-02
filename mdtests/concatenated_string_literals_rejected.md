@@ -4,7 +4,7 @@ Concatenation does not broaden the set of supported literal escapes.
 
 ```c filename=concatenated_string_literals_rejected.c
 uint8* invalid_string() {
-    return "hello" "\x20world";
+    return "hello" "\u0020world";
 }
 ```
 

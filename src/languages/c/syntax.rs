@@ -6838,6 +6838,11 @@ struct Parser {
     string_literal_names: BTreeSet<String>,
     loop_contexts: Vec<CLoopContext>,
     function_declarations: BTreeMap<String, C0FunctionHeader>,
+    /// The most recent attribute that is valid only on `static inline`.
+    static_inline_attribute: &'static str,
+    /// Unnamed parameters seen by `parse_parameters`; a function header
+    /// records how many belong to it.
+    unnamed_parameters: usize,
     function_declaration_lines: BTreeMap<String, Vec<usize>>,
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
@@ -6909,6 +6914,8 @@ pub(crate) struct C0FunctionHeader {
     /// this; calls and address uses are refused because the variable
     /// arguments have no model.
     variadic: bool,
+    /// A parameter has no name, which only a body-less prototype may do.
+    has_unnamed_parameter: bool,
     parameters: Vec<C0Parameter>,
 }
 
@@ -7117,6 +7124,8 @@ impl Parser {
             string_literal_names: BTreeSet::new(),
             loop_contexts: Vec::new(),
             function_declarations: BTreeMap::new(),
+            static_inline_attribute: "always-inline",
+            unnamed_parameters: 0,
             function_declaration_lines: BTreeMap::new(),
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
@@ -7651,6 +7660,44 @@ impl Parser {
         Ok(())
     }
 
+    /// Whether the `static` declaration at the cursor declares a function:
+    /// its first parenthesis outside an attribute directly follows the
+    /// declared name. `static int (*callback)(int);` declares an object, and
+    /// so does anything that reaches `=`, `[`, `;`, or `{` first.
+    fn static_function_declarator_ahead(&self) -> bool {
+        let mut offset = 1;
+        loop {
+            match self.peek_n(offset) {
+                Some(Token::Ident(name)) if name == "__attribute__" => {
+                    offset += 1;
+                    let mut depth = 0usize;
+                    loop {
+                        match self.peek_n(offset) {
+                            Some(Token::LParen) => depth += 1,
+                            Some(Token::RParen) => {
+                                depth = depth.saturating_sub(1);
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            None => return false,
+                            _ => {}
+                        }
+                        offset += 1;
+                    }
+                }
+                Some(Token::LParen) => {
+                    return matches!(self.peek_n(offset - 1), Some(Token::Ident(_)))
+                        && !self.is_type_start_at(offset - 1)
+                        && self.peek_n(offset + 1) != Some(&Token::Star);
+                }
+                Some(Token::Ident(_) | Token::Star) => {}
+                _ => return false,
+            }
+            offset += 1;
+        }
+    }
+
     fn file_static_kernel_name(&self, source_name: &str) -> String {
         format!(
             "{source_name}#file-static:{}",
@@ -8077,15 +8124,11 @@ impl Parser {
                     "inline function definitions require `static inline` or `static __always_inline` in this slice",
                 ));
             }
-            if is_static && !is_inline {
-                return Err(self.error_here(
-                    "file-scope static functions require `static inline` or `static __always_inline` in this slice",
-                ));
-            }
             if has_always_inline_attribute && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if !self.is_type_start() {
                 return Err(self.error_here(format!(
@@ -8095,16 +8138,21 @@ impl Parser {
                         .unwrap_or_else(|| "end of input".to_string())
                 )));
             }
-            let mut header = self.parse_function_header(is_static && is_inline)?;
+            // A `static` function has internal linkage whether or not it is
+            // also `inline`; the two differ only in an optimization hint.
+            let mut header = self.parse_function_header(is_static)?;
             self.consume_function_asm_label(&mut header)?;
             let (has_trailing_always_inline_attribute, suffix_weak, suffix_returns_twice) =
                 self.consume_function_attributes()?;
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
-            if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+            if (has_always_inline_attribute || has_trailing_always_inline_attribute)
+                && !(is_static && is_inline)
+            {
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if self.peek() == Some(&Token::LBrace) {
                 self.reject_variadic_definition(&header)?;
@@ -8183,9 +8231,10 @@ impl Parser {
                 ));
             }
             if has_always_inline_attribute && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if !self.is_type_start() {
                 return Err(self.error_here(format!(
@@ -8202,9 +8251,10 @@ impl Parser {
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
             if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if self.peek() == Some(&Token::LBrace) {
                 self.reject_variadic_definition(&header)?;
@@ -8259,9 +8309,10 @@ impl Parser {
             ));
         }
         if (prefix_inline || suffix_inline) && !internal_linkage {
-            return Err(self.error_here(
-                "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-            ));
+            return Err(self.error_here(format!(
+                "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                self.static_inline_attribute
+            )));
         }
         self.register_function_declaration(&header, true)?;
         if self.peek() != Some(&Token::LBrace) {
@@ -8361,6 +8412,12 @@ impl Parser {
     /// A variadic body would read its variable arguments through `va_arg`,
     /// which has no model. Only the body-less prototype is retained.
     fn reject_variadic_definition(&self, header: &C0FunctionHeader) -> Result<(), C0SyntaxError> {
+        if header.has_unnamed_parameter {
+            return Err(self.error_here(format!(
+                "function definition `{}` has an unnamed parameter; only a body-less prototype may omit parameter names",
+                header.source_name
+            )));
+        }
         if header.variadic {
             return Err(self.error_here(format!(
                 "variadic function definitions (`...`) are not supported in C0; only a body-less prototype of `{}` can be declared",
@@ -8429,7 +8486,9 @@ impl Parser {
         let source_name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
         self.push_scope();
+        let unnamed_before = self.unnamed_parameters;
         let parameters = self.parse_parameters()?;
+        let has_unnamed_parameter = self.unnamed_parameters != unnamed_before;
         let variadic = self.peek() == Some(&Token::Ellipsis);
         if variadic {
             self.position += 1;
@@ -8452,6 +8511,7 @@ impl Parser {
             weak_linkage: false,
             returns_twice: false,
             variadic,
+            has_unnamed_parameter,
             parameters,
         })
     }
@@ -8474,7 +8534,17 @@ impl Parser {
             loop {
                 let attribute = self.expect_ident("GNU function attribute")?;
                 match attribute.as_str() {
-                    "always_inline" | "__always_inline__" => always_inline = true,
+                    "always_inline" | "__always_inline__" => {
+                        always_inline = true;
+                        self.static_inline_attribute = "always-inline";
+                    }
+                    // On a `static inline` function `gnu_inline` selects
+                    // nothing: it changes only when a non-static inline
+                    // definition is emitted. It is refused anywhere else.
+                    "gnu_inline" | "__gnu_inline__" => {
+                        always_inline = true;
+                        self.static_inline_attribute = "gnu-inline";
+                    }
                     "weak" | "__weak__" => weak = true,
                     "returns_twice" | "__returns_twice__" => returns_twice = true,
                     "access" | "__access__" => {
@@ -8509,9 +8579,13 @@ impl Parser {
                         }
                         self.expect(Token::RParen)?;
                     }
+                    // `unused` silences a warning and
+                    // `no_instrument_function` omits profiling hooks; neither
+                    // changes what the function computes.
                     "nothrow" | "__nothrow__" | "leaf" | "__leaf__" | "const"
                     | "__const__" | "noreturn" | "__noreturn__" | "deprecated"
-                    | "__deprecated__" => {},
+                    | "__deprecated__" | "unused" | "__unused__"
+                    | "no_instrument_function" | "__no_instrument_function__" => {},
                     "nonnull" | "__nonnull__" => {
                         if self.peek() == Some(&Token::LParen) {
                             self.position += 1;
@@ -8535,7 +8609,7 @@ impl Parser {
                         }
                     }
                     _ => return Err(self.error_at_previous(format!(
-                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `weak`, `returns_twice`, and `access` are supported in this slice"
+                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, and `access` are supported in this slice"
                     ))),
                 }
                 if self.peek() != Some(&Token::Comma) {
@@ -8749,6 +8823,9 @@ impl Parser {
             {
                 break;
             } else if self.peek_ident() == Some("static") {
+                if !self.header_mode && self.static_function_declarator_ahead() {
+                    break;
+                }
                 self.parse_global_declaration()?;
             } else if self.peek_ident() == Some("typedef") {
                 self.parse_typedef_declaration()?;
@@ -10615,7 +10692,15 @@ impl Parser {
                 }
                 return Err(self.error_here("function parameters cannot have type `void`"));
             }
-            let name = self.expect_ident("parameter name")?;
+            // A prototype may leave a parameter unnamed. The placeholder
+            // cannot be spelled in C, and a definition that has one is
+            // rejected by the caller.
+            let name = if matches!(self.peek(), Some(Token::Comma | Token::RParen)) {
+                self.unnamed_parameters += 1;
+                format!("#unnamed{}", parameters.len())
+            } else {
+                self.expect_ident("parameter name")?
+            };
             let kernel_name = self.declare_name(&name)?;
             if parsed_type.is_volatile && self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here(
@@ -20232,29 +20317,71 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
     }
 }
 
+/// Decodes the escape sequence whose backslash is at `backslash`, returning
+/// its byte and the index after it. Octal escapes take up to three digits
+/// and hexadecimal escapes take every following hexadecimal digit, as in C;
+/// a value that does not fit one byte is rejected.
+fn parse_escape(
+    chars: &[char],
+    backslash: usize,
+    literal: &str,
+) -> Result<(u8, usize), C0SyntaxError> {
+    let Some(escaped) = chars.get(backslash + 1).copied() else {
+        return Err(C0SyntaxError::new(format!(
+            "unterminated {literal} literal"
+        )));
+    };
+    let simple = match escaped {
+        'n' => Some(b'\n'),
+        'r' => Some(b'\r'),
+        't' => Some(b'\t'),
+        'a' => Some(0x07),
+        'b' => Some(0x08),
+        'f' => Some(0x0c),
+        'v' => Some(0x0b),
+        '\\' => Some(b'\\'),
+        '\'' => Some(b'\''),
+        '"' => Some(b'"'),
+        '?' => Some(b'?'),
+        _ => None,
+    };
+    if let Some(byte) = simple {
+        return Ok((byte, backslash + 2));
+    }
+    let (radix, first_digit, max_digits) = match escaped {
+        '0'..='7' => (8, backslash + 1, 3),
+        'x' => (16, backslash + 2, usize::MAX),
+        other => {
+            return Err(C0SyntaxError::new(format!(
+                "unsupported {literal} escape `\\{other}`"
+            )));
+        }
+    };
+    let mut value = 0u32;
+    let mut end = first_digit;
+    while end - first_digit < max_digits
+        && let Some(digit) = chars.get(end).and_then(|digit| digit.to_digit(radix))
+    {
+        value = value.saturating_mul(radix).saturating_add(digit);
+        end += 1;
+    }
+    if end == first_digit {
+        return Err(C0SyntaxError::new(format!(
+            "hexadecimal {literal} escape `\\x` requires at least one digit"
+        )));
+    }
+    let byte = u8::try_from(value).map_err(|_| {
+        C0SyntaxError::new(format!("numeric {literal} escape does not fit one byte"))
+    })?;
+    Ok((byte, end))
+}
+
 fn parse_char_literal(chars: &[char], start: usize) -> Result<(u8, usize), C0SyntaxError> {
     let Some(first) = chars.get(start + 1).copied() else {
         return Err(C0SyntaxError::new("unterminated character literal"));
     };
     let (value, end) = if first == '\\' {
-        let Some(escaped) = chars.get(start + 2).copied() else {
-            return Err(C0SyntaxError::new("unterminated character literal"));
-        };
-        let value = match escaped {
-            'n' => b'\n',
-            'r' => b'\r',
-            't' => b'\t',
-            '0' => b'\0',
-            '\\' => b'\\',
-            '\'' => b'\'',
-            '"' => b'"',
-            other => {
-                return Err(C0SyntaxError::new(format!(
-                    "unsupported character escape `\\{other}`"
-                )));
-            }
-        };
-        (value, start + 3)
+        parse_escape(chars, start + 1, "character")?
     } else {
         if !first.is_ascii() {
             return Err(C0SyntaxError::new(
@@ -20280,25 +20407,9 @@ fn parse_string_literal(chars: &[char], start: usize) -> Result<(Vec<u8>, usize)
         match ch {
             '"' => return Ok((value, index + 1)),
             '\\' => {
-                let Some(escaped) = chars.get(index + 1).copied() else {
-                    return Err(C0SyntaxError::new("unterminated string literal"));
-                };
-                let byte = match escaped {
-                    'n' => b'\n',
-                    'r' => b'\r',
-                    't' => b'\t',
-                    '0' => b'\0',
-                    '\\' => b'\\',
-                    '\'' => b'\'',
-                    '"' => b'"',
-                    other => {
-                        return Err(C0SyntaxError::new(format!(
-                            "unsupported string escape `\\{other}`"
-                        )));
-                    }
-                };
+                let (byte, next) = parse_escape(chars, index, "string")?;
                 value.push(byte);
-                index += 2;
+                index = next;
             }
             '\n' | '\r' => {
                 return Err(C0SyntaxError::new(

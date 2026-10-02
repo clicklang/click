@@ -2915,7 +2915,7 @@ fn rewrite_integer_match_typed_body(
         algebraic_replacements,
     );
     let rewritten = rewrite.term(&Term::Integer(body));
-    if rewrite.integer_work_exhausted || rewrite.unsupported_integer_scope {
+    if rewrite.refusal().is_some() {
         return None;
     }
     let Term::Integer(value) = rewritten else {

@@ -18,11 +18,11 @@ use super::compiler_import::create_lock;
 use super::{provenance::CSourceMap, syntax};
 use crate::source::SourcePosition;
 
-/// The first rejection of the complete pinned translation unit. The C
-/// tokenizer scans the whole artifact before parsing, so this is the first
-/// lexical rejection, not a statement about the declarations before it.
+/// The first rejection of the complete pinned translation unit: the
+/// anonymous union member of `struct ftrace_branch_data`, the artifact's
+/// first declaration.
 const FIRST_REJECTION: &str =
-    "./include/linux/printk.h:21: character literals must contain exactly one byte";
+    "././include/linux/compiler_types.h:172: expected union name, got `{`";
 
 /// The existing compiler-import profile refuses the recorded kernel
 /// compiler arguments before it runs the compiler.
@@ -70,11 +70,23 @@ impl Drop for Closure {
 /// against the provenance record.
 fn extract_closure(provenance: &serde_json::Value) -> Closure {
     let archive = fs::read(fixture().join("input-closure.tar.gz")).unwrap();
-    assert_eq!(
-        sha256(&archive),
-        text(provenance, &["closure", "archive_sha256"]),
-        "input-closure.tar.gz differs from provenance.json"
-    );
+    extract_archive(provenance, &archive, true)
+}
+
+/// `check_archive_hash` is false only for the tamper regressions, which
+/// reach the per-member checks behind the whole-archive hash.
+fn extract_archive(
+    provenance: &serde_json::Value,
+    archive: &[u8],
+    check_archive_hash: bool,
+) -> Closure {
+    if check_archive_hash {
+        assert_eq!(
+            sha256(archive),
+            text(provenance, &["closure", "archive_sha256"]),
+            "input-closure.tar.gz differs from provenance.json"
+        );
+    }
     let mut expected = provenance["closure"]["files"]
         .as_array()
         .unwrap()
@@ -104,7 +116,7 @@ fn extract_closure(provenance: &serde_json::Value) -> Closure {
     ));
     fs::create_dir(&root).expect("create isolated closure directory");
     let closure = Closure(root);
-    let mut entries = tar::Archive::new(flate2::read::GzDecoder::new(archive.as_slice()));
+    let mut entries = tar::Archive::new(flate2::read::GzDecoder::new(archive));
     for entry in entries.entries().unwrap() {
         let mut entry = entry.unwrap();
         assert!(
@@ -154,6 +166,141 @@ fn recorded_toolchain(provenance: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
+/// `Ok(None)` when the host has the recorded compiler. Otherwise the
+/// frontier checks cannot run: that is a notice to print, or an error when
+/// the recorded compiler is required.
+fn toolchain_gate(
+    provenance: &serde_json::Value,
+    required: bool,
+) -> Result<Option<String>, String> {
+    match recorded_toolchain(provenance) {
+        Ok(()) => Ok(None),
+        Err(reason) if required => Err(format!("{REQUIRE_TOOLCHAIN} is set, but {reason}")),
+        Err(reason) => Ok(Some(format!(
+            "linux-rbtree: NOT CHECKED: preprocessing and the frontier pin need the recorded GCC ({reason}); only the closure was checked"
+        ))),
+    }
+}
+
+#[test]
+fn linux_rbtree_gate_reports_or_refuses_another_compiler() {
+    // Another compiler is simulated by recording a different identity.
+    let mut other_binary = provenance();
+    other_binary["toolchain"]["cc1"]["sha256"] = "0".repeat(64).into();
+    let mut missing = provenance();
+    missing["toolchain"]["gcc"]["path"] = "/nonexistent/click-linux-rbtree-gcc".into();
+    for (provenance, reason) in [
+        (other_binary, "is not the recorded binary"),
+        (missing, "/nonexistent/click-linux-rbtree-gcc"),
+    ] {
+        // The reason does not depend on whether this host has the recorded
+        // compiler: an unreadable recorded `gcc` path is also "another compiler".
+        let Err(actual) = recorded_toolchain(&provenance) else {
+            panic!("a changed identity must not match the host compiler");
+        };
+        if fs::metadata(text(&provenance, &["toolchain", "gcc", "path"])).is_ok()
+            && fs::metadata(text(&provenance, &["toolchain", "cc1", "path"])).is_ok()
+        {
+            assert!(actual.contains(reason), "{actual}");
+        }
+        let notice = toolchain_gate(&provenance, false)
+            .expect("another compiler is not a failure by default")
+            .expect("another compiler must be reported, not silently accepted");
+        assert!(notice.contains("NOT CHECKED"), "{notice}");
+        let refusal = toolchain_gate(&provenance, true)
+            .expect_err("a required recorded compiler must fail the gate");
+        assert!(refusal.contains(REQUIRE_TOOLCHAIN), "{refusal}");
+    }
+}
+
+fn panic_message(result: std::thread::Result<Closure>) -> String {
+    let payload = result.err().expect("a tampered closure must be refused");
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|text| text.to_string()))
+        .unwrap_or_default()
+}
+
+#[test]
+fn linux_rbtree_gate_refuses_a_tampered_closure() {
+    let provenance = provenance();
+    let archive = fs::read(fixture().join("input-closure.tar.gz")).unwrap();
+
+    // One flipped byte anywhere changes the archive hash.
+    let mut flipped = archive.clone();
+    let middle = flipped.len() / 2;
+    flipped[middle] ^= 1;
+    let message = panic_message(std::panic::catch_unwind(|| {
+        extract_archive(&provenance, &flipped, true)
+    }));
+    assert!(
+        message.contains("differs from provenance.json"),
+        "{message}"
+    );
+
+    // Behind the archive hash, each member is checked on its own: a changed
+    // file, a missing file, and an unrecorded file are each refused.
+    let mut raw = Vec::new();
+    flate2::read::GzDecoder::new(archive.as_slice())
+        .read_to_end(&mut raw)
+        .unwrap();
+    let repack = |edit: &dyn Fn(&str, &mut Vec<u8>) -> bool, extra: Option<&str>| {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::fast(),
+        ));
+        let mut append = |path: &str, bytes: &[u8]| {
+            let mut header = tar::Header::new_ustar();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append_data(&mut header, path, bytes).unwrap();
+        };
+        for entry in tar::Archive::new(raw.as_slice()).entries().unwrap() {
+            let mut entry = entry.unwrap();
+            let path = entry.path().unwrap().to_str().unwrap().to_string();
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes).unwrap();
+            if edit(&path, &mut bytes) {
+                append(&path, &bytes);
+            }
+        }
+        if let Some(path) = extra {
+            append(path, b"int unrecorded;\n");
+        }
+        builder.into_inner().unwrap().finish().unwrap()
+    };
+    let cases: [(Vec<u8>, &str); 3] = [
+        (
+            repack(
+                &|path, bytes| {
+                    if path == "include/linux/rbtree.h" {
+                        bytes[0] ^= 1;
+                    }
+                    true
+                },
+                None,
+            ),
+            "include/linux/rbtree.h: content differs",
+        ),
+        (
+            repack(&|path, _| path != "include/linux/rbtree_types.h", None),
+            "recorded inputs missing from the closure",
+        ),
+        (
+            repack(&|_, _| true, Some("include/linux/unrecorded.h")),
+            "include/linux/unrecorded.h: not a recorded input",
+        ),
+    ];
+    for (tampered, expected) in cases {
+        let message = panic_message(std::panic::catch_unwind(|| {
+            extract_archive(&provenance, &tampered, false)
+        }));
+        assert!(message.contains(expected), "{expected}: {message}");
+    }
+}
+
 #[test]
 fn linux_rbtree_closure_matches_its_provenance() {
     let provenance = provenance();
@@ -196,14 +343,11 @@ fn linux_rbtree_closure_matches_its_provenance() {
 fn linux_rbtree_pinned_translation_unit_stops_at_its_recorded_frontier() {
     let provenance = provenance();
     let closure = extract_closure(&provenance);
-    if let Err(reason) = recorded_toolchain(&provenance) {
-        assert!(
-            std::env::var_os(REQUIRE_TOOLCHAIN).is_none_or(|value| value.is_empty()),
-            "{REQUIRE_TOOLCHAIN} is set, but {reason}"
-        );
-        eprintln!(
-            "linux-rbtree: NOT CHECKED: preprocessing and the frontier pin need the recorded GCC ({reason}); only the closure was checked"
-        );
+    let required = std::env::var_os(REQUIRE_TOOLCHAIN).is_some_and(|value| !value.is_empty());
+    if let Some(notice) =
+        toolchain_gate(&provenance, required).unwrap_or_else(|error| panic!("{error}"))
+    {
+        eprintln!("{notice}");
         return;
     }
 

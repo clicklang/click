@@ -3384,7 +3384,7 @@ fn c0_rejects_unsupported_string_literal_escapes_in_concatenated_sequences() {
     let error = syntax::parse_functions(
         r#"
         uint8* literal() {
-            return "hello" "\x20world";
+            return "hello" "\u0020world";
         }
         "#,
     )

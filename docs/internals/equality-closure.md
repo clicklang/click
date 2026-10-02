@@ -1151,6 +1151,19 @@ The recursive unfold → sibling-field write → refold fixture now verifies,
 expands, and independently rechecks. Overwriting the pointer field instead
 rejects the expanded proof.
 
+A load's equal-cell scan also reads this graph when the cached cells are a
+seeded run. A run names the slot a load is at from the byte shift between the
+load and the run's base, and a load spelled in another block used to reach the
+base only through a stated alias filed under its exact pointer: `id` reached
+`p`, while `id + 8` reached nothing and became a fresh load after any store.
+`run_slots_equal_to_load` now re-expresses such a load in the run's block
+with `pointer_in_block`, one keyed query over the affine class relation, so a
+run answers for `id + 8` exactly as a single cached cell does through
+`pointers_known_equal`. It selects a cached slot only; it adds no separation,
+framing, or read authority: the slot is the one a load spelled at the run's
+own address reads from the same snapshot. `mdtests/fold_at_arm_identity_after_store_to_other_node.md`
+and its three negatives retain the case.
+
 A retained cell-map entry alone is insufficient preservation evidence:
 low-level snapshot construction can leave it present after a write through a
 possibly aliasing address. Other memory transitions and separation forms

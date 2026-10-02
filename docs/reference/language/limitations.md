@@ -147,7 +147,8 @@ recursive helper needs a checked rule for its cycle. `extern inline` has profile
 emission rules and stays rejected, as do bare `inline` and other inline
 spellings. The declaration-only GNU spellings
 `__attribute__((always_inline))` and `__attribute__((__always_inline__))` are
-accepted on those helpers; other attributes and function definitions in headers
+accepted on those helpers, as is `gnu_inline` on a `static inline` helper
+only; other inline attributes and function definitions in headers
 remain unsupported. The exact trailing struct spelling
 `__attribute__((aligned(sizeof(long))))` (and `__aligned__`) is supported as an
 LP64 eight-byte alignment requirement; other alignment forms remain

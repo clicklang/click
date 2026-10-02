@@ -1881,6 +1881,14 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a>(
                         proof = proof
                             .with_execution_tactic_index(indexed.index)?
                             .at_source_tactic(indexed.source_index);
+                        let statement_index = proof.execution_frontier_index().unwrap_or_default();
+                        let _timing = TacticTiming::new(
+                            claim_label,
+                            indexed.index,
+                            indexed.source_index,
+                            &indexed.tactic,
+                            statement_index,
+                        );
                         let checkpoint = proof.checkpoint();
                         proof = proof.apply_step(ProofStep::Step)?;
                         if indexed.source_index != owning_source_index

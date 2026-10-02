@@ -9,7 +9,7 @@ through B3, C1, C1b, C2, C2b, C2c, and C4's replacement half are landed.
 What remains is finishing the specific example: the verbatim `__rb_insert`,
 the traversals, erase, the augmented callbacks, and attaching the sidecars
 to the pinned source. That work is numbered as
-[chunks 1 to 17](#remaining-work-chunks-1-to-17), one pull request each. The
+[chunks 1 to 24](#remaining-work-chunks-1-to-24), one pull request each. The
 full history is in git: `git log --follow issues/rbtree-example.md`.
 
 P1: required for MVR. Linux rbtree does not store keys, so its generic
@@ -530,19 +530,21 @@ blocks C3; each is a candidate package when it starts to.
   a time only read authority is published, not a full arm re-decision,
   because a per-clause re-decision broke the near-linear width contract
   (A28).
-- **Pointer spellings across a write or a fold** (blocks chunk 1; restated
-  there with its reduction on 2026-10-02): a read through an arm identity at
-  a nonzero field offset is not identified with the read through the owning
-  pointer after a store separated only by ownership. Owned-cell consumption
-  by a fold at an arm binding now passes. Loads in fold arguments
+- **Pointer spellings across a write or a fold:** a fold at an arm identity
+  after a store to another owned node now verifies (chunk 1). The logical
+  form is still open and filed as
+  `bugs/arm-identity-read-differs-from-parameter-read-after-a-store.md`:
+  after such a store, `have id->right == p->right` is refused although
+  `have p == id` holds. Loads in fold arguments
   (`fold(rb_at(x->left), ...)`) are unsupported.
 - **Stale prose:** `mdtests/rb_replace_node.md` says a victim with
   children cannot be contracted, which `rb_replace_node_with_children.md`
   contradicts.
 
-## Remaining work: chunks 1 to 17
+## Remaining work: chunks 1 to 24
 
-Renumbered on 2026-10-02. A **chunk** is one pull request: one coherent green
+Renumbered on 2026-10-02, and the importer chunks again the same day once
+the pinned source was measured. A **chunk** is one pull request: one coherent green
 commit series with its regressions and docs. C is fixed; adaptation goes into
 contracts, lemmas, resources, tactics, lowering, or the kernel. No chunk
 creates issues. A chunk that hits a tooling failure listed in `AGENTS.md`
@@ -561,10 +563,10 @@ as follows:
 | C4b (traversals) | chunks 8 and 9 |
 | C5 (erase) | chunks 10 to 13 |
 | C6 (augmented variants and callbacks) | chunk 14 |
-| [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 and 16 |
-| D1 (attach sidecars to the pinned source; not design decision D1) | chunk 17 |
+| [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 to 23 |
+| D1 (attach sidecars to the pinned source; not design decision D1) | chunk 24 |
 
-Chunks 1, 3, 8, 10, and 15 have no unlanded prerequisite. None depends on the
+Chunks 8, 10, and 15 have no unlanded prerequisite; chunk 3 is landed. None depends on the
 [authority migration](authority-migration.md): the rbtree fixtures use neither
 `count(...)` nor `guarded_by`.
 
@@ -576,94 +578,115 @@ the uncle-black arms also end, which is chunk 6. Measure verify time again as
 the rotation arms land: a superlinear step is a scaling regression under
 `docs/internals/verification-efficiency.md`.
 
-**Chunk 1. Last two left-left leaves.** The two case-3 leaves under a
-`Right` great-grandparent frame in the cursor-`Left`, grandparent-`Left`
-combination. Blocked on the kernel gap below; the fix is its own pull
-request ahead of the leaves.
+**Chunk 1. Last two left-left leaves: landed 2026-10-02.** The two case-3
+leaves under a `Right` great-grandparent frame in the cursor-`Left`,
+grandparent-`Left` combination run to the `break`: the sibling `xs` is
+unfolded so that `parent->rb_left == old` in the inlined `__rb_change_child`
+is decided, `step()` runs the rotation, and `xs` is refolded at its arm
+identity with `fold(rb_at(yid), ...)` before the frame refolds the finished
+leaves already use. The frontier report is now at statement 23,
+`tmp = parent->rb_right`, with 11 `break`s and 4 `continue`s complete;
+`tests/examples.rs` pins it.
 
-Recheck 2026-10-02 on `07ed80171`: the frontier is unchanged at statement 42
-with 9 `break`s and 4 `continue`s. The "two statement successors" stop
-reported on 2026-09-30 is not a kernel gap. It appears only when `xs` is
-refolded before `step()`, which hides the cells that decide
-`parent->rb_left == old` in the inlined `__rb_change_child`; with
-`unfold(xs); step();` the step passes. The remaining failure is the
-post-step `fold(rb_at(yid), ...)`, refused with `selected child does not
-satisfy the proposed parent model`. The left child read through the arm
-identity `yid` at a nonzero field offset is a fresh load after the
-rotation's stores to other nodes. Those stores are separated from it only by
-ownership, and the load is not identified with the unfold-time read. This is
-the first leaf where a node that is unfolded, but neither written nor in a
-written block, must survive stores to other nodes. No proof-side route was
-found: pointer disequality from separate ownership is not provable as a
-proposition, loads cannot appear in fold arguments, and the inline call is
-one `step()`.
+Two earlier readings of this leaf were wrong. The "two statement successors"
+stop reported on 2026-09-30 was not a kernel gap: it appears only when `xs`
+is refolded before `step()`, which hides the cells that decide the test. The
+refusal of the post-step refold (`selected child does not satisfy the proposed
+parent model`) was not a missing read identity across the rotation's stores
+either. The unfold's cells were still cached as a seeded run, and the load of
+`yid->rb_left` missed its slot because the run lookup reached the run's base
+only through an alias index keyed by the exact pointer, so `id` found the run
+at `p` and `id + 8` did not. The lookup now asks the equality graph for the
+load's address in the run's block
+(`mdtests/fold_at_arm_identity_after_store_to_other_node.md` and three
+negatives; see
+[the equality-closure note](../docs/internals/equality-closure.md#checked-pointer-read-sources)).
 
-Violated invariant: with `p == id` proved and a cell owned under `p`, a read
-through `id` at a nonzero constant field offset, after a store separated
-from it only by ownership, is the read through `p`. Intended regression,
-which must pass and currently fails at the fold:
+**Chunk 2. Empty-uncle leaves of left-left: landed 2026-10-02.** All eight
+leaves under an empty uncle run case 3 to the `break`. The uncle is refolded
+as `fold(rb_at(tmp), { model: RbTree::Empty })` with
+`rb_root_black(RbTree::Empty) == 1` by unfolding, and the rest is the
+node-uncle arm's text with the uncle model spelled `RbTree::Empty`; the arm
+starts one statement earlier than the old three-`step()` stub left it, at the
+join after `if (tmp && rb_is_red(tmp))`. The frontier report named this path
+before the change (checked by advancing each empty-uncle leaf one step: only
+this one moved the report, although the report's `tactic@` line points at the
+last leaf in the file). It is now at statement 52, `tmp = parent->rb_left`,
+with 19 `break`s and 4 `continue`s complete; `tests/examples.rs` pins it.
+Verify time of the frontier on a release build, user seconds, load average
+about 10: 3.1 with 9 `break`s, 3.2 with 11, 4.3 with 19.
 
-```c
-struct node { struct node *left; struct node *right; int tag; };
-void roundtrip(struct node *p, struct node *q) { q->tag = 1; }
-```
+**Chunk 3. Case-2 step theorems — landed 2026-10-02.**
+`ctx_insert_case2_left_step` / `_right_step` state the model between the
+case-2 rotation and the case-3 code, with conclusions in the spelling
+`ctx_insert_case3_*_step` takes with parent and cursor exchanged.
+`ctx_insert_case2_left_exit_step` / `_right_exit_step` chain the two and
+conclude on `plug(up2, rotated subtree)`, because `node` is the subtree root
+at this `break`. The exit spelling was inferred from the C and the finished
+left-left leaf; chunk 5 is its first consumer.
 
-```click
-spec enum Tree { Empty, Node(struct node*, Tree, Tree) }
-resource tree(p: struct node*) {
-    field model: Tree;
-    match model {
-        Tree::Empty => { fact p == 0; },
-        Tree::Node(id, lm, rm) => {
-            owns &p->left; owns &p->right; owns &p->tag;
-            owns left: tree(p->left); owns right: tree(p->right);
-            fact p != 0; fact p == id;
-            fact left.model == lm; fact right.model == rm;
-        },
-    }
-}
-void roundtrip(struct node* p, struct node* q) {
-    owns t: tree(p);
-    owns &q->tag;
-    requires t.model != Tree::Empty;
-    ensures t.model == old(t.model);
-} by {
-    match t.model {
-        Tree::Empty => { contradiction(t.model == Tree::Empty); },
-        Tree::Node(id, lm, rm) => {
-            let { left: l, right: r } = unfold(t);
-            step();
-            let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
-            execute(); simp();
-        },
-    }
-}
-```
+**Chunk 4. Right-right combination: landed 2026-10-02.** The mirror of
+left-left, case 3 only: sixteen leaves, eight under a black node uncle and
+eight under an empty one. The text is the left-left arms' with the cursor,
+grandparent, and uncle frames spelled `Context::Right`, the rotated
+grandparent's children exchanged
+(`RbTree::Node(gparent, cid, Color::Red, uncle, rb_reparent(csib, gparent))`),
+and `ctx_insert_case3_right_step` in place of the left theorem; the
+great-grandparent frame split, including the unfold of its sibling before
+`__rb_change_child`, is unchanged. No lemma was added. The frontier report
+stays at statement 52, `tmp = parent->rb_left`, now with 35 `break`s and 4
+`continue`s complete; `tests/examples.rs` pins it. The reported path is the
+node-uncle black arm of the cursor-`Left`, grandparent-`Right` combination
+(chunk 6), checked by advancing each of the four remaining stubs one step.
+Verify time of the frontier, release build, user seconds: 4.6 with 19
+`break`s and 7.0 with 35, measured together at load average 18, so about
+0.15 per leaf against 0.14 for chunk 2.
 
-`fold(tree(p), ...)` passes, as do stores to `p`'s own `tag`. Only a child
-at a nonzero field offset fails: `left` at offset 0 passes, and moving `tag`
-first in the struct makes `left` fail. After the step, `have id->right ==
-p->right` is refused although `have p == id` holds. Acceptance: the
-regression passes; a negative that drops `owns &q->tag`, and one that
-overwrites `p->right`, are still refused; no history walk is added to
-equality queries or `fold`; then the two leaves are finished and the pinned
-frontier moves.
+**Chunk 5. Left-right combination: landed 2026-10-02.** The cursor-`Right`,
+grandparent-`Left` combination with a black uncle runs case 2's rotation at
+the parent and then case 3 to the `break` on 32 leaves: the uncle (node or
+empty) times the cursor's left child (empty or a node, for the first
+`if (tmp)`) times its right child (for the second) times the
+great-grandparent's frame (`Top`, `Left`, `Right` with an empty or a node
+sibling). Each leaf refolds the old parent at
+`RbTree::Node(cid, nid, Color::Red, csib, rb_reparent(nleft, cid))` before
+`parent = node`, the grandparent at
+`RbTree::Node(gparent, nid, Color::Red, rb_reparent(nright, gparent), uncle)`
+after `__rb_rotate_set_parents`, and the cursor over both as the new subtree
+root; the loop's context binder at the `break` is the great-grandparent's
+frame itself, refolded at `node`. `ctx_insert_case2_left_exit_step` supplied
+the three whole-tree facts and both children's black roots in the spelling
+the arm needed, so the model is unchanged. The frontier report stays at
+statement 52, `tmp = parent->rb_left`, now with 67 `break`s and 4
+`continue`s complete; `tests/examples.rs` pins it.
 
-**Chunk 2. Empty-uncle leaves of left-left.** The text is the same after
-refolding the uncle as `Empty`. Depends on 1.
+The arm needed one tooling fix first, its own pull request: a `step()` in a
+`preserve` body was charged to the enclosing `loop`, whose single budget the
+sixteenth new leaf exhausted. Verify time of the frontier, release build,
+user seconds at load average 5 to 10: 7.1 with 35 `break`s, 11.3 with 51,
+14.9 with 67, so 0.26 and 0.22 per leaf for the two halves of this chunk
+against 0.15 for chunk 4's shorter leaves; counted work is 77,000 and 67,000
+units per leaf against 68,000. The marginal cost of same-shaped leaves does
+not grow with the size of the proof.
 
-**Chunk 3. Case-2 step theorems.** `_step` forms of `ctx_insert_case2_*` in
-the model, in the shape of `ctx_insert_case1_*_step` and
-`ctx_insert_case3_*_step`. Pure; no C.
-
-**Chunk 4. Right-right combination.** The mirror of left-left: case 3 only,
-through `__rb_rotate_set_parents` and `__rb_change_child`, refolds at the
-rotated models, `break` owing the binders. Depends on 2.
-
-**Chunk 5. Left-right combination.** Case 2's rotation at the parent, then
-case 3. Depends on 3 and 4.
-
-**Chunk 6. Right-left combination.** The mirror of chunk 5. Depends on 5.
+**Chunk 6. Right-left combination: landed 2026-10-02; the loop rule is not
+yet certified.** The mirror of chunk 5 on the cursor-`Left`,
+grandparent-`Right` frames, 32 leaves through
+`ctx_insert_case2_right_exit_step`, model unchanged. Every path of the loop
+body now ends: 3 early `break`s, 96 rotation `break`s, and 4 `continue`s. The
+frontier report is gone, and the loop rule itself is refused:
+`loop exits reach different states, so they have no common successor: memory,
+resource ownership`, which `tests/examples.rs` now pins. The exits hold the
+same binders and bytes in different representations (the two binders in
+different fold orders, cells cached as concrete cells at some exits and as
+run slots at others), and the exit join compares them structurally; see
+`bugs/loop-exits-equal-up-to-representation-do-not-join.md`, which has three
+small reductions. Chunk 7 cannot start until that is fixed. Verify time of the
+frontier, release build, user seconds, back to back at load average 8 to 10:
+15.0 with 67 `break`s, 18.3 with the first sixteen leaves here, 27.4 with all
+of them and the join. Counted work is 4.63, 5.86, and 6.94 million units, so
+the second step adds 1.08 million units but 9.1 seconds: the exit join over
+99 exits takes several seconds its work count does not show.
 
 **Chunk 7. Post-loop and `rb_insert_color`.** The body's end, the post-loop
 `is_rb_root(plug(ctx.model, sub.model)) == 1`, in-order preservation and
@@ -680,9 +703,20 @@ assignment-expression parser/lowering prerequisite is delivered for simple
 scalar variable targets, including the unchanged `rb_next` guard.
 
 **Chunk 8. `rb_next`.** The complete descent and ascent on the node-keyed
-model, on the verbatim body. The unchanged regression currently stops at the
-first descent branch because `rb_at(node)` is folded and no view of
-`node->rb_right` has yet been published.
+model, on the verbatim body. Not finished (2026-10-02). `mdtests/rb_next.md`
+has the unchanged body with `RB_EMPTY_NODE` and the successor contract, runs
+the descent to its `return` and the ascent loop through its back edge and its
+three `break` exits, with `decreases t;` and `decreases c;`, and stops at the
+first claim after the ascent loop: what every exit stated about the frame's
+model is not available after the join (the "Loop exits" finding above,
+reduced in `mdtests/loop_break_exit_algebraic_equation_is_not_exported.md`).
+Behind it is `bugs/function-match-arm-rejects-contradiction-after-have.md`.
+Remaining once both close: the post-loop section (match the frame, fold the
+produced instances at `parent`), whose lemmas are already in the fixture and
+whose proof text has not been checked. The descent's postconditions are
+certified only on a cut body, `mdtests/rb_next_descent.md`, which goes when
+`rb_next.md` passes. The parameter is declared without `const`
+(`mdtests/rb_next_const_signature.md`).
 
 **Chunk 9. `rb_prev`.** The mirror of chunk 8. Depends on 8.
 
@@ -724,20 +758,62 @@ for the complete mutation-capable augmentation proof.
 
 ### Pinned source
 
-**Chunk 15. Import the pinned translation unit.** The retained C semantics
-the expanded `lib/rbtree.c` needs (`typeof`, statement expressions,
-branch-expectation builtins, and the export/assembly storage decisions), as
-scoped in [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md). May
-split once the first rejection on the pinned source is known.
+The in-repository import fixture is a demonstration arrangement, chosen for
+expedience; work that uses imports is expected to move out of this
+repository. Click imports only the checked dependency closure of the verified
+rbtree functions, about 80 of the 2,575 file-scope declarations in the
+preprocessed unit, and makes no claim about the rest. A declaration inside
+the closure that is unsupported is rejected, not dropped. Export storage and
+`.export_symbol` assembly are outside the closure and outside the claim.
+The measured inventory is in
+[kernel-scale-preprocessing.md](kernel-scale-preprocessing.md).
 
-**Chunk 16. Pinned inline helpers.** The actual `rbtree.h` and
+Landed or in the merge queue: variadic prototypes retained as uncallable
+declarations, and the
+pinned closure `integrations/linux-rbtree/` with its gate test and measured
+frontier. `typeof`, statement expressions, and `__builtin_expect` were
+already supported.
+
+Chunks 15 to 20 are independent of each other but edit the same parser, so
+they run serially. Each moves the first rejection pinned in the gate.
+
+**Chunk 15. Character-literal escapes.** Octal and hexadecimal escapes; the
+current first rejection is `'\001'` at `include/linux/printk.h:21`.
+
+**Chunk 16. Declaration-only attributes.** `__gnu_inline__`, `__unused__`,
+and `no_instrument_function` on `static inline`, with near-miss negatives;
+`gnu_inline` on a non-static inline stays rejected.
+
+**Chunk 17. Unnamed parameters** in body-less prototypes (eight in
+`rbtree.h`).
+
+**Chunk 18. Static non-inline file-scope functions**
+(`rb_left_deepest_node`).
+
+**Chunk 19. Qualifier and conditional typing.** The const forms in `rb_next`,
+`rb_prev`, and the postorder functions, and the conditional-operator type in
+`__rb_erase_augmented`, by the actual C rules.
+
+**Chunk 20. `compiletime_assert` and `__builtin_constant_p`.** Block-scope
+`extern` declarations with `noreturn`/`error`, and a constant-p semantics
+under which the code Click verifies in `rcu_assign_pointer` is the code the
+pinned compiler compiled.
+
+**Chunk 21. Checked dependency-closure projection.** Depends on 15 to 20.
+
+**Chunk 22. Recorded compiler-option profile and lock.** Accept a recorded
+option only where ignoring it cannot make Click accept what the compiler
+treats differently; then a real import lock replaces the negative gate.
+Depends on 21.
+
+**Chunk 23. Pinned inline helpers.** The actual `rbtree.h` and
 `rbtree_augmented.h` inline bodies as called from the pinned source, per
 [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md). Depends on
-15.
+22.
 
-**Chunk 17. Attach the sidecars to the pinned translation unit** and replace
+**Chunk 24. Attach the sidecars to the pinned translation unit** and replace
 the verbatim-copy fixtures with the pinned regression. Depends on 9, 14, and
-16.
+23.
 
 ## Structural termination audit, 2026-09-14
 

@@ -40,6 +40,19 @@ pub(in crate::surface) fn contract_environment_at_state(
     );
 
     let mut state_array_refs = array_refs_with_memory(array_refs, state.memory());
+    // A parameter's array reference is read through the variable, exactly as
+    // its value is above. `array_refs` was built from the caller's arguments,
+    // so after the body assigns a pointer parameter it still holds the entry
+    // pointer while `values` holds the current one; a pure function or theorem
+    // argument naming that parameter then read two different pointers under
+    // one name.
+    for (name, value) in state.locals().object_values() {
+        if let CValue::Pointer(pointer) = value
+            && let Some(array_ref) = state_array_refs.get_mut(name)
+        {
+            array_ref.pointer = pointer.pointer().clone();
+        }
+    }
     for (name, value, element_type) in state.locals().array_object_values() {
         let CValue::Pointer(pointer) = value.clone() else {
             unreachable!("local array values are pointers")
