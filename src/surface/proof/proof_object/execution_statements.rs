@@ -650,11 +650,23 @@ impl<'a> Proof<'a> {
         }
         let goal = self.goal()?;
         let (parameters, arguments) = self.diagnostic_naming_tables();
-        Some(crate::surface::diagnostics::describe_stated_fact(
-            goal,
-            &parameters,
-            &arguments,
-        ))
+        let lowered =
+            crate::surface::diagnostics::describe_stated_fact(goal, &parameters, &arguments);
+        // The back-edge locals do not name a value read at an earlier
+        // snapshot, which the lowered spelling elides. The synthesized form
+        // names that snapshot even where it does not lower back exactly, as
+        // an unsigned order does not.
+        if lowered.contains('…')
+            && let Some(surface) = self.bundle_member_surface(goal, false)
+        {
+            let spelled = crate::surface::diagnostics::with_refusal_spelling(|| {
+                crate::surface::printing::source_click_proposition(&surface)
+            });
+            if !spelled.contains("__click_") && !spelled.contains('…') {
+                return Some(spelled);
+            }
+        }
+        Some(lowered)
     }
 
     fn with_synthesized_bundle_member_surface(&self) -> Self {
@@ -695,6 +707,14 @@ impl<'a> Proof<'a> {
         &self,
         goal: &Proposition,
     ) -> Option<ClickProposition> {
+        self.bundle_member_surface(goal, true)
+    }
+
+    /// [`Self::synthesized_bundle_member_surface`], or with `checked` false
+    /// the synthesized form whether or not it lowers back to `goal`. Only a
+    /// refusal reads the unchecked form, to name the snapshots a member
+    /// compares; nothing proves or records it.
+    fn bundle_member_surface(&self, goal: &Proposition, checked: bool) -> Option<ClickProposition> {
         let context = self.execution_context()?;
         let execution = self.execution()?;
         let bundle = context.constants.invariant_body_context.as_deref()?;
@@ -710,11 +730,13 @@ impl<'a> Proof<'a> {
                 )
             };
             let accepted = |surface: &ClickProposition| {
-                self.lower_surface_goal(surface, "loop invariant bundle member")
-                    .ok()
-                    .is_some_and(|lowered| {
-                        crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
-                    })
+                !checked
+                    || self
+                        .lower_surface_goal(surface, "loop invariant bundle member")
+                        .ok()
+                        .is_some_and(|lowered| {
+                            crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
+                        })
             };
             if bundle.binder_names.is_empty() {
                 return synthesize().filter(accepted);

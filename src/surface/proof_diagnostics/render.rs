@@ -116,12 +116,36 @@ pub(crate) fn render_simple_click_fact_labeled(
         ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => (left, right, ">=", "<"),
         _ => return None,
     };
+    let operator = if *polarity { positive } else { negative };
+    // A 32-bit unsigned order is the signed order of both operands with
+    // their sign bit flipped, a constant operand arriving already flipped.
+    // It is spelled as the unsigned comparison it means.
+    const SIGN_BIT: u32 = 0x8000_0000;
+    let flipped = |term: &Bitvector32Term| match term {
+        Bitvector32Term::BitwiseXor(value, sign) | Bitvector32Term::BitwiseXor(sign, value)
+            if sign.as_const() == Some(SIGN_BIT) =>
+        {
+            operand(value, labels)
+        }
+        _ => None,
+    };
+    let unflipped = |term: &Bitvector32Term| {
+        flipped(term).or_else(|| term.as_const().map(|value| (value ^ SIGN_BIT).to_string()))
+    };
+    let ordered = !matches!(condition, ConditionTerm::Bitvector32Equal(_, _));
+    let unsigned = match (flipped(left), flipped(right)) {
+        _ if !ordered => None,
+        (Some(left), Some(right)) => Some((left, right)),
+        (Some(left), None) => unflipped(right).map(|right| (left, right)),
+        (None, Some(right)) => unflipped(left).map(|left| (left, right)),
+        (None, None) => None,
+    };
+    if let Some((left, right)) = unsigned {
+        return Some(format!("{left} {operator} {right} (unsigned)"));
+    }
     let left = operand(left, labels)?;
     let right = operand(right, labels)?;
-    Some(format!(
-        "{left} {} {right}",
-        if *polarity { positive } else { negative }
-    ))
+    Some(format!("{left} {operator} {right}"))
 }
 
 fn alphabetic_label(mut index: usize) -> String {
@@ -859,6 +883,40 @@ impl Renderer<'_> {
         }
     }
     fn binary_condition_bv(&mut self, a: &Bitvector32Term, b: &Bitvector32Term, label: &str) {
+        // A signed order of sign-flipped operands is the unsigned order of
+        // the operands themselves; a constant operand arrives already
+        // flipped. Render what it means, not the bias.
+        const SIGN_BIT: u32 = 0x8000_0000;
+        fn flipped(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+            match term {
+                Bitvector32Term::BitwiseXor(value, sign)
+                | Bitvector32Term::BitwiseXor(sign, value)
+                    if sign.as_const() == Some(SIGN_BIT) =>
+                {
+                    Some(value)
+                }
+                _ => None,
+            }
+        }
+        let unflipped = |term: &Bitvector32Term| {
+            flipped(term).cloned().or_else(|| {
+                term.as_const()
+                    .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
+            })
+        };
+        if let Some(order) = label.strip_prefix("int32 ").filter(|order| *order != "=")
+            && (flipped(a).is_some() || flipped(b).is_some())
+            && let (Some(a), Some(b)) = (unflipped(a), unflipped(b))
+        {
+            self.push("uint32 ");
+            self.push(order);
+            self.push("(");
+            self.bitvector(&a);
+            self.push(", ");
+            self.bitvector(&b);
+            self.push(")");
+            return;
+        }
         self.push(label);
         self.push("(");
         self.bitvector(a);
