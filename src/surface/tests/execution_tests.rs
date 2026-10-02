@@ -1897,3 +1897,44 @@ fn execute_splits_a_symbolic_switch_without_the_planner() {
         .join()
         .unwrap();
 }
+
+/// A short-circuit condition is false along two checked paths, so a C
+/// `branch` cannot split it directly. `execute()` first splits the checked
+/// `Proof` on the condition that tells those paths apart, without the
+/// planner.
+#[test]
+fn execute_splits_a_short_circuit_condition_without_the_planner() {
+    let c_source = r#"
+        int32 both_positive(int32 a, int32 b) {
+            if (a > 0 && b > 0) {
+                return 1;
+            }
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        verifying "both_positive.c";
+
+        int32 both_positive(int32 a, int32 b) {
+            ensures result == 0 or result == 1;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let before = crate::kernel::reasoning::path_facts::smart_planning_entries();
+            verify_c0_sources(click_source, &[("both_positive.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+            assert_eq!(
+                crate::kernel::reasoning::path_facts::smart_planning_entries() - before,
+                0,
+                "`execute()` handed a short-circuit condition to the planner"
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

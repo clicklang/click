@@ -226,15 +226,25 @@ impl<'a> Proof<'a> {
                     )
                 })
                 .collect::<String>();
-            return Err(self.step_error(format!(
+            let split_condition =
+                super::super::cursor_execution::condition_path_case_split_condition(
+                    &path_facts,
+                    &|fact| self.facts().contains(fact),
+                    &current_state,
+                    context,
+                );
+            let error = self.step_error(format!(
                 "`branch` cannot split the C `if` at statement({statement_index}): its condition `{}` is {value} along {} checked paths, and `branch` has one arm per truth value{cases}\nSplit the proof on the facts that tell these paths apart with a proof `if` first; in each case the condition has one path per arm. `execute()` makes this split itself.",
                 crate::surface::diagnostics::describe_c_expression(&condition),
                 transitions
                     .iter()
                     .filter(|transition| transition.is_true == value)
                     .count(),
-            ))
-            .with_path_case_split());
+            ));
+            return Err(match split_condition {
+                Some(condition) => error.with_path_case_condition(condition),
+                None => error.with_path_case_split(),
+            });
         }
         let mut arms: [Option<PreparedExecutionArm>; 2] = [None, None];
         for transition in transitions {
@@ -2516,11 +2526,21 @@ impl<'a> Proof<'a> {
                     .map(|(split, record)| (split, record, true))
             } else if proof.is_at_execution_branch()? {
                 // A condition with path cases needs a case split on their
-                // facts before a C `branch` applies; that split belongs to
-                // the planner, so this linear search declines.
+                // facts before a C `branch` applies: split the proof on the
+                // condition that tells them apart, and each case meets the
+                // same `if` again with one path per arm.
                 let (split, record) = match proof.split_focused_execution_branch() {
                     Ok(split) => split,
-                    Err(error) if error.is_path_case_split() => return Ok(None),
+                    Err(error) if error.is_path_case_split() => {
+                        let Some(condition) = error.path_case_condition() else {
+                            return Ok(None);
+                        };
+                        return proof.try_focused_execute_cases_to_exit(
+                            condition.clone(),
+                            &enclosing,
+                            retried_requirements,
+                        );
+                    }
                     Err(error) => return Err(error),
                 };
                 Some((split, record, false))
