@@ -260,9 +260,8 @@ pub(in crate::surface) fn capture_c0_tactic_expansion(
                 &site,
                 source_index,
             )? {
-                Some(context) => Err(ClickError::new(format!(
-                    "selected tactic expansion failed while checking {context}: {}",
-                    error.message()
+                Some(context) => Err(error.with_context(format!(
+                    "selected tactic expansion failed while checking {context}"
                 ))),
                 None => Err(error),
             }
@@ -622,7 +621,7 @@ pub(super) fn finish_tactic_expansion_capture(
         }
         None => ProofCertificate::from_steps(proof_certificate_builder.steps.clone())
             .map(|certificate| certificate.to_proof_tactics())
-            .map_err(|error| error.message().to_string()),
+            .map_err(|error| error.raw_summary().to_string()),
     });
 }
 
@@ -975,11 +974,11 @@ pub(super) fn append_surface_tactics_by_leaf(
             steps.push(ProofStep::CallOutcomes {
                 returned_proof: Box::new(
                     ProofCertificate::from_steps(returned_steps.clone())
-                        .map_err(|error| error.message().to_string())?,
+                        .map_err(|error| error.raw_summary().to_string())?,
                 ),
                 threw_proof: Box::new(
                     ProofCertificate::from_steps(threw_steps.clone())
-                        .map_err(|error| error.message().to_string())?,
+                        .map_err(|error| error.raw_summary().to_string())?,
                 ),
             });
             return Ok(());
@@ -1324,11 +1323,11 @@ pub(super) fn synthesize_surface_paths(
     let mut steps = prefix;
     let then_proof = Box::new(
         ProofCertificate::from_steps(synthesize_surface_paths(then_paths)?)
-            .map_err(|error| error.message().to_string())?,
+            .map_err(|error| error.raw_summary().to_string())?,
     );
     let else_proof = Box::new(
         ProofCertificate::from_steps(synthesize_surface_paths(else_paths)?)
-            .map_err(|error| error.message().to_string())?,
+            .map_err(|error| error.raw_summary().to_string())?,
     );
     steps.push(match first_choice.selector {
         SurfacePathSelector::Proposition(condition) => ProofStep::If {

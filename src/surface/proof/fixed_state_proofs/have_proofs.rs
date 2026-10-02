@@ -1743,7 +1743,7 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
                             // A merged record that is not a certificate blocks
                             // this claim's expansion; it never becomes one.
                             Ok(steps) => ProofCertificate::from_steps(steps.clone())
-                                .map_err(|error| error.message().to_string()),
+                                .map_err(|error| error.raw_summary().to_string()),
                             Err(message) => Err(format!(
                                 "could not merge the claim's surface record across branch contexts: {message}"
                             )),

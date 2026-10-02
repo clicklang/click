@@ -4170,10 +4170,7 @@ pub(super) fn bounded_execute_from_frontier_position(
             Some(&mut path_cases),
         )
         .map_err(|error| {
-            ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `execute` failed after {executed_steps} small execution steps: {}",
-                error.message()
-            ))
+            error.with_context(format!("`{claim_label}` tactic {tactic_index}: `execute` failed after {executed_steps} small execution steps"))
         })?;
         if !path_cases.is_empty() {
             let cases = path_cases

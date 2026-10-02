@@ -1237,10 +1237,7 @@ fn unparseable_expansion_error_for_file(
         .iter()
         .any(|form| replacement.contains(form))
     {
-        return ClickError::new(format!(
-            "the expansion did not parse as Click: {}",
-            parse_error.message()
-        ));
+        return parse_error.with_context("the expansion did not parse as Click");
     }
     let witnesses = file
         .map(|file| {

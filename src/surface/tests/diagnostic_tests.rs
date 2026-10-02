@@ -1362,3 +1362,47 @@ fn statement_sites_change_nothing_but_the_location_line() {
         }
     }
 }
+
+/// A loop's generated closer that fails reports the open member and the
+/// goal, attributed to the `loop` tactic. The premises and search candidates
+/// stay in the trace; they are not folded into the summary and reported as
+/// a line per colon.
+#[test]
+fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
+    let c_source = r#"
+        int32 settle(int32 state) {
+            while (state > 0) {
+                state = state;
+            }
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        verifying "settle.c";
+
+        int32 settle(int32 state) {
+            requires state >= 0;
+            ensures result == 0;
+        } by {
+            loop {
+                decreases state;
+                invariant state >= 0;
+            }
+            execute();
+            simp();
+        }
+    "#;
+    let error = verify_c0_sources(click_source, &[("settle.c", c_source)])
+        .expect_err("a loop whose measure does not decrease is refused");
+    let (report, context) = error.concise_report_parts();
+    assert!(report.contains("`state < state` remained open"), "{report}");
+    assert!(report.lines().count() <= 4, "{report}");
+    for internal in ["stage", "search candidates", "18446744073709551615"] {
+        assert!(!report.contains(internal), "{report}");
+    }
+    assert!(
+        context.iter().any(|line| line.starts_with("goal: ")),
+        "{context:?}"
+    );
+    assert_eq!(error.proof_source_tactic_path(), Some(&[0][..]));
+}
