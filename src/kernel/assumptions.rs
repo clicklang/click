@@ -4332,6 +4332,49 @@ impl PureFactContext {
         exact.chain(fallback)
     }
 
+    /// The read-defined facts stated at `pointer` for `value_type`, at one
+    /// of its exact aliases, or at another spelling in its equality class:
+    /// the keys [`Self::has_memory_read_defined_evidence`] looks up.
+    pub(crate) fn memory_read_defined_candidates(
+        &self,
+        pointer: &Pointer,
+        value_type: CType,
+    ) -> Vec<&Proposition> {
+        let spellings = self.equality_graph.pointer_spellings(pointer);
+        std::iter::once(pointer)
+            .chain(self.exact_pointer_aliases(pointer))
+            .chain(spellings.iter())
+            .filter_map(|candidate| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.memory_read_defined_facts.get(&(
+                    crate::kernel::api::canonicalize_pointer_loads(candidate),
+                    value_type,
+                ))
+            })
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .collect()
+    }
+
+    /// The separation facts the prover consults directly for two memory
+    /// ranges: those stated between their blocks, and the residue with a
+    /// non-memory side. `None` for any other query shape, which the prover
+    /// answers by scanning.
+    pub(crate) fn resource_separation_candidates(
+        &self,
+        left: &CResource,
+        right: &CResource,
+    ) -> Option<Vec<&Proposition>> {
+        let (CResource::Memory(left), CResource::Memory(right)) = (left, right) else {
+            return None;
+        };
+        Some(
+            self.memory_separation_candidates(&left.base().block, &right.base().block)
+                .map(|(proposition, _, _)| proposition)
+                .chain(self.nonmemory_separation_facts.iter())
+                .collect(),
+        )
+    }
+
     pub(in crate::kernel) fn memory_loadable_candidates_for_object(
         &self,
         pointer: &Pointer,
