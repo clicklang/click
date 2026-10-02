@@ -33,3 +33,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [`simp` exhausts its budget on a false postcondition instead of failing promptly](simp-exhausts-its-budget-on-a-false-list-postcondition.md)
 - [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)
 - [`--trace-proof` prints no trace when the failure is a loop frontier report](trace-proof-prints-no-trace-at-a-loop-frontier.md)
+- [Loop `break` exits that reach the same state in a different representation do not join](loop-exits-equal-up-to-representation-do-not-join.md)
