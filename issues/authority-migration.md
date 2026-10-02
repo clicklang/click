@@ -345,11 +345,21 @@ a negative caller quantity using legacy call semantics. Checked entry failures
 now return a bounded diagnostic instead of asserting. This does not add
 symbolic batch transfer support.
 
-The next small slice is still cleanup through the two-authority control: reading
-a field-valued slot quantity from a folded control at a helper boundary,
-then proving zero-population retirement. The read-projection prototype is not
-part of this checkpoint. Keep symbolic grow/shrink and two-pool
-transfer separate. The original bounded-pool project still uses legacy
+Field-valued quantities now read through explicitly required folded controls.
+`authority_control_quantity_read.md` checks `owns pool->capacity of slot(pool)`
+in both clause orders and proves the implicit nonnegative entry guard. Its
+negative companions reject authority without memory and a different pool's
+control. The projection grants read views only; a zero owned quantity cannot
+expose the body. It does not open authority or import mutable body custody.
+The same quantity setup is used by source entry, certified entry, and derived
+loop-frame setup. Deterministic regressions cover many quantity clauses and
+unrelated resource definitions; definition lookup is indexed.
+
+The next small slice is direct cleanup through the two-authority control:
+consume the owned full slot population, restore capacity zero, and prove
+zero-population retirement. Symbolic batch helper transfer remains separate;
+this checkpoint covers quantity reads at entry, not that transfer. Keep
+symbolic grow/shrink and two-pool transfer separate. The original bounded-pool project still uses legacy
 counting and is not migrated as a whole. The speculative cache repair remains
 removed; these checkout proofs required no count-model or authority change.
 Missing facts inside `open(...)` report `Requires f`.

@@ -10138,6 +10138,9 @@ pub(crate) fn establish_resource_derived_loop_frames(
     let quantity_assumptions = match quantified_resource_requirement_assumptions(
         entry,
         function.resource_requires(),
+        function
+            .contract_interface()
+            .composite_resource_definitions(),
         &transition_assumptions,
         budget,
     )? {
@@ -23296,9 +23299,12 @@ pub(super) fn expand_composite_resource_fact_with_children(
     let CResource::Composite { name, arguments } = composite.resource() else {
         return None;
     };
-    let definition = definitions
-        .iter()
-        .find(|definition| definition.name() == name)?;
+    let definition = &definitions[definitions
+        .binary_search_by(|definition| {
+            crate::instrumentation::record_deterministic_work(1);
+            definition.name().cmp(name)
+        })
+        .ok()?];
     if definition.instance_schema.is_some() || definition.matched.is_some() {
         return None;
     }
@@ -23967,9 +23973,12 @@ fn expand_composite_resource_tree(
     let CResource::Composite { name, .. } = composite.resource() else {
         return Some(context.clone());
     };
-    let definition = definitions
-        .iter()
-        .find(|definition| definition.name() == name)?;
+    let definition = &definitions[definitions
+        .binary_search_by(|definition| {
+            crate::instrumentation::record_deterministic_work(1);
+            definition.name().cmp(name)
+        })
+        .ok()?];
     if definition.is_recursive() && ancestors.iter().any(|ancestor| ancestor == name) {
         return Some(context.clone());
     }
@@ -26454,6 +26463,44 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     // premises select, and nothing when they select none (D7). The arm stays
     // folded either way: only its read authority is published here.
     let mut views = instance_arm_views(&base, definitions, state, assumptions);
+    // A control may contain an authority that generic composite expansion
+    // cannot expose without a live population ledger. Its declared memory is
+    // still readable through the folded clause, independently of that ledger.
+    // Publish only views of those cells, never the authority or body ownership.
+    for fact in supplied {
+        if !fact.is_view() && !fact.has_proven_positive_quantity(assumptions) {
+            continue;
+        }
+        let CResource::Composite { name, .. } = fact.resource() else {
+            continue;
+        };
+        let Ok(index) = definitions.binary_search_by(|definition| {
+            crate::instrumentation::record_deterministic_work(1);
+            definition.name().cmp(name)
+        }) else {
+            continue;
+        };
+        if let Some(loadable) = evaluate_composite_resource_loadable_propositions(
+            fact,
+            &definitions[index..=index],
+            state.memory(),
+            assumptions,
+        ) {
+            views.extend(loadable.into_iter().filter_map(|proposition| {
+                let Proposition::CMemoryLoadable { base, bytes, .. } = proposition else {
+                    return None;
+                };
+                Some(CResourceFact::view_memory(
+                    CMemoryRange::new_with_element_width(
+                        base,
+                        Bitvector32Term::Constant(0),
+                        bytes,
+                        1,
+                    ),
+                ))
+            }));
+        }
+    }
     // A field-bearing instance one of this section's own clauses supplied
     // publishes the cells its unconditional, unmatched body owns, the way a
     // field-free composite and a decided arm do. Only the section's own
@@ -28327,21 +28374,69 @@ pub(super) fn evaluate_iterated_resource_spec(
 pub(crate) fn quantified_resource_requirement_assumptions(
     state: &CState,
     resources: &[CResourceSpec],
+    definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<Vec<Proposition>, CRuntimeError>> {
     let mut propositions = Vec::new();
+    let mut quantity_read_state = None;
     for resource in resources {
         let CResourceQuantity::Count(quantity) = resource.quantity() else {
             continue;
         };
-        let quantity = match evaluate_loop_effect_segment_value(
-            state,
+        let mut evaluated = evaluate_loop_effect_segment_value(
+            quantity_read_state.as_ref().unwrap_or(state),
             quantity,
             assumptions,
             "declared resource quantity",
             budget,
-        )? {
+        )?;
+        if evaluated.is_err() && quantity_read_state.is_none() {
+            // This is an entry-assumption prepass, before the complete resource
+            // section can be checked using the quantities' nonnegativity.
+            // Let its unquantified clauses supply their ordinary read views,
+            // including fields behind folded controls. Never invent a member
+            // to read a quantity, or change the entry's actual ownership.
+            let unquantified = resources
+                .iter()
+                .filter(|resource| !matches!(resource.quantity(), CResourceQuantity::Count(_)))
+                .cloned()
+                .collect::<Vec<_>>();
+            let supplied = evaluate_resource_clauses_against_whole_section(
+                state,
+                state,
+                &unquantified,
+                definitions,
+                assumptions,
+                budget,
+            )?;
+            let read_resources = match supplied {
+                Ok(clauses) => resource_clause_section_supply(
+                    state,
+                    &clauses
+                        .into_iter()
+                        .map(|clause| clause.fact)
+                        .collect::<Vec<_>>(),
+                    definitions,
+                    assumptions,
+                ),
+                // Refuse to grant read authority from clauses this partial
+                // section could not evaluate. Preserve the quantity's own
+                // failure rather than reporting an unrelated clause error.
+                Err(_) => state.resources().clone(),
+            };
+            quantity_read_state = Some(state.clone().with_resource_context(read_resources));
+            evaluated = evaluate_loop_effect_segment_value(
+                quantity_read_state
+                    .as_ref()
+                    .expect("quantity read frame established"),
+                quantity,
+                assumptions,
+                "declared resource quantity",
+                budget,
+            )?;
+        }
+        let quantity = match evaluated {
             Ok(CValue::Int32(quantity)) => quantity,
             Ok(_) | Err(_) => {
                 return Ok(Err(CRuntimeError::FunctionContract(
@@ -28358,6 +28453,184 @@ pub(crate) fn quantified_resource_requirement_assumptions(
         ));
     }
     Ok(Ok(propositions))
+}
+
+#[cfg(test)]
+mod quantified_entry_read_tests {
+    use super::*;
+
+    fn fixture(
+        unrelated: usize,
+        quantities: usize,
+    ) -> (
+        CState,
+        Vec<CResourceSpec>,
+        Vec<CCompositeResourceDefinition>,
+    ) {
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("quantity-pool".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let state = CState::new()
+            .with_local("pool", CValue::pointer(pointer.clone()))
+            .with_memory(CMemory::new().with_block(pointer.block.clone(), 8).store(
+                pointer.offset_by_int32_elements(Bitvector32Term::Constant(1)),
+                int32(4),
+            ));
+        let slot = CResourceSpec::composite(
+            CResourceAccessMode::Own,
+            "slot".into(),
+            vec![c_variable("pool")],
+            vec![CType::Int32Pointer],
+        );
+        let authority = CResourceSpec::new(
+            CResourceTerm::PopulationAuthority {
+                population_arity: None,
+                protected: Box::new(CResourceTypeSpec {
+                    resource: Box::new(slot.clone()),
+                    schema: ResourceFieldSchema::new(vec![]).unwrap(),
+                }),
+                snapshot: CResourceSnapshot::Current,
+            },
+            CResourceAccessMode::Own,
+            CResourceQuantity::One,
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap();
+        let control = CCompositeResourceDefinition::new(
+            "zz_control",
+            vec![c_parameter("pool", CType::Int32Pointer)],
+            None,
+            false,
+            vec![
+                CResourceSpec::owned_memory(CMemorySegment::new(
+                    c_variable("pool"),
+                    c_int32_literal(0),
+                    c_int32_literal(2),
+                )),
+                authority,
+            ],
+            vec![],
+        );
+        let mut definitions = (0..unrelated)
+            .map(|index| {
+                CCompositeResourceDefinition::new(
+                    format!("unused_{index:04}"),
+                    vec![],
+                    None,
+                    false,
+                    vec![],
+                    vec![],
+                )
+            })
+            .collect::<Vec<_>>();
+        definitions.push(control);
+        definitions.sort_by(|a, b| a.name().cmp(b.name()));
+        let quantity = CResourceSpec::quantified(
+            c_load(c_add(c_variable("pool"), c_int32_literal(1))),
+            slot,
+            CResourceTransferRole::Borrow,
+            CResourceSnapshot::Entry,
+        )
+        .unwrap();
+        let mut resources = vec![CResourceSpec::composite(
+            CResourceAccessMode::Own,
+            "zz_control".into(),
+            vec![c_variable("pool")],
+            vec![CType::Int32Pointer],
+        )];
+        resources.extend(std::iter::repeat_n(quantity, quantities));
+        (state, resources, definitions)
+    }
+
+    fn sample(unrelated: usize, quantities: usize) -> usize {
+        let (state, resources, definitions) = fixture(unrelated, quantities);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            quantified_resource_requirement_assumptions(
+                &state,
+                &resources,
+                &definitions,
+                &PureFactContext::new(),
+                &mut ExecutionBudget::new(),
+            )
+        });
+        let guards = result
+            .unwrap()
+            .expect("a folded control supplies the field read");
+        assert_eq!(guards.len(), quantities);
+        assert!(guards.iter().all(|guard| guard
+            == &Proposition::ConditionIs(
+                ConditionTerm::Bitvector32SignedGreaterEqual(
+                    Box::new(Bitvector32Term::Constant(4)),
+                    Box::new(Bitvector32Term::Constant(0)),
+                ),
+                true
+            )));
+        assert!(
+            state.resources().facts().is_empty(),
+            "the scratch projection must not change entry ownership"
+        );
+        work
+    }
+
+    #[test]
+    fn composite_read_projection_requires_positive_ownership() {
+        let (state, _, definitions) = fixture(0, 1);
+        let pointer = match state.locals.get("pool").unwrap() {
+            CValue::Pointer(value) => value.pointer().clone(),
+            _ => unreachable!(),
+        };
+        let target = CResourceFact::view_memory(CMemoryRange::new(
+            pointer.clone(),
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::Constant(2),
+        ));
+        for quantity in [0, 1] {
+            let supplied = CResourceFact::Own(
+                CResource::Composite {
+                    name: "zz_control".into(),
+                    arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
+                },
+                Box::new(Bitvector32Term::Constant(quantity)),
+            );
+            let supply = resource_clause_section_supply(
+                &state,
+                &[supplied],
+                &definitions,
+                &PureFactContext::new(),
+            );
+            assert_eq!(
+                supply.satisfies_fact(&target, &PureFactContext::new()),
+                quantity == 1,
+                "zero ownership must not expose a folded body's memory"
+            );
+        }
+    }
+
+    #[test]
+    fn quantity_read_projection_is_built_once_per_section() {
+        let samples = [1, 4, 16, 64].map(|size| (size, sample(64, size)));
+        assert!(samples[0].1 > 0);
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1 * (pair[1].0 / pair[0].0) + 32,
+                "quantity setup must scale with its clauses: {samples:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn quantity_read_projection_ignores_unrelated_definitions() {
+        let samples = [0, 16, 64, 256, 1024].map(|size| (size, sample(size, 1)));
+        let baseline = samples[0].1;
+        assert!(
+            samples
+                .iter()
+                .all(|(size, work)| *work <= baseline + 4 * (size + 1).ilog2() as usize + 8),
+            "quantity setup must not scan unrelated declarations: {samples:?}"
+        );
+    }
 }
 
 fn evaluate_function_declared_resource_spec(
