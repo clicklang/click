@@ -40,9 +40,53 @@ pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
     source_names: HashMap<Variable, String>,
     anonymous_names: HashMap<Variable, String>,
+    /// The parameters or locals a diagnostic spells addresses through, with
+    /// their values, when the caller has them.
+    naming: Option<std::rc::Rc<NamingTables>>,
 }
 
 impl SnapshotLabels {
+    /// Labels that read a scalar the tables name as that name, and an
+    /// address inside an object the tables name as its source spelling.
+    pub(crate) fn naming(
+        parameters: &[crate::languages::c::syntax::C0Parameter],
+        arguments: &[crate::kernel::CExpression],
+    ) -> Self {
+        let mut labels = Self::default();
+        for (parameter, argument) in parameters.iter().zip(arguments) {
+            let crate::kernel::CExpression::Value(value) = argument else {
+                continue;
+            };
+            let term = match value {
+                crate::kernel::CValue::Bool(term)
+                | crate::kernel::CValue::Int8(term)
+                | crate::kernel::CValue::Int16(term)
+                | crate::kernel::CValue::Int32(term)
+                | crate::kernel::CValue::UInt8(term)
+                | crate::kernel::CValue::UInt16(term)
+                | crate::kernel::CValue::UInt32(term)
+                | crate::kernel::CValue::Int64(term)
+                | crate::kernel::CValue::UInt64(term) => term,
+                _ => continue,
+            };
+            if let Bitvector32Term::Variable(variable) = term {
+                labels.source_name(*variable, parameter.name().to_string());
+            }
+        }
+        labels.naming = Some(std::rc::Rc::new((parameters.to_vec(), arguments.to_vec())));
+        labels
+    }
+
+    /// Labels naming what the function being verified declares, when one is.
+    pub(crate) fn ambient() -> Self {
+        let Some(tables) = AMBIENT_NAMING.with(|naming| naming.borrow().clone()) else {
+            return Self::default();
+        };
+        let mut labels = Self::naming(&tables.0, &tables.1);
+        labels.naming = Some(tables);
+        labels
+    }
+
     pub(crate) fn source_name(&mut self, variable: Variable, name: String) {
         self.source_names.entry(variable).or_insert(name);
     }
@@ -164,7 +208,33 @@ fn alphabetic_label(mut index: usize) -> String {
 /// Render one proposition without allowing its shape or attached snapshots to
 /// determine the size of the error message.
 pub(crate) fn render_proposition(proposition: &Proposition) -> String {
-    render_proposition_labeled(proposition, &mut SnapshotLabels::default())
+    render_proposition_labeled(proposition, &mut SnapshotLabels::ambient())
+}
+
+type NamingTables = (
+    Vec<crate::languages::c::syntax::C0Parameter>,
+    Vec<crate::kernel::CExpression>,
+);
+
+thread_local! {
+    /// The parameters of the C function being verified and their entry
+    /// values. Diagnostics only: nothing reads it to decide a proof.
+    static AMBIENT_NAMING: std::cell::RefCell<Option<std::rc::Rc<NamingTables>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Starts verifying a C function whose parameters hold `arguments`.
+pub(crate) fn enter_ambient_naming(
+    parameters: &[crate::languages::c::syntax::C0Parameter],
+    arguments: &[crate::kernel::CExpression],
+) {
+    AMBIENT_NAMING.with(|naming| {
+        *naming.borrow_mut() = Some(std::rc::Rc::new((parameters.to_vec(), arguments.to_vec())));
+    });
+}
+
+pub(crate) fn clear_ambient_naming() {
+    AMBIENT_NAMING.with(|naming| *naming.borrow_mut() = None);
 }
 
 /// A bounded view of one exact resource representation for a proof trace.
@@ -239,7 +309,7 @@ pub(crate) fn render_proposition_labeled(
 /// elimination, so its `Debug` reaches the same datatype schemas a
 /// proposition's does.
 pub(crate) fn render_integer_term(term: &IntegerTerm) -> String {
-    let mut labels = SnapshotLabels::default();
+    let mut labels = SnapshotLabels::ambient();
     let mut renderer = Renderer {
         output: String::with_capacity(128),
         nodes: 0,
@@ -259,7 +329,7 @@ pub(crate) fn render_integer_term(term: &IntegerTerm) -> String {
 /// The kernel's `Debug` for an algebraic sort embeds its entire constructor
 /// schema, which obscures the proposition that follows the binder.
 pub(crate) fn render_sort(sort: &Sort) -> String {
-    let mut labels = SnapshotLabels::default();
+    let mut labels = SnapshotLabels::ambient();
     let mut renderer = Renderer {
         output: String::with_capacity(64),
         nodes: 0,
@@ -1210,6 +1280,16 @@ impl Renderer<'_> {
         }
     }
     fn pointer(&mut self, p: &Pointer) {
+        // An address inside an object the caller's tables name reads as its
+        // source spelling, not as a block and an offset.
+        if let Some(tables) = self.labels.naming.clone() {
+            let (parameters, arguments) = &*tables;
+            let spelled = crate::surface::diagnostics::describe_pointer(p, parameters, arguments);
+            if !spelled.contains("the pointer value at this program point") {
+                self.push(&spelled);
+                return;
+            }
+        }
         self.push("pointer(");
         match &p.block {
             crate::kernel::PointerBlock::Concrete(s) | crate::kernel::PointerBlock::Function(s) => {

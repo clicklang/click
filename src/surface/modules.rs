@@ -122,15 +122,24 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
         // closure, and the standard library, but never an importer-only name.
         let closure_ids = transitive_imports(identity, &modules)?;
         let mut combined = merge_modules(&closure_ids, identity, &locals)?;
-        combined = validation::expand_declared_resource_clauses(combined)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
+        combined = validation::expand_declared_resource_clauses(combined).map_err(|error| {
+            error
+                .with_kind(ClickErrorKind::Type)
+                .located_by_ambient_declaration()
+        })?;
+        crate::surface::clear_ambient_proof_source();
         validation::validate_click_definitions(&combined).map_err(|error| {
             error
                 .with_kind(ClickErrorKind::Type)
                 .with_context(format!("while checking module `{identity}`"))
+                .located_by_ambient_declaration()
         })?;
-        lowering::check_resource_field_schemas(&mut combined)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
+        crate::surface::clear_ambient_proof_source();
+        lowering::check_resource_field_schemas(&mut combined).map_err(|error| {
+            error
+                .with_kind(ClickErrorKind::Type)
+                .located_by_ambient_declaration()
+        })?;
     }
 
     for identity in order
@@ -165,12 +174,21 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             combined.thread_runtime = runtime;
         }
     }
-    combined = validation::expand_declared_resource_clauses(combined)
-        .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
-    validation::validate_click_definitions(&combined)
-        .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
-    lowering::check_resource_field_schemas(&mut combined)
-        .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
+    combined = validation::expand_declared_resource_clauses(combined).map_err(|error| {
+        error
+            .with_kind(ClickErrorKind::Type)
+            .located_by_ambient_declaration()
+    })?;
+    validation::validate_click_definitions(&combined).map_err(|error| {
+        error
+            .with_kind(ClickErrorKind::Type)
+            .located_by_ambient_declaration()
+    })?;
+    lowering::check_resource_field_schemas(&mut combined).map_err(|error| {
+        error
+            .with_kind(ClickErrorKind::Type)
+            .located_by_ambient_declaration()
+    })?;
     reject_theorem_justification_cycles(&combined)?;
     Ok(combined)
 }

@@ -199,7 +199,7 @@ pub fn accepted_proof_trace(
     have_body_contains: &dyn Fn(&str, &[usize], &crate::source::SourcePosition) -> bool,
     target: Option<&crate::source::SourcePosition>,
 ) -> Option<String> {
-    let mut labels = proof_diagnostics::render::SnapshotLabels::default();
+    let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
     proof_trace::render_accepted(
         &mut labels,
         tactic_location,
@@ -5782,6 +5782,7 @@ thread_local! {
 /// Starts verifying the Click declaration `name`; no tactic of it has been
 /// addressed yet.
 pub(crate) fn enter_ambient_declaration(name: &str) {
+    proof_diagnostics::render::clear_ambient_naming();
     AMBIENT_PROOF_SOURCE.with(|ambient| {
         *ambient.borrow_mut() = AmbientProofSource {
             declaration: Some(name.to_owned()),
@@ -5806,6 +5807,7 @@ pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize)
 }
 
 pub(crate) fn clear_ambient_proof_source() {
+    proof_diagnostics::render::clear_ambient_naming();
     AMBIENT_PROOF_SOURCE.with(|ambient| *ambient.borrow_mut() = AmbientProofSource::default());
 }
 
@@ -7133,7 +7135,7 @@ impl ClickError {
     /// was attempted. `message()` stays the stable cause text used by tools
     /// that compare or aggregate diagnostics.
     pub fn report(&self) -> String {
-        let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::default();
+        let mut snapshot_labels = proof_diagnostics::render::SnapshotLabels::ambient();
         let traced_message = self.diagnostic.as_ref().and_then(|diagnostic| {
             (self.kind == ClickErrorKind::Proof
                 && proof_trace::enabled_for(&diagnostic.claim_label))
@@ -7336,7 +7338,7 @@ impl ClickError {
         {
             return None;
         }
-        let mut labels = proof_diagnostics::render::SnapshotLabels::default();
+        let mut labels = proof_diagnostics::render::SnapshotLabels::ambient();
         let context = proof_diagnostics::render_trace_context_labeled(
             diagnostic,
             self.search_failures
@@ -7440,6 +7442,21 @@ impl ClickError {
                 detail.source_tactic = Some((claim, vec![source_index]));
             }
             None => detail.declaration = declaration,
+        }
+        self
+    }
+
+    /// Shows a failure that names no source the declaration that was being
+    /// checked when it arose, whatever kind of failure it is. Declaration
+    /// checking has no tactic to name.
+    pub(crate) fn located_by_ambient_declaration(mut self) -> Self {
+        if self.proof_source_site().is_some() || self.proof_declaration().is_some() {
+            return self;
+        }
+        let declaration = AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow().declaration.clone());
+        if let Some(declaration) = declaration {
+            std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).declaration =
+                Some(declaration);
         }
         self
     }

@@ -2054,6 +2054,10 @@ pub(super) fn initial_claim_context_with_mode(
             resource_semantics_mode,
         )?
     };
+    crate::surface::proof_diagnostics::render::enter_ambient_naming(
+        parsed_function.parameters(),
+        &arguments,
+    );
     let mut observed_population_families = BTreeSet::new();
     let mut pending_predicates = BTreeSet::new();
     for requirement in function_block.requires() {

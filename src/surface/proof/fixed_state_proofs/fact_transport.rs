@@ -648,7 +648,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
                 {
                     // One label set for both leaves, so a read they share is
                     // spelled once and two different reads never share a name.
-                    let mut labels = render::SnapshotLabels::default();
+                    let mut labels = render::SnapshotLabels::ambient();
                     let had = render::render_proposition_labeled(from, &mut labels);
                     let wanted = render::render_proposition_labeled(to, &mut labels);
                     rendered.push_str(&format!(
@@ -686,7 +686,7 @@ fn describe_unreachable_fact_transport(
     target: &Proposition,
     transition_facts: &[ExecutionPureFact],
 ) -> String {
-    let mut labels = render::SnapshotLabels::default();
+    let mut labels = render::SnapshotLabels::ambient();
     let mut rendered = format!(
         "`{claim_label}` tactic {tactic_index}: `transport using` found no frame evidence \
          carrying its source fact to the target's state\

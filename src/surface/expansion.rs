@@ -3486,8 +3486,8 @@ pub fn program_prepared_tactic_source_position(
 ///
 /// A failure with no tactic or C statement to address, such as a contract
 /// that could not be set up at entry, shows this declaration instead. A
-/// declaration is the name followed by `(` outside every brace; a use of the
-/// name inside a body is not one.
+/// declaration is the name followed by its parameters or body outside every
+/// brace; a use of the name inside a body is not one.
 pub fn click_declaration_source_position(click_source: &str, name: &str) -> Option<SourcePosition> {
     let tokens = scan_source_tokens(click_source).ok()?;
     let mut depth = 0usize;
@@ -3505,7 +3505,12 @@ pub fn click_declaration_source_position(click_source: &str, name: &str) -> Opti
                         .position(|token| token.text == ">")
                         .map_or(next, |close| next + close + 1);
                 }
-                if tokens.get(next).map(|token| token.text.as_str()) == Some("(") {
+                // A function, contract, resource or theorem is followed by
+                // its parameters; a datatype by its body.
+                if matches!(
+                    tokens.get(next).map(|token| token.text.as_str()),
+                    Some("(" | "{")
+                ) {
                     return Some(token.span.start);
                 }
             }

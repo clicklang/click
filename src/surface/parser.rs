@@ -738,12 +738,22 @@ impl Parser {
 
     fn parse_file(mut self) -> Result<ClickFile, ClickError> {
         let file = self.parse_file_items()?;
-        let mut file = super::validation::expand_declared_resource_clauses(file)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
-        super::validation::validate_click_definitions(&file)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
-        super::lowering::check_resource_field_schemas(&mut file)
-            .map_err(|error| error.with_kind(ClickErrorKind::Type))?;
+        let mut file =
+            super::validation::expand_declared_resource_clauses(file).map_err(|error| {
+                error
+                    .with_kind(ClickErrorKind::Type)
+                    .located_by_ambient_declaration()
+            })?;
+        super::validation::validate_click_definitions(&file).map_err(|error| {
+            error
+                .with_kind(ClickErrorKind::Type)
+                .located_by_ambient_declaration()
+        })?;
+        super::lowering::check_resource_field_schemas(&mut file).map_err(|error| {
+            error
+                .with_kind(ClickErrorKind::Type)
+                .located_by_ambient_declaration()
+        })?;
         Ok(file)
     }
 

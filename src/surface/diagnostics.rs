@@ -497,7 +497,7 @@ pub(super) fn describe_pure_fact(
                 _ => format!("malformed named contract fact `{contract}`"),
             }
         }
-        _ => describe_unclassified_pure_fact(fact),
+        _ => describe_unclassified_pure_fact(fact, parameters, arguments),
     }
 }
 
@@ -512,11 +512,20 @@ pub(super) fn describe_pure_fact(
 /// `proof_diagnostics::render` spells the same proposition in its source
 /// vocabulary under node, depth, and byte bounds; `CLICK_FULL_DIAGNOSTICS`
 /// still yields the developer dump.
-fn describe_unclassified_pure_fact(fact: &Proposition) -> String {
+fn describe_unclassified_pure_fact(
+    fact: &Proposition,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
     if std::env::var_os(FULL_DIAGNOSTICS_ENV).is_some() {
         return format!("{fact:?}");
     }
-    crate::surface::proof_diagnostics::render::render_proposition(fact)
+    crate::surface::proof_diagnostics::render::render_proposition_labeled(
+        fact,
+        &mut crate::surface::proof_diagnostics::render::SnapshotLabels::naming(
+            parameters, arguments,
+        ),
+    )
 }
 
 pub(super) fn describe_execution_pure_facts(facts: &[ExecutionPureFact]) -> String {
@@ -1141,10 +1150,18 @@ pub(super) fn describe_runtime_error(
             "cannot execute call to `{name}` opaquely: its contract refers to an internal program point that is unavailable at the call site"
         ),
         crate::kernel::CRuntimeError::AbstractFunctionPointerCall(name) => format!(
-            "cannot verify call through function pointer `{name}`: no matching named contract is available for this value"
+            "cannot verify call through {}: no matching named contract is available for this value",
+            if is_call_result_temporary(name) {
+                "a function pointer loaded from memory".to_string()
+            } else {
+                format!("function pointer `{name}`")
+            }
         ),
         crate::kernel::CRuntimeError::FunctionContract(message) => {
-            format!("function contract could not be applied: {message}")
+            format!(
+                "function contract could not be applied: {}",
+                name_string_literal_storage(message)
+            )
         }
         crate::kernel::CRuntimeError::UninitializedMutex { mutex } => format!(
             "could not prove that mutex `{}` was initialized on this path",
@@ -3428,7 +3445,7 @@ fn describe_address_index(
     describe_bitvector_with_context(index, parameters, arguments)
 }
 
-pub(super) fn describe_pointer(
+pub(in crate::surface) fn describe_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
     arguments: &[CExpression],
@@ -3932,6 +3949,32 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
     }
 }
 
+/// A string literal's storage reads as "a string literal": its block name
+/// is one the lowering generated, not one the source has.
+fn name_string_literal_storage(message: &str) -> String {
+    let Some(start) = message.find("`string:") else {
+        return message.to_string();
+    };
+    let Some(length) = message[start + 1..].find('`') else {
+        return message.to_string();
+    };
+    let end = start + 1 + length;
+    if !message[start..end].contains("__click_string_literal") {
+        return message.to_string();
+    }
+    format!(
+        "{}a string literal{}",
+        &message[..start],
+        &message[end + 1..]
+    )
+}
+
+/// Whether `name` is a temporary the C lowering introduced for the result of
+/// a call or load nested inside a larger expression.
+pub(in crate::surface) fn is_call_result_temporary(name: &str) -> bool {
+    name.starts_with("__click_call_result")
+}
+
 pub(super) fn describe_c_expression(expression: &CExpression) -> String {
     match expression {
         CExpression::Value(value) => describe_c_value(value, &[], &[]),
@@ -4126,6 +4169,9 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             describe_c_expression(target),
             describe_c_expression(source)
         ),
+        CStatement::Assign { name, expression } if is_call_result_temporary(name) => {
+            format!("{};", describe_c_expression(expression))
+        }
         CStatement::Assign { name, expression } => {
             format!("{name} = {};", describe_c_expression(expression))
         }
@@ -4133,15 +4179,24 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
             target,
             function_name,
             arguments,
-        } => format!(
-            "{target} = {function_name}({});",
-            describe_c_expression_list(arguments)
-        ),
+        } => {
+            let call = format!(
+                "{}({});",
+                describe_called_function(function_name),
+                describe_c_expression_list(arguments)
+            );
+            if is_call_result_temporary(target) {
+                call
+            } else {
+                format!("{target} = {call}")
+            }
+        }
         CStatement::Call {
             function_name,
             arguments,
         } => format!(
-            "{function_name}({});",
+            "{}({});",
+            describe_called_function(function_name),
             describe_c_expression_list(arguments)
         ),
         CStatement::HeapAllocate {
@@ -4213,6 +4268,16 @@ pub(super) fn describe_c_statement_head(statement: &CStatement) -> String {
         }
     };
     truncate_utf8_with_suffix(&head, MAX_STATEMENT_HEAD_BYTES, "…")
+}
+
+/// The callee as the C names it; a function pointer the lowering loaded into
+/// a temporary has no name there.
+pub(in crate::surface) fn describe_called_function(function_name: &str) -> &str {
+    if is_call_result_temporary(function_name) {
+        "(the loaded function pointer)"
+    } else {
+        function_name
+    }
 }
 
 /// A guard already sits inside the parentheses the statement writes, so drop

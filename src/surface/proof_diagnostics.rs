@@ -108,7 +108,7 @@ pub(crate) fn render_terminal_message(
         summary,
         diagnostic,
         search_failures,
-        &mut render::SnapshotLabels::default(),
+        &mut render::SnapshotLabels::ambient(),
     )
 }
 
