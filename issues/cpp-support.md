@@ -72,6 +72,18 @@ length claims agree. Full-width unsigned constant bounds use the queried
 endpoint's index, with fixed-work regressions over unrelated fact populations.
 This establishes encoded length, not byte serialization or parsing.
 
+Concrete function templates are now imported through ordinary selected callers.
+Boolean value arguments and the supported unqualified builtin scalar type
+arguments have distinct Clang identities and sidecar names, including equal-width
+`long`/`long long` distinctions. Pinned Clang selects `if constexpr` in constant
+evaluation context; the artifact retains the selected arm, constant condition,
+and source spans. Selected unsupported behavior fails explicitly. Regressions
+cover modular callers, receiver ownership, framing, false contracts, type
+identity, Boolean substitution, absent else arms, and rejection of unsupported
+arguments and dependent selection. Both instantiated unsigned fee fast-path
+expressions verify concrete rounding cases, expansion and retained audit. These
+are synthetic prerequisites; no additional upstream fee proof is claimed.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -93,11 +105,11 @@ regression for every new slice.
 Select unchanged `FeeFrac::EvaluateFeeDown/Up` and their instantiated helpers
 from this pinned release. State input bounds that make the result representable
 and prove the documented rounding direction, including negative fees, exact
-division, and a nonzero remainder. The selected source uses templated
-`EvaluateFee`, `if constexpr`, general unsigned-to-signed-64 conversion, and
-`__int128` helpers on this target. Those are further
-importer and arithmetic-model work; the delivered method slice does not yet
-support them.
+division, and a nonzero remainder. Concrete Boolean template instances and `if constexpr` now have prerequisite
+coverage. The selected source still requires general unsigned-to-signed-64
+conversion, `__int128` helpers, assumption obligations, and direct return-call
+positions on this target. Those remain importer and arithmetic-model work;
+upstream `EvaluateFee` is not yet supported.
 
 Before implementing the upstream proof, freeze a small regression that
 preserves the chosen rounding/conversion pattern. Include hostile false

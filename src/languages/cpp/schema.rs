@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 23;
+pub(crate) const EXPORT_SCHEMA: u32 = 24;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1758,6 +1758,29 @@ impl CppCallArgument {
 }
 
 impl CppExpression {
+    // Only a closed, typed Boolean conversion participates in return analysis.
+    // The selected constexpr arm is retained as an ordinary constant if; an
+    // unknown runtime condition must still return on both paths.
+    fn constant_boolean(&self) -> Option<bool> {
+        let Self::IntegralCast {
+            value,
+            value_type: CppType::Boolean { .. },
+            ..
+        } = self
+        else {
+            return None;
+        };
+        match value.as_ref() {
+            Self::CompilerConstant { value, .. } | Self::IntegerLiteral { value, .. } => {
+                match value.as_str() {
+                    "0" => Some(false),
+                    "1" => Some(true),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
     pub(crate) fn value_type(&self) -> &CppType {
         match self {
             Self::IntegerLiteral { value_type, .. }
@@ -2284,10 +2307,17 @@ impl CppStatement {
         match self {
             Self::Return { .. } | Self::Throw { .. } => true,
             Self::If {
+                condition,
                 then_branch,
                 else_branch,
                 ..
-            } => sequence_always_returns(then_branch) && sequence_always_returns(else_branch),
+            } => match condition.constant_boolean() {
+                Some(true) => sequence_always_returns(then_branch),
+                Some(false) => sequence_always_returns(else_branch),
+                None => {
+                    sequence_always_returns(then_branch) && sequence_always_returns(else_branch)
+                }
+            },
             Self::Scope { body, .. } => sequence_always_returns(body),
             Self::TryCatchInt32 {
                 try_body, handler, ..
@@ -3688,5 +3718,52 @@ mod tests {
             error.contains("disagrees with its evaluated value"),
             "{error}"
         );
+    }
+    #[test]
+    fn return_analysis_rejects_missing_return_in_the_reachable_constant_arm() {
+        let condition = |value: &str| CppExpression::IntegralCast {
+            value: Box::new(CppExpression::CompilerConstant {
+                value: value.into(),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            }),
+            value_type: CppType::Boolean {
+                bits: 8,
+                is_const: false,
+            },
+            span: cleanup_span(),
+        };
+        let returned = CppStatement::Return {
+            value: CppExpression::IntegerLiteral {
+                value: "7".into(),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            },
+            cleanups: vec![],
+            span: cleanup_span(),
+        };
+        let branch = |condition, then_branch, else_branch| CppStatement::If {
+            condition,
+            then_branch,
+            else_branch,
+            span: cleanup_span(),
+        };
+        assert!(branch(condition("1"), vec![returned.clone()], vec![]).always_returns());
+        assert!(!branch(condition("0"), vec![returned.clone()], vec![]).always_returns());
+        assert!(branch(condition("0"), vec![], vec![returned.clone()]).always_returns());
+        assert!(!branch(condition("1"), vec![], vec![returned.clone()]).always_returns());
+        let unknown = CppExpression::Load {
+            place: CppPlaceReference {
+                declaration_id: "flag".into(),
+                name: "flag".into(),
+                span: cleanup_span(),
+            },
+            value_type: CppType::Boolean {
+                bits: 8,
+                is_const: false,
+            },
+            span: cleanup_span(),
+        };
+        assert!(!branch(unknown, vec![returned], vec![]).always_returns());
     }
 }

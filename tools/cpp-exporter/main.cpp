@@ -18,10 +18,11 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
-#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/RecordLayout.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
 #include "clang/AST/TypeLoc.h"
@@ -238,7 +239,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 23;
+    artifact["schema"] = 24;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -281,6 +282,13 @@ private:
   };
 
   std::optional<Json> lower_function(const clang::FunctionDecl *declaration) {
+    if (declaration->isDependentContext() ||
+        declaration->getType()->isDependentType()) {
+      fail(declaration->getLocation(),
+           "select an ordinary C++ caller of concrete template instances, not "
+           "a dependent template pattern");
+      return std::nullopt;
+    }
     const auto *constructor =
         llvm::dyn_cast<clang::CXXConstructorDecl>(declaration);
     const auto *destructor =
@@ -439,12 +447,11 @@ private:
 
     llvm::json::Object result;
     result["declaration_id"] = declaration_id(declaration);
-    result["name"] =
-        ordinary_method ? method_name(method)
-        : constructor == nullptr
-            ? (destructor == nullptr ? declaration->getNameAsString()
-                                     : destructor_name(destructor))
-            : constructor_name(constructor);
+    result["name"] = ordinary_method ? method_name(method)
+                     : constructor == nullptr
+                         ? (destructor == nullptr ? function_name(declaration)
+                                                  : destructor_name(destructor))
+                         : constructor_name(constructor);
     result["function_kind"] = std::move(function_kind);
     result["return_type"] = std::move(*return_type);
     result["parameters"] = std::move(parameters);
@@ -825,6 +832,34 @@ private:
         fail(conditional->getIfLoc(),
              "the supported C++ if statement cannot declare an initializer or condition variable");
         return std::nullopt;
+      }
+      // Clang has already instantiated this condition. A discarded constexpr
+      // arm is not runtime behavior and must not add callees, loads, or
+      // cleanup.
+      if (conditional->isConstexpr()) {
+        auto selected = conditional->getNondiscardedCase(context_);
+        if (!selected) {
+          fail(conditional->getIfLoc(),
+               "dependent C++ if constexpr condition is unsupported");
+          return std::nullopt;
+        }
+        const bool takes_then = *selected == conditional->getThen();
+        auto branch =
+            lower_branch(*selected, function,
+                         allow_nested_scope ? CleanupScopeKind::Conditional
+                                            : CleanupScopeKind::None);
+        if (!branch)
+          return std::nullopt;
+        llvm::json::Object result;
+        result["kind"] = "if";
+        result["condition"] = boolean_constant(
+            takes_then, conditional->getCond()->getSourceRange(), true);
+        result["then_branch"] =
+            takes_then ? std::move(*branch) : llvm::json::Array();
+        result["else_branch"] =
+            takes_then ? llvm::json::Array() : std::move(*branch);
+        result["span"] = span(conditional->getSourceRange());
+        return Json(std::move(result));
       }
       auto condition = lower_expression(conditional->getCond(), function);
       auto branch_scope = allow_nested_scope
@@ -1466,7 +1501,7 @@ private:
     llvm::json::Object reference;
     reference["declaration_id"] = declaration_id(definition);
     reference["name"] =
-        method != nullptr ? method_name(method) : definition->getNameAsString();
+        method != nullptr ? method_name(method) : function_name(definition);
     reference["span"] = span(call->getCallee()->getSourceRange());
 
     Json call_span = span(call->getSourceRange());
@@ -1711,6 +1746,15 @@ private:
                ? "scalar int32 throws must be standalone statements"
                : "throw expressions are outside the normal-only C++ profile");
       return std::nullopt;
+    }
+    if (const auto *substitution =
+            llvm::dyn_cast<clang::SubstNonTypeTemplateParmExpr>(expression)) {
+      return lower_expression(substitution->getReplacement(), function);
+    }
+    if (const auto *boolean =
+            llvm::dyn_cast<clang::CXXBoolLiteralExpr>(expression)) {
+      return boolean_constant(boolean->getValue(), boolean->getSourceRange(),
+                              false);
     }
     // Closed compile-time operations are evaluated by the pinned Clang profile,
     // and retain their source span as distinct compiler_constant artifact
@@ -2034,6 +2078,11 @@ private:
   }
 
   bool validate_record(const clang::CXXRecordDecl *record) {
+    if (llvm::isa<clang::ClassTemplateSpecializationDecl>(record)) {
+      fail(record->getLocation(),
+           "C++ class template instances are unsupported");
+      return false;
+    }
     if (!record->isStruct() || record->getName().empty()) {
       fail(record->getLocation(),
            "the supported C++ record must be a named struct");
@@ -2396,6 +2445,86 @@ private:
     return declaration_id(method) + "@this";
   }
 
+  Json boolean_constant(bool value, clang::SourceRange source,
+                        bool compiler_evaluated) {
+    llvm::json::Object integer_type;
+    integer_type["kind"] = "integer";
+    integer_type["bits"] = 32;
+    integer_type["signed"] = true;
+    integer_type["is_const"] = false;
+    integer_type["source_aliases"] = llvm::json::Array();
+    llvm::json::Object integer;
+    integer["kind"] =
+        compiler_evaluated ? "compiler_constant" : "integer_literal";
+    integer["value"] = value ? "1" : "0";
+    integer["value_type"] = std::move(integer_type);
+    integer["span"] = span(source);
+    llvm::json::Object boolean_type;
+    boolean_type["kind"] = "boolean";
+    boolean_type["bits"] =
+        static_cast<std::int64_t>(context_.getTypeSize(context_.BoolTy));
+    boolean_type["is_const"] = false;
+    llvm::json::Object result;
+    result["kind"] = "integral_cast";
+    result["value"] = std::move(integer);
+    result["value_type"] = std::move(boolean_type);
+    result["span"] = span(source);
+    return Json(std::move(result));
+  }
+
+  std::string template_suffix(const clang::FunctionDecl *function) {
+    const auto *arguments = function->getTemplateSpecializationArgs();
+    if (arguments == nullptr)
+      return {};
+    std::string suffix;
+    for (const auto &argument : arguments->asArray()) {
+      if (argument.getKind() == clang::TemplateArgument::Integral &&
+          argument.getIntegralType()->isBooleanType()) {
+        suffix +=
+            argument.getAsIntegral().isZero() ? "__bool_false" : "__bool_true";
+      } else if (argument.getKind() == clang::TemplateArgument::Type) {
+        const auto type = context_.getCanonicalType(argument.getAsType());
+        if (type.hasQualifiers()) {
+          fail(function->getLocation(),
+               "qualified C++ template type arguments are unsupported");
+          return {};
+        }
+        // Exact builtin identities, rather than widths, keep long and long
+        // long (both 64 bits in this profile) separate. Aliases canonicalize.
+        const std::pair<clang::QualType, const char *> supported[] = {
+            {context_.BoolTy, "__bool"},
+            {context_.IntTy, "__int"},
+            {context_.UnsignedIntTy, "__unsigned_int"},
+            {context_.LongTy, "__long"},
+            {context_.UnsignedLongTy, "__unsigned_long"},
+            {context_.LongLongTy, "__long_long"},
+            {context_.UnsignedLongLongTy, "__unsigned_long_long"}};
+        const char *name = nullptr;
+        for (const auto &[candidate, token] : supported) {
+          if (context_.hasSameType(type, candidate)) {
+            name = token;
+            break;
+          }
+        }
+        if (name == nullptr) {
+          fail(function->getLocation(), "C++ template type arguments require "
+                                        "bool or 32/64-bit builtin integers");
+          return {};
+        }
+        suffix += name;
+      } else {
+        fail(function->getLocation(), "C++ template arguments require Boolean "
+                                      "values or supported scalar types");
+        return {};
+      }
+    }
+    return suffix;
+  }
+
+  std::string function_name(const clang::FunctionDecl *function) {
+    return function->getNameAsString() + template_suffix(function);
+  }
+
   std::string method_name(const clang::CXXMethodDecl *method) {
     std::string name = method->getNameAsString();
     if (method->isOverloadedOperator()) {
@@ -2409,7 +2538,8 @@ private:
                  ? "operator_add_assign"
                  : "operator_subtract_assign";
     }
-    return method->getParent()->getNameAsString() + "_" + name;
+    return method->getParent()->getNameAsString() + "_" + name +
+           template_suffix(method);
   }
 
   std::string constructor_name(
