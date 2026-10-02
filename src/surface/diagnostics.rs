@@ -1651,7 +1651,21 @@ pub(super) fn describe_memory_range(
     // not at a pointer to it.
     let base = match named_object_block(&range.base().block, parameters, arguments) {
         Some(name) if range.base().offset == PointerOffsetTerm::Constant(0) => name,
-        _ => describe_pointer(range.base(), parameters, arguments),
+        _ => {
+            let cell = describe_pointer(range.base(), parameters, arguments);
+            // One element at an address spelled as a member or a byte offset
+            // is that cell; `p->data[2][0..1]` would read as a second index.
+            // A bare name or an elided address keeps its range.
+            let compound = cell.starts_with("(char *)")
+                || cell.contains("->")
+                || cell.contains("].")
+                || cell.ends_with(']');
+            if compound && range.start().as_const() == Some(0) && range.end().as_const() == Some(1)
+            {
+                return cell;
+            }
+            cell
+        }
     };
     format!(
         "{}[{}..{}]",
@@ -3394,6 +3408,7 @@ pub(super) fn describe_pointer(
     // through the parameter the address actually belongs to, and picking it is
     // deterministic.
     let mut best: Option<String> = None;
+    let mut byte_offset: Option<String> = None;
     for (parameter, argument) in parameters.iter().zip(arguments) {
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
@@ -3416,9 +3431,30 @@ pub(super) fn describe_pointer(
             if best.as_ref().is_none_or(|best| spelled.len() < best.len()) {
                 best = Some(spelled);
             }
+        } else if let Some(member) =
+            describe_parameter_struct_member(pointer, parameter, base.pointer())
+        {
+            if best.as_ref().is_none_or(|best| member.len() < best.len()) {
+                best = Some(member);
+            }
+        } else if let Some(bytes) = pointer.offset_from_base(base.pointer()) {
+            // An address inside the parameter's object that is no whole
+            // element of it -- a byte of a wider cell, say -- is still a
+            // byte offset from the parameter, as a named object's is below.
+            let spelled = format!(
+                "(char *){} + {}",
+                parameter.name(),
+                describe_pointer_offset(&bytes)
+            );
+            if byte_offset
+                .as_ref()
+                .is_none_or(|best: &String| spelled.len() < best.len())
+            {
+                byte_offset = Some(spelled);
+            }
         }
     }
-    if let Some(best) = best {
+    if let Some(best) = best.or(byte_offset) {
         return best;
     }
     match &pointer.block {
@@ -3485,6 +3521,73 @@ fn describe_parameter_struct_field_pointer(
     })
 }
 
+/// An address inside the struct a parameter points to, spelled through the
+/// parameter: `p->field` for a member of `*p`, `p[i].field` for a member of
+/// element `i`, and `p->field[k]` for an element of an array member.
+///
+/// The address is the parameter's own plus at most one index scaled by the
+/// struct's size plus a constant inside the struct. Anything else has no
+/// member spelling here.
+///
+/// The index is spelled without the naming tables, as an element's index
+/// is: naming a loaded index describes the cell it was loaded from, which
+/// can be this address again.
+fn describe_parameter_struct_member(
+    pointer: &Pointer,
+    parameter: &syntax::C0Parameter,
+    base: &Pointer,
+) -> Option<String> {
+    let layout = parameter
+        .pointee_struct_layout()
+        .or_else(|| parameter.struct_layout())?;
+    let size = i64::from(layout.size_bytes());
+    if size == 0 {
+        return None;
+    }
+    let mut constant = 0i64;
+    let mut element: Option<&Bitvector32Term> = None;
+    let rest = pointer.offset_from_base(base)?;
+    let mut pending = vec![&rest];
+    while let Some(term) = pending.pop() {
+        match term {
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            PointerOffsetTerm::Constant(bytes) => constant = constant.checked_add(*bytes)?,
+            PointerOffsetTerm::Int32Scaled { value, byte_width }
+            | PointerOffsetTerm::Int64Scaled {
+                value, byte_width, ..
+            } if *byte_width == size && element.is_none() => element = Some(value),
+            _ => return None,
+        }
+    }
+    // A constant past the first struct selects a later element.
+    let (whole, inside) = (constant.div_euclid(size), constant.rem_euclid(size));
+    let selected = match (element, whole) {
+        (None, 0) => None,
+        (None, whole) => Some(whole.to_string()),
+        (Some(index), 0) => Some(describe_bitvector(index)),
+        (Some(index), whole) => Some(format!("{} + {whole}", describe_bitvector(index))),
+    };
+    let fields = layout.fields();
+    let (name, field) = fields
+        .iter()
+        .filter(|(_, field)| i64::from(field.offset_bytes()) <= inside)
+        .max_by_key(|(_, field)| field.offset_bytes())?;
+    let within = inside - i64::from(field.offset_bytes());
+    let member = match &selected {
+        Some(index) => format!("{}[{index}].{name}", parameter.name()),
+        None => format!("{}->{name}", parameter.name()),
+    };
+    if within == 0 {
+        return Some(member);
+    }
+    let width = scalar_element_width(field.c_type())
+        .or_else(|| field.array_element_width().map(i64::from))?;
+    (within % width == 0).then(|| format!("{member}[{}]", within / width))
+}
+
 fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
     match c_type {
         C0Type::Bool | C0Type::Char | C0Type::UInt8 => 1,
@@ -3498,6 +3601,11 @@ fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
 }
 
 pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter) -> i64 {
+    // A pointer to (or array of) one scalar type is indexed by that scalar's
+    // width, whatever the pointer itself occupies.
+    if let Some(width) = scalar_element_width(parameter.c_type()) {
+        return width;
+    }
     match parameter.c_type() {
         C0Type::Void => 0,
         C0Type::Bool => 1,
