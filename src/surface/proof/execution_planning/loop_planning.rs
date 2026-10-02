@@ -258,6 +258,8 @@ struct InitializePhaseExpansion {
     helpers: usize,
     individual_bodies: bool,
     sites: Vec<usize>,
+    /// The first tactic of the script every invariant runs.
+    shared_start: Option<usize>,
 }
 
 impl InitializePhaseExpansion {
@@ -270,7 +272,18 @@ impl InitializePhaseExpansion {
             helpers: layout.helpers.len(),
             individual_bodies: layout.invariant_bodies.is_some(),
             sites,
+            shared_start: layout.shared_source_indices.first().copied(),
         }
+    }
+
+    /// The source index a closer's expansion replaces from. The expansion
+    /// is one step per invariant, each holding the whole shared script, so
+    /// it stands for every shared tactic written before the closer too.
+    fn replaces_from(&self, selected: usize) -> Option<usize> {
+        if self.individual_bodies || !self.sites.contains(&selected) {
+            return None;
+        }
+        self.shared_start.filter(|start| *start < selected)
     }
 
     fn expand(&self, selected: usize, certificate: &ProofCertificate) -> Option<Vec<ProofTactic>> {
@@ -596,7 +609,11 @@ impl CheckedLoopInitialization {
         selected: usize,
         certificate: &ProofCertificate,
     ) -> Option<Vec<ProofTactic>> {
-        self.expansion.expand(selected, certificate)
+        let expansion = self.expansion.expand(selected, certificate)?;
+        if let Some(from) = self.expansion.replaces_from(selected) {
+            crate::surface::expansion::note_expansion_replaces_from(from);
+        }
+        Some(expansion)
     }
 
     pub(in crate::surface::proof) fn is_complete(&self) -> bool {

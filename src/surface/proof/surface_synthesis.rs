@@ -3165,6 +3165,30 @@ fn synthesize_local_aggregate_field(
                     };
                     if element_count == 1 {
                         Some(field_expression)
+                    } else if let Some(shape) = field.array_shape() {
+                        // Spell the element with one subscript per declared
+                        // dimension, as the parser reads it back.
+                        let mut remaining = index;
+                        let mut indexes = vec![CExpression::Value(int32(0)); shape.len()];
+                        for (slot, dimension) in indexes.iter_mut().zip(shape).rev() {
+                            *slot = CExpression::Value(int32(remaining % dimension));
+                            remaining /= dimension;
+                        }
+                        let ContractExpression::Field { lowered, .. } = &field_expression else {
+                            unreachable!()
+                        };
+                        let lowered = CExpression::Index(
+                            Box::new(lowered.clone()),
+                            Box::new(crate::surface::parser::flatten_array_indices(
+                                indexes.clone(),
+                                shape,
+                            )),
+                        );
+                        Some(ContractExpression::ArrayIndex {
+                            base: Box::new(field_expression),
+                            indexes,
+                            lowered,
+                        })
                     } else {
                         Some(ContractExpression::Index(
                             Box::new(field_expression),
