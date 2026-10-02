@@ -10007,13 +10007,16 @@ fn typed_load_type_from_name(name: Option<&str>) -> Option<CType> {
     match name {
         Some("load_int32") => Some(CType::Int32),
         Some("load_uint8") => Some(CType::UInt8),
+        Some("load_uint16") => Some(CType::UInt16),
         Some("load_uint32") => Some(CType::UInt32),
         Some("load_int64") => Some(CType::Int64),
         Some("load_uint64") => Some(CType::UInt64),
         Some("load_int32_pointer") => Some(CType::Int32Pointer),
         Some("load_uint8_pointer") => Some(CType::UInt8Pointer),
+        Some("load_uint16_pointer") => Some(CType::UInt16Pointer),
         Some("load_int32_pointer_pointer") => Some(CType::Int32PointerPointer),
         Some("load_uint8_pointer_pointer") => Some(CType::UInt8PointerPointer),
+        Some("load_uint16_pointer_pointer") => Some(CType::UInt16PointerPointer),
         _ => None,
     }
 }

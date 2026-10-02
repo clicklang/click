@@ -378,9 +378,10 @@ fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {
                 pending.push(left);
                 pending.push(right);
             }
-            E::Not { value } | E::BitwiseNot { value, .. } | E::Cast { value, .. } => {
-                pending.push(value)
-            }
+            E::Not { value }
+            | E::BitwiseNot { value, .. }
+            | E::Cast { value, .. }
+            | E::IntegerFrom { value, .. } => pending.push(value),
             E::Borrow { place, .. } => pending.push(place),
             E::Deref { reference, .. } => pending.push(reference),
             E::Field { base, .. } => pending.push(base),

@@ -3698,8 +3698,12 @@ impl C0StructLayout {
         for (name, c_type, offset_bytes, byte_width) in fields {
             let (expected_width, expected_alignment) = match c_type {
                 C0Type::UInt8 => (1, 1),
+                C0Type::UInt16 => (2, 2),
                 C0Type::Int32 | C0Type::UInt32 => (4, 4),
-                C0Type::Int32Pointer | C0Type::UInt8Pointer | C0Type::UInt32Pointer => (8, 8),
+                C0Type::Int32Pointer
+                | C0Type::UInt8Pointer
+                | C0Type::UInt16Pointer
+                | C0Type::UInt32Pointer => (8, 8),
                 _ => {
                     return Err(format!(
                         "explicit struct field `{name}` has unsupported type"
@@ -20267,6 +20271,23 @@ fn is_ident_continue(ch: char) -> bool {
 #[cfg(test)]
 mod scope_metadata_tests {
     use super::*;
+
+    #[test]
+    fn explicit_halfword_fields_check_width_alignment_and_separation() {
+        let fields = vec![
+            ("a".into(), C0Type::UInt16, 0, 2),
+            ("b".into(), C0Type::UInt16, 2, 2),
+        ];
+        let layout = C0StructLayout::from_explicit_fields(fields.clone(), 4, 2).unwrap();
+        assert_eq!(layout.field("b").unwrap().offset_bytes, 2);
+        assert_eq!(layout.field("b").unwrap().byte_width, 2);
+        for (offset, width) in [(1, 2), (0, 2), (2, 1), (4, 2)] {
+            let mut invalid = fields.clone();
+            invalid[1].2 = offset;
+            invalid[1].3 = width;
+            assert!(C0StructLayout::from_explicit_fields(invalid, 4, 2).is_err());
+        }
+    }
 
     #[test]
     fn shadow_metadata_storage_is_independent_of_unrelated_globals() {

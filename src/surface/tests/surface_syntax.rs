@@ -4219,13 +4219,16 @@ fn parses_built_in_expressions_on_either_comparison_side() {
     let loads = [
         "load_int32",
         "load_uint8",
+        "load_uint16",
         "load_uint32",
         "load_int64",
         "load_uint64",
         "load_int32_pointer",
         "load_uint8_pointer",
+        "load_uint16_pointer",
         "load_int32_pointer_pointer",
         "load_uint8_pointer_pointer",
+        "load_uint16_pointer_pointer",
     ];
     for load in loads {
         parser::parse_file_items(&format!(

@@ -1,7 +1,7 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA: u32 = 7;
+pub const SCHEMA: u32 = 8;
 pub const COMPILER_COMMIT: &str = "01dfd79246f1b2d5f146616deff08223a840a9ae";
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
 
@@ -32,6 +32,7 @@ pub struct Span {
 pub enum Type {
     I32,
     U8,
+    U16,
     U32,
     Usize,
     ByteSlice { mutable: bool },
@@ -78,6 +79,11 @@ pub struct Function {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expression {
+    IntegerFrom {
+        value: Box<Self>,
+        source_type: Type,
+        value_type: Type,
+    },
     ChunkRemainder {
         iterator: String,
     },

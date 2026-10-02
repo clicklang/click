@@ -102,7 +102,8 @@ fn assert_cli(p: &Project, args: &[&str]) {
     let result = p.cli(args);
     assert!(
         result.status.success(),
-        "{args:?}: {}",
+        "{args:?}: stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
 }
@@ -630,7 +631,7 @@ fn rust_split_at_metadata_and_reads_verify() {
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap())
             .unwrap();
-    assert_eq!(artifact["schema"], 7);
+    assert_eq!(artifact["schema"], 8);
     assert_eq!(artifact["functions"][0]["body"][0]["kind"], "slice_split");
     assert_eq!(artifact["functions"][0]["body"][0]["left"]["name"], "left");
     assert_eq!(
@@ -1658,7 +1659,7 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
 fn assert_slice_iterator_artifact(p: &Project, by_reference: bool) {
     let bytes = fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap();
     let artifact: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(artifact["schema"], 7);
+    assert_eq!(artifact["schema"], 8);
     let iterator = &artifact["functions"][0]["body"][1];
     assert_eq!(iterator["kind"], "slice_for");
     assert_eq!(iterator["iterator"], "__rust_iter_3_5");
@@ -2012,5 +2013,187 @@ fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
         .unwrap_or_else(|error| panic!("{}", error.message()));
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn rust_integer_from_preserves_native_unsigned_values() {
+    let p = Project::new(
+        "pub fn byte(x: u8) -> u32 { u32::from(x) }
+        pub fn half(x: u8) -> u16 { u16::from(x) }
+        pub fn word(x: u16) -> u32 { <u32 as From<u16>>::from(x) }
+        pub fn size(x: u16) -> usize { usize::from(x) }
+        pub fn identity(x: u16) -> u16 { u16::from(x) }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+        uint32 byte(uint8 x) { ensures result == (uint32)x; } by { execute(); simp(); }
+        uint16 half(uint8 x) { ensures ((uint32)result) == (uint32)x; } by { execute(); simp(); }
+        uint32 word(uint16 x) { ensures result == (uint32)x; } by { execute(); simp(); }
+        uint64 size(uint16 x) { ensures result == (uint64)x; } by { execute(); simp(); }
+        uint16 identity(uint16 x) { ensures result == x; } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("result == (uint32)x", "result == (uint32)x + 1u32"),
+            &prepared,
+        )
+        .is_err()
+    );
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "word.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
+fn rust_integer_from_evaluates_nested_calls_once_in_order() {
+    let p = Project::new(
+        "pub fn next(p: &mut i32) -> u8 { *p += 1; *p as u8 }
+        pub fn pair(p: &mut i32) -> u32 { u32::from(next(p)) * 256 + u32::from(next(p)) }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+        uint8 next(int32* p) { requires 0 <= p[0] and p[0] <= 1; owns p[0..1];
+            ensures p[0] == old(p[0]) + 1; ensures ((uint32)result) == ((uint32)p[0] & 255u32);
+        } by { execute(); simp(); }
+        uint32 pair(int32* p) { requires p[0] == 0; owns p[0..1];
+            ensures p[0] == 2; ensures result == 258u32;
+        } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+}
+
+#[test]
+fn rust_u16_casts_truncate_and_shifts_keep_sixteen_bits() {
+    let p = Project::new(
+        "pub fn low(x: usize) -> u16 { x as u16 }
+        pub fn signed(x: i32) -> u16 { x as u16 }
+        pub fn byte(x: u16) -> u8 { x as u8 }
+        pub fn invert(x: u16) -> u16 { !x }
+        pub fn shift(x: u16, count: usize) -> u16 { x << count }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+        uint16 low(uint64 x) { ensures ((uint32)result) == ((uint32)x & 65535u32); } by { execute(); simp(); }
+        uint16 signed(int32 x) { ensures ((uint32)result) == ((uint32)x & 65535u32); } by { execute(); simp(); }
+        uint8 byte(uint16 x) { ensures ((uint32)result) == ((uint32)x & 255u32); } by { execute(); simp(); }
+        uint16 invert(uint16 x) { ensures ((uint32)result) == (~(uint32)x & 65535u32); } by { execute(); simp(); }
+        uint16 shift(uint16 x, uint64 count) { requires count < 16u64;
+            ensures ((uint32)result) == (((uint32)x << (uint32)count) & 65535u32);
+        } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for count in [16, 4294967296u64, u64::MAX] {
+        let invalid = sidecar.replace(
+            "requires count < 16u64;",
+            &format!("requires count == {count}u64;"),
+        );
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .unwrap();
+        assert!(
+            error.message().contains("Rust shl panic check"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn rust_u16_arithmetic_checks_its_own_width() {
+    let p = Project::new(
+        "pub fn add(x: u16) -> u16 { x + 1 }
+        pub fn sub(x: u16) -> u16 { x - 1 }
+        pub fn mul(x: u16) -> u16 { x * 3 }
+        pub fn div(x: u16, d: u16) -> u16 { x / d }
+        pub fn rem(x: u16, d: u16) -> u16 { x % d }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+        uint16 add(uint16 x) { requires x <= 65534; ensures ((uint32)result) == (uint32)x + 1u32; } by { execute(); simp(); }
+        uint16 sub(uint16 x) { requires 1 <= x; ensures ((uint32)result) == (uint32)x - 1u32; } by { execute(); simp(); }
+        uint16 mul(uint16 x) { requires x <= 21845; ensures ((uint32)result) == (uint32)x * 3u32; } by { have 0 <= ((int32)x) * 3 by { arithmetic() using { 0 <= x; x <= 21845; } } have ((int32)x) * 3 <= 65535 by { arithmetic() using { 0 <= x; x <= 21845; } } execute(); simp(); }
+        uint16 div(uint16 x, uint16 d) { requires 0 < d; ensures ((uint32)result) == (uint32)x / (uint32)d; } by { execute(); simp(); }
+        uint16 rem(uint16 x, uint16 d) { requires 0 < d; ensures ((uint32)result) == (uint32)x % (uint32)d; } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for (operator, input, divisor, label) in [
+        ("+", 65535, 1, "Rust add panic check"),
+        ("-", 0, 1, "Rust sub panic check"),
+        ("*", 21846, 3, "Rust mul panic check"),
+        ("/", 5, 0, "division by zero"),
+        ("%", 5, 0, "division by zero"),
+    ] {
+        let p = Project::new(&format!(
+            "pub fn bad(x: u16, d: u16) -> u16 {{ x {operator} d }}"
+        ));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint16 bad(uint16 x, uint16 d) {{ requires x == {input}; requires d == {divisor}; ensures result == 0; }} by {{ execute(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .unwrap();
+        assert!(error.message().contains(label), "{}", error.message());
+    }
+}
+
+#[test]
+fn rust_integer_from_rejects_other_conversions_and_shadowed_methods() {
+    for (source, diagnostic) in [
+        (
+            "pub fn bad(x: bool) -> u8 { u8::from(x) }",
+            "only lossless supported unsigned",
+        ),
+        ("pub fn bad(x: u32) -> u16 { u16::from(x) }", "From<u32>"),
+        (
+            "pub fn bad(x: u8) -> u64 { u64::from(x) }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(x: u8) -> u32 { x.into() }",
+            "only builtin byte-slice",
+        ),
+        (
+            "pub struct Word { x: u32 } impl Word { pub fn from(x: u8) -> u32 { 99 } } pub fn bad(x: u8) -> u32 { Word::from(x) }",
+            "Rust source boundary",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!error.contains("panicked"), "{error}");
+    }
+}
+
+#[test]
+fn rust_u16_accumulator_fields_and_references_preserve_authority() {
+    let p = Project::new(include_str!(
+        "../examples/rust-integer-conversions/accumulator.rs"
+    ));
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = include_str!("../examples/rust-integer-conversions/accumulator.click")
+        .replace("accumulator.rs", "borrow.rs");
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    for invalid in [
+        sidecar.replace("ensures state->a == 254;", "ensures state->a == 255;"),
+        sidecar.replace("owns state->a;", "views state->a;"),
+        sidecar.replace("owns state->b;", ""),
+        sidecar.replace("views value[0..1];", ""),
+        sidecar.replace(
+            "ensures state->b == old(state->b);",
+            "ensures state->b != old(state->b);",
+        ),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    assert_cli(&p, &["expand", "--claim", "bump_a.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);
 }

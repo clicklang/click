@@ -95,6 +95,7 @@ fn export_type<'tcx>(tcx: TyCtxt<'tcx>, t: ty::Ty<'tcx>) -> Result<Type, String>
     match t.kind() {
         ty::Int(ty::IntTy::I32) => Ok(Type::I32),
         ty::Uint(ty::UintTy::U8) => Ok(Type::U8),
+        ty::Uint(ty::UintTy::U16) => Ok(Type::U16),
         ty::Uint(ty::UintTy::U32) => Ok(Type::U32),
         ty::Uint(ty::UintTy::Usize) => Ok(Type::Usize),
         ty::Array(element, length) => {
@@ -130,7 +131,12 @@ fn export_type<'tcx>(tcx: TyCtxt<'tcx>, t: ty::Ty<'tcx>) -> Result<Type, String>
             let pointee = export_type(tcx, *p)?;
             if !matches!(
                 pointee,
-                Type::I32 | Type::U8 | Type::U32 | Type::Record { .. } | Type::Array { .. }
+                Type::I32
+                    | Type::U8
+                    | Type::U16
+                    | Type::U32
+                    | Type::Record { .. }
+                    | Type::Array { .. }
             ) {
                 return Err("reference pointee outside Rust slice".into());
             }
@@ -244,11 +250,13 @@ impl<'tcx> BodyExporter<'tcx> {
             }
             hir::ExprKind::Lit(lit) => match lit.node {
                 rustc_ast::LitKind::Int(v, _) => match export_type(self.tcx, t)? {
-                    value_type @ (Type::U8 | Type::U32) => Ok(Expression::UnsignedInteger {
-                        value: u32::try_from(v.get())
-                            .map_err(|_| self.error(e, "unsigned literal outside u32"))?,
-                        value_type,
-                    }),
+                    value_type @ (Type::U8 | Type::U16 | Type::U32) => {
+                        Ok(Expression::UnsignedInteger {
+                            value: u32::try_from(v.get())
+                                .map_err(|_| self.error(e, "unsigned literal outside u32"))?,
+                            value_type,
+                        })
+                    }
                     Type::Usize => Ok(Expression::UsizeInteger {
                         value: u64::try_from(v.get())
                             .map_err(|_| self.error(e, "usize literal outside target width"))?,
@@ -338,10 +346,10 @@ impl<'tcx> BodyExporter<'tcx> {
                 if matches!(operator, "shl" | "shr")
                     && !matches!(
                         export_type(self.tcx, self.typeck.expr_ty(l))?,
-                        Type::U8 | Type::U32 | Type::Usize
+                        Type::U8 | Type::U16 | Type::U32 | Type::Usize
                     )
                 {
-                    return Err(self.error(e, "Rust shifts require u8, u32 or usize operands"));
+                    return Err(self.error(e, "Rust shifts require u8, u16, u32 or usize operands"));
                 }
                 Ok(Expression::Binary {
                     operator: operator.into(),
@@ -408,6 +416,31 @@ impl<'tcx> BodyExporter<'tcx> {
                 })
             }
             hir::ExprKind::Call(callee, args) => {
+                if self.is_integer_from(callee) {
+                    let [value] = args else {
+                        return Err(self.error(e, "integer From requires one argument"));
+                    };
+                    let source = export_type(self.tcx, self.typeck.expr_ty(value))?;
+                    let target = export_type(self.tcx, t)?;
+                    let width = |t: &Type| match t {
+                        Type::U8 => Some(8),
+                        Type::U16 => Some(16),
+                        Type::U32 => Some(32),
+                        Type::Usize => Some(64),
+                        _ => None,
+                    };
+                    if !matches!((width(&source), width(&target)), (Some(a), Some(b)) if a <= b) {
+                        return Err(self.error(e, "only lossless supported unsigned integer From conversions are supported"));
+                    }
+                    // Both types are primitive integers. Rust's orphan rules
+                    // exclude user implementations of this core trait pair;
+                    // the pinned standard implementation preserves the value.
+                    return Ok(Expression::IntegerFrom {
+                        value: Box::new(self.expr(value)?),
+                        source_type: source,
+                        value_type: target,
+                    });
+                }
                 let hir::ExprKind::Path(hir::QPath::Resolved(_, path)) = callee.kind else {
                     return Err(self.error(e, "only direct calls are supported"));
                 };
@@ -506,6 +539,43 @@ impl<'tcx> BodyExporter<'tcx> {
                 ty::Slice(_)
             )
     }
+    fn is_integer_from(&self, callee: &hir::Expr<'tcx>) -> bool {
+        let method = match callee.kind {
+            hir::ExprKind::Path(hir::QPath::Resolved(_, path)) => {
+                let Res::Def(hir::def::DefKind::AssocFn, method) = path.res else {
+                    return false;
+                };
+                method
+            }
+            hir::ExprKind::Path(hir::QPath::TypeRelative(..)) => {
+                let Some(method) = self.typeck.type_dependent_def_id(callee.hir_id) else {
+                    return false;
+                };
+                method
+            }
+            _ => return false,
+        };
+        if method.is_local()
+            || self.tcx.crate_name(method.krate).as_str() != "core"
+            || self.tcx.item_name(method).as_str() != "from"
+        {
+            return false;
+        }
+        let parent = self.tcx.parent(method);
+        let trait_id = match self.tcx.def_kind(parent) {
+            hir::def::DefKind::Trait => parent,
+            hir::def::DefKind::Impl { of_trait: true } => {
+                self.tcx
+                    .impl_trait_ref(parent)
+                    .instantiate_identity()
+                    .skip_norm_wip()
+                    .def_id
+            }
+            _ => return false,
+        };
+        self.tcx.is_diagnostic_item(rustc_span::sym::From, trait_id)
+    }
+
     fn is_chunk_type(&self, t: ty::Ty<'tcx>) -> bool {
         matches!(t.kind(), ty::Adt(def, args)
             if !def.did().is_local()
@@ -1026,7 +1096,7 @@ fn export(tcx: TyCtxt<'_>, logical: &str) -> Result<RustExport, String> {
                     )?;
                     if !matches!(
                         value_type,
-                        Type::I32 | Type::U8 | Type::U32 | Type::Reference { .. }
+                        Type::I32 | Type::U8 | Type::U16 | Type::U32 | Type::Reference { .. }
                     ) {
                         return Err("struct fields must be supported integers or references".into());
                     }

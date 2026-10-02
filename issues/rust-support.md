@@ -163,6 +163,15 @@ full-width oversized chunks, one evaluation of the size, nested loops, shared
 write rejection, zero-size panic rejection, and checked expansion have
 regressions. Mutable chunks, iterator copies/adapters, and explicit `next`
 remain outstanding; this fixture does not verify adler2.
+Checked `u16` scalars, references, and compiler-layout record fields now support
+primitive lossless unsigned `From` calls, including `u32::from(u8/u16)`. The
+[conversion fixture](../examples/rust-integer-conversions/README.md) verifies a
+fixed accumulator wrap-boundary case and generic reference/field updates with
+read/write authority and preserved neighbors. Conversion operands evaluate
+once in order; casts truncate to sixteen bits and arithmetic checks that width.
+This is not an arbitrary checksum proof. Tuple structs, array iteration,
+indexed compound assignments, and checksum-specific operator implementations
+still block the unchanged adler2 loop.
 Shared byte-slice `split_at` now supports two plain local tuple bindings,
 full-width panic bounds, and an explicit signed-word pointer-offset limit.
 Both slice lengths and reads through variable split points have regressions,

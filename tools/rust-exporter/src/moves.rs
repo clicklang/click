@@ -81,11 +81,13 @@ impl<'tcx> Context<'_, 'tcx> {
                     ty::Int(ty::IntTy::I32) => Ok(Expression::Integer {
                         value: bits as u32 as i32,
                     }),
-                    ty::Uint(ty::UintTy::U8 | ty::UintTy::U32) => Ok(Expression::UnsignedInteger {
-                        value: u32::try_from(bits)
-                            .map_err(|_| "MIR unsigned constant outside u32")?,
-                        value_type: export_type(self.tcx, c.const_.ty())?,
-                    }),
+                    ty::Uint(ty::UintTy::U8 | ty::UintTy::U16 | ty::UintTy::U32) => {
+                        Ok(Expression::UnsignedInteger {
+                            value: u32::try_from(bits)
+                                .map_err(|_| "MIR unsigned constant outside u32")?,
+                            value_type: export_type(self.tcx, c.const_.ty())?,
+                        })
+                    }
                     _ => Err("MIR constant outside supported integer/bool slice".into()),
                 }
             }
