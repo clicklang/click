@@ -393,8 +393,15 @@ and return ordinary storage with `produces object(pool)`. The
 checks direct, nested, and zero-sized calls. Call application consumes the
 checked entry quantity even when the helper changes the accounting field.
 Retired consumption evidence remains available to the certificate checker;
-it grants no live authority or member rights. Splitting batches and retiring
-additional authorities inside the same consumed control remain separate work.
+it grants no live authority or member rights. When the consumed control owns
+several authorities, cleanup checks and retires each one. Additional
+populations must have zero global count and no outstanding member custody;
+local absence alone does not establish emptiness. The
+[pool cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup_helper.md)
+checks direct, nested, and zero-capacity calls using the original pool cleanup
+C. The caller unfolds and refolds the control to establish the required
+conservation and empty-population facts before calling cleanup. Splitting
+batches remains separate work.
 
 For an authority passed into a function, retirement checks both that its
 member custody has been consumed and that its authenticated global count is
