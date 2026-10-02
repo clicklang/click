@@ -257,6 +257,12 @@ impl Context<'_> {
     }
     fn statement(&mut self, s: &S) -> Result<CStatement, String> {
         match s {
+            S::SliceSplit {
+                slice,
+                midpoint,
+                left,
+                right,
+            } => self.slice_split(slice, midpoint, left, right),
             S::SliceFor {
                 iterator,
                 slice,
@@ -471,6 +477,110 @@ impl Context<'_> {
                 Ok(c_seq(checks, c_call(function, arguments)))
             }
         }
+    }
+    fn slice_split(
+        &mut self,
+        slice: &E,
+        midpoint: &E,
+        left: &super::schema::Place,
+        right: &super::schema::Place,
+    ) -> Result<CStatement, String> {
+        let E::Local { name } = slice else {
+            return Err("split_at requires a shared byte-slice local".into());
+        };
+        if !self.slices.get(name).is_some_and(|(_, constant)| *constant) {
+            return Err("split_at requires a shared byte-slice local".into());
+        }
+        let (pointer, length) = self.slice_parts(slice)?;
+        // Evaluate the receiver before the argument and capture both metadata
+        // components. The midpoint may call code; it is evaluated only once.
+        let (pointer_capture, pointer_name) = self.capture_operand(
+            pointer,
+            &Type::Reference {
+                mutable: false,
+                pointee: Box::new(Type::U8),
+            },
+        )?;
+        let (length_capture, length_name) = self.capture_operand(length, &Type::Usize)?;
+        let (midpoint_prefix, midpoint_value) = self.prepared_expr(midpoint)?;
+        let (midpoint_capture, midpoint_name) =
+            self.capture_operand(midpoint_value, &Type::Usize)?;
+        let mut result = c_seq(
+            pointer_capture,
+            c_seq(length_capture, c_seq(midpoint_prefix, midpoint_capture)),
+        );
+        result = c_seq(
+            result,
+            c_labeled_assert(
+                c_less_equal(c_variable(&midpoint_name), c_variable(&length_name)),
+                "Rust split_at panic check",
+            ),
+        );
+        // Pointer offsets use the shared signed-word memory model. Check the
+        // full-width midpoint before narrowing; slice lengths remain usize.
+        result = c_seq(
+            result,
+            c_labeled_assert(
+                c_less_equal(
+                    c_variable(&midpoint_name),
+                    c_uint64_literal(i32::MAX as u64),
+                ),
+                "Rust split_at memory-model offset bound",
+            ),
+        );
+        for (place, pointer, length) in [
+            (left, c_variable(&pointer_name), c_variable(&midpoint_name)),
+            (
+                right,
+                c_add(
+                    c_variable(&pointer_name),
+                    c_cast(
+                        c_cast(c_variable(&midpoint_name), CType::UInt32),
+                        CType::Int32,
+                    ),
+                ),
+                c_subtract(c_variable(&length_name), c_variable(&midpoint_name)),
+            ),
+        ] {
+            if place.value_type != (Type::ByteSlice { mutable: false }) {
+                return Err("split_at results must be shared byte slices".into());
+            }
+            let length_name = format!("{}_len", place.name);
+            if !self.locals.insert(place.name.clone()) || !self.locals.insert(length_name.clone()) {
+                return Err("duplicate split_at local identity".into());
+            }
+            self.slices
+                .insert(place.name.clone(), (length_name.clone(), true));
+            result = c_seq(
+                result,
+                c_seq(
+                    c_declare_with_all_qualifiers(
+                        &place.name,
+                        CType::UInt8Pointer,
+                        false,
+                        false,
+                        false,
+                        true,
+                    ),
+                    c_seq(
+                        c_declare(&length_name, CType::UInt64),
+                        c_seq(
+                            c_assign(
+                                &place.name,
+                                c_cast_with_pointee_qualifiers(
+                                    pointer,
+                                    CType::UInt8Pointer,
+                                    false,
+                                    true,
+                                ),
+                            ),
+                            c_assign(length_name, length),
+                        ),
+                    ),
+                ),
+            );
+        }
+        Ok(result)
     }
     // Semantic slice-iterator state: cursor plus remaining slice length.
     // The signed length is the shared memory model's checked representation,

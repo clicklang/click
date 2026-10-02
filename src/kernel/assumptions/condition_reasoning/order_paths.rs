@@ -2185,7 +2185,9 @@ impl PureFactContext {
                 }
             }
         }
-        if let Some(guard) = condition.uint64_successor_guard()
+        if let Some(guard) = condition
+            .uint64_successor_guard()
+            .or_else(|| condition.uint64_subtraction_guard())
             && self.decide(&guard) == Some(true)
         {
             return Some(true);
@@ -2232,6 +2234,67 @@ impl PureFactContext {
 #[cfg(test)]
 mod slice_index_tests {
     use super::*;
+
+    #[test]
+    fn uint64_constant_lower_bound_survives_checked_narrowing() {
+        let value = Bitvector32Term::Variable(Variable(991003));
+        let context = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::uint64_less_than(Bitvector32Term::UInt64Constant(0), value.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    value.clone(),
+                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                ),
+                true,
+            );
+        let goal = ConditionTerm::signed_less_than(
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::uint32_from_64(value),
+        );
+        assert_eq!(context.decide_condition_for_simp(&goal), Some(true));
+    }
+
+    #[test]
+    fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
+        let length = Bitvector32Term::Variable(Variable(993001));
+        let midpoint = Bitvector32Term::Variable(Variable(993002));
+        let difference = Bitvector32Term::uint64_subtract(length.clone(), midpoint.clone());
+        let positive =
+            ConditionTerm::uint64_less_than(Bitvector32Term::UInt64Constant(0), difference.clone());
+        let bounded = ConditionTerm::uint64_less_equal(difference, length.clone());
+        let mut work = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut context = PureFactContext::new();
+            for n in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::uint64_less_equal(
+                        Bitvector32Term::Variable(Variable(994000 + n)),
+                        Bitvector32Term::UInt64Constant(100),
+                    ),
+                    true,
+                );
+            }
+            context = context.assume_condition(
+                ConditionTerm::uint64_less_than(midpoint.clone(), length.clone()),
+                true,
+            );
+            let (_, used) = crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(context.decide_condition_for_simp(&positive), Some(true));
+                assert_eq!(context.decide_condition_for_simp(&bounded), Some(true));
+            });
+            work.push(used);
+        }
+        assert!(work.iter().all(|used| *used == work[0]), "{work:?}");
+        let unbounded = PureFactContext::new();
+        assert_ne!(unbounded.decide_condition_for_simp(&positive), Some(true));
+        assert_ne!(unbounded.decide_condition_for_simp(&bounded), Some(true));
+        let underflow = PureFactContext::new()
+            .assume_condition(ConditionTerm::uint64_greater_than(midpoint, length), true);
+        assert_ne!(underflow.decide_condition_for_simp(&bounded), Some(true));
+    }
 
     #[test]
     fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {

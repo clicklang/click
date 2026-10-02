@@ -151,6 +151,12 @@ dereferences. Direct slices and `.iter()` support both copied and reference
 bindings, with read authority and shared-reference write rejection regressions.
 Only immutable shared byte-slice bindings are supported; mutable iteration,
 stored iterators, chunk iterators, and iterator control flow remain outstanding.
+Shared byte-slice `split_at` now supports two plain local tuple bindings,
+full-width panic bounds, and an explicit signed-word pointer-offset limit.
+Both slice lengths and reads through variable split points have regressions,
+along with empty/endpoint splits, preserved full-width metadata, false claims,
+missing read authority, and expanded-proof verification. Mutable splitting,
+general tuple values, and range subscripts remain outstanding.
 By-value array parameters/returns, non-byte slices, and crate extraction also
 remain outstanding. Neither library is verified
 by this assessment.

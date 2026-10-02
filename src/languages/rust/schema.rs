@@ -1,7 +1,7 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA: u32 = 5;
+pub const SCHEMA: u32 = 6;
 pub const COMPILER_COMMIT: &str = "01dfd79246f1b2d5f146616deff08223a840a9ae";
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
 
@@ -151,6 +151,13 @@ pub enum Expression {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Statement {
+    // Compiler-resolved shared slice split, with the tuple destructured locally.
+    SliceSplit {
+        slice: Expression,
+        midpoint: Expression,
+        left: Place,
+        right: Place,
+    },
     // Compiler-resolved slice iterator protocol, not an index-loop rewrite.
     SliceFor {
         iterator: String,

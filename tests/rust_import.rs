@@ -619,6 +619,252 @@ const SLICES_SOURCE: &str = include_str!("../examples/rust-slices/bytes.rs");
 const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click");
 
 #[test]
+fn rust_split_at_metadata_and_reads_verify() {
+    let p = Project::new(include_str!("../examples/rust-split-at/split.rs"));
+    let sidecar =
+        include_str!("../examples/rust-split-at/split.click").replace("split.rs", "borrow.rs");
+    fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    let artifact: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap())
+            .unwrap();
+    assert_eq!(artifact["schema"], 6);
+    assert_eq!(artifact["functions"][0]["body"][0]["kind"], "slice_split");
+    assert_eq!(artifact["functions"][0]["body"][0]["left"]["name"], "left");
+    assert_eq!(
+        artifact["functions"][0]["body"][0]["right"]["name"],
+        "right"
+    );
+    for incorrect in [
+        sidecar.replace("ensures result == mid;", "ensures result == 0u64;"),
+        sidecar.replace(
+            "ensures result == bytes_len - mid;",
+            "ensures result == mid;",
+        ),
+        sidecar.replace(
+            "ensures result == bytes[(int32)(uint32)mid];",
+            "ensures result == bytes[0];",
+        ),
+        sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&incorrect, &prepared).is_err());
+    }
+    assert_cli(&p, &["profile"]);
+    assert_cli(&p, &["audit"]);
+    for claim in [
+        "left_length.contract",
+        "right_length.contract",
+        "left_first.contract",
+        "right_first.contract",
+    ] {
+        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn rust_split_at_endpoints_and_full_width_lengths_verify() {
+    let p = Project::new(
+        "pub fn length(bytes: &[u8], mid: usize) -> usize { let (left, right) = bytes.split_at(mid); right.len() }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    for (length, midpoint) in [
+        (0u64, 0u64),
+        (4, 0),
+        (4, 4),
+        (2147483647, 2147483647),
+        (4294967296, 1),
+        (u64::MAX, 0),
+    ] {
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {midpoint}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            length - midpoint
+        );
+        C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    }
+}
+
+#[test]
+fn rust_split_at_checks_bounds_before_pointer_narrowing() {
+    let p = Project::new(
+        "pub fn length(bytes: &[u8], mid: usize) -> usize { let (left, right) = bytes.split_at(mid); right.len() }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    for (length, midpoint, label) in [
+        (0u64, 1u64, "Rust split_at panic check"),
+        (4, 5, "Rust split_at panic check"),
+        (4, 4294967296, "Rust split_at panic check"),
+        (
+            u64::MAX,
+            u64::MAX,
+            "Rust split_at memory-model offset bound",
+        ),
+        (
+            4294967296,
+            4294967296,
+            "Rust split_at memory-model offset bound",
+        ),
+    ] {
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {midpoint}u64; ensures result == result; }} by {{ execute(); simp(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("invalid split must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(error.message().contains(label), "{}", error.message());
+    }
+}
+
+#[test]
+fn rust_split_at_rejects_unsupported_results_and_mutation() {
+    for (source, message) in [
+        (
+            "pub fn bad(bytes: &[u8]) { let (left, right) = bytes.split_at(1); right[0] = 7; }",
+            "cannot assign",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { let (left, _) = bytes.split_at(1); }",
+            "two plain tuple bindings",
+        ),
+        (
+            "pub fn bad(bytes: &mut [u8]) { let (left, right) = bytes.split_at(1); }",
+            "shared byte-slice local",
+        ),
+        (
+            "pub fn bad(bytes: &[u8; 4]) { let (left, right) = bytes.split_at(1); }",
+            "shared byte-slice local",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { let pair = bytes.split_at(1); }",
+            "two plain tuple bindings",
+        ),
+        (
+            "pub fn bad(bytes: &mut [u8]) { let (left, right) = bytes.split_at_mut(1); }",
+            "unsupported Rust type",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(message), "expected {message}: {error}");
+        assert!(!p.root.join("borrow.rs.click-rust.json").exists());
+    }
+}
+
+#[test]
+fn rust_split_at_empty_results_reject_indexing() {
+    for (length, midpoint, result_slice) in [
+        (0u64, 0u64, "left"),
+        (0, 0, "right"),
+        (4, 0, "left"),
+        (4, 4, "right"),
+    ] {
+        let p = Project::new(&format!(
+            "pub fn read(bytes: &[u8], mid: usize) -> u8 {{ let (left, right) = bytes.split_at(mid); {result_slice}[0] }}"
+        ));
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint8 read(const uint8* bytes, uint64 bytes_len, uint64 mid) {{ requires bytes_len == {length}u64; requires mid == {midpoint}u64; views bytes[0..{length}]; ensures result == result; }} by {{ execute(); simp(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("empty result read must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        assert!(
+            error.message().contains("Rust slice index panic check"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn rust_split_at_calls_nested_splits_aliases_and_argument_evaluation_verify() {
+    let p = Project::new(
+        r#"
+pub fn first(bytes: &[u8]) -> u8 { bytes[0] }
+pub fn nested(bytes: &[u8]) -> u8 {
+    let (left, right) = bytes.split_at(1);
+    let (prefix, suffix) = right.split_at(1);
+    let alias = suffix;
+    first(alias)
+}
+pub fn retarget(bytes: &[u8]) -> usize {
+    let (mut left, right) = bytes.split_at(1);
+    left = right;
+    left.len()
+}
+pub fn shadow(bytes: &[u8]) -> usize {
+    let (bytes, tail) = bytes.split_at(bytes.len() - 1);
+    bytes.len()
+}
+pub fn next(counter: &mut u32) -> usize {
+    let old = *counter;
+    *counter += 1;
+    old as usize
+}
+pub fn once(bytes: &[u8], counter: &mut u32) -> usize {
+    let (left, right) = bytes.split_at(next(counter));
+    right.len()
+}
+"#,
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = r#"verifying "borrow.rs";
+uint8 first(const uint8* bytes, uint64 bytes_len) {
+    requires bytes_len == 2u64;
+    views bytes[0..1];
+    ensures result == bytes[0];
+} by { execute(); simp(); }
+uint8 nested(const uint8* bytes, uint64 bytes_len) {
+    requires bytes_len == 4u64;
+    views bytes[0..4];
+    ensures result == bytes[2];
+    ensures bytes[0] == old(bytes[0]);
+    ensures bytes[3] == old(bytes[3]);
+} by { execute(); simp(); }
+uint64 retarget(const uint8* bytes, uint64 bytes_len) {
+    requires bytes_len == 4u64;
+    ensures result == 3u64;
+} by { execute(); simp(); }
+uint64 shadow(const uint8* bytes, uint64 bytes_len) {
+    requires bytes_len == 4u64;
+    ensures result == 3u64;
+} by { execute(); simp(); }
+uint64 next(uint32* counter) {
+    requires *counter == 1u32;
+    owns counter[0..1];
+    ensures result == 1u64;
+    ensures *counter == 2u32;
+} by { execute(); simp(); }
+uint64 once(const uint8* bytes, uint64 bytes_len, uint32* counter) {
+    requires bytes_len == 4u64;
+    requires *counter == 1u32;
+    owns counter[0..1];
+    ensures result == 3u64;
+    ensures *counter == 2u32;
+} by { execute(); simp(); }
+"#;
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(
+            &sidecar.replace("ensures *counter == 2u32;", "ensures *counter == 3u32;"),
+            &prepared
+        )
+        .is_err()
+    );
+    assert_cli(&p, &["expand", "--claim", "once.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
+}
+
+#[test]
 fn rust_byte_slices_indexing_calls_and_expansion_verify() {
     let p = Project::new(SLICES_SOURCE);
     let sidecar = SLICES_SIDECAR.replace("bytes.rs", "borrow.rs");
@@ -1412,7 +1658,7 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
 fn assert_slice_iterator_artifact(p: &Project, by_reference: bool) {
     let bytes = fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap();
     let artifact: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(artifact["schema"], 5);
+    assert_eq!(artifact["schema"], 6);
     let iterator = &artifact["functions"][0]["body"][1];
     assert_eq!(iterator["kind"], "slice_for");
     assert_eq!(iterator["iterator"], "__rust_iter_3_5");
