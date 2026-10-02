@@ -4426,6 +4426,20 @@ impl CMemory {
         });
     }
 
+    /// Whether the two snapshots describe one memory: the same blocks, heap
+    /// lifetimes, union views and forgotten-knowledge marks, and the same
+    /// cells whatever representation each cell store keeps them in
+    /// ([`CellStore::same_cells_as`]). Everything but the cell cache's layout
+    /// is compared exactly as `==` compares it.
+    pub(in crate::kernel) fn same_contents_as(&self, other: &Self) -> bool {
+        self == other
+            || (self.blocks == other.blocks
+                && self.union_cells == other.union_cells
+                && self.forgotten == other.forgotten
+                && self.heap == other.heap
+                && self.cells.same_cells_as(&other.cells))
+    }
+
     /// Whether `self == other`, for two snapshots each derived from `base`'s
     /// storage, comparing only what each changed from `base` (see
     /// [`SnapshotMap::eq_relative_to`]). Exact whatever the snapshots share;

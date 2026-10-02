@@ -3209,7 +3209,7 @@ fn abstract_loop_exit_states(
     // state that still differs differs in something this rule does not model,
     // so it is refused under its own name rather than abstracted blindly.
     if let Some(mismatch) = rebound.iter().find_map(|state| {
-        loop_exit_residual_difference(&successor, state, &locals, &cells, binders)
+        loop_exit_residual_difference(&successor, state, &locals, &cells, binders, assumptions)
     }) {
         return Err(mismatch);
     }
@@ -3746,6 +3746,7 @@ fn loop_exit_residual_difference(
     locals: &[(String, CType)],
     cells: &BTreeSet<Pointer>,
     binders: &[CLoopBinder],
+    assumptions: &PureFactContext,
 ) -> Option<String> {
     let mut witness = successor.clone();
     // Where a path last folded a binder is not a component of its state: a
@@ -3809,13 +3810,55 @@ fn loop_exit_residual_difference(
         witness = witness.with_memory(memory);
         seated = seated.with_memory(exit_memory);
     }
-    loop_exit_state_difference(&witness, &seated)
+    loop_exit_state_difference(&witness, &seated, assumptions)
 }
 
 /// What two loop exit states disagree about, named for a refusal.
-fn loop_exit_state_difference(left: &CState, right: &CState) -> Option<String> {
+///
+/// Two components are compared by what they mean rather than by how the
+/// path that built them happened to lay them out, because a layout is not
+/// something a path reaches:
+///
+/// - memory, by [`CMemory::same_contents_as`]: the same cells with the same
+///   values, whether the cell cache holds one as a concrete cell or as a
+///   slot of a seeded run;
+/// - resource ownership, by the normalized context, the form
+///   `ResourceContext::normalized` already gives two contexts before the
+///   kernel compares an unfolded body with its expected one. It merges only
+///   what the resource algebra says is one authority (an unbound view held
+///   twice, an owner and its own unbound view) and never a loan-bound or
+///   supported description.
+///
+/// Both are exact: a byte, a value, an owned or viewed fact, a quantity, a
+/// read-only block, a heap lifetime or a loan dependency that differs still
+/// differs afterwards. The equivalent component is then taken from the left
+/// state so the remaining components are compared by `==` as before.
+fn loop_exit_state_difference(
+    left: &CState,
+    right: &CState,
+    assumptions: &PureFactContext,
+) -> Option<String> {
     if left == right {
         return None;
+    }
+    let same_memory = left.memory().same_contents_as(right.memory());
+    let same_resources = left.resources() == right.resources()
+        || left.resources().clone().normalized(assumptions)
+            == right.resources().clone().normalized(assumptions);
+    if same_memory || same_resources {
+        // The fields are assigned directly: the setters also refresh what
+        // they mirror elsewhere in the state, and nothing but the component
+        // just shown equivalent may change before the comparison.
+        let mut aligned = right.clone();
+        if same_memory {
+            aligned.memory = left.memory.clone();
+        }
+        if same_resources {
+            aligned.resources = left.resources.clone();
+        }
+        if *left == aligned {
+            return None;
+        }
     }
     let mut differences = Vec::new();
     let changed_locals = left
@@ -3827,10 +3870,10 @@ fn loop_exit_state_difference(left: &CState, right: &CState) -> Option<String> {
     if !changed_locals.is_empty() {
         differences.push(format!("local `{}`", changed_locals.join("`, `")));
     }
-    if left.memory() != right.memory() {
+    if !same_memory {
         differences.push("memory".to_string());
     }
-    if left.resources() != right.resources() {
+    if !same_resources {
         differences.push("resource ownership".to_string());
     }
     if left.loan_ledger != right.loan_ledger {

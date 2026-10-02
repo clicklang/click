@@ -427,6 +427,20 @@ exit read, because only that path opened the instance owning it, is knowledge
 the successor does not claim rather than a difference between the exits
 (`mdtests/loop_break_exit_join_sets_aside_unshared_cells.md`).
 
+Two layouts of one state are one state. Memory is compared by its cells, the
+same pointers with the same values, whether the cell cache holds one as a
+written cell or as a slot of the run an `unfold` seeded
+(`mdtests/loop_break_exit_join_compares_cells_not_their_cache.md`). Resources
+are compared after the merges the resource algebra itself defines, so a view
+of a cell that one exit holds twice, because it opened the binder and folded
+it back, is the view the other exit holds once
+(`mdtests/loop_break_exit_join_refolded_and_untouched_binder.md`). Nothing
+else is looked through: a block, a read-only status, a heap lifetime, an owned
+or lent resource, or the record that an automatic object has ended still has
+to agree. The last of these is a current limit, since an exit that called a
+function with a local and an exit that did not are refused
+(`mdtests/loop_break_exit_after_a_call_with_a_local_does_not_join.md`).
+
 What every exit states survives the join as an ordinary fact, so a claim that
 does not distinguish the exits needs nothing special
 (`mdtests/loop_break_exit_refold_join.md`). A claim that does distinguish them

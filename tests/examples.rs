@@ -200,10 +200,11 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
     // Every path of the loop body ends: the uncle-red `continue`s on every
     // frame combination, and the black-uncle rotation `break`s of all four
     // (case 3 on the outer frames, case 2 then case 3 on the inner ones).
-    // The loop rule then refuses to join the exits, which hold the same
-    // bytes in different memory representations
-    // (bugs/loop-exits-equal-up-to-representation-do-not-join.md). The
-    // exits' differing fold orders already join by what they hold.
+    // The loop rule then refuses to join the exits. They hold the same
+    // cells and resources, and the join looks through the cell cache's
+    // layout and fold order; what still differs is the record of automatic
+    // storage the rotation exits' call to `__rb_rotate_set_parents` left
+    // (bugs/loop-exits-after-different-calls-do-not-join.md).
     let message = error.message();
     assert!(
         message.contains(
