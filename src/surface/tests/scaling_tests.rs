@@ -4771,3 +4771,84 @@ fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
         }
     }
 }
+
+/// A `step()` written in a loop's `preserve` body is its own simple tactic:
+/// it has its own work event and its own simple budget, like a `step()`
+/// anywhere else. The preservation driver used to apply it with no tactic
+/// open, so every C statement of every path through the body was charged to
+/// the enclosing `loop`, whose single budget then capped the whole proof
+/// however small each step was. The loop's own work must not grow with what
+/// its body steps through.
+#[test]
+fn preserve_body_steps_are_charged_to_themselves_not_to_the_loop() {
+    let sample = |stores: usize| {
+        let c_source = format!(
+            "void fill(int32 *p, int32 n) {{\n    int32 i = 0;\n    while (i < n) {{\n{}        i = i + 1;\n    }}\n}}\n",
+            (0..stores)
+                .map(|index| format!("        p[0] = {index};\n"))
+                .collect::<String>()
+        );
+        let click_source = format!(
+            "verifying \"fill.c\";
+
+void fill(int32* p, int32 n) {{
+    owns p[0..1];
+    requires n >= 0;
+}} by {{
+    step();
+    step();
+    loop {{
+        decreases n - i;
+        invariant i >= 0;
+
+        initialize by simp;
+        preserve by {{
+{}        }}
+    }}
+    step();
+    simp();
+}}
+",
+            "            step();\n".repeat(stores + 1)
+        );
+        let (result, events) = crate::instrumentation::collect(|| {
+            verify_c0_sources(&click_source, &[("fill.c", &c_source)])
+        });
+        result.unwrap_or_else(|error| {
+            panic!("the {stores}-store loop should verify: {}", error.message())
+        });
+        let finished = |name: &str| {
+            events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::instrumentation::VerificationEvent::TacticFinished {
+                        tactic,
+                        work,
+                        ..
+                    } if tactic.tactic_name == name => Some(*work),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let loop_work = finished("loop").into_iter().max().unwrap_or(0);
+        (stores, finished("step").len(), loop_work)
+    };
+    let samples = [2, 8, 32].map(sample);
+    let (_, base_steps, base_loop_work) = samples[0];
+    for &(stores, steps, loop_work) in &samples {
+        // The proof is checked the same number of times at every size, so
+        // the step events grow by that many per added body statement.
+        assert!(
+            steps >= base_steps + (stores - 2),
+            "every `step()` in the preserve body must report its own work: \
+             (stores, step events, loop work) {samples:?}"
+        );
+        // A few units of frontier bookkeeping per statement, never the
+        // statement's own execution.
+        assert!(
+            loop_work <= base_loop_work + 16 * (stores - 2),
+            "the loop must not be charged for the statements its body steps through: \
+             (stores, step events, loop work) {samples:?}"
+        );
+    }
+}

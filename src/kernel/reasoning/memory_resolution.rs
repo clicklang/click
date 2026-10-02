@@ -3362,6 +3362,34 @@ pub(in crate::kernel) fn run_slots_equal_to_load(
                     .filter(|index| *index < run.count())
                     .map(|index| SlotSet::Elements(index, index + 1))
             })
+            // A stated alias is filed under the exact pointer it names, so
+            // `id` reaches the run's base `p` but `id + 8` reaches nothing,
+            // although the graph already holds `id + 8 == p + 8`: the
+            // per-cell ladder answers that pair by `pointers_known_equal`,
+            // and a run must name the same slot its cells would. Re-express
+            // the load in the run's own block through the trusted affine
+            // class relation, one keyed query that enumerates no class
+            // member, and read the slot from the byte shift as above.
+            .or_else(|| {
+                if normalized.block == run.base().block {
+                    return None;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                let aligned = assumptions
+                    .equality_graph
+                    .pointer_in_block(normalized, &run.base().block)?;
+                let RunAccess::Shift(shift) = run_access(run, &aligned) else {
+                    return None;
+                };
+                let width = i64::from(run.element_width()).max(1);
+                if shift.rem_euclid(width) != 0 {
+                    return None;
+                }
+                u32::try_from(shift.div_euclid(width))
+                    .ok()
+                    .filter(|index| *index < run.count())
+                    .map(|index| SlotSet::Elements(index, index + 1))
+            })
             .unwrap_or(SlotSet::Nothing),
     };
     // A `Shift` names one address exactly, by the byte arithmetic every slot
