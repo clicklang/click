@@ -2863,6 +2863,19 @@ impl PureFactContext {
     /// also makes withdrawal a no-op for the fact values that were never
     /// filed.
     fn adjust_pointer_block_alias(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+        if let Some((pointer, alignment)) = condition.as_pointer_alignment() {
+            if value && alignment.is_power_of_two() {
+                let key = (pointer.clone(), alignment);
+                if insert {
+                    self.pointer_alignment_facts.insert(key, ());
+                    self.equality_graph.register_alignment(pointer, alignment);
+                } else {
+                    self.pointer_alignment_facts.remove(&key);
+                    self.rebuild_equality_graph();
+                }
+            }
+            return;
+        }
         let ConditionTerm::PointerEqual(left, right) = condition else {
             return;
         };
@@ -2941,6 +2954,9 @@ impl PureFactContext {
             for ((_, address), (value, memory)) in definitions.iter() {
                 classes.add_equality(value, &Pointer::loaded_value(memory, address));
             }
+        }
+        for ((pointer, alignment), _) in self.pointer_alignment_facts.iter() {
+            classes.register_alignment(pointer, *alignment);
         }
         self.equality_graph = classes;
     }
@@ -3416,6 +3432,7 @@ impl PureFactContext {
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.open_condition_facts = crate::persistent::PersistentMap::default();
         self.order_condition_facts = crate::persistent::PersistentMap::default();
+        self.pointer_alignment_facts = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases = crate::persistent::PersistentMap::default();
         self.pointer_block_aliases_by_offset = crate::persistent::PersistentMap::default();
         self.equality_graph = EqualityGraph::default();
@@ -3829,6 +3846,7 @@ impl PureFactContext {
         self.algebraic_variable_constructors = crate::persistent::PersistentMap::default();
         self.algebraic_variable_variant_evidence = crate::persistent::PersistentMap::default();
         self.resource_compositions = std::sync::Arc::new(BTreeSet::new());
+        self.composition_object_resources = Default::default();
         self.memory_read_defined_facts = crate::persistent::PersistentMap::default();
         self.memory_loadable_facts = std::sync::Arc::new(BTreeMap::new());
         self.memory_loadable_object_facts = crate::persistent::PersistentMap::default();
@@ -4448,6 +4466,7 @@ impl PureFactContext {
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         if let Proposition::CResourceComposition(resources) = proposition {
             if std::sync::Arc::make_mut(&mut self.resource_compositions).insert(resources.clone()) {
+                self.composition_object_resources.admit(&resources);
                 self.content_fingerprint ^= Self::fingerprint(3, &resources);
             }
             return;

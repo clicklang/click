@@ -5792,6 +5792,7 @@ pub(super) struct ResourceContextStorage {
 
 #[derive(Clone)]
 pub(super) struct ResourceContextChange {
+    pub(super) depth: usize,
     /// Exact occurrence delta for derived indexes; metadata changes use None.
     pub(super) entry_delta: Option<(ResourceEntryId, bool)>,
     pub(super) fact: CResourceFact,
@@ -5850,13 +5851,7 @@ pub(super) struct ResourceContextIndex {
     /// Raw persistent roots for pairing with an equality graph, maintained
     /// alongside the spelling index so pairing never scans the resource store.
     memory_addresses: memory_equality_index::MemoryAddresses,
-    /// Constant byte spans of owned memory, normalized by additive base.
-    /// A predecessor query selects an access's containing span without
-    /// scanning other fields, ranges, or parameters in the same block.
-    pub(super) owned_byte_spans: PersistentMap<(Pointer, i64, i64), ResourceEntryIds>,
-    /// Nonconstant spans require explicit bounds reasoning. Kept apart so
-    /// a missing constant access never scans unrelated constant ranges.
-    pub(super) symbolic_owned_byte_spans: PersistentMap<Pointer, ResourceEntryIds>,
+    memory_objects: memory_equality_index::symbolic::ObjectSuppliers,
     pub(super) owned_memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
     /// The blocks holding two or more owned memory ranges. Only those can
     /// contribute same-block separation candidates, so projecting a
@@ -8592,6 +8587,8 @@ pub struct PureFactContext {
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of
     /// every pointer comparison the path happens to hold.
+    /// Original alignment premises, retained for graph reconstruction only.
+    pub(super) pointer_alignment_facts: crate::persistent::PersistentMap<(Pointer, u64), ()>,
     pub(super) pointer_block_aliases: crate::persistent::PersistentMap<
         Pointer,
         crate::persistent::PersistentMap<Pointer, ConditionTerm>,
@@ -8736,6 +8733,9 @@ pub struct PureFactContext {
     /// unrelated proposition in the context.
     pub(super) disjunction_facts: std::sync::Arc<BTreeSet<Proposition>>,
     pub(super) resource_compositions: std::sync::Arc<BTreeSet<ResourceContext>>,
+    /// Derived provenance-only footprints published with each explicitly
+    /// admitted composition. This is not consumable resource authority.
+    pub(super) composition_object_resources: memory_equality_index::ObjectEvidenceSources,
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
         (Pointer, CType),
         crate::persistent::PersistentSet<Proposition>,

@@ -865,9 +865,7 @@ pub(super) fn initialization_storage_refusal(
     alignment: u32,
     assumptions: &PureFactContext,
 ) -> Option<super::CRuntimeError> {
-    let resolved = super::primitives::storage_pointer_spellings(mutex, assumptions)
-        .pop()
-        .expect("storage spelling");
+    let resolved = assumptions.equality_graph.storage_address(mutex);
     let range =
         super::CMemoryRange::new_with_element_width(mutex.clone(), 0u32.into(), bytes.into(), 1);
     let automatic =
@@ -892,10 +890,6 @@ pub(super) fn initialization_storage_refusal(
         mutex.clone(),
         u64::from(alignment),
     )) != Some(true)
-        && assumptions.decide(&ConditionTerm::pointer_aligned(
-            resolved.clone(),
-            u64::from(alignment),
-        )) != Some(true)
     {
         return Some(super::CRuntimeError::MissingMutexStorageAlignment {
             mutex: mutex.clone(),
@@ -4156,7 +4150,8 @@ mod tests {
         };
         let mut samples = vec![];
         for size in [16usize, 64, 256, 1024] {
-            let mut resources = ResourceContext::new();
+            let assumptions = PureFactContext::new();
+            let mut resources = ResourceContext::new_with_equalities(&assumptions);
             for index in 0..size {
                 // Alternate units, so the index must compare bytes, not element indices.
                 let width = if index % 2 == 0 { 1 } else { 8 };

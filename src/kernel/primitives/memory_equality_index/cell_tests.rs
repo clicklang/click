@@ -2028,3 +2028,213 @@ fn constant_memory_miss_ignores_unrelated_zero_bound_neighbors() {
         );
     }
 }
+
+#[test]
+fn storage_ownership_follows_transitive_address_equality() {
+    let base = Pointer::symbolic(Variable(894_000));
+    let alias = Pointer::symbolic(Variable(894_001));
+    let last = Pointer::symbolic(Variable(894_002));
+    let empty = PureFactContext::new();
+    let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            0u32.into(),
+            48u32.into(),
+            1,
+        )),
+    );
+    let facts = empty
+        .clone()
+        .assume_condition(
+            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::pointer_equal(alias, last.clone()), true);
+    assert!(resources.owns_storage_access(&last.offset_by_bytes(8), 40, &facts));
+    assert!(!resources.owns_storage_access(&last.offset_by_bytes(9), 40, &facts));
+    assert!(!resources.owns_storage_access(&last, 40, &empty));
+    assert!(
+        !ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_fact(view(&base, 0, 48))
+            .owns_storage_access(&last, 40, &facts)
+    );
+}
+
+#[test]
+fn object_evidence_uses_provenance_classes_and_live_nonempty_occurrences() {
+    let external = |id: u64| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(898_000 + id)),
+    };
+    let source = external(0);
+    let target = external(1);
+    let empty = PureFactContext::new();
+    let fact = view(&source, 0, 4);
+    let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(fact.clone());
+    let address_only = empty.clone().assume_condition(
+        ConditionTerm::pointer_equal(source.clone(), target.clone()),
+        true,
+    );
+    assert!(
+        resources
+            .memory_object_evidence(&target, &address_only)
+            .is_none()
+    );
+    let shared_object = address_only.assume_condition(
+        ConditionTerm::pointer_equal(source.object_identity(), target.object_identity()),
+        true,
+    );
+    assert_eq!(
+        resources.memory_object_evidence(&target, &shared_object),
+        Some(&fact)
+    );
+    assert!(resources.memory_object_evidence(&target, &empty).is_none());
+    assert_eq!(
+        resources.memory_object_evidence(&source.offset_by_bytes(100), &empty),
+        Some(&fact)
+    );
+    assert!(!resources.owns_storage_access(&source, 4, &empty));
+    let owner = CResourceFact::own_memory(fact.memory_range().unwrap().clone());
+    let owned = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(owner.clone());
+    let gone = owned
+        .clone()
+        .without_fact_incrementally(&owner, &empty)
+        .unwrap();
+    assert!(gone.memory_object_evidence(&source, &empty).is_none());
+    assert_eq!(owned.memory_object_evidence(&source, &empty), Some(&owner));
+    for fact in [
+        view(&source, 0, 0),
+        CResourceFact::own_quantity(
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                source.clone(),
+                0u32.into(),
+                4u32.into(),
+                1,
+            )),
+            0u32.into(),
+        ),
+    ] {
+        assert!(
+            ResourceContext::new_with_equalities(&empty)
+                .unchecked_with_fact(fact)
+                .memory_object_evidence(&source, &empty)
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn composition_object_evidence_ignores_unrelated_admitted_sources() {
+    let external = |id: u64| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Variable(Variable(899_000 + id)),
+    };
+    let target = external(0);
+    let target_fact = view(&target, 0, 4);
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let mut facts = PureFactContext::new();
+        for id in 1..=size {
+            facts = facts.assume_proposition(Proposition::CResourceComposition(
+                ResourceContext::new().unchecked_with_fact(view(&external(id), 0, 4)),
+            ));
+        }
+        let sibling = facts.clone();
+        facts = facts.assume_proposition(Proposition::CResourceComposition(
+            ResourceContext::new().unchecked_with_fact(target_fact.clone()),
+        ));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                facts
+                    .composition_object_resources
+                    .memory_object_evidence(&target, &facts),
+                Some(&target_fact)
+            );
+            assert!(
+                sibling
+                    .composition_object_resources
+                    .memory_object_evidence(&target, &sibling)
+                    .is_none()
+            );
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples[3] <= samples[0] + 40,
+        "composition lookup searched unrelated sources: {samples:?}"
+    );
+}
+
+#[test]
+fn composition_provenance_admission_follows_sibling_deltas_not_the_shared_frame() {
+    let pointer = |id: u64| Pointer::symbolic(Variable(901_000 + id));
+    let dormant = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        pointer(0),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let left_fact = view(&pointer(1), 0, 4);
+    let right_fact = view(&pointer(2), 0, 4);
+    let mut samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let empty = PureFactContext::new();
+        let mut common =
+            ResourceContext::new_with_equalities(&empty).unchecked_with_fact(dormant.clone());
+        for id in 3..size + 3 {
+            common = common.unchecked_with_fact(view(&pointer(id), 0, 4));
+        }
+        // Independently consumed histories have a common prefix that still
+        // contains dormant. Neither admitted source actually contains it.
+        let left = common
+            .clone()
+            .without_fact_incrementally(&dormant, &empty)
+            .unwrap()
+            .unchecked_with_fact(left_fact.clone());
+        let right = common
+            .clone()
+            .without_fact_incrementally(&dormant, &empty)
+            .unwrap()
+            .unchecked_with_fact(right_fact.clone());
+        let parent = empty
+            .clone()
+            .assume_proposition(Proposition::CResourceComposition(left));
+        let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
+            parent
+                .clone()
+                .assume_proposition(Proposition::CResourceComposition(right))
+        });
+        assert_eq!(
+            facts
+                .composition_object_resources
+                .memory_object_evidence(&pointer(2), &facts),
+            Some(&right_fact)
+        );
+        assert!(
+            facts
+                .composition_object_resources
+                .memory_object_evidence(&pointer(0), &facts)
+                .is_none()
+        );
+        assert!(
+            parent
+                .composition_object_resources
+                .memory_object_evidence(&pointer(2), &parent)
+                .is_none()
+        );
+        let (returned, returning_work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.assume_proposition(Proposition::CResourceComposition(common))
+        });
+        assert_eq!(
+            returned
+                .composition_object_resources
+                .memory_object_evidence(&pointer(0), &returned),
+            Some(&dormant)
+        );
+        samples.push(work + returning_work);
+    }
+    assert!(
+        samples[3] <= samples[0] + 40,
+        "source admission visited the shared frame: {samples:?}"
+    );
+}
