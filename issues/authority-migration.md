@@ -375,9 +375,14 @@ rejects using a global count in place of owned fragments. Deterministic scaling
 coverage checks selected transfers with many unrelated populations. No new
 syntax or population transition is introduced by borrowing the batch.
 
-The next small slice is applying cleanup's consumed symbolic-batch effect
-through an ordinary helper call and propagating checked retirement evidence.
-The unchanged-batch bridge does not yet complete that consuming call. Keep
+Single-population cleanup now applies its consumed symbolic-batch effect
+through ordinary direct and nested helper calls in
+`authority_symbolic_batch_cleanup_helper.md`, including zero-sized callers.
+The call uses the checked entry quantity, and retired consumption accounting
+survives return for certificate checking without conveying live rights. A
+negative companion rejects missing batch custody. The next small slice is
+retiring the additional already-empty authority in bounded-pool cleanup's
+consumed control; the reduced helper fixture covers only one authority. Keep
 batch splitting, symbolic grow/shrink, and two-pool transfer separate. The
 original bounded-pool project still uses legacy counting and is not migrated
 as a whole. The speculative cache repair remains removed; the checkout proofs

@@ -870,7 +870,7 @@ impl CreationEvents {
         if (scope.population_arity().is_some()
             && import.wildcard_member.as_ref() != Some(description))
             || (scope.population_arity().is_none() && import.description != *description)
-            || import.authority_holder != self.0.opaque_actor
+            || (!import.retired_authority && import.authority_holder != self.0.opaque_actor)
         {
             return None;
         }

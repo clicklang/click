@@ -3545,3 +3545,77 @@ mod wildcard_scope_tests {
         }
     }
 }
+
+#[test]
+fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
+    let description = member_description(PointerBlock::ExternalArgument);
+    let quantity = Bitvector32Term::Variable(Variable(980_220));
+    let assumptions = PureFactContext::new().assume_condition(
+        crate::kernel::ConditionTerm::signed_greater_equal(
+            quantity.clone(),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let entry = CreationEvents::new()
+        .import_opaque_contract_population_inner(
+            &description,
+            0,
+            Some(quantity.clone()),
+            Some(quantity.clone()),
+            None,
+        )
+        .unwrap();
+    let child = entry.enter_call();
+    let authority = child
+        .transfer_call_fact(&entry, &child, &description, true)
+        .unwrap();
+    let held = authority
+        .transfer_call_fact_quantity(&entry, &child, &description, false, &quantity, &assumptions)
+        .unwrap();
+    let spent = held
+        .checked_member_exchange_quantity(
+            &PointerBlock::ExternalArgument,
+            &description,
+            false,
+            &quantity,
+            &assumptions,
+        )
+        .unwrap()
+        .0;
+    assert_eq!(
+        spent.finish_call(&entry).unwrap_err(),
+        CreationRefusal::OutstandingOwnership
+    );
+    let retired = spent
+        .checked_retire_imported(&description, &assumptions)
+        .unwrap()
+        .0;
+    let returned = retired.finish_call(&entry).unwrap();
+    assert!(returned.retired_imported_authority_since(&entry, &description));
+    assert_eq!(
+        returned.imported_member_delta_since_entry(&description),
+        Some((false, quantity))
+    );
+    assert!(returned.checked_empty_population(&description));
+    assert!(!returned.owns_population_authority(&description));
+    assert!(!returned.owns_population_member(&description));
+    assert!(returned.observe_symbolic(&description).is_none());
+    assert!(
+        returned
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &description,
+                true,
+                &Bitvector32Term::Constant(1),
+                &assumptions
+            )
+            .is_err()
+    );
+    assert_eq!(
+        returned
+            .checked_retire_imported(&description, &assumptions)
+            .unwrap_err(),
+        CreationRefusal::MissingAuthority
+    );
+}

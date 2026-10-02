@@ -4897,12 +4897,6 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            if quantity.as_const() != Some(1) {
-                paths.push(resource_call_failure(
-                    "final release requires one exact member",
-                ));
-                continue;
-            }
             let description = ResourceDescription::new(
                 name,
                 arguments,
@@ -4920,17 +4914,35 @@ fn execute_verified_function_applications_with_suspension(
                 ));
                 continue;
             };
-            let (spent, _) =
-                match events.checked_member_exchange(&pointer.pointer().block, &description, false)
-                {
-                    Ok(exchange) => exchange,
-                    Err(refusal) => {
-                        paths.push(resource_call_failure(&format!(
-                            "final release member transition refused: {refusal:?}"
-                        )));
-                        continue;
-                    }
-                };
+            // Entry field expressions can denote an empty batch even though
+            // the resource planner has already omitted its zero member rights.
+            let exchange_quantity = if !events.owns_imported_population_member(&description)
+                && crate::kernel::quantity_condition_holds(
+                    &effective_assumptions,
+                    ConditionTerm::Bitvector32Equal(
+                        quantity.clone(),
+                        Box::new(Bitvector32Term::Constant(0)),
+                    ),
+                ) {
+                Bitvector32Term::Constant(0)
+            } else {
+                *quantity
+            };
+            let (spent, _) = match events.checked_member_exchange_quantity(
+                &pointer.pointer().block,
+                &description,
+                false,
+                &exchange_quantity,
+                &effective_assumptions,
+            ) {
+                Ok(exchange) => exchange,
+                Err(refusal) => {
+                    paths.push(resource_call_failure(&format!(
+                        "final release member transition refused: {refusal:?}"
+                    )));
+                    continue;
+                }
+            };
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
