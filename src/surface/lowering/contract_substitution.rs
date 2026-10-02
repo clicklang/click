@@ -3131,12 +3131,14 @@ pub(in crate::surface) fn substitute_c_fragment_in(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
         } => Ok(CExpression::Cast {
             expression: Box::new(substitute_c_fragment_in(expression, substitutions)?),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,

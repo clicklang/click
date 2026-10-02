@@ -58,10 +58,13 @@ the upstream `__int128` path. The next milestone below remains open.
 
 Unsigned scalar support now delivers by-value 32/64-bit parameters, returns,
 locals and modular captures, wrapping arithmetic, comparisons, division/remainder
-and the supported mixed conversions. Uint64-to-int64 reinterpretation remains
-explicitly unsupported; unsigned references and record fields are outside this
-slice. The fast-path fixture preserves both unsigned fee expressions but returns
-the intermediate, so it is not a proof of upstream `EvaluateFee`.
+and the supported mixed conversions. C++20 uint64-to-int64 conversion now
+preserves all source bits through a distinct kernel cast mode, with sign-bit
+and extrema regressions, arbitrary-input round trips, modular caller framing,
+and following signed overflow checks. Ordinary C conversion behavior is retained.
+Unsigned references and record fields are outside this slice. The unsigned
+fast-path fixture preserves both fee expressions but returns the intermediate,
+so it is not a proof of upstream `EvaluateFee`.
 
 The unchanged `GetSizeOfCompactSize` in the pinned `serialize.h` is proved for
 all uint64 inputs in four disjoint ranges (encoded lengths 1, 3, 5, 9). Its
@@ -106,9 +109,11 @@ Select unchanged `FeeFrac::EvaluateFeeDown/Up` and their instantiated helpers
 from this pinned release. State input bounds that make the result representable
 and prove the documented rounding direction, including negative fees, exact
 division, and a nonzero remainder. Concrete Boolean template instances and `if constexpr` now have prerequisite
-coverage. The selected source still requires general unsigned-to-signed-64
-conversion, `__int128` helpers, assumption obligations, and direct return-call
-positions on this target. Those remain importer and arithmetic-model work;
+coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
+the synthetic fast paths now preserve the signed return and concrete rounding
+cases. The selected upstream source still requires `__int128` helpers,
+assumption obligations, and direct return-call positions on this target.
+Those remain importer and arithmetic-model work;
 upstream `EvaluateFee` is not yet supported.
 
 Before implementing the upstream proof, freeze a small regression that

@@ -1107,6 +1107,15 @@ pub(super) enum CLValueStorage {
     Memory { pointer: Pointer },
 }
 
+/// The language-specific integer rule at an explicit kernel cast boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CIntegerCastMode {
+    #[default]
+    Standard,
+    /// Reinterpret all 64 bits as a signed value, as required by C++20.
+    UInt64BitsToInt64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CExpression {
     Value(CValue),
@@ -1115,6 +1124,7 @@ pub enum CExpression {
     Cast {
         expression: Box<CExpression>,
         target_type: CType,
+        integer_mode: CIntegerCastMode,
         /// The struct tag of a pointer cast target, as the source spelled it.
         /// Evaluation ignores it: a struct pointer is a kernel `Int32Pointer`
         /// and the layout lives with the field accesses. It is kept so a

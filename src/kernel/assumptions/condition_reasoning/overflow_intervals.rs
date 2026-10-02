@@ -2099,4 +2099,52 @@ mod tests {
             previous = Some((depth, work));
         }
     }
+    #[test]
+    fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
+        let value = Bitvector32Term::Variable(Variable(99_001));
+        let mut baseline = None;
+        for population in [8u64, 32, 128, 512] {
+            let mut facts = PureFactContext::new();
+            for index in 0..population {
+                facts = facts.assume_condition(
+                    ConditionTerm::uint64_equal(
+                        Bitvector32Term::Variable(Variable(100_000 + index)),
+                        Bitvector32Term::UInt64Constant(0),
+                    ),
+                    true,
+                );
+            }
+            let query = ConditionTerm::uint64_equal(
+                Bitvector32Term::UInt64FromInt64(Box::new(value.clone())),
+                value.clone(),
+            );
+            let (answer, work) =
+                crate::instrumentation::measure_deterministic_work(|| facts.decide(&query));
+            assert_eq!(answer, Some(true));
+            if let Some(previous) = baseline {
+                assert_eq!(work, previous);
+            } else {
+                baseline = Some(work);
+            }
+        }
+        let facts = PureFactContext::new();
+        let mut previous = None;
+        for depth in [8usize, 32, 128, 512] {
+            let mut term = value.clone();
+            for _ in 0..depth {
+                term = Bitvector32Term::UInt64FromInt64(Box::new(term));
+            }
+            let query = ConditionTerm::uint64_equal(term, value.clone());
+            let (answer, work) =
+                crate::instrumentation::measure_deterministic_work(|| facts.decide(&query));
+            assert_eq!(answer, Some(true));
+            if let Some((old_depth, old_work)) = previous {
+                assert!(
+                    work <= old_work * depth / old_depth + 32,
+                    "{depth}: {work}, previous {old_work}"
+                );
+            }
+            previous = Some((depth, work));
+        }
+    }
 }

@@ -509,7 +509,7 @@ fn clang_export_is_deterministic_typed_and_loads_without_clang() {
 
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
     let prepared = load_import(&project.config()).expect("locked loading must not execute Clang");
-    assert_eq!(prepared.export().schema, 24);
+    assert_eq!(prepared.export().schema, 25);
     assert!(prepared.export().reachable_functions.is_empty());
     assert_eq!(prepared.logical_source(), "increment.cpp");
     assert_eq!(prepared.identity().len(), 64);
@@ -1652,7 +1652,7 @@ fn signed_int64_predicate_retains_alias_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the predicate artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     assert!(import.export().profile.exceptions);
     assert!(!import.export().function.declared_noexcept);
     assert!(matches!(
@@ -1767,7 +1767,7 @@ fn constexpr_coin_retains_alias_chain_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constexpr artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     assert_eq!(import.export().dependencies, ["cstdint"]);
     let CppType::LvalueReference { pointee } = &import.export().function.parameters[0].value_type
     else {
@@ -1878,7 +1878,7 @@ fn constexpr_max_money_retains_checked_dependency_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the dependent artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("COIN and MAX_MONEY were not captured as one ordered dependency")
     };
@@ -1939,7 +1939,7 @@ fn signed_int64_less_equal_verifies_max_money_upper_bound_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the upper-bound artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the upper-bound artifact lost the MAX_MONEY dependency graph")
     };
@@ -1985,7 +1985,7 @@ fn built_in_cpp_logical_and_verifies_inclusive_money_range_offline() {
     fs::remove_file(&project.exporter).expect("make the exporter unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the range artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [coin, max_money] = import.export().constants.as_slice() else {
         panic!("the range artifact lost the ordered MAX_MONEY dependency graph")
     };
@@ -2611,7 +2611,7 @@ fn direct_cpp_call_exports_reachable_definition_and_verifies_modularly_offline()
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the call graph artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     assert_eq!(import.export().function.name, "call_set_seven");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2689,7 +2689,7 @@ fn scalar_local_captures_a_direct_call_result_and_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the scalar-local artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     assert_eq!(import.export().function.name, "relay_value");
     assert_eq!(import.export().reachable_functions.len(), 1);
     let reachable = &import.export().reachable_functions[0];
@@ -2807,7 +2807,7 @@ fn mutable_pointer_dereference_and_reference_address_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the pointer artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let caller = &import.export().function;
     assert_eq!(caller.name, "bump_reference");
     assert!(matches!(
@@ -2945,7 +2945,7 @@ fn record_reference_member_loads_and_stores_verify_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the record artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [record] = import.export().records.as_slice() else {
         panic!("the referenced record layout was not captured")
     };
@@ -3047,7 +3047,7 @@ fn brace_initialized_local_aggregate_verifies_offline() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the aggregate artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [record] = import.export().records.as_slice() else {
         panic!("the local aggregate record layout was not captured")
     };
@@ -3147,7 +3147,7 @@ fn explicit_constructor_local_verifies_as_a_modular_call() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the constructor artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [record] = import.export().records.as_slice() else {
         panic!("the constructed record layout was not captured")
     };
@@ -3286,7 +3286,7 @@ fn terminal_return_captures_value_before_checked_destructor_cleanup() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [record] = import.export().records.as_slice() else {
         panic!("the destructible record layout was not captured")
     };
@@ -3436,7 +3436,7 @@ fn every_return_after_construction_runs_the_checked_destructor() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the cleanup artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let destructor = import
         .export()
         .reachable_functions
@@ -3622,7 +3622,7 @@ fn two_constructed_objects_are_destroyed_in_reverse_order_on_every_return() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the ordered cleanup artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let [
         CppStatement::Declare { local: first, .. },
         CppStatement::Declare { local: second, .. },
@@ -3719,7 +3719,7 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
     fs::remove_file(&project.exporter).expect("make the frontend unavailable after refresh");
 
     let import = load_import(&project.config()).expect("load the nested-scope artifact offline");
-    assert_eq!(import.export().schema, 24);
+    assert_eq!(import.export().schema, 25);
     let destructor = import
         .export()
         .reachable_functions
@@ -5408,7 +5408,7 @@ uint64 add64(uint64 a, uint64 b) {
 }
 
 #[test]
-fn unsigned_division_rejects_zero_and_unsigned_to_signed64_is_explicitly_unsupported() {
+fn unsigned_division_rejects_zero() {
     for name in ["div64", "rem64"] {
         let project = Project::with_fixture("unsigned.cpp", name, UNSIGNED_ARITHMETIC_SOURCE);
         refresh_import(&project.config()).unwrap();
@@ -5425,17 +5425,6 @@ fn unsigned_division_rejects_zero_and_unsigned_to_signed64_is_explicitly_unsuppo
             error.message()
         );
     }
-    let project = Project::with_fixture(
-        "unsigned.cpp",
-        "bad",
-        "long bad(unsigned long a) noexcept { return static_cast<long>(a); }",
-    );
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(
-        error.contains("uint64-to-int64 reinterpretation"),
-        "{error}"
-    );
-    assert!(!project.artifact().exists());
 }
 
 #[test]
@@ -5481,7 +5470,7 @@ fn unsigned_positive_divisor_contract_expands_and_reverifies() {
 #[test]
 fn unsigned_fee_fast_path_expressions_cover_large_products_and_rounding() {
     // Exact fast-path expressions from EvaluateFee; return the unsigned
-    // intermediate. The upstream uint64-to-int64 return cast is still unsupported.
+    // intermediate; signed-result conversion is covered by signed-conversion fixtures.
     let cpp = include_str!("fixtures/cpp-verification/unsigned-arithmetic/fee_fast_path.cpp");
     for (name, up) in [("down", false), ("up", true)] {
         let project = Project::with_fixture("fast_path.cpp", name, cpp);
@@ -5797,4 +5786,129 @@ fn class_template_instances_remain_explicitly_unsupported() {
         "{error}"
     );
     assert!(!project.artifact().exists());
+}
+
+const SIGNED_CONVERSION_SOURCE: &str =
+    include_str!("fixtures/cpp-verification/signed-conversion/conversion.cpp");
+
+#[test]
+fn cpp20_unsigned_to_signed64_preserves_all_bits_at_boundaries() {
+    for value in [
+        0u64,
+        1,
+        i32::MAX as u64,
+        u32::MAX as u64,
+        i64::MAX as u64,
+        1u64 << 63,
+        (1u64 << 63) + 1,
+        u64::MAX,
+    ] {
+        for selected in ["explicit_cast", "implicit_cast"] {
+            let project =
+                Project::with_fixture("conversion.cpp", selected, SIGNED_CONVERSION_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let expected = value as i64;
+            let source = format!(
+                "verifying \"conversion.cpp\"; int64 {selected}(uint64 value) {{ requires value == {value}u64; ensures result == {expected}i64; }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &source);
+            let hostile = source.replace(
+                &format!("result == {expected}i64"),
+                &format!("result == {}i64", expected.wrapping_add(1)),
+            );
+            fs::write(
+                project.directory.join("bad.click"),
+                hostile.replace(
+                    "-9223372036854775808i64",
+                    "(-9223372036854775807i64 - 1i64)",
+                ),
+            )
+            .unwrap();
+            let bad = fs::read_to_string(project.directory.join("bad.click")).unwrap();
+            let parsed = read_click_project(&project.directory.join("bad.click"), &bad).unwrap();
+            assert!(verify_program_prepared_project(&parsed, &import).is_err());
+        }
+    }
+}
+
+#[test]
+fn cpp20_signed_unsigned_round_trips_verify_without_input_bounds() {
+    for (selected, value_type) in [
+        ("signed_round_trip", "int64"),
+        ("unsigned_round_trip", "uint64"),
+    ] {
+        let project = Project::with_fixture("conversion.cpp", selected, SIGNED_CONVERSION_SOURCE);
+        refresh_import(&project.config()).unwrap();
+        let import = load_import(&project.config()).unwrap();
+        let source = format!(
+            "verifying \"conversion.cpp\"; {value_type} {selected}({value_type} value) {{ ensures result == value; }} by {{ execute(); simp(); }}"
+        );
+        check_arithmetic_sidecar(&project, &import, &source);
+    }
+}
+
+#[test]
+fn cpp20_modular_conversion_contract_preserves_bits_and_frames_memory() {
+    let project = Project::with_fixture("conversion.cpp", "relay", SIGNED_CONVERSION_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "conversion.cpp";
+int64 explicit_cast(uint64 value) { ensures ((uint64)result) == value; } by { execute(); simp(); }
+int64 relay(uint64 value, int32* untouched) {
+ owns untouched[0..1];
+ ensures ((uint64)result) == value;
+ ensures untouched[0] == old(untouched[0]);
+} by { execute(); simp(); }
+"#;
+    check_arithmetic_sidecar(&project, &import, source);
+}
+
+#[test]
+fn cpp20_conversion_keeps_following_signed_overflow_obligations() {
+    let project = Project::with_fixture("conversion.cpp", "arithmetic", SIGNED_CONVERSION_SOURCE);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    check_arithmetic_sidecar(
+        &project,
+        &import,
+        "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 18446744073709551615u64; ensures result == 0i64; } by { execute(); simp(); }",
+    );
+    let source = "verifying \"conversion.cpp\"; int64 arithmetic(uint64 value) { requires value == 9223372036854775807u64; ensures result == 0i64; } by { execute(); simp(); }";
+    fs::write(project.directory.join("bad.click"), source).unwrap();
+    let parsed = read_click_project(&project.directory.join("bad.click"), source).unwrap();
+    let error = verify_program_prepared_project(&parsed, &import).unwrap_err();
+    assert!(error.message().contains("overflow"), "{}", error.message());
+}
+
+#[test]
+fn cpp20_fee_fast_paths_preserve_the_signed_return_conversion() {
+    for (fee, at_size, size) in [
+        (0u64, 1u64, 3u64),
+        (7, 2, 3),
+        (8, 2, 4),
+        (8589934591, 2147483647, 2147483647),
+    ] {
+        for (selected, instance, expected) in [
+            ("fee_down", "fee__bool_true", (fee * at_size / size) as i64),
+            (
+                "fee_up",
+                "fee__bool_false",
+                (fee * at_size).div_ceil(size) as i64,
+            ),
+        ] {
+            let project =
+                Project::with_fixture("conversion.cpp", selected, SIGNED_CONVERSION_SOURCE);
+            refresh_import(&project.config()).unwrap();
+            let import = load_import(&project.config()).unwrap();
+            let contract = format!(
+                "requires fee == {fee}i64; requires at_size == {at_size}; requires size == {size}; ensures result == {expected}i64;"
+            );
+            let caller_contract = contract.replace("requires fee ==", "requires fee_value ==");
+            let source = format!(
+                "verifying \"conversion.cpp\"; int64 {instance}(int64 fee, int32 at_size, int32 size) {{ {contract} }} by {{ execute(); simp(); }} int64 {selected}(int64 fee_value, int32 at_size, int32 size) {{ {caller_contract} }} by {{ execute(); simp(); }}"
+            );
+            check_arithmetic_sidecar(&project, &import, &source);
+        }
+    }
 }

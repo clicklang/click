@@ -791,6 +791,23 @@ impl LoweringContext<'_> {
                     cpp_scalar_kernel_type(value_type)?
                 };
                 let value_expression = self.lower_expression(value)?;
+                if matches!(
+                    value.value_type(),
+                    CppType::Integer {
+                        bits: 64,
+                        signed: false,
+                        ..
+                    }
+                ) && matches!(
+                    value_type,
+                    CppType::Integer {
+                        bits: 64,
+                        signed: true,
+                        ..
+                    }
+                ) {
+                    return Ok(crate::kernel::c_uint64_bits_to_int64(value_expression));
+                }
                 // C++20 signed narrowing is congruent modulo 2^32. The shared
                 // unsigned conversion truncates bits; int32 then reinterprets them.
                 Ok(

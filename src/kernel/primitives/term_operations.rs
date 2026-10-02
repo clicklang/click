@@ -763,7 +763,7 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
             ConditionTerm::Constant(false) => int64_constant(else_term),
             _ => None,
         },
-        _ => None,
+        _ => uint64_constant(term).map(|bits| bits as i64),
     }
 }
 
@@ -1444,6 +1444,18 @@ impl Bitvector32Term {
             Self::Int64Constant(value) => Self::UInt64Constant(value as u64),
             Self::UInt64Constant(_) | Self::UInt64FromInt64(_) => value,
             value => Self::UInt64FromInt64(Box::new(value)),
+        }
+    }
+
+    /// Both typed values use the same 64-bit bitvector carrier. Signedness
+    /// determines the following operators; this conversion preserves the bits.
+    pub(crate) fn int64_from_uint64_bits(value: Self) -> Self {
+        match value {
+            Self::UInt64Constant(bits) => Self::Int64Constant(bits as i64),
+            Self::UInt64FromInt64(value) => *value,
+            Self::UInt64From32(value) => Self::int64_from_uint32(*value),
+            Self::UInt64FromInt32(value) => Self::int64_from_32(*value),
+            value => value,
         }
     }
 

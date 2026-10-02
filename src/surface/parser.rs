@@ -1333,6 +1333,7 @@ impl Parser {
             Some(target_type) => CExpression::Cast {
                 expression: Box::new(expression.clone()),
                 target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -8478,6 +8479,7 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(operand),
                 target_type: CType::Int32Pointer,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
@@ -8500,6 +8502,7 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(expression),
                 target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -9117,6 +9120,7 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -10392,6 +10396,7 @@ fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition
             Box::new(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
