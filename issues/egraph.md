@@ -145,12 +145,20 @@ this list.
    structural resource satisfaction remains separate. Permission
    queries never publish the ambient frame. Existing multi-size regressions
    cover unrelated resources, same-class views, late merges, deltas, and forks.
-5. **Delete symbolic-range read searches.** Migrate
-   `memory_state::resource_context_has_symbolic_range_read`. Remove its
-   exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
-   from milestone 3 and retain element-width, valid-extent, bounds, and
-   initialization checks. Test symbolic buffers through equal bases and
-   increasing unrelated ranges, including many ranges in the same class.
+5. **Delete symbolic-range read searches — complete.**
+   `memory_state::resource_context_has_symbolic_range_read` uses the shared
+   symbolic supplier evidence and refuses unknown selection. Its exact-base
+   retry, whole-context scan, and unused `memory_base_facts` helper are deleted.
+   The selected supplier's explicit byte scaling is converted to its element
+   width before ordinary coverage checks; this preserves bounded byte,
+   halfword, and wider reads without discovering suppliers arithmetically.
+   Quantity, bounds, valid-extent, snapshot, and initialization obligations
+   remain with their existing judgments. A red-to-green consumer regression
+   refuses ambiguous starts even when bounds could prove coverage after a
+   search, and measures flat checker/index work beside 16–1,024 same-base
+   ranges. Controls cover late alias facts, sibling isolation, missing bounds,
+   view and owner suppliers, and zero quantity. Expansion and rechecking remain
+   covered by the full fixture gate.
 6. **Unify satisfaction, support, and fragment consumption.** Finish the
    memory paths in `satisfies_fact`, `directly_supporting_fact`,
    `directly_supporting_owned_entry_with_separation`, and

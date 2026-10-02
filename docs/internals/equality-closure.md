@@ -833,9 +833,18 @@ expansion/rechecking regression. Kernel regressions cover symbolic index bounds,
 late endpoint equality, snapshots, sibling contexts, retired occurrences,
 read/write authority, and same-base non-supplier scaling at multiple sizes.
 
-The symbolic-byte-extent consumer uses this service for known selections.
-Its old unknown-case search remains for milestone 5. Satisfaction and storage
-consumers retain the separately tracked work in milestones 6–7.
+The symbolic-byte-extent consumer uses this service exclusively. Unknown or
+ambiguous selection refuses without its former exact-base retry or whole-input
+scan; the unused `memory_base_facts` consumer API is removed. After selecting
+one supplier, the checker inverts explicitly scaled byte counts into that
+supplier's element width before ordinary coverage arithmetic. It checks the
+selected read core, including quantity; equality does not supply authority.
+Consumer regressions cover byte, halfword, and wider footprints, bounded
+subranges, missing bounds and aliases, sibling isolation, view and owner
+suppliers, and zero quantity. A red-to-green regression rejects an ambiguous
+start bucket even when a hidden search could find a covering supplier;
+checker and persistent-index work remain flat across 16–1,024 same-base ranges.
+Satisfaction and storage consumers retain the work in milestones 6–7.
 
 General read/write permission uses one shared classifier. Exact address/start
 payloads include eligible partial reads; physical interval hits select retained
