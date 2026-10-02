@@ -169,10 +169,7 @@ pub(super) fn check(
     .ok_or("cannot evaluate the population invariant at its initial quantity")?;
     let mut allowed = Vec::new();
     for obligation in obligations {
-        if !crate::kernel::api::contract_certification::certification_proves_proposition(
-            assumptions,
-            &obligation.proposition,
-        ) {
+        if !crate::kernel::PureFactContext::settles_exactly(assumptions, &obligation.proposition) {
             return Err(format!(
                 "population initialization requires {}",
                 obligation

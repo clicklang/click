@@ -117,8 +117,8 @@ pub(in crate::kernel) use algebraic_cases::algebraic_constructor_case_equations;
 pub use algebraic_cases::algebraic_constructor_cases;
 use contract_certification::{
     certification_proves_condition_from_verified_pure_implication,
-    certification_proves_proposition, contract_resource_condition_cases,
-    prove_symbolic_c_function_verification_paths, resources_certify_loadability,
+    contract_resource_condition_cases, prove_symbolic_c_function_verification_paths,
+    resources_certify_loadability,
 };
 
 pub fn int32(bits: impl Into<Bitvector32Term>) -> CValue {
@@ -305,6 +305,34 @@ pub fn c_condition_facts_match_for_transport(
         && assumptions.condition_matches(source_condition, target_condition)
 }
 
+/// The `transport` rule for one bare condition: `context` states it, it
+/// holds by memory resolution from the facts in `context`, or a quantified
+/// fact instantiated at its terms states it.
+fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> bool {
+    let Proposition::ConditionIs(condition, value) = target else {
+        return false;
+    };
+    context.proves_exact(target)
+        || contract_certification::condition_holds_by_memory_resolution(context, condition, *value)
+        || contract_certification::condition_holds_by_instantiated_fact(
+            context,
+            condition,
+            *value,
+            &|premise| transport_premise_holds(context, premise),
+        )
+}
+
+/// A premise of a quantified fact `transport` instantiates: each conjunct
+/// is settled by an exact route or reaches like a target.
+fn transport_premise_holds(context: &PureFactContext, premise: &Proposition) -> bool {
+    match premise {
+        Proposition::And(left, right) => {
+            transport_premise_holds(context, left) && transport_premise_holds(context, right)
+        }
+        _ => context.settles_exactly(premise) || condition_target_reaches(context, premise),
+    }
+}
+
 /// Certifies a stated condition target from one explicit condition source and
 /// deterministic memory-resolution evidence. Unlike whole-fact transport,
 /// this permits a target to retain an old load on one side while transporting
@@ -320,7 +348,7 @@ pub(crate) fn c_condition_fact_target_reaches_in_context(
         return false;
     }
     let with_source = assumptions.clone().assume_proposition(source.clone());
-    certification_proves_proposition(&with_source, target)
+    condition_target_reaches(&with_source, target)
 }
 
 /// Exports target-directed transport only when every contextual dependency
@@ -351,7 +379,7 @@ pub fn prove_c_condition_fact_target_transport(
             context.assume_proposition(premise)
         })
         .assume_proposition(source.clone());
-    certification_proves_proposition(&restricted, target)
+    condition_target_reaches(&restricted, target)
         .then(|| c_condition_fact_transport_theorem(source, target.clone(), premises))
 }
 
@@ -3252,10 +3280,9 @@ pub(crate) fn checked_c_function_contract_resource_transition(
         outcome,
         assumptions,
     )?;
-    if let Some(obligation) = obligations
-        .iter()
-        .find(|obligation| !certification_proves_proposition(assumptions, obligation.proposition()))
-    {
+    if let Some(obligation) = obligations.iter().find(|obligation| {
+        !crate::kernel::PureFactContext::settles_exactly(assumptions, obligation.proposition())
+    }) {
         return Err(format!(
             "unproved contract resource obligation: {}",
             obligation.context().unwrap_or("resource transition"),
@@ -5142,7 +5169,7 @@ pub fn prove_owned_resource_count_lower_bound(
         None => {
             let zero = Bitvector32Term::Constant(0);
             let quantity_is_zero = quantity == zero
-                || certification_proves_proposition(
+                || crate::kernel::PureFactContext::settles_exactly(
                     assumptions,
                     &Proposition::ConditionIs(
                         ConditionTerm::Bitvector32Equal(
@@ -5586,7 +5613,7 @@ pub(crate) fn counted_populations_definitionally_equal(
         );
         right_by_identity.get(&identity).is_some_and(|right_count| {
             let exact = population.count == **right_count;
-            let proved = certification_proves_proposition(
+            let proved = crate::kernel::PureFactContext::settles_exactly(
                 assumptions,
                 &Proposition::ConditionIs(
                     ConditionTerm::Bitvector32Equal(

@@ -148,7 +148,7 @@ pub(super) fn prepare(
     .ok_or("cannot evaluate the population invariant after consumption")?;
     for obligation in obligations {
         if obligation.is_body_fact
-            && !crate::kernel::api::contract_certification::certification_proves_proposition(
+            && !crate::kernel::PureFactContext::settles_exactly(
                 assumptions,
                 &obligation.proposition,
             )

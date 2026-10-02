@@ -266,6 +266,14 @@ impl PureFactContext {
     // These are stack-budget boundaries, not alternative search strategies.
     // Keep rule-local by-value temporaries out of the recursive dispatcher.
 
+    /// Whether this context settles `proposition` by an exact route: the
+    /// fact index, or the frozen checker for its one atomic shape. It
+    /// searches no logical structure and instantiates nothing, so a
+    /// proposition it does not settle is left for a tactic to prove.
+    pub(crate) fn settles_exactly(&self, proposition: &Proposition) -> bool {
+        self.proves_exact(proposition) || self.proves_atomic_without_search(proposition)
+    }
+
     pub(crate) fn proves_atomic_without_search(&self, proposition: &Proposition) -> bool {
         match proposition {
             Proposition::ConditionIs(condition, value) => {

@@ -6335,7 +6335,7 @@ fn prepare_verified_function_call<'a>(
     let has_population_invariant = population_facts.iter().any(|fact| fact.is_body_fact);
     for fact in population_facts {
         if fact.is_body_fact
-            && !super::api::contract_certification::certification_proves_proposition(
+            && !crate::kernel::PureFactContext::settles_exactly(
                 &path_assumptions,
                 &fact.proposition,
             )
@@ -23589,10 +23589,6 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
             assumptions.proves_condition_exact_or_snapshot(condition, *value)
                 || assumptions.decide(condition) == Some(*value)
                 || assumptions.proves_atomic_without_search(proposition)
-                || crate::kernel::api::contract_certification::certification_proves_proposition(
-                    assumptions,
-                    proposition,
-                )
         }
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, value) => {
@@ -23602,10 +23598,6 @@ pub(crate) fn evaluate_guarded_contract_condition_with_loop_entry(
                         condition.clone(),
                         !*value,
                     ))
-                    || crate::kernel::api::contract_certification::certification_proves_proposition(
-                        assumptions,
-                        &Proposition::ConditionIs(condition.clone(), !*value),
-                    )
             }
             _ => false,
         },

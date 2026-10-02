@@ -86,12 +86,11 @@ fn source_condition(
     let [path] = paths.as_slice() else {
         return Err("conditional loop resources require one scalar condition".into());
     };
-    if !path.obligations.iter().all(|o| {
-        crate::kernel::api::contract_certification::certification_proves_proposition(
-            assumptions,
-            o.proposition(),
-        )
-    }) {
+    if !path
+        .obligations
+        .iter()
+        .all(|o| crate::kernel::PureFactContext::settles_exactly(assumptions, o.proposition()))
+    {
         return Err("Requires the conditional loop resource expression to be defined".into());
     }
     let value = crate::kernel::spec::conditional_spec_value(&path.proposition, int32(1), int32(0))
