@@ -1333,6 +1333,7 @@ impl Parser {
             Some(target_type) => CExpression::Cast {
                 expression: Box::new(expression.clone()),
                 target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -8478,6 +8479,7 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(operand),
                 target_type: CType::Int32Pointer,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: Some(cast.struct_name),
                 pointee_volatile: false,
                 pointee_constant: cast.pointee_constant,
@@ -8500,6 +8502,7 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(expression),
                 target_type,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -8721,11 +8724,27 @@ impl Parser {
                                 indexes.len()
                             )));
                         }
-                        let offset = flatten_array_indices(indexes, &shape);
-                        expression = ContractExpression::Index(
-                            Box::new(expression),
-                            Box::new(ContractExpression::CFragment(offset)),
-                        );
+                        let offset = flatten_array_indices(indexes.clone(), &shape);
+                        // Keep the source rank of a multidimensional field
+                        // access, as a global array access does: the
+                        // flattened index alone prints as one subscript,
+                        // which does not parse back.
+                        expression = match contract_expression_as_c_fragment(&expression) {
+                            Some(lowered_base) if indexes.len() > 1 => {
+                                ContractExpression::ArrayIndex {
+                                    base: Box::new(expression),
+                                    indexes,
+                                    lowered: CExpression::Index(
+                                        Box::new(lowered_base),
+                                        Box::new(offset),
+                                    ),
+                                }
+                            }
+                            _ => ContractExpression::Index(
+                                Box::new(expression),
+                                Box::new(ContractExpression::CFragment(offset)),
+                            ),
+                        };
                         struct_name = None;
                         union_name = None;
                         struct_array_element_width = None;
@@ -9117,6 +9136,7 @@ impl Parser {
             return Ok(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,
@@ -10137,7 +10157,10 @@ fn named_place_base(expression: &CExpression) -> Option<&String> {
     }
 }
 
-fn flatten_array_indices(indexes: Vec<CExpression>, dimensions: &[u32]) -> CExpression {
+pub(in crate::surface) fn flatten_array_indices(
+    indexes: Vec<CExpression>,
+    dimensions: &[u32],
+) -> CExpression {
     let mut terms = Vec::with_capacity(indexes.len());
     for (index, expression) in indexes.into_iter().enumerate() {
         let stride = dimensions[index + 1..]
@@ -10392,6 +10415,7 @@ fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition
             Box::new(ContractExpression::CFragment(CExpression::Cast {
                 expression: Box::new(pointer),
                 target_type: CType::UInt64,
+                integer_mode: crate::kernel::CIntegerCastMode::Standard,
                 pointee_struct: None,
                 pointee_volatile: false,
                 pointee_constant: false,

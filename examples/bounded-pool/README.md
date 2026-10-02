@@ -38,3 +38,9 @@ hidden unit. The resize pipeline starts with one slot, consumes that entire
 positive population through `pool_shrink`, explicitly observes the resulting
 zero population, and then destroys the pool. This checks that reaching zero
 removes ownership without making a later zero-resource operation fail.
+
+The authority migration's first project-level checkpoint is the
+[authority lifecycle companion](../bounded-pool-authority/README.md). It uses
+these C files directly and proves initialization, cleanup, and the existing
+zero-capacity pipeline with explicit population authorities. This sidecar
+continues to cover the remaining pipelines while they migrate.

@@ -1549,10 +1549,20 @@ pub fn c_cast_with_pointee_qualifiers_and_struct(
     CExpression::Cast {
         expression: Box::new(expression),
         target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
         pointee_struct,
         pointee_volatile,
         pointee_constant,
     }
+}
+
+/// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
+pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
+    let mut result = c_cast(expression, CType::Int64);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::UInt64BitsToInt64;
+    }
+    result
 }
 
 pub fn c_conditional(
@@ -8063,6 +8073,29 @@ pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector
     Theorem::new(Proposition::Implies(
         Box::new(premise),
         Box::new(conclusion),
+    ))
+}
+
+/// Signed int32 observation is injective: two equal mathematical values
+/// have the same 32-bit pattern. No overflow premise or conversion back is
+/// needed, since every signed int32 pattern has one exact Integer value.
+pub fn prove_int32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+    let observe = |value| {
+        IntegerTerm::from_machine(MachineIntegerType::Int32, value)
+            .expect("every int32 bit pattern has a mathematical interpretation")
+    };
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                observe(left.clone()).into(),
+                observe(right.clone()).into(),
+            ),
+            true,
+        )),
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::equal(left, right),
+            true,
+        )),
     ))
 }
 

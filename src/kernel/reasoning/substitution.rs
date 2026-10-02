@@ -2838,6 +2838,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
@@ -2846,6 +2847,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
                 expression, from, to,
             )),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,
@@ -6022,6 +6024,7 @@ fn substitute_pointer_variable_in_c_expression(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
@@ -6030,6 +6033,7 @@ fn substitute_pointer_variable_in_c_expression(
                 expression, from, to,
             )),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,

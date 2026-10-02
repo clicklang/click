@@ -480,7 +480,13 @@ fn expand_top_level_tactic_for_test(
     let proof = match claim {
         CProofClaim::Grouped => find_grouped_proof_span(&tokens, &function)?,
         CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-            find_claim_proof_span(&tokens, &function, claim)?
+            let file = parse_source_with_c_layouts(click_source, c_sources)?;
+            let function_block = file
+                .function_blocks()
+                .iter()
+                .find(|function| function.signature().name() == function_name)
+                .ok_or_else(|| ClickError::new(format!("unknown function `{function_name}`")))?;
+            find_claim_proof_span(&tokens, &function, function_block, claim)?
         }
     };
     let span = find_tactic_span(&tokens, &proof, tactic_index)?;
@@ -2240,6 +2246,39 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
     assert!(!selected.contains("simp();"), "{selected}");
     verify_click_theorems(&expanded)
         .expect("the serialized nested pure branch should independently reverify");
+}
+
+/// An `extern` contract is assumed. Its clauses have no proof, so the
+/// implicit `auto` of an unproved clause is not a site: `click audit` used to
+/// list one per clause and then fail to expand it, reporting that the
+/// function `has no verified ensures clause`.
+#[test]
+fn smart_inventory_skips_assumed_extern_contracts() {
+    let c_source = "int32 child(int32 x);\nint32 parent(int32 x) { return child(x); }\n";
+    let source = r#"
+verifying "calls.c";
+
+extern int32 child(int32 x) {
+    requires x >= 0;
+    ensures result == x;
+}
+
+int32 parent(int32 x) {
+    requires x >= 0;
+    ensures result == x by auto;
+}
+"#;
+    let c_sources = [("calls.c", c_source)];
+    verify_c0_sources(source, &c_sources)
+        .expect("the caller verifies against the assumed contract");
+    let sites = c0_smart_tactic_source_sites(source, &c_sources).unwrap();
+    assert_eq!(
+        sites
+            .iter()
+            .map(|site| site.claim_label.as_str())
+            .collect::<Vec<_>>(),
+        ["parent.ensures_0"]
+    );
 }
 
 #[test]

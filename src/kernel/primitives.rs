@@ -1107,6 +1107,15 @@ pub(super) enum CLValueStorage {
     Memory { pointer: Pointer },
 }
 
+/// The language-specific integer rule at an explicit kernel cast boundary.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CIntegerCastMode {
+    #[default]
+    Standard,
+    /// Reinterpret all 64 bits as a signed value, as required by C++20.
+    UInt64BitsToInt64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CExpression {
     Value(CValue),
@@ -1115,6 +1124,7 @@ pub enum CExpression {
     Cast {
         expression: Box<CExpression>,
         target_type: CType,
+        integer_mode: CIntegerCastMode,
         /// The struct tag of a pointer cast target, as the source spelled it.
         /// Evaluation ignores it: a struct pointer is a kernel `Int32Pointer`
         /// and the layout lives with the field accesses. It is kept so a
@@ -2764,6 +2774,11 @@ pub struct CAggregateField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
     pub(super) c_type: CType,
+    /// The source dimensions of an array field with more than one, outermost
+    /// first. `c_type` holds such a field as one flat array; nothing reasons
+    /// from the shape, which only lets a proof term about an element be
+    /// spelled with the subscripts the source declares.
+    pub(super) array_shape: Option<Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -2841,7 +2856,18 @@ impl CAggregateField {
             name: name.into(),
             offset_bytes,
             c_type,
+            array_shape: None,
         }
+    }
+
+    /// Records the source dimensions of a multidimensional array field.
+    pub fn with_array_shape(mut self, shape: Option<&[u32]>) -> Self {
+        self.array_shape = shape.filter(|shape| shape.len() > 1).map(<[u32]>::to_vec);
+        self
+    }
+
+    pub fn array_shape(&self) -> Option<&[u32]> {
+        self.array_shape.as_deref()
     }
 
     pub fn name(&self) -> &str {

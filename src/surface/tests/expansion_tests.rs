@@ -568,7 +568,9 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
         "{expanded}"
     );
     assert!(
-        claim.contains("premise 0: old(st.total) < 100 => old(st.total) < 100;"),
+        claim.contains(
+            "premise 0: at(function.entry, st.total < 100) => at(function.entry, st.total < 100);"
+        ),
         "{expanded}"
     );
     assert!(
@@ -710,6 +712,105 @@ fn ranked_loops_with_no_invariant_expand_and_reverify() {
         );
         assert!(expanded.contains("preserve by {"), "{expanded}");
     }
+}
+
+/// An element of a multidimensional array field keeps one subscript per
+/// dimension when a proof about it is expanded. The parser used to keep only
+/// the flattened index, so the expansion printed `p->words[((1 * 2) + 1)]`,
+/// which the parser itself rejects for a two-dimensional field.
+#[test]
+fn multidimensional_array_field_expands_with_every_subscript() {
+    let anchor = "ensures p->words[1][1] == value by ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/struct_wide_integer_arrays.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(
+        expanded.contains("have p->words[1][1] == value by {"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("words[(("), "{expanded}");
+}
+
+/// The same for an element the expansion spells from the checked state
+/// rather than from the written clause: a local struct's field is a flat
+/// array there, and its layout carries the declared dimensions so the
+/// element reads `copy->values[1][2]`, not `copy->values[5]`.
+#[test]
+fn multidimensional_local_array_field_expands_with_every_subscript() {
+    let anchor = "ensures result == 75;\n} by {\n    execute();\n    ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/struct_multidimensional_scalar_array.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(expanded.contains("copy->values[1][2]"), "{expanded}");
+    assert!(!expanded.contains("values[5]"), "{expanded}");
+}
+
+/// A `produces` clause naming a struct member is one ensure per field of
+/// that member, all sharing the proof the author wrote once. Every such
+/// claim resolves to that written clause: the locator used to count written
+/// clauses by claim index, so the later claims pointed past the last clause
+/// and `click audit` stopped with `could not locate source ensure 2`.
+#[test]
+fn flattened_aggregate_claims_resolve_to_their_written_clause() {
+    let (click_source, c_sources) = mdtest_sources("mdtests/struct_aggregate_resources.md");
+    let c_sources = c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let sites = expansion::c0_smart_tactic_source_sites(&click_source, &c_sources).unwrap();
+    let written = click_source
+        .find("produces packet->inner by auto;")
+        .expect("the fixture states the aggregate clause");
+    let written = expansion::position_at_offset(&click_source, written);
+    let mut resolved = 0;
+    for site in sites
+        .iter()
+        .filter(|site| site.claim_label.starts_with("write_inner.ensures_"))
+    {
+        let position = expansion::c0_tactic_source_position(
+            &click_source,
+            &c_sources,
+            &site.claim_label,
+            site.source_index,
+        )
+        .unwrap_or_else(|error| panic!("{}: {}", site.claim_label, error.message()));
+        if site.claim_label != "write_inner.ensures_0" {
+            assert_eq!(position.line, written.line, "{}", site.claim_label);
+            resolved += 1;
+        }
+    }
+    assert!(resolved >= 2, "the member should flatten to several claims");
+}
+
+/// A `simp()` closing an `initialize` script that several invariants share
+/// expands to one step per invariant, each holding the whole script. Those
+/// steps stand for the tactics written before the closer too, so the rewrite
+/// replaces from the first of them: left in place, the leading `unfold` ran
+/// before every generated step and the phase no longer closed its goal.
+#[test]
+fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
+    let anchor = "initialize by { unfold(head(box)); ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/loop_decreases_pure_expression.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(
+        expanded.contains("initialize by { have 0 <= box[0] by {"),
+        "{expanded}"
+    );
+    assert!(
+        expanded.contains("have head(box) == box[0] by {"),
+        "{expanded}"
+    );
+    assert!(
+        !expanded.contains("initialize by { unfold(head(box)); have"),
+        "{expanded}"
+    );
 }
 
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands

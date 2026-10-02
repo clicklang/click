@@ -393,8 +393,29 @@ and return ordinary storage with `produces object(pool)`. The
 checks direct, nested, and zero-sized calls. Call application consumes the
 checked entry quantity even when the helper changes the accounting field.
 Retired consumption evidence remains available to the certificate checker;
-it grants no live authority or member rights. Splitting batches and retiring
-additional authorities inside the same consumed control remain separate work.
+it grants no live authority or member rights. When the consumed control owns
+several authorities, cleanup checks and retires each one. Additional
+populations must have zero global count and no outstanding member custody;
+local absence alone does not establish emptiness. The
+[pool cleanup helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_control_cleanup_helper.md)
+checks direct, nested, and zero-capacity calls using the original pool cleanup
+C. The caller unfolds and refolds the control to establish the required
+conservation and empty-population facts before calling cleanup. A caller
+holding a concrete numerical batch can pass it to an entry field-valued
+quantity when an available equality identifies that field with the sender's
+complete held batch. The equality moves only those existing members;
+it cannot substitute a global count for custody or permit consumption without
+authority. The [field-quantity cleanup fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_cleanup_field_quantity.md)
+checks two owned slots passed as the cleanup helper's entry capacity.
+A helper that creates a fresh symbolic quantity can return that exact whole
+batch with `produces amount of slot(pool)`. The transfer changes batch custody
+without changing the already-checked population delta or moving preexisting
+members. It requires the actual born quantity and its current holder; returning
+a different quantity or spending the transfer twice is rejected. The
+[growth helper fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_pool_grow_helper.md)
+checks this boundary with arbitrary entry totals and nonnegative growth. The
+caller establishes the count addition's definedness from the control before
+calling. Splitting batches remains separate work.
 
 For an authority passed into a function, retirement checks both that its
 member custody has been consumed and that its authenticated global count is
@@ -428,8 +449,9 @@ the initializer’s empty-population precondition. Click does not assume zero
 or read an uninitialized field to obtain that count. The
 [initialization fixture](https://github.com/clicklang/click/blob/master/mdtests/population_initialized_cleanup.md)
 checks that the initializer still produces its first reference.
-Standalone symbolic batch exchange is supported, but symbolic nested transfers
-are not yet supported on this migration path.
+Standalone symbolic batch exchange and whole-batch helper custody are supported.
+Composing additional population changes with an already-updated symbolic batch
+remains separate work.
 
 For a field-free family with several arguments, one authority can govern all
 members sharing a concrete storage anchor:

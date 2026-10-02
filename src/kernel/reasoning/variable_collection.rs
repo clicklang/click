@@ -1,5 +1,50 @@
 use super::*;
 
+thread_local! {
+    static CONNECTION_VARIABLES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn collecting_connection_variables() -> bool {
+    CONNECTION_VARIABLES.with(std::cell::Cell::get)
+}
+
+/// How far back along a snapshot's derivation
+/// [`collect_proposition_frame_variables`] looks for havoc ranges.
+const HAVOC_RANGE_HOPS: usize = 64;
+
+thread_local! {
+    static COLLECTING_HAVOC_RANGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The bitvector variables of `proposition`, with those of the ranges the
+/// calls and loops recently behind each snapshot it loads from wrote.
+///
+/// Like [`collect_proposition_connection_variables`], this is for a planner
+/// choosing which facts a derivation may need.
+pub(crate) fn collect_proposition_frame_variables(
+    proposition: &Proposition,
+    variables: &mut BTreeSet<Variable>,
+) {
+    let previous = COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(true));
+    collect_proposition_bitvector_variables(proposition, variables);
+    COLLECTING_HAVOC_RANGES.with(|flag| flag.set(previous));
+}
+
+/// Every variable through which `proposition` can be related to another
+/// fact: its bitvector variables, and also the algebraic-value and
+/// pointer-offset variables the bitvector collectors deliberately leave out.
+///
+/// This is for a planner choosing which facts a derivation may need. It is
+/// not a free-variable set for freshness or substitution.
+pub(crate) fn collect_proposition_connection_variables(
+    proposition: &Proposition,
+    variables: &mut BTreeSet<Variable>,
+) {
+    let previous = CONNECTION_VARIABLES.with(|flag| flag.replace(true));
+    collect_proposition_bitvector_variables(proposition, variables);
+    CONNECTION_VARIABLES.with(|flag| flag.set(previous));
+}
+
 pub(in crate::kernel) fn bitvector_same_base_nonzero_const_offset(
     left: &Bitvector32Term,
     right: &Bitvector32Term,
@@ -259,7 +304,11 @@ fn collect_algebraic_term_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match &term.node {
-        AlgebraicTermNode::Variable(_) => {}
+        AlgebraicTermNode::Variable(variable) => {
+            if collecting_connection_variables() {
+                variables.insert(*variable);
+            }
+        }
         AlgebraicTermNode::Constructor { fields, .. } => {
             for field in fields {
                 collect_algebraic_value_bitvector_variables(field, variables);
@@ -2856,8 +2905,34 @@ pub(crate) fn collect_bitvector_variables(
                 collect_bitvector_variables(argument, variables);
             }
         }
-        Bitvector32Term::ClickFunctionApplication { .. } => {}
-        Bitvector32Term::AlgebraicMatch { arms, .. } => {
+        Bitvector32Term::ClickFunctionApplication { arguments, .. } => {
+            // An application's arguments are not free bitvector variables
+            // of the term, but a fact about one of them is related to it.
+            if collecting_connection_variables() {
+                for argument in arguments {
+                    match argument {
+                        PureFunctionArgument::Value(value) => {
+                            collect_c_value_bitvector_variables(value, variables)
+                        }
+                        PureFunctionArgument::Algebraic(value) => {
+                            collect_algebraic_term_bitvector_variables(value, variables)
+                        }
+                        PureFunctionArgument::Integer(value) => {
+                            collect_integer_variables(value, variables)
+                        }
+                        PureFunctionArgument::ArrayRef { pointer, .. } => {
+                            collect_c_value_bitvector_variables(pointer, variables)
+                        }
+                    }
+                }
+            }
+        }
+        Bitvector32Term::AlgebraicMatch {
+            scrutinee, arms, ..
+        } => {
+            if collecting_connection_variables() {
+                collect_algebraic_term_bitvector_variables(scrutinee, variables);
+            }
             for arm in arms {
                 collect_bitvector_variables(&arm.body, variables);
             }
@@ -4857,7 +4932,12 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match offset {
-        PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
+        PointerOffsetTerm::Constant(_) => {}
+        PointerOffsetTerm::Variable(variable) => {
+            if collecting_connection_variables() {
+                variables.insert(*variable);
+            }
+        }
         PointerOffsetTerm::Add(left, right) => {
             collect_pointer_offset_bitvector_variables(left, variables);
             collect_pointer_offset_bitvector_variables(right, variables);
@@ -5077,6 +5157,33 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
     memory: &SharedCMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get) {
+        // The ranges a call or loop wrote to reach this snapshot: a fact
+        // about one of their bounds is what frames a load across the edge.
+        let mut current = memory.clone();
+        for _ in 0..HAVOC_RANGE_HOPS {
+            let Some(derivation) = current.derivation() else {
+                break;
+            };
+            match derivation.as_ref() {
+                CMemoryDerivation::CallHavoc { mutable_ranges, .. } => {
+                    for range in mutable_ranges {
+                        collect_c_memory_range_bitvector_variables(range, variables);
+                    }
+                }
+                CMemoryDerivation::LoopHavoc {
+                    mutable_ranges: Some(mutable_ranges),
+                    ..
+                } => {
+                    for range in mutable_ranges {
+                        collect_c_memory_range_bitvector_variables(range, variables);
+                    }
+                }
+                _ => {}
+            }
+            current = derivation.base().clone();
+        }
+    }
     variables.extend(
         shared_memory_variable_counts(memory, WholeCount::Charged)
             .keys()
@@ -5341,6 +5448,11 @@ pub(in crate::kernel) fn collect_memory_bitvector_variables(
     memory: &CMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
+    // Two facts about one snapshot are not thereby related: what relates
+    // them is the address or value they speak of.
+    if collecting_connection_variables() {
+        return;
+    }
     // A live state's memory is the interned storage its last derivation
     // left, so its variables are that snapshot's remembered counts, counted
     // once per session from its derivation base's: the work of what changed,

@@ -269,7 +269,7 @@ pub fn expand_c0_claim_source(
     let edit = if grouped || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_sources_at(click_source, c_sources, target.line, target.column)?;
@@ -322,7 +322,7 @@ fn expand_c0_project_claim_source(
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_project_at(project, c_sources, target.line, target.column)?;
@@ -373,7 +373,7 @@ fn expand_c0_prepared_project_claim_source(
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = verify_c0_prepared_project_at(project, imports, target.line, target.column)?;
@@ -422,7 +422,7 @@ fn expand_c0_prepared_claim_source(
     let edit = if grouped || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified =
@@ -785,7 +785,7 @@ fn expand_program_prepared_claim_source_context(
     let edit = if function_block.grouped_proof().is_some() || claim == CProofClaim::Grouped {
         ProofSourceEdit::Explicit(find_grouped_proof_span(&tokens, &function)?)
     } else {
-        find_claim_proof_edit(&tokens, &function, claim)?
+        find_claim_proof_edit(&tokens, &function, function_block, claim)?
     };
     let target = position_at_offset(click_source, edit.selector());
     let verified = match project {
@@ -929,6 +929,12 @@ fn c0_smart_tactic_source_sites_file(
         }
     }
     for function in file.function_blocks() {
+        // An `extern` contract is assumed, not proved: its clauses carry no
+        // proof, so the implicit `auto` of an unproved clause is not a site
+        // there is anything to expand.
+        if function.is_external() {
+            continue;
+        }
         let function_name = function.signature().name();
         for clause in function.structural_clauses() {
             if let CodeRegion::Loop(loop_index) = clause.region() {
@@ -1388,9 +1394,9 @@ fn expand_c0_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
@@ -1625,9 +1631,9 @@ fn expand_program_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
@@ -1758,9 +1764,9 @@ fn expand_c0_prepared_tactic_source_at_context(
             }
         }
     };
-    let (span, replacement) = match selected.edit {
+    let (span, replacement) = match selected.edit.clone() {
         TacticSourceEdit::Partial(span) => (
-            span,
+            selected.replaced_span(span),
             super::printing::format_partial_tactic_sequence(&replacement_tactics),
         ),
         TacticSourceEdit::PartialProofClause(span) => {
@@ -2248,9 +2254,10 @@ fn find_grouped_proof_span(
 fn find_claim_proof_span(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<Range<usize>, ClickError> {
-    match find_claim_proof_edit(tokens, function, claim)? {
+    match find_claim_proof_edit(tokens, function, function_block, claim)? {
         ProofSourceEdit::Explicit(span) => Ok(span),
         ProofSourceEdit::DefaultTerminator { .. } => Err(ClickError::new(format!(
             "selected {} uses a default proof and has no explicit source tactic",
@@ -2298,12 +2305,18 @@ impl ProofSourceEdit {
 fn find_claim_proof_edit(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<ProofSourceEdit, ClickError> {
     match claim {
-        CProofClaim::Ensure(index) => {
-            find_ensure_proof_edit(tokens, function.body_open, function.body_close, index)
-        }
+        // The source is searched by written clause; a flattened aggregate
+        // clause gives several ensures one written clause.
+        CProofClaim::Ensure(index) => find_ensure_proof_edit(
+            tokens,
+            function.body_open,
+            function.body_close,
+            function_block.ensure_source_clause(index),
+        ),
         CProofClaim::ExceptionalEnsure(index) => find_exceptional_ensure_proof_edit(
             tokens,
             function.body_open,
@@ -2542,6 +2555,40 @@ struct LocatedSourceTactic {
     /// tactic.
     nested: Vec<usize>,
     edit: TacticSourceEdit,
+    /// Where each claim-level tactic of this site starts in the source, by
+    /// source index: an expansion that stands for a run of tactics ending at
+    /// the selected one replaces from an earlier one of these.
+    sibling_starts: Vec<(usize, usize)>,
+}
+
+thread_local! {
+    /// The claim-level source index an expansion replaces from, when the
+    /// recorded tactics stand for more than the selected tactic.
+    static EXPANSION_REPLACES_FROM: std::cell::Cell<Option<usize>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Records that the expansion captured for the selected tactic also stands
+/// for the tactics written before it, back to `source_index`. A closer of a
+/// loop phase shared by several invariants expands to one step per
+/// invariant, each holding the whole shared script; the written tactics
+/// before the closer are part of what it replaces.
+pub(in crate::surface) fn note_expansion_replaces_from(source_index: usize) {
+    EXPANSION_REPLACES_FROM.with(|from| from.set(Some(source_index)));
+}
+
+impl LocatedSourceTactic {
+    /// `span` widened back to the tactic a recorded
+    /// [`note_expansion_replaces_from`] names, if any.
+    fn replaced_span(&self, span: Range<usize>) -> Range<usize> {
+        let Some(from) = EXPANSION_REPLACES_FROM.with(std::cell::Cell::take) else {
+            return span;
+        };
+        self.sibling_starts
+            .iter()
+            .find(|(source_index, start)| *source_index == from && *start < span.start)
+            .map_or(span.clone(), |(_, start)| *start..span.end)
+    }
 }
 
 /// One written tactic in the span-indexed side table that source selection
@@ -2882,8 +2929,25 @@ fn locate_source_tactic_file(
         None => select_source_tactic_entry(click_source, &entries, line, Some(column))
             .map_err(|error| error.into_click_error(line, Some(column)))?,
     };
+    // A stale note from an earlier expansion on this thread must not widen
+    // this one.
+    EXPANSION_REPLACES_FROM.with(|from| from.set(None));
     match &entry.selection {
-        EntrySelection::Located(located) => Ok(located.clone()),
+        EntrySelection::Located(located) => {
+            let mut located = located.clone();
+            located.sibling_starts = entries
+                .iter()
+                .filter_map(|entry| match &entry.selection {
+                    EntrySelection::Located(sibling)
+                        if sibling.site == located.site && sibling.nested.is_empty() =>
+                    {
+                        Some((sibling.source_index, entry.span.start))
+                    }
+                    _ => None,
+                })
+                .collect();
+            Ok(located)
+        }
         EntrySelection::Unaddressable(reason) => Err(ClickError::new(reason.clone())),
     }
 }
@@ -2977,7 +3041,7 @@ fn source_tactic_entries(
         }
         for (index, ensure) in function_block.ensures().iter().enumerate() {
             let claim = CProofClaim::Ensure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, claim)?;
+            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -2996,7 +3060,7 @@ fn source_tactic_entries(
         }
         for (index, ensure) in function_block.exceptional_ensures().iter().enumerate() {
             let claim = CProofClaim::ExceptionalEnsure(index);
-            let edit = find_claim_proof_edit(&tokens, &function, claim)?;
+            let edit = find_claim_proof_edit(&tokens, &function, function_block, claim)?;
             let label = ensure.name().map_or_else(
                 || format!("{function_name}.exceptional_ensures_{index}"),
                 |name| format!("{function_name}.{name}"),
@@ -3036,6 +3100,7 @@ fn proof_tactic_entries(
             source_index: 0,
             nested: Vec::new(),
             edit: TacticSourceEdit::WholeProof(edit.clone()),
+            sibling_starts: Vec::new(),
         }),
     };
     let omitted_proof_span = || match edit {
@@ -3090,6 +3155,7 @@ fn proof_tactic_entries(
                         source_index,
                         nested: Vec::new(),
                         edit,
+                        sibling_starts: Vec::new(),
                     }),
                 };
                 entries.push(entry.clone());
@@ -3248,6 +3314,7 @@ fn block_tactic_entries(
                 source_index,
                 nested: path.clone(),
                 edit: TacticSourceEdit::Partial(span.clone()),
+                sibling_starts: Vec::new(),
             }),
         };
         entries.push(entry.clone());
@@ -3707,13 +3774,13 @@ fn c0_tactic_source_position_file(
         let fallback = match claim {
             CProofClaim::Grouped => tokens[function.body_close].span.start,
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_clause_offset(&tokens, &function, claim)?
+                find_claim_clause_offset(&tokens, &function, function_block, claim)?
             }
         };
         let proof_span = match claim {
             CProofClaim::Grouped => Some(find_grouped_proof_span(&tokens, &function)?),
             CProofClaim::Ensure(_) | CProofClaim::ExceptionalEnsure(_) => {
-                find_claim_proof_span(&tokens, &function, claim).ok()
+                find_claim_proof_span(&tokens, &function, function_block, claim).ok()
             }
         };
         return proof_source_position(
@@ -3774,9 +3841,10 @@ fn proof_source_position(
 fn find_claim_clause_offset(
     tokens: &[SourceToken],
     function: &FunctionSource,
+    function_block: &FunctionBlock,
     claim: CProofClaim,
 ) -> Result<usize, ClickError> {
-    Ok(find_claim_proof_edit(tokens, function, claim)?.selector())
+    Ok(find_claim_proof_edit(tokens, function, function_block, claim)?.selector())
 }
 
 fn find_loop_phase_proof_span(

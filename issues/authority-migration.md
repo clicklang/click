@@ -380,13 +380,65 @@ through ordinary direct and nested helper calls in
 `authority_symbolic_batch_cleanup_helper.md`, including zero-sized callers.
 The call uses the checked entry quantity, and retired consumption accounting
 survives return for certificate checking without conveying live rights. A
-negative companion rejects missing batch custody. The next small slice is
-retiring the additional already-empty authority in bounded-pool cleanup's
-consumed control; the reduced helper fixture covers only one authority. Keep
-batch splitting, symbolic grow/shrink, and two-pool transfer separate. The
-original bounded-pool project still uses legacy counting and is not migrated
-as a whole. The speculative cache repair remains removed; the checkout proofs
-required no count-model or authority change.
+negative companion rejects missing batch custody.
+
+`authority_pool_control_cleanup_helper.md` now applies cleanup through direct,
+nested, and zero-capacity helper calls with both pool authorities. It preserves
+`pool_destroy.c` verbatim. The caller exposes and restores the control to prove
+its slot conservation and private-object emptiness before the call. Call
+application selects all authorities from the checked entry control body and
+retires each only with global zero and exhausted custody. Proof exit checks
+require retirement evidence for every authority in the consumed control. A
+kernel regression rejects leaving the second authority outstanding or retiring
+it with a nonzero global count and no locally owned members.
+
+The first project-level companion now lives in
+`examples/bounded-pool-authority/pool_lifecycle.click`. It references the original
+bounded-pool C directly and proves arbitrary nonnegative initialization,
+cleanup, and the complete zero-capacity pipeline through ordinary contracts.
+Initialization explicitly receives storage and empty authorities; it cannot
+mint them for an external pointer. Cleanup returns ordinary memory after
+retiring both populations. The example gate includes this companion.
+
+The companion now also verifies the original checkout and return helpers.
+Checkout converts one slot plus private object memory into a concrete member;
+return restores that memory unchanged and produces a slot. Both preserve the
+folded control's invariant, deriving arithmetic safety from conservation.
+These reuse the focused proofs without changing C or the authority model.
+
+The companion now verifies the original two-object pipeline through cleanup:
+initialization, two checkouts, private writes under closed pool control, reverse
+returns, and retirement of both populations. It returns ordinary memory,
+preserves the written values, and proves both counts zero. No C changes or
+surface additions were needed. `authority_pool_cleanup_field_quantity.md`
+reduces the final call: the caller owns two slots, while cleanup consumes an
+entry field equal to two. The ledger accepts a recorded equality to the
+sender's complete numerical batch, then checks ordinary custody and authority.
+Kernel regressions reject absent/mismatched custody, repeated spending, and
+consumption without authority; deterministic work stays bounded over growing
+batch sizes and unrelated fact sets.
+
+The companion also verifies the original `pool_shrink` with arbitrary amount
+and entry totals, including zero reduction, and the original resize pipeline
+through ordinary helper calls and cleanup. Shrink consumes only its supplied
+batch and preserves checked-out members and the global remainder. Ordinary
+source arithmetic lemmas restore the capacity invariant; the general prelude
+bridge `int32_equal_of_to_integer` identifies machine values from equal signed
+mathematical observations. No population or authority rule changed.
+
+The original symbolic `pool_grow` also verifies. It uses existing population
+birth operations and ordinary source arithmetic certificates, preserving
+checked-out members and all old slots without a new authority rule. Zero
+amounts are admitted; focused regressions reject missing authority and C
+capacity overflow. A helper can return its exact freshly born symbolic batch;
+the checked transfer preserves the count delta and outstanding population.
+Independent kernel tests reject wrong quantities and double transfer, and
+multi-size work checks cover both entry and freshly born batches.
+
+The next slice is two-pool transfer. Keep additional
+batch splitting support driven by those actual consumers.
+The original bounded-pool project still uses legacy counting and is not
+migrated as a whole. The speculative cache repair remains removed.
 Missing facts inside `open(...)` report `Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)

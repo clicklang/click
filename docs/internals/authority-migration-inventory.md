@@ -2,6 +2,15 @@
 
 This is the consumer inventory for `issues/authority-migration.md`, not a specification of new syntax. The groups below use the legacy resource/population rules unless marked as authority-mode proofs. Design notes are proposals or historical investigations, not passing fixtures. The C in source-backed fixtures is frozen by the migration issue.
 
+The authority-mode companion in `examples/bounded-pool-authority` references
+unchanged C in the original project. It verifies initialization, checkout,
+return, cleanup, growth, and shrink, plus the original zero-capacity, two-object, and
+resize pipelines. Shrink consumes a symbolic owned slot quantity under the
+control's authority while preserving the global remainder and checked-out
+members. Growth produces only its requested slot quantity under the existing
+control, preserves both populations' old members, and checks signed capacity
+bounds. Two-pool transfer is not yet migrated.
+
 ## Discovery boundary
 
 The `authority_wildcard_*` fixture group adds concrete, field-free

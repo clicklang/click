@@ -3513,3 +3513,66 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
         "provenance scanned the raw block: {samples:?}"
     );
 }
+
+#[test]
+fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
+    let assert_type_mismatch = |expression| {
+        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        assert!(matches!(
+            theorem.proposition(),
+            Proposition::CExpressionEvaluates {
+                outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                ..
+            }
+        ));
+    };
+    for bits in [0u64, 1, i64::MAX as u64, 1u64 << 63, u64::MAX] {
+        let expression = c_uint64_bits_to_int64(c_uint64_literal(bits));
+        let theorem = prove_c_expression_evaluation(CState::new(), expression).unwrap();
+        let Proposition::CExpressionEvaluates {
+            outcome: CExpressionOutcome::Value(CValue::Int64(value)),
+            ..
+        } = theorem.proposition()
+        else {
+            panic!("expected signed bits");
+        };
+        assert_eq!(value.int64_as_const(), Some(bits as i64));
+        // The explicit language rule does not enable the same ordinary C cast.
+        assert_type_mismatch(c_cast(c_uint64_literal(bits), CType::Int64));
+    }
+    assert_type_mismatch(c_uint64_bits_to_int64(c_int32_literal(1)));
+    let mut malformed = c_uint64_bits_to_int64(c_uint64_literal(1));
+    let CExpression::Cast { target_type, .. } = &mut malformed else {
+        unreachable!()
+    };
+    *target_type = CType::UInt64;
+    assert_type_mismatch(malformed);
+}
+
+#[test]
+fn reinterpreted_unsigned_arithmetic_keeps_signed_operators_and_definedness() {
+    let source = Bitvector32Term::uint64_subtract(
+        Bitvector32Term::Variable(Variable(139_001)),
+        Bitvector32Term::UInt64Constant(1),
+    );
+    let converted = Bitvector32Term::int64_from_uint64_bits(source.clone());
+    assert_eq!(converted, source); // Preserve the symbolic 64-bit expression.
+    let wrapped = Bitvector32Term::UInt64Add(
+        Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
+        Box::new(Bitvector32Term::UInt64Constant(1)),
+    );
+    assert_eq!(wrapped.int64_as_const(), Some(0));
+    let high = Bitvector32Term::UInt64Constant(1u64 << 63);
+    assert_eq!(
+        Bitvector32Term::int64_divide(high, Bitvector32Term::Int64Constant(-1)).int64_as_const(),
+        None
+    );
+    assert_eq!(
+        Bitvector32Term::int64_divide(
+            Bitvector32Term::Int64Constant(1),
+            Bitvector32Term::Int64Constant(0)
+        )
+        .int64_as_const(),
+        None
+    );
+}

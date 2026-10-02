@@ -4943,6 +4943,41 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 }
             };
+            // A consumed control can package additional authority families.
+            // Select them from its checked entry body, before the helper's
+            // stores change any field-valued arguments or count relations.
+            let Some(control) = checked_consumed_population_control(interface, &transfer) else {
+                paths.push(resource_call_failure(
+                    "final release lost its checked entry control",
+                ));
+                continue;
+            };
+            let CResource::Composite {
+                name: control_name, ..
+            } = control.resource()
+            else {
+                paths.push(resource_call_failure(
+                    "final release requires a control resource",
+                ));
+                continue;
+            };
+            let Some(definition) = interface.composite_resource_definition(control_name) else {
+                paths.push(resource_call_failure(
+                    "final release lost its control definition",
+                ));
+                continue;
+            };
+            let (children, _) = match entry_contract_state.checked_authority_wrapper_body(
+                control,
+                definition,
+                &effective_assumptions,
+            ) {
+                Ok(body) => body,
+                Err(error) => {
+                    paths.push(resource_call_failure(&error));
+                    continue;
+                }
+            };
             let retirement = if spent.recognizes_imported_population(&description) {
                 spent.checked_retire_imported(&description, &effective_assumptions)
             } else {
@@ -4957,6 +4992,36 @@ fn execute_verified_function_applications_with_suspension(
                     continue;
                 }
             };
+            let mut retired = retired;
+            for child in children {
+                let CResource::PopulationAuthority(additional) = child.resource() else {
+                    continue;
+                };
+                if additional == &description {
+                    continue;
+                }
+                let retirement = if retired.recognizes_imported_population(additional) {
+                    retired.checked_retire_imported(additional, &effective_assumptions)
+                } else if let Some(AlgebraicValue::C(CValue::Pointer(anchor))) =
+                    additional.arguments().first()
+                {
+                    retired.checked_retire(&anchor.pointer().block, additional)
+                } else {
+                    paths.push(resource_call_failure(
+                        "final release authority needs a pointer anchor",
+                    ));
+                    continue 'arguments;
+                };
+                retired = match retirement {
+                    Ok((next, _)) => next,
+                    Err(refusal) => {
+                        paths.push(resource_call_failure(&format!(
+                            "final release authority retirement refused: {refusal:?}"
+                        )));
+                        continue 'arguments;
+                    }
+                };
+            }
             Arc::make_mut(&mut post_state.population_effects).creation = Some(retired);
         }
         // Publish the checked population delta before lowering postcondition counts.
@@ -30018,6 +30083,57 @@ fn contract_exit_outcome_with_boundary_transfer(
             Ok(retires) => retires,
             Err(error) => return Ok(Err(error)),
         };
+        if final_release {
+            let interface = function.contract_interface();
+            let checked_control = checked_transfer.and_then(|receipt| {
+                checked_consumed_population_control(interface, &receipt.transfer)
+            });
+            let selected = if let Some(control) = checked_control {
+                control.clone()
+            } else {
+                let control = authority_mode_consumed_control(interface)
+                    .expect("checked final-release control");
+                match evaluate_function_resource_spec_with_entry(
+                    &callee_state,
+                    &callee_state,
+                    control,
+                    assumptions,
+                    budget,
+                )? {
+                    Ok(control) => control,
+                    Err(error) => return Ok(Err(error)),
+                }
+            };
+            let CResource::Composite { name, .. } = selected.resource() else {
+                return Ok(Err(CRuntimeError::FunctionContract(
+                    "final release requires a control resource".into(),
+                )));
+            };
+            let definition = interface
+                .composite_resource_definition(name)
+                .expect("checked final-release control definition");
+            let descriptions = match callee_state.authority_wrapper_descriptions(
+                &selected,
+                definition,
+                assumptions,
+            ) {
+                Ok(descriptions) => descriptions,
+                Err(error) => return Ok(Err(CRuntimeError::FunctionContract(error))),
+            };
+            for description in &descriptions {
+                if !state
+                    .population_effects
+                    .creation
+                    .as_ref()
+                    .is_some_and(|events| events.checked_empty_population(description))
+                {
+                    return Ok(Err(CRuntimeError::FunctionContract(format!(
+                        "Requires consumes authority({}(...))",
+                        description.family(),
+                    ))));
+                }
+            }
+        }
         for (produce, member_spec) in
             authority_mode_checked_member_effects(function.contract_interface())
         {

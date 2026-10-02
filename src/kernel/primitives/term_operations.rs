@@ -725,12 +725,12 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
         Bitvector32Term::Int64Divide(left, right) => {
             let left = int64_constant(left)?;
             let right = int64_constant(right)?;
-            (right != 0 && !(left == i64::MIN && right == -1)).then_some(left / right)
+            (right != 0 && !(left == i64::MIN && right == -1)).then(|| left / right)
         }
         Bitvector32Term::Int64Remainder(left, right) => {
             let left = int64_constant(left)?;
             let right = int64_constant(right)?;
-            (right != 0 && !(left == i64::MIN && right == -1)).then_some(left % right)
+            (right != 0 && !(left == i64::MIN && right == -1)).then(|| left % right)
         }
         Bitvector32Term::Int64ShiftLeft(left, right) => {
             let left = int64_constant(left)?;
@@ -763,7 +763,7 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
             ConditionTerm::Constant(false) => int64_constant(else_term),
             _ => None,
         },
-        _ => None,
+        _ => uint64_constant(term).map(|bits| bits as i64),
     }
 }
 
@@ -1447,6 +1447,18 @@ impl Bitvector32Term {
         }
     }
 
+    /// Both typed values use the same 64-bit bitvector carrier. Signedness
+    /// determines the following operators; this conversion preserves the bits.
+    pub(crate) fn int64_from_uint64_bits(value: Self) -> Self {
+        match value {
+            Self::UInt64Constant(bits) => Self::Int64Constant(bits as i64),
+            Self::UInt64FromInt64(value) => *value,
+            Self::UInt64From32(value) => Self::int64_from_uint32(*value),
+            Self::UInt64FromInt32(value) => Self::int64_from_32(*value),
+            value => value,
+        }
+    }
+
     pub(crate) fn int64_as_const(&self) -> Option<i64> {
         int64_constant(self)
     }
@@ -1487,6 +1499,9 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn int64_subtract(left: Self, right: Self) -> Self {
+        if left == right {
+            return Self::Int64Constant(0);
+        }
         Self::int64_binary(left, right, i64::checked_sub, Self::Int64Subtract)
     }
 
@@ -1498,9 +1513,7 @@ impl Bitvector32Term {
         Self::int64_binary(
             left,
             right,
-            |left, right| {
-                (right != 0 && !(left == i64::MIN && right == -1)).then_some(left / right)
-            },
+            |left, right| (right != 0 && !(left == i64::MIN && right == -1)).then(|| left / right),
             Self::Int64Divide,
         )
     }
@@ -1509,9 +1522,7 @@ impl Bitvector32Term {
         Self::int64_binary(
             left,
             right,
-            |left, right| {
-                (right != 0 && !(left == i64::MIN && right == -1)).then_some(left % right)
-            },
+            |left, right| (right != 0 && !(left == i64::MIN && right == -1)).then(|| left % right),
             Self::Int64Remainder,
         )
     }

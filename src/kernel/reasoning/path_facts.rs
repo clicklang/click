@@ -1569,6 +1569,7 @@ thread_local! {
     static CONTEXT_REBUILD_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static SMART_PLANNING_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     static SMART_PLANNING_CONTEXT_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SMART_PLANNING_ENTRIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Counts, in test builds, the entries a fact context built from a list
@@ -1615,6 +1616,14 @@ pub(crate) fn smart_planning_context_entries() -> usize {
     SMART_PLANNING_CONTEXT_ENTRIES.with(std::cell::Cell::get)
 }
 
+/// How many times a smart planning tactic ([`SmartPlanningScope`]) has been
+/// entered on this thread: the executions the checked `Proof` search handed
+/// to the planner.
+#[cfg(test)]
+pub(crate) fn smart_planning_entries() -> usize {
+    SMART_PLANNING_ENTRIES.with(std::cell::Cell::get)
+}
+
 /// Marks, in test builds, the extent of one smart planning tactic, so a
 /// scaling regression can count the context entries planning builds apart
 /// from those of the checks around it.
@@ -1625,6 +1634,7 @@ pub(crate) struct SmartPlanningScope(());
 impl SmartPlanningScope {
     pub(crate) fn enter() -> Self {
         SMART_PLANNING_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        SMART_PLANNING_ENTRIES.with(|count| count.set(count.get() + 1));
         Self(())
     }
 }
