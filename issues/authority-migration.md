@@ -308,26 +308,24 @@ resize/transfer/cleanup paths remain to migrate.
 The original C is unchanged. Do not replace these pipelines with locally
 allocated synthetic pools or weaken their final claims to avoid the gaps.
 
-The next checkout investigation must first isolate a missing proof fact or a
-count/counter correspondence defect. The reduced regression currently states
-`checked_out < 2147483647`; the original contract must instead derive increment
-safety from its available slot and control invariant. The attempted proof failed
-to establish `defined(count(...) + 1)` after deriving a field-based bound.
-Different load names suggested a correspondence problem, but that hypothesis
-has not been established by a minimal regression. An attempted early
-counter-cache repair broke four existing authority fixtures and was removed.
-Do not treat that prototype as a required redesign. First reduce the missing
-fact using explicit arithmetic and the diagnostics below; change the verifier
-only if the reduction demonstrates a defect.
-Intended regression: retain the original `pool_checkout.c`, its slot and
-private-object inputs, and all original output claims; prove increment safety
-without adding an extra counter-bound precondition. Check both ordinary count
-expressions and `defined(...)`, then checked control closure after the C store
-and member creation. Existing authority fixtures must stay green, including
-conditional refcount release. Explicit arithmetic steps are acceptable; an
-unrelated C rewrite, a stronger contract, or inconsistent count snapshots are
-not. Explicit missing facts within `open(...)` now report `Requires f`, and
-explicit theorem applications preserve the missing-premise diagnostic.
+The checkout definedness reduction is now checked without an authority or
+counter-cache change. `authority_count_defined_through_control.md` opens a
+control with an arbitrary entry count, a nonnegative counter, and equality
+between the counter and the wildcard population count. An explicit arithmetic
+step supplies `counter >= 0`; rewriting the count to the equal counter then
+transports `defined(counter + 1)` to `defined(count(...) + 1)`. Its two smart
+sites expand and reverify. `authority_count_defined_at_max_rejected.md` checks
+that the same control cannot justify an increment at `2147483647`.
+
+This does not finish checkout: the reduced pool regression still states
+`checked_out < 2147483647`. The next source-proof slice must derive increment
+safety from the available slot and control invariant, then use the explicit
+transport above. Preserve the original `pool_checkout.c`, all original output
+claims, and existing authority fixtures. Do not add an extra counter-bound
+precondition or reinstate the speculative cache repair. That repair broke four
+fixtures and was removed; the minimal reproduction now proves with existing
+tactics, so it does not justify a count-model redesign. Missing facts inside
+`open(...)` report `Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
