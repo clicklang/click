@@ -97,6 +97,15 @@ Call graph and cleanup validation remain explicit. Uncaught return-call cleanup
 edges have structural coverage; guarded `try` returns and resource-bearing
 exceptional contracts remain outside this slice.
 
+Nested scalar calls now support a sole value argument in a direct free-function return call,
+including deeper chains. Typed captures preserve evaluation order, inner
+exceptions skip outer calls, and normal cleanup follows the final capture.
+Regressions cover all scalar widths and signedness, Boolean results, source-name
+collisions and scaling, mixed-width branches, hostile claims, selected-caller
+expansion and audit, and nested
+callee/type/cycle validation. Multiple-argument nesting remains unsupported;
+this does not yet import Bitcoin's `Div(Mul(...), ...)` form.
+
 ## Required invariant
 
 Every accepted selected C++ operation must have faithful, checked execution
@@ -122,7 +131,7 @@ division, and a nonzero remainder. Concrete Boolean template instances and `if c
 coverage. The unsigned-to-signed-64 conversion prerequisite is also delivered:
 the synthetic fast paths now preserve the signed return and concrete rounding
 cases. The selected upstream source still requires `__int128` helpers,
-assumption obligations, and nested value-call arguments such as
+assumption obligations, and multiple-argument nested value calls such as
 `Div(Mul(...), ...)` on this target. Those remain importer and arithmetic-model
 work;
 upstream `EvaluateFee` is not yet supported.

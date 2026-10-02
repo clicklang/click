@@ -239,7 +239,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 26;
+    artifact["schema"] = 27;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -815,7 +815,7 @@ private:
                                    "and caller return types");
           return std::nullopt;
         }
-        auto lowered = lower_call_operation(call, function);
+        auto lowered = lower_call_operation(call, function, true);
         auto value_type = lower_type(call->getType(), call->getExprLoc());
         if (!lowered || !value_type) {
           return std::nullopt;
@@ -1443,7 +1443,8 @@ private:
 
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
-                       const clang::FunctionDecl *caller) {
+                       const clang::FunctionDecl *caller,
+                       bool allow_nested = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
     if (callee == nullptr) {
       fail(call->getExprLoc(),
@@ -1508,9 +1509,36 @@ private:
       arguments.push_back(std::move(argument));
     }
     for (unsigned index = 0; index < definition->getNumParams(); ++index) {
-      auto argument =
-          lower_call_argument(call->getArg(index + argument_offset),
-                              definition->getParamDecl(index), caller);
+      const auto *source_argument = call->getArg(index + argument_offset);
+      const auto *nested =
+          llvm::dyn_cast<clang::CallExpr>(source_argument->IgnoreParens());
+      std::optional<Json> argument;
+      if (allow_nested && nested != nullptr &&
+          !is_numeric_limits_max_call(nested)) {
+        if (method != nullptr || definition->getNumParams() != 1 ||
+            definition->getParamDecl(index)->getType()->isReferenceType() ||
+            !context_.hasSameType(source_argument->getType(),
+                                  definition->getParamDecl(index)->getType())) {
+          fail(source_argument->getExprLoc(),
+               "nested C++ calls require exactly one matching scalar value "
+               "argument to preserve evaluation order");
+          return std::nullopt;
+        }
+        auto operation = lower_call_operation(nested, caller, true);
+        auto value_type = lower_type(nested->getType(), nested->getExprLoc());
+        if (!operation || !value_type)
+          return std::nullopt;
+        llvm::json::Object value;
+        value["kind"] = "call";
+        value["callee"] = std::move(operation->callee);
+        value["arguments"] = std::move(operation->arguments);
+        value["value_type"] = std::move(*value_type);
+        value["span"] = std::move(operation->span);
+        argument = Json(std::move(value));
+      } else {
+        argument = lower_call_argument(source_argument,
+                                       definition->getParamDecl(index), caller);
+      }
       if (!argument) {
         return std::nullopt;
       }

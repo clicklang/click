@@ -326,9 +326,21 @@ and retained audit. Artifact checks reject return-type mismatches, invalid call
 graphs, and missing or misordered cleanups. Uncaught return-call cleanup edges
 reuse the existing scalar exception lowering and have structural coverage;
 resource-bearing exceptional contracts and returns from guarded `try` regions
-remain outside the supported surface slice. Calls nested in value expressions
-or arguments, converted return-call results, and returned references or objects
-also remain unsupported.
+remain outside the supported surface slice.
+
+A direct free-function return call also accepts a nested call as its sole value argument,
+including deeper chains such as `return echo(echo(echo(value)));`. Each nested
+result has its own checked, typed capture; an inner exception skips the outer
+call and uses the return's cleanup edge. Ordinary verification, selected-caller
+expansion/reverification, and retained audit cover all supported scalar types,
+fresh capture names, mixed-width branches, normal destruction, and object-free
+exception propagation. Name allocation has deterministic scaling coverage.
+Artifact validation checks every nested callee and capture type and rejects
+recursive graphs. Multiple arguments containing a nested call are rejected
+because their C++ evaluation order needs a broader model. Nesting in local
+initializers, general value expressions, converted call results, and returned
+references or objects remains unsupported. In particular, Bitcoin's
+`Div(Mul(...), ...)` still requires multiple-argument evaluation support.
 
 The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
 32/64-bit integer locals declared directly
@@ -374,7 +386,7 @@ Direct `object.method(...)`, explicit `operator+=`/`operator-=`, and
 `object += other`/`object -= other` calls bind that receiver to the selected declaration identity. Call arguments
 must be direct supported references or the existing value arguments; pointer
 receivers, virtual dispatch, other overloaded operators, and call results
-outside the existing scalar-local initializer slice remain unsupported.
+outside the scalar-local initializer and direct scalar return-call slices remain unsupported.
 Same-width signed field `+=` and `-=` use checked loads, arithmetic, and
 stores. Compound updates with side effects or mixed-width conversions remain
 unsupported. Overflow obligations apply to each field's
@@ -385,7 +397,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 26;
+its documented application invariant. The typed artifact schema is now 27;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
@@ -578,7 +590,8 @@ multiple record types remain explicit errors.
 Uninitialized or nested scalar locals, local references, shadowing,
 address-taking other than a current mutable reference parameter for a supported
 pointer call, pointer locals, pointer arithmetic, null pointers, multiple
-indirection, call results outside a local initializer, indirect calls, loops,
+indirection, call results outside the supported initializer and return-call slices,
+indirect calls, loops,
 external specifications, and broader C++ syntax also remain outside this
 end-to-end subset.
 

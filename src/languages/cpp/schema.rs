@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 26;
+pub(crate) const EXPORT_SCHEMA: u32 = 27;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -297,8 +297,18 @@ pub enum CppCleanup {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppCallArgument {
-    Value { value: CppExpression },
-    Reference { place: CppPlaceReference },
+    Value {
+        value: CppExpression,
+    },
+    Reference {
+        place: CppPlaceReference,
+    },
+    Call {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        span: CppSpan,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1557,7 +1567,7 @@ impl CppStatement {
                 cleanups,
                 span,
             } => {
-                validate_call(callee, arguments, span, places, records, logical_source)?;
+                validate_nested_call(callee, arguments, span, places, records, logical_source)?;
                 value_type.validate_aliases(logical_source)?;
                 if require_scalar_integer(value_type, "return-call value").is_err() {
                     require_bool(value_type, false, "return-call value")?;
@@ -1740,6 +1750,33 @@ fn validate_call(
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<(), String> {
+    if arguments
+        .iter()
+        .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+    {
+        return Err("nested C++ calls are supported only in scalar return-call arguments".into());
+    }
+    validate_nested_call(callee, arguments, span, places, records, logical_source)
+}
+
+fn validate_nested_call(
+    callee: &CppFunctionReference,
+    arguments: &[CppCallArgument],
+    span: &CppSpan,
+    places: &BTreeMap<String, (String, CppType)>,
+    records: &BTreeMap<String, &CppRecord>,
+    logical_source: &str,
+) -> Result<(), String> {
+    if arguments
+        .iter()
+        .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+        && arguments.len() != 1
+    {
+        return Err(
+            "nested C++ calls require exactly one value argument to preserve evaluation order"
+                .into(),
+        );
+    }
     span.validate(logical_source)?;
     callee.span.validate(logical_source)?;
     if callee.declaration_id.is_empty() || callee.name.is_empty() {
@@ -1759,6 +1796,18 @@ impl CppCallArgument {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::Call {
+                callee,
+                arguments,
+                value_type,
+                span,
+            } => {
+                value_type.validate_aliases(logical_source)?;
+                if require_scalar_integer(value_type, "nested-call value").is_err() {
+                    require_bool(value_type, false, "nested-call value")?;
+                }
+                validate_nested_call(callee, arguments, span, places, records, logical_source)
+            }
             Self::Value { value } => value.validate(places, records, logical_source),
             Self::Reference { place } => {
                 let value_type = validate_place_reference(place, places, logical_source)?;
@@ -2583,6 +2632,7 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                     arguments,
                     destination: Some(value_type),
                 });
+                collect_nested_calls(arguments, calls);
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
                     calls.push(CollectedCall::Destructor { object, callee });
@@ -2598,6 +2648,25 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::Assign { .. }
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. } => {}
+        }
+    }
+}
+
+fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<CollectedCall<'a>>) {
+    for argument in arguments {
+        if let CppCallArgument::Call {
+            callee,
+            arguments,
+            value_type,
+            ..
+        } = argument
+        {
+            calls.push(CollectedCall::Ordinary {
+                callee,
+                arguments,
+                destination: Some(value_type),
+            });
+            collect_nested_calls(arguments, calls);
         }
     }
 }
@@ -2619,6 +2688,9 @@ fn validate_call_arguments(
     }
     for (index, (argument, parameter)) in arguments.iter().zip(parameters).enumerate() {
         let compatible = match (argument, &parameter.value_type) {
+            (CppCallArgument::Call { value_type, .. }, expected) => {
+                same_scalar_type(value_type, expected)
+            }
             (
                 CppCallArgument::Value { value },
                 CppType::Boolean {
@@ -2998,6 +3070,16 @@ impl CppCallArgument {
         match self {
             Self::Value { value } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
+            }
+            Self::Call { arguments, .. } => {
+                for argument in arguments {
+                    argument.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                Ok(())
             }
             Self::Reference { .. } => Ok(()),
         }
@@ -3444,6 +3526,101 @@ mod tests {
             cleanups: vec![],
             span: cleanup_span(),
         }
+    }
+
+    #[test]
+    fn nested_call_artifacts_validate_capture_types_order_and_reachable_graph() {
+        let nested = CppCallArgument::Call {
+            callee: CppFunctionReference {
+                declaration_id: "inner".into(),
+                name: "inner".into(),
+                span: cleanup_span(),
+            },
+            arguments: vec![],
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let mut call = return_call();
+        let CppStatement::ReturnCall { arguments, .. } = &mut call else {
+            unreachable!()
+        };
+        arguments.push(nested.clone());
+        assert!(
+            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .is_ok()
+        );
+        let mut invalid = call.clone();
+        let CppStatement::ReturnCall { arguments, .. } = &mut invalid else {
+            unreachable!()
+        };
+        arguments.push(nested.clone());
+        assert!(
+            invalid
+                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .unwrap_err()
+                .contains("evaluation order")
+        );
+        let mut invalid = nested.clone();
+        let CppCallArgument::Call { value_type, .. } = &mut invalid else {
+            unreachable!()
+        };
+        *value_type = CppType::Void;
+        assert!(
+            invalid
+                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .is_err()
+        );
+        let function = |name: &str, body, parameters| CppFunction {
+            declaration_id: name.into(),
+            name: name.into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            parameters,
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body,
+        };
+        let caller = function("caller", vec![call], vec![]);
+        let callee = function(
+            "callee",
+            vec![],
+            vec![CppPlace {
+                declaration_id: "parameter".into(),
+                name: "parameter".into(),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            }],
+        );
+        let inner = function("inner", vec![], vec![]);
+        let validate = |inner: &CppFunction| {
+            validate_reachable_calls(
+                "caller",
+                &BTreeMap::from([
+                    ("caller".into(), &caller),
+                    ("callee".into(), &callee),
+                    ("inner".into(), inner),
+                ]),
+                &mut Vec::new(),
+                &mut BTreeSet::new(),
+                "fixture.cpp",
+            )
+        };
+        assert!(validate(&inner).is_ok());
+        let mut changed = inner.clone();
+        changed.return_type = signed_integer(64, false);
+        assert!(validate(&changed).unwrap_err().contains("call result"));
+        changed = inner.clone();
+        changed.name = "wrong".into();
+        assert!(validate(&changed).unwrap_err().contains("is named"));
+        changed = inner;
+        let mut recursive = return_call();
+        let CppStatement::ReturnCall { callee, .. } = &mut recursive else {
+            unreachable!()
+        };
+        callee.declaration_id = "caller".into();
+        callee.name = "caller".into();
+        changed.body.push(recursive);
+        assert!(validate(&changed).unwrap_err().contains("recursive"));
     }
 
     #[test]

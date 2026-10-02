@@ -27,3 +27,8 @@ bool ordinary_bool(int& value) noexcept {
     Restore guard(&value);
     return true;
 }
+int echo(int value) noexcept { return value; }
+int capture_nested(int& value) noexcept {
+    Restore guard(&value);
+    return echo(read(&value));
+}
