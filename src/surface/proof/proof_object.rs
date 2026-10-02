@@ -2260,6 +2260,9 @@ impl<'a> Proof<'a> {
     /// source tactic occurrence. This is diagnostic addressing only: no goal,
     /// fact, execution state, or provenance node changes.
     pub(in crate::surface::proof) fn at_source_tactic(&self, index: usize) -> Self {
+        if index != usize::MAX {
+            crate::surface::note_ambient_source_tactic(self.context.claim_label(), index);
+        }
         if self.site.addresses_source_tactic(index) {
             return self.clone();
         }

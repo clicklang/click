@@ -3483,11 +3483,19 @@ pub fn click_declaration_source_position(click_source: &str, name: &str) -> Opti
         match token.text.as_str() {
             "{" => depth += 1,
             "}" => depth = depth.saturating_sub(1),
-            text if depth == 0
-                && text == name
-                && tokens.get(index + 1).map(|token| token.text.as_str()) == Some("(") =>
-            {
-                return Some(token.span.start);
+            text if depth == 0 && text == name => {
+                // A generic declaration lists its type parameters between
+                // the name and the parameter list.
+                let mut next = index + 1;
+                if tokens.get(next).map(|token| token.text.as_str()) == Some("<") {
+                    next = tokens[next..]
+                        .iter()
+                        .position(|token| token.text == ">")
+                        .map_or(next, |close| next + close + 1);
+                }
+                if tokens.get(next).map(|token| token.text.as_str()) == Some("(") {
+                    return Some(token.span.start);
+                }
             }
             _ => {}
         }

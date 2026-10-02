@@ -2893,6 +2893,11 @@ impl CTerminationError {
     pub fn message(&self) -> &str {
         &self.message
     }
+
+    /// The function whose termination was being decided, when one was.
+    pub fn function(&self) -> Option<&str> {
+        self.function.as_deref()
+    }
 }
 
 impl std::fmt::Display for CTerminationError {
