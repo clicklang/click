@@ -2576,6 +2576,33 @@ theorem rb_parent_consistent_node_fixes_parent(node: struct rb_node*, parent: st
     }
 }
 
+theorem rb_parent_consistent_same(t: RbTree, a: struct rb_node*, b: struct rb_node*) {
+    requires rb_parent_consistent(t, a) == 1;
+    requires a == b;
+
+    ensures rb_parent_consistent(t, b) == 1 by {
+        induct(t) as ih {
+            RbTree::Empty => {
+                apply(rb_parent_consistent_empty(b));
+                assumption();
+            }
+            RbTree::Node(node, parent, color, left, right) => {
+                apply(rb_parent_consistent_node_left(node, parent, color, left, right, a));
+                apply(rb_parent_consistent_node_right(node, parent, color, left, right, a));
+                apply(rb_parent_consistent_node_parent(node, parent, color, left, right, a));
+                apply(rb_node_is_same(parent, a));
+                have parent == b by {
+                    rewrite(b == a);
+                    assumption();
+                }
+                apply(rb_node_is_equal(parent, b));
+                apply(rb_parent_consistent_node(node, parent, color, left, right, b));
+                assumption();
+            }
+        }
+    }
+}
+
 theorem ctx_consistent_swap(ctx: Context, node: struct rb_node*, parent: struct rb_node*,
                             color: Color, left: RbTree, right: RbTree, other: RbTree,
                             root_parent: struct rb_node*) {
@@ -2591,7 +2618,8 @@ theorem ctx_consistent_swap(ctx: Context, node: struct rb_node*, parent: struct 
                 apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right,
                     root_parent));
                 have rb_parent_consistent(other, root_parent) == 1 by {
-                    simp();
+                    apply(rb_parent_consistent_same(other, parent, root_parent));
+                    assumption();
                 }
                 apply(ctx_consistent_top_frame(other, root_parent));
                 assumption();
@@ -2606,7 +2634,8 @@ theorem ctx_consistent_swap(ctx: Context, node: struct rb_node*, parent: struct 
                 apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right,
                     identity));
                 have rb_parent_consistent(other, identity) == 1 by {
-                    simp();
+                    apply(rb_parent_consistent_same(other, parent, identity));
+                    assumption();
                 }
                 apply(rb_node_is_reflexive(grandparent));
                 apply(rb_parent_consistent_node(identity, grandparent, fcolor, other,
@@ -2629,7 +2658,8 @@ theorem ctx_consistent_swap(ctx: Context, node: struct rb_node*, parent: struct 
                 apply(rb_parent_consistent_node_fixes_parent(node, parent, color, left, right,
                     identity));
                 have rb_parent_consistent(other, identity) == 1 by {
-                    simp();
+                    apply(rb_parent_consistent_same(other, parent, identity));
+                    assumption();
                 }
                 apply(rb_node_is_reflexive(grandparent));
                 apply(rb_parent_consistent_node(identity, grandparent, fcolor, sibling_model,
