@@ -54,7 +54,8 @@ With it, the test checks three things:
 2. The recorded preprocessing, run directly in the extracted closure, yields
    exactly the recorded 637,604 bytes.
 3. Click's C frontend rejects that artifact first at
-   `./include/linux/printk.h:21`, a character literal with an octal escape.
+   `././include/linux/compiler_types.h:172`, an anonymous union member in
+   the artifact's first declaration.
 
 The recorded compiler is Ubuntu 24.04's `gcc-13` package, which is what the
 CI runners have. On a host with a different compiler the second test checks

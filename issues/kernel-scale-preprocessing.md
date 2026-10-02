@@ -606,12 +606,14 @@ The gate pins the first rejection on each route:
   `-fmacro-prefix-map=./=`. The profile accepts only `-D`, `-U`, `-I`,
   `-isystem`, and `-include`; 83 of the recorded arguments are other options.
   The importer also does not allowlist `HOME`.
-- C frontend, on the reproduced artifact: `./include/linux/printk.h:21`,
-  `character literals must contain exactly one byte` (the octal escape
-  `'\001'`). This is again lexical. It is the only declaration with a lexical
-  rejection, but it is not the first unsupported declaration.
+- C frontend, on the reproduced artifact:
+  `././include/linux/compiler_types.h:172`, `expected union name`, the
+  anonymous union member of the artifact's first declaration. Before octal
+  and hexadecimal escapes were modeled, the pin was the lexical rejection of
+  `'\001'` at `printk.h:21`; the artifact has no lexical rejection now.
 
-The inventory below was measured at the commit that added the fixture, with
+The inventory below was measured at the commit that modeled numeric character
+escapes, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
@@ -622,7 +624,7 @@ accepts 758 and rejects 1,817:
 
 | Count | First rejection | Notes |
 | ---: | --- | --- |
-| 1,320 | function attribute `__gnu_inline__` | first at `compiler.h:220`; the kernel's `inline` expands to `inline __attribute__((__gnu_inline__)) __attribute__((__unused__)) __attribute__((no_instrument_function))` on every inline helper |
+| 1,321 | function attribute `__gnu_inline__` | first at `compiler.h:220`; the kernel's `inline` expands to `inline __attribute__((__gnu_inline__)) __attribute__((__unused__)) __attribute__((no_instrument_function))` on every inline helper |
 | 91 | unknown type name | `__signed__` 4 (first at `uapi/asm-generic/int-ll64.h:20`); the rest cascade from it and from rejected typedefs: `u64` 38, `s32` 9, `__u64` 8, `va_list`, `__builtin_va_list`, `u128`, callback typedefs |
 | 61 | unsupported file-scope object form | includes the twelve `extern typeof(fn) fn;` export redeclarations |
 | 54 | declarator form (`expected type ..., got (` or `;`) | function-pointer declarators 49, others 5 |
@@ -636,7 +638,7 @@ accepts 758 and rejects 1,817:
 | 10 | undeclared identifier | cascades from rejected rbtree definitions |
 | 6 | struct attribute `packed` | |
 | 5 | empty struct | |
-| 29 | fourteen further forms, at most five each | enum parameters and returns, deeper `const`, struct arrays, function-pointer objects, const discarding, and the octal character literal |
+| 28 | thirteen further forms, at most five each | enum parameters and returns, deeper `const`, struct arrays, function-pointer objects, and const discarding |
 
 A scratch experiment that ignored every unknown function attribute, and
 landed nothing, still rejected 1,357 declarations. The next layer inside the

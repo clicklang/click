@@ -20226,29 +20226,71 @@ fn expression_reads_runtime_value(expression: &C0Expression) -> bool {
     }
 }
 
+/// Decodes the escape sequence whose backslash is at `backslash`, returning
+/// its byte and the index after it. Octal escapes take up to three digits
+/// and hexadecimal escapes take every following hexadecimal digit, as in C;
+/// a value that does not fit one byte is rejected.
+fn parse_escape(
+    chars: &[char],
+    backslash: usize,
+    literal: &str,
+) -> Result<(u8, usize), C0SyntaxError> {
+    let Some(escaped) = chars.get(backslash + 1).copied() else {
+        return Err(C0SyntaxError::new(format!(
+            "unterminated {literal} literal"
+        )));
+    };
+    let simple = match escaped {
+        'n' => Some(b'\n'),
+        'r' => Some(b'\r'),
+        't' => Some(b'\t'),
+        'a' => Some(0x07),
+        'b' => Some(0x08),
+        'f' => Some(0x0c),
+        'v' => Some(0x0b),
+        '\\' => Some(b'\\'),
+        '\'' => Some(b'\''),
+        '"' => Some(b'"'),
+        '?' => Some(b'?'),
+        _ => None,
+    };
+    if let Some(byte) = simple {
+        return Ok((byte, backslash + 2));
+    }
+    let (radix, first_digit, max_digits) = match escaped {
+        '0'..='7' => (8, backslash + 1, 3),
+        'x' => (16, backslash + 2, usize::MAX),
+        other => {
+            return Err(C0SyntaxError::new(format!(
+                "unsupported {literal} escape `\\{other}`"
+            )));
+        }
+    };
+    let mut value = 0u32;
+    let mut end = first_digit;
+    while end - first_digit < max_digits
+        && let Some(digit) = chars.get(end).and_then(|digit| digit.to_digit(radix))
+    {
+        value = value.saturating_mul(radix).saturating_add(digit);
+        end += 1;
+    }
+    if end == first_digit {
+        return Err(C0SyntaxError::new(format!(
+            "hexadecimal {literal} escape `\\x` requires at least one digit"
+        )));
+    }
+    let byte = u8::try_from(value).map_err(|_| {
+        C0SyntaxError::new(format!("numeric {literal} escape does not fit one byte"))
+    })?;
+    Ok((byte, end))
+}
+
 fn parse_char_literal(chars: &[char], start: usize) -> Result<(u8, usize), C0SyntaxError> {
     let Some(first) = chars.get(start + 1).copied() else {
         return Err(C0SyntaxError::new("unterminated character literal"));
     };
     let (value, end) = if first == '\\' {
-        let Some(escaped) = chars.get(start + 2).copied() else {
-            return Err(C0SyntaxError::new("unterminated character literal"));
-        };
-        let value = match escaped {
-            'n' => b'\n',
-            'r' => b'\r',
-            't' => b'\t',
-            '0' => b'\0',
-            '\\' => b'\\',
-            '\'' => b'\'',
-            '"' => b'"',
-            other => {
-                return Err(C0SyntaxError::new(format!(
-                    "unsupported character escape `\\{other}`"
-                )));
-            }
-        };
-        (value, start + 3)
+        parse_escape(chars, start + 1, "character")?
     } else {
         if !first.is_ascii() {
             return Err(C0SyntaxError::new(
@@ -20274,25 +20316,9 @@ fn parse_string_literal(chars: &[char], start: usize) -> Result<(Vec<u8>, usize)
         match ch {
             '"' => return Ok((value, index + 1)),
             '\\' => {
-                let Some(escaped) = chars.get(index + 1).copied() else {
-                    return Err(C0SyntaxError::new("unterminated string literal"));
-                };
-                let byte = match escaped {
-                    'n' => b'\n',
-                    'r' => b'\r',
-                    't' => b'\t',
-                    '0' => b'\0',
-                    '\\' => b'\\',
-                    '\'' => b'\'',
-                    '"' => b'"',
-                    other => {
-                        return Err(C0SyntaxError::new(format!(
-                            "unsupported string escape `\\{other}`"
-                        )));
-                    }
-                };
+                let (byte, next) = parse_escape(chars, index, "string")?;
                 value.push(byte);
-                index += 2;
+                index = next;
             }
             '\n' | '\r' => {
                 return Err(C0SyntaxError::new(
