@@ -5145,27 +5145,6 @@ impl ResourceContext {
         false
     }
 
-    pub(in crate::kernel) fn permits_memory_read_structurally(
-        &self,
-        pointer: &Pointer,
-        byte_width: u32,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        let bytes = crate::kernel::assumptions::read_candidate_byte_width(byte_width);
-        for entry in self.structural_memory_entries(pointer, pointer, Some(bytes)) {
-            let resource = self.fact(entry);
-            let Some(range) = resource_fact_read_core_range(resource) else {
-                continue;
-            };
-            if pointer_has_structural_range_base(pointer, range.base())
-                && memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-            {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Bounded owner lookup for a storage operation. Constant spans use a
     /// predecessor index; the resource entailment check remains authoritative.
     /// A single symbolic span at the selected base can use bounds facts;
@@ -7514,32 +7493,6 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
     assert!(!owner.permits_memory_read(&d, 12, &connected));
     assert!(!owner.permits_memory_read(&d, 4, &facts));
-}
-
-fn pointer_has_structural_range_base(pointer: &Pointer, base: &Pointer) -> bool {
-    if pointer.block != base.block {
-        return false;
-    }
-    if crate::kernel::assumptions::pointers_equal_ignoring_memories(pointer, base) {
-        return true;
-    }
-    matches!(
-        &pointer.offset,
-        PointerOffsetTerm::Add(left, right)
-            if crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                &Pointer {
-                    block: pointer.block.clone(),
-                    offset: left.as_ref().clone(),
-                },
-                base,
-            ) || crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                &Pointer {
-                    block: pointer.block.clone(),
-                    offset: right.as_ref().clone(),
-                },
-                base,
-            )
-    )
 }
 
 /// Range endpoints compare like ordinary terms, and additionally two loads

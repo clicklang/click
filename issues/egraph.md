@@ -139,7 +139,10 @@ this list.
    Provisional clause prefixes capture an empty input before admitting memory
    occurrences. Proof/planning conversions preserve their checked source graph.
    Cached borrowed-input authority and final certification pair their explicit
-   input at the producer boundary when the premise context changes. Permission
+   input at the producer boundary when the premise context changes. The
+   kernel-admitted surface entry view publishes its newly selected context
+   before execution. The superseded structural-read permission API is deleted;
+   structural resource satisfaction remains separate. Permission
    queries never publish the ambient frame. Existing multi-size regressions
    cover unrelated resources, same-class views, late merges, deltas, and forks.
 5. **Delete symbolic-range read searches.** Migrate

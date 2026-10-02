@@ -1388,7 +1388,7 @@ fn c_function_contract_entry_facts(
             proposition,
         );
     }
-    // The trusted certification builds its own admissible premise context.
+    // The trusted contract-entry builder creates its admissible premise context.
     // Attach the selected caller input to that context once, before the
     // contract clauses are evaluated; clause reads never publish a frame.
     caller_state

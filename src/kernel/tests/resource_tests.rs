@@ -690,7 +690,7 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
 }
 
 #[test]
-fn structural_memory_lookup_ignores_unrelated_pointer_parameters() {
+fn indexed_memory_lookup_ignores_unrelated_pointer_parameters() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let at = |id| Pointer {
@@ -723,13 +723,14 @@ fn structural_memory_lookup_ignores_unrelated_pointer_parameters() {
                 true,
             )
             .assume_condition(ConditionTerm::signed_less_than(index.clone(), limit), true);
+        symbolic.synchronize_memory_equalities(&facts);
         let query = at(size).offset_by_elements(index, 4);
         let required =
             |base| CResourceFact::view_memory(CMemoryRange::new(base, 1u32.into(), 2u32.into()));
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                assert!(symbolic.permits_memory_read_structurally(&query, 4, &facts));
-                assert!(!symbolic.permits_memory_read_structurally(&at(size + 1), 4, &facts));
+                assert!(symbolic.permits_memory_read(&query, 4, &facts));
+                assert!(!symbolic.permits_memory_read(&at(size + 1), 4, &facts));
                 assert!(concrete.satisfies_memory_fact_structurally(&required(at(size))));
                 assert!(!concrete.satisfies_memory_fact_structurally(&required(at(size + 1))));
             })
