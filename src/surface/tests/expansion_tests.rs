@@ -697,6 +697,24 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
 }
 
+/// A ranked loop with no invariant has nothing to initialize. Its expansion
+/// used to print that phase as `initialize by { }`, which is not Click; the
+/// phase keeps `assumption();` and the rewrite re-verifies.
+#[test]
+fn ranked_loops_with_no_invariant_expand_and_reverify() {
+    for fixture in [
+        "mdtests/a_ranked_loop_with_no_invariant_closes_a_branching_body.md",
+        "mdtests/a_ranked_unsigned_loop_with_no_invariant_closes_a_branching_body.md",
+    ] {
+        let expanded = expand_mdtest_site_and_reverify(fixture, "loop {", 0);
+        assert!(
+            expanded.contains("initialize by {\n            assumption();\n        }"),
+            "{expanded}"
+        );
+        assert!(expanded.contains("preserve by {"), "{expanded}");
+    }
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
