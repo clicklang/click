@@ -28,7 +28,7 @@
 
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Nested disjunction case splits allowed inside one derivation.
 const MAX_DISJUNCTION_SPLIT_DEPTH: usize = 2;
@@ -479,34 +479,7 @@ impl PropositionSearch for PureFactContext {
             // with the component already reachable from the goal. Growing
             // that component once selects a conservative proof graph without
             // rerunning the prover once per ambient premise.
-            let mut connected_variables = BTreeSet::new();
-            collect_proposition_bitvector_variables(proposition, &mut connected_variables);
-            let mut selected: Vec<(ConditionTerm, bool)> = Vec::new();
-            let mut changed = true;
-            while changed {
-                changed = false;
-                for (condition, value) in self.condition_fact_pairs() {
-                    if selected.iter().any(|(chosen, _)| chosen == condition) {
-                        continue;
-                    }
-                    let mut variables = BTreeSet::new();
-                    collect_condition_bitvector_variables(condition, &mut variables);
-                    let exact_goal_fact = matches!(
-                        proposition,
-                        Proposition::ConditionIs(goal, expected)
-                            if goal == condition && *expected == value
-                    );
-                    if !exclude_exact_goal && exact_goal_fact
-                        || (!exact_goal_fact
-                            && !variables.is_empty()
-                            && !variables.is_disjoint(&connected_variables))
-                    {
-                        connected_variables.extend(variables);
-                        selected.push((condition.clone(), value));
-                        changed = true;
-                    }
-                }
-            }
+            let selected = connected_condition_component(self, proposition, exclude_exact_goal);
             let candidate = self.restricted_to_facts(&selected, &[]);
             let (evidence, premises_id) =
                 candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
@@ -1169,4 +1142,83 @@ mod monotone_forall_tests {
             "an outer fact cannot establish a body that uses the new binder"
         );
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONDITION_SELECTION_VISITS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
+
+/// How many condition facts premise selection has examined on this thread
+/// since the last reset, counted apart from the kernel's checking work.
+#[cfg(test)]
+pub(crate) fn condition_selection_visits() -> usize {
+    CONDITION_SELECTION_VISITS.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+pub(crate) fn reset_condition_selection_visits() {
+    CONDITION_SELECTION_VISITS.with(|visits| visits.set(0));
+}
+
+/// The condition facts connected to `proposition` through shared symbolic
+/// variables, in the context's own order.
+///
+/// One pass indexes each fact by the variables it mentions; a worklist over
+/// newly reached variables then visits each fact of the component once per
+/// variable it mentions. A chain stated in any order therefore costs the
+/// context once, not once per link.
+fn connected_condition_component(
+    context: &PureFactContext,
+    proposition: &Proposition,
+    exclude_exact_goal: bool,
+) -> Vec<(ConditionTerm, bool)> {
+    let mut facts = Vec::new();
+    let mut facts_by_variable: BTreeMap<Variable, Vec<usize>> = BTreeMap::new();
+    let mut chosen = Vec::new();
+    for (condition, value) in context.condition_fact_pairs() {
+        #[cfg(test)]
+        CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
+        let index = facts.len();
+        let exact_goal_fact = matches!(
+            proposition,
+            Proposition::ConditionIs(goal, expected)
+                if goal == condition && *expected == value
+        );
+        let mut variables = BTreeSet::new();
+        // The goal's own statement is taken or left as a whole; it never
+        // extends the component.
+        if !exact_goal_fact {
+            collect_condition_bitvector_variables(condition, &mut variables);
+            for variable in &variables {
+                facts_by_variable.entry(*variable).or_default().push(index);
+            }
+        }
+        chosen.push(exact_goal_fact && !exclude_exact_goal);
+        facts.push((condition, value, variables));
+    }
+    let mut reached = BTreeSet::new();
+    collect_proposition_bitvector_variables(proposition, &mut reached);
+    let mut pending = reached.iter().copied().collect::<Vec<_>>();
+    while let Some(variable) = pending.pop() {
+        for &index in facts_by_variable.get(&variable).into_iter().flatten() {
+            #[cfg(test)]
+            CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
+            if std::mem::replace(&mut chosen[index], true) {
+                continue;
+            }
+            for &next in &facts[index].2 {
+                if reached.insert(next) {
+                    pending.push(next);
+                }
+            }
+        }
+    }
+    facts
+        .into_iter()
+        .zip(chosen)
+        .filter(|(_, chosen)| *chosen)
+        .map(|((condition, value, _), _)| (condition.clone(), value))
+        .collect()
 }

@@ -6,6 +6,5 @@ roadmap milestones. Each file states the violated invariant, a small intended
 regression, and acceptance criteria. Delete a bug file when its fix, regression
 coverage, and documentation land.
 
-- [Condition premise selection repeatedly scans ambient facts](condition-premise-selection-scans-ambient-facts.md)
 - [Proposition candidate selection scans unrelated facts](proposition-candidate-selection-scans-unrelated-facts.md)
 - [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
