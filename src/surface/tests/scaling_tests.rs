@@ -5159,9 +5159,16 @@ fn loop_with_break_exits_work(exits: usize, c_branches: bool) -> usize {
 /// so counted work follows the real cost and quadruples, no more, when the
 /// exits do.
 ///
+/// Every proof-level case split in the body also read its path's certificate,
+/// which walked the proof's whole history back to the root, sibling arms
+/// included. Each node now remembers the lineage that ends at it, so a split
+/// reads only the nodes added since the last walk that passed, and the walk
+/// is charged.
+///
 /// The bound is on each fourfold step rather than on the whole range, because
 /// at these sizes a pairwise term is still a small part of the total: with the
-/// exits recorded pairwise again the last step is 4.75 times, against 3.95.
+/// exits recorded pairwise again the last step is 4.75 times, and with the
+/// history walked in full again it is 9.5 times, against 3.97.
 #[test]
 fn loop_break_exit_join_work_is_near_linear_in_the_exits() {
     let samples =

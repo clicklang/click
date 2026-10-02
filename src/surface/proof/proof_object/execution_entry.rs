@@ -51,6 +51,7 @@ impl<'a> Proof<'a> {
                 }),
             ),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,

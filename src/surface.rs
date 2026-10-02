@@ -3832,7 +3832,23 @@ impl ProofCertificate {
     /// request.  The walk is iterative because certificates can contain
     /// deeply nested branch, loop, and `have` proofs.
     fn contains_arithmetic_using(&self) -> bool {
-        let mut pending = self.steps.iter().collect::<Vec<_>>();
+        self.steps.iter().any(proof_step_contains_arithmetic_using)
+    }
+
+    /// Steps already admitted one at a time by the checks [`Self::from_steps`]
+    /// applies to the whole list ([`validate_certificate_step`] and
+    /// [`proof_step_contains_arithmetic_using`]).
+    pub(crate) fn from_admitted_steps(steps: Vec<ProofStep>) -> Self {
+        Self::from_validated_steps(steps)
+    }
+}
+
+/// Whether this step, or any step nested in it, is a source-only
+/// `ArithmeticUsing`. A certificate contains one exactly when one of its steps
+/// does.
+pub(crate) fn proof_step_contains_arithmetic_using(step: &ProofStep) -> bool {
+    {
+        let mut pending = vec![step];
         while let Some(step) = pending.pop() {
             match step {
                 ProofStep::ArithmeticUsing(_) => return true,
@@ -3883,7 +3899,9 @@ impl ProofCertificate {
         }
         false
     }
+}
 
+impl ProofCertificate {
     fn from_validated_proof(proof: &SourceProof) -> Self {
         let SourceProof::Script(tactics) = proof else {
             unreachable!("validated simple proof must be an explicit script")
@@ -4480,6 +4498,19 @@ fn validate_certificate_steps(
     path: &mut Vec<CertificatePathSegment>,
 ) -> Result<(), CertificateError> {
     for (index, step) in steps.iter().enumerate() {
+        validate_certificate_step(step, index, path)?;
+    }
+    Ok(())
+}
+
+/// [`validate_certificate_steps`] for the step at `index` of its list: a list
+/// is admitted exactly when each of its steps is.
+pub(crate) fn validate_certificate_step(
+    step: &ProofStep,
+    index: usize,
+    path: &mut Vec<CertificatePathSegment>,
+) -> Result<(), CertificateError> {
+    {
         path.push(CertificatePathSegment::Tactic(index));
         // ArithmeticUsing remains accepted by the source-tactic constructor
         // as a smart request, but generated certificate steps must already

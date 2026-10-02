@@ -2020,6 +2020,7 @@ impl<'a> Proof<'a> {
                 OpenBranch::new(Obligation::Proposition(obligation), context)
             }),
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,

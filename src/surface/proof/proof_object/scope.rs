@@ -826,6 +826,7 @@ impl<'a> ProofScope<'a> {
                     context: self.root.context.clone(),
                     state,
                     node: Arc::new(ProofNode {
+                        path_memo: Default::default(),
                         parent: Some(self.root.node.clone()),
                         step: Some(Arc::new(ProofStep::Have {
                             proposition,
@@ -1043,6 +1044,7 @@ impl<'a> ProofScope<'a> {
                     context: self.root.context.clone(),
                     state,
                     node: Arc::new(ProofNode {
+                        path_memo: Default::default(),
                         parent: Some(self.root.node.clone()),
                         step: Some(Arc::new(ProofStep::Open {
                             resource,
@@ -1116,6 +1118,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(ProofStep::Have {
                     proposition,
@@ -1164,6 +1167,7 @@ impl<'a> Proof<'a> {
                 context: retained.context.clone(),
                 state,
                 node: Arc::new(ProofNode {
+                    path_memo: Default::default(),
                     parent: Some(retained.node.clone()),
                     step: Some(Arc::new(ProofStep::Have {
                         proposition: conclusion.clone(),

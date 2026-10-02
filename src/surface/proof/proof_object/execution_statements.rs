@@ -1016,6 +1016,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(step)),
                 focused_branch: self.focused_branch_id(),
@@ -1172,6 +1173,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: None,
                 step: None,
                 focused_branch: BranchId::ROOT,
@@ -1283,6 +1285,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(ProofStep::CloseInvariantsBy(Box::new(
                     certificate,
@@ -1606,7 +1609,7 @@ impl<'a> Proof<'a> {
                 // derivation contributes steps to `certificate()` that this
                 // path never took, and counting those puts the case past the
                 // end of its own tactics.
-                let tactic_offset = self.path_certificate()?.steps().len();
+                let tactic_offset = self.path_step_count()?;
                 arm_execution
                     .presentation
                     .surface_record
@@ -1644,6 +1647,7 @@ impl<'a> Proof<'a> {
                     context: self.context.clone(),
                     state,
                     node: Arc::new(ProofNode {
+                        path_memo: Default::default(),
                         parent: Some(self.node.clone()),
                         step: None,
                         focused_branch: self.focused_branch_id(),
@@ -2246,6 +2250,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: Some(Arc::new(loop_step)),
                 focused_branch: self.focused_branch_id(),

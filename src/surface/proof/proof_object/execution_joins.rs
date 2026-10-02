@@ -2388,6 +2388,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(parent_node.clone()),
                 step: Some(Arc::new(parts.step)),
                 focused_branch: parent_goal,
@@ -3295,6 +3296,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
@@ -3413,6 +3415,7 @@ impl<'a> Proof<'a> {
             context: self.context.clone(),
             state,
             node: Arc::new(ProofNode {
+                path_memo: Default::default(),
                 parent: Some(self.node.clone()),
                 step: None,
                 focused_branch: self.focused_branch_id(),
