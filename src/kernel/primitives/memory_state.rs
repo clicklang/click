@@ -6883,6 +6883,28 @@ thread_local! {
         const { std::cell::RefCell::new(BTreeMap::new()) };
 }
 
+thread_local! {
+    /// Where the argument copied into each by-value aggregate parameter's
+    /// frame block arrived. The callee's copy and the caller's argument are
+    /// two objects; a diagnostic reads this to name the second. Nothing
+    /// that decides a proof reads it.
+    static AGGREGATE_ARGUMENT_SOURCES: std::cell::RefCell<BTreeMap<PointerBlock, Pointer>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+/// Records that the aggregate parameter stored in `slot` was copied from
+/// `source`. One entry per parameter bound; a later binding of the same
+/// frame block replaces it.
+pub(crate) fn register_aggregate_argument_source(slot: &PointerBlock, source: &Pointer) {
+    AGGREGATE_ARGUMENT_SOURCES.with(|sources| {
+        sources.borrow_mut().insert(slot.clone(), source.clone());
+    });
+}
+
+pub(crate) fn registered_aggregate_argument_source(slot: &PointerBlock) -> Option<Pointer> {
+    AGGREGATE_ARGUMENT_SOURCES.with(|sources| sources.borrow().get(slot).cloned())
+}
+
 pub(crate) fn register_block_alignment(block: &PointerBlock, alignment: u32) {
     if alignment < 2 {
         return;

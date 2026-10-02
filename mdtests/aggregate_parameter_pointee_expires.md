@@ -18,5 +18,5 @@ void dispose(struct packet input) {
 ```
 
 ```expect
-fail: viewable
+fail: owns allocation(input.data, 4)
 ```

@@ -55,7 +55,8 @@ pub(in crate::kernel) use memory_state::CallKeptOwnership;
 pub use memory_state::CallKeptRanges;
 pub(crate) use memory_state::{
     block_is_never_address_taken_local, clear_block_alignment_registry,
-    clear_never_address_taken_locals, register_block_alignment, registered_block_alignment,
+    clear_never_address_taken_locals, register_aggregate_argument_source, register_block_alignment,
+    registered_aggregate_argument_source, registered_block_alignment,
     registered_block_alignment_charged, set_never_address_taken_locals,
     withdraw_never_address_taken_locals,
 };

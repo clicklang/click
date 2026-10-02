@@ -15132,6 +15132,7 @@ pub(in crate::kernel) fn bind_c_function_arguments(
             let source = pointer.pointer().clone();
             let slot = CMemory::frame_local_pointer(frame, parameter.name());
             register_block_alignment(&slot.block, layout.alignment_bytes());
+            register_aggregate_argument_source(&slot.block, &source);
             // Preserve the caller's memory snapshot for symbolic source
             // loads. Declaring the destination first would make an unknown
             // external field load depend on the callee's fresh block and
