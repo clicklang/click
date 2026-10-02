@@ -2242,6 +2242,38 @@ id = "stdlib.theorem.int32_positive_predecessor_strictly_decreases"
 path = "reference/library/index.md#int32_positive_predecessor_strictly_decreases"
 
 [[item]]
+id = "stdlib.theorem.uint32_positive_predecessor_strictly_decreases"
+path = "reference/library/index.md#uint32_positive_predecessor_strictly_decreases"
+
+[[item]]
+id = "stdlib.theorem.uint32_increment_upper_bound"
+path = "reference/library/index.md#uint32_increment_upper_bound"
+
+[[item]]
+id = "stdlib.theorem.uint32_increment_strictly_increases"
+path = "reference/library/index.md#uint32_increment_strictly_increases"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_implies_positive_difference"
+path = "reference/library/index.md#uint32_lt_implies_positive_difference"
+
+[[item]]
+id = "stdlib.theorem.uint32_gt_implies_reversed_lt"
+path = "reference/library/index.md#uint32_gt_implies_reversed_lt"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_implies_reversed_gt"
+path = "reference/library/index.md#uint32_lt_implies_reversed_gt"
+
+[[item]]
+id = "stdlib.theorem.uint32_ge_implies_reversed_le"
+path = "reference/library/index.md#uint32_ge_implies_reversed_le"
+
+[[item]]
+id = "stdlib.theorem.uint32_le_implies_reversed_ge"
+path = "reference/library/index.md#uint32_le_implies_reversed_ge"
+
+[[item]]
 id = "stdlib.theorem.int32_nonnegative_predecessor_upper_bound"
 path = "reference/library/index.md#int32_nonnegative_predecessor_upper_bound"
 

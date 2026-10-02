@@ -5,12 +5,9 @@ measure. Its bundle owes the constant-true nonnegativity member, since every
 unsigned value is a natural number, and the decrease member
 `x - 1 <u x` at the entry value of `x`, which the guard `x >u 0` makes true.
 
-The claim is true, but closing it needs unsigned order arithmetic: the
-closer reads `x - 1 <u x` as a signed order between the sign-bit-flipped
-values `(x - 1) ^ 2^31` and `x ^ 2^31`, and does not relate the two. That
-open decrease member is the refusal this test pins; it changes to `pass`
-when
-`bugs/unsigned-order-arithmetic-in-closers.md` is fixed.
+The closer does not relate `x - 1` to `x` under the unsigned order by
+itself. The proof states the two steps: the guard read the other way round,
+and the predecessor of a nonzero `uint32`.
 
 ```c filename=an_unsigned_count_down_loop_owes_an_unsigned_descent.c
 int32 drain(uint32 x) {
@@ -32,6 +29,16 @@ int32 drain(uint32 x) {
         initialize by { simp(); }
         preserve by {
             step();
+            have 0u32 < at(statement(1).entry, x) by {
+                apply(uint32_gt_implies_reversed_lt(at(statement(1).entry, x), 0u32)) using {
+                    at(statement(1).entry, x) > 0u32;
+                }
+            }
+            have x < at(statement(1).entry, x) by {
+                apply(uint32_positive_predecessor_strictly_decreases(at(statement(1).entry, x))) using {
+                    0u32 < at(statement(1).entry, x);
+                }
+            }
             close_invariants();
         }
     }
@@ -41,5 +48,5 @@ int32 drain(uint32 x) {
 ```
 
 ```expect
-fail: `x < at(statement(1).entry, x) (unsigned)` remained open; this loop declares `decreases`, so the bundle also has `0 <= x` at the back edge, `x` decreases at the back edge
+pass
 ```

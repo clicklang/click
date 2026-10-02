@@ -555,6 +555,54 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
     ensures value - 1 < value;
 }
 
+theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures value - 1u32 < value;
+}
+
+theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value + 1u32 <= upper;
+}
+
+theorem uint32_increment_strictly_increases(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value < value + 1u32;
+}
+
+theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0u32 < upper - value;
+}
+
+theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+    requires greater > lower;
+
+    ensures lower < greater;
+}
+
+theorem uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+    requires lower < greater;
+
+    ensures greater > lower;
+}
+
+theorem uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+    requires greater >= lower;
+
+    ensures lower <= greater;
+}
+
+theorem uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+    requires lower <= greater;
+
+    ensures greater >= lower;
+}
+
 theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires 0 <= value;
     requires value <= bound;

@@ -404,6 +404,70 @@ theorem docs_use_int32_positive_predecessor_strictly_decreases(value: int32) {
     }
 }
 
+theorem docs_use_uint32_positive_predecessor_strictly_decreases(value: uint32) {
+    requires 0u32 < value;
+
+    ensures value - 1u32 < value by {
+        apply(uint32_positive_predecessor_strictly_decreases(value));
+    }
+}
+
+theorem docs_use_uint32_increment_upper_bound(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value + 1u32 <= upper by {
+        apply(uint32_increment_upper_bound(value, upper));
+    }
+}
+
+theorem docs_use_uint32_increment_strictly_increases(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures value < value + 1u32 by {
+        apply(uint32_increment_strictly_increases(value, upper));
+    }
+}
+
+theorem docs_use_uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
+    requires value < upper;
+
+    ensures 0u32 < upper - value by {
+        apply(uint32_lt_implies_positive_difference(value, upper));
+    }
+}
+
+theorem docs_use_uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
+    requires greater > lower;
+
+    ensures lower < greater by {
+        apply(uint32_gt_implies_reversed_lt(greater, lower));
+    }
+}
+
+theorem docs_use_uint32_lt_implies_reversed_gt(lower: uint32, greater: uint32) {
+    requires lower < greater;
+
+    ensures greater > lower by {
+        apply(uint32_lt_implies_reversed_gt(lower, greater));
+    }
+}
+
+theorem docs_use_uint32_ge_implies_reversed_le(greater: uint32, lower: uint32) {
+    requires greater >= lower;
+
+    ensures lower <= greater by {
+        apply(uint32_ge_implies_reversed_le(greater, lower));
+    }
+}
+
+theorem docs_use_uint32_le_implies_reversed_ge(lower: uint32, greater: uint32) {
+    requires lower <= greater;
+
+    ensures greater >= lower by {
+        apply(uint32_le_implies_reversed_ge(lower, greater));
+    }
+}
+
 theorem docs_use_int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires 0 <= value;
     requires value <= bound;

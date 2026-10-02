@@ -372,14 +372,15 @@ component, a shift of a `uint64` value, and a `?:` that chooses between
 `uint64` values, and names the refusal. A pure component and a self-recursive
 function's expression measure take the same carriers.
 
-Closing an unsigned member currently needs unsigned order arithmetic, which
-the closer does not yet do: it reads an unsigned comparison as a signed order
+Closing an unsigned member needs unsigned order arithmetic, which the closer
+does not do by itself: it reads an unsigned comparison as a signed order
 between sign-bit-flipped values and does not relate `x - 1` to `x` through
-the flip. A true descent such as `while (x > 0u) x--;` under `decreases x` is
-therefore still refused at its decrease member
+the flip. The proof applies the `uint32_*` order lemmas by name, as
+`while (x > 0u) x--;` under `decreases x` does
 (`mdtests/an_unsigned_count_down_loop_owes_an_unsigned_descent.md`,
-`mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`,
-`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`;
+`mdtests/an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.md`).
+A measure `c - x` over a constant is still refused at its decrease member
+(`mdtests/an_unsigned_loop_counter_store_is_bounded_by_its_guard.md`;
 see `bugs/unsigned-order-arithmetic-in-closers.md`).
 
 A component whose type is `Integer` ranks the loop in that carrier:
