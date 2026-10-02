@@ -1302,6 +1302,62 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let folded_paths = evaluate_count(&folded).expect("owned control opens for a count read");
     assert!(folded.resources().contains_exact_representation(&selected));
     assert_eq!(folded.resources().facts().len(), 1);
+    // Repackaging an existing authority into a different ordinary control
+    // retains the same count and custody. It grants no import or creator right.
+    let mut replacement_definition = definition.clone();
+    replacement_definition.name = "replacement".into();
+    let replacement = CResourceFact::own(CResource::Composite {
+        name: "replacement".into(),
+        arguments: description.arguments().to_vec().into(),
+    });
+    let replacement_state = folded
+        .clone()
+        .with_resource_context(ResourceContext::new().unchecked_with_fact(replacement.clone()));
+    let registered = replacement_state
+        .with_checked_current_control_wrapper(
+            &replacement,
+            &replacement_definition,
+            &PureFactContext::new(),
+        )
+        .unwrap();
+    assert_eq!(
+        evaluate_count(&registered).unwrap()[0].value,
+        folded_paths[0].value
+    );
+    assert_eq!(
+        registered
+            .with_checked_current_control_wrapper(
+                &replacement,
+                &replacement_definition,
+                &PureFactContext::new(),
+            )
+            .unwrap()
+            .population_effects
+            .creation,
+        registered.population_effects.creation
+    );
+    assert!(
+        folded
+            .with_checked_current_control_wrapper(
+                &replacement,
+                &replacement_definition,
+                &PureFactContext::new(),
+            )
+            .is_err(),
+        "an unowned replacement cannot register count permission"
+    );
+    assert!(
+        state
+            .clone()
+            .with_resource_context(replacement_state.resources().clone())
+            .with_checked_current_control_wrapper(
+                &replacement,
+                &replacement_definition,
+                &PureFactContext::new(),
+            )
+            .is_err(),
+        "packaging cannot invent authority custody"
+    );
     let absent_control = folded.clone().with_resource_context(ResourceContext::new());
     assert!(evaluate_count(&absent_control).is_err());
     let viewed_control = folded.clone().with_resource_context(

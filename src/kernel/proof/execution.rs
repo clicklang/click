@@ -1329,7 +1329,23 @@ impl CheckedResourceRewrite {
         ) {
             return Err("authority control close changed C memory".into());
         }
+        let expected_creation = if exposing {
+            before_state.population_effects.creation.clone()
+        } else {
+            before_state
+                .clone()
+                .with_resource_context(after_state.resources().clone())
+                .with_checked_current_control_wrapper(selected, definition, assumptions)?
+                .population_effects
+                .creation
+                .clone()
+        };
+        if after_state.population_effects.creation != expected_creation {
+            return Err("authority control changed its population registration".into());
+        }
         let mut unchanged = after_state.clone();
+        Arc::make_mut(&mut unchanged.population_effects).creation =
+            before_state.population_effects.creation.clone();
         unchanged.memory = before_state.memory.clone();
         unchanged.resources = before_state.resources.clone();
         unchanged.population_access = before_state.population_access.clone();
