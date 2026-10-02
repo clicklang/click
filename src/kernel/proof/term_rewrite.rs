@@ -3567,7 +3567,10 @@ impl<'a> TermRewrite<'a> {
                 return ConditionTerm::Constant(true);
             }
         }
-        if let Some(guard) = result.uint64_successor_guard() {
+        if let Some(guard) = result
+            .uint64_successor_guard()
+            .or_else(|| result.uint64_subtraction_guard())
+        {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.push(guard.clone());
             }

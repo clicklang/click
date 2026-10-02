@@ -441,6 +441,10 @@ impl<'tcx> BodyExporter<'tcx> {
                     let init = local
                         .init
                         .ok_or("uninitialized locals outside Rust slice")?;
+                    if self.is_slice_method(init, "split_at") {
+                        out.push(self.slice_split(local.pat, init)?);
+                        continue;
+                    }
                     let initializer = self.expr(init)?;
                     let name = self.bind(local.pat, false)?;
                     out.push(Statement::Declare {
@@ -464,6 +468,79 @@ impl<'tcx> BodyExporter<'tcx> {
             out.push(Statement::Return { value: None });
         }
         Ok(out)
+    }
+    fn is_slice_method(&self, e: &hir::Expr<'tcx>, name: &str) -> bool {
+        if !matches!(e.kind, hir::ExprKind::MethodCall(..)) {
+            return false;
+        }
+        let Some(method) = self.typeck.type_dependent_def_id(e.hir_id) else {
+            return false;
+        };
+        let implementation = self.tcx.parent(method);
+        !method.is_local()
+            && self.tcx.crate_name(method.krate).as_str() == "core"
+            && self.tcx.item_name(method).as_str() == name
+            && matches!(
+                self.tcx.def_kind(implementation),
+                hir::def::DefKind::Impl { of_trait: false }
+            )
+            && matches!(
+                self.tcx
+                    .type_of(implementation)
+                    .instantiate_identity()
+                    .skip_norm_wip()
+                    .kind(),
+                ty::Slice(_)
+            )
+    }
+    fn slice_split(
+        &mut self,
+        pattern: &hir::Pat<'tcx>,
+        e: &hir::Expr<'tcx>,
+    ) -> Result<Statement, String> {
+        let bad = || {
+            self.error(
+                e,
+                "split_at requires a shared byte-slice local and two plain tuple bindings",
+            )
+        };
+        let hir::ExprKind::MethodCall(_, receiver, [midpoint], _) = e.kind else {
+            return Err(bad());
+        };
+        if export_type(self.tcx, self.typeck.expr_ty(receiver))?
+            != (Type::ByteSlice { mutable: false })
+            || !matches!(receiver.kind, hir::ExprKind::Path(hir::QPath::Resolved(_, path)) if matches!(path.res, Res::Local(_)))
+            || export_type(self.tcx, self.typeck.expr_ty(midpoint))? != Type::Usize
+        {
+            return Err(bad());
+        }
+        let hir::PatKind::Tuple([left, right], rest) = pattern.kind else {
+            return Err(bad());
+        };
+        if rest.as_opt_usize().is_some()
+            || !matches!(left.kind, hir::PatKind::Binding(mode, _, _, None) if mode.0 == hir::ByRef::No)
+            || !matches!(right.kind, hir::PatKind::Binding(mode, _, _, None) if mode.0 == hir::ByRef::No)
+        {
+            return Err(bad());
+        }
+        let slice = self.expr(receiver)?;
+        let midpoint = self.expr(midpoint)?;
+        let left = Place {
+            name: self.bind(left, false)?,
+            value_type: export_type(self.tcx, self.typeck.pat_ty(left))?,
+            span: span(self.tcx, left.span),
+        };
+        let right = Place {
+            name: self.bind(right, false)?,
+            value_type: export_type(self.tcx, self.typeck.pat_ty(right))?,
+            span: span(self.tcx, right.span),
+        };
+        Ok(Statement::SliceSplit {
+            slice,
+            midpoint,
+            left,
+            right,
+        })
     }
     // Recognize the pinned compiler's for desugaring, never user call names.
     // Copied bytes and shared byte references retain the standard next protocol.
@@ -489,28 +566,9 @@ impl<'tcx> BodyExporter<'tcx> {
             return Err(bad());
         }
         let slice = if let hir::ExprKind::MethodCall(_, receiver, [], _) = slice.kind {
-            let method = self
-                .typeck
-                .type_dependent_def_id(slice.hir_id)
-                .ok_or_else(bad)?;
-            let implementation = self.tcx.parent(method);
             // `iter` has no lang item. Check the resolved core inherent slice
             // method, including its impl self type, rather than source spelling.
-            if !matches!(
-                self.tcx.def_kind(implementation),
-                hir::def::DefKind::Impl { of_trait: false }
-            ) || method.is_local()
-                || self.tcx.crate_name(method.krate).as_str() != "core"
-                || self.tcx.item_name(method).as_str() != "iter"
-                || !matches!(
-                    self.tcx
-                        .type_of(implementation)
-                        .instantiate_identity()
-                        .skip_norm_wip()
-                        .kind(),
-                    ty::Slice(_)
-                )
-            {
+            if !self.is_slice_method(slice, "iter") {
                 return Err(bad());
             }
             receiver

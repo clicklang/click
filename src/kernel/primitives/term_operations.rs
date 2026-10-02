@@ -2021,6 +2021,9 @@ impl ConditionTerm {
         fn wide(term: &Bitvector32Term) -> Option<Bitvector32Term> {
             match term {
                 Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
+                Bitvector32Term::Constant(value) if *value <= i32::MAX as u32 => {
+                    Some(Bitvector32Term::UInt64Constant(u64::from(*value)))
+                }
                 Bitvector32Term::Add(left, right) if right.as_const().is_some() => {
                     let Bitvector32Term::UInt32From64(value) = left.as_ref() else {
                         return None;
@@ -2095,6 +2098,32 @@ impl ConditionTerm {
                 };
                 (n == other_n && predecessor(next) == Some(old.as_ref()))
                     .then(|| Self::uint64_less_than(old.as_ref().clone(), n.as_ref().clone()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Sufficient non-wrapping bounds for an unsigned slice remainder length.
+    pub(crate) fn uint64_subtraction_guard(&self) -> Option<Self> {
+        match self {
+            Self::Bitvector64UnsignedLessThan(zero, difference)
+                if zero.uint64_as_const() == Some(0) =>
+            {
+                let Bitvector32Term::UInt64Subtract(length, midpoint) = difference.as_ref() else {
+                    return None;
+                };
+                Some(Self::uint64_less_than(
+                    midpoint.as_ref().clone(),
+                    length.as_ref().clone(),
+                ))
+            }
+            Self::Bitvector64UnsignedLessEqual(difference, upper) => {
+                let Bitvector32Term::UInt64Subtract(length, midpoint) = difference.as_ref() else {
+                    return None;
+                };
+                (length == upper).then(|| {
+                    Self::uint64_less_equal(midpoint.as_ref().clone(), length.as_ref().clone())
+                })
             }
             _ => None,
         }
