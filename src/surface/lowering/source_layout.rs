@@ -652,6 +652,20 @@ impl SourceExecutionLayout {
         self.data.statements.len()
     }
 
+    pub(in crate::surface) fn execution_region_entry(
+        &self,
+        region: CodeRegion,
+    ) -> Result<usize, String> {
+        match region {
+            CodeRegion::Statement(index) => Ok(index),
+            CodeRegion::Loop(index) => self.loop_body_entry(index)
+                .and_then(|body| body.checked_sub(1))
+                .filter(|head| matches!(self.statement(*head).map(|r| r.kind), Some(SourceStatementKind::Loop { loop_index }) if loop_index == index))
+                .ok_or_else(|| format!("`execute_until` cannot resolve loop({index})")),
+            _ => Err("`execute_until` expects a statement or loop region".into()),
+        }
+    }
+
     pub(in crate::surface) fn loop_body_entry(&self, loop_index: usize) -> Option<usize> {
         self.data.loop_bodies.get(&loop_index).copied()
     }

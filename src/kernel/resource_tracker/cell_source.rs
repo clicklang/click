@@ -174,6 +174,11 @@ pub(in crate::kernel) enum StoreSeparatedRangeOrientation {
 /// touches only this index and the named bound premises.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum PointerInRangeEvidence {
+    ExactAlias {
+        alias: Pointer,
+        condition: ConditionTerm,
+        membership: Box<PointerInRangeEvidence>,
+    },
     /// Existing structural constant/affine membership. Retaining this cheap
     /// form keeps ordinary store edges out of the symbolic bound producer.
     Shallow,
@@ -762,6 +767,30 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        Self::for_pointer_direct(pointer, range, assumptions).or_else(|| {
+            assumptions
+                .exact_pointer_aliases(pointer)
+                .find_map(|alias| {
+                    let membership = Self::for_pointer_direct(alias, range, assumptions)?;
+                    let condition = ConditionTerm::pointer_equal(pointer.clone(), alias.clone());
+                    crate::kernel::record_implicit_reasoning_provenance(
+                        assumptions,
+                        &Proposition::ConditionIs(condition.clone(), true),
+                    );
+                    Some(Self::ExactAlias {
+                        alias: alias.clone(),
+                        condition,
+                        membership: Box::new(membership),
+                    })
+                })
+        })
+    }
+
+    fn for_pointer_direct(
+        pointer: &Pointer,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
         if crate::kernel::assumptions::pointer_in_memory_range_shallow_with_facts(
             pointer,
             range,
@@ -787,6 +816,17 @@ impl PointerInRangeEvidence {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Self::ExactAlias {
+            alias,
+            condition,
+            membership,
+        } = self
+        {
+            return *condition == ConditionTerm::pointer_equal(pointer.clone(), alias.clone())
+                && assumptions.exact_condition_value(condition) == Some(true)
+                && !matches!(membership.as_ref(), Self::ExactAlias { .. })
+                && membership.checks(alias, range, assumptions);
+        }
         let Self::Indexed {
             index: retained_index,
             lower,

@@ -1230,9 +1230,7 @@ fn canonicalized_pointer_value_from_int_cell(
     let loaded = if matches!(
         pointer.block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || (pointer.block.starts_with("local:")
-        && registered_load_for_variable(&fresh)
-            .is_some_and(|(memory, _)| memory.has_call_memory_havoc()))
+    ) || pointer.block.starts_with("local:")
     {
         Pointer::symbolic(fresh)
     } else {
@@ -1267,8 +1265,9 @@ fn should_use_symbolic_pointer_identity(
     pointer: &Pointer,
     value_type: CType,
 ) -> bool {
-    // A pointer in fresh heap/temporary storage may target any object. Its
-    // storage block supplies no provenance for the loaded value.
+    // A pointer in heap, temporary, or local storage may target any object.
+    // Its storage block supplies no provenance for the loaded value, including
+    // after loop havoc (which need not be a call-memory havoc).
     // After a call-havoc edge, an unknown pointer-sized cell may contain the
     // address of any live object, including an automatic local. Give that
     // value an opaque identity instead of deriving a fresh offset in the
@@ -1282,8 +1281,8 @@ fn should_use_symbolic_pointer_identity(
     (matches!(
         pointer.block,
         PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || (memory.has_call_memory_havoc()
-        && (pointer_sized_load || pointer.block.starts_with("local:"))))
+    ) || pointer.block.starts_with("local:")
+        || (memory.has_call_memory_havoc() && pointer_sized_load))
         && value_type.is_pointer()
         && memory.known_union_value(pointer, value_type).is_none()
         && memory.known_value(pointer).is_none()
@@ -4243,8 +4242,8 @@ mod tests {
     }
 
     #[test]
-    fn unknown_pointer_after_call_in_local_storage_has_opaque_provenance() {
-        for offset in [0, 8] {
+    fn unknown_pointer_in_local_storage_has_opaque_provenance_with_and_without_call_havoc() {
+        for (offset, call_havoc) in [(0, false), (8, false), (0, true), (8, true)] {
             let cell = Pointer {
                 block: "local:pointer-holder".into(),
                 offset: PointerOffsetTerm::Constant(offset),
@@ -4264,8 +4263,19 @@ mod tests {
             let range =
                 CMemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 8u32.into(), 1);
             let assumptions = PureFactContext::new();
-            let memory =
-                before.with_call_memory_havoc(Variable(944_014), &[range], &assumptions, None);
+            let memory = if call_havoc {
+                before.with_call_memory_havoc(Variable(944_014), &[range], &assumptions, None)
+            } else {
+                // A loop head can forget the field's value without adding a
+                // call-havoc node. The storage address still says nothing
+                // about the pointee's allocation identity.
+                before.with_loop_memory_havoc_preserving_loans(
+                    Variable(944_014),
+                    &BTreeSet::new(),
+                    Some(&[range]),
+                    None,
+                )
+            };
             assert!(memory.known_value(&cell).is_none());
             for logical in [false, true] {
                 let paths = if logical {

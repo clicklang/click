@@ -211,7 +211,7 @@ pub enum Statement {
     },
 }
 
-// Drop-elaborated, acyclic MIR. Ownership events remain explicit in the
+// Drop-elaborated MIR with validated acyclic regions and natural while loops. Ownership events remain explicit in the
 // artifact and are checked by live-value assertions in direct lowering.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

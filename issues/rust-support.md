@@ -238,9 +238,13 @@ source/proof correspondence, and checked resource mapping remain adoption gates.
 
 The [end-to-end adapter trial](../design/charon-trial/README.md) now routes checked
 arithmetic and a restoring owned guard through ULLBC and the existing engine.
+The borrowed-loop checkpoint now proves iteration, termination, and restoration
+with a live guard, including zero iterations and the maximum signed bound.
+It rejects unsupported CFG exits/entries and effectful guards; scaling checks
+cover sequential loops and diamonds. Shared pointer framing retains exact alias
+and separation premises, rather than inferring provenance from local storage.
 Keep migration opt-in until the supported fixtures have equivalent coverage.
-Next compose a borrowed loop with a live guard, bring resolved conversions and
-compact arrays through the same adapter, and establish stable source/proof
+Next bring resolved conversions and compact arrays through the same adapter, and establish stable source/proof
 observations and scaling checks before switching production imports. Preserve source metadata and a
 Click-owned semantic boundary; do not rebuild rustc's HIR-to-MIR semantics just
 to retain syntax. Use the assessment's configuration rather than adopting an
