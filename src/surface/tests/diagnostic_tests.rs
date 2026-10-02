@@ -1406,3 +1406,86 @@ fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
     );
     assert_eq!(error.proof_source_tactic_path(), Some(&[0][..]));
 }
+
+/// A pure theorem's accepted path is retained for a trace, each written
+/// tactic addressed by its source occurrence, and tracing it verifies
+/// neither another theorem nor a C function.
+#[test]
+fn a_passing_theorem_retains_its_accepted_trace_path() {
+    let source = r#"verifying "f.c";
+theorem good(x: int32, y: int32) {
+    requires x == y;
+    ensures y == x by {
+        have y == x by { simp(); }
+        assumption();
+    }
+}
+theorem split(x: int32) {
+    requires x == 1 or x == 2;
+    ensures x >= 1 by {
+        cases(x == 1 or x == 2) {
+            rewrite(x == 1);
+            normalize();
+        } {
+            rewrite(x == 2);
+            normalize();
+        }
+    }
+}
+theorem unproved(x: int32) { ensures x == 0 by { normalize(); } }
+int32 f() { ensures result == 2; } by { step(); simp(); }
+"#;
+    let project = ClickProject::new(
+        "entry.click",
+        [ClickModuleSource::new("entry.click", source, [])],
+    );
+    let c = [("f.c", "int f(void) { return 1; }")];
+    let locate = |claim: &str, path: &[usize]| {
+        let outer = c0_project_tactic_source_position(&project, &c, claim, path[0]).ok()?;
+        let position = if path.len() == 1 {
+            outer
+        } else {
+            nested_tactic_source_position(source, &outer, &path[1..]).ok()?
+        };
+        Some((format!("tactic@{}", position.line), position))
+    };
+    let arm = |claim: &str, path: &[usize], target: &SourcePosition| {
+        let (_, branch) = locate(claim, path)?;
+        tactic_arm_containing_position(source, &branch, target)
+            .ok()
+            .flatten()
+    };
+    with_proof_trace("good", || {
+        verify_c0_project_theorem(&project, &c, "good").unwrap();
+        let trace = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
+        assert_eq!(
+            trace,
+            "proof trace (checked tactics and branch facts):\ntactic@5: have y == x\n  adds: y == x\ntactic@6: assumption()"
+        );
+    });
+    with_proof_trace("split", || {
+        verify_c0_project_theorem(&project, &c, "split").unwrap();
+        let whole = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
+        assert!(whole.ends_with("\ntactic@12: cases"), "{whole}");
+        let right = accepted_proof_trace(
+            &locate,
+            &arm,
+            &|_, _, _| false,
+            Some(&SourcePosition::new(17, 13)),
+        )
+        .unwrap();
+        assert!(
+            right.ends_with(
+                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@16: rewrite\n  tactic@17: normalize()"
+            ),
+            "{right}"
+        );
+        assert!(!right.contains("x == 1"), "{right}");
+    });
+    // The theorem that fails reports the tactic it wrote.
+    let error = verify_c0_project_theorem(&project, &c, "unproved").unwrap_err();
+    assert_eq!(
+        error.proof_source_site(),
+        Some(("unproved.ensures_0", &[0][..]))
+    );
+}
