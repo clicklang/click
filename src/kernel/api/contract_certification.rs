@@ -1215,6 +1215,15 @@ pub(super) fn c_function_contract_certification_assumptions(
     for proposition in quantity_assumptions {
         assumptions = assumptions.assume_proposition(proposition);
     }
+    // The trusted certification builds its own admissible premise context.
+    // Attach the selected caller input to that context once, before the
+    // contract clauses are evaluated; clause reads never publish a frame.
+    caller_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
+    entry_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
     let (required_resources, required_entry_clauses) =
         match evaluate_function_resource_context_with_metadata(
             &entry_state,

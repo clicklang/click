@@ -4960,9 +4960,14 @@ mod tests {
                 .are_pointer_loads_equal(&snapshot, &a, &b)
         );
         assert!(branch.pointers_known_equal(&x, &y));
-        let owner = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(x.clone(), 0u32.into(), 1u32.into(), 4),
-        ));
+        let owner = ResourceContext::new_with_equalities(&available).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                x.clone(),
+                0u32.into(),
+                1u32.into(),
+                4,
+            )),
+        );
         assert!(!owner.permits_memory_read(&y, 4, &available));
         assert!(owner.memory_write_range(&y, 4, &available).is_none());
         assert!(owner.permits_memory_read(&y, 4, &branch));

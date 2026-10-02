@@ -233,10 +233,11 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     ))
                 })?;
                 for preservation in preservation_contexts {
-                    let mut pure_facts = context.pure_facts.to_vec();
-                    pure_facts.extend_from_slice(preservation.pure_facts());
-                    pure_facts.sort();
-                    pure_facts.dedup();
+                    // Retain the checked graph prefix paired with the head's
+                    // resources. The preservation assumptions are its explicit
+                    // delta, not a newly rebuilt equality namespace.
+                    let mut pure_facts = context.pure_facts.clone();
+                    pure_facts.extend(preservation.pure_facts().iter().cloned());
                     if let Some(clause) = loop_clause {
                         let (preservation_tactics, first_generated_tactic_index) =
                             if let Some(tactics) = explicit_tactics {
@@ -308,7 +309,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                     }
                     iteration_contexts.push(PlanningExecutionContext {
                         state: preservation.state().clone(),
-                        pure_facts: pure_facts.into(),
+                        pure_facts,
                         surface_propositions: context.surface_propositions.clone(),
                         recorded_snapshots: context.recorded_snapshots.clone(),
                         case_path: context.case_path.clone(),

@@ -736,10 +736,9 @@ aliases do not become structural matches. Multi-size regressions cover cold
 hits and misses beside unrelated pointer parameters, and controls cover
 partial ranges, consumption, branch isolation, and read width.
 
-This retires the two structural block scans, not all general permission
-lookup. General read/write checks still have spelling and resource-search
-paths for addresses outside the complete indexed fragments. Checked resource
-construction now owns attachment: an empty input captures the closed graph
+This retires the two structural block scans. General read/write permission
+also uses the shared candidate service described below, with bounded refusal
+outside its supported fragments. Checked resource construction owns attachment: an empty input captures the closed graph
 before insertion, and composition advances a prepared lineage. Normalization
 already visits its full input and publishes even when no representation changes. These boundaries also
 cover temporary contexts built during resource-clause evaluation, independent
@@ -840,37 +839,46 @@ late endpoint equality, snapshots, sibling contexts, retired occurrences,
 read/write authority, and same-base non-supplier scaling at multiple sizes.
 
 The symbolic-byte-extent consumer uses this service for known selections.
-Its old unknown-case search remains for milestone 5. General read/write callers
-and structural satisfaction still require milestones 4 and 6; this interface
-is the common support they will use, not a claim that all scans are gone.
+Its old unknown-case search remains for milestone 5. Satisfaction and storage
+consumers retain the separately tracked work in milestones 6–7.
 
-A prepared affine address bucket also retains all flat memory owner occurrences
-separately from views, regardless of whether their extent is concrete or their
-quantity is positive. After exact and concrete interval selection are unknown,
-`write_access_entries` may select a sole owner with symbolic bounds in a complete
-affine block. It checks cardinality without enumerating views or ambiguous owner
-sets. The existing checker then validates positive quantity, alignment, width,
-and bounds using the retained graph checkpoint. A failed selected-owner check
-is final. Resource deltas and graph block merges maintain this persistent summary;
-permission lookup never initializes it by traversing ambient resources.
+General read/write permission uses one shared classifier. Exact address/start
+payloads include eligible partial reads; physical interval hits select retained
+suppliers even when the index cannot establish complete coverage. A miss is
+final only for a complete concrete interval fragment. Otherwise, prepared base
+and affine-class summaries can select a sole supplier by cardinality. Symbolic
+read starts have their own class payload, so a partition rooted in an outer
+storage block does not hide its logical pointer base. A multi-size regression
+selects the left partition beside unrelated same-base ranges without searching
+them; missing bounds and view-only write authority still refuse. Ambiguous
+or unsupported queries refuse before checking. No consumer retries spellings,
+searches a block/frame, or tries another strategy after a failed supplier check.
+Views supply read authority; writes select owners. Quantity, alignment, width,
+signed bounds, initialization, and no-wrap obligations remain checked separately.
 
-This fragment applies only to prepared inputs. Function-entry construction
-publishes its selected resources against the final exported pure context, once
-after provisional clause evaluation and entry-fact construction. Both proof
-drivers retain that context through `ProofFacts::from_source`: selected-fact
-indexes are built at the root, while the source's trusted graph is shared.
-A source with no cached context builds one once. Root conversion must not erase
-the lineage by converting a cached source to a plain proposition vector.
-Deterministic regressions check indexed entry selection and graph sharing with
-zero pure-history readmission over increasing root sizes. A same-base symbolic
-store expands and independently rechecks, including authority/bounds controls.
+Each address has a stable raw application connected to its checked affine
+projection. Completed typed-read equality joins those address applications as
+well as the pointer equality service. Explicit query subterms register before
+pairing class deltas with resource payloads. Opaque pointer-read tokens cannot
+be treated as ordinary offsets using coarse block membership: their supplier
+base must have a checked graph bridge to the query. Persistent siblings retain
+their own admitted read evidence.
 
-The unchanged reduced alias store `q[i] = 7` with `p == q` and `owns p[1..n]`
-now reaches permission lookup with a prepared input but still fails its relative
-address bounds check. Aligning that access through the shared candidate/coverage
-interface remains separate work. Unsupported permission queries still have the
-milestone-4 compatibility path. The symbolic-owner regression measures both
-checker and persistent-index work beside increasing same-class symbolic views.
+`MemoryAccessCandidates::address` aligns the query against the selected
+occurrence's base using the same retained graph. It preserves explicit byte
+increments and their bounds obligations. The unchanged alias store `q[i] = 7`
+with `p == q` and `owns p[1..n]` verifies, expands, and independently rechecks;
+missing equality, bounds, and write authority still reject it.
+
+Function entry and certification publish selected inputs at their construction
+boundary. Clause prefixes capture their checked graph while empty and maintain
+occurrence deltas as they grow. Proof roots and planners use `from_source` to
+retain the graph instead of rebuilding a fresh lineage from a proposition
+vector. Reused borrowed-input authority and certification caller states pair
+against the new claim's premise context at those explicit producer boundaries.
+Permission queries never initialize an index by traversing ambient input.
+Deterministic regressions measure checker and persistent-index work beside
+increasing unrelated resources, same-class views, late merges, and forks.
 
 ## Resource producer publication audit
 

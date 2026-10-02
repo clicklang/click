@@ -54,12 +54,12 @@ provenance, initialization, and snapshot transport.
   graph-based address alignment. The remaining retry/normalization paths in
   satisfaction have not been removed; a passing direct query does not complete
   milestone 6.
-- General read/write permission still retries spellings and can search all
-  resources. Symbolic whole-range readability and storage ownership have
-  their own residual lookup paths. Producer publication is complete, but
-  containment selection and consumer deletion remain unfinished.
+- General read/write permission now uses the shared indexed candidate service,
+  with no spelling retries or ambient resource scans. Symbolic whole-range
+  readability, satisfaction/consumption, and storage ownership still have the
+  residual paths listed in milestones 5–7.
 
-### Seven milestones (milestones 1–3 complete; milestone 4 in progress)
+### Seven milestones (milestones 1–4 complete)
 
 These are seven reviewable outcomes, **not a promise of seven commits**.
 Split an outcome into small green slices when necessary, and record completion
@@ -117,74 +117,31 @@ this list.
    queries beside increasing same-base symbolic non-suppliers. The symbolic
    extent consumer uses known selections; its unknown-case search is deleted
    in milestone 5, after general read/write migration in milestone 4.
-4. **Delete general read/write permission retries.** Route
-   `ResourceContext::permits_memory_read` and `memory_write_range` entirely
-   through the shared candidate contract. Remove `pointer_spellings`, the
-   per-spelling block searches, and the final `self.iter()` searches. A complete
-   indexed miss is final; unknown support is a bounded, actionable refusal or
-   an explicitly supplied witness, never another lookup strategy. Keep read
-   views distinct from write authority and preserve all permission checks.
+4. **Delete general read/write permission retries — complete.**
+   `ResourceContext::permits_memory_read` and `memory_write_range` use one shared
+   candidate classifier. Their `pointer_spellings`, per-spelling block searches,
+   and final `self.iter()` searches are deleted. The classifier selects exact
+   address/start payloads, retained physical intervals, or a sole indexed base
+   supplier (including logical read starts for symbolic partitions); it never searches resources after a failed permission check.
+   A known interval hit remains useful when coverage is incomplete; only a
+   complete concrete index can make an interval miss decisive. Unsupported or
+   ambiguous selection refuses boundedly. Quantity, width, signed bounds,
+   initialization, and view versus owner authority remain ordinary kernel checks.
 
-   **Partial checkpoint:** concrete interval writes now have a separate owned
-   supplier summary. They no longer enumerate overlapping read views to find
-   an owner. A deterministic regression varies covering views from 16 to 1,024
-   while retaining one owner, measuring both checker and persistent-map work.
-   The general permission retries have **not** been removed.
+   Stable raw address applications follow checked affine projections and typed
+   read equalities. Explicit query dependencies register before class deltas are
+   paired, so a late subterm merge cannot strand occurrence payloads. Loaded
+   pointer tokens need a checked base bridge, not coarse block membership.
+   The unchanged alias-store regression `q[i] = 7`, with `p == q`, `1 <= i`,
+   `i < n`, and `owns p[1..n]`, verifies, expands, and rechecks; removing equality,
+   either bound, or write authority still rejects it.
 
-   The attempted wholesale removal exposed two prerequisites: provisional
-   resource lowering sometimes checks reads with a fresh, empty pure context,
-   and symbolic per-access coverage needs more than the whole-range evidence
-   introduced in milestone 3. Examples include lowering `readable_input` after
-   unfolding, and writing into an owned symbolic range with a nonzero lower
-   bound. Publishing the ambient resource input during these queries restores
-   some behavior but violates the no-scan contract; it is not an acceptable fix.
-   The broad prototype was withdrawn. Before deleting retries, reduce these
-   boundaries to independent regressions and pass retained checked context or
-   explicit supplier evidence through the shared interface. Do not grow this
-   into separate fixes for each failing loop, contract, or fold consumer.
-
-   **Follow-up context slice:** composite fold lowering now passes its retained
-   checked assumptions through resource arguments, body clauses, witness
-   selection, and reconstruction of the selected resource for its certificate.
-   It no longer starts those reads in an empty context. A reduced regression
-   folds `tag(q[i])` with a view of `p[0..n]`, checked `p == q`, and index bounds;
-   ordinary verification and expanded rechecking agree. Missing equality or
-   either bound is still refused. This is context plumbing, not a new graph
-   rule or query-time resource publication. Other provisional read boundaries
-   and the symbolic per-access supplier migration remain to be reduced before
-   the general retries can be removed.
-   **Symbolic write-selection slice:** a prepared affine address class now
-   retains all flat memory owners separately from views. When the class has
-   exactly one owner with symbolic bounds, `memory_write_range` selects that
-   occurrence without iterating views, then checks positive quantity and the
-   ordinary access bounds. Late base equalities, resource deltas, and persistent
-   forks maintain the summary. Ambiguous classes return unknown before checking
-   candidates; the general compatibility retries still exist outside this
-   fragment. A red scaling regression measured persistent-index work growing
-   from 672 to 9,837 as same-class views grew from 16 to 1,024; indexed selection
-   removes that traversal. Controls cover missing equality/bounds, endpoints,
-   access width, view-only authority, nonpositive quantities, and owner deltas.
-
-   **Execution publication slice:** selected function-entry resources now
-   publish once against the final exported pure context, after provisional
-   clause evaluation and entry-fact construction. Both proof drivers retain
-   that context through root construction instead of converting to a vector
-   and rebuilding a disconnected graph. `ProofFacts::from_source` builds its
-   own selected-fact indexes while sharing a cached source's trusted graph.
-   A red regression checks known indexed write selection at entry and after
-   root conversion; a deterministic test at 16, 64, 256, and 1,024 facts checks
-   that cached root conversion readmits no pure history. The same-base symbolic
-   store verifies, expands, and rechecks, with missing-bound and view-only
-   controls. No permission lookup publishes ambient input.
-
-   The unchanged C reduction `q[i] = 7` with checked `p == q`, `1 <= i`,
-   `i < n`, and `owns p[1..n]` still fails ordinary verification. Instrumentation
-   now confirms a **prepared** index at its write permission lookup. The
-   remaining refusal asks for bounds on the relative address `((q + i) - p)`;
-   publication alone does not establish those bounds through the existing
-   candidate/coverage interface. Keep this reduction for the next narrow
-   address-alignment slice, without changing C or adding alias-spelling
-   searches. General retry deletion remains unfinished.
+   Provisional clause prefixes capture an empty input before admitting memory
+   occurrences. Proof/planning conversions preserve their checked source graph.
+   Cached borrowed-input authority and final certification pair their explicit
+   input at the producer boundary when the premise context changes. Permission
+   queries never publish the ambient frame. Existing multi-size regressions
+   cover unrelated resources, same-class views, late merges, deltas, and forks.
 5. **Delete symbolic-range read searches.** Migrate
    `memory_state::resource_context_has_symbolic_range_read`. Remove its
    exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
@@ -213,12 +170,11 @@ this list.
    for a supplier. Close with source audit, expansion/rechecking, deterministic
    scaling, and the full gate.
 
-Milestones 1–3 establish the common interface. Milestones 4–7 migrate and
+Milestones 1–4 establish and migrate the common permission interface. Milestones 5–7 migrate and
 remove its remaining consumers; they must not introduce their own alias walks
 or containment indexes. Do not implement several independently evolving
-fallback replacements in parallel. Continue milestone 4: delete general
-read/write permission retries using shared bounded supplier evidence, after
-reducing the provisional read-context and symbolic per-access gaps above.
+fallback replacements in parallel. Continue with milestone 5: migrate the
+symbolic-range read search to retained indexed supplier evidence.
 
 ### Meaning of “no scans” and completion
 

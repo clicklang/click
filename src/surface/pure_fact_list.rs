@@ -168,6 +168,18 @@ impl<'a> IntoIterator for &'a PureFactList {
 }
 
 impl PureFactList {
+    /// Retain an already checked source's graph while materializing the
+    /// ordered syntax needed by the surface driver. Re-admitting this prefix
+    /// would disconnect resources published against the source context.
+    pub(crate) fn from_source(source: &(impl PropositionSource + ?Sized)) -> Self {
+        let facts = source
+            .propositions()
+            .map(crate::kernel::clone_proposition_iteratively)
+            .collect::<Vec<_>>();
+        let built = BuiltContext(Mutex::new(Some((facts.len(), source.pure_context()))));
+        Self::with_built_context(facts, built)
+    }
+
     /// `facts` with the context `built` holds for a prefix of them.
     pub(crate) fn with_built_context(facts: Vec<Proposition>, built: BuiltContext) -> Self {
         Self {
