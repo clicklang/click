@@ -103,6 +103,8 @@ struct OpaqueImport {
     owned_members: u32,
     /// Symbolic cardinality is admitted only through a checked control wrapper.
     entry_symbolic_members: Option<Bitvector32Term>,
+    /// Whole-batch custody is independent of the authority holder.
+    symbolic_member_holder: Option<Holder>,
     symbolic_delta: Option<(bool, Bitvector32Term)>,
     /// Only a checked control wrapper can supply this immutable entry load.
     entry_count: Option<Bitvector32Term>,
@@ -590,6 +592,7 @@ impl CreationEvents {
                 entry_owned_members: owned_members,
                 owned_members,
                 entry_symbolic_members: symbolic_members.clone(),
+                symbolic_member_holder: symbolic_members.as_ref().map(|_| self.0.opaque_actor),
                 symbolic_delta: None,
                 entry_count,
                 retired_authority: false,
@@ -838,13 +841,7 @@ impl CreationEvents {
                     .copied()
                     .unwrap_or(0)
                     > 0
-                    || (import.authority_holder == self.0.opaque_actor
-                        && import
-                            .symbolic_delta
-                            .as_ref()
-                            .map_or(import.entry_symbolic_members.is_some(), |(produce, _)| {
-                                *produce
-                            })))
+                    || import.symbolic_member_holder == Some(self.0.opaque_actor))
         })
     }
 
@@ -1032,6 +1029,7 @@ impl CreationEvents {
         holders
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn transfer_opaque(
         &self,
         from: &Self,
@@ -1040,19 +1038,39 @@ impl CreationEvents {
         member_description: &ResourceDescription,
         authority_fact: bool,
         quantity: &Bitvector32Term,
+        assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
         let import = self
             .0
             .opaque_imports
             .get(description)
             .ok_or(CreationRefusal::MissingAuthority)?;
-        if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
-            return Err(CreationRefusal::InvalidQuantity);
-        }
-        let quantity = quantity
-            .as_const()
-            .filter(|q| *q > 0 && *q <= i32::MAX as u32)
-            .ok_or(CreationRefusal::InvalidQuantity)?;
+        // Transfer an unchanged whole symbolic batch; splitting or transporting
+        // a batch after a population update remains outside this checkpoint.
+        let symbolic_batch = !authority_fact && import.entry_symbolic_members.is_some();
+        let quantity = if symbolic_batch {
+            if import.symbolic_delta.is_some()
+                || !same_quantity(
+                    import.entry_symbolic_members.as_ref().unwrap(),
+                    quantity,
+                    assumptions,
+                )
+            {
+                return Err(CreationRefusal::InvalidQuantity);
+            }
+            // Numeric batches are bounded by i32::MAX. This disjoint cache tag
+            // avoids using a deep symbolic expression as a cache key.
+            u32::MAX
+        } else {
+            quantity
+                .as_const()
+                .filter(|q| *q > 0 && *q <= i32::MAX as u32)
+                .ok_or(if authority_fact {
+                    CreationRefusal::InvalidQuantity
+                } else {
+                    CreationRefusal::MissingMembers
+                })?
+        };
         let sender = from.0.opaque_actor;
         let receiver = to.0.opaque_actor;
         let key = (
@@ -1086,7 +1104,19 @@ impl CreationEvents {
                 holders = Self::adjust_rights(holders, sender, true, false);
                 holders = Self::adjust_rights(holders, receiver, false, true);
             }
+        } else if symbolic_batch {
+            if import.retired_authority || import.symbolic_member_holder != Some(sender) {
+                return Err(CreationRefusal::MissingMembers);
+            }
+            updated.symbolic_member_holder = Some(receiver);
+            if sender != receiver {
+                holders = Self::adjust_rights(holders, sender, true, false);
+                holders = Self::adjust_rights(holders, receiver, false, true);
+            }
         } else {
+            if import.entry_symbolic_members.is_some() || import.symbolic_delta.is_some() {
+                return Err(CreationRefusal::InvalidQuantity);
+            }
             let private_key = Self::exact_count_key(member_description);
             if let Some(member) = import.private_members.get(&private_key) {
                 if quantity != 1 || member.owner != Some(sender) {
@@ -1752,7 +1782,9 @@ impl CreationEvents {
             if import.owned_members != 0 || import.entry_symbolic_members.is_some() {
                 return Err(CreationRefusal::MissingMembers);
             }
-        } else if import.entry_symbolic_members.as_ref() != Some(quantity) {
+        } else if import.entry_symbolic_members.as_ref() != Some(quantity)
+            || import.symbolic_member_holder != Some(self.0.opaque_actor)
+        {
             return Err(CreationRefusal::MissingMembers);
         }
         let after = Self(Arc::new(Root {
@@ -1785,6 +1817,7 @@ impl CreationEvents {
                 description.clone(),
                 OpaqueImport {
                     symbolic_delta: Some((produce, quantity.clone())),
+                    symbolic_member_holder: produce.then_some(self.0.opaque_actor),
                     ..import.clone()
                 },
             ),
@@ -2208,6 +2241,12 @@ impl CreationEvents {
         quantity: &Bitvector32Term,
         assumptions: &PureFactContext,
     ) -> Result<Self, CreationRefusal> {
+        // Zero ownership transports no member capability, including when a
+        // checked contract equality establishes that a field-valued quantity
+        // is zero. It cannot move the authority or justify a unit operation.
+        if !authority_fact && same_quantity(quantity, &Bitvector32Term::Constant(0), assumptions) {
+            return Ok(self.clone());
+        }
         if let Some(scope) = self.governing_authority(description)
             && let Some(import) = self.0.opaque_imports.get(&scope)
         {
@@ -2223,7 +2262,15 @@ impl CreationEvents {
             {
                 return Err(CreationRefusal::InvalidMember);
             }
-            return self.transfer_opaque(from, to, &scope, description, authority_fact, quantity);
+            return self.transfer_opaque(
+                from,
+                to,
+                &scope,
+                description,
+                authority_fact,
+                quantity,
+                assumptions,
+            );
         }
         let Some(AlgebraicValue::C(CValue::Pointer(pointer))) = description.arguments().first()
         else {

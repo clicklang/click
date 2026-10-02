@@ -2521,10 +2521,14 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
             ResourceFamily::Composite | ResourceFamily::PopulationAuthority
         )
     };
+    let protected = authority_mode_protected_families(interface);
     let admitted = |spec: &&CResourceSpec| {
         spec.role() == CResourceTransferRole::Borrow
             && spec.access() == CResourceAccessMode::Own
-            && spec.quantity() == &CResourceQuantity::One
+            && (spec.quantity() == &CResourceQuantity::One
+                || matches!(spec.term(), CResourceTerm::Composite { name, .. }
+                    if protected.contains(name.as_str())
+                        && authority_mode_member_quantity_admitted(interface, spec)))
             && spec.guard().is_none()
             && spec.resource_arguments().is_empty()
     };
@@ -2547,7 +2551,7 @@ fn authority_mode_preserves_resource_contract(interface: &CFunctionContractInter
         && inputs
             .iter()
             .zip(outputs)
-            .all(|(left, right)| left.term() == right.term())
+            .all(|(left, right)| left.term() == right.term() && left.quantity() == right.quantity())
 }
 
 /// Direct population-like companions remain conserved. A control wrapper's
