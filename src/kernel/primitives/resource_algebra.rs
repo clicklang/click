@@ -2462,23 +2462,6 @@ impl ResourceContext {
             .map(|entry| self.fact(*entry))
     }
 
-    /// The memory facts whose range base is spelled exactly `base`, from the
-    /// base index. A subset of [`Self::memory_block_facts`]: a lookup that
-    /// usually succeeds on the range written against its own base asks these
-    /// first and falls back to the wider scan only on a miss.
-    pub(in crate::kernel) fn memory_base_facts(
-        &self,
-        base: &Pointer,
-    ) -> impl Iterator<Item = &CResourceFact> {
-        self.storage
-            .index
-            .memory_by_base
-            .get(base)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .map(|entry| self.fact(*entry))
-    }
-
     /// Necessary-shape candidates for proof-aware direct resource matching.
     /// Snapshot-insensitive matching cannot change a pointer block, resource
     /// family, composite/token name, or arity, so unrelated facts need not
