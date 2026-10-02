@@ -817,6 +817,17 @@ impl PureFactContext {
                 .map(AtomicPropositionDerivationEvidence::BitvectorEqualityPath),
             _ => None,
         };
+        let pinned_constant_equality_evidence = match proposition {
+            Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true)
+                if self.exact_constant_equalities.get(left.as_ref()).is_some()
+                    || self.exact_constant_equalities.get(right.as_ref()).is_some() =>
+            {
+                self.direct_bitvector_equality_evidence(left, right)
+                    .map(Box::new)
+                    .map(AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality)
+            }
+            _ => None,
+        };
         let le_and_not_lt_equality_evidence = match proposition {
             Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) => {
                 let less_equal =
@@ -1327,6 +1338,7 @@ impl PureFactContext {
             .or(successor_le_implies_lt_evidence)
             .or(constant_lower_bound_weakening_evidence)
             .or(negated_strict_successor_bound_evidence)
+            .or(pinned_constant_equality_evidence)
             .or(signed_order_evidence)
             .or(increment_upper_bound_evidence)
             .or(increment_constant_upper_bound_evidence)
@@ -2007,6 +2019,15 @@ impl PureFactContext {
                 &value,
                 &Bitvector32Term::Constant(1),
             );
+        }
+        if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
+        {
+            let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) =
+                proposition
+            else {
+                return false;
+            };
+            return evidence.checks(left, right, self);
         }
         if let AtomicPropositionDerivationEvidence::Int32LeAndNotLtImpliesEquality(evidence) =
             evidence

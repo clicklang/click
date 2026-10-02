@@ -8250,6 +8250,7 @@ pub(crate) enum DirectBitvectorEqualityEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SignedConstantEvidence {
     Constant,
+    ExactEquality(Box<Proposition>),
     SingletonBounds {
         variable: Variable,
         lower: IndexedSignedOrderBoundEvidence,
@@ -8259,6 +8260,7 @@ pub(crate) enum SignedConstantEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct IndexedSignedOrderBoundEvidence {
+    pub(in crate::kernel) other_equality: Option<Box<Proposition>>,
     pub(in crate::kernel) endpoint: Bitvector32Term,
     pub(in crate::kernel) other: Bitvector32Term,
     pub(in crate::kernel) strict: bool,
@@ -8453,6 +8455,7 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     LoadAddressCongruence(Box<LoadAddressCongruenceEvidence>),
     PointerOffsetMemoryDag(Box<PointerOffsetEqualityEvidence>),
     BitvectorEqualityPath(Vec<BitvectorEqualityDerivationStep>),
+    Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
     SignedOrderPath(Vec<SignedOrderDerivationStep>),
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),

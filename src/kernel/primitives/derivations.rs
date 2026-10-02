@@ -13,6 +13,19 @@ impl Theorem {
 }
 
 impl PropositionDerivation {
+    /// Whether this equality retained exact constants and singleton bounds.
+    /// Surface transcription uses only the retained context premises to emit
+    /// an independently checked signed arithmetic certificate.
+    pub fn is_int32_pinned_constant_equality(&self) -> bool {
+        matches!(
+            &self.rule,
+            PropositionDerivationRule::ContextualAtomic {
+                evidence: AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(_),
+                ..
+            }
+        )
+    }
+
     pub fn conclusion(&self) -> &Proposition {
         &self.conclusion
     }
@@ -855,6 +868,25 @@ impl PointerOffsetCongruenceEvidence {
     }
 }
 
+impl SignedConstantEvidence {
+    pub(in crate::kernel) fn exact_equality_value(
+        term: &Bitvector32Term,
+        source: &Proposition,
+    ) -> Option<i64> {
+        let Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), true) = source
+        else {
+            return None;
+        };
+        if left.as_ref() == term {
+            signed_bitvector_constant(right)
+        } else if right.as_ref() == term {
+            signed_bitvector_constant(left)
+        } else {
+            None
+        }
+    }
+}
+
 impl DirectBitvectorEqualityEvidence {
     pub(in crate::kernel) fn checks(
         &self,
@@ -882,6 +914,11 @@ impl DirectBitvectorEqualityEvidence {
                     |term: &Bitvector32Term, evidence: &SignedConstantEvidence| match evidence {
                         SignedConstantEvidence::Constant => {
                             signed_bitvector_constant(term) == Some(*value)
+                        }
+                        SignedConstantEvidence::ExactEquality(source) => {
+                            assumptions.contains_assumed_exact(source)
+                                && SignedConstantEvidence::exact_equality_value(term, source)
+                                    == Some(*value)
                         }
                         SignedConstantEvidence::SingletonBounds {
                             variable,
@@ -929,7 +966,17 @@ impl DirectBitvectorEqualityEvidence {
                                     {
                                         return None;
                                     }
-                                    let bound = signed_bitvector_constant(&evidence.other)?;
+                                    let bound = if let Some(source) = &evidence.other_equality {
+                                        if !assumptions.contains_assumed_exact(source) {
+                                            return None;
+                                        }
+                                        SignedConstantEvidence::exact_equality_value(
+                                            &evidence.other,
+                                            source,
+                                        )?
+                                    } else {
+                                        signed_bitvector_constant(&evidence.other)?
+                                    };
                                     if lower_bound {
                                         if evidence.strict {
                                             bound.checked_add(1)
@@ -983,9 +1030,19 @@ impl DirectBitvectorEqualityEvidence {
     fn collect_context_premises(&self, premises: &mut BTreeSet<Proposition>) {
         let collect_signed = |evidence: &SignedConstantEvidence,
                               premises: &mut BTreeSet<Proposition>| {
-            if let SignedConstantEvidence::SingletonBounds { lower, upper, .. } = evidence {
-                premises.insert(lower.source.as_ref().clone());
-                premises.insert(upper.source.as_ref().clone());
+            match evidence {
+                SignedConstantEvidence::Constant => {}
+                SignedConstantEvidence::ExactEquality(source) => {
+                    premises.insert(source.as_ref().clone());
+                }
+                SignedConstantEvidence::SingletonBounds { lower, upper, .. } => {
+                    for bound in [lower, upper] {
+                        premises.insert(bound.source.as_ref().clone());
+                        if let Some(source) = &bound.other_equality {
+                            premises.insert(source.as_ref().clone());
+                        }
+                    }
+                }
             }
         };
         match self {

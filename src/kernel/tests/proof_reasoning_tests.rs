@@ -8929,3 +8929,41 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         constant(5)
     )));
 }
+
+#[test]
+fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
+    let i = Bitvector32Term::Variable(Variable(9_890_001));
+    let n = Bitvector32Term::Variable(Variable(9_890_002));
+    let lower = Proposition::ConditionIs(
+        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), i.clone()),
+        true,
+    );
+    let upper =
+        Proposition::ConditionIs(ConditionTerm::signed_less_equal(i.clone(), n.clone()), true);
+    let pinned = Proposition::ConditionIs(
+        ConditionTerm::equal(n.clone(), Bitvector32Term::Constant(0)),
+        true,
+    );
+    let goal = Proposition::ConditionIs(ConditionTerm::equal(i, n), true);
+    let facts = PureFactContext::new()
+        .assume_proposition(lower.clone())
+        .assume_proposition(upper.clone())
+        .assume_proposition(pinned.clone());
+    let proof = facts
+        .derive_simp_proposition(&goal)
+        .expect("typed singleton equality");
+    assert!(proof.check(&facts));
+    assert!(proof.is_int32_pinned_constant_equality());
+    assert_eq!(
+        proof
+            .context_premises()
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([lower.clone(), upper.clone(), pinned.clone()])
+    );
+    for missing in [lower, upper, pinned] {
+        let restricted = facts.without_exact_fact(&missing);
+        assert!(!proof.check(&restricted));
+        assert!(restricted.derive_simp_proposition(&goal).is_none());
+    }
+}
