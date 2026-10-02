@@ -1172,7 +1172,7 @@ fn kernel_claim_goal(
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
-) -> Option<(Proposition, Vec<Proposition>)> {
+) -> Option<crate::kernel::CClaimGoal> {
     let mut goals = match claim {
         FunctionClaimRef::Ensure(source_index, _) => {
             let contract_index =
@@ -1242,7 +1242,7 @@ fn kernel_claim_goal_forms(
     outcome: &CFunctionOutcome,
     assumptions: &PureFactContext,
     unfolded_predicates: &[String],
-) -> Vec<(Proposition, Vec<Proposition>)> {
+) -> Vec<crate::kernel::CClaimGoal> {
     let mut forms = Vec::new();
     for unfolds in [&[][..], unfolded_predicates] {
         if let Some(form) = kernel_claim_goal(
@@ -1271,12 +1271,35 @@ fn required_outcome<'p, 'a>(root: &'p Option<Proof<'a>>) -> Result<&'p Proof<'a>
 
 fn focus_claim_goal<'a>(
     root: &Proof<'a>,
-    kernel_goal: Option<(Proposition, Vec<Proposition>)>,
+    kernel_goal: Option<crate::kernel::CClaimGoal>,
     surface_goal: &ClickProposition,
 ) -> Result<Proof<'a>, ClickError> {
     match kernel_goal {
-        Some((goal, facts)) => root.focus_lowered_outcome_claim(goal, &facts, surface_goal),
+        Some(goal) => root.focus_kernel_claim_goal(&goal, surface_goal),
         None => root.focus_fixed_state_surface_goal(surface_goal),
+    }
+}
+
+/// A goal a closer tries for one claim: the kernel's own goal for the claim,
+/// or a proposition the proof side lowered or rewrote for it.
+#[derive(Clone)]
+enum ClaimGoalCandidate {
+    Kernel(crate::kernel::CClaimGoal),
+    Lowered(Proposition),
+}
+
+impl ClaimGoalCandidate {
+    fn focus<'a>(
+        &self,
+        root: &Proof<'a>,
+        surface_goal: &ClickProposition,
+    ) -> Result<Proof<'a>, ClickError> {
+        match self {
+            Self::Kernel(goal) => root.focus_kernel_claim_goal(goal, surface_goal),
+            Self::Lowered(goal) => {
+                root.focus_lowered_outcome_claim(goal.clone(), &[], surface_goal)
+            }
+        }
     }
 }
 
@@ -1623,7 +1646,9 @@ fn close_claim_directly_from_outcome<'a>(
     // closure lacked is not pushed past the item limit by unrelated ones.
     let path_facts = root.facts().propositions().cloned().collect::<Vec<_>>();
     let context = describe_goal_proof_context(
-        listed_goal.as_ref().map(|(goal, _)| goal),
+        listed_goal
+            .as_ref()
+            .map(crate::kernel::CClaimGoal::proposition),
         &path_facts,
         &path_case_facts(entry_facts, execution_paths, path_index),
         resource_facts,
@@ -3067,11 +3092,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // failed rewritten proof as a success.
                                     if rewritten_claim_proofs[claim_index].is_some() {
                                         if let Some(root) = &fixed_state_root {
-                                            for (original, _) in &kernel_goals {
+                                            for original in &kernel_goals {
                                                 let candidate = root
-                                                    .focus_fixed_state_goal_with_surface(
-                                                        original.clone(),
-                                                        Some(surface_goal.clone()),
+                                                    .focus_bare_kernel_claim_goal(
+                                                        original,
+                                                        surface_goal,
                                                     )?
                                                     .apply_step(ProofStep::Assumption);
                                                 if let Ok(proof) = candidate {
@@ -3096,22 +3121,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &rewritten_claim_goals[claim_index],
                                         kernel_goals.is_empty(),
                                     ) {
-                                        (Some(goal), _) => vec![(goal.clone(), Vec::new())],
-                                        (None, false) => kernel_goals,
-                                        (None, true) => vec![(
+                                        (Some(goal), _) => {
+                                            vec![ClaimGoalCandidate::Lowered(goal.clone())]
+                                        }
+                                        (None, false) => kernel_goals
+                                            .into_iter()
+                                            .map(ClaimGoalCandidate::Kernel)
+                                            .collect(),
+                                        (None, true) => vec![ClaimGoalCandidate::Lowered({
+                                            if let Some(recorded) = outcome_surface_propositions
+                                                .available_kernel_matching(surface_goal, |fact| {
+                                                    path_requirements.contains_top_level(fact)
+                                                })
                                             {
-                                                if let Some(recorded) = outcome_surface_propositions
-                                                    .available_kernel_matching(
-                                                        surface_goal,
-                                                        |fact| {
-                                                            path_requirements
-                                                                .contains_top_level(fact)
-                                                        },
-                                                    )
-                                                {
-                                                    recorded.clone()
-                                                } else {
-                                                    lower_ensure_proposition_goal(
+                                                recorded.clone()
+                                            } else {
+                                                lower_ensure_proposition_goal(
                                             &path_requirements,
                                             surface_goal,
                                             parsed_function.parameters(),
@@ -3128,10 +3153,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 "`{proof_label}` path {path_index}, tactic {tactic_index}: `assumption` could not lower goal: {message}"
                                             ))
                                         })?
-                                                }
-                                            },
-                                            Vec::new(),
-                                        )],
+                                            }
+                                        })],
                                     };
                                     // A goal rewritten on the retained outcome
                                     // proof is closed on that proof.
@@ -3162,13 +3185,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let mut closed = None;
                                     let mut last_error = None;
-                                    for (goal, goal_facts) in goal_candidates {
-                                        match fixed_state_root
-                                            .focus_lowered_outcome_claim(
-                                                goal,
-                                                &goal_facts,
-                                                surface_goal,
-                                            )?
+                                    for goal in goal_candidates {
+                                        match goal
+                                            .focus(fixed_state_root, surface_goal)?
                                             .apply_step(ProofStep::Assumption)
                                         {
                                             Ok(proof) => {
@@ -3332,9 +3351,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &rewritten_claim_goals[claim_index],
                                         kernel_goals.is_empty(),
                                     ) {
-                                        (Some(goal), _) => vec![(goal.clone(), Vec::new())],
-                                        (None, false) => kernel_goals,
-                                        (None, true) => vec![(
+                                        (Some(goal), _) => vec![ClaimGoalCandidate::Lowered(goal.clone())],
+                                        (None, false) => kernel_goals
+                                            .into_iter()
+                                            .map(ClaimGoalCandidate::Kernel)
+                                            .collect(),
+                                        (None, true) => vec![ClaimGoalCandidate::Lowered(
                                             lower_ensure_proposition_goal(
                                                 &path_requirements,
                                                 surface_goal,
@@ -3352,7 +3374,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: `{closer_name}` could not lower goal: {message}"
                                                 ))
                                             })?,
-                                            Vec::new(),
                                         )],
                                     };
                                     // A goal rewritten on the retained outcome
@@ -3396,13 +3417,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let mut closed = None;
                                     let mut last_error = None;
-                                    for (goal, goal_facts) in goal_candidates {
-                                        let focused = fixed_state_root
-                                            .focus_lowered_outcome_claim(
-                                                goal,
-                                                &goal_facts,
-                                                surface_goal,
-                                            )?;
+                                    for goal in goal_candidates {
+                                        let focused = goal.focus(fixed_state_root, surface_goal)?;
                                         let candidate = if let PostExecutionTactic::Both(both) =
                                             post_tactic
                                         {
@@ -3620,9 +3636,12 @@ pub(super) fn finish_ordered_proof<'a>(
                                         &rewritten_claim_goals[claim_index],
                                         kernel_goals.is_empty(),
                                     ) {
-                                        (Some(goal), _) => vec![(goal.clone(), Vec::new())],
-                                        (None, false) => kernel_goals,
-                                        (None, true) => vec![(
+                                        (Some(goal), _) => vec![ClaimGoalCandidate::Lowered(goal.clone())],
+                                        (None, false) => kernel_goals
+                                            .into_iter()
+                                            .map(ClaimGoalCandidate::Kernel)
+                                            .collect(),
+                                        (None, true) => vec![ClaimGoalCandidate::Lowered(
                                             lower_ensure_proposition_goal(
                                                 &path_requirements,
                                                 surface_goal,
@@ -3640,7 +3659,6 @@ pub(super) fn finish_ordered_proof<'a>(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: `rewrite` could not lower goal: {message}"
                                                 ))
                                             })?,
-                                            Vec::new(),
                                         )],
                                     };
                                     // Continue the retained claim judgment, or
@@ -3666,16 +3684,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                         }
                                     } else {
                                         let evolving = required_outcome(&outcome_proof)?;
-                                        for (goal, goal_facts) in &goal_candidates {
-                                            match evolving
-                                                .focus_lowered_outcome_claim(
-                                                    goal.clone(),
-                                                    goal_facts,
-                                                    surface_goal,
-                                                )?
-                                                .apply_step(ProofStep::Rewrite(
-                                                    surface_equality.clone(),
-                                                )) {
+                                        for goal in &goal_candidates {
+                                            match goal.focus(evolving, surface_goal)?.apply_step(
+                                                ProofStep::Rewrite(surface_equality.clone()),
+                                            ) {
                                                 Ok(proof) => {
                                                     let certificate = proof.certificate();
                                                     rewritten_result = Some((
@@ -4165,9 +4177,26 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 Vec::new(),
                                             )
                                         } else {
+                                            let claim_goals = direct_claims
+                                                .iter()
+                                                .map(|(claim_index, _, _)| {
+                                                    kernel_claim_goal_forms(
+                                                        function,
+                                                        &claims[*claim_index],
+                                                        contract_pre_state,
+                                                        arguments,
+                                                        &outcome,
+                                                        &assumptions_from_propositions(
+                                                            &path_requirements,
+                                                        ),
+                                                        &unfolded_predicates,
+                                                    )
+                                                })
+                                                .collect::<Vec<_>>();
                                             direct_proof.complete_fixed_state_obligations_since(
                                                 &direct_base,
                                                 &surface_goals,
+                                                &claim_goals,
                                             )?
                                         };
                                         // Keep the checked authority for the original claims,

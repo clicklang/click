@@ -66,6 +66,9 @@ pub(crate) struct PropositionObligation<S, O> {
     proposition: Arc<Proposition>,
     pub(crate) presentation: S,
     pub(crate) outcome: Option<O>,
+    /// The contract claim this obligation states, when it was opened from
+    /// the kernel's goal for that claim.
+    claim: Option<crate::kernel::CFunctionContractClaimTarget>,
 }
 
 impl<S, O> PropositionObligation<S, O> {
@@ -74,6 +77,7 @@ impl<S, O> PropositionObligation<S, O> {
             proposition: Arc::new(proposition),
             presentation,
             outcome: None,
+            claim: None,
         }
     }
 
@@ -82,6 +86,41 @@ impl<S, O> PropositionObligation<S, O> {
             proposition: Arc::new(proposition),
             presentation,
             outcome: Some(outcome),
+            claim: None,
+        }
+    }
+
+    /// The obligation to prove the kernel's goal for one contract claim. Its
+    /// proposition is the goal's own, so the claim it records is the claim
+    /// it states.
+    pub(crate) fn for_claim_goal(
+        goal: &crate::kernel::CClaimGoal,
+        presentation: S,
+        outcome: Option<O>,
+    ) -> Self {
+        Self {
+            proposition: Arc::new(goal.proposition().clone()),
+            presentation,
+            outcome,
+            claim: Some(goal.target().clone()),
+        }
+    }
+
+    pub(crate) fn claim(&self) -> Option<&crate::kernel::CFunctionContractClaimTarget> {
+        self.claim.as_ref()
+    }
+
+    /// The same obligation under another presentation: what is to be proved,
+    /// and for which claim, is unchanged.
+    pub(crate) fn with_presentation(&self, presentation: S) -> Self
+    where
+        O: Clone,
+    {
+        Self {
+            proposition: self.proposition.clone(),
+            presentation,
+            outcome: self.outcome.clone(),
+            claim: self.claim.clone(),
         }
     }
 
@@ -142,6 +181,7 @@ pub(crate) struct CheckedProposition {
     proposition: Arc<Proposition>,
     root_assumptions: super::ProofFacts,
     outcome: Option<OutcomeProofCore>,
+    claim: Option<crate::kernel::CFunctionContractClaimTarget>,
 }
 
 impl CheckedProposition {
@@ -149,12 +189,19 @@ impl CheckedProposition {
         proposition: Proposition,
         root_assumptions: super::ProofFacts,
         outcome: Option<OutcomeProofCore>,
+        claim: Option<crate::kernel::CFunctionContractClaimTarget>,
     ) -> Self {
         Self {
             proposition: Arc::new(proposition),
             root_assumptions,
             outcome,
+            claim,
         }
+    }
+
+    /// The contract claim whose kernel-issued goal this proof closed.
+    pub(crate) fn claim(&self) -> Option<&crate::kernel::CFunctionContractClaimTarget> {
+        self.claim.as_ref()
     }
 
     /// Whether the completed proof stood on no root assumption at all.
@@ -189,6 +236,8 @@ impl CheckedProposition {
             proposition: Arc::new(goal.clone()),
             root_assumptions: self.root_assumptions.clone(),
             outcome: self.outcome.clone(),
+            // The derived implication is not the claim's own goal.
+            claim: None,
         })
     }
 

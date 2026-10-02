@@ -1931,6 +1931,18 @@ impl<'a> Proof<'a> {
         goal: Proposition,
         surface_goal: Option<ClickProposition>,
     ) -> Result<Self, ClickError> {
+        self.focus_fixed_state_goal_for_claim(goal, surface_goal, None)
+    }
+
+    /// Focuses `goal` as a new proposition proof. With `claim_goal`, the
+    /// obligation is the kernel's goal for a contract claim and keeps that
+    /// claim's identity.
+    pub(super) fn focus_fixed_state_goal_for_claim(
+        &self,
+        goal: Proposition,
+        surface_goal: Option<ClickProposition>,
+        claim_goal: Option<&crate::kernel::CClaimGoal>,
+    ) -> Result<Self, ClickError> {
         let fixed_state_context = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             && matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
         // A function-outcome goal is itself a result-aware fixed-state proof context:
@@ -1968,9 +1980,14 @@ impl<'a> Proof<'a> {
                     surface_bindings: PersistentMap::default(),
                     ..PropositionPresentation::default()
                 };
-                let obligation = match outcome.clone() {
-                    Some(outcome) => PropositionObligation::at_outcome(goal, presentation, outcome),
-                    None => PropositionObligation::new(goal, presentation),
+                let obligation = match (claim_goal, outcome.clone()) {
+                    (Some(claim_goal), outcome) => {
+                        PropositionObligation::for_claim_goal(claim_goal, presentation, outcome)
+                    }
+                    (None, Some(outcome)) => {
+                        PropositionObligation::at_outcome(goal, presentation, outcome)
+                    }
+                    (None, None) => PropositionObligation::new(goal, presentation),
                 };
                 OpenBranch::new(Obligation::Proposition(obligation), context)
             }),
@@ -2008,7 +2025,7 @@ impl<'a> Proof<'a> {
         &self,
         goals: &[ClickProposition],
     ) -> Result<ProofCertificate, ClickError> {
-        self.complete_fixed_state_obligations_inner(None, goals)
+        self.complete_fixed_state_obligations_inner(None, goals, &[])
             .map(|(certificate, _)| certificate)
     }
 
@@ -2023,6 +2040,7 @@ impl<'a> Proof<'a> {
         &self,
         since: &ProofCheckpoint<'a>,
         goals: &[ClickProposition],
+        claim_goals: &[Vec<crate::kernel::CClaimGoal>],
     ) -> Result<
         (
             ProofCertificate,
@@ -2030,13 +2048,14 @@ impl<'a> Proof<'a> {
         ),
         ClickError,
     > {
-        self.complete_fixed_state_obligations_inner(Some(since), goals)
+        self.complete_fixed_state_obligations_inner(Some(since), goals, claim_goals)
     }
 
     fn complete_fixed_state_obligations_inner(
         &self,
         since: Option<&ProofCheckpoint<'a>>,
         goals: &[ClickProposition],
+        claim_goals: &[Vec<crate::kernel::CClaimGoal>],
     ) -> Result<
         (
             ProofCertificate,
@@ -2064,10 +2083,22 @@ impl<'a> Proof<'a> {
             None => self.certificate().steps().to_vec(),
         };
         let mut checked_propositions = Vec::with_capacity(goals.len());
-        for goal in goals {
-            let closer = self
-                .focus_fixed_state_surface_goal(goal)?
-                .apply_step(ProofStep::Assumption)?;
+        for (index, goal) in goals.iter().enumerate() {
+            // Close the kernel's own goal for the claim when the accumulated
+            // facts state it, so the completed proposition names its claim.
+            let claim_closer = claim_goals.get(index).and_then(|forms| {
+                forms.iter().find_map(|form| {
+                    self.focus_kernel_claim_goal(form, goal)
+                        .and_then(|focused| focused.apply_step(ProofStep::Assumption))
+                        .ok()
+                })
+            });
+            let closer = match claim_closer {
+                Some(closer) => closer,
+                None => self
+                    .focus_fixed_state_surface_goal(goal)?
+                    .apply_step(ProofStep::Assumption)?,
+            };
             checked_propositions.push(closer.completed_proposition()?);
             steps.extend_from_slice(closer.certificate().steps());
         }

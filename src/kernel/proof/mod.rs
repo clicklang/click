@@ -37,10 +37,9 @@ pub(crate) use execution::{
 #[allow(unused_imports)]
 pub(crate) use fact_keys::propositions_are_alpha_equal;
 pub(crate) use fact_keys::{
-    IntegerEqualityAlphaKey, PropositionIdentityKey, QuantifiedEquivalenceKey,
-    SnapshotBlindPropositionKey, integer_equality_alpha_key, proposition_identity_key,
-    proposition_identity_key_declines_shape, quantified_equivalence_index_key,
-    snapshot_blind_proposition_key,
+    PropositionIdentityKey, QuantifiedEquivalenceKey, SnapshotBlindPropositionKey,
+    proposition_identity_key, proposition_identity_key_declines_shape,
+    quantified_equivalence_index_key, snapshot_blind_proposition_key,
 };
 #[cfg(test)]
 pub(crate) use fact_keys::{alpha_proposition_key_visits, reset_alpha_proposition_key_visits};
