@@ -619,9 +619,22 @@ about 10: 3.1 with 9 `break`s, 3.2 with 11, 4.3 with 19.
 the model, in the shape of `ctx_insert_case1_*_step` and
 `ctx_insert_case3_*_step`. Pure; no C.
 
-**Chunk 4. Right-right combination.** The mirror of left-left: case 3 only,
-through `__rb_rotate_set_parents` and `__rb_change_child`, refolds at the
-rotated models, `break` owing the binders. Depends on 2.
+**Chunk 4. Right-right combination: landed 2026-10-02.** The mirror of
+left-left, case 3 only: sixteen leaves, eight under a black node uncle and
+eight under an empty one. The text is the left-left arms' with the cursor,
+grandparent, and uncle frames spelled `Context::Right`, the rotated
+grandparent's children exchanged
+(`RbTree::Node(gparent, cid, Color::Red, uncle, rb_reparent(csib, gparent))`),
+and `ctx_insert_case3_right_step` in place of the left theorem; the
+great-grandparent frame split, including the unfold of its sibling before
+`__rb_change_child`, is unchanged. No lemma was added. The frontier report
+stays at statement 52, `tmp = parent->rb_left`, now with 35 `break`s and 4
+`continue`s complete; `tests/examples.rs` pins it. The reported path is the
+node-uncle black arm of the cursor-`Left`, grandparent-`Right` combination
+(chunk 6), checked by advancing each of the four remaining stubs one step.
+Verify time of the frontier, release build, user seconds: 4.6 with 19
+`break`s and 7.0 with 35, measured together at load average 18, so about
+0.15 per leaf against 0.14 for chunk 2.
 
 **Chunk 5. Left-right combination.** Case 2's rotation at the parent, then
 case 3. Depends on 3 and 4.
