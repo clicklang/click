@@ -9,7 +9,11 @@ resize pipelines. Shrink consumes a symbolic owned slot quantity under the
 control's authority while preserving the global remainder and checked-out
 members. Growth produces only its requested slot quantity under the existing
 control, preserves both populations' old members, and checks signed capacity
-bounds. Two-pool transfer is not yet migrated.
+bounds. Two-pool transfer is not yet migrated. Its reduced four-unit exchange is
+covered by `authority_four_effect_exchange.md`: all four authorities and exact
+member effects are checked, neighboring ownership survives, and final cleanup
+is exact. The original counter updates and two-control restoration remain the
+next integration slice.
 
 ## Discovery boundary
 

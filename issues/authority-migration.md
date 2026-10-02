@@ -435,7 +435,17 @@ the checked transfer preserves the count delta and outstanding population.
 Independent kernel tests reject wrong quantities and double transfer, and
 multi-size work checks cover both entry and freshly born batches.
 
-The next slice is two-pool transfer. Keep additional
+The reduced four-effect exchange also verifies: one object changes pools,
+its destination slot is spent, and a source slot is returned. Ordinary
+`owns`/`consumes`/`produces` borrow all four authorities. Caller-retained members
+and slots survive, and all populations can be cleaned up afterward. Independent
+admission checks reject missing scopes, lost authorities, nonunit quantities,
+wrong member/anchor identities, and extra effects. Standalone contract checking
+checks both consumptions; focused source refusals cover an omitted second
+consumption and an extra birth without explicit count postconditions.
+
+The next slice integrates the original two-counter transfer and its pipeline
+through the two ordinary controls. Keep additional
 batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.
