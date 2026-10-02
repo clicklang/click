@@ -1568,24 +1568,13 @@ fn function_claim_holds_on_prepared_path(
             );
             // A lowering that folded the ensure to a constant truth decided
             // the claim on this path by evaluation alone. Otherwise the
-            // proof's completion of this claim on this path is the normal
-            // route. The prover is reached only when the proof closed the
-            // claim in a spelling other than the kernel's goal for it, so
-            // its completion names no claim.
-            let path_assumptions =
-                assumptions_with_path_context(assumptions, &path.facts, &path.obligations);
+            // claim holds here because the proof completed it on this path.
             let proposition_holds = lowered_goal_is_constant_true(&path.proposition)
                 || crate::instrumentation::measure_operation(
                     function.name(),
                     "contract claim",
                     "completion match",
                     claim_completion_certifies,
-                )
-                || crate::instrumentation::measure_operation(
-                    function.name(),
-                    "contract claim",
-                    "lowered proposition closure",
-                    || certification_proves_proposition(&path_assumptions, &path.proposition),
                 );
             obligations_hold && proposition_holds
         }
@@ -1967,6 +1956,28 @@ impl CClaimGoal {
     }
 }
 
+/// The entry state as a contract reads it. A by-value aggregate parameter
+/// denotes the caller's argument object; the callee's copy of it is private
+/// storage the body may overwrite.
+fn contract_view_of_entry(
+    mut entry_state: CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+) -> CState {
+    for (parameter, argument) in function.parameters().iter().zip(arguments) {
+        if let (Some(layout), CExpression::Value(CValue::Pointer(argument))) =
+            (parameter.aggregate_layout(), argument)
+        {
+            entry_state.locals.set_aggregate_object_at(
+                parameter.name().to_string(),
+                layout.clone(),
+                argument.pointer().clone(),
+            );
+        }
+    }
+    entry_state
+}
+
 /// Certifies every exact contract claim in one pass over a kernel-produced,
 /// complete execution frontier.
 ///
@@ -2008,7 +2019,11 @@ pub fn c_function_ensure_goals(
     else {
         return None;
     };
-    let mut entry_state = c_function_entry_state(caller_state, function, arguments)?;
+    let mut entry_state = contract_view_of_entry(
+        c_function_entry_state(caller_state, function, arguments)?,
+        function,
+        arguments,
+    );
     let expanded_entry_resources =
         crate::kernel::functions::expand_all_composite_resource_facts_at_state(
             entry_state.resources(),
@@ -2102,7 +2117,11 @@ pub(crate) fn c_function_exceptional_ensure_goals(
     else {
         return None;
     };
-    let mut entry_state = c_function_entry_state(caller_state, function, arguments)?;
+    let mut entry_state = contract_view_of_entry(
+        c_function_entry_state(caller_state, function, arguments)?,
+        function,
+        arguments,
+    );
     let expanded_entry_resources = expand_all_composite_resource_facts(
         entry_state.resources(),
         function.composite_resource_definitions(),
