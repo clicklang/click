@@ -1943,12 +1943,7 @@ fn substitute_bitvector_variable_in_integer_checked_with_mode(
         Term::Integer(result) => result,
         _ => unreachable!(),
     };
-    if rewrite.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if rewrite.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(rewrite.refusal())?;
     Ok(result)
 }
 
@@ -2081,13 +2076,21 @@ pub(crate) fn substitute_integer_variable_in_pure_proposition(
     walker.reserve_integer_substitution_variables(&reserved);
     let result =
         substitute_integer_pure_proposition_with_walker(proposition, from, false, &mut walker);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     result
+}
+
+fn integer_substitution_refusal(
+    refusal: Option<crate::kernel::proof::term_rewrite::RewriteRefusal>,
+) -> Result<(), IntegerPureSubstitutionError> {
+    use crate::kernel::proof::term_rewrite::RewriteRefusal;
+    match refusal {
+        None => Ok(()),
+        Some(RewriteRefusal::WorkExhausted) => Err(IntegerPureSubstitutionError::WorkLimitExceeded),
+        Some(RewriteRefusal::UnsupportedScope) => {
+            Err(IntegerPureSubstitutionError::UnsupportedCarrier)
+        }
+    }
 }
 
 fn integer_work(units: usize) -> Result<(), IntegerPureSubstitutionError> {
@@ -2217,12 +2220,7 @@ fn rewrite_integer_atomic_proposition(
         from, to, shadowed, renamings,
     );
     let result = walker.proposition(proposition);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     integer_work(0)?;
     Ok(result)
 }
@@ -2233,12 +2231,7 @@ fn rewrite_integer_atomic_proposition_with_walker(
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     integer_work(1)?;
     let result = walker.proposition(proposition);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     integer_work(0)?;
     Ok(result)
 }
@@ -2470,12 +2463,12 @@ fn queue_integer_quantifier_rewrite<'a>(
     } else {
         walker.replacement_contains_c_variable(var)
     };
-    if walker.integer_work_exhausted {
+    if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
     let new_var = if renamed {
         let Some(variable) = walker.fresh_integer_substitution_variable() else {
-            return if walker.integer_work_exhausted {
+            return if walker.work_exhausted() {
                 Err(IntegerPureSubstitutionError::WorkLimitExceeded)
             } else {
                 Err(IntegerPureSubstitutionError::FreshVariableExhausted)
@@ -2485,7 +2478,7 @@ fn queue_integer_quantifier_rewrite<'a>(
     } else {
         var
     };
-    if walker.integer_work_exhausted {
+    if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
 
@@ -2548,12 +2541,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         ))) else {
             unreachable!("pointer rewrite changed its carrier")
         };
-        if walker.integer_work_exhausted {
-            return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-        }
-        if walker.unsupported_integer_scope {
-            return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-        }
+        integer_substitution_refusal(walker.refusal())?;
         return Ok(Proposition::CMemoryReadDefined {
             memory: memory.clone(),
             pointer: pointer.pointer().clone(),
@@ -2573,16 +2561,11 @@ fn rewrite_integer_memory_loadable_with_walker(
     let Term::CValue(CValue::Pointer(pointer)) = walker.term(&Term::CValue(pointer)) else {
         unreachable!("pointer rewrite changed its carrier")
     };
-    if walker.integer_work_exhausted {
+    if walker.work_exhausted() {
         return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
     }
     let bytes = walker.bits(bytes);
-    if walker.integer_work_exhausted {
-        return Err(IntegerPureSubstitutionError::WorkLimitExceeded);
-    }
-    if walker.unsupported_integer_scope {
-        return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
-    }
+    integer_substitution_refusal(walker.refusal())?;
     Ok(Proposition::CMemoryLoadable {
         // Snapshots are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.

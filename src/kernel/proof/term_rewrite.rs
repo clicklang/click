@@ -1202,15 +1202,67 @@ pub(crate) struct TermRewrite<'a> {
     /// A malformed registry cycle is rejected before recursive pointer
     /// expansion can consume unbounded work.
     registered_load_pointer_active: BTreeSet<Variable>,
-    pub(crate) unsupported_integer_scope: bool,
-    pub(crate) integer_work_exhausted: bool,
+    /// Set when the walker met a scope it will not substitute through. The
+    /// value it then hands back is a placeholder, not a rewritten term, so
+    /// both refusal flags are private: callers read them through
+    /// [`TermRewrite::refusal`], and a debug build panics when a walker that
+    /// refused a scope is dropped without that question having been asked.
+    unsupported_integer_scope: bool,
+    integer_work_exhausted: bool,
+    refusal_observed: std::cell::Cell<bool>,
     pub(crate) changed: bool,
     #[cfg(test)]
     pub(crate) visits: usize,
     #[cfg(test)]
     pub(crate) collector_visits: usize,
 }
+/// Why a [`TermRewrite`] result must not be used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RewriteRefusal {
+    /// The walker ran out of checked work; the enclosing tactic's budget
+    /// report is the diagnostic.
+    WorkExhausted,
+    /// The walker met a binder or load it will not substitute through.
+    UnsupportedScope,
+}
+
+impl Drop for TermRewrite<'_> {
+    fn drop(&mut self) {
+        // A refused scope leaves a placeholder constant in the result. A
+        // caller that never asks cannot have told it from a rewritten term,
+        // which is how `rewrite` once turned an unfolded `match` into `0`.
+        // Work exhaustion is not asserted here: it is sticky in the run's
+        // budget state, which fails the run whatever the caller does.
+        #[cfg(debug_assertions)]
+        if self.unsupported_integer_scope
+            && !self.refusal_observed.get()
+            && !std::thread::panicking()
+        {
+            panic!("a TermRewrite refused a scope and its caller never read `refusal()`");
+        }
+    }
+}
+
 impl<'a> TermRewrite<'a> {
+    /// Whether the value this walker returned is a placeholder. Every caller
+    /// that can reach a refusing scope must ask before using the result.
+    pub(crate) fn refusal(&self) -> Option<RewriteRefusal> {
+        self.refusal_observed.set(true);
+        if self.integer_work_exhausted {
+            Some(RewriteRefusal::WorkExhausted)
+        } else if self.unsupported_integer_scope {
+            Some(RewriteRefusal::UnsupportedScope)
+        } else {
+            None
+        }
+    }
+
+    /// Whether checked work ran out, for a caller that stops early between
+    /// walker calls. It does not stand in for [`TermRewrite::refusal`].
+    pub(crate) fn work_exhausted(&self) -> bool {
+        self.integer_work_exhausted
+    }
+
     pub(crate) fn new(from: &'a AlgebraicTerm, to: &'a AlgebraicTerm) -> Self {
         Self {
             conditions: None,
@@ -1243,6 +1295,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             pointer_variable: None,
             #[cfg(test)]
@@ -1308,6 +1361,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: replacement_work_exhausted,
             pointer_variable: None,
             #[cfg(test)]
@@ -1416,6 +1470,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             pointer_variable: None,
             #[cfg(test)]
@@ -1468,6 +1523,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             changed: false,
             #[cfg(test)]
@@ -1549,6 +1605,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             changed: false,
             #[cfg(test)]
@@ -1722,6 +1779,7 @@ impl<'a> TermRewrite<'a> {
             registered_load_cache: HashMap::new(),
             registered_load_pointer_active: BTreeSet::new(),
             unsupported_integer_scope: false,
+            refusal_observed: std::cell::Cell::new(false),
             integer_work_exhausted: false,
             changed: false,
             #[cfg(test)]
@@ -1736,7 +1794,7 @@ impl<'a> TermRewrite<'a> {
         let mut walker = TermRewrite::for_conditions(&empty);
         walker.collected_conditions = Some(Vec::new());
         walker.proposition(proposition);
-        walker.collected_conditions.unwrap()
+        walker.collected_conditions.take().unwrap()
     }
 
     fn new_carrier_variables(&self) -> CarrierVariables {
@@ -2790,6 +2848,7 @@ impl<'a> TermRewrite<'a> {
         );
         let value = field_rewrite.integer(&arm.body);
         self.changed |= field_rewrite.changed;
+        field_rewrite.refusal_observed.set(true);
         self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
         self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
         #[cfg(test)]
@@ -2855,6 +2914,7 @@ impl<'a> TermRewrite<'a> {
         );
         let value = field_rewrite.bits(&arm.body);
         self.changed |= field_rewrite.changed;
+        field_rewrite.refusal_observed.set(true);
         self.unsupported_integer_scope |= field_rewrite.unsupported_integer_scope;
         self.integer_work_exhausted |= field_rewrite.integer_work_exhausted;
         #[cfg(test)]
@@ -4486,7 +4546,10 @@ mod tests {
         cycle_rewrite.enable_registered_load_resolution();
         cycle_rewrite.registered_load_pointer_active.insert(load);
         let _ = cycle_rewrite.bits(&Bitvector32Term::Variable(load));
-        assert!(cycle_rewrite.unsupported_integer_scope);
+        assert_eq!(
+            cycle_rewrite.refusal(),
+            Some(RewriteRefusal::UnsupportedScope)
+        );
     }
 
     #[test]
@@ -6472,6 +6535,40 @@ mod tests {
         ));
     }
 
+    /// The placeholder a refused scope leaves behind is only told from a
+    /// rewritten term by asking. A debug build makes a caller that does not
+    /// ask fail at the first test that reaches a refusing scope through it.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "never read `refusal()`")]
+    fn refused_scope_dropped_unread_panics_in_debug_builds() {
+        let source_variable = Variable(3_104_000);
+        let source = Bitvector32Term::Add(
+            Box::new(Bitvector32Term::Variable(source_variable)),
+            Box::new(Bitvector32Term::Constant(1)),
+        );
+        let replacement = Bitvector32Term::Variable(Variable(3_104_001));
+        let fold = IntegerTerm::range_fold(
+            crate::kernel::IntegerRangeFoldIndex::Int32 {
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
+                    Bitvector32Term::Constant(0),
+                ),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                    1,
+                )),
+            },
+            IntegerTerm::constant_i64(0),
+            Variable(3_104_002),
+            source_variable,
+            IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
+                crate::kernel::MachineIntegerType::Int32,
+                source.clone(),
+            )),
+        );
+        let mut rewrite = TermRewrite::for_bits(&source, &replacement);
+        let _placeholder = rewrite.term(&Term::Integer(fold));
+    }
+
     #[test]
     fn composite_machine_source_is_rejected_under_c_binder() {
         let source_variable = Variable(3_103_000);
@@ -6499,7 +6596,7 @@ mod tests {
         );
         let mut rewrite = TermRewrite::for_bits(&source, &replacement);
         let output = rewrite.term(&Term::Integer(fold));
-        assert!(rewrite.unsupported_integer_scope);
+        assert_eq!(rewrite.refusal(), Some(RewriteRefusal::UnsupportedScope));
         assert!(matches!(
             output,
             Term::Integer(IntegerTerm::Constant(value)) if value == 0.into()
