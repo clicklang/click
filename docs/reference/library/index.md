@@ -115,6 +115,16 @@ remain pending.
 
 **Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
 
+A count and an equal C counter can have different checked term representations.
+To transfer increment definedness, explicitly rewrite the count to the counter
+using the control's equality and establish the nonnegative bound as needed.
+For example, `rewrite(count(item(pool, _)) == pool->checked_out)` can transport
+`defined(pool->checked_out + 1)` inside an opened control. Nonnegativity alone
+does not establish increment safety: the count can still be `2147483647`.
+
+**Verified use:** [`authority_count_defined_through_control.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_through_control.md)
+and [`authority_count_defined_at_max_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_at_max_rejected.md).
+
 ## Allocation authority
 
 ### `allocation`
