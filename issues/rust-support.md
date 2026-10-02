@@ -20,6 +20,9 @@ There are two independently reviewable milestones:
 
 Ship and document the first milestone as soon as it is complete. Do not wait
 for the library demonstration to announce the supported subset.
+Both milestones must satisfy the architecture consolidation requirements below;
+successful isolated feature fixtures are not sufficient evidence that the
+features compose or that their representations scale.
 
 ## Unmet capability and required invariant
 
@@ -55,12 +58,12 @@ than Rust's field-sensitive rules. Disjoint range partitioning has separate
 evidence and must be connected to any exclusive dependency representation.
 
 Use a pinned rustc integration and reuse its type and borrow checking for the
-supported safe subset. Compare typed HIR and MIR before selecting an extraction
-boundary. A complete lifetime/loan export or an independent borrow checker is
-not a prerequisite unless the selected proof interpretation needs it. Study
-[Verus's architecture](https://github.com/verus-lang/verus/blob/main/source/CODE.md)
-and [mutable-reference interpretation](https://verus-lang.github.io/verus/guide/mutable-references.html)
-as implementation references; retain Click sidecars and checked proof operations.
+supported safe subset. Select extraction boundaries by semantic coverage and
+composition evidence. HIR versus MIR is not a contest with one universally
+correct answer; the requirement is a consistent verification representation.
+A complete lifetime/loan export or an independent borrow checker is not a
+prerequisite unless the selected proof interpretation needs it. Retain Click
+sidecars and checked proof operations when borrowing designs from other tools.
 
 Map ordinary exclusive access to borrowed `owns` authority and ordinary shared
 access to stable `views`. Keep allocation lifetime, access authority, and type
@@ -90,6 +93,151 @@ subset now includes whole-value moves, checked drops, nested field borrows,
 and disjoint mutable field regressions. Explicit extracted loan authority
 suspension/recovery and wider source coverage remain outstanding; source borrow
 legality currently comes from the pinned compiler.
+
+## Architecture consolidation before further library coverage
+
+The 2026-10-02 review identified four design changes required for the long-term
+frontend. Preserve the useful foundations: pinned compiler semantics and layout,
+locked prepared inputs, explicit panic obligations, shared memory authority,
+and checked proof certificates. Consolidate the representations in coherent
+increments rather than replacing the proof engine or rewriting source programs.
+
+### 1. Make supported operations compose with ownership
+
+The exporter currently uses structured typed HIR for scalar/reference functions,
+but switches a whole function to the narrower drop-elaborated MIR exporter when
+any MIR local has a local record type. This is a semantic coverage cliff.
+For example, a function returning `u32::from(x)` for `x: u16` imports, but adding
+`let _guard = Guard { field: 1 };` makes the same conversion fail with
+`MIR call outside direct local scalar/reference calls`. MIR arithmetic and
+byte slices have separate restrictions, and owned-value MIR loops are rejected.
+
+Introduce a common typed semantic body representation for evaluation, places,
+checked operations, resolved calls, control flow, and ownership/drop events.
+HIR may supply source structure and proof locations; MIR may supply resolved
+evaluation and cleanup. Specify which compiler phase establishes each fact and
+how source structure corresponds to semantic operations. Do not combine the
+two by heuristic matching or maintain separate definitions of Rust arithmetic
+and call semantics according to whether a function contains an owned record.
+
+Acceptance:
+
+- Existing supported conversions, arithmetic, references, arrays, slices, and
+  iteration compose with modeled owned records, moves, and drops. Add tests that
+  combine these features, including a guard surviving across a supported loop.
+- Preserve evaluation order, single evaluation, checked overflow/bounds,
+  short-circuiting, and cleanup on every supported exit. Negative functional,
+  panic, permission, and duplicate-cleanup cases reach the appropriate boundary.
+- Shared control-flow joins remain shared; body size and checking work do not
+  grow with the number of paths. Preserve source attribution through lowering.
+
+### 2. Keep array shape and bulk operations compact
+
+Current local-array lowering enumerates every element in the aggregate layout;
+`[value; N]` also builds an element-sized vector and emits N stores. Tiny source
+such as `[0u8; 1_000_000]` can therefore generate a huge verifier program.
+Four checksum lanes do not establish a scalable representation for buffers.
+
+Represent array element type, length, repeated initialization, and whole-array
+copies compactly, with range-based value and authority reasoning. An explicit
+N-element source initializer may require N work; a repeated initializer must
+not require N verifier operations merely because its runtime storage is large.
+Preserve one evaluation of the repeated operand, including when N is zero.
+
+Acceptance:
+
+- Empty arrays, repeated initialization, explicit initialization, copies,
+  aliasing/reborrows, element updates, and neighboring-byte preservation verify
+  with the same source semantics and permission rules.
+- Deterministic regressions vary repeat/copy length, explicit source initializer
+  size, and unrelated context independently. Compact operations do not allocate
+  one layout field, proof term, or generated store per represented element.
+- Ordinary verification, expansion, and audit agree; no higher work budgets or
+  specialized source rewrites compensate for representation growth.
+
+### 3. Separate source identities and proof observations from lowering names
+
+Functions, records, and locals currently cross the artifact boundary largely as
+strings. Generated slice parameters and iterator state use names such as
+`bytes_len` and `chunks_remaining`; valid Rust names can collide with them.
+Sidecars also depend on these names and repeated `(int32)(uint32)` conversions.
+Expression and statement variants lack systematic source spans.
+
+Use compiler-resolved identities, typed place projections, and source locations
+independently of display spelling. Add stable source-facing observations for
+slice contents/lengths and iterator remaining ranges so representation changes
+do not require rewriting every contract and invariant. Retain an explicit
+mapping for readable diagnostics and checked expanded proofs. Migrate existing
+sidecars deliberately rather than silently changing their meaning.
+
+Acceptance:
+
+- Shadowing and source names matching generated suffixes remain importable;
+  qualified item identities support later modules and resolved method calls
+  without depending on globally unique short names.
+- Contracts and loop invariants use stable observations; generated temporary
+  spelling and storage representation can change without changing the claim.
+- Panic/permission diagnostics identify the original Rust operation. Expansion
+  preserves identity and snapshot meaning and parses and verifies normally.
+- Full-width Rust metadata remains intact. The current signed-word memory-range
+  bound stays explicit until shared kernel support removes it; a nicer proof
+  surface must not conceal that semantic restriction or truncate `usize`.
+
+### 4. Centralize resolved library models and their trust assumptions
+
+`From`, slice iteration, splitting, and exact chunks currently use separate
+recognition and lowering paths. Keep compiler resolution, but replace the
+growing collection of special cases with a common registry of supported
+operations or instances. A model records the resolved item/type arguments,
+compiler/profile requirements, preconditions, effects, panic behavior, and
+whether its semantics come from verified imported code or a named trusted
+interpretation. The same model must apply inside and outside owned functions.
+
+Acceptance:
+
+- Supported standard-library calls and instances share resolution and semantic
+  dispatch. Lookalike user methods, unsupported implementations, and unmodeled
+  instances fail promptly rather than receiving a model by spelling alone.
+- Model identity participates in prepared-input compatibility; source/profile
+  or model changes require the appropriate refresh and invalidation.
+- Iterator models preserve actual state, exhaustion, shared bytes, and remainder
+  coverage without generated processed-count shortcuts. Conversion models
+  preserve values and evaluation order. Mutable/adapted forms require their own
+  assessed resource and state transitions before being enabled.
+- Documentation names trusted models individually. Checksum computation remains
+  verified code; a library summary must not assume the checksum postcondition.
+
+### Implementation references and delivery order
+
+The inspected projects offer complementary designs:
+
+- [Verus](https://github.com/verus-lang/verus/blob/main/source/CODE.md) translates
+  Rust HIR to its own VIR, then to a statement-oriented representation and
+  assertion IR. Borrow its separation of compiler integration, semantic IR,
+  and proof backend, and study its
+  [mutable-reference interpretation](https://verus-lang.github.io/verus/guide/mutable-references.html).
+- [Creusot's body translator](https://github.com/creusot-rs/creusot/blob/master/creusot/src/translation/function.rs)
+  translates MIR to FMIR; its
+  [program backend](https://github.com/creusot-rs/creusot/blob/master/creusot/src/backend/program.rs)
+  lowers that to Coma for Why3. It provides a complementary MIR-based example
+  of keeping Rust semantic normalization separate from backend reasoning.
+- [Charon](https://github.com/AeneasVerif/charon) extracts simplified MIR,
+  resolved declaration/trait information, and source information into an
+  independent representation. [Aeneas](https://github.com/AeneasVerif/aeneas)
+  consumes its LLBC representation and translates a safe-Rust subset into pure
+  functional models for proof assistants. Study the extraction and borrowing
+  abstractions without replacing Click's existing memory and proof model.
+
+Start with composition regressions and a small extraction/normalization
+comparison, including an assessment of reusing Charon versus extending the
+pinned exporter. Evaluate compiler phase, drops, panic checks, source mapping,
+supported inputs, dependency locks, and translator trust; do not adopt another
+tool solely because its IR is called MIR-based. Charon's documented beta/API
+limitations must be part of a reuse decision. Then consolidate semantic
+operations and identities, compact arrays, stable proof observations, and the
+model registry in reviewable increments. Extend checksum syntax on top of these
+boundaries rather than adding more incompatible paths. These are requirements
+for closing this issue, not evidence that the changes have already landed.
 
 ## Initial assessment
 
