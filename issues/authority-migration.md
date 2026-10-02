@@ -308,26 +308,35 @@ resize/transfer/cleanup paths remain to migrate.
 The original C is unchanged. Do not replace these pipelines with locally
 allocated synthetic pools or weaken their final claims to avoid the gaps.
 
-The next checkout investigation must first isolate a missing proof fact or a
-count/counter correspondence defect. The reduced regression currently states
-`checked_out < 2147483647`; the original contract must instead derive increment
-safety from its available slot and control invariant. The attempted proof failed
-to establish `defined(count(...) + 1)` after deriving a field-based bound.
-Different load names suggested a correspondence problem, but that hypothesis
-has not been established by a minimal regression. An attempted early
-counter-cache repair broke four existing authority fixtures and was removed.
-Do not treat that prototype as a required redesign. First reduce the missing
-fact using explicit arithmetic and the diagnostics below; change the verifier
-only if the reduction demonstrates a defect.
-Intended regression: retain the original `pool_checkout.c`, its slot and
-private-object inputs, and all original output claims; prove increment safety
-without adding an extra counter-bound precondition. Check both ordinary count
-expressions and `defined(...)`, then checked control closure after the C store
-and member creation. Existing authority fixtures must stay green, including
-conditional refcount release. Explicit arithmetic steps are acceptable; an
-unrelated C rewrite, a stronger contract, or inconsistent count snapshots are
-not. Explicit missing facts within `open(...)` now report `Requires f`, and
-explicit theorem applications preserve the missing-premise diagnostic.
+The checkout definedness reduction is now checked without an authority or
+counter-cache change. `authority_count_defined_through_control.md` opens a
+control with an arbitrary entry count, a nonnegative counter, and equality
+between the counter and the wildcard population count. An explicit arithmetic
+step supplies `counter >= 0`; rewriting the count to the equal counter then
+transports `defined(counter + 1)` to `defined(count(...) + 1)`. Its two smart
+sites expand and reverify. `authority_count_defined_at_max_rejected.md` checks
+that the same control cannot justify an increment at `2147483647`.
+
+`authority_pool_checkout_original_bound.md` now verifies the original
+`pool_checkout.c` verbatim under authority semantics. It derives increment
+safety from one available slot, the nonnegative counter, and the defined
+capacity invariant; no extra counter-bound requirement is added. The proof
+preserves `valid_pool` and checks the counter, capacity, and both population
+count changes. All seven smart sites expand and reverify. Its companion
+`authority_pool_checkout_without_slot_rejected.md` rejects the unavailable-slot
+case with `Requires 1 <= count(pool_slot(pool))`.
+
+The next checkout slice is the ordinary helper boundary with that same
+contract. The existing reduced helper regression still explicitly requires
+`checked_out < 2147483647`; removing that requirement currently refuses the
+member transition with `InvalidQuantity`. First establish the needed call-site
+fact from the folded control or an explicit open/prove/close sequence. Do not
+weaken the contract or change C to make the transfer pass. Keep symbolic
+cleanup and two-pool transfer separate from this reduction. The original
+bounded-pool project still uses legacy counting and is not migrated as a whole.
+The speculative cache repair remains removed; these direct proofs required no
+count-model or authority change. Missing facts inside `open(...)` report
+`Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
