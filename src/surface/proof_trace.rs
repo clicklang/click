@@ -68,6 +68,9 @@ pub(super) struct TraceBody {
 pub(super) struct TraceBranch {
     pub header: String,
     pub source_tactic_path: Option<Vec<usize>>,
+    /// How the source spells the two arms: `then`/`else` for an `if`,
+    /// `left`/`right` for `cases` and `both`.
+    pub arm_names: [&'static str; 2],
     pub arms: [(BranchId, Vec<TraceFact>); 2],
 }
 
@@ -627,7 +630,7 @@ fn append_path(
                 if let Some(arm) = selected_arm {
                     detail.push_str(&format!(
                         "\n{indent}{header} ({} arm)",
-                        if arm == 0 { "then" } else { "else" }
+                        branch.arm_names[arm]
                     ));
                     append_added_facts(
                         &mut detail,
@@ -712,7 +715,7 @@ fn append_path(
                     branch.source_tactic_path.as_deref(),
                     tactic_location,
                 ),
-                if arm == 0 { "then" } else { "else" },
+                branch.arm_names[arm],
             ));
             append_added_facts(&mut detail, facts, labels, &format!("{indent}  "));
             depth += 1;
@@ -1158,6 +1161,7 @@ mod tests {
                 TraceBranch {
                     header: "source tactic 0: branch".into(),
                     source_tactic_path: Some(vec![0]),
+                    arm_names: ["then", "else"],
                     arms: [
                         (
                             BranchId::ROOT,

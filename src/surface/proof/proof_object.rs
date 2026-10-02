@@ -1154,14 +1154,39 @@ impl Proof<'_> {
         if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
             return;
         }
-        let location = self
-            .site()
-            .path()
-            .unwrap_or_else(|| format!("checked branch {}", marker.depth));
         let then_source = crate::surface::printing::source_click_proposition(condition);
         let else_source = crate::surface::printing::source_click_proposition(
             &ClickProposition::Not(Box::new(condition.clone())),
         );
+        self.record_trace_split(
+            marker,
+            arms,
+            path_facts,
+            "branch",
+            ["then", "else"],
+            [Some(then_source), Some(else_source)],
+        );
+    }
+
+    /// Records a two-arm split for the trace: the tactic that opened it, how
+    /// its arms are spelled, and the facts each arm assumes. `arm_sources`
+    /// spells each arm's first fact as the user wrote it.
+    fn record_trace_split(
+        &self,
+        marker: &Arc<ProofNode>,
+        arms: [BranchId; 2],
+        path_facts: &[Vec<Proposition>; 2],
+        kind: &str,
+        arm_names: [&'static str; 2],
+        arm_sources: [Option<String>; 2],
+    ) {
+        if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
+            return;
+        }
+        let location = self
+            .site()
+            .path()
+            .unwrap_or_else(|| format!("checked branch {}", marker.depth));
         let facts = |index: usize| {
             let focused = self.focus_branch(arms[index]).ok();
             path_facts[index]
@@ -1180,12 +1205,10 @@ impl Proof<'_> {
                             surface_view: None,
                         }
                     };
-                    if fact_index == 0 {
-                        fact.source = Some(if index == 0 {
-                            then_source.clone()
-                        } else {
-                            else_source.clone()
-                        });
+                    if fact_index == 0
+                        && let Some(source) = &arm_sources[index]
+                    {
+                        fact.source = Some(source.clone());
                     }
                     fact
                 })
@@ -1194,8 +1217,9 @@ impl Proof<'_> {
         crate::surface::proof_trace::record_branch(
             Arc::as_ptr(marker) as usize,
             crate::surface::proof_trace::TraceBranch {
-                header: format!("{location}: branch"),
+                header: format!("{location}: {kind}"),
                 source_tactic_path: self.site().source_tactic_path(),
+                arm_names,
                 arms: [(arms[0], facts(0)), (arms[1], facts(1))],
             },
         );
@@ -1244,6 +1268,7 @@ impl Proof<'_> {
             crate::surface::proof_trace::TraceBranch {
                 header: format!("{location}: branch"),
                 source_tactic_path: self.site().source_tactic_path(),
+                arm_names: ["then", "else"],
                 arms: [(then_id, facts(0)), (else_id, facts(1))],
             },
         );

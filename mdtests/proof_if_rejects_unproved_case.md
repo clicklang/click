@@ -18,7 +18,7 @@ theorem not_always_zero(x: int32) {
 ```expect
 fail: could not establish `x == 0`
   stage: proof step
-  location: proof tactic 1 > else arm tactic 1
+  location: tactic 0 > else arm tactic 1
   recent premises (showing 1 of 1):
     x != 0
 ```
