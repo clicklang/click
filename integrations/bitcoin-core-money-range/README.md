@@ -134,3 +134,40 @@ boundary theorems without invoking Clang during verification or expansion.
 
 This is one function under one Clang profile, not general Bitcoin Core or
 Linux binary verification.
+
+## FeeFrac value methods
+
+The same unchanged input closure and real `feerate.cpp` compilation command
+also select `FeeFrac::IsEmpty()` and `FeeFrac::operator+=` from
+`src/util/feefrac.h`. Its SHA-256 is
+`213a97d13eb82b34831466febcff24f4c20879603f36fc6edd894b89000f7ab9`.
+No Bitcoin source, archive contents, or compiler flags were changed for these
+proofs. The gate checks the existing archive digest, header digest, and the
+320-file Clang inventory before verifying all three sidecars:
+
+- `FeeFracIsEmpty.click` proves the result is exactly `size == 0`, preserving
+  both fields, without requiring the application's fee/size invariant.
+- `FeeFracAdd.click` proves exact addition for distinct owned objects and
+  preservation of the other object's fields. Each input field is bounded to
+  half its signed range, sufficient to keep both sums defined.
+- `FeeFracAddSelf.click` proves the alias case `self == other`, owning each
+  field once and doubling it under the same half-range bounds.
+
+After the full-checkout setup above, lock and verify each of these sidecars
+with the same commands used for `MoneyRange`. Their adjacent import configs
+select the exact upstream method; their proof interfaces use an explicit
+receiver and the names `FeeFrac_IsEmpty` and `FeeFrac_operator_add_assign`.
+Exceptions and RTTI remain enabled in the real command. Unselected templates,
+constructors, wide-integer helpers, and other methods do not enter the proof
+graph; the whole record layout and selected method bodies do.
+
+The [synthetic value-method fixtures](../../tests/fixtures/cpp-verification/value-methods/)
+separately verify source callers using both `value += value` and
+`value.operator+=(value)`, with an unrelated owned cell framed unchanged.
+They also check expansion/reverification and retained audit sessions, and
+reject false results, incorrect sums, missing field authority, and missing
+overflow bounds. Artifact regressions reject const-receiver writes and
+const-to-mutable argument conversion independently of Clang's source checks.
+
+These are bounded value-method proofs, not verification of all `FeeFrac`, fee
+rounding, `CFeeRate`, or Bitcoin Core.

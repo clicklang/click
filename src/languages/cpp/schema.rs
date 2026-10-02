@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 20;
+pub(crate) const EXPORT_SCHEMA: u32 = 21;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -112,6 +112,11 @@ pub enum CppFunctionKind {
         record_declaration_id: String,
         record_name: String,
     },
+    Method {
+        record_declaration_id: String,
+        record_name: String,
+        is_const: bool,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -137,6 +142,7 @@ pub enum CppType {
     Record {
         declaration_id: String,
         name: String,
+        is_const: bool,
     },
 }
 
@@ -180,6 +186,7 @@ pub struct CppPlace {
 #[serde(rename_all = "snake_case")]
 pub enum CppBinaryOperator {
     Add,
+    Equal,
     Multiply,
     LessEqual,
     GreaterEqual,
@@ -475,13 +482,33 @@ impl CppExport {
             previous_dependency = Some(dependency);
             alias_sources.insert(dependency.clone());
         }
-        if self.function.name != function {
+        let expected_name = match &self.function.function_kind {
+            CppFunctionKind::Method { record_name, .. } => {
+                let prefix = format!("{record_name}::");
+                let member = function.strip_prefix(&prefix).ok_or_else(|| {
+                    "selected C++ method requires a qualified Class::method selector".to_string()
+                })?;
+                format!(
+                    "{record_name}_{}",
+                    if member == "operator+=" {
+                        "operator_add_assign"
+                    } else {
+                        member
+                    }
+                )
+            }
+            _ => function.to_owned(),
+        };
+        if self.function.name != expected_name {
             return Err(format!(
                 "C++ export resolved `{}` instead of selected function `{function}`",
                 self.function.name
             ));
         }
-        if !matches!(self.function.function_kind, CppFunctionKind::Free) {
+        if !matches!(
+            self.function.function_kind,
+            CppFunctionKind::Free | CppFunctionKind::Method { .. }
+        ) {
             return Err("the selected C++ declaration must be a free function".into());
         }
 
@@ -491,16 +518,22 @@ impl CppExport {
         if (self.profile.rtti
             || (self.profile.exceptions
                 && matches!(self.exception_behavior, CppExceptionBehavior::NormalOnly)))
-            && !self.records.is_empty()
+            && self
+                .records
+                .iter()
+                .any(|record| record.destructor.is_some())
         {
             return Err(
-                "the exception- or RTTI-enabled C++ profile is limited to an object-free normal-only graph"
+                "exception- or RTTI-enabled normal-only C++ records require trivial destruction"
                     .into(),
             );
         }
         let mut records = BTreeMap::new();
         for record in &self.records {
             record.validate(logical_source)?;
+            for field in &record.fields {
+                field.value_type.validate_aliases_in(&alias_sources)?;
+            }
             if records
                 .insert(record.declaration_id.clone(), record)
                 .is_some()
@@ -684,8 +717,12 @@ impl CppRecord {
             }
             let (size, alignment) = match &field.value_type {
                 CppType::Integer { .. } => {
-                    require_int32(&field.value_type, false, "record field")?;
-                    (4, 4)
+                    if require_int32(&field.value_type, false, "record field").is_ok() {
+                        (4, 4)
+                    } else {
+                        require_signed_int64(&field.value_type, false, "record field")?;
+                        (8, 8)
+                    }
                 }
                 CppType::Pointer { pointee } => {
                     require_int32(pointee, false, "record pointer field")?;
@@ -741,8 +778,10 @@ impl CppFunction {
             return Err("C++ function is missing declaration identity".into());
         }
         match &self.function_kind {
-            CppFunctionKind::Free => {
-                if require_int32(&self.return_type, false, "function return type").is_err() {
+            CppFunctionKind::Free | CppFunctionKind::Method { .. } => {
+                if self.return_type != CppType::Void
+                    && require_int32(&self.return_type, false, "function return type").is_err()
+                {
                     require_bool(&self.return_type, false, "function return type")?;
                 }
             }
@@ -763,9 +802,21 @@ impl CppFunction {
                 validate_record_reference(records, record_declaration_id, record_name)?;
             }
         }
+        if let CppFunctionKind::Method {
+            record_declaration_id,
+            record_name,
+            ..
+        } = &self.function_kind
+        {
+            validate_record_reference(records, record_declaration_id, record_name)?;
+        }
         self.return_type.validate_aliases(logical_source)?;
         if !self.declared_noexcept
-            && (!exceptions_enabled || !matches!(self.function_kind, CppFunctionKind::Free))
+            && (!exceptions_enabled
+                || matches!(
+                    self.function_kind,
+                    CppFunctionKind::Constructor { .. } | CppFunctionKind::Destructor { .. }
+                ))
         {
             return Err(format!(
                 "C++ function `{}` must declare noexcept outside the exception-enabled object-free profile",
@@ -774,7 +825,10 @@ impl CppFunction {
         }
         if matches!(exception_behavior, CppExceptionBehavior::ScalarInt32)
             && self.declared_noexcept
-            && matches!(self.function_kind, CppFunctionKind::Free)
+            && matches!(
+                self.function_kind,
+                CppFunctionKind::Free | CppFunctionKind::Method { .. }
+            )
         {
             return Err(format!(
                 "C++ function `{}` declares noexcept, whose termination behavior is outside the scalar int32 exception profile",
@@ -797,6 +851,7 @@ impl CppFunction {
                     if let CppType::Record {
                         declaration_id,
                         name,
+                        ..
                     } = pointee.as_ref()
                     {
                         validate_record_reference(records, declaration_id, name)?;
@@ -833,6 +888,26 @@ impl CppFunction {
             }
             parameter.value_type.validate_aliases_in(alias_sources)?;
         }
+        if let CppFunctionKind::Method {
+            record_declaration_id,
+            record_name,
+            is_const,
+        } = &self.function_kind
+        {
+            let Some(receiver) = self.parameters.first() else {
+                return Err("C++ method is missing its receiver".into());
+            };
+            if receiver.name != "self"
+                || !matches!(&receiver.value_type,
+                CppType::LvalueReference { pointee } if matches!(pointee.as_ref(),
+                    CppType::Record { declaration_id, name, is_const: actual_const }
+                    if declaration_id == record_declaration_id && name == record_name && actual_const == is_const))
+            {
+                return Err(
+                    "C++ method has a mismatched receiver identity or const qualification".into(),
+                );
+            }
+        }
         if let CppFunctionKind::Constructor {
             record_declaration_id,
             record_name,
@@ -854,7 +929,7 @@ impl CppFunction {
                     CppType::LvalueReference { pointee }
                         if matches!(
                             pointee.as_ref(),
-                            CppType::Record { declaration_id, name }
+                            CppType::Record { declaration_id, name, is_const: false }
                                 if declaration_id == record_declaration_id && name == record_name
                         )
                 )
@@ -917,6 +992,12 @@ impl CppFunction {
             return Err("supported C++ function has no executable statements".into());
         }
         validate_return_types(&self.body, &self.return_type)?;
+        if exceptions_enabled
+            && matches!(exception_behavior, CppExceptionBehavior::NormalOnly)
+            && sequence_constructs_record(&self.body)
+        {
+            return Err("exception-enabled normal-only C++ supports borrowed records only".into());
+        }
         if matches!(exception_behavior, CppExceptionBehavior::NormalOnly)
             && sequence_contains_throw(&self.body)
         {
@@ -959,6 +1040,7 @@ impl CppFunction {
                     CppType::Record {
                         declaration_id,
                         name,
+                        is_const: false,
                     } => {
                         if has_conditional_cleanup_scope {
                             return Err(format!(
@@ -1327,7 +1409,9 @@ impl CppFunction {
             validate_return_cleanups(&self.body, &self.name, &[])?;
         }
         match &self.function_kind {
-            CppFunctionKind::Free if !sequence_always_returns(&self.body) => {
+            CppFunctionKind::Free | CppFunctionKind::Method { .. }
+                if self.return_type != CppType::Void && !sequence_always_returns(&self.body) =>
+            {
                 return Err(
                     "supported non-void C++ function can reach the end without returning".into(),
                 );
@@ -1398,10 +1482,18 @@ impl CppStatement {
                 span,
             } => {
                 span.validate(logical_source)?;
+                let object_type = validate_place_reference(object, places, logical_source)?;
+                if matches!(object_type, CppType::Record { is_const: true, .. })
+                    || matches!(object_type, CppType::LvalueReference { pointee } if matches!(pointee.as_ref(), CppType::Record { is_const: true, .. }))
+                {
+                    return Err(
+                        "C++ member store cannot write through a const record reference".into(),
+                    );
+                }
                 let field_type =
                     validate_member_reference(object, field, places, records, logical_source)?;
                 value.validate(places, records, logical_source)?;
-                if value.value_type() != field_type {
+                if !same_scalar_type(value.value_type(), field_type) {
                     return Err(format!(
                         "C++ member store to `{}` has a mismatched value type",
                         field.name
@@ -1477,6 +1569,7 @@ impl CppCleanup {
                 let CppType::Record {
                     declaration_id,
                     name,
+                    ..
                 } = validate_place_reference(object, places, logical_source)?
                 else {
                     return Err("C++ destructor cleanup must name a record object".into());
@@ -1528,6 +1621,7 @@ impl CppInitializer {
                 CppType::Record {
                     declaration_id,
                     name,
+                    ..
                 },
             ) => {
                 span.validate(logical_source)?;
@@ -1612,6 +1706,19 @@ impl CppCallArgument {
             Self::Value { value } => value.validate(places, records, logical_source),
             Self::Reference { place } => {
                 let value_type = validate_place_reference(place, places, logical_source)?;
+                let record_type = match value_type {
+                    CppType::LvalueReference { pointee } => pointee.as_ref(),
+                    other => other,
+                };
+                if let CppType::Record {
+                    declaration_id,
+                    name,
+                    ..
+                } = record_type
+                {
+                    validate_record_reference(records, declaration_id, name)?;
+                    return Ok(());
+                }
                 match value_type {
                     CppType::LvalueReference { pointee } => {
                         require_int32(pointee, true, "call reference argument")
@@ -1756,7 +1863,7 @@ impl CppExpression {
                 span.validate(logical_source)?;
                 let field_type =
                     validate_member_reference(object, field, places, records, logical_source)?;
-                if value_type != field_type {
+                if !same_scalar_type(value_type, field_type) {
                     return Err(format!(
                         "C++ member load of `{}` has a mismatched value type",
                         field.name
@@ -1782,12 +1889,37 @@ impl CppExpression {
                 span,
                 ..
             } => {
-                require_int32(value_type, false, "binary result type")?;
+                if require_int32(value_type, false, "binary result type").is_err() {
+                    require_signed_int64(value_type, false, "binary result type")?;
+                }
                 span.validate(logical_source)?;
                 left.validate(places, records, logical_source)?;
                 right.validate(places, records, logical_source)?;
-                require_int32(left.value_type(), false, "binary left operand")?;
-                require_int32(right.value_type(), false, "binary right operand")
+                if !same_scalar_type(left.value_type(), value_type)
+                    || !same_scalar_type(right.value_type(), value_type)
+                {
+                    return Err("C++ addition requires same-width signed operands".into());
+                }
+                Ok(())
+            }
+            Self::Binary {
+                operator: CppBinaryOperator::Equal,
+                left,
+                right,
+                value_type,
+                span,
+            } => {
+                span.validate(logical_source)?;
+                require_bool(value_type, false, "comparison result type")?;
+                left.validate(places, records, logical_source)?;
+                right.validate(places, records, logical_source)?;
+                if require_int32(left.value_type(), false, "comparison operand").is_err() {
+                    require_signed_int64(left.value_type(), false, "comparison operand")?;
+                }
+                if !same_scalar_type(left.value_type(), right.value_type()) {
+                    return Err("C++ equality requires same-width signed operands".into());
+                }
+                Ok(())
             }
             Self::Binary {
                 operator: CppBinaryOperator::LessEqual,
@@ -1832,6 +1964,22 @@ impl CppExpression {
             }
         }
     }
+}
+
+fn sequence_constructs_record(statements: &[CppStatement]) -> bool {
+    statements.iter().any(|statement| match statement {
+        CppStatement::Declare { local, .. } => matches!(local.value_type, CppType::Record { .. }),
+        CppStatement::Scope { body, .. } => sequence_constructs_record(body),
+        CppStatement::If {
+            then_branch,
+            else_branch,
+            ..
+        } => sequence_constructs_record(then_branch) || sequence_constructs_record(else_branch),
+        CppStatement::TryCatchInt32 {
+            try_body, handler, ..
+        } => sequence_constructs_record(try_body) || sequence_constructs_record(handler),
+        _ => false,
+    })
 }
 
 fn find_declared_place<'a>(
@@ -1917,6 +2065,7 @@ fn validate_nested_scope(
             let CppType::Record {
                 declaration_id,
                 name,
+                ..
             } = &candidate.value_type
             else {
                 return Err(
@@ -2150,7 +2299,10 @@ fn validate_reachable_calls(
         }
         match call {
             CollectedCall::Ordinary { .. } => {
-                if !matches!(target.function_kind, CppFunctionKind::Free) {
+                if !matches!(
+                    target.function_kind,
+                    CppFunctionKind::Free | CppFunctionKind::Method { .. }
+                ) {
                     return Err(format!(
                         "ordinary C++ call from `{}` cannot invoke object operation `{}`",
                         function.name, target.name
@@ -2176,7 +2328,7 @@ fn validate_reachable_calls(
                 };
                 if !matches!(
                     &local.value_type,
-                    CppType::Record { declaration_id, name }
+                    CppType::Record { declaration_id, name, .. }
                         if declaration_id == record_declaration_id && name == record_name
                 ) {
                     return Err(format!(
@@ -2210,7 +2362,7 @@ fn validate_reachable_calls(
                 };
                 if !matches!(
                     function.place_type(&object.declaration_id),
-                    Some(CppType::Record { declaration_id, name })
+                    Some(CppType::Record { declaration_id, name, .. })
                         if declaration_id == record_declaration_id && name == record_name
                 ) {
                     return Err(format!(
@@ -2350,11 +2502,7 @@ fn validate_call_arguments(
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },
             ) => {
-                let actual = caller
-                    .parameters
-                    .iter()
-                    .find(|candidate| candidate.declaration_id == place.declaration_id)
-                    .map(|candidate| &candidate.value_type);
+                let actual = caller.place_type(&place.declaration_id);
                 match (actual, expected.as_ref()) {
                     (
                         Some(CppType::LvalueReference { pointee: actual }),
@@ -2373,6 +2521,28 @@ fn validate_call_arguments(
                             ..
                         } if *expected_const || !*actual_const
                     ),
+                    (
+                        Some(CppType::LvalueReference { pointee: actual }),
+                        CppType::Record {
+                            declaration_id,
+                            name,
+                            is_const,
+                        },
+                    ) => {
+                        matches!(actual.as_ref(), CppType::Record { declaration_id: actual_id, name: actual_name, is_const: actual_const }
+                            if actual_id == declaration_id && actual_name == name && (*is_const || !*actual_const))
+                    }
+                    (
+                        Some(actual @ CppType::Record { .. }),
+                        CppType::Record {
+                            declaration_id,
+                            name,
+                            is_const,
+                        },
+                    ) => {
+                        matches!(actual, CppType::Record { declaration_id: actual_id, name: actual_name, is_const: actual_const }
+                            if actual_id == declaration_id && actual_name == name && (*is_const || !*actual_const))
+                    }
                     _ => false,
                 }
             }
@@ -2854,6 +3024,7 @@ fn validate_member_reference<'a>(
     let CppType::Record {
         declaration_id,
         name,
+        ..
     } = record_type
     else {
         return Err("C++ member access requires a supported record object".into());
@@ -3056,6 +3227,7 @@ mod tests {
             value_type: CppType::Record {
                 declaration_id: "record".into(),
                 name: "Guard".into(),
+                is_const: false,
             },
             span: cleanup_span(),
         }
@@ -3094,6 +3266,168 @@ mod tests {
             is_const,
             source_aliases: Vec::new(),
         }
+    }
+
+    #[test]
+    fn method_receiver_constness_and_field_authority_are_checked_in_artifacts() {
+        let record = CppRecord {
+            declaration_id: "record".into(),
+            name: "State".into(),
+            size_bytes: 8,
+            alignment_bytes: 8,
+            destructor: None,
+            span: cleanup_span(),
+            fields: vec![CppField {
+                declaration_id: "field".into(),
+                name: "fee".into(),
+                value_type: signed_integer(64, false),
+                offset_bytes: 0,
+                size_bytes: 8,
+                span: cleanup_span(),
+            }],
+        };
+        let records = BTreeMap::from([("record".into(), &record)]);
+        let mut receiver = CppPlace {
+            declaration_id: "self".into(),
+            name: "self".into(),
+            value_type: CppType::LvalueReference {
+                pointee: Box::new(CppType::Record {
+                    declaration_id: "record".into(),
+                    name: "State".into(),
+                    is_const: false,
+                }),
+            },
+            span: cleanup_span(),
+        };
+        let field = CppFieldReference {
+            record_declaration_id: "record".into(),
+            declaration_id: "field".into(),
+            name: "fee".into(),
+            span: cleanup_span(),
+        };
+        let object = CppPlaceReference {
+            declaration_id: "self".into(),
+            name: "self".into(),
+            span: cleanup_span(),
+        };
+        let store = CppStatement::MemberStore {
+            object: object.clone(),
+            field: field.clone(),
+            value: CppExpression::MemberLoad {
+                object,
+                field,
+                value_type: signed_integer(64, false),
+                span: cleanup_span(),
+            },
+            span: cleanup_span(),
+        };
+        let mut function = CppFunction {
+            declaration_id: "method".into(),
+            name: "State_update".into(),
+            function_kind: CppFunctionKind::Method {
+                record_declaration_id: "record".into(),
+                record_name: "State".into(),
+                is_const: false,
+            },
+            return_type: CppType::Void,
+            parameters: vec![receiver.clone()],
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body: vec![store],
+        };
+        let sources = BTreeSet::from(["fixture.cpp".into()]);
+        function
+            .validate(
+                "fixture.cpp",
+                &sources,
+                &records,
+                false,
+                CppExceptionBehavior::NormalOnly,
+            )
+            .unwrap();
+        if let CppType::LvalueReference { pointee } = &mut receiver.value_type
+            && let CppType::Record { is_const, .. } = pointee.as_mut()
+        {
+            *is_const = true;
+        }
+        function.parameters[0] = receiver;
+        assert!(
+            function
+                .validate(
+                    "fixture.cpp",
+                    &sources,
+                    &records,
+                    false,
+                    CppExceptionBehavior::NormalOnly
+                )
+                .unwrap_err()
+                .contains("mismatched receiver")
+        );
+        if let CppFunctionKind::Method { is_const, .. } = &mut function.function_kind {
+            *is_const = true;
+        }
+        assert!(
+            function
+                .validate(
+                    "fixture.cpp",
+                    &sources,
+                    &records,
+                    false,
+                    CppExceptionBehavior::NormalOnly
+                )
+                .unwrap_err()
+                .contains("const record reference")
+        );
+
+        let actual = function.parameters.clone();
+        let arguments = vec![CppCallArgument::Reference {
+            place: CppPlaceReference {
+                declaration_id: "self".into(),
+                name: "self".into(),
+                span: cleanup_span(),
+            },
+        }];
+        validate_call_arguments(&function, "read", &actual, &arguments).unwrap();
+        let mut writable = actual;
+        if let CppType::LvalueReference { pointee } = &mut writable[0].value_type
+            && let CppType::Record { is_const, .. } = pointee.as_mut()
+        {
+            *is_const = false;
+        }
+        assert!(validate_call_arguments(&function, "write", &writable, &arguments).is_err());
+    }
+
+    #[test]
+    fn wide_addition_artifacts_reject_mixed_width_operands() {
+        let literal = CppExpression::IntegerLiteral {
+            value: "1".into(),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let cast = CppExpression::IntegralCast {
+            value: Box::new(literal.clone()),
+            value_type: signed_integer(64, false),
+            span: cleanup_span(),
+        };
+        let mut expression = CppExpression::Binary {
+            operator: CppBinaryOperator::Add,
+            left: Box::new(cast.clone()),
+            right: Box::new(cast),
+            value_type: signed_integer(64, false),
+            span: cleanup_span(),
+        };
+        expression
+            .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+            .unwrap();
+        if let CppExpression::Binary { right, .. } = &mut expression {
+            **right = literal;
+        }
+        assert!(
+            expression
+                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .unwrap_err()
+                .contains("same-width")
+        );
     }
 
     fn coin_constant() -> CppConstant {

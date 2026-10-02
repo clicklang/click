@@ -502,8 +502,14 @@ fn validate_config(config: &Config) -> Result<(), String> {
     ) {
         return Err("the first C++ import slice requires a `.cpp` or `.h` logical source".into());
     }
-    if !is_identifier(&config.function) {
-        return Err("the first C++ import slice requires an unqualified function name".into());
+    let valid_selector = match config.function.split_once("::") {
+        Some((record, method)) => {
+            is_identifier(record) && (is_identifier(method) || method == "operator+=")
+        }
+        None => is_identifier(&config.function),
+    };
+    if !valid_selector {
+        return Err("C++ function selector requires a function name or Class::method (including operator+=)".into());
     }
     if config.source == config.artifact || config.logical_source == config.artifact {
         return Err("C++ source and semantic artifact paths must differ".into());

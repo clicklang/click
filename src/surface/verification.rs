@@ -5276,6 +5276,12 @@ pub(in crate::surface) fn parse_c_layouts_for_target(
                             is_const: false,
                             ..
                         } => C0Type::Int32,
+                        crate::languages::cpp::CppType::Integer {
+                            bits: 64,
+                            signed: true,
+                            is_const: false,
+                            ..
+                        } => C0Type::Int64,
                         crate::languages::cpp::CppType::Pointer { pointee }
                             if matches!(
                                 pointee.as_ref(),
@@ -6826,7 +6832,7 @@ fn cpp_function_interface(
                 .with_pointee_constant(true))
             }
             crate::languages::cpp::CppType::LvalueReference { pointee } => {
-                let crate::languages::cpp::CppType::Record { name, .. } = pointee.as_ref() else {
+                let crate::languages::cpp::CppType::Record { name, is_const, .. } = pointee.as_ref() else {
                     return Err(ClickError::new(format!(
                         "C++ declaration `{}` parameter `{}` has an unsupported reference pointee",
                         source.declaration_id, parameter.name
@@ -6836,7 +6842,7 @@ fn cpp_function_interface(
                     C0Type::Int32Pointer,
                     parameter.name.clone(),
                     Some(name.clone()),
-                ))
+                ).with_pointee_constant(*is_const))
             }
             crate::languages::cpp::CppType::Pointer { pointee }
                 if matches!(
