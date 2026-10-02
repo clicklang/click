@@ -3397,6 +3397,37 @@ fn scalar_element_width(c_type: C0Type) -> Option<i64> {
     }
 }
 
+thread_local! {
+    /// How many addresses are being spelled inside one another's indices.
+    static NESTED_ADDRESS_SPELLINGS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// An index inside an address spelling. It is named through the tables,
+/// so a local reads as its name and a loaded value as the cell it was
+/// loaded from. Naming a load spells its address, whose own index can be a
+/// load again, and one address can be reached from itself that way; past a
+/// small nesting the index is spelled without the tables, which ends it.
+fn describe_address_index(
+    index: &Bitvector32Term,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> String {
+    const NESTING_LIMIT: u32 = 2;
+    let depth = NESTED_ADDRESS_SPELLINGS.with(std::cell::Cell::get);
+    if depth >= NESTING_LIMIT {
+        return describe_bitvector(index);
+    }
+    struct Leave(u32);
+    impl Drop for Leave {
+        fn drop(&mut self) {
+            NESTED_ADDRESS_SPELLINGS.with(|nested| nested.set(self.0));
+        }
+    }
+    NESTED_ADDRESS_SPELLINGS.with(|nested| nested.set(depth + 1));
+    let _leave = Leave(depth);
+    describe_bitvector_with_context(index, parameters, arguments)
+}
+
 pub(super) fn describe_pointer(
     pointer: &Pointer,
     parameters: &[syntax::C0Parameter],
@@ -3426,14 +3457,22 @@ pub(super) fn describe_pointer(
             let spelled = if index == Bitvector32Term::Constant(0) {
                 parameter.name().to_string()
             } else {
-                format!("{}[{}]", parameter.name(), describe_bitvector(&index))
+                format!(
+                    "{}[{}]",
+                    parameter.name(),
+                    describe_address_index(&index, parameters, arguments)
+                )
             };
             if best.as_ref().is_none_or(|best| spelled.len() < best.len()) {
                 best = Some(spelled);
             }
-        } else if let Some(member) =
-            describe_parameter_struct_member(pointer, parameter, base.pointer())
-        {
+        } else if let Some(member) = describe_parameter_struct_member(
+            pointer,
+            parameter,
+            base.pointer(),
+            parameters,
+            arguments,
+        ) {
             if best.as_ref().is_none_or(|best| member.len() < best.len()) {
                 best = Some(member);
             }
@@ -3456,6 +3495,31 @@ pub(super) fn describe_pointer(
     }
     if let Some(best) = best.or(byte_offset) {
         return best;
+    }
+    // A by-value aggregate parameter is two objects: the callee's copy,
+    // which the tables name, and the argument it was copied from, which a
+    // claim about the parameter reads. The second is the caller's.
+    for (parameter, argument) in parameters.iter().zip(arguments) {
+        let CExpression::Value(CValue::Pointer(copy)) = argument else {
+            continue;
+        };
+        let Some(source) = crate::kernel::registered_aggregate_argument_source(&copy.block) else {
+            continue;
+        };
+        // A pointer the argument holds in a field is that field's value,
+        // the same in the copy and in the argument it was copied from.
+        if let Some(field) = describe_parameter_struct_field_pointer(pointer, parameter, &source) {
+            return field.replacen("->", ".", 1);
+        }
+        let name = format!("the caller's {}", parameter.name());
+        if let Some(member) = describe_struct_member_from(
+            pointer, parameter, &source, &name, ".", parameters, arguments,
+        ) {
+            return member;
+        }
+        if *pointer == source {
+            return name;
+        }
     }
     match &pointer.block {
         // External argument blocks are verifier-owned lowering artifacts. Do
@@ -3529,13 +3593,36 @@ fn describe_parameter_struct_field_pointer(
 /// struct's size plus a constant inside the struct. Anything else has no
 /// member spelling here.
 ///
-/// The index is spelled without the naming tables, as an element's index
-/// is: naming a loaded index describes the cell it was loaded from, which
-/// can be this address again.
+/// The index is spelled by [`describe_address_index`].
 fn describe_parameter_struct_member(
     pointer: &Pointer,
     parameter: &syntax::C0Parameter,
     base: &Pointer,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
+) -> Option<String> {
+    describe_struct_member_from(
+        pointer,
+        parameter,
+        base,
+        parameter.name(),
+        "->",
+        parameters,
+        arguments,
+    )
+}
+
+/// [`describe_parameter_struct_member`] against an object spelled `name`
+/// whose members are selected with `select` (`->` through a pointer, `.` on
+/// a value).
+fn describe_struct_member_from(
+    pointer: &Pointer,
+    parameter: &syntax::C0Parameter,
+    base: &Pointer,
+    name: &str,
+    select: &str,
+    parameters: &[syntax::C0Parameter],
+    arguments: &[CExpression],
 ) -> Option<String> {
     let layout = parameter
         .pointee_struct_layout()
@@ -3567,18 +3654,21 @@ fn describe_parameter_struct_member(
     let selected = match (element, whole) {
         (None, 0) => None,
         (None, whole) => Some(whole.to_string()),
-        (Some(index), 0) => Some(describe_bitvector(index)),
-        (Some(index), whole) => Some(format!("{} + {whole}", describe_bitvector(index))),
+        (Some(index), 0) => Some(describe_address_index(index, parameters, arguments)),
+        (Some(index), whole) => Some(format!(
+            "{} + {whole}",
+            describe_address_index(index, parameters, arguments)
+        )),
     };
     let fields = layout.fields();
-    let (name, field) = fields
+    let (field_name, field) = fields
         .iter()
         .filter(|(_, field)| i64::from(field.offset_bytes()) <= inside)
         .max_by_key(|(_, field)| field.offset_bytes())?;
     let within = inside - i64::from(field.offset_bytes());
     let member = match &selected {
-        Some(index) => format!("{}[{index}].{name}", parameter.name()),
-        None => format!("{}->{name}", parameter.name()),
+        Some(index) => format!("{name}[{index}].{field_name}"),
+        None => format!("{name}{select}{field_name}"),
     };
     if within == 0 {
         return Some(member);

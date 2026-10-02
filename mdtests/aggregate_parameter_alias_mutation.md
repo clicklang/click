@@ -17,5 +17,5 @@ int32 change(struct packet input) {
 ```
 
 ```expect
-fail: did not retain a complete proof
+fail: left side evaluated to load(the caller's input.value), right side evaluated to 5
 ```

@@ -10,5 +10,4 @@ coverage, and documentation land.
 - [Proposition candidate selection scans unrelated facts](proposition-candidate-selection-scans-unrelated-facts.md)
 - [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
 - [`simp` and `arithmetic()` stop at short order chains](unsigned-and-long-order-chains-in-simp-and-arithmetic.md)
-- [A by-value aggregate parameter's incoming storage has no source name](store-refusal-through-unsigned-index-names-no-element.md)
 - [`simp` and `arithmetic()` treat sign-bit-flipped unsigned values as opaque](unsigned-order-arithmetic-in-closers.md)
