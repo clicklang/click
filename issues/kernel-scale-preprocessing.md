@@ -581,6 +581,27 @@ metadata. The actual compiler vector also includes options such as
 require explicit target-policy review. Do not remove those options to make the
 kernel input fit the first importer profile.
 
+Package 3 update, 2026-10-02: body-less variadic prototypes are now retained as
+declarations, so the `panic` declaration's `...` no longer rejects the import.
+Calls to a variadic function, uses of its address, variadic definitions,
+variadic function-pointer signatures, and a fixed-arity redeclaration are
+rejected with located diagnostics; no variable-argument semantics were added
+(`docs/reference/language/c0.md`; regressions `mdtests/c_variadic_*.md` and
+`imported_variadic_prototype_is_retained_without_becoming_callable`). The same
+change refuses statement-position calls to weak and returns-twice functions,
+which previously reached an `extern` contract.
+
+The recorded `panic.h:12` rejection came from the C tokenizer, which rejected
+any `...` in the whole artifact before parsing began. It was therefore the
+first `...` in the artifact, not evidence that the declarations before it
+parse. The first parser rejection in the pinned artifact is not known and must
+be measured again. That measurement needs the pinned tree and capture, which
+existed only under `/tmp` on the capturing machine. The evidence JSON records
+the archive, configuration, compiler vector, and hashes, but not how the host
+build tools (kconfig's lexer and parser generators and objtool's dependencies)
+were provisioned, so the capture is not yet reproducible from this repository
+alone. The fixture-provisioning decision required after Stage 0 is still open.
+
 The earlier `/tmp/linux-6.8.12` tree and `/tmp/rbtree-6.8.12.i` combined upstream
 sources with host-generated headers and failed compiler validation. They are
 rejected exploratory inputs and must never be used as fixtures. A temporary
