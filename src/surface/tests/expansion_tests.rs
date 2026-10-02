@@ -14752,3 +14752,36 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
     verify_c0_sources(&expanded, &c_sources)
         .expect("expanded fold argument reads should independently reverify");
 }
+
+#[test]
+fn published_symbolic_owner_store_expands_and_rechecks() {
+    let c = "void put(int32* p, int32 i, int32 n) { p[i] = 7; }";
+    let source = r#"
+verifying "symbolic_write.c";
+void put(int32* p, int32 i, int32 n) {
+    requires 1 <= i;
+    requires i < n;
+    owns p[1..n];
+    ensures p[i] == 7;
+} by { execute(); simp(); }
+"#;
+    let inputs = [("symbolic_write.c", c)];
+    verify_c0_sources(source, &inputs)
+        .expect("the published symbolic owner should authorize the store");
+    let expanded = expand_c0_claim_source(source, &inputs, "put", CProofClaim::Ensure(0))
+        .expect("the symbolic owner store should expand");
+    verify_c0_sources(&expanded, &inputs)
+        .expect("the expanded store should independently reverify");
+    for premise in ["requires 1 <= i;", "requires i < n;"] {
+        let missing = source.replace(premise, "");
+        assert!(
+            verify_c0_sources(&missing, &inputs).is_err(),
+            "missing {premise} must not authorize the store"
+        );
+    }
+    let views = source.replace("owns p[1..n];", "views p[1..n];");
+    assert!(
+        verify_c0_sources(&views, &inputs).is_err(),
+        "a published view is not write authority"
+    );
+}

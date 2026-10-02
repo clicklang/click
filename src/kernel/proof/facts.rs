@@ -318,7 +318,14 @@ impl ProofFacts {
     }
 
     pub(crate) fn from_ordered(facts: &[Proposition]) -> Self {
-        crate::kernel::reasoning::path_facts::count_context_rebuild_entries(facts.len());
+        Self::from_source(facts)
+    }
+
+    /// Index the explicitly supplied root facts while retaining their pure
+    /// context. Cached sources carry the trusted graph lineage already paired
+    /// with entry resources; rebuilding it would disconnect that publication.
+    /// Uncached sources build their context once through PropositionSource.
+    pub(crate) fn from_source(facts: &(impl PropositionSource + ?Sized)) -> Self {
         let mut ordered = PersistentSequence::default();
         let mut reserved_variables = PersistentSet::default();
         let mut top_level_exact = PersistentSet::default();
@@ -333,10 +340,10 @@ impl ProofFacts {
         let mut by_quantified_equivalence = PersistentMap::default();
         let mut implications_by_consequent = PersistentMap::default();
         let mut implications_by_quantified_consequent = PersistentMap::default();
-        let mut assumptions = PureFactContext::new();
+        let assumptions = facts.pure_context();
         let mut implicit_transport_assumptions = PureFactContext::new();
         let mut by_predicate = PersistentMap::default();
-        for fact in facts {
+        for fact in facts.propositions() {
             for variable in crate::kernel::proposition_variables(fact) {
                 reserved_variables = reserved_variables.with_value(variable);
             }
@@ -391,8 +398,6 @@ impl ProofFacts {
             algebraic_equalities_by_term =
                 index_algebraic_equality_fact(algebraic_equalities_by_term, fact.as_ref());
             exact = exact.with_value(crate::kernel::clone_proposition_iteratively(fact.as_ref()));
-            assumptions = assumptions
-                .assume_proposition(crate::kernel::clone_proposition_iteratively(fact.as_ref()));
             implicit_transport_assumptions =
                 index_implicit_transport_context(implicit_transport_assumptions, fact.as_ref());
         }
@@ -3503,6 +3508,40 @@ mod integer_equality_fact_index_tests {
         for pair in samples.windows(2) {
             assert!(pair[1] >= pair[0]);
             assert!(pair[1] <= pair[0] * 8 + 32, "{samples:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod retained_root_context_tests {
+    use super::*;
+
+    #[test]
+    fn cached_root_sources_share_the_graph_without_readmitting_history() {
+        for size in [16u32, 64, 256, 1024] {
+            let inputs = (0..size)
+                .map(|index| {
+                    Proposition::ConditionIs(
+                        ConditionTerm::equal(
+                            Bitvector32Term::Variable(Variable(970_000 + u64::from(index))),
+                            Bitvector32Term::Constant(index),
+                        ),
+                        true,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let source = ProofFacts::from_ordered(&inputs);
+            let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
+            let retained = ProofFacts::from_source(&source);
+            let rebuilt = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
+            assert_eq!(rebuilt, 0, "cached root readmitted {size} input facts");
+            assert!(
+                retained.assumptions().equality_graph.input_key()
+                    == source.assumptions().equality_graph.input_key(),
+                "root conversion changed the trusted graph lineage"
+            );
+            assert!(retained.contains(inputs.last().unwrap()));
+            assert_eq!(retained.fact_count(), size as usize);
         }
     }
 }

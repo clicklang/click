@@ -13,7 +13,7 @@ impl<'a> Proof<'a> {
         claim_label: &'a str,
         tactic_index: usize,
         execution: ExecutionProofState,
-        pure_facts: Vec<Proposition>,
+        pure_facts: impl PropositionSource,
         constants: ExecutionProofConstants,
         function_block: &'a FunctionBlock,
         function: &'a CFunction,
@@ -45,7 +45,7 @@ impl<'a> Proof<'a> {
             state: KernelProofObject::root(
                 ProofLocals::default(),
                 OpenBranch::frontier(BranchState {
-                    facts: ProofFacts::from_ordered(&pure_facts),
+                    facts: ProofFacts::from_source(&pure_facts),
                     unfolded_predicates: PersistentOrderedSet::default(),
                     execution: Some(Arc::new(execution)),
                 }),

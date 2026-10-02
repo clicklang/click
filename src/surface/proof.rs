@@ -2571,6 +2571,14 @@ pub(super) fn initial_claim_context_with_mode(
         }
     }
     debug_assert_eq!(requirement_pure_facts.len(), entry_fact_origins.len());
+    // Export the selected function-entry input in the final execution lineage.
+    // Clause evaluation used a separate context with projection-derived read
+    // facts excluded; its prepared index cannot stand in for this one. Entry
+    // construction owns this whole-input boundary, once before proof steps.
+    // Permission lookup must only advance its checked resource/equality deltas.
+    state
+        .resources()
+        .synchronize_memory_equalities(&requirement_pure_facts.context());
     Ok(InitialClaimContext {
         state,
         arguments,

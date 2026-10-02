@@ -535,6 +535,20 @@ impl ResourceContext {
         projection_tests::record_context(self);
     }
 
+    #[cfg(test)]
+    pub(crate) fn memory_write_selection_is_known_for_test(
+        &self,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        let pointer = range
+            .base()
+            .offset_by_elements(range.start().clone(), range.element_width());
+        self.write_access_entries(&pointer, range.element_width(), assumptions)
+            .is_some()
+            && self.memory_write_range(&pointer, range.element_width(), assumptions) == Some(range)
+    }
+
     /// Pair at proof boundaries, then apply only resource and class deltas.
     /// Forks share the registered input and apply only their admitted delta.
     /// Independent lineages start from raw roots; no sibling premise leaks.
