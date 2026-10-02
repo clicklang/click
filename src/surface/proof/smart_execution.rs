@@ -86,9 +86,9 @@ impl<'a> Proof<'a> {
             {
                 next
             } else {
-                if !proof.is_at_execution_branch()? && !proof.is_at_call_outcomes_frontier()? {
-                    return Ok(None);
-                }
+                // A structural frontier (a C branch, a call's outcomes, or a
+                // statement such as a `switch` whose successors are path
+                // cases) runs to exit through the focused split recursion.
                 let Some(next) =
                     proof.try_focused_execute_to_exit_with_retries(&mut retried_requirements)?
                 else {
