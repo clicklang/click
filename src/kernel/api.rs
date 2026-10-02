@@ -1549,10 +1549,20 @@ pub fn c_cast_with_pointee_qualifiers_and_struct(
     CExpression::Cast {
         expression: Box::new(expression),
         target_type,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
         pointee_struct,
         pointee_volatile,
         pointee_constant,
     }
+}
+
+/// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
+pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
+    let mut result = c_cast(expression, CType::Int64);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::UInt64BitsToInt64;
+    }
+    result
 }
 
 pub fn c_conditional(

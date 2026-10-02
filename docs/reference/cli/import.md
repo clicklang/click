@@ -363,7 +363,7 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 24;
+its documented application invariant. The typed artifact schema is now 25;
 previous artifacts require an explicit lock refresh.
 
 The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
@@ -395,9 +395,13 @@ division and remainder require a nonzero divisor. Clang exports the usual
 arithmetic conversions explicitly, so mixed signed/unsigned source expressions
 retain their C++ meaning. Signed-to-unsigned conversion is modulo the target
 width; unsigned-to-int32 narrowing reinterprets the low 32 bits. Uint32-to-int64
-is an exact widening. Uint64-to-int64 conversion remains explicitly unsupported,
-as do unsigned references and record fields, runtime narrow/wide integer types,
-bitwise operations, and general templates.
+is an exact widening. C++20 uint64-to-int64 conversion preserves all 64 bits:
+values through `INT64_MAX` retain their value, and higher values denote the
+congruent signed value modulo 2^64. The importer selects the explicit kernel
+`UInt64BitsToInt64` cast mode; ordinary C casts retain their existing checks and
+supported slice. Subsequent signed operations retain overflow obligations.
+Unsigned references and record fields, runtime narrow/wide integer types,
+bitwise operations, and general templates remain outside this slice.
 
 The `unsigned-arithmetic` fixtures check wraparound, extrema, casts, modular
 caller framing, division guards, and both unsigned fee fast-path expressions.
@@ -405,6 +409,18 @@ Those fast-path cases return the unsigned intermediate and do not prove
 upstream `EvaluateFee`. The kernel strengthens unsigned constant bounds using
 only the queried endpoint's index, including negated bounds and values above
 the signed sign bit; deterministic regressions grow unrelated fact populations.
+
+The `signed-conversion` fixtures verify explicit and implicit conversions at
+the sign bit and both extrema, both round trips for arbitrary inputs, a modular
+bit-preservation contract with unrelated memory, and subsequent signed overflow.
+They preserve the instantiated fee fast-path expressions and signed return type
+and verify concrete rounding/boundary cases. The complete upstream `EvaluateFee`
+implementation and a general rounding theorem remain open. Conversion proofs
+agree across ordinary verification, expansion/reverification, and retained audit;
+false signed results are rejected. The shared bitvector representation preserves
+source bits and uses typed signed operators for subsequent computation. Indexed
+bit-preserving equality rules have fact-population and expression-depth scaling
+regressions.
 
 The pinned Clang exporter evaluates constant `sizeof` expressions and static
 zero-argument constexpr `std::numeric_limits::max()` calls in selected expression

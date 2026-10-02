@@ -1266,6 +1266,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
         CExpression::Cast {
             expression,
             target_type,
+            integer_mode,
             pointee_struct: _,
             pointee_volatile,
             pointee_constant,
@@ -1273,6 +1274,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             state,
             expression,
             *target_type,
+            *integer_mode,
             *pointee_volatile,
             *pointee_constant,
             assumptions,
@@ -1541,10 +1543,12 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
     Ok(paths)
 }
 
+#[allow(clippy::too_many_arguments)] // Cast mode and pointee qualifiers are independent.
 fn evaluate_c_cast_paths(
     state: &CState,
     expression: &CExpression,
     target_type: CType,
+    integer_mode: CIntegerCastMode,
     pointee_volatile: bool,
     pointee_constant: bool,
     assumptions: &PureFactContext,
@@ -1575,7 +1579,14 @@ fn evaluate_c_cast_paths(
             CExpressionOutcome::Value(value) => {
                 let effective_assumptions =
                     assumptions_with_path_context(assumptions, &facts, &obligations);
-                let coerced = if target_type == CType::Int32 {
+                let coerced = if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
+                    match (target_type, value) {
+                        (CType::Int64, CValue::UInt64(bits)) => {
+                            Ok(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(bits)))
+                        }
+                        _ => Err(CRuntimeError::TypeMismatch),
+                    }
+                } else if target_type == CType::Int32 {
                     match value {
                         value @ (CValue::Int8(_)
                         | CValue::Int16(_)

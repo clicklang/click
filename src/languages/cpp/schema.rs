@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 24;
+pub(crate) const EXPORT_SCHEMA: u32 = 25;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -1966,23 +1966,6 @@ impl CppExpression {
                 value.validate(places, records, logical_source)?;
                 require_integral_scalar(value.value_type(), "integral cast operand")?;
                 require_integral_scalar(value_type, "integral cast result")?;
-                if matches!(
-                    value.value_type(),
-                    CppType::Integer {
-                        bits: 64,
-                        signed: false,
-                        ..
-                    }
-                ) && matches!(
-                    value_type,
-                    CppType::Integer {
-                        bits: 64,
-                        signed: true,
-                        ..
-                    }
-                ) {
-                    return Err("C++ uint64-to-int64 reinterpretation is not supported yet".into());
-                }
                 Ok(())
             }
             Self::Binary {

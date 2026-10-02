@@ -1496,12 +1496,14 @@ impl<'a> TermRewrite<'a> {
             CExpression::Cast {
                 expression,
                 target_type,
+                integer_mode,
                 pointee_struct,
                 pointee_volatile,
                 pointee_constant,
             } => CExpression::Cast {
                 expression: Box::new(self.rewrite_c_expression(expression)?),
                 target_type: *target_type,
+                integer_mode: *integer_mode,
                 pointee_struct: pointee_struct.clone(),
                 pointee_volatile: *pointee_volatile,
                 pointee_constant: *pointee_constant,

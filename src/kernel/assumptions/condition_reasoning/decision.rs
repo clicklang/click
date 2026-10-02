@@ -340,8 +340,8 @@ impl PureFactContext {
         };
         if let Some((left, right, operator)) = wide_comparison {
             if operator == 8 {
-                let left_base = self.int64_additive_identity_base(left);
-                let right_base = self.int64_additive_identity_base(right);
+                let left_base = self.bitvector64_identity_base(left);
+                let right_base = self.bitvector64_identity_base(right);
                 if (!std::ptr::eq(left_base, left.as_ref())
                     || !std::ptr::eq(right_base, right.as_ref()))
                     && let Some(answer) = self.decide(&ConditionTerm::int64_equal(
@@ -1162,13 +1162,10 @@ impl PureFactContext {
         None
     }
 
-    /// Strip signed additive identities through borrowed operands. A chain of
-    /// zeros costs one indexed query per node and is cloned only after the
-    /// walk, rather than cloning every remaining subtree at every step.
-    fn int64_additive_identity_base<'a>(
-        &self,
-        mut term: &'a Bitvector32Term,
-    ) -> &'a Bitvector32Term {
+    /// Strip bit-preserving 64-bit conversions and signed additive identities
+    /// through borrowed operands. Each node costs at most its operand's indexed
+    /// query; clone only after the walk, not each remaining subtree.
+    fn bitvector64_identity_base<'a>(&self, mut term: &'a Bitvector32Term) -> &'a Bitvector32Term {
         loop {
             term = match term {
                 Bitvector32Term::Int64Add(a, b)
@@ -1186,6 +1183,8 @@ impl PureFactContext {
                 {
                     a
                 }
+                // A signed-to-unsigned 64-bit conversion preserves all bits.
+                Bitvector32Term::UInt64FromInt64(value) => value,
                 _ => return term,
             };
         }

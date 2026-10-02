@@ -76,7 +76,7 @@ int get_flag() noexcept {
 }
 
 // Preserve EvaluateFee's instantiated unsigned fast-path expressions. The
-// unsigned return keeps the still-unsupported final int64 conversion explicit.
+// unsigned return isolates template/unsigned arithmetic from signed conversion.
 template<bool RoundDown>
 unsigned long fee_fast_path(long fee, int at_size, int size) noexcept {
     if constexpr (RoundDown) {
