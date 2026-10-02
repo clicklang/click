@@ -2430,9 +2430,12 @@ fn synthesize_surface_bitvector(
         )));
     }
     if let Some((name, _)) = state.locals().object_values().find(|(_, value)| {
+        if matches!(value, CValue::Bool(_)) {
+            crate::instrumentation::record_deterministic_work(1);
+        }
         matches!(
             value,
-            CValue::Int8(local) | CValue::Int16(local)
+            CValue::Bool(local) | CValue::Int8(local) | CValue::Int16(local)
                 | CValue::Int32(local)
                 | CValue::UInt8(local)
                 | CValue::UInt16(local)

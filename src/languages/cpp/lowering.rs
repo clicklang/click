@@ -89,6 +89,8 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
     let mut context = LoweringContext {
         source_unit: import.logical_source(),
         function_name: &source.name,
+        source_names: places.values().map(|place| place.name.as_str()).collect(),
+        next_call_capture: 0,
         places,
         records: import
             .export()
@@ -104,6 +106,7 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
             .collect(),
         next_load_occurrence: 0,
         return_capture_name: return_capture_name(source),
+        nested_capture_name: fresh_internal_name(source, "__click_cpp_nested_value"),
         unwind_exception_name: fresh_internal_name(source, "__click_cpp_unwind_exception"),
         unwind_cleanups: matches!(
             import.export().exception_behavior,
@@ -204,6 +207,9 @@ struct LoweringContext<'a> {
     constants: BTreeMap<&'a str, &'a CppConstant>,
     next_load_occurrence: u32,
     return_capture_name: String,
+    nested_capture_name: String,
+    source_names: std::collections::BTreeSet<&'a str>,
+    next_call_capture: u64,
     unwind_exception_name: String,
     unwind_cleanups: bool,
 }
@@ -215,7 +221,9 @@ impl LoweringContext<'_> {
     /// that escape the frame before a return is reached.
     fn lower_function_body(&mut self, statements: &[CppStatement]) -> Result<CStatement, String> {
         let function_cleanups = match statements.last() {
-            Some(CppStatement::Return { cleanups, .. }) => cleanups.as_slice(),
+            Some(
+                CppStatement::Return { cleanups, .. } | CppStatement::ReturnCall { cleanups, .. },
+            ) => cleanups.as_slice(),
             _ => &[],
         };
         let mut active = Vec::new();
@@ -391,19 +399,33 @@ impl LoweringContext<'_> {
             CppStatement::Return {
                 value, cleanups, ..
             } => {
+                let value_type = cpp_return_scalar_type(value.value_type())?;
                 let value = self.lower_expression(value)?;
                 if cleanups.is_empty() {
                     return Ok(c_return(value));
                 }
                 let capture = self.return_capture_name.clone();
-                let mut result = c_seq(
-                    c_declare(capture.clone(), CType::Int32),
-                    c_assign(capture.clone(), value),
+                self.lower_captured_return(c_assign(capture, value), value_type, cleanups, false)
+            }
+            CppStatement::ReturnCall {
+                callee,
+                arguments,
+                value_type,
+                cleanups,
+                ..
+            } => {
+                let capture = self.return_capture_name.clone();
+                let (prefix, arguments) = self.lower_return_call_arguments(arguments)?;
+                let call = c_seq(
+                    prefix,
+                    c_call_assign(capture, callee.name.clone(), arguments),
                 );
-                for cleanup in cleanups {
-                    result = c_seq(result, self.lower_cleanup(cleanup)?);
-                }
-                Ok(c_seq(result, c_return(c_variable(capture))))
+                self.lower_captured_return(
+                    call,
+                    cpp_return_scalar_type(value_type)?,
+                    cleanups,
+                    true,
+                )
             }
             CppStatement::Throw { value, .. } => {
                 Ok(CStatement::Throw(self.lower_expression(value)?))
@@ -468,6 +490,32 @@ impl LoweringContext<'_> {
                 self.lower_call_arguments(arguments)?,
             )),
         }
+    }
+
+    /// Capture the result before destruction. A throwing return call takes the
+    /// same cleanup chain on its exceptional edge and never produces a return.
+    fn lower_captured_return(
+        &mut self,
+        mut evaluation: CStatement,
+        value_type: CType,
+        cleanups: &[CppCleanup],
+        can_throw: bool,
+    ) -> Result<CStatement, String> {
+        let capture = self.return_capture_name.clone();
+        if can_throw && self.unwind_cleanups && !cleanups.is_empty() {
+            let binding = self.unwind_exception_name.clone();
+            let mut handler = c_skip();
+            for cleanup in cleanups {
+                handler = c_seq(handler, self.lower_cleanup(cleanup)?);
+            }
+            handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
+            evaluation = c_try_catch_int32_with_cleanup(evaluation, binding, handler, true);
+        }
+        let mut result = c_seq(c_declare(capture.clone(), value_type), evaluation);
+        for cleanup in cleanups {
+            result = c_seq(result, self.lower_cleanup(cleanup)?);
+        }
+        Ok(c_seq(result, c_return(c_variable(capture))))
     }
 
     /// Lowers a cleanup scope whose constructed-object set can differ by
@@ -619,6 +667,48 @@ impl LoweringContext<'_> {
         ))
     }
 
+    fn lower_return_call_arguments(
+        &mut self,
+        arguments: &[CppCallArgument],
+    ) -> Result<(CStatement, Vec<CExpression>), String> {
+        if let [
+            CppCallArgument::Call {
+                callee,
+                arguments,
+                value_type,
+                ..
+            },
+        ] = arguments
+        {
+            let (prefix, arguments) = self.lower_return_call_arguments(arguments)?;
+            // Every call gets a distinct name, including calls in different
+            // branches with different scalar types. The source-name index
+            // avoids rescanning every source local for each nested capture.
+            let mut capture = format!("{}_{}", self.nested_capture_name, self.next_call_capture);
+            self.next_call_capture = self
+                .next_call_capture
+                .checked_add(1)
+                .ok_or("C++ nested call capture counter overflow")?;
+            loop {
+                crate::instrumentation::record_deterministic_work(1);
+                if !self.source_names.contains(capture.as_str()) {
+                    break;
+                }
+                capture.push('_');
+            }
+            let evaluation = c_seq(
+                prefix,
+                c_seq(
+                    c_declare(capture.clone(), cpp_return_scalar_type(value_type)?),
+                    c_call_assign(capture.clone(), callee.name.clone(), arguments),
+                ),
+            );
+            Ok((evaluation, vec![c_variable(capture)]))
+        } else {
+            Ok((c_skip(), self.lower_call_arguments(arguments)?))
+        }
+    }
+
     fn lower_call_arguments(
         &mut self,
         arguments: &[CppCallArgument],
@@ -641,6 +731,9 @@ impl LoweringContext<'_> {
         match argument {
             CppCallArgument::Value { value } => self.lower_expression(value),
             CppCallArgument::Reference { place } => self.lower_place(place),
+            CppCallArgument::Call { .. } => {
+                Err("nested C++ call outside a supported return call".into())
+            }
         }
     }
 
@@ -989,7 +1082,9 @@ fn scope_needs_path_sensitive_unwind(statements: &[CppStatement], cleanups: &[Cp
 
 fn statement_may_throw(statement: &CppStatement) -> bool {
     match statement {
-        CppStatement::Call { .. } | CppStatement::Throw { .. } => true,
+        CppStatement::Call { .. }
+        | CppStatement::ReturnCall { .. }
+        | CppStatement::Throw { .. } => true,
         CppStatement::Declare {
             initializer: CppInitializer::Call { .. },
             ..
@@ -1085,6 +1180,20 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
         record.alignment_bytes,
         fields,
     ))
+}
+
+fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if matches!(
+        value_type,
+        CppType::Boolean {
+            bits: 8,
+            is_const: false
+        }
+    ) {
+        Ok(CType::Bool)
+    } else {
+        cpp_scalar_kernel_type(value_type)
+    }
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {

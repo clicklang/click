@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 25;
+pub(crate) const EXPORT_SCHEMA: u32 = 27;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -297,8 +297,18 @@ pub enum CppCleanup {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CppCallArgument {
-    Value { value: CppExpression },
-    Reference { place: CppPlaceReference },
+    Value {
+        value: CppExpression,
+    },
+    Reference {
+        place: CppPlaceReference,
+    },
+    Call {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
+        span: CppSpan,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -349,6 +359,13 @@ pub enum CppStatement {
     },
     Return {
         value: CppExpression,
+        cleanups: Vec<CppCleanup>,
+        span: CppSpan,
+    },
+    ReturnCall {
+        callee: CppFunctionReference,
+        arguments: Vec<CppCallArgument>,
+        value_type: CppType,
         cleanups: Vec<CppCleanup>,
         span: CppSpan,
     },
@@ -1262,7 +1279,10 @@ impl CppFunction {
                     || has_exception_cleanup_scope
                     || aggregate_locals != 0
                     || !destructible_locals.is_empty()
-                    || !matches!(handler.as_slice(), [CppStatement::Return { .. }])
+                    || !matches!(
+                        handler.as_slice(),
+                        [CppStatement::Return { .. } | CppStatement::ReturnCall { .. }]
+                    )
                     || !matches!(body.first(), Some(CppStatement::Declare { .. }))
                     || sequence_contains_return(body)
                 {
@@ -1413,7 +1433,9 @@ impl CppFunction {
             ));
         }
         if !destructible_locals.is_empty() {
-            let Some(CppStatement::Return { .. }) = self.body.last() else {
+            let Some(CppStatement::Return { .. } | CppStatement::ReturnCall { .. }) =
+                self.body.last()
+            else {
                 return Err(format!(
                     "C++ function `{}` with automatic destruction requires one final return",
                     self.name
@@ -1532,6 +1554,23 @@ impl CppStatement {
                 value.validate(places, records, logical_source)?;
                 if require_scalar_integer(value.value_type(), "return value").is_err() {
                     require_bool(value.value_type(), false, "return value")?;
+                }
+                for cleanup in cleanups {
+                    cleanup.validate(places, records, logical_source)?;
+                }
+                Ok(())
+            }
+            Self::ReturnCall {
+                callee,
+                arguments,
+                value_type,
+                cleanups,
+                span,
+            } => {
+                validate_nested_call(callee, arguments, span, places, records, logical_source)?;
+                value_type.validate_aliases(logical_source)?;
+                if require_scalar_integer(value_type, "return-call value").is_err() {
+                    require_bool(value_type, false, "return-call value")?;
                 }
                 for cleanup in cleanups {
                     cleanup.validate(places, records, logical_source)?;
@@ -1711,6 +1750,33 @@ fn validate_call(
     records: &BTreeMap<String, &CppRecord>,
     logical_source: &str,
 ) -> Result<(), String> {
+    if arguments
+        .iter()
+        .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+    {
+        return Err("nested C++ calls are supported only in scalar return-call arguments".into());
+    }
+    validate_nested_call(callee, arguments, span, places, records, logical_source)
+}
+
+fn validate_nested_call(
+    callee: &CppFunctionReference,
+    arguments: &[CppCallArgument],
+    span: &CppSpan,
+    places: &BTreeMap<String, (String, CppType)>,
+    records: &BTreeMap<String, &CppRecord>,
+    logical_source: &str,
+) -> Result<(), String> {
+    if arguments
+        .iter()
+        .any(|argument| matches!(argument, CppCallArgument::Call { .. }))
+        && arguments.len() != 1
+    {
+        return Err(
+            "nested C++ calls require exactly one value argument to preserve evaluation order"
+                .into(),
+        );
+    }
     span.validate(logical_source)?;
     callee.span.validate(logical_source)?;
     if callee.declaration_id.is_empty() || callee.name.is_empty() {
@@ -1730,6 +1796,18 @@ impl CppCallArgument {
         logical_source: &str,
     ) -> Result<(), String> {
         match self {
+            Self::Call {
+                callee,
+                arguments,
+                value_type,
+                span,
+            } => {
+                value_type.validate_aliases(logical_source)?;
+                if require_scalar_integer(value_type, "nested-call value").is_err() {
+                    require_bool(value_type, false, "nested-call value")?;
+                }
+                validate_nested_call(callee, arguments, span, places, records, logical_source)
+            }
             Self::Value { value } => value.validate(places, records, logical_source),
             Self::Reference { place } => {
                 let value_type = validate_place_reference(place, places, logical_source)?;
@@ -2201,7 +2279,7 @@ fn sequence_always_returns(statements: &[CppStatement]) -> bool {
 
 fn sequence_contains_return(statements: &[CppStatement]) -> bool {
     statements.iter().any(|statement| match statement {
-        CppStatement::Return { .. } => true,
+        CppStatement::Return { .. } | CppStatement::ReturnCall { .. } => true,
         CppStatement::If {
             then_branch,
             else_branch,
@@ -2238,7 +2316,7 @@ fn validate_return_cleanups(
 ) -> Result<(), String> {
     for statement in statements {
         match statement {
-            CppStatement::Return { cleanups, .. } => {
+            CppStatement::Return { cleanups, .. } | CppStatement::ReturnCall { cleanups, .. } => {
                 if !return_cleanups_match(cleanups, locals) {
                     return Err(format!(
                         "C++ return from `{function_name}` must destroy every constructed local exactly once in reverse construction order"
@@ -2288,7 +2366,7 @@ fn return_cleanups_match(cleanups: &[CppCleanup], locals: &[CppPlace]) -> bool {
 impl CppStatement {
     fn always_returns(&self) -> bool {
         match self {
-            Self::Return { .. } | Self::Throw { .. } => true,
+            Self::Return { .. } | Self::ReturnCall { .. } | Self::Throw { .. } => true,
             Self::If {
                 condition,
                 then_branch,
@@ -2375,7 +2453,7 @@ fn validate_reachable_calls(
         match call {
             CollectedCall::Ordinary { destination, .. } => {
                 if destination.is_some_and(|value| !same_scalar_type(value, &target.return_type)) {
-                    return Err("C++ call capture requires matching return and local types".into());
+                    return Err("C++ call result does not match its capture or return type".into());
                 }
                 if !matches!(
                     target.function_kind,
@@ -2542,6 +2620,24 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
                 collect_calls(try_body, calls);
                 collect_calls(handler, calls);
             }
+            CppStatement::ReturnCall {
+                callee,
+                arguments,
+                value_type,
+                cleanups,
+                ..
+            } => {
+                calls.push(CollectedCall::Ordinary {
+                    callee,
+                    arguments,
+                    destination: Some(value_type),
+                });
+                collect_nested_calls(arguments, calls);
+                for cleanup in cleanups {
+                    let CppCleanup::Destructor { object, callee, .. } = cleanup;
+                    calls.push(CollectedCall::Destructor { object, callee });
+                }
+            }
             CppStatement::Return { cleanups, .. } => {
                 for cleanup in cleanups {
                     let CppCleanup::Destructor { object, callee, .. } = cleanup;
@@ -2552,6 +2648,25 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             | CppStatement::Assign { .. }
             | CppStatement::Store { .. }
             | CppStatement::MemberStore { .. } => {}
+        }
+    }
+}
+
+fn collect_nested_calls<'a>(arguments: &'a [CppCallArgument], calls: &mut Vec<CollectedCall<'a>>) {
+    for argument in arguments {
+        if let CppCallArgument::Call {
+            callee,
+            arguments,
+            value_type,
+            ..
+        } = argument
+        {
+            calls.push(CollectedCall::Ordinary {
+                callee,
+                arguments,
+                destination: Some(value_type),
+            });
+            collect_nested_calls(arguments, calls);
         }
     }
 }
@@ -2573,6 +2688,9 @@ fn validate_call_arguments(
     }
     for (index, (argument, parameter)) in arguments.iter().zip(parameters).enumerate() {
         let compatible = match (argument, &parameter.value_type) {
+            (CppCallArgument::Call { value_type, .. }, expected) => {
+                same_scalar_type(value_type, expected)
+            }
             (
                 CppCallArgument::Value { value },
                 CppType::Boolean {
@@ -2893,7 +3011,7 @@ fn validate_statement_constant_references(
                     referenced_constants,
                 )?;
             }
-            CppStatement::Call { arguments, .. } => {
+            CppStatement::Call { arguments, .. } | CppStatement::ReturnCall { arguments, .. } => {
                 for argument in arguments {
                     argument.validate_constant_references(
                         logical_source,
@@ -2952,6 +3070,16 @@ impl CppCallArgument {
         match self {
             Self::Value { value } => {
                 value.validate_constant_references(logical_source, constants, referenced_constants)
+            }
+            Self::Call { arguments, .. } => {
+                for argument in arguments {
+                    argument.validate_constant_references(
+                        logical_source,
+                        constants,
+                        referenced_constants,
+                    )?;
+                }
+                Ok(())
             }
             Self::Reference { .. } => Ok(()),
         }
@@ -3292,6 +3420,11 @@ fn validate_return_types(statements: &[CppStatement], return_type: &CppType) -> 
             {
                 return Err("C++ return value does not match the function return type".into());
             }
+            CppStatement::ReturnCall { value_type, .. }
+                if !same_scalar_type(value_type, return_type) =>
+            {
+                return Err("C++ return-call value does not match the function return type".into());
+            }
             CppStatement::Scope { body, .. } => validate_return_types(body, return_type)?,
             CppStatement::TryCatchInt32 {
                 try_body, handler, ..
@@ -3379,6 +3512,245 @@ mod tests {
             is_const,
             source_aliases: Vec::new(),
         }
+    }
+
+    fn return_call() -> CppStatement {
+        CppStatement::ReturnCall {
+            callee: CppFunctionReference {
+                declaration_id: "callee".into(),
+                name: "callee".into(),
+                span: cleanup_span(),
+            },
+            arguments: vec![],
+            value_type: signed_integer(32, false),
+            cleanups: vec![],
+            span: cleanup_span(),
+        }
+    }
+
+    #[test]
+    fn nested_call_artifacts_validate_capture_types_order_and_reachable_graph() {
+        let nested = CppCallArgument::Call {
+            callee: CppFunctionReference {
+                declaration_id: "inner".into(),
+                name: "inner".into(),
+                span: cleanup_span(),
+            },
+            arguments: vec![],
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        };
+        let mut call = return_call();
+        let CppStatement::ReturnCall { arguments, .. } = &mut call else {
+            unreachable!()
+        };
+        arguments.push(nested.clone());
+        assert!(
+            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .is_ok()
+        );
+        let mut invalid = call.clone();
+        let CppStatement::ReturnCall { arguments, .. } = &mut invalid else {
+            unreachable!()
+        };
+        arguments.push(nested.clone());
+        assert!(
+            invalid
+                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .unwrap_err()
+                .contains("evaluation order")
+        );
+        let mut invalid = nested.clone();
+        let CppCallArgument::Call { value_type, .. } = &mut invalid else {
+            unreachable!()
+        };
+        *value_type = CppType::Void;
+        assert!(
+            invalid
+                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .is_err()
+        );
+        let function = |name: &str, body, parameters| CppFunction {
+            declaration_id: name.into(),
+            name: name.into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            parameters,
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body,
+        };
+        let caller = function("caller", vec![call], vec![]);
+        let callee = function(
+            "callee",
+            vec![],
+            vec![CppPlace {
+                declaration_id: "parameter".into(),
+                name: "parameter".into(),
+                value_type: signed_integer(32, false),
+                span: cleanup_span(),
+            }],
+        );
+        let inner = function("inner", vec![], vec![]);
+        let validate = |inner: &CppFunction| {
+            validate_reachable_calls(
+                "caller",
+                &BTreeMap::from([
+                    ("caller".into(), &caller),
+                    ("callee".into(), &callee),
+                    ("inner".into(), inner),
+                ]),
+                &mut Vec::new(),
+                &mut BTreeSet::new(),
+                "fixture.cpp",
+            )
+        };
+        assert!(validate(&inner).is_ok());
+        let mut changed = inner.clone();
+        changed.return_type = signed_integer(64, false);
+        assert!(validate(&changed).unwrap_err().contains("call result"));
+        changed = inner.clone();
+        changed.name = "wrong".into();
+        assert!(validate(&changed).unwrap_err().contains("is named"));
+        changed = inner;
+        let mut recursive = return_call();
+        let CppStatement::ReturnCall { callee, .. } = &mut recursive else {
+            unreachable!()
+        };
+        callee.declaration_id = "caller".into();
+        callee.name = "caller".into();
+        changed.body.push(recursive);
+        assert!(validate(&changed).unwrap_err().contains("recursive"));
+    }
+
+    #[test]
+    fn return_call_artifacts_require_scalar_types_return_matching_and_complete_cleanups() {
+        let mut call = return_call();
+        assert!(
+            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .is_ok()
+        );
+        assert!(call.always_returns());
+        assert!(validate_return_types(&[call.clone()], &signed_integer(64, false)).is_err());
+        let locals = vec![
+            cleanup_place("first", "first"),
+            cleanup_place("second", "second"),
+        ];
+        assert!(validate_return_cleanups(&[call.clone()], "caller", &locals).is_err());
+        let CppStatement::ReturnCall { cleanups, .. } = &mut call else {
+            unreachable!()
+        };
+        *cleanups = locals.iter().rev().map(cleanup_for).collect();
+        assert!(validate_return_cleanups(&[call.clone()], "caller", &locals).is_ok());
+        let CppStatement::ReturnCall { cleanups, .. } = &mut call else {
+            unreachable!()
+        };
+        cleanups.swap(0, 1);
+        assert!(validate_return_cleanups(&[call.clone()], "caller", &locals).is_err());
+        let CppStatement::ReturnCall {
+            value_type,
+            cleanups,
+            ..
+        } = &mut call
+        else {
+            unreachable!()
+        };
+        cleanups.clear();
+        *value_type = CppType::Void;
+        assert!(
+            call.validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn return_call_graphs_check_callee_identity_destination_arguments_and_cycles() {
+        let function = |name: &str, body| CppFunction {
+            declaration_id: name.into(),
+            name: name.into(),
+            function_kind: CppFunctionKind::Free,
+            return_type: signed_integer(32, false),
+            parameters: vec![],
+            declared_noexcept: true,
+            span: cleanup_span(),
+            body,
+        };
+        let caller = function("caller", vec![return_call()]);
+        let callee = function("callee", vec![]);
+        let validate = |caller: &CppFunction, callee: &CppFunction| {
+            validate_reachable_calls(
+                "caller",
+                &BTreeMap::from([("caller".into(), caller), ("callee".into(), callee)]),
+                &mut Vec::new(),
+                &mut BTreeSet::new(),
+                "fixture.cpp",
+            )
+        };
+        assert!(validate(&caller, &callee).is_ok());
+        let mut changed = callee.clone();
+        changed.return_type = signed_integer(64, false);
+        assert!(
+            validate(&caller, &changed)
+                .unwrap_err()
+                .contains("call result")
+        );
+        changed = callee.clone();
+        changed.return_type = CppType::Integer {
+            bits: 32,
+            signed: false,
+            is_const: false,
+            source_aliases: vec![],
+        };
+        assert!(
+            validate(&caller, &changed)
+                .unwrap_err()
+                .contains("call result")
+        );
+        changed = callee.clone();
+        changed.name = "other".into();
+        assert!(
+            validate(&caller, &changed)
+                .unwrap_err()
+                .contains("is named")
+        );
+        changed = callee.clone();
+        changed.parameters.push(CppPlace {
+            declaration_id: "parameter".into(),
+            name: "parameter".into(),
+            value_type: signed_integer(32, false),
+            span: cleanup_span(),
+        });
+        assert!(
+            validate(&caller, &changed)
+                .unwrap_err()
+                .contains("arguments")
+        );
+        let mut changed_caller = caller.clone();
+        let CppStatement::ReturnCall {
+            callee: reference, ..
+        } = &mut changed_caller.body[0]
+        else {
+            unreachable!()
+        };
+        reference.declaration_id = "missing".into();
+        assert!(
+            validate(&changed_caller, &callee)
+                .unwrap_err()
+                .contains("missing reachable definition")
+        );
+        let CppStatement::ReturnCall {
+            callee: reference, ..
+        } = &mut changed_caller.body[0]
+        else {
+            unreachable!()
+        };
+        reference.declaration_id = "caller".into();
+        reference.name = "caller".into();
+        assert!(
+            validate(&changed_caller, &callee)
+                .unwrap_err()
+                .contains("recursive C++ calls")
+        );
     }
 
     #[test]

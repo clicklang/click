@@ -239,7 +239,7 @@ public:
     profile["compilation_command"] = std::move(compilation_command);
 
     llvm::json::Object artifact;
-    artifact["schema"] = 25;
+    artifact["schema"] = 27;
     artifact["language"] = "c++";
     artifact["profile"] = std::move(profile);
     artifact["exception_behavior"] = exception_behavior_;
@@ -803,13 +803,35 @@ private:
              "the first C++ slice requires an int return value");
         return std::nullopt;
       }
-      auto value = lower_expression(returned->getRetValue(), function);
-      if (!value) {
-        return std::nullopt;
-      }
       llvm::json::Object result;
-      result["kind"] = "return";
-      result["value"] = std::move(*value);
+      const auto *call = llvm::dyn_cast<clang::CallExpr>(
+          returned->getRetValue()->IgnoreParens());
+      if (call != nullptr && !is_numeric_limits_max_call(call)) {
+        const auto *callee = call->getDirectCallee();
+        if (callee == nullptr ||
+            !context_.hasSameType(callee->getReturnType(),
+                                  function->getReturnType())) {
+          fail(call->getExprLoc(), "C++ return call requires matching callee "
+                                   "and caller return types");
+          return std::nullopt;
+        }
+        auto lowered = lower_call_operation(call, function, true);
+        auto value_type = lower_type(call->getType(), call->getExprLoc());
+        if (!lowered || !value_type) {
+          return std::nullopt;
+        }
+        result["kind"] = "return_call";
+        result["callee"] = std::move(lowered->callee);
+        result["arguments"] = std::move(lowered->arguments);
+        result["value_type"] = std::move(*value_type);
+      } else {
+        auto value = lower_expression(returned->getRetValue(), function);
+        if (!value) {
+          return std::nullopt;
+        }
+        result["kind"] = "return";
+        result["value"] = std::move(*value);
+      }
       llvm::json::Array cleanups;
       const auto cleanup = cleanup_locals_.find(function->getCanonicalDecl());
       if (cleanup != cleanup_locals_.end()) {
@@ -1421,7 +1443,8 @@ private:
 
   std::optional<LoweredCall>
   lower_call_operation(const clang::CallExpr *call,
-                       const clang::FunctionDecl *caller) {
+                       const clang::FunctionDecl *caller,
+                       bool allow_nested = false) {
     const clang::FunctionDecl *callee = call->getDirectCallee();
     if (callee == nullptr) {
       fail(call->getExprLoc(),
@@ -1448,7 +1471,9 @@ private:
         receiver = operator_call->getArg(0);
         argument_offset = 1;
       }
-      if (receiver == nullptr || receiver->getType()->isPointerType()) {
+      if (receiver == nullptr ||
+          (receiver->getType()->isPointerType() &&
+           !llvm::isa<clang::CXXThisExpr>(receiver->IgnoreParenImpCasts()))) {
         fail(call->getExprLoc(), "supported C++ method call requires a direct "
                                  "record lvalue receiver");
         return std::nullopt;
@@ -1484,9 +1509,36 @@ private:
       arguments.push_back(std::move(argument));
     }
     for (unsigned index = 0; index < definition->getNumParams(); ++index) {
-      auto argument =
-          lower_call_argument(call->getArg(index + argument_offset),
-                              definition->getParamDecl(index), caller);
+      const auto *source_argument = call->getArg(index + argument_offset);
+      const auto *nested =
+          llvm::dyn_cast<clang::CallExpr>(source_argument->IgnoreParens());
+      std::optional<Json> argument;
+      if (allow_nested && nested != nullptr &&
+          !is_numeric_limits_max_call(nested)) {
+        if (method != nullptr || definition->getNumParams() != 1 ||
+            definition->getParamDecl(index)->getType()->isReferenceType() ||
+            !context_.hasSameType(source_argument->getType(),
+                                  definition->getParamDecl(index)->getType())) {
+          fail(source_argument->getExprLoc(),
+               "nested C++ calls require exactly one matching scalar value "
+               "argument to preserve evaluation order");
+          return std::nullopt;
+        }
+        auto operation = lower_call_operation(nested, caller, true);
+        auto value_type = lower_type(nested->getType(), nested->getExprLoc());
+        if (!operation || !value_type)
+          return std::nullopt;
+        llvm::json::Object value;
+        value["kind"] = "call";
+        value["callee"] = std::move(operation->callee);
+        value["arguments"] = std::move(operation->arguments);
+        value["value_type"] = std::move(*value_type);
+        value["span"] = std::move(operation->span);
+        argument = Json(std::move(value));
+      } else {
+        argument = lower_call_argument(source_argument,
+                                       definition->getParamDecl(index), caller);
+      }
       if (!argument) {
         return std::nullopt;
       }
@@ -1737,6 +1789,20 @@ private:
     return Json(std::move(result));
   }
 
+  // These calls already have distinct compiler-constant semantics. Preserve
+  // that allowlist before recognizing a runtime return-call operation.
+  bool is_numeric_limits_max_call(const clang::CallExpr *call) const {
+    const auto *method =
+        call == nullptr ? nullptr
+                        : llvm::dyn_cast_or_null<clang::CXXMethodDecl>(
+                              call->getDirectCallee());
+    return method != nullptr && method->isStatic() && method->isConstexpr() &&
+           call->getNumArgs() == 0 && method->getNameAsString() == "max" &&
+           method->getParent()->getNameAsString() == "numeric_limits" &&
+           method->getParent()->getQualifiedNameAsString().rfind(
+               "std::numeric_limits", 0) == 0;
+  }
+
   std::optional<Json> lower_expression(const clang::Expr *expression,
                                        const clang::FunctionDecl *function) {
     if (const auto *throw_expression =
@@ -1763,17 +1829,7 @@ private:
     const auto *trait =
         llvm::dyn_cast<clang::UnaryExprOrTypeTraitExpr>(candidate);
     const auto *constant_call = llvm::dyn_cast<clang::CallExpr>(candidate);
-    const auto *constant_method =
-        constant_call == nullptr ? nullptr
-                                 : llvm::dyn_cast_or_null<clang::CXXMethodDecl>(
-                                       constant_call->getDirectCallee());
-    const bool limits_max =
-        constant_method != nullptr && constant_method->isStatic() &&
-        constant_method->isConstexpr() && constant_call->getNumArgs() == 0 &&
-        constant_method->getNameAsString() == "max" &&
-        constant_method->getParent()->getNameAsString() == "numeric_limits" &&
-        constant_method->getParent()->getQualifiedNameAsString().rfind(
-            "std::numeric_limits", 0) == 0;
+    const bool limits_max = is_numeric_limits_max_call(constant_call);
     if ((trait != nullptr && trait->getKind() == clang::UETT_SizeOf) ||
         limits_max) {
       if (expression->getType()->isIntegerType() &&
