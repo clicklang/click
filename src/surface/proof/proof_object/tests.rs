@@ -13100,7 +13100,6 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         CState::new(),
         helper.clone(),
         helper_arguments,
-        vec![],
         CExecutionEnvironment::new(),
         CExecutionSemantics::EXECUTE_BODIES,
         CFunctionContractExecutionMode::VerifyLoops,

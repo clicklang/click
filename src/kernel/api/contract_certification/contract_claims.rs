@@ -1626,6 +1626,7 @@ fn function_claim_holds_on_prepared_path(
 
                     proof.specification.requires().iter().all(|requirement| {
                         assumptions.proves_exact(requirement)
+                            || assumptions.states_required_goal(requirement)
                             || match requirement {
                                 Proposition::CResourceComposition(required) => {
                                     resource_context_definitionally_contains(

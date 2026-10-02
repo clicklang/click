@@ -2506,10 +2506,9 @@ pub(super) fn initial_claim_context_with_mode(
     )?;
     // The entry partition facts are entry assumptions of this contract, on the
     // same footing as the `viewable(..)` fact a clause yields: they are
-    // derived from the written clause list. Contract certification computes
-    // the same facts a second time from the same list
-    // (`c_function_contract_certification_assumptions`); the two computations
-    // must agree.
+    // derived from the written clause list. They are the proof side's
+    // spelling of what the kernel's contract entry states; a proof keeps one
+    // only when the entry states it (`contract_entry_view`).
     for fact in entry_partition_facts {
         if !requirement_pure_facts.contains(&fact) {
             requirement_pure_facts.push(fact);

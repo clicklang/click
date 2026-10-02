@@ -1256,8 +1256,9 @@ so travels nowhere: only `unfold` or a proof `match` names that binding. An arm
 fact that names no binding of its own does travel, so a resource whose `Some`
 arm also states `fact p != 0` makes that an entry premise, and a walk that
 starts with `if (p == 0)` decides the guard instead of needing an infeasible
-`branch`. Contract certification computes the same facts a second time at its
-own entry state, so the two contexts agree on what the contract assumed
+`branch`. The proof starts from the kernel's contract entry, which states
+those facts, so the proof and contract certification share what the contract
+assumed
 (`mdtests/resource_selected_arm_fact_at_contract.md`).
 
 ### A model field is not carried for you

@@ -1908,15 +1908,6 @@ pub(crate) fn resource_context_has_read(
     })
 }
 
-pub(in crate::kernel) fn resource_context_has_structural_read(
-    resources: &ResourceContext,
-    pointer: &Pointer,
-    byte_width: u32,
-    assumptions: &PureFactContext,
-) -> bool {
-    resources.permits_memory_read_structurally(pointer, byte_width, assumptions)
-}
-
 /// Charge one collector node and report whether the checked fold analysis has
 /// already exhausted its deterministic budget.  The instrumentation scope is
 /// inactive for legacy callers, so those callers retain their existing work

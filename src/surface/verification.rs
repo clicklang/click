@@ -3218,7 +3218,6 @@ fn verify_c0_sources_with_context(
                             certification_state.clone(),
                             contract_function.clone(),
                             certification_arguments.clone(),
-                            certification_facts.into_vec(),
                             certification_function_environment,
                             if has_frontier_loop_rules {
                                 CExecutionSemantics::APPLY_VERIFIED_RULES

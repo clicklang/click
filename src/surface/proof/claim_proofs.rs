@@ -425,6 +425,13 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
             ClickError::new(format!("`{claim_label}` could not bind function arguments"))
         })?;
+    let (pure_facts, entry_fact_origins) = contract_entry_view(
+        pure_facts,
+        entry_fact_origins,
+        &state,
+        &function,
+        &arguments,
+    );
     // The proof of a function that declares an expression `decreases` measure
     // steps under that function's recursion anchor, which is what makes a
     // self-call raise the descent obligations. Certification derives the same
@@ -677,6 +684,13 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
             ClickError::new(format!("`{proof_label}` could not bind function arguments"))
         })?;
+    let (pure_facts, entry_fact_origins) = contract_entry_view(
+        pure_facts,
+        entry_fact_origins,
+        &state,
+        &function,
+        &arguments,
+    );
     // Same anchor as the single-claim route; see `prove_claim_by_tactics`.
     let anchored_function_environment =
         crate::kernel::c_execution_environment_with_recursion_anchor(
@@ -5454,4 +5468,51 @@ mod evidence_tests {
         assert!(closure.require_evidence(execution, 1, &key).is_err());
         assert!(ClaimClosure::vacuous(execution, 1, key, ClaimCertificate::ExactCheck).is_err());
     }
+}
+
+/// The entry facts a proof starts from: the kernel's contract entry, seen
+/// the way the contract's source states it.
+///
+/// The kernel builds the entry from the contract. A proof keeps each fact
+/// of `surface_facts` the entry states, under the source spelling and origin
+/// the proof side recorded for it, and takes the entry's own spelling of
+/// what the contract's clauses and parameters say beside them. What the
+/// entry's resources state at depth stays out of view until the proof
+/// observes or opens the resource.
+fn contract_entry_view(
+    surface_facts: PureFactList,
+    surface_origins: Vec<EntryFactOrigin>,
+    state: &CState,
+    function: &CFunction,
+    arguments: &[CExpression],
+) -> (PureFactList, Vec<EntryFactOrigin>) {
+    let Ok(entry) = crate::kernel::c_function_contract_entry(state, function, arguments) else {
+        return (surface_facts, surface_origins);
+    };
+    let mut facts = Vec::new();
+    let mut origins = Vec::new();
+    let mut kept = BTreeSet::new();
+    for (fact, origin) in surface_facts.iter().zip(surface_origins) {
+        if entry.states(fact) {
+            facts.push(fact.clone());
+            origins.push(origin);
+            kept.insert(fact);
+        }
+    }
+    for fact in entry.facts() {
+        use crate::kernel::CContractEntryFactOrigin as Origin;
+        let visible = !matches!(
+            fact.origin(),
+            Origin::CompositeDefinition
+                | Origin::PopulationFact
+                | Origin::Observable
+                | Origin::ResourceQuantity
+                | Origin::PredicateBody(_)
+        );
+        if visible && kept.insert(fact.proposition()) {
+            facts.push(fact.proposition().clone());
+            origins.push(EntryFactOrigin::Derived);
+        }
+    }
+    (PureFactList::from(facts), origins)
 }
