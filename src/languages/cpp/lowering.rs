@@ -215,7 +215,9 @@ impl LoweringContext<'_> {
     /// that escape the frame before a return is reached.
     fn lower_function_body(&mut self, statements: &[CppStatement]) -> Result<CStatement, String> {
         let function_cleanups = match statements.last() {
-            Some(CppStatement::Return { cleanups, .. }) => cleanups.as_slice(),
+            Some(
+                CppStatement::Return { cleanups, .. } | CppStatement::ReturnCall { cleanups, .. },
+            ) => cleanups.as_slice(),
             _ => &[],
         };
         let mut active = Vec::new();
@@ -391,19 +393,33 @@ impl LoweringContext<'_> {
             CppStatement::Return {
                 value, cleanups, ..
             } => {
+                let value_type = cpp_return_scalar_type(value.value_type())?;
                 let value = self.lower_expression(value)?;
                 if cleanups.is_empty() {
                     return Ok(c_return(value));
                 }
                 let capture = self.return_capture_name.clone();
-                let mut result = c_seq(
-                    c_declare(capture.clone(), CType::Int32),
-                    c_assign(capture.clone(), value),
+                self.lower_captured_return(c_assign(capture, value), value_type, cleanups, false)
+            }
+            CppStatement::ReturnCall {
+                callee,
+                arguments,
+                value_type,
+                cleanups,
+                ..
+            } => {
+                let capture = self.return_capture_name.clone();
+                let call = c_call_assign(
+                    capture,
+                    callee.name.clone(),
+                    self.lower_call_arguments(arguments)?,
                 );
-                for cleanup in cleanups {
-                    result = c_seq(result, self.lower_cleanup(cleanup)?);
-                }
-                Ok(c_seq(result, c_return(c_variable(capture))))
+                self.lower_captured_return(
+                    call,
+                    cpp_return_scalar_type(value_type)?,
+                    cleanups,
+                    true,
+                )
             }
             CppStatement::Throw { value, .. } => {
                 Ok(CStatement::Throw(self.lower_expression(value)?))
@@ -468,6 +484,32 @@ impl LoweringContext<'_> {
                 self.lower_call_arguments(arguments)?,
             )),
         }
+    }
+
+    /// Capture the result before destruction. A throwing return call takes the
+    /// same cleanup chain on its exceptional edge and never produces a return.
+    fn lower_captured_return(
+        &mut self,
+        mut evaluation: CStatement,
+        value_type: CType,
+        cleanups: &[CppCleanup],
+        can_throw: bool,
+    ) -> Result<CStatement, String> {
+        let capture = self.return_capture_name.clone();
+        if can_throw && self.unwind_cleanups && !cleanups.is_empty() {
+            let binding = self.unwind_exception_name.clone();
+            let mut handler = c_skip();
+            for cleanup in cleanups {
+                handler = c_seq(handler, self.lower_cleanup(cleanup)?);
+            }
+            handler = c_seq(handler, CStatement::Throw(c_variable(binding.clone())));
+            evaluation = c_try_catch_int32_with_cleanup(evaluation, binding, handler, true);
+        }
+        let mut result = c_seq(c_declare(capture.clone(), value_type), evaluation);
+        for cleanup in cleanups {
+            result = c_seq(result, self.lower_cleanup(cleanup)?);
+        }
+        Ok(c_seq(result, c_return(c_variable(capture))))
     }
 
     /// Lowers a cleanup scope whose constructed-object set can differ by
@@ -989,7 +1031,9 @@ fn scope_needs_path_sensitive_unwind(statements: &[CppStatement], cleanups: &[Cp
 
 fn statement_may_throw(statement: &CppStatement) -> bool {
     match statement {
-        CppStatement::Call { .. } | CppStatement::Throw { .. } => true,
+        CppStatement::Call { .. }
+        | CppStatement::ReturnCall { .. }
+        | CppStatement::Throw { .. } => true,
         CppStatement::Declare {
             initializer: CppInitializer::Call { .. },
             ..
@@ -1085,6 +1129,20 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
         record.alignment_bytes,
         fields,
     ))
+}
+
+fn cpp_return_scalar_type(value_type: &CppType) -> Result<CType, String> {
+    if matches!(
+        value_type,
+        CppType::Boolean {
+            bits: 8,
+            is_const: false
+        }
+    ) {
+        Ok(CType::Bool)
+    } else {
+        cpp_scalar_kernel_type(value_type)
+    }
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
