@@ -504,12 +504,13 @@ fn validate_config(config: &Config) -> Result<(), String> {
     }
     let valid_selector = match config.function.split_once("::") {
         Some((record, method)) => {
-            is_identifier(record) && (is_identifier(method) || method == "operator+=")
+            is_identifier(record)
+                && (is_identifier(method) || matches!(method, "operator+=" | "operator-="))
         }
         None => is_identifier(&config.function),
     };
     if !valid_selector {
-        return Err("C++ function selector requires a function name or Class::method (including operator+=)".into());
+        return Err("C++ function selector requires a function name or Class::method (including operator+= and operator-=)".into());
     }
     if config.source == config.artifact || config.logical_source == config.artifact {
         return Err("C++ source and semantic artifact paths must differ".into());

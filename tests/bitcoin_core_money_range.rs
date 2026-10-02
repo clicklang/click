@@ -23,13 +23,15 @@ const COMMAND: &str =
     include_str!("../integrations/bitcoin-core-money-range/feerate-command.json.in");
 const SIDECAR: &str = include_str!("../integrations/bitcoin-core-money-range/MoneyRange.click");
 
-#[test]
-fn pinned_upstream_fee_frac_methods_reexport_and_verify() {
+fn check_upstream_fee_frac(selected: &str, name: &str, source: &str) {
     assert_eq!(
         sha256(ARCHIVE),
         "fceeaef86784f820339f6dc3fc24992eb9c6bcf52edccbf6b7869d79296a3c7d"
     );
-    let root = std::env::temp_dir().join(format!("click-bitcoin-fee-frac-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "click-bitcoin-fee-frac-{name}-{}",
+        std::process::id()
+    ));
     fs::create_dir(&root).unwrap();
     let archive_path = root.join("input-closure.tar.gz");
     fs::write(&archive_path, ARCHIVE).unwrap();
@@ -54,45 +56,72 @@ fn pinned_upstream_fee_frac_methods_reexport_and_verify() {
         .replace("@CLANGXX@", clang.to_str().unwrap())
         .replace("@RESOURCE_DIR@", &output(&clang, &["-print-resource-dir"]));
     fs::write(root.join("compile_commands.json"), database).unwrap();
-    for (selected, name, source) in [
-        (
-            "FeeFrac::IsEmpty",
-            "FeeFracIsEmpty",
-            include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click"),
-        ),
-        (
-            "FeeFrac::operator+=",
-            "FeeFracAdd",
-            include_str!("../integrations/bitcoin-core-money-range/FeeFracAdd.click"),
-        ),
-        (
-            "FeeFrac::operator+=",
-            "FeeFracAddSelf",
-            include_str!("../integrations/bitcoin-core-money-range/FeeFracAddSelf.click"),
-        ),
-    ] {
-        let config = serde_json::json!({
-            "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
-            "exceptions": true, "rtti": true,
-            "exporter": std::env::var("CLICK_CPP_EXPORTER").unwrap(),
-            "compilation_database": "compile_commands.json", "working_directory": ".",
-            "source": "bitcoin-src/src/policy/feerate.cpp", "logical_source": "bitcoin-src/src/util/feefrac.h",
-            "dependencies": ["sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h", "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
-            "function": selected, "artifact": format!("{name}.click-cpp.json")
-        });
-        let config_path = root.join(format!("{name}.click.import.json"));
-        fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
-        let sidecar = root.join(format!("{name}.click"));
-        fs::write(&sidecar, source).unwrap();
-        refresh_import(&config_path).unwrap_or_else(|error| panic!("{selected}: {error}"));
-        let import = load_import(&config_path).unwrap();
-        assert_eq!(import.export().preprocessor_files.len(), 320);
-        assert!(import.export().reachable_functions.is_empty());
-        let project = read_click_project(&sidecar, source).unwrap();
-        verify_program_prepared_project(&project, &import)
-            .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
-    }
+    let config = serde_json::json!({
+        "schema": 6, "language": "c++", "standard": "c++20", "target": "x86_64-unknown-linux-gnu",
+        "exceptions": true, "rtti": true,
+        "exporter": std::env::var("CLICK_CPP_EXPORTER").unwrap(),
+        "compilation_database": "compile_commands.json", "working_directory": ".",
+        "source": "bitcoin-src/src/policy/feerate.cpp", "logical_source": "bitcoin-src/src/util/feefrac.h",
+        "dependencies": ["sysroot/usr/include/x86_64-linux-gnu/bits/stdint-intn.h", "sysroot/usr/include/x86_64-linux-gnu/bits/types.h"],
+        "function": selected, "artifact": format!("{name}.click-cpp.json")
+    });
+    let config_path = root.join(format!("{name}.click.import.json"));
+    fs::write(&config_path, serde_json::to_vec_pretty(&config).unwrap()).unwrap();
+    let sidecar = root.join(format!("{name}.click"));
+    fs::write(&sidecar, source).unwrap();
+    refresh_import(&config_path).unwrap_or_else(|error| panic!("{selected}: {error}"));
+    let import = load_import(&config_path).unwrap();
+    assert_eq!(import.export().preprocessor_files.len(), 320);
+    assert!(import.export().reachable_functions.is_empty());
+    let project = read_click_project(&sidecar, source).unwrap();
+    verify_program_prepared_project(&project, &import)
+        .unwrap_or_else(|error| panic!("{selected}: {}", error.message()));
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn pinned_upstream_fee_frac_isempty_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::IsEmpty",
+        "FeeFracIsEmpty",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracIsEmpty.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_add_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator+=",
+        "FeeFracAdd",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracAdd.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_addself_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator+=",
+        "FeeFracAddSelf",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracAddSelf.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_subtract_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator-=",
+        "FeeFracSubtract",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracSubtract.click"),
+    );
+}
+
+#[test]
+fn pinned_upstream_fee_frac_subtractself_reexports_and_verifies() {
+    check_upstream_fee_frac(
+        "FeeFrac::operator-=",
+        "FeeFracSubtractSelf",
+        include_str!("../integrations/bitcoin-core-money-range/FeeFracSubtractSelf.click"),
+    );
 }
 
 fn sha256(bytes: &[u8]) -> String {

@@ -138,6 +138,13 @@ impl PureFactContext {
     ) -> Option<bool> {
         match condition {
             ConditionTerm::Bitvector32SignedSubtractOverflows(left, right) => {
+                if self.decide(&ConditionTerm::equal(
+                    left.as_ref().clone(),
+                    right.as_ref().clone(),
+                )) == Some(true)
+                {
+                    return Some(false);
+                }
                 let left = left.as_ref().clone();
                 let right = right.as_ref().clone();
                 let zero = Bitvector32Term::Constant(0);
@@ -262,11 +269,38 @@ impl PureFactContext {
                 .then_some(false)
             }
             ConditionTerm::Bitvector64SignedSubtractOverflows(left, right) => {
+                if self.decide(&ConditionTerm::int64_equal(
+                    left.as_ref().clone(),
+                    right.as_ref().clone(),
+                )) == Some(true)
+                {
+                    return Some(false);
+                }
                 crate::kernel::primitives::int64_subtract_interval_fits(
                     self.int64_interval(left),
                     self.int64_interval(right),
                 )
                 .then_some(false)
+            }
+            ConditionTerm::Bitvector64SignedMultiplyOverflows(left, right) => {
+                let (a, b) = self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX));
+                let (c, d) = self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX));
+                let products = [
+                    i128::from(a) * i128::from(c),
+                    i128::from(a) * i128::from(d),
+                    i128::from(b) * i128::from(c),
+                    i128::from(b) * i128::from(d),
+                ];
+                products
+                    .iter()
+                    .all(|value| *value >= i128::from(i64::MIN) && *value <= i128::from(i64::MAX))
+                    .then_some(false)
+            }
+            ConditionTerm::Bitvector64SignedDivideOverflows(left, right) => {
+                let (a, _) = self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX));
+                let (c, d) = self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX));
+                // This guard includes zero and the sole signed overflow pair MIN / -1.
+                ((c > 0 || d < 0) && (a > i64::MIN || c > -1 || d < -1)).then_some(false)
             }
             ConditionTerm::Bitvector32SignedMultiplyOverflows(left, right)
                 if right.as_ref() == &Bitvector32Term::Constant(0)
@@ -574,7 +608,11 @@ impl PureFactContext {
         }
     }
 
-    fn int64_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
+    pub(super) fn int64_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
+        if let Some(bits) = self.wide_constant_from_equalities(term) {
+            let value = bits as i64;
+            return Some((value, value));
+        }
         let (mut lower, mut upper) = term.int64_width_interval().unwrap_or((i64::MIN, i64::MAX));
         let canonical = crate::kernel::eval::canonical_term(term);
         let keys = if canonical == *term {
@@ -1708,6 +1746,128 @@ mod tests {
             ConditionTerm::Bitvector64SignedAddOverflows(_, _)
         ));
         assert_eq!(PureFactContext::new().decide(&unbounded), None);
+    }
+
+    #[test]
+    fn int64_division_and_multiplication_guards_use_only_queried_bounds() {
+        let n = Bitvector32Term::Variable(Variable(95_101));
+        let d = Bitvector32Term::Variable(Variable(95_102));
+        let constant = Bitvector32Term::Int64Constant;
+        let positive = PureFactContext::new().assume_condition(
+            ConditionTerm::int64_signed_greater_than(d.clone(), constant(0)),
+            true,
+        );
+        let divide = ConditionTerm::int64_signed_divide_overflows(n.clone(), d.clone());
+        assert_eq!(positive.decide(&divide), Some(false));
+        assert_eq!(
+            positive.decide(&ConditionTerm::int64_equal(d.clone(), constant(0))),
+            Some(false)
+        );
+        assert_eq!(
+            Bitvector32Term::int64_subtract(n.clone(), n.clone()),
+            constant(0)
+        );
+        assert_eq!(PureFactContext::new().decide(&divide), None);
+        let exact = PureFactContext::new()
+            .assume_condition(ConditionTerm::int64_equal(n.clone(), constant(7)), true)
+            .assume_condition(ConditionTerm::int64_equal(d.clone(), constant(3)), true);
+        assert_eq!(exact.decide(&divide), Some(false));
+        let exceptional = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::int64_equal(n.clone(), constant(i64::MIN)),
+                true,
+            )
+            .assume_condition(ConditionTerm::int64_equal(d.clone(), constant(-1)), true);
+        assert_ne!(exceptional.decide(&divide), Some(false));
+        assert_ne!(
+            PureFactContext::new()
+                .assume_condition(ConditionTerm::int64_equal(d.clone(), constant(0)), true)
+                .decide(&divide),
+            Some(false)
+        );
+        let multiply = ConditionTerm::int64_signed_multiply_overflows(constant(2), n.clone());
+        let bounded = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::int64_signed_less_equal(constant(i64::MIN / 2), n.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::int64_signed_less_equal(n.clone(), constant(i64::MAX / 2)),
+                true,
+            );
+        assert_eq!(bounded.decide(&multiply), Some(false));
+        assert_eq!(PureFactContext::new().decide(&multiply), None);
+        let same = ConditionTerm::int64_signed_subtract_overflows(n.clone(), n.clone());
+        assert_eq!(PureFactContext::new().decide(&same), Some(false));
+    }
+
+    #[test]
+    fn int64_guard_work_is_independent_of_unrelated_facts() {
+        let n = Bitvector32Term::Variable(Variable(95_111));
+        let d = Bitvector32Term::Variable(Variable(95_112));
+        let constant = Bitvector32Term::Int64Constant;
+        let mut work_counts = Vec::new();
+        for size in [8, 32, 128, 512] {
+            let mut facts = PureFactContext::new();
+            for index in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::int64_signed_less_equal(
+                        Bitvector32Term::Variable(Variable(96_000 + index)),
+                        constant(123),
+                    ),
+                    true,
+                );
+            }
+            facts = facts
+                .assume_condition(ConditionTerm::int64_equal(n.clone(), constant(7)), true)
+                .assume_condition(
+                    ConditionTerm::int64_signed_greater_than(d.clone(), constant(0)),
+                    true,
+                );
+            let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
+                [
+                    facts.decide(&ConditionTerm::int64_signed_divide_overflows(
+                        n.clone(),
+                        d.clone(),
+                    )),
+                    facts.decide(&ConditionTerm::int64_signed_multiply_overflows(
+                        n.clone(),
+                        constant(2),
+                    )),
+                    facts.decide(&ConditionTerm::int64_signed_subtract_overflows(
+                        n.clone(),
+                        n.clone(),
+                    )),
+                ]
+            });
+            assert_eq!(answers, [Some(false); 3]);
+            work_counts.push(work);
+        }
+        assert!(
+            work_counts.iter().all(|work| *work == work_counts[0]),
+            "{work_counts:?}"
+        );
+        assert!(work_counts[0] > 0);
+    }
+
+    #[test]
+    fn int64_constant_division_and_remainder_are_partial_without_panicking() {
+        let constant = Bitvector32Term::Int64Constant;
+        for (n, d, quotient, remainder) in [
+            (7, 3, Some(2), Some(1)),
+            (-7, 3, Some(-2), Some(-1)),
+            (i64::MIN, -1, None, None),
+            (7, 0, None, None),
+        ] {
+            assert_eq!(
+                Bitvector32Term::int64_divide(constant(n), constant(d)).int64_as_const(),
+                quotient
+            );
+            assert_eq!(
+                Bitvector32Term::int64_remainder(constant(n), constant(d)).int64_as_const(),
+                remainder
+            );
+        }
     }
 
     #[test]

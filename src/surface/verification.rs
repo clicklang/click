@@ -6769,6 +6769,12 @@ fn cpp_function_interface(
             is_const: false,
             ..
         } => C0Type::Int32,
+        crate::languages::cpp::CppType::Integer {
+            bits: 64,
+            signed: true,
+            is_const: false,
+            ..
+        } => C0Type::Int64,
         crate::languages::cpp::CppType::Boolean {
             bits: 8,
             is_const: false,
@@ -6784,6 +6790,7 @@ fn cpp_function_interface(
         .parameters
         .iter()
         .map(|parameter| match &parameter.value_type {
+            crate::languages::cpp::CppType::Integer { bits, signed: true, is_const: false, .. } if *bits == 32 || *bits == 64 => Ok(syntax::C0Parameter::new(if *bits == 32 { C0Type::Int32 } else { C0Type::Int64 }, parameter.name.clone(), None)),
             crate::languages::cpp::CppType::Boolean {
                 bits: 8,
                 is_const: false,
