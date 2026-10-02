@@ -1074,7 +1074,67 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        self.affine_pair_through_equality(target)
+        if let Some(node) = self.affine_pair_through_equality(target) {
+            return Some(node);
+        }
+        if allow_weakening {
+            return self.affine_sum_of_listed_claims(target);
+        }
+        None
+    }
+
+    /// The sum of every listed inequality, for a chain of any length:
+    /// `x < a`, `a <= b`, `b <= 4` sum to `x < 4`. `arithmetic() using`
+    /// lists the premises it means, so all of them are added, in order, and
+    /// the sum is weakened to the target when it is stronger. The work is
+    /// one addition per listed premise; nothing is searched.
+    fn affine_sum_of_listed_claims(&mut self, target: &SignedArithmeticClaim) -> Option<usize> {
+        if target.relation != SignedArithmeticRelation::LessEqual {
+            return None;
+        }
+        let listed = self
+            .claims
+            .iter()
+            .filter(|(_, claim)| claim.relation == SignedArithmeticRelation::LessEqual)
+            .cloned()
+            .collect::<Vec<_>>();
+        // One or two premises are the cases the searches above decide.
+        if listed.len() < 3 {
+            return None;
+        }
+        let mut listed = listed.into_iter();
+        let (first_index, mut sum) = listed.next()?;
+        let mut node = self.premise(first_index, &sum)?;
+        for (index, claim) in listed {
+            charge_work(1)?;
+            let next = add_affine_claims(&sum, &claim)?;
+            let right = self.premise(index, &claim)?;
+            node = self.push(SignedArithmeticNode::Add {
+                left: node,
+                right,
+                result: next.clone(),
+            })?;
+            sum = next;
+        }
+        if sum == *target {
+            return Some(node);
+        }
+        if sum.terms != target.terms || sum.constant < target.constant {
+            return None;
+        }
+        let trivial = self.push(SignedArithmeticNode::Trivial {
+            result: SignedArithmeticClaim {
+                carrier: target.carrier,
+                relation: SignedArithmeticRelation::LessEqual,
+                terms: BTreeMap::new(),
+                constant: &target.constant - &sum.constant,
+            },
+        })?;
+        self.push(SignedArithmeticNode::Add {
+            left: node,
+            right: trivial,
+            result: target.clone(),
+        })
     }
 
     /// A two-premise sum where one addend is a direction of an equality
