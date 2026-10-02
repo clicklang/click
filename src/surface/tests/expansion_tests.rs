@@ -813,6 +813,27 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
     );
 }
 
+/// An invariant owes its side conditions as entry goals of their own beside
+/// its body: a quantified `viewable` invariant owes the extent bound too.
+/// The closer's expansion states one `have` per owed goal, so that
+/// invariant is named twice. The script layout used to accept only one
+/// `have` per invariant, fell back to running the whole script against
+/// every goal, and checked the bound's arithmetic step against the
+/// `viewable` body.
+#[test]
+fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
+    let anchor = "            }\n            simp();\n        }\n        preserve";
+    let quantified = "have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {\n                have";
+    for fixture in [
+        "mdtests/loop_initialize_narrows_a_held_range_under_a_universal.md",
+        "mdtests/loop_quantified_viewable_invariant_bounded_by_its_views_clause.md",
+    ] {
+        let expanded =
+            expand_mdtest_site_and_reverify(fixture, anchor, "            }\n            ".len());
+        assert_eq!(expanded.matches(quantified).count(), 2, "{expanded}");
+    }
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
