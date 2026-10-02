@@ -417,6 +417,18 @@ checks this boundary with arbitrary entry totals and nonnegative growth. The
 caller establishes the count addition's definedness from the control before
 calling. Splitting batches remains separate work.
 
+A unit-exchange helper can move one unit of each of two families between two
+distinct anchors. It consumes the two incoming members and produces the two
+outgoing members using ordinary `consumes` and `produces`; all four matching
+authorities are borrowed and returned with `owns`. This covers moving an object
+to another pool while consuming its destination slot and returning a source
+slot. Every transition has separate authority, exact-identity, and custody
+checks. The [four-effect fixture](https://github.com/clicklang/click/blob/master/mdtests/authority_four_effect_exchange.md)
+retains neighboring ownership and checks all four resulting counts. Omitting a
+consumption reports `Requires consumes R(...)`; extra births are rejected even
+without count postconditions. This checkpoint supports unit exchanges, not
+arbitrary groups of symbolic effects.
+
 For an authority passed into a function, retirement checks both that its
 member custody has been consumed and that its authenticated global count is
 zero. This applies to an already-empty population and to a fully consumed
