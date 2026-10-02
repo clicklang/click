@@ -235,9 +235,10 @@ into C text. The `const-reference-alias` fixture writes through an `int&` and
 reads through an aliased `const int&`, using one explicit `owns` resource.
 C++ `const` restricts access through that reference; it does not create a Click
 `views` resource or imply that aliases cannot write. Supported parameters are
-currently by-value `bool`, `int&`, `const int&`, mutable `int*`, one `const`
-signed-64 reference, and a mutable reference to the one supported simple record
-type. Selected functions return `int` or `bool`.
+currently by-value `bool` or signed/unsigned 32/64-bit integers, `int&`, `const int&`,
+mutable `int*`, one `const` signed-64 reference, and mutable or const references
+to the one supported simple record type. Selected functions return `int`,
+signed/unsigned 64-bit integers, `unsigned int`, `bool`, or `void`.
 
 The `int64-predicate` fixture is the first narrow bridge toward Bitcoin Core's
 `MoneyRange`: Clang retains the declaration identity and source span for a
@@ -292,8 +293,9 @@ These fixtures do not claim the host C++ standard library: their header is a
 pinned input containing only the needed `int64_t` typedef. Mutable or
 non-`constexpr` globals, undeclared header dependencies, broader or unordered
 constant graphs, other constant expressions, mutable signed-64 references,
-unsigned 64-bit aliases, other relational operators, `||`, overloaded logical
-operators, and non-Boolean `&&` operands remain outside the boundary.
+`!=`, `||`, and overloaded logical operators remain
+outside the boundary. Signed integer operands in a Boolean context use the
+checked nonzero conversion; they are not truncated to 32 bits first.
 
 The `direct-call` fixture selects a caller and captures the transitive closure
 of definitions reached by discarded-result direct call statements. Each call
@@ -306,7 +308,8 @@ only in an exception-enabled normal-only profile (including borrowed trivial rec
 continues to reject them. Omitting `noexcept` does not itself declare a Click
 exception.
 
-The `scalar-local` fixture adds mutable automatic `int` locals declared directly
+The `scalar-local` and `signed-arithmetic` fixtures add mutable automatic signed/unsigned
+32/64-bit integer locals declared directly
 in the function body. Each local requires an initializer, which may be an
 already-supported integer expression or a supported direct call. Local
 declaration identity comes from Clang; direct-call initialization lowers to the
@@ -334,8 +337,9 @@ layout from C++ source or create a synthetic C body.
 
 The `value-methods` fixtures add non-static, non-virtual ordinary methods on
 that record. Select a method with `"function": "FeeFrac::IsEmpty"` or
-`"function": "FeeFrac::operator+="`. The proof interface names them
-`FeeFrac_IsEmpty` and `FeeFrac_operator_add_assign`, with an explicit first
+`"function": "FeeFrac::operator+="` (or `operator-=`). The proof interface names
+them `FeeFrac_IsEmpty`, `FeeFrac_operator_add_assign`, and
+`FeeFrac_operator_subtract_assign`, with an explicit first
 parameter `self`. Const methods use `const struct FeeFrac* self`; const record
 reference parameters retain the same qualification. This restricts writes
 through that parameter without forbidding an alias through a mutable parameter.
@@ -344,14 +348,14 @@ not imported into the execution graph. Reachable definitions and the record's
 complete supported field layout are still checked. Overloaded proof names and
 reachable unsupported bodies fail import.
 
-Direct `object.method(...)`, `object.operator+=(...)`, and `object += other`
-calls bind that receiver to the selected declaration identity. Call arguments
+Direct `object.method(...)`, explicit `operator+=`/`operator-=`, and
+`object += other`/`object -= other` calls bind that receiver to the selected declaration identity. Call arguments
 must be direct supported references or the existing value arguments; pointer
 receivers, virtual dispatch, other overloaded operators, and call results
 outside the existing scalar-local initializer slice remain unsupported.
-Same-width signed field `+=` and signed integer equality use checked loads,
-addition, and stores. Compound updates with side effects or mixed-width
-conversions remain unsupported. Overflow obligations apply to each field's
+Same-width signed field `+=` and `-=` use checked loads, arithmetic, and
+stores. Compound updates with side effects or mixed-width conversions remain
+unsupported. Overflow obligations apply to each field's
 width. The fixtures prove disjoint-object addition, self-addition with one set
 of field resources, and preservation of unrelated caller memory; they reject
 false claims and missing authority or overflow bounds.
@@ -359,8 +363,115 @@ false claims and missing authority or overflow bounds.
 The [Bitcoin Core integration](https://github.com/clicklang/click/blob/master/integrations/bitcoin-core-money-range/README.md#fee-frac-value-methods)
 verifies these same properties for unchanged upstream `FeeFrac` methods under
 the real project profile. This does not prove the class's other methods or
-its documented application invariant. The typed artifact schema is now 21;
+its documented application invariant. The typed artifact schema is now 25;
 previous artifacts require an explicit lock refresh.
+
+The `signed-arithmetic` fixture lowers signed 32/64-bit `+`, `-`, `*`, `/`,
+`%`, unary negation, and `==`, `<`, `>`, `<=`, `>=` into the common checked
+kernel. Clang's integral promotions and signed casts are explicit artifact
+nodes; mixed-width operands require those conversions. Signed 64-to-32
+narrowing follows C++20's modulo semantics using the kernel's unsigned bit
+conversion and signed reinterpretation. Boolean conversion preserves the
+nonzero meaning of all 64 bits. Division truncates towards zero, and remainder
+has the dividend's sign. Zero divisors and the `MIN / -1` and `MIN % -1`
+overflow pair fail verification. Addition, subtraction, multiplication, and
+negation retain their signed-overflow obligations. Scalar local call captures
+require the same return width as the declaration; casts around calls remain
+outside this slice.
+
+The fixture preserves Bitcoin's quotient/remainder correction expression with
+a signed 64-bit dividend. It checks both rounding directions for positive and
+negative dividends, exact division, zero, signed extrema, and the largest
+positive int32 divisor, together with expansion and retained audit sessions.
+These are concrete rounding cases, not a general rounding theorem. General
+quotient/remainder contracts and a modular caller with unrelated memory also
+verify. Bitcoin's actual rounding helper uses `__int128`; wider integers
+remain unsupported.
+
+Unsigned 32/64-bit scalar parameters, returns, locals, direct captures, and
+same-type arithmetic/comparisons now use the common unsigned kernel types.
+Addition, subtraction, multiplication and negation wrap modulo the width;
+division and remainder require a nonzero divisor. Clang exports the usual
+arithmetic conversions explicitly, so mixed signed/unsigned source expressions
+retain their C++ meaning. Signed-to-unsigned conversion is modulo the target
+width; unsigned-to-int32 narrowing reinterprets the low 32 bits. Uint32-to-int64
+is an exact widening. C++20 uint64-to-int64 conversion preserves all 64 bits:
+values through `INT64_MAX` retain their value, and higher values denote the
+congruent signed value modulo 2^64. The importer selects the explicit kernel
+`UInt64BitsToInt64` cast mode; ordinary C casts retain their existing checks and
+supported slice. Subsequent signed operations retain overflow obligations.
+Unsigned references and record fields, runtime narrow/wide integer types,
+bitwise operations, and general templates remain outside this slice.
+
+The `unsigned-arithmetic` fixtures check wraparound, extrema, casts, modular
+caller framing, division guards, and both unsigned fee fast-path expressions.
+Those fast-path cases return the unsigned intermediate and do not prove
+upstream `EvaluateFee`. The kernel strengthens unsigned constant bounds using
+only the queried endpoint's index, including negated bounds and values above
+the signed sign bit; deterministic regressions grow unrelated fact populations.
+
+The `signed-conversion` fixtures verify explicit and implicit conversions at
+the sign bit and both extrema, both round trips for arbitrary inputs, a modular
+bit-preservation contract with unrelated memory, and subsequent signed overflow.
+They preserve the instantiated fee fast-path expressions and signed return type
+and verify concrete rounding/boundary cases. The complete upstream `EvaluateFee`
+implementation and a general rounding theorem remain open. Conversion proofs
+agree across ordinary verification, expansion/reverification, and retained audit;
+false signed results are rejected. The shared bitvector representation preserves
+source bits and uses typed signed operators for subsequent computation. Indexed
+bit-preserving equality rules have fact-population and expression-depth scaling
+regressions.
+
+The pinned Clang exporter evaluates constant `sizeof` expressions and static
+zero-argument constexpr `std::numeric_limits::max()` calls in selected expression
+positions. These produce distinct `compiler_constant` nodes with a checked
+32/64-bit value/type and the original source span. The exporter preserves runtime
+expression semantics under the pinned target and locked preprocessor input
+closure. Standard-library semantics remain part of the trusted compiler input.
+Runtime calls are never folded by this allowlist. General constexpr calls in
+runtime expression positions, unsigned namespace constants, and local
+call-capture initializer forms outside the ordinary call slice remain unsupported. The unchanged Bitcoin `GetSizeOfCompactSize` proof covers every
+uint64 input in four disjoint ranges, checks expansion and retained audit, and
+rejects false encoded-length claims. It proves encoded length, not serialized
+bytes or a round trip.
+
+Concrete function-template instances are supported when reached through an
+ordinary selected caller and their instantiated operations fit the existing
+profile. Boolean value arguments and unqualified builtin `bool`, `int`,
+`unsigned int`, `long`, `unsigned long`, `long long`, and `unsigned long long`
+type arguments are accepted. Each instance keeps its distinct Clang USR.
+Sidecar names append argument tokens in order, such as `choose__bool_true`,
+`identity__unsigned_long`, or `Value_select__bool_false`. Type aliases use the
+canonical builtin token; equal-width types such as `long` and `long long`
+retain different names. Name collisions remain explicit import errors.
+
+For `if constexpr`, pinned Clang chooses the instantiated arm in constant
+evaluation context. The artifact retains an ordinary constant Boolean `if`,
+the selected arm, an empty discarded arm, and the original statement and
+condition spans. The condition uses a distinct `compiler_constant` under a
+Boolean conversion. Discarded code contributes no runtime calls, accesses,
+or cleanup. A selected unsupported arm fails import. Ordinary `if` statements
+continue to import both arms. Return validation checks the reachable arm of a
+closed constant Boolean condition and both arms of an unknown condition.
+
+The `template-instances` fixture checks modular callers, receiver authority,
+framing, false contracts, same-width type identities, Boolean substitution,
+constant-evaluation context, and unsupported arguments. Its instantiated fee
+fast paths retain the unsigned expressions and cover both rounding directions
+with expansion/reverification and retained audit. They remain synthetic
+prerequisite proofs, not verification of upstream `EvaluateFee`. Selecting a
+dependent template pattern, packs, other non-type arguments, class templates,
+qualified or non-scalar type arguments, and calls in unsupported expression
+positions remain outside this slice. Template substitution and constexpr
+selection are trusted compiler operations under the locked input profile;
+selected function implementations still require verified sidecar contracts.
+
+The shared signed-64 reasoning rules also verify `x + z` and `x - z` across
+the full signed range when a modular helper establishes `z == 0`. They retain
+the equality's proof provenance, read only the queried operands' fact indexes,
+and strip chains of zero additions through borrowed operands. Deterministic
+regressions check unrelated fact populations and increasing expression depth;
+the C `int64_returned_zero_identity` fixture covers the common kernel path.
 
 The `local-aggregate` fixture declares one automatic object of that same record
 kind directly in a function body. It must use direct braces with exactly one

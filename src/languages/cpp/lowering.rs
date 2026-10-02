@@ -20,10 +20,11 @@ use super::{
 use crate::kernel::{
     CAggregateField, CAggregateLayout, CExpression, CFunction, CStatement, CType, LoadSourceId,
     LoadSourceOwnerId, c_add, c_and, c_assign, c_begin_aggregate_construction, c_call,
-    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_equal, c_function, c_greater_equal,
-    c_if, c_int32_literal, c_int64_literal, c_less_equal, c_parameter, c_pointer_offset_bytes,
-    c_return, c_seq, c_skip, c_try_catch_int32, c_try_catch_int32_with_cleanup,
-    c_typed_load_with_source, c_typed_store, c_variable,
+    c_call_assign, c_cast, c_declare, c_declare_aggregate, c_divide, c_equal, c_function,
+    c_greater_equal, c_greater_than, c_if, c_int32_literal, c_int64_literal, c_less_equal,
+    c_less_than, c_multiply, c_parameter, c_pointer_offset_bytes, c_remainder, c_return, c_seq,
+    c_skip, c_subtract, c_try_catch_int32, c_try_catch_int32_with_cleanup,
+    c_typed_load_with_source, c_typed_store, c_uint32_literal, c_uint64_literal, c_variable,
 };
 
 /// One kernel function together with the immutable semantic artifact that
@@ -112,9 +113,16 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
     let body = context.lower_function_body(&source.body)?;
     let return_type = match &source.function_kind {
         CppFunctionKind::Free | CppFunctionKind::Method { .. }
-            if is_mutable_int32(&source.return_type) =>
+            if matches!(
+                source.return_type,
+                CppType::Integer {
+                    bits: 32 | 64,
+                    is_const: false,
+                    ..
+                }
+            ) =>
         {
-            CType::Int32
+            cpp_scalar_kernel_type(&source.return_type)?
         }
         CppFunctionKind::Free | CppFunctionKind::Method { .. }
             if matches!(
@@ -150,6 +158,10 @@ fn lower_function(import: &PreparedCppImport, source: &CppFunction) -> Result<CF
 
 fn lower_parameter(parameter: &CppPlace) -> Result<crate::kernel::CParameter, String> {
     match &parameter.value_type {
+        CppType::Integer { .. } => Ok(c_parameter(
+            parameter.name.clone(),
+            cpp_scalar_kernel_type(&parameter.value_type)?,
+        )),
         CppType::Boolean {
             bits: 8,
             is_const: false,
@@ -246,7 +258,10 @@ impl LoweringContext<'_> {
                 local, initializer, ..
             } => match (&local.value_type, initializer) {
                 (CppType::Integer { .. }, CppInitializer::Value { value }) => Ok(c_seq(
-                    c_declare(local.name.clone(), CType::Int32),
+                    c_declare(
+                        local.name.clone(),
+                        cpp_scalar_kernel_type(&local.value_type)?,
+                    ),
                     c_assign(local.name.clone(), self.lower_expression(value)?),
                 )),
                 (
@@ -255,7 +270,10 @@ impl LoweringContext<'_> {
                         callee, arguments, ..
                     },
                 ) => Ok(c_seq(
-                    c_declare(local.name.clone(), CType::Int32),
+                    c_declare(
+                        local.name.clone(),
+                        cpp_scalar_kernel_type(&local.value_type)?,
+                    ),
                     c_call_assign(
                         local.name.clone(),
                         callee.name.clone(),
@@ -630,14 +648,20 @@ impl LoweringContext<'_> {
         match expression {
             CppExpression::IntegerLiteral {
                 value, value_type, ..
-            } if is_mutable_int32(value_type) => {
-                let value = value
-                    .parse::<i32>()
-                    .map_err(|_| format!("unsupported C++ integer literal `{value}`"))?;
-                Ok(c_int32_literal(value as u32))
             }
-            CppExpression::IntegerLiteral { .. } => {
-                Err("C++ integer literal is outside direct `int` lowering".into())
+            | CppExpression::CompilerConstant {
+                value, value_type, ..
+            } => {
+                let error = || format!("unsupported C++ integer constant `{value}`");
+                Ok(match cpp_scalar_kernel_type(value_type)? {
+                    CType::Int32 => {
+                        c_int32_literal(value.parse::<i32>().map_err(|_| error())? as u32)
+                    }
+                    CType::Int64 => c_int64_literal(value.parse::<i64>().map_err(|_| error())?),
+                    CType::UInt32 => c_uint32_literal(value.parse::<u32>().map_err(|_| error())?),
+                    CType::UInt64 => c_uint64_literal(value.parse::<u64>().map_err(|_| error())?),
+                    _ => return Err(error()),
+                })
             }
             CppExpression::ConstantReference { constant, .. } => {
                 let resolved = self
@@ -680,8 +704,8 @@ impl LoweringContext<'_> {
                     },
                 ) => Ok(c_variable(place.name.clone())),
                 (CppType::Integer { .. }, CppType::Integer { .. })
-                    if is_mutable_int32(&self.place(place)?.value_type)
-                        && is_mutable_int32(value_type) =>
+                    if cpp_scalar_kernel_type(&self.place(place)?.value_type)?
+                        == cpp_scalar_kernel_type(value_type)? =>
                 {
                     Ok(c_variable(place.name.clone()))
                 }
@@ -760,82 +784,69 @@ impl LoweringContext<'_> {
             }
             CppExpression::IntegralCast {
                 value, value_type, ..
-            } if is_mutable_int32(value.value_type()) && is_mutable_int64(value_type) => {
-                Ok(c_cast(self.lower_expression(value)?, CType::Int64))
-            }
-            CppExpression::IntegralCast { .. } => {
-                Err("C++ integral cast is outside direct `int` to signed-64 lowering".into())
+            } => {
+                let target = if is_mutable_bool(value_type) {
+                    CType::Bool
+                } else {
+                    cpp_scalar_kernel_type(value_type)?
+                };
+                let value_expression = self.lower_expression(value)?;
+                if matches!(
+                    value.value_type(),
+                    CppType::Integer {
+                        bits: 64,
+                        signed: false,
+                        ..
+                    }
+                ) && matches!(
+                    value_type,
+                    CppType::Integer {
+                        bits: 64,
+                        signed: true,
+                        ..
+                    }
+                ) {
+                    return Ok(crate::kernel::c_uint64_bits_to_int64(value_expression));
+                }
+                // C++20 signed narrowing is congruent modulo 2^32. The shared
+                // unsigned conversion truncates bits; int32 then reinterprets them.
+                Ok(
+                    if matches!(value.value_type(), CppType::Integer { bits: 64, .. })
+                        && is_mutable_int32(value_type)
+                    {
+                        c_cast(c_cast(value_expression, CType::UInt32), CType::Int32)
+                    } else {
+                        c_cast(value_expression, target)
+                    },
+                )
             }
             CppExpression::Binary {
-                operator: CppBinaryOperator::Add,
+                operator,
                 left,
                 right,
                 value_type,
                 ..
-            } if is_mutable_int32(value_type) || is_mutable_int64(value_type) => {
+            } => {
                 let left = self.lower_expression(left)?;
                 let right = self.lower_expression(right)?;
-                Ok(c_add(left, right))
-            }
-            CppExpression::Binary {
-                operator: CppBinaryOperator::Equal,
-                left,
-                right,
-                ..
-            } => Ok(c_cast(
-                c_equal(self.lower_expression(left)?, self.lower_expression(right)?),
-                CType::Bool,
-            )),
-            CppExpression::Binary {
-                operator: CppBinaryOperator::LogicalAnd,
-                left,
-                right,
-                value_type:
-                    CppType::Boolean {
-                        bits: 8,
-                        is_const: false,
-                    },
-                ..
-            } if is_mutable_bool(left.value_type()) && is_mutable_bool(right.value_type()) => {
-                Ok(c_cast(
-                    c_and(self.lower_expression(left)?, self.lower_expression(right)?),
-                    CType::Bool,
-                ))
-            }
-            CppExpression::Binary {
-                operator: CppBinaryOperator::LessEqual,
-                left,
-                right,
-                value_type:
-                    CppType::Boolean {
-                        bits: 8,
-                        is_const: false,
-                    },
-                ..
-            } if is_mutable_int64(left.value_type()) && is_mutable_int64(right.value_type()) => {
-                Ok(c_cast(
-                    c_less_equal(self.lower_expression(left)?, self.lower_expression(right)?),
-                    CType::Bool,
-                ))
-            }
-            CppExpression::Binary {
-                operator: CppBinaryOperator::GreaterEqual,
-                left,
-                right,
-                value_type:
-                    CppType::Boolean {
-                        bits: 8,
-                        is_const: false,
-                    },
-                ..
-            } if is_mutable_int64(left.value_type()) && is_mutable_int64(right.value_type()) => {
-                Ok(c_cast(
-                    c_greater_equal(self.lower_expression(left)?, self.lower_expression(right)?),
-                    CType::Bool,
-                ))
-            }
-            CppExpression::Binary { .. } => {
-                Err("C++ binary expression is outside direct `int` lowering".into())
+                let expression = match operator {
+                    CppBinaryOperator::Add => c_add(left, right),
+                    CppBinaryOperator::Subtract => c_subtract(left, right),
+                    CppBinaryOperator::Multiply => c_multiply(left, right),
+                    CppBinaryOperator::Divide => c_divide(left, right),
+                    CppBinaryOperator::Remainder => c_remainder(left, right),
+                    CppBinaryOperator::Equal => c_equal(left, right),
+                    CppBinaryOperator::LessThan => c_less_than(left, right),
+                    CppBinaryOperator::GreaterThan => c_greater_than(left, right),
+                    CppBinaryOperator::LessEqual => c_less_equal(left, right),
+                    CppBinaryOperator::GreaterEqual => c_greater_equal(left, right),
+                    CppBinaryOperator::LogicalAnd => c_and(left, right),
+                };
+                Ok(if is_mutable_bool(value_type) {
+                    c_cast(expression, CType::Bool)
+                } else {
+                    expression
+                })
             }
         }
     }
@@ -1077,14 +1088,33 @@ fn cpp_record_layout(record: &CppRecord) -> Result<CAggregateLayout, String> {
 }
 
 fn cpp_scalar_kernel_type(value_type: &CppType) -> Result<CType, String> {
-    if is_mutable_int32(value_type) {
-        Ok(CType::Int32)
-    } else if is_mutable_int64(value_type) {
-        Ok(CType::Int64)
-    } else if is_mutable_int32_pointer(value_type) {
-        Ok(CType::Int32Pointer)
-    } else {
-        Err("C++ record field is outside mutable `int`/`int*` lowering".into())
+    match value_type {
+        CppType::Integer {
+            bits: 32,
+            signed: true,
+            is_const: false,
+            ..
+        } => Ok(CType::Int32),
+        CppType::Integer {
+            bits: 64,
+            signed: true,
+            is_const: false,
+            ..
+        } => Ok(CType::Int64),
+        CppType::Integer {
+            bits: 32,
+            signed: false,
+            is_const: false,
+            ..
+        } => Ok(CType::UInt32),
+        CppType::Integer {
+            bits: 64,
+            signed: false,
+            is_const: false,
+            ..
+        } => Ok(CType::UInt64),
+        _ if is_mutable_int32_pointer(value_type) => Ok(CType::Int32Pointer),
+        _ => Err("unsupported C++ scalar kernel type".into()),
     }
 }
 

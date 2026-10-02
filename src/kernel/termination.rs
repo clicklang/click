@@ -59,12 +59,14 @@ fn substitute_c_expression_variables(
         Cast {
             expression: body,
             target_type,
+            integer_mode,
             pointee_struct,
             pointee_volatile,
             pointee_constant,
         } => Cast {
             expression: unary(body),
             target_type: *target_type,
+            integer_mode: *integer_mode,
             pointee_struct: pointee_struct.clone(),
             pointee_volatile: *pointee_volatile,
             pointee_constant: *pointee_constant,

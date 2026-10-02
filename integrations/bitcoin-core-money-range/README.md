@@ -138,12 +138,12 @@ Linux binary verification.
 ## FeeFrac value methods
 
 The same unchanged input closure and real `feerate.cpp` compilation command
-also select `FeeFrac::IsEmpty()` and `FeeFrac::operator+=` from
+also select `FeeFrac::IsEmpty()`, `FeeFrac::operator+=`, and `FeeFrac::operator-=` from
 `src/util/feefrac.h`. Its SHA-256 is
 `213a97d13eb82b34831466febcff24f4c20879603f36fc6edd894b89000f7ab9`.
 No Bitcoin source, archive contents, or compiler flags were changed for these
 proofs. The gate checks the existing archive digest, header digest, and the
-320-file Clang inventory before verifying all three sidecars:
+320-file Clang inventory before verifying all five sidecars:
 
 - `FeeFracIsEmpty.click` proves the result is exactly `size == 0`, preserving
   both fields, without requiring the application's fee/size invariant.
@@ -152,6 +152,10 @@ proofs. The gate checks the existing archive digest, header digest, and the
   half its signed range, sufficient to keep both sums defined.
 - `FeeFracAddSelf.click` proves the alias case `self == other`, owning each
   field once and doubling it under the same half-range bounds.
+- `FeeFracSubtract.click` proves exact subtraction for distinct owned objects
+  and preserves the other object's fields, under the half-range input bounds.
+- `FeeFracSubtractSelf.click` proves both fields become zero for `self == other`
+  over their entire signed ranges, owning each field once without range bounds.
 
 After the full-checkout setup above, lock and verify each of these sidecars
 with the same commands used for `MoneyRange`. Their adjacent import configs
@@ -171,3 +175,38 @@ const-to-mutable argument conversion independently of Clang's source checks.
 
 These are bounded value-method proofs, not verification of all `FeeFrac`, fee
 rounding, `CFeeRate`, or Bitcoin Core.
+
+The [subtraction caller fixture](../../tests/fixtures/cpp-verification/subtract-methods/)
+checks that self-subtraction preserves unrelated caller memory. The
+[signed arithmetic fixtures](../../tests/fixtures/cpp-verification/signed-arithmetic/)
+check quotient/remainder contracts, overflow and zero-divisor rejection, C++20
+signed narrowing and Boolean conversion, and Bitcoin's correction expression
+for concrete rounding cases with a signed 64-bit dividend. They do not prove
+upstream `FeeFrac::Div` or `EvaluateFeeDown/Up`: this pinned compiler profile
+uses `__int128` for the former and a templated unsigned fast path for the latter.
+
+
+## CompactSize encoded length
+
+The same pinned v31.1 archive and unchanged `feerate.cpp` compilation command
+select `GetSizeOfCompactSize` in `src/serialize.h` (SHA-256
+`87a273aa8cb9aeea82cd8038bb85284a5782c8abc35f8c826eb60f1a01e06775`).
+The 320-file input closure and compiler flags remain unchanged. Four sidecars
+cover all uint64 values:
+
+| Sidecar | Input range | Encoded length |
+| --- | --- | --- |
+| `CompactSize1.click` | 0 through 252 | 1 byte |
+| `CompactSize3.click` | 253 through 65,535 | 3 bytes |
+| `CompactSize5.click` | 65,536 through 4,294,967,295 | 5 bytes |
+| `CompactSize9.click` | 4,294,967,296 through UINT64_MAX | 9 bytes |
+
+Use the same lock/verify setup described above. Their configs pin unsigned
+`uint64_t` aliases to `bits/stdint-uintn.h` and `bits/types.h` in the hermetic
+sysroot. Pinned Clang evaluates the helper's `sizeof` and constexpr
+`std::numeric_limits::max()` expressions; artifacts retain their source spans
+as distinct compiler constants and lock the entire preprocessor input closure.
+This is part of the compiler trust boundary, not a standard-library proof.
+The gate checks ordinary verification, expansion/reverification, retained audit,
+and false length claims for each range. It does not prove serialization bytes,
+parsing, or round trips.
