@@ -448,7 +448,11 @@ The original two-counter transfer now verifies through two ordinary controls.
 The source member and destination slot supply its counter bounds; the proof
 preserves the object's value and restores both pool invariants. No C, syntax,
 or further checker change is required. The next slice integrates its original
-caller pipeline. Keep additional
+caller pipeline. Its first initialization exposed an allocation projection
+bug: returned resources and untouched caller controls were inspected under
+one callee ledger. A reduced initialization fixture now checks those ownership
+boundaries independently; ordinary custody checks are unchanged. Two successive
+initializations' memory framing remains separate from that repair. Keep additional
 batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.

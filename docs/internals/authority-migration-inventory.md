@@ -14,7 +14,12 @@ controls, preserving private object memory and restoring both invariants. Its
 reduced four-unit exchange is
 covered by `authority_four_effect_exchange.md`: all four authorities and exact
 member effects are checked, neighboring ownership survives, and final cleanup
-is exact. The original transfer pipeline remains the next integration slice.
+is exact. The original transfer pipeline remains the next integration slice. The
+reduced `authority_two_control_init_call.md` checks initialization with an
+independent caller-held control. Allocation reconciliation projects each
+control using its actual owner's ledger, preserving caller authority and
+population counts. Two successive calls' memory framing is a separate proof
+boundary to check before integrating the full pipeline.
 
 ## Discovery boundary
 

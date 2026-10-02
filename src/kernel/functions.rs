@@ -5325,7 +5325,11 @@ fn execute_verified_function_applications_with_suspension(
             &entry_state.memory,
             &transfer.callee_resources,
             &caller_resources_after_requirements,
-            &return_resources,
+            if caller_state.uses_population_authority_semantics() {
+                &output_resources
+            } else {
+                &return_resources
+            },
             &population_transition.retained_body_allocations,
             interface,
             &allocation_assumptions,
@@ -14281,6 +14285,16 @@ fn apply_verified_heap_allocation_delta(
                 "could not inspect preserved caller allocation effects at call".to_string(),
             ))
         })?;
+    // Returned controls belong to the callee until checked custody returns;
+    // untouched controls belong to the caller. Keep their checked projections
+    // separate and visit the same returned facts without rebuilding the frame.
+    let authority_mode = mutex_state.uses_population_authority_semantics();
+    let returned_facts = || {
+        output
+            .facts()
+            .iter()
+            .chain(preserved.facts().iter().filter(|_| authority_mode))
+    };
     let allocation_assumptions = input
         .observable_facts_assuming_valid(assumptions)
         .into_iter()
@@ -14289,7 +14303,7 @@ fn apply_verified_heap_allocation_delta(
         });
     let mut output_allocations_by_block =
         BTreeMap::<PointerBlock, Vec<(Pointer, Bitvector32Term)>>::new();
-    for (base, bytes) in output.facts().iter().filter_map(CResourceFact::allocation) {
+    for (base, bytes) in returned_facts().filter_map(CResourceFact::allocation) {
         output_allocations_by_block
             .entry(base.block.clone())
             .or_default()
@@ -14314,6 +14328,10 @@ fn apply_verified_heap_allocation_delta(
         if output
             .cached_support_exposing_fact(fact, &allocation_assumptions)
             .is_some()
+            || (authority_mode
+                && preserved
+                    .cached_support_exposing_fact(fact, &allocation_assumptions)
+                    .is_some())
             || expose_composite_resource_fact(
                 &output,
                 fact,
@@ -14445,7 +14463,7 @@ fn apply_verified_heap_allocation_delta(
         ));
     }
 
-    for fact in output.facts() {
+    for fact in returned_facts() {
         let Some((base, bytes)) = fact.allocation() else {
             continue;
         };
