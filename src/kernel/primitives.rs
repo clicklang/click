@@ -29,6 +29,7 @@ pub(crate) use contracts::{
     stated_separation_extent_guards,
 };
 mod integer;
+mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm,

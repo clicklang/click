@@ -1,7 +1,7 @@
 //! Compiler-owned typed Rust source vocabulary. No printed compiler dumps.
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA: u32 = 6;
+pub const SCHEMA: u32 = 7;
 pub const COMPILER_COMMIT: &str = "01dfd79246f1b2d5f146616deff08223a840a9ae";
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
 
@@ -78,6 +78,9 @@ pub struct Function {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Expression {
+    ChunkRemainder {
+        iterator: String,
+    },
     ArrayToSlice {
         array: Box<Self>,
         mutable: bool,
@@ -151,6 +154,16 @@ pub enum Expression {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Statement {
+    ChunkDeclare {
+        iterator: String,
+        slice: Expression,
+        size: Expression,
+    },
+    ChunkFor {
+        iterator: String,
+        binding: Place,
+        body: Vec<Self>,
+    },
     // Compiler-resolved shared slice split, with the tuple destructured locally.
     SliceSplit {
         slice: Expression,

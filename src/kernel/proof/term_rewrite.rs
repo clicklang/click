@@ -3570,6 +3570,7 @@ impl<'a> TermRewrite<'a> {
         if let Some(guard) = result
             .uint64_successor_guard()
             .or_else(|| result.uint64_subtraction_guard())
+            .or_else(|| result.uint64_remainder_bound_guard())
         {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.push(guard.clone());
@@ -3967,6 +3968,18 @@ impl<'a> TermRewrite<'a> {
                 right: Box::new(self.bits(right)),
             },
         };
+        if let Some((guards, replacement)) = result.guarded_remainder_rewrite() {
+            if let Some(conditions) = &mut self.collected_conditions {
+                conditions.extend(guards.iter().cloned());
+            }
+            if self.conditions.is_some_and(|conditions| {
+                guards.iter().all(|guard| {
+                    *guard == ConditionTerm::Constant(true) || conditions.get(guard) == Some(&true)
+                })
+            }) {
+                return replacement;
+            }
+        }
         if self.checked_work_exhausted() {
             Bitvector32Term::Constant(0)
         } else {

@@ -38,7 +38,7 @@ writes the artifact and input lock. Ordinary verification loads those files
 without executing the compiler. Source, configuration, artifact, or profile
 changes require refresh. The saved lock includes the compiler/exporter identity. After updating the
 exporter, refresh existing imports. Configuration schema 2 is unchanged; the
-typed artifact and lock now use schema 6.
+typed artifact and lock now use schema 7.
 
 ## Supported semantics
 
@@ -75,7 +75,7 @@ modular reduction, shifts, packing, truncation, and unsigned comparison. Its
 uses ordinary Click contracts and tactics. Expansion can use the shared
 `unsigned_sum_bound` arithmetic-certificate step for widened word bounds.
 It does not establish checksum-library support;
-chunk iterators and crate extraction remain outstanding.
+crate extraction remains outstanding.
 
 ```sh
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
@@ -297,8 +297,47 @@ verification have regressions. The
 [reference iterator fixture](https://github.com/clicklang/click/blob/master/examples/rust-iter-references/sum.rs)
 proves the same sum using `for byte in bytes.iter()` and `*byte`. Missing views
 and attempts to write through yielded shared references are rejected.
-Array iteration, `.iter_mut()`, stored iterator locals, `.chunks_exact()`,
-custom iterators, labels, `break`, and `continue` remain outside this subset.
+Array iteration, `.iter_mut()`, stored `Iter` locals, custom iterators,
+labels, `break`, and `continue` remain outside this subset.
+
+## Exact chunk iterators and remainder
+
+The core shared byte-slice `chunks_exact(size)` method supports stored local
+iterators, `for chunk in chunks`, `for chunk in &mut chunks`, and direct or
+nested `for chunk in bytes.chunks_exact(size)` loops. The exporter checks the
+resolved core slice method, the concrete `ChunksExact<u8>` type, and the
+compiler's standard iterator/Option desugaring. It retains `ChunkDeclare`
+and `ChunkFor` operations. `chunks.remainder()` checks the resolved core
+inherent method and retains a `ChunkRemainder` expression. The receiver is
+a shared byte-slice local; parameters or returns of iterator type, iterator
+assignment/copying, adapters, and explicit `next()` calls are unsupported.
+
+Construction captures the receiver before evaluating the size once, then
+checks `size != 0` and the input's signed-word memory-model length bound.
+For an iterator named `chunks`, the sidecar sees `chunks_cursor`,
+`chunks_remaining`, `chunks_size`, `chunks_tail`, and `chunks_tail_len`.
+The complete range has length `length - length % size`; its cursor initially
+points at the original input. The fixed tail begins at the end of that
+range and has length `length % size`. Chunk sizes and tail lengths retain
+64 bits. The complete range's remaining length uses the checked `int32`
+representation of the current memory model.
+
+Each successful `next` binds a shared byte subslice of length `size`, then
+advances the cursor and subtracts that size from the remaining complete
+range before the source body runs. The exhausted case performs no reads or
+pointer advance. `remainder()` exposes the fixed tail, independently of how
+many complete chunks were consumed. A saved remainder can be used after
+consumption by value; borrowing the iterator allows subsequent method calls.
+The compiler enforces moves and borrows. Neither method copies bytes or
+creates write authority. Reads through chunks, aliases, calls, and tails
+retain the original input's view requirements.
+
+The [exact-chunk fixture](https://github.com/clicklang/click/tree/master/examples/rust-chunks-exact)
+uses a cursor invariant and a divisibility invariant to describe the input
+partition without a generated processed count. Regressions cover empty
+input, exact multiples, short tails, nested loops, full-width chunk sizes,
+zero-size rejection, false claims, missing bounds/views, and expanded proofs.
+Mutable chunk iterators and non-byte slices remain unsupported.
 
 ## Moves and drops
 

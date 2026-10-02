@@ -1743,8 +1743,8 @@ impl<'a> Planner<'a> {
         while let Some(term) = pending.pop() {
             match term {
                 Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_) => {}
-                Bitvector32Term::UInt32From64(value)
-                    if matches!(value.as_ref(), Bitvector32Term::Variable(_)) => {}
+                Bitvector32Term::UInt32From64(_)
+                    if SignedArithmeticAtom::from_term(term).is_some() => {}
                 Bitvector32Term::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
                 }

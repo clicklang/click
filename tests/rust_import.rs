@@ -630,7 +630,7 @@ fn rust_split_at_metadata_and_reads_verify() {
     let artifact: serde_json::Value =
         serde_json::from_slice(&fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap())
             .unwrap();
-    assert_eq!(artifact["schema"], 6);
+    assert_eq!(artifact["schema"], 7);
     assert_eq!(artifact["functions"][0]["body"][0]["kind"], "slice_split");
     assert_eq!(artifact["functions"][0]["body"][0]["left"]["name"], "left");
     assert_eq!(
@@ -1658,7 +1658,7 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
 fn assert_slice_iterator_artifact(p: &Project, by_reference: bool) {
     let bytes = fs::read(p.root.join("borrow.rs.click-rust.json")).unwrap();
     let artifact: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(artifact["schema"], 6);
+    assert_eq!(artifact["schema"], 7);
     let iterator = &artifact["functions"][0]["body"][1];
     assert_eq!(iterator["kind"], "slice_for");
     assert_eq!(iterator["iterator"], "__rust_iter_3_5");
@@ -1805,4 +1805,212 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
     let p = Project::new("pub fn bad(bytes: &[u8]) { for byte in bytes.iter() { *byte = 0; } }");
     let error = refresh_import(&p.config()).unwrap_err();
     assert!(error.contains("cannot assign"), "{error}");
+}
+
+#[test]
+fn rust_chunks_exact_remainder_metadata_and_bytes() {
+    let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
+    pub fn tail_byte(bytes: &[u8]) -> u8 { let chunks = bytes.chunks_exact(2); let tail = chunks.remainder(); tail[0] }";
+    let p = Project::new(source);
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+    uint64 tail_len(const uint8* bytes, uint64 bytes_len, uint64 size) {
+        requires bytes_len <= 2147483647u64; requires size != 0u64;
+        ensures result == bytes_len % size;
+    } by { execute(); simp(); }
+    uint8 tail_byte(const uint8* bytes, uint64 bytes_len) {
+        requires bytes_len == 5u64; views bytes[0..5];
+        ensures result == bytes[4];
+    } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for invalid in [
+        sidecar.replace("requires size != 0u64;", ""),
+        sidecar.replace("requires bytes_len <= 2147483647u64;", ""),
+        sidecar.replace("views bytes[0..5];", ""),
+        sidecar.replace("result == bytes[4]", "result == bytes[3]"),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+
+#[test]
+fn rust_chunks_exact_loops_cover_input_and_preserve_bytes() {
+    let source = include_str!("../examples/rust-chunks-exact/chunks.rs");
+    let sidecar = include_str!("../examples/rust-chunks-exact/chunks.click")
+        .replace("chunks.rs", "borrow.rs");
+    for source in [
+        source.to_string(),
+        source
+            .replace("let chunks =", "let mut chunks =")
+            .replace("in chunks {", "in &mut chunks {")
+            .replace("tail.len()", "chunks.remainder().len()"),
+    ] {
+        let p = Project::new(&source);
+        refresh_import(&p.config()).unwrap();
+        let prepared = load_import(&p.config()).unwrap();
+        C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .unwrap_or_else(|error| panic!("{}", error.message()));
+        for invalid in [
+            sidecar.replace(
+                "ensures result == bytes_len % 4u64;",
+                "ensures result == bytes_len % 4u64 + 1u64;",
+            ),
+            sidecar.replace("views bytes[0..(int32)(uint32)bytes_len];", ""),
+            sidecar.replace("requires bytes_len <= 1000u64;", ""),
+            sidecar.replace(
+                "invariant chunks_remaining % 4 == 0;",
+                "invariant chunks_remaining % 4 == 1;",
+            ),
+            sidecar.replace("bytes[k] == old(bytes[k])", "bytes[k] != old(bytes[k])"),
+        ] {
+            assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+        }
+        fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
+        assert_cli(&p, &["profile"]);
+        assert_cli(&p, &["audit"]);
+        assert_cli(&p, &["expand", "--claim", "cover.contract", "--in-place"]);
+        assert_cli(&p, &["verify"]);
+    }
+}
+
+#[test]
+fn rust_chunks_exact_boundaries_and_full_width_sizes() {
+    let p = Project::new(
+        "pub fn length(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); chunks.remainder().len() }",
+    );
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    for (length, size) in [
+        (0u64, 4u64),
+        (8, 4),
+        (5, 4),
+        (3, 4),
+        (5, 1),
+        (5, 4294967296),
+        (5, 9223372036854775808),
+        (5, u64::MAX),
+    ] {
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ execute(); simp(); }}",
+            length % size
+        );
+        C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
+    }
+    for length in [0, 5] {
+        let sidecar = format!(
+            "verifying \"borrow.rs\"; uint64 length(const uint8* bytes, uint64 bytes_len, uint64 size) {{ requires bytes_len == {length}u64; requires size == 0u64; ensures result == 0u64; }} by {{ execute(); }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+            .err()
+            .expect("zero size must fail");
+        assert!(
+            error
+                .message()
+                .contains("Rust chunks_exact zero size panic check"),
+            "{}",
+            error.message()
+        );
+    }
+}
+
+#[test]
+fn rust_chunks_exact_evaluates_size_once_and_keeps_shadowed_iterators_distinct() {
+    let p = Project::new("pub fn size(p: &mut i32) -> usize { *p = *p + 1; 4 }
+    pub fn length(bytes: &[u8], p: &mut i32) -> usize { let chunks = bytes.chunks_exact(size(p)); chunks.remainder().len() }
+    pub fn shadow(bytes: &[u8]) -> usize { let chunks = bytes.chunks_exact(4); let tail = chunks.remainder(); let chunks = tail.chunks_exact(1); chunks.remainder().len() }");
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+    uint64 size(int32* p) { requires p[0] == 0; owns p[0..1]; ensures p[0] == 1; ensures result == 4u64; } by { execute(); simp(); }
+    uint64 length(const uint8* bytes, uint64 bytes_len, int32* p) { requires bytes_len == 5u64; requires p[0] == 0; owns p[0..1]; ensures p[0] == 1; ensures result == 1u64; } by { execute(); simp(); }
+    uint64 shadow(const uint8* bytes, uint64 bytes_len) { requires bytes_len == 5u64; ensures result == 0u64; } by { execute(); simp(); }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    let artifact = prepared.export();
+    assert!(matches!(
+        &artifact.functions[1].body[0],
+        click::languages::rust::schema::Statement::ChunkDeclare {
+            size: click::languages::rust::schema::Expression::Call { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn rust_chunks_exact_rejects_writes_and_unsupported_iterator_protocols() {
+    for (source, diagnostic) in [
+        (
+            "pub fn bad(bytes: &[u8]) { for chunk in bytes.chunks_exact(4) { chunk[0] = 0; } }",
+            "cannot assign",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { let chunks = bytes.chunks_exact(4); let tail = chunks.remainder(); tail[0] = 0; }",
+            "cannot assign",
+        ),
+        (
+            "pub fn bad(bytes: &mut [u8]) { let chunks = bytes.chunks_exact_mut(4); }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { for chunk in bytes.chunks_exact(4).rev() {} }",
+            "Rust for loops",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { let chunks = bytes.chunks_exact(4); let copy = chunks; }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { let mut chunks = bytes.chunks_exact(4); let item = chunks.next(); }",
+            "unsupported Rust type",
+        ),
+        (
+            "pub fn bad(bytes: &[u8]) { let chunks = bytes.chunks_exact(4); for chunk in chunks {} chunks.remainder(); }",
+            "moved value",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!error.contains("panicked"), "{error}");
+    }
+}
+
+#[test]
+fn rust_chunks_exact_direct_nested_loops_keep_independent_state() {
+    let source = "pub fn nested(bytes: &[u8]) -> usize {
+    for chunk in bytes.chunks_exact(4) {
+        for part in chunk.chunks_exact(2) {}
+    }
+    0
+}";
+    let p = Project::new(source);
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    let sidecar = "verifying \"borrow.rs\";
+    uint64 nested(const uint8* bytes, uint64 bytes_len) {
+        requires bytes_len == 8u64; ensures result == 0u64;
+    } by {
+        execute_until(statement(18));
+        loop {
+            decreases __rust_iter_2_5_remaining;
+            invariant __rust_iter_2_5_size == 4u64;
+            invariant 0 <= __rust_iter_2_5_remaining and __rust_iter_2_5_remaining <= 8;
+            preserve by {
+                execute_until(statement(44));
+                loop {
+                    decreases __rust_iter_3_9_remaining;
+                    invariant __rust_iter_3_9_size == 2u64;
+                    invariant 0 <= __rust_iter_3_9_remaining and __rust_iter_3_9_remaining <= 4;
+                    preserve by { execute_until(statement(52)); step(); close_invariants(); }
+                }
+                close_invariants();
+            }
+        }
+        execute(); simp();
+    }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    fs::write(p.root.join("borrow.click"), sidecar).unwrap();
+    assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
+    assert_cli(&p, &["verify"]);
 }
