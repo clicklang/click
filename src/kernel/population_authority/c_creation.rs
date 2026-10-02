@@ -375,12 +375,30 @@ impl CreationEvents {
     /// Import only an exact owned wrapper and each contained authority. A
     /// declared counter equality supplies a checked entry load; otherwise a
     /// fresh private symbol names this population's arbitrary entry total.
+    #[cfg(test)]
     pub(in crate::kernel) fn import_checked_control_wrapper(
         &self,
         state: &CState,
         selected: &CResourceFact,
         definition: &CCompositeResourceDefinition,
         assumptions: &PureFactContext,
+    ) -> Result<Self, String> {
+        self.import_checked_control_wrapper_with_members(
+            state,
+            selected,
+            definition,
+            assumptions,
+            &BTreeMap::new(),
+        )
+    }
+
+    pub(in crate::kernel) fn import_checked_control_wrapper_with_members(
+        &self,
+        state: &CState,
+        selected: &CResourceFact,
+        definition: &CCompositeResourceDefinition,
+        assumptions: &PureFactContext,
+        wildcard_members: &BTreeMap<ResourceDescription, Vec<CResourceFact>>,
     ) -> Result<Self, String> {
         if state.population_effects.creation.as_ref() != Some(self) {
             return Err("control import requires the current creation ledger".into());
@@ -415,6 +433,40 @@ impl CreationEvents {
                     }
                 }
             };
+            let wildcard_member = if description.population_arity().is_some() {
+                match wildcard_members.get(&description).map(Vec::as_slice) {
+                    None | Some([]) => None,
+                    Some([fact]) => {
+                        let CResourceFact::Own(CResource::Composite { name, arguments }, quantity) =
+                            fact
+                        else {
+                            return Err("Requires one owned wildcard member".into());
+                        };
+                        if quantity.as_const() != Some(1)
+                            || name != description.family()
+                            || Some(arguments.len()) != description.population_arity()
+                            || arguments.first() != description.arguments().first()
+                            || !state.resources().contains_exact_representation(fact)
+                        {
+                            return Err(
+                                "Requires the declared concrete member of this authority".into()
+                            );
+                        }
+                        Some(ResourceDescription::new(
+                            name.clone(),
+                            arguments.clone(),
+                            description.schema().clone(),
+                        ))
+                    }
+                    Some(_) => {
+                        return Err(
+                            "wildcard control entry currently supports one concrete member".into(),
+                        );
+                    }
+                }
+            } else {
+                None
+            };
             let member = CResource::Composite {
                 name: description.family().to_owned(),
                 arguments: description.arguments().to_vec().into(),
@@ -431,10 +483,14 @@ impl CreationEvents {
                     total.checked_add(quantity.as_const()?)
                 })
                 .filter(|n| *n <= i32::MAX as u32);
-            let (owned_members, symbolic_members) = match (numeric_members, owned.as_slice()) {
-                (Some(quantity), _) => (quantity, None),
-                (None, [quantity]) => (0, Some(quantity.clone())),
-                _ => return Err("control import needs one owned member quantity".into()),
+            let (owned_members, symbolic_members) = if wildcard_member.is_some() {
+                (1, None)
+            } else {
+                match (numeric_members, owned.as_slice()) {
+                    (Some(quantity), _) => (quantity, None),
+                    (None, [quantity]) => (0, Some(quantity.clone())),
+                    _ => return Err("control import needs one owned member quantity".into()),
+                }
             };
             events = events
                 .import_opaque_contract_population_with_member(
@@ -443,7 +499,7 @@ impl CreationEvents {
                     Some(entry_count),
                     symbolic_members,
                     Some((selected.clone(), Arc::new(definition.clone()))),
-                    None,
+                    wildcard_member,
                 )
                 .map_err(|refusal| format!("control import refused: {refusal:?}"))?;
         }
@@ -698,12 +754,25 @@ impl CreationEvents {
             return None;
         }
         import.symbolic_delta.clone().or_else(|| {
+            if import.entry_symbolic_members.is_some()
+                || (import.entry_count.is_none()
+                    && import.owned_members == import.entry_owned_members)
+            {
+                // An unchanged symbolic batch or an unobserved opaque import
+                // has no numerical count summary. Preserve that boundary.
+                return None;
+            }
             if import.entry_owned_members.checked_add(1) == Some(import.owned_members) {
                 Some((true, Bitvector32Term::Constant(1)))
             } else if import.owned_members.checked_add(1) == Some(import.entry_owned_members) {
                 Some((false, Bitvector32Term::Constant(1)))
             } else {
-                None
+                Some((
+                    import.owned_members >= import.entry_owned_members,
+                    Bitvector32Term::Constant(
+                        import.owned_members.abs_diff(import.entry_owned_members),
+                    ),
+                ))
             }
         })
     }
@@ -1268,6 +1337,65 @@ impl CreationEvents {
                 description,
                 produce,
                 Some(assumptions),
+                1,
+            );
+        }
+        // Concrete batches in opaque unary populations share the numerical
+        // ledger with unit operations. Updating a batch is constant work, not
+        // one exchange per unit, and may be followed by checked helper calls.
+        if let Some(amount) = quantity
+            .as_const()
+            .filter(|amount| *amount <= i32::MAX as u32)
+            && let Some(import) = self.0.opaque_imports.get(description)
+            && import.entry_symbolic_members.is_none()
+            && import.symbolic_delta.is_none()
+            && description.population_arity().is_none()
+        {
+            if produce && amount > 0 {
+                let entry = import
+                    .entry_count
+                    .clone()
+                    .ok_or(CreationRefusal::UnknownTotal)?;
+                let delta = i64::from(import.owned_members) - i64::from(import.entry_owned_members);
+                let zero_entry =
+                    assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
+                        entry.clone(),
+                        Bitvector32Term::Constant(0),
+                    )) == Some(true);
+                let upper = entry
+                    .as_const()
+                    .map(|value| i64::from(value as i32))
+                    .or_else(|| {
+                        assumptions
+                            .indexed_constant_interval(&entry)
+                            .map(|(_, high)| high)
+                    });
+                let bounded = (zero_entry && delta + i64::from(amount) <= i64::from(i32::MAX))
+                    || upper.is_some_and(|high| {
+                        high + delta + i64::from(amount) <= i64::from(i32::MAX)
+                    });
+                let current = if delta >= 0 {
+                    Bitvector32Term::add(entry, Bitvector32Term::Constant(delta as u32))
+                } else {
+                    Bitvector32Term::subtract(entry, Bitvector32Term::Constant((-delta) as u32))
+                };
+                if !bounded
+                    && assumptions.exact_condition_value(
+                        &crate::kernel::ConditionTerm::signed_add_overflows(
+                            current,
+                            quantity.clone(),
+                        ),
+                    ) != Some(false)
+                {
+                    return Err(CreationRefusal::InvalidQuantity);
+                }
+            }
+            return self.checked_member_exchange_with_context(
+                block,
+                description,
+                produce,
+                Some(assumptions),
+                amount,
             );
         }
         if !crate::kernel::quantity_condition_holds(
@@ -1463,7 +1591,7 @@ impl CreationEvents {
         description: &ResourceDescription,
         produce: bool,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
-        self.checked_member_exchange_with_context(block, description, produce, None)
+        self.checked_member_exchange_with_context(block, description, produce, None, 1)
     }
 
     fn checked_member_exchange_with_context(
@@ -1472,6 +1600,7 @@ impl CreationEvents {
         description: &ResourceDescription,
         produce: bool,
         assumptions: Option<&PureFactContext>,
+        amount: u32,
     ) -> Result<(Self, CheckedPopulationMemberExchange), CreationRefusal> {
         if description.population_arity().is_some() {
             return Err(CreationRefusal::InvalidMember);
@@ -1481,6 +1610,9 @@ impl CreationEvents {
             .ok_or(CreationRefusal::InvalidMember)?;
         if let Some(import) = self.0.opaque_imports.get(&scope) {
             if scope.population_arity().is_some() {
+                if amount != 1 {
+                    return Err(CreationRefusal::InvalidQuantity);
+                }
                 // One birth from authority-only input, or one death of the
                 // exact member supplied on entry. Retain its identity after
                 // death so neither replacement nor repeated exchanges pass.
@@ -1535,18 +1667,18 @@ impl CreationEvents {
                 .copied()
                 .unwrap_or(0);
             let next_held = if produce {
-                held.checked_add(1)
+                held.checked_add(amount)
             } else {
-                held.checked_sub(1)
+                held.checked_sub(amount)
             }
             .ok_or(CreationRefusal::MissingMembers)?;
             let owned_members = if produce {
                 import
                     .owned_members
-                    .checked_add(1)
+                    .checked_add(amount)
                     .filter(|n| *n <= i32::MAX as u32)
             } else {
-                import.owned_members.checked_sub(1)
+                import.owned_members.checked_sub(amount)
             }
             .ok_or(CreationRefusal::MissingMembers)?;
             let after = Self(Arc::new(Root {

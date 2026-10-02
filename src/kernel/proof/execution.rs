@@ -1121,6 +1121,14 @@ fn authority_control_evaluation_condition_proven(
         if stated(&Proposition::ConditionIs(condition.clone(), false)) {
             return true;
         }
+        if let ConditionTerm::Bitvector32SignedAddOverflows(left, right) = condition
+            && stated(&Proposition::ConditionIs(
+                ConditionTerm::signed_add_overflows(right.as_ref().clone(), left.as_ref().clone()),
+                false,
+            ))
+        {
+            return true;
+        }
         match condition {
             ConditionTerm::Bitvector32SignedAddOverflows(value, one)
                 if one.as_const() == Some(1) =>
@@ -9074,6 +9082,26 @@ mod tests {
         );
         for missing in 0..=3 {
             let facts = guards
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != missing)
+                .fold(PureFactContext::new(), |facts, (_, condition)| {
+                    facts.assume_condition(condition.clone(), false)
+                });
+            assert_eq!(
+                super::authority_control_evaluation_condition_proven(&facts, &goal),
+                missing == 3
+            );
+        }
+        // Return reverses the two original summands. Commutativity must
+        // preserve the check without dropping either child-domain premise.
+        let reversed_guards = [
+            ConditionTerm::signed_add_overflows(b.clone(), a.clone()),
+            guards[1].clone(),
+            guards[2].clone(),
+        ];
+        for missing in 0..=3 {
+            let facts = reversed_guards
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| *i != missing)

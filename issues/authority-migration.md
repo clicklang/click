@@ -280,6 +280,43 @@ focused positives/negatives and the full gate pass. Private memory access remain
 ordinary member ownership. Any capability not actually required by these claims
 stays a separate future task rather than expanding this milestone.
 
+#### Current milestone 1 checkpoint
+
+Return through a two-authority control now has direct and nested regressions:
+`mdtests/authority_pool_control_return_full.md`. They consume the exact member,
+return its private object and a slot, preserve both invariants and the ordinary
+`valid_pool(pool)` predicate, and retain a caller-owned neighboring slot. Import validation rejects absent custody,
+duplicate inputs, and a member from the wrong pool. Signed sum checks preserve
+all required operand domains, including reversed summands.
+
+`mdtests/authority_pool_control_init_nested.md` verifies standalone initialization
+with an arbitrary nonnegative capacity and a nested initialization at capacity
+two. Numerical batches now compose with unit exchanges in imported unary
+populations; zero has no member rights. Symbolic batches forwarded through
+another opaque helper still need support. These tests do not complete the
+original bounded-pool migration.
+
+The attempted original sidecar exposed two further dependencies before the
+pipeline can migrate. Keep the original sidecar on its existing verification
+path until these regressions pass:
+
+- **Current control observations after wrapper replacement.** Initialize from
+  an owned empty `pool_storage(pool)`, return `pool_control(pool)` containing
+  the same two authorities, and prove the original `valid_pool(pool)` predicate
+  over their current counts. Authenticate the current wrapper rather than
+  using its entry wrapper or dropping count-dependent claims. Preserve the
+  distinction between historical and current observations.
+- **Multiple identified members under imported authority.** A pipeline whose
+  pool is an external argument checks out two different private objects and
+  returns each. The current opaque wildcard import represents one selected
+  member. Extend its custody by exact member identity before admitting a
+  second birth: aggregate cardinality alone must not authorize consumption or
+  helper transfer of a different member. Test retained neighbors, aliasing,
+  wrong-member consumption, and deterministic scaling over unrelated members.
+
+The original C is unchanged. Do not replace these pipelines with locally
+allocated synthetic pools or weaken their final claims to avoid the gaps.
+
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
 
 1. Define/check population occurrence identity independently of proof fields;
