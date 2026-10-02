@@ -929,6 +929,12 @@ fn c0_smart_tactic_source_sites_file(
         }
     }
     for function in file.function_blocks() {
+        // An `extern` contract is assumed, not proved: its clauses carry no
+        // proof, so the implicit `auto` of an unproved clause is not a site
+        // there is anything to expand.
+        if function.is_external() {
+            continue;
+        }
         let function_name = function.signature().name();
         for clause in function.structural_clauses() {
             if let CodeRegion::Loop(loop_index) = clause.region() {

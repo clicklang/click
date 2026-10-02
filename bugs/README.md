@@ -7,7 +7,6 @@ regression, and acceptance criteria. Delete a bug file when its fix, regression
 coverage, and documentation land.
 
 - [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
-- [`auto` expansion re-verifies against a callee with no verified clause](auto-expansion-loses-callee-contract-clauses.md)
 - [Expanded `simp` in a loop `initialize` leaves the invariant entry goal open](loop-initialize-expansion-does-not-close-entry-goal.md)
 - [Expanded `simp` in a loop `initialize` emits an arithmetic step the checker rejects](loop-initialize-expansion-emits-rejected-arithmetic-certificate.md)
 - [Expanded `simp` in a loop `initialize` emits a tactic after one that closed the goal](loop-initialize-expansion-continues-after-closing-tactic.md)
