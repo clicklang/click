@@ -120,6 +120,14 @@ impl RangeSupports {
             }
         }
     }
+    pub(super) fn footprint_entries(&self, class: u64, owned: bool) -> Option<ResourceEntryIds> {
+        let suppliers = if owned {
+            &self.owned_footprints
+        } else {
+            &self.footprints
+        };
+        suppliers.classes.get(&class).cloned()
+    }
     pub(super) fn sole_base(&self, class: u64, owned: bool) -> Option<ResourceEntryId> {
         if owned {
             self.owned_bases.sole(class)

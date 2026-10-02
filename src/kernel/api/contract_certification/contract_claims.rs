@@ -1269,6 +1269,15 @@ fn prepare_function_claim_path(
         });
     }
 
+    // A certificate can instantiate exit terms by variable substitution,
+    // which intentionally rebuilds structural resources without old graph
+    // equalities. Publish that explicit output once at path preparation,
+    // before any individual claim consumes it. Already published persistent
+    // outputs keep their pairing; claim lookup must never attach a cold frame.
+    claim_exit_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
+
     Ok(CertifiedFunctionClaimPath {
         caller_state: caller_state.clone(),
         arguments: arguments.to_vec(),

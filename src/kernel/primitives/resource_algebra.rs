@@ -553,16 +553,6 @@ impl ResourceContextIndex {
                         .with_inserted(block.clone(), ());
                 }
             }
-            result.memory_starts = insert_resource_index_entry(
-                &result.memory_starts,
-                (block.clone(), mode, range.start().clone()),
-                entry,
-            );
-            result.memory_ends = insert_resource_index_entry(
-                &result.memory_ends,
-                (block, mode, range.end().clone()),
-                entry,
-            );
             if let (Some(start), Some(end)) = signed_range_endpoints(range) {
                 let base = (range.base().clone(), mode);
                 result.concrete_memory = insert_resource_index_entry(
@@ -767,16 +757,6 @@ impl ResourceContextIndex {
                         result.shared_owned_memory_blocks.without_key(&block);
                 }
             }
-            result.memory_starts = remove_resource_index_entry(
-                &result.memory_starts,
-                &(block.clone(), mode, range.start().clone()),
-                entry,
-            );
-            result.memory_ends = remove_resource_index_entry(
-                &result.memory_ends,
-                &(block, mode, range.end().clone()),
-                entry,
-            );
             if let (Some(start), Some(end)) = signed_range_endpoints(range) {
                 let base = (range.base().clone(), mode);
                 result.concrete_memory = remove_resource_index_entry(
@@ -2488,6 +2468,14 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<&CResourceFact> {
+        if let Some(range) = required.memory_range() {
+            let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
+            return candidates.entries.iter().find_map(|entry| {
+                let aligned = candidates.requirement(entry, required)?;
+                let available = self.fact(entry);
+                resource_fact_entails(available, &aligned, assumptions).then_some(available)
+            });
+        }
         self.direct_match_candidates(required)
             .find(|available| resource_fact_entails(available, required, assumptions))
     }
@@ -2639,86 +2627,52 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         use_separation: bool,
     ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
-        // Complete concrete interval candidates avoid a block-wide scan on
-        // misses, including a request that must be assembled from fragments.
-        if let Some(range) = required.memory_own_range()
-            && let Some((start, end)) = concrete_memory_range_bounds(range)
-            && let Ok(bytes) = u32::try_from(end - start)
-            && let Some(mut entries) = self.concrete_write_entries(
-                &Pointer {
-                    block: range.base().block.clone(),
-                    offset: PointerOffsetTerm::Constant(start),
-                },
-                bytes,
-                assumptions,
-            )
-        {
-            // The selected query is the requested range's start. Restore its
-            // base coordinates after alignment in the retained graph, instead
-            // of asking an ambient graph that may not register these loads.
-            let start_bytes = i64::from(range.start().as_const()? as i32)
-                .checked_mul(i64::from(range.element_width()))?;
-            let base_delta = start_bytes.checked_neg()?;
-            while let Some(entry) = entries.next() {
-                crate::instrumentation::record_deterministic_work(1);
+        if let Some(range) = required.memory_range() {
+            let candidates = self.memory_fact_candidates(range, true, assumptions);
+            for entry in candidates.entries.iter() {
+                let Some(aligned) = candidates.requirement(entry, required) else {
+                    continue;
+                };
                 let candidate = self.fact(entry);
-                if candidate.memory_own_range().is_none() {
-                    continue;
-                }
-                let Some(address) = entries.address(entry) else {
-                    continue;
-                };
-                let base = Pointer {
-                    block: address.block,
-                    offset: PointerOffsetTerm::add(
-                        address.offset,
-                        PointerOffsetTerm::Constant(base_delta),
-                    ),
-                };
-                let mut translated = range.clone();
-                translated.base = base;
-                let translated = CResourceFact::Own(
-                    CResource::Memory(translated),
-                    required.owned_quantity_term()?.clone().into(),
-                );
-                if resource_fact_entails(candidate, &translated, assumptions) {
+                if Self::memory_support_entails(candidate, &aligned, assumptions, use_separation) {
                     return Some((self.occurrence(entry), candidate));
+                }
+            }
+            if required.is_view() && !self.storage.supported_by.is_empty() {
+                let projections = self.memory_fact_candidates(range, false, assumptions);
+                for entry in projections.entries.iter() {
+                    let Some(support_occurrence) =
+                        self.storage.support_occurrence_by_projection.get(&entry)
+                    else {
+                        continue;
+                    };
+                    let Some(support) = self.owned_fact_for_occurrence(*support_occurrence) else {
+                        continue;
+                    };
+                    if self.storage.supported_by.get(&entry) != Some(support) {
+                        continue;
+                    }
+                    let Some(aligned) = projections.requirement(entry, required) else {
+                        continue;
+                    };
+                    if Self::memory_support_entails(
+                        self.fact(entry),
+                        &aligned,
+                        assumptions,
+                        use_separation,
+                    ) {
+                        return Some((*support_occurrence, support));
+                    }
                 }
             }
             return None;
         }
-        let entails = |candidate: &CResourceFact| {
-            if !use_separation
-                && let (Some(available), Some(required)) = (
-                    resource_fact_read_core_range(candidate),
-                    required.memory_view_range(),
-                )
-            {
-                memory_range_covers_with_separation(&available, required, assumptions, false)
-            } else {
-                resource_fact_entails(candidate, required, assumptions)
-            }
-        };
-        // Concrete memory requirements have a monotone start position.  Use
-        // the exact bucket or its immediate predecessor before falling back
-        // to the block bucket; repeated disjoint consumption otherwise
-        // revisits every residual range produced by earlier clauses.
-        if let CResource::Memory(range) = required.resource()
-            && let Some(indexed) = self.concrete_memory_start_candidates(range, true)
-        {
-            for entry in indexed {
-                let candidate = self.fact(entry);
-                if entails(candidate) && candidate.is_own() {
-                    return Some((self.occurrence(entry), candidate));
-                }
-            }
-        }
-        self.owned_support_candidate_positions(required)
+        self.direct_match_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
             .filter_map(|entry| {
                 let candidate = self.fact(*entry);
-                if !entails(candidate) {
+                if !resource_fact_entails(candidate, required, assumptions) {
                     return None;
                 }
                 if candidate.is_own() {
@@ -2742,6 +2696,24 @@ impl ResourceContext {
             .next()
     }
 
+    fn memory_support_entails(
+        available: &CResourceFact,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+        use_separation: bool,
+    ) -> bool {
+        if !use_separation
+            && let (Some(available), Some(required)) = (
+                resource_fact_read_core_range(available),
+                required.memory_view_range(),
+            )
+        {
+            memory_range_covers_with_separation(&available, required, assumptions, false)
+        } else {
+            resource_fact_entails(available, required, assumptions)
+        }
+    }
+
     /// Whether another owned occurrence besides `excluded` directly supports
     /// this fact. The lookup stays within the same indexed candidate frontier
     /// as `directly_supporting_owned_entry` so provenance checks do not scan
@@ -2752,6 +2724,40 @@ impl ResourceContext {
         excluded: ResourceOccurrenceId,
         assumptions: &PureFactContext,
     ) -> bool {
+        if let Some(range) = required.memory_range() {
+            for owned in [true, false] {
+                if !owned && (!required.is_view() || self.storage.supported_by.is_empty()) {
+                    break;
+                }
+                let candidates = self.memory_fact_candidates(range, owned, assumptions);
+                for entry in candidates.entries.iter() {
+                    let support = if self.fact(entry).is_own() {
+                        Some(self.occurrence(entry))
+                    } else {
+                        self.storage
+                            .support_occurrence_by_projection
+                            .get(&entry)
+                            .copied()
+                            .filter(|support| {
+                                self.owned_fact_for_occurrence(*support)
+                                    .is_some_and(|live| {
+                                        self.storage.supported_by.get(&entry) == Some(live)
+                                    })
+                            })
+                    };
+                    if support.is_some_and(|support| support != excluded)
+                        && candidates
+                            .requirement(entry, required)
+                            .is_some_and(|aligned| {
+                                resource_fact_entails(self.fact(entry), &aligned, assumptions)
+                            })
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
         let supports_other = |entry: ResourceEntryId| {
             let candidate = self.fact(entry);
             if !resource_fact_entails(candidate, required, assumptions) {
@@ -2778,52 +2784,11 @@ impl ResourceContext {
             support.is_some_and(|support| support != excluded)
         };
 
-        if let CResource::Memory(range) = required.resource()
-            && let Some(indexed) = self.concrete_memory_start_candidates(range, true)
-            && indexed.into_iter().any(&supports_other)
-        {
-            return true;
-        }
-        self.owned_support_candidate_positions(required)
+        self.direct_match_candidate_positions(required)
             .into_iter()
             .flat_map(ResourceEntryIds::iter)
             .copied()
             .any(supports_other)
-    }
-
-    /// The candidates [`Self::directly_supporting_owned_entry`] and
-    /// [`Self::has_other_directly_supporting_owned_entry`] must ask, in the
-    /// order of [`Self::direct_match_candidate_positions`].
-    ///
-    /// Both answer from a candidate of two kinds only: an owned fact, or a
-    /// projection with a recorded owned support (`supported_by`). A
-    /// candidate of any other kind is asked for entailment and then
-    /// discarded whatever the answer. When this context records no
-    /// projection support at all, every candidate that can answer is owned,
-    /// and for a memory requirement the owned candidates are exactly the
-    /// owned bucket of its block: `owned_memory_by_block` files an entry
-    /// under its block if and only if `memory_by_block` does and the fact is
-    /// owned (`ResourceContextIndex::with_inserted` and `without_entry`).
-    /// That bucket is the block bucket with the discarded entries removed,
-    /// in the same (entry-id) order,
-    /// so the first answer and the existence of another answer are
-    /// unchanged. Without it, a contract with `N` views beside `M` owners
-    /// asked every view of the shared parameter block once per view: `N^2`
-    /// coverage queries at entry where `N * M` decide the same thing.
-    fn owned_support_candidate_positions(
-        &self,
-        required: &CResourceFact,
-    ) -> Option<&ResourceEntryIds> {
-        if self.storage.supported_by.is_empty()
-            && let CResource::Memory(range) = required.resource()
-        {
-            return self
-                .storage
-                .index
-                .owned_memory_by_block
-                .get(&range.base().block);
-        }
-        self.direct_match_candidate_positions(required)
     }
 
     pub(crate) fn owned_fact_for_occurrence(
@@ -2904,31 +2869,6 @@ impl ResourceContext {
             cursor = cursor.checked_add(i64::from(bytes))?;
         }
         Some((self, supports))
-    }
-
-    fn concrete_memory_start_candidates(
-        &self,
-        range: &CMemoryRange,
-        owned: bool,
-    ) -> Option<Vec<ResourceEntryId>> {
-        (range.start().as_const().is_some() && range.end().as_const().is_some()).then(|| {
-            let key = (range.base().block.clone(), owned, range.start().clone());
-            self.storage
-                .index
-                .memory_starts
-                .get(&key)
-                .into_iter()
-                .chain(
-                    self.storage
-                        .index
-                        .memory_starts
-                        .get_less_than(&key)
-                        .map(|(_, entries)| entries),
-                )
-                .flat_map(ResourceEntryIds::iter)
-                .copied()
-                .collect()
-        })
     }
 
     /// Return indexed view occurrences that entail `required`. The caller
@@ -5029,19 +4969,30 @@ impl ResourceContext {
         {
             return true;
         }
-        if let CResource::Memory(range) = fact.resource() {
-            // The trusted graph selects retained occurrences; equality alone
-            // grants no authority. Align the query just as consumption does,
-            // then let the memory algebra check access and byte coverage.
-            let entries = self.equal_address_entries(range, fact.is_own(), assumptions);
-            if entries.iter().any(|entry| {
-                let available = self.fact(*entry);
-                memory_fact_in_available_block(fact, available, assumptions).is_some_and(
-                    |required| resource_fact_entails(available, &required, assumptions),
-                )
+        if let Some(range) = fact.memory_range() {
+            if memory_range_is_proven_empty(range, assumptions)
+                || fact.owned_quantity_term().is_some_and(|quantity| {
+                    resource_quantity_resolves_to_zero(quantity, assumptions)
+                })
+            {
+                return true;
+            }
+            let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
+            if candidates.entries.iter().any(|entry| {
+                candidates.requirement(entry, fact).is_some_and(|aligned| {
+                    resource_fact_entails(self.fact(entry), &aligned, assumptions)
+                })
             }) {
                 return true;
             }
+            return self
+                .normalized_memory_suppliers(
+                    &candidates.entries.iter().collect::<Vec<_>>(),
+                    assumptions,
+                )
+                .is_some_and(|joined| {
+                    joined.directly_supporting_fact(fact, assumptions).is_some()
+                });
         }
         if let Some(required) = numeric_population_owned_units(fact) {
             let (units, entries) = self
@@ -5087,39 +5038,7 @@ impl ResourceContext {
         {
             return true;
         }
-        // A required fact may span several adjacent held resources; merge
-        // them and retry once. Only memory resources have a split/merge
-        // algebra: token and composite entailment is decided one fact at a
-        // time above. Normalizing an unrelated ambient memory context while
-        // looking for a missing token or composite makes an exact resource
-        // query depend on every symbolic range the caller happens to hold.
-        if fact.family() != ResourceFamily::Memory {
-            return false;
-        }
-        // Normalization can only merge facts within one access mode. A
-        // viewed context cannot acquire ownership by normalizing, so avoid
-        // scanning unrelated composite views for an impossible owned-memory
-        // query.
-        if fact.is_own()
-            && !self
-                .direct_match_candidates(fact)
-                .any(CResourceFact::is_own)
-        {
-            return false;
-        }
-        let normalized = crate::instrumentation::measure_operation(
-            "kernel",
-            "resource satisfaction",
-            "resource satisfaction: normalization fallback",
-            || {
-                self.clone()
-                    .normalized_around_facts(std::slice::from_ref(fact), assumptions)
-            },
-        );
-        normalized.storage.facts.len() < self.storage.facts.len()
-            && normalized
-                .direct_match_candidates(fact)
-                .any(|available| resource_fact_entails(available, fact, assumptions))
+        false
     }
 
     pub fn is_empty(&self) -> bool {
@@ -5280,14 +5199,10 @@ impl ResourceContext {
             .then_some(self)
     }
 
-    /// Consumes one fact while normalizing only its indexed candidate bucket.
-    ///
-    /// Direct algebraic consumption is the common path. If several retained
-    /// representations must be combined first, this operation rebuilds only
-    /// the exact-resource bucket and then, if equality-aware matching is
-    /// needed, the resource's necessary-shape bucket. Unrelated resources are
-    /// neither scanned nor materialized, and the returned snapshot preserves
-    /// this context's mutation ancestry.
+    /// Consume from retained memory suppliers, composing only selected fragments
+    /// when no single supplier suffices. Nonmemory resources use their local
+    /// exact/shape indexes. Neither route materializes unrelated holdings;
+    /// persistent edits preserve this context's mutation ancestry.
     pub(crate) fn without_fact_incrementally(
         self,
         fact: &CResourceFact,
@@ -5306,62 +5221,75 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        let entries = self.equal_address_entries(range, fact.is_own(), assumptions);
-        // Equality selects existing occurrences; the resource algebra still
-        // checks access mode, quantity and range coverage before consuming.
+        let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
         let mut selected = self;
-        if selected.consume_memory_from_indexed_candidates(fact, assumptions, &entries) {
-            return Some(selected);
+        for entry in candidates.entries.iter() {
+            if let Some(required) = candidates.requirement(entry, fact)
+                && selected.consume_fact_from_candidates(
+                    &required,
+                    assumptions,
+                    std::iter::once(entry),
+                )
+            {
+                return Some(selected);
+            }
         }
-        if let Some(consumed) = selected
-            .clone()
-            .without_fact_from_local_indexes(fact, assumptions)
-        {
-            return Some(consumed);
+        let mut joined = selected.normalized_memory_suppliers(
+            &candidates.entries.iter().collect::<Vec<_>>(),
+            assumptions,
+        )?;
+        let support = joined.memory_fact_candidates(range, fact.is_own(), assumptions);
+        let mut consumed = false;
+        for entry in support.entries.iter() {
+            if let Some(required) = support.requirement(entry, fact)
+                && joined.consume_fact_from_candidates(
+                    &required,
+                    assumptions,
+                    std::iter::once(entry),
+                )
+            {
+                consumed = true;
+                break;
+            }
         }
-        if entries.is_empty() {
+        if !consumed {
             return None;
         }
-        // Several fractions at the selected address may together supply the
-        // requirement. Normalize only that output bucket, never its aliases.
-        let mut candidates = ResourceContext::new();
-        for entry in &entries {
-            candidates.insert_fact(selected.fact(*entry).clone());
-        }
-        candidates = candidates.normalized(assumptions);
-        if !candidates.consume_fact_without_normalizing(fact, assumptions) {
-            return None;
-        }
-        let residual = candidates.iter().cloned().collect::<Vec<_>>();
-        for entry in entries {
-            // An owner can retire supported observations in this bucket too.
+        for entry in candidates.entries.iter() {
             if selected.storage.facts.contains_key(&entry) {
                 selected.remove_entry(entry);
             }
         }
-        for fact in residual {
-            selected.insert_fact(fact);
+        for residual in joined.iter() {
+            selected.insert_fact(residual.clone());
         }
         Some(selected)
     }
 
-    fn consume_memory_from_indexed_candidates(
-        &mut self,
-        fact: &CResourceFact,
-        assumptions: &PureFactContext,
+    /// Join only the suppliers selected for the explicit footprint. Loan-bound
+    /// observations keep their original occurrences and cannot be coalesced.
+    /// This is proportional to selected input, never the ambient context.
+    fn normalized_memory_suppliers(
+        &self,
         entries: &[ResourceEntryId],
-    ) -> bool {
-        for entry in entries {
-            let Some(required) =
-                memory_fact_in_available_block(fact, self.fact(*entry), assumptions)
-            else {
-                continue;
-            };
-            if self.consume_fact_from_candidates(&required, assumptions, std::iter::once(*entry)) {
-                return true;
-            }
+        assumptions: &PureFactContext,
+    ) -> Option<Self> {
+        if entries.len() < 2
+            || entries.iter().any(|entry| {
+                self.storage.supported_by.contains_key(entry)
+                    || self
+                        .loan_dependencies
+                        .map
+                        .contains_key(&self.occurrence(*entry))
+            })
+        {
+            return None;
         }
-        false
+        let mut suppliers = Self::new_with_equalities(assumptions);
+        for entry in entries {
+            suppliers.insert_fact(self.fact(*entry).clone());
+        }
+        Some(suppliers.normalized(assumptions))
     }
 
     fn without_fact_from_local_indexes(
@@ -5369,6 +5297,10 @@ impl ResourceContext {
         fact: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        debug_assert!(
+            fact.memory_range().is_none(),
+            "memory consumption uses retained graph suppliers"
+        );
         if !fact.has_valid_exclusive_access() {
             return None;
         }
@@ -5378,23 +5310,6 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        // An empty range is the unit of memory ownership: it names no cell,
-        // so requiring it consumes nothing. Without this a body such as
-        // `owns data[start..next]` could not fold at `next == start` unless an
-        // empty fact happened to be lying around from an earlier split.
-        if let CResource::Memory(range) = fact.resource()
-            && memory_range_is_proven_empty(range, assumptions)
-        {
-            return Some(self);
-        }
-
-        if let CResource::Memory(range) = fact.resource()
-            && let Some(candidates) = self.concrete_memory_start_candidates(range, fact.is_own())
-            && self.consume_fact_from_candidates(fact, assumptions, candidates)
-        {
-            return Some(self);
-        }
-
         let exact_resource_entries = self.storage.index.by_resource.get(fact.resource()).cloned();
         if exact_resource_entries.as_ref().is_some_and(|entries| {
             self.consume_fact_from_candidates(fact, assumptions, entries.iter().copied())
@@ -6188,31 +6103,6 @@ fn normalize_resource_fact_pair(
     resource_family_algebra(left.family()).normalize_pair(left, right, assumptions)
 }
 
-/// Express a memory requirement in a selected occurrence's block using the
-/// trusted equality graph. This preserves bounds, element width and access
-/// mode; satisfaction and consumption still check the ordinary resource algebra.
-fn memory_fact_in_available_block(
-    required: &CResourceFact,
-    available: &CResourceFact,
-    assumptions: &PureFactContext,
-) -> Option<CResourceFact> {
-    let available = available.memory_range()?;
-    let CResource::Memory(range) = required.resource() else {
-        return None;
-    };
-    let base = assumptions
-        .equality_graph
-        .pointer_in_block(range.base(), &available.base().block)?;
-    let mut range = range.clone();
-    range.base = base;
-    Some(match required {
-        CResourceFact::Own(_, quantity) => {
-            CResourceFact::Own(CResource::Memory(range), quantity.clone())
-        }
-        CResourceFact::View(_) => CResourceFact::View(CResource::Memory(range)),
-    })
-}
-
 fn memory_resource_fact_entails(
     available: &CResourceFact,
     required: &CResourceFact,
@@ -6409,14 +6299,7 @@ pub(in crate::kernel) fn memory_range_is_proven_empty(
     range: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    range.start() == range.end()
-        || quantity_condition_holds(
-            assumptions,
-            ConditionTerm::Bitvector32Equal(
-                Box::new(range.start().clone()),
-                Box::new(range.end().clone()),
-            ),
-        )
+    assumptions.int32_values_known_equal(range.start(), range.end())
 }
 
 pub(in crate::kernel) fn quantity_condition_holds(

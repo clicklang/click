@@ -2901,7 +2901,9 @@ fn relative_dependent_range_is_covered_by_owned_range() {
         )
         .assume_condition(ConditionTerm::signed_less_than(index, length.clone()), true)
         .assume_condition(ConditionTerm::signed_less_equal(length, capacity), true);
-    let resources = ResourceContext::new().unchecked_with_fact(available);
+    // Publish the symbolic supplier at construction, before containment queries.
+    let resources =
+        ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(available);
 
     assert!(resources.satisfies_fact(&required, &assumptions));
     assert!(resources.without_fact(&required, &assumptions).is_some());

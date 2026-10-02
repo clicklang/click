@@ -770,9 +770,9 @@ its residual `a[1..3]` as satisfying `c[1..3]`, without restoring the consumed
 prefix or changing either retained representation. This graph and its index
 are part of the trusted kernel. Regressions cover sibling-context isolation,
 view refusal, insufficient coverage, preserved snapshots, and multi-size
-scaling beside unrelated resources and equalities. General multi-occurrence
-normalization and unsupported memory matching remain separate paths; this
-slice migrates direct satisfaction from a selected occurrence.
+scaling beside unrelated resources and equalities. The retained supplier
+interface below also covers explicit fragment composition; unsupported
+symbolic matching refuses without an ambient retry.
 
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its
@@ -844,7 +844,7 @@ subranges, missing bounds and aliases, sibling isolation, view and owner
 suppliers, and zero quantity. A red-to-green regression rejects an ambiguous
 start bucket even when a hidden search could find a covering supplier;
 checker and persistent-index work remain flat across 16–1,024 same-base ranges.
-Satisfaction and storage consumers retain the work in milestones 6–7.
+Storage and object consumers retain the separately tracked milestone-7 work.
 
 General read/write permission uses one shared classifier. Exact address/start
 payloads include eligible partial reads; physical interval hits select retained
@@ -888,6 +888,65 @@ Permission queries never initialize an index by traversing ambient input.
 Deterministic regressions measure checker and persistent-index work beside
 increasing unrelated resources, same-class views, late merges, and forks.
 
+## Retained memory support and fragment consumption
+
+`MemoryFactCandidates` is the shared memory-supplier interface for satisfaction,
+direct fact support, owned support (including its other-support check), and
+incremental consumption. It retains original entry IDs and the paired graph
+checkpoint. Requirement alignment uses that checkpoint rather than a pointer
+spelling selected from an ambient graph. Direct support returns the original
+held representation; owned support returns its original occurrence. A supported
+projection must still name a live owner matching its recorded dependency.
+The graph and this derived candidate evidence are part of the trusted kernel.
+
+Candidate selection first admits exact typed footprints (including explicitly
+supplied unpublished inputs), then uses graph symbolic footprints and intervals
+covering the whole requested span. The fragment frontier includes intervals
+covering its start and starts inside its explicit concrete byte span. A sole
+indexed symbolic supplier can be checked; ambiguous unsupported selection
+refuses without block or shape searches. Ownership selection excludes
+nonpositive quantities. Ordinary resource judgments check coverage, access
+mode, quantity, width, and the operation's separation policy. Equality supplies
+no resource or loan authority. Candidate delivery is lazy: a direct proof stops
+at its first checked supplier rather than collecting all overlapping views.
+
+When the request needs several fragments, the checker composes only its
+selected supplier input and computes residuals there. Symbolic fragment chains
+follow a unique indexed start at each selected endpoint. Ordinary coverage
+checks that a fragment lies inside the explicit request before traversal
+continues, and ambiguity or a repeated occurrence stops the chain. Starts are
+looked up by typed address class, so proved endpoint aliases reach the same
+retained owner payload. Indexed lower bounds incident to the requested start
+can name a unique residual start (for example, `i < j` reaches `i + 1`).
+That bound selects an occurrence; it never grants coverage or ownership.
+Constant queries do not inspect a shared literal's bound neighborhood.
+Explicit base displacements are folded into object-relative candidate
+coordinates once, covering both `p[j..j+1]` and `(p+j)[0..1]`. Stored pointers
+and resource facts retain their original terms. Modular coordinate agreement
+is only candidate selection; ordinary numeric coverage and merging still
+reject wrapped, non-adjacent physical footprints.
+This pays
+for selected fragments rather than walking unrelated same-base holdings.
+It does not normalize unrelated holdings or retry an ambient matching route. Loan-bound and projected
+observations keep their original dependencies and cannot be coalesced this way.
+Persistent edits install residuals in the consuming fork; siblings retain their
+input. The superseded symbolic base-anchor payload, structural start/end
+indexes, and `equal_address_entries` helper are deleted. Empty range identity
+asks the shared graph whether its endpoints are equal.
+
+A transitive-alias regression was red because direct support searched the
+original pointer's shape bucket. It now returns the actual retained owner and
+occurrence through the shared candidate interface. Multi-size regressions
+measure satisfaction, support, and two-fragment consumption beside 16, 64,
+256, and 1,024 unrelated same-base spans. Controls cover holes, insufficient
+coverage, residuals, missing aliases, view-only authority, zero quantity,
+sibling snapshots, and the existing projection/separation checks. Another
+red-to-green scaling regression checks direct support beside 16–1,024
+overlapping views, including insufficient views inserted before a sufficient
+owner; explicit fragment composition is measured separately
+over increasing selected input sizes. Symbolic-chain and ordered-residual
+regressions also measure work beside unrelated holdings.
+
 ## Resource producer publication audit
 
 Milestone 1 of the repository's egraph issue is producer publication, not
@@ -916,15 +975,15 @@ The production audit covers these producer families:
 | Framing and owned-footprint derivation, matched-instance body evaluation, and selected instance load values | Fresh selected heads/ranges start published; expansion deltas preserve attachment. |
 | Contract transfer, returned-clause evaluation, counted transitions, allocation support, and definitional resource consumption | Fresh requirement/supply/frontier contexts capture the assumptions used by their consumers. |
 | Stable-view planning and loan entailment | Fresh callee and single-supplier contexts start published. Binding checks that intentionally exclude ambient facts use one empty proof context for both construction and entailment. |
-| Kernel execution certificates and population initialization/consumption | Checked temporary child, authority, and support contexts start published under the certificate's local facts. |
+| Kernel execution certificates and population initialization/consumption | Checked temporary child, authority, and support contexts start published under the certificate's local facts. Path preparation publishes explicitly substituted exit resources once before individual claims query the output. |
 | Loop body reset and borrowed contract input installation | Fresh live contexts capture the current assumptions; selected-view/instance deltas retain their parent's publication. |
 | Surface dynamic view dependencies, checked returned-resource receipts, and compact composition propositions | Fresh contexts capture the same assumptions used to check their occurrences or receipts. Existing occurrence and loan provenance is preserved. |
 
 Existing checked constructors in composite projection, owned-frontier expansion,
 frontier coverage, mutex transfer, and object-comparison support remain unchanged.
-Selected normalization buckets in resource consumption publish through
-`normalized` before any equality-sensitive consumption. Those buckets' selection
-and normalization retries still belong to milestone 6.
+Explicit supplier composition in resource consumption starts with the
+selected checked input and publishes its normalized result before consumption.
+It does not select through a structural or ambient normalization retry.
 
 The retained raw constructors are intentional and have different lifetimes:
 
@@ -953,9 +1012,9 @@ parent snapshots, and fresh plus framing construction beside 16, 64, 256, and
 persistent-map work are measured, so deferred publication or a hidden ambient
 scan cannot pass merely because the final lookup is cheap.
 
-Publication now has an explicit producer policy. It does not remove the
-containment index's unknown cases, spelling retries, or supplier scans; those
-remain the separate milestones 2–7.
+Publication has an explicit producer policy. Publication alone does not
+complete candidate selection: the consumer migrations above establish bounded
+selection and refusal. Adjacent storage/object queries remain milestone 7.
 
 ## Checked pointer-read sources
 

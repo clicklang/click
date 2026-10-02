@@ -49,17 +49,15 @@ provenance, initialization, and snapshot transport.
   descendants maintain pairing through deltas. Retained raw constructors are
   classified as provisional data or structural/empty placeholders in the
   publication audit. This does not make containment selection complete.
-- The direct memory `satisfies_fact` migration has passed its red regression,
-  control tests, deterministic scaling, and full gate. It shares consumption's
-  graph-based address alignment. The remaining retry/normalization paths in
-  satisfaction have not been removed; a passing direct query does not complete
-  milestone 6.
-- General read/write permission now uses the shared indexed candidate service,
-  with no spelling retries or ambient resource scans. Symbolic whole-range
-  readability, satisfaction/consumption, and storage ownership still have the
-  residual paths listed in milestones 5–7.
+- Memory satisfaction, direct/owned support, and incremental consumption now
+  share retained indexed suppliers. Their block/shape retries and ambient
+  normalization routes are deleted; multi-fragment composition visits only
+  selected input. Supplier delivery is lazy and preserves original authority.
+- General read/write permission and symbolic whole-range readability use
+  indexed evidence, with no spelling retries or ambient resource scans.
+  Adjacent storage/object ownership and provenance queries remain in milestone 7.
 
-### Seven milestones (milestones 1–4 complete)
+### Seven milestones (milestones 1–6 complete)
 
 These are seven reviewable outcomes, **not a promise of seven commits**.
 Split an outcome into small green slices when necessary, and record completion
@@ -159,16 +157,44 @@ this list.
    ranges. Controls cover late alias facts, sibling isolation, missing bounds,
    view and owner suppliers, and zero quantity. Expansion and rechecking remain
    covered by the full fixture gate.
-6. **Unify satisfaction, support, and fragment consumption.** Finish the
-   memory paths in `satisfies_fact`, `directly_supporting_fact`,
-   `directly_supporting_owned_entry_with_separation`, and
-   `without_fact_incrementally`. They still combine graph candidates with
-   structural/shape candidates or normalization retries. Return the original
-   retained occurrence as support evidence. A multi-fragment requirement may
-   visit its explicitly selected suppliers and compute their residuals; it
-   must not discover them by scanning a block or normalizing unrelated facts.
-   Preserve access mode, separation policy, partial consumption, projection
-   dependency, quantities where applicable, and persistent input snapshots.
+6. **Unify satisfaction, support, and fragment consumption — complete.**
+   The memory paths in `satisfies_fact`, `directly_supporting_fact`,
+   `directly_supporting_owned_entry_with_separation`, its other-support query,
+   and `without_fact_incrementally` use `MemoryFactCandidates`. It retains
+   the selected original entries and the graph checkpoint which aligns their
+   requirements. No memory path retries a block/shape bucket or normalizes
+   the ambient context after an indexed miss. Exact symbolic footprints and
+   concrete spans select suppliers; unsupported symbolic ambiguity refuses.
+   Delivery is lazy, so direct support stops at its first checked supplier.
+   Exact typed footprints also support explicitly supplied unpublished inputs
+   without publishing their ambient context during lookup.
+   Symbolic fragments follow unique indexed endpoint-to-start successors,
+   checking containment before continuing within the requested footprint.
+   Typed address-class payloads carry owner starts, so endpoint aliases
+   compose directly. Indexed bounds incident to the query name a unique
+   residual start; ordinary coverage checks the selected original owner.
+   Explicit displacements use one candidate-coordinate conversion; stored
+   terms remain unchanged and wraparound cannot establish numeric adjacency.
+   Constant queries never visit shared literals' unrelated bound neighbors.
+   Multi-fragment composition joins only the explicitly selected suppliers,
+   checks ordinary coverage, and installs the computed residuals in a fork.
+   Loan-bound or projected observations are not coalesced into fresh authority.
+   Support lookup retains the original occurrence and validates any recorded
+   projection dependency against its live owner. Separation policy, access
+   mode, quantities, widths, and bounds stay in their ordinary judgments.
+   Empty-memory identity uses the shared graph endpoint-equality query.
+   Superseded base-anchor payloads, structural start/end indexes, and the old
+   candidate helper are removed. A red-to-green transitive-alias support test,
+   authority/dependency controls, and multi-size same-base fragment regressions
+   cover retained identity, gaps, residuals, sibling isolation, and indexed
+   checker/update work beside unrelated spans. A separate red-to-green
+   regression ensures direct support does not enumerate overlapping views,
+   including short views inserted before a sufficient whole-span owner.
+   Symbolic-chain and ordered-residual regressions cover endpoint aliases,
+   gaps, and unrelated same-base spans.
+   Certificate path preparation publishes substituted explicit exit resources
+   once before individual claims; expansion and audit rechecking cover this
+   admission boundary.
 7. **Finish adjacent storage/object queries and delete obsolete helpers.**
    Migrate `owns_storage_access`, the resource-derived object-provenance lookup
    in `eval/operators.rs`, and callers of `storage_pointer_spellings` in mutex
@@ -184,8 +210,8 @@ this list.
 Milestones 1–4 establish and migrate the common permission interface. Milestones 5–7 migrate and
 remove its remaining consumers; they must not introduce their own alias walks
 or containment indexes. Do not implement several independently evolving
-fallback replacements in parallel. Continue with milestone 5: migrate the
-symbolic-range read search to retained indexed supplier evidence.
+fallback replacements in parallel. Continue with milestone 7: finish the
+adjacent storage/object queries and delete their obsolete spelling helpers.
 
 ### Meaning of “no scans” and completion
 

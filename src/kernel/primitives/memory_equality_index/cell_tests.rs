@@ -310,7 +310,13 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
                             4u32.into(),
                             1,
                         );
-                        assert_eq!(resources.equal_address_entries(&cell, true, facts).len(), 1);
+                        assert_eq!(
+                            resources
+                                .memory_fact_candidates(&cell, true, facts)
+                                .entries
+                                .len(),
+                            1
+                        );
                     }
                 }
             })
@@ -426,7 +432,13 @@ fn publication_in_one_branch_keeps_sibling_input_pairing() {
                     .is_some_and(|entries| entries.exact())
             );
             let cell = CMemoryRange::new_with_element_width(alias, 0u32.into(), 4u32.into(), 1);
-            assert_eq!(resources.equal_address_entries(&cell, true, facts).len(), 1);
+            assert_eq!(
+                resources
+                    .memory_fact_candidates(&cell, true, facts)
+                    .entries
+                    .len(),
+                1
+            );
         }
         assert!(!resources.permits_memory_read(&at(1), 4, &sibling));
         assert!(!resources.permits_memory_read(&at(2), 4, &first));
@@ -612,8 +624,9 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
         resources.memory_write_range(&alias, 4, &facts),
         cell(owner.clone()).memory_own_range()
     );
-    let entries =
-        resources.equal_address_entries(cell(alias.clone()).memory_range().unwrap(), true, &facts);
+    let entries = resources
+        .memory_fact_candidates(cell(alias.clone()).memory_range().unwrap(), true, &facts)
+        .entries;
     assert_eq!(entries.len(), 1);
     assert!(
         resources
@@ -1566,4 +1579,452 @@ fn symbolic_partition_read_start_is_indexed_without_searching_other_ranges() {
         samples[3].2 <= samples[0].2 * 4 + 512,
         "read traversed unrelated payloads: {samples:?}"
     );
+}
+
+#[test]
+fn memory_support_returns_retained_occurrences_through_transitive_aliases() {
+    let p = Pointer::symbolic(Variable(974_000));
+    let q = Pointer::symbolic(Variable(974_001));
+    let r = Pointer::symbolic(Variable(974_002));
+    let empty = PureFactContext::new();
+    let facts = empty
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true)
+        .assume_condition(ConditionTerm::pointer_equal(q, r.clone()), true);
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        p,
+        0u32.into(),
+        8u32.into(),
+        1,
+    ));
+    let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(owner.clone());
+    let required = view(&r, 2, 4);
+    assert_eq!(
+        resources.directly_supporting_fact(&required, &facts),
+        Some(&owner)
+    );
+    let support = resources
+        .directly_supporting_owned_entry(&required, &facts)
+        .unwrap();
+    assert_eq!(support.0, resources.occurrences_for_fact(&owner)[0]);
+    assert_eq!(support.1, &owner);
+    assert!(
+        resources
+            .directly_supporting_fact(&required, &empty)
+            .is_none()
+    );
+}
+
+#[test]
+fn indexed_memory_support_and_fragment_consumption_ignore_unrelated_spans() {
+    let p = Pointer::symbolic(Variable(975_000));
+    let q = Pointer::symbolic(Variable(975_001));
+    let empty = PureFactContext::new();
+    let facts = empty
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    let own = |base: &Pointer, start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            start.into(),
+            end.into(),
+            1,
+        ))
+    };
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let left = own(&p, 4u32, 10u32);
+        let right = own(&p, 10u32, 16u32);
+        let mut resources = ResourceContext::new_with_equalities(&empty)
+            .unchecked_with_fact(left.clone())
+            .unchecked_with_fact(right);
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(own(&p, 32 + i * 4, 34 + i * 4));
+        }
+        resources.synchronize_memory_equalities(&facts);
+        let whole = own(&q, 6u32, 14u32);
+        let piece = view(&q, 6, 8);
+        let occurrence = resources.occurrences_for_fact(&left)[0];
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(
+                    resources.directly_supporting_fact(&piece, &facts),
+                    Some(&left)
+                );
+                assert_eq!(
+                    resources.directly_supporting_owned_entry(&piece, &facts),
+                    Some((occurrence, &left))
+                );
+                assert!(
+                    !resources
+                        .has_other_directly_supporting_owned_entry(&piece, occurrence, &facts)
+                );
+                assert!(resources.satisfies_fact(&whole, &facts));
+                assert!(
+                    resources
+                        .directly_supporting_owned_entry(&whole, &facts)
+                        .is_none()
+                );
+                let consumed = resources
+                    .clone()
+                    .without_fact_incrementally(&whole, &facts)
+                    .unwrap();
+                assert!(consumed.satisfies_fact(&own(&q, 4u32, 6u32), &facts));
+                assert!(consumed.satisfies_fact(&own(&q, 14u32, 16u32), &facts));
+                assert!(!consumed.satisfies_fact(&whole, &facts));
+                assert!(resources.satisfies_fact(&whole, &facts));
+                assert!(!resources.satisfies_fact(&own(&q, 16u32, 20u32), &facts));
+            })
+        });
+        samples.push((size, work, map_work));
+        assert!(!resources.satisfies_fact(&whole, &empty));
+        let gapped = resources
+            .clone()
+            .without_exact_representation(&left)
+            .unwrap()
+            .unchecked_with_fact(own(&p, 4u32, 7u32));
+        assert!(!gapped.satisfies_fact(&whole, &facts));
+        assert!(gapped.without_fact_incrementally(&whole, &facts).is_none());
+        let views =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(view(&p, 4, 16));
+        assert!(!views.satisfies_fact(&whole, &facts));
+        assert!(views.without_fact_incrementally(&whole, &facts).is_none());
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 128,
+        "memory support searched unrelated spans: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "memory support rebuilt unrelated input: {samples:?}"
+    );
+}
+
+#[test]
+fn indexed_memory_support_never_promotes_zero_quantity() {
+    let p = Pointer::symbolic(Variable(976_000));
+    let facts = PureFactContext::new();
+    let range = CMemoryRange::new_with_element_width(p, 0u32.into(), 4u32.into(), 1);
+    let owner = CResourceFact::own_memory(range.clone());
+    let zero = CResourceFact::Own(CResource::Memory(range), Box::new(0u32.into()));
+    let resources = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(zero);
+    assert!(!resources.satisfies_fact(&owner, &facts));
+    assert!(resources.directly_supporting_fact(&owner, &facts).is_none());
+    assert!(
+        resources
+            .directly_supporting_owned_entry(&owner, &facts)
+            .is_none()
+    );
+    assert!(
+        resources
+            .without_fact_incrementally(&owner, &facts)
+            .is_none()
+    );
+}
+
+#[test]
+fn explicit_memory_fragment_composition_scales_with_selected_input() {
+    let base = Pointer::symbolic(Variable(977_000));
+    let facts = PureFactContext::new();
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64, 256] {
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                CMemoryRange::new_with_element_width(base.clone(), i.into(), (i + 1).into(), 1),
+            ));
+        }
+        let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base.clone(),
+            0u32.into(),
+            size.into(),
+            1,
+        ));
+        let ((consumed, work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                resources
+                    .without_fact_incrementally(&required, &facts)
+                    .unwrap()
+            })
+        });
+        assert!(consumed.is_empty());
+        samples.push((size as usize, work, map_work));
+    }
+    let (base_size, base_work, base_map) = samples[0];
+    for (size, work, map_work) in &samples {
+        let scale = (size * (size.ilog2() as usize + 1))
+            .div_ceil(base_size * (base_size.ilog2() as usize + 1));
+        assert!(
+            *work <= base_work * scale * 2 + 128,
+            "fragment composition exceeded selected input: {samples:?}"
+        );
+        assert!(
+            *map_work <= base_map * scale * 2 + 512,
+            "fragment composition rebuilt ambient input: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn direct_memory_support_does_not_enumerate_overlapping_views() {
+    let p = Pointer::symbolic(Variable(976_000));
+    let q = Pointer::symbolic(Variable(976_001));
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    for late_owner in [false, true] {
+        for bytes in [4u32, 4096] {
+            let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                p.clone(),
+                0u32.into(),
+                bytes.into(),
+                1,
+            ));
+            let mut samples = Vec::new();
+            for size in [16u32, 64, 256, 1024] {
+                let mut resources = ResourceContext::new_with_equalities(&facts);
+                if !late_owner {
+                    resources = resources.unchecked_with_fact(owner.clone());
+                }
+                for i in 0..size {
+                    resources = resources.unchecked_with_fact(view(&p, 0, 8 + i));
+                }
+                if late_owner {
+                    resources = resources.unchecked_with_fact(owner.clone());
+                }
+                let required = view(&q, 0, bytes);
+                let ((), work) = crate::persistent::measure_persistent_work(|| {
+                    let support = resources
+                        .directly_supporting_fact(&required, &facts)
+                        .unwrap();
+                    assert!(!resources.occurrences_for_fact(support).is_empty());
+                    assert!(resources.satisfies_fact(&required, &facts));
+                });
+                samples.push(work);
+            }
+            assert!(
+                samples.iter().all(|work| *work <= samples[0] * 3 + 128),
+                "direct {bytes}-byte support (late owner: {late_owner}) enumerated overlapping views: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
+    let p = Pointer::symbolic(Variable(977_000));
+    let i = Bitvector32Term::Variable(Variable(977_001));
+    let n = Bitvector32Term::Variable(Variable(977_002));
+    let middle = Bitvector32Term::Variable(Variable(977_003));
+    let next = Bitvector32Term::add(i.clone(), 1u32.into());
+    let facts = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::Bitvector32Equal(Box::new(n.clone()), Box::new(4u32.into())),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::Bitvector32Equal(Box::new(i.clone()), Box::new(middle.clone())),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+    let own = |start, end| CResourceFact::own_memory(CMemoryRange::new(p.clone(), start, end));
+    let required = own(0u32.into(), n.clone());
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut resources = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_fact(own(0u32.into(), i.clone()))
+            .unchecked_with_fact(own(next.clone(), n.clone()))
+            .unchecked_with_fact(own(middle.clone(), next.clone()))
+            .unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(
+                p.clone(),
+                middle.clone(),
+                next.clone(),
+            )));
+        for k in 0..size {
+            resources =
+                resources.unchecked_with_fact(own((100 + 4 * k).into(), (102 + 4 * k).into()));
+        }
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(resources.satisfies_fact(&required, &facts));
+                assert!(resources.satisfies_fact(&own(0u32.into(), 4u32.into()), &facts));
+                assert!(
+                    resources
+                        .clone()
+                        .without_fact_incrementally(&required, &facts)
+                        .is_some()
+                );
+            })
+        });
+        samples.push((work, map_work));
+        // A missing middle fragment cannot be bridged by unrelated same-base holdings.
+        let gap = resources
+            .clone()
+            .without_fact_incrementally(&own(i.clone(), next.clone()), &facts)
+            .unwrap();
+        assert!(!gap.satisfies_fact(&required, &facts));
+    }
+    for (work, map_work) in &samples {
+        assert!(
+            *work <= samples[0].0 * 2 + 128,
+            "symbolic fragment checker scanned ambient spans: {samples:?}"
+        );
+        assert!(
+            *map_work <= samples[0].1 * 4 + 512,
+            "symbolic endpoint traversal scanned ambient spans: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn ordered_symbolic_subrange_selects_its_retained_residual_without_scanning() {
+    let p = Pointer::symbolic(Variable(978_000));
+    let i = Bitvector32Term::Variable(Variable(978_001));
+    let j = Bitvector32Term::Variable(Variable(978_002));
+    let n = Bitvector32Term::Variable(Variable(978_003));
+    let next_i = Bitvector32Term::add(i.clone(), 1u32.into());
+    let next_j = Bitvector32Term::add(j.clone(), 1u32.into());
+    let facts = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_greater_equal(j.clone(), 0u32.into()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), j.clone()), true)
+        .assume_condition(ConditionTerm::signed_less_than(j.clone(), n.clone()), true);
+    let own = |start, end| CResourceFact::own_memory(CMemoryRange::new(p.clone(), start, end));
+    let tail = own(next_i, n);
+    let required = own(j.clone(), next_j);
+    let shifted = CResourceFact::own_memory(CMemoryRange::new(
+        p.offset_by_int32_elements(j),
+        0u32.into(),
+        1u32.into(),
+    ));
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut resources = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_fact(own(0u32.into(), i.clone()))
+            .unchecked_with_fact(tail.clone());
+        for k in 0..size {
+            resources =
+                resources.unchecked_with_fact(own((100 + 4 * k).into(), (102 + 4 * k).into()));
+        }
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                for required in [&required, &shifted] {
+                    assert_eq!(
+                        resources.directly_supporting_fact(required, &facts),
+                        Some(&tail)
+                    );
+                    assert_eq!(
+                        resources
+                            .directly_supporting_owned_entry(required, &facts)
+                            .unwrap()
+                            .1,
+                        &tail
+                    );
+                    assert!(resources.satisfies_fact(required, &facts));
+                    assert!(
+                        resources
+                            .clone()
+                            .without_fact_incrementally(required, &facts)
+                            .is_some()
+                    );
+                }
+            })
+        });
+        samples.push((work, map_work));
+    }
+    for (work, map_work) in &samples {
+        assert!(
+            *work <= samples[0].0 * 2 + 128,
+            "ordered residual selection scanned ambient spans: {samples:?}"
+        );
+        assert!(
+            *map_work <= samples[0].1 * 4 + 512,
+            "ordered residual index scanned ambient spans: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn fragment_coordinate_residues_do_not_establish_wide_pointer_adjacency() {
+    let p = Pointer::symbolic(Variable(979_000));
+    let positive = Pointer {
+        block: p.block.clone(),
+        offset: PointerOffsetTerm::Constant(i64::from(i32::MAX)),
+    };
+    let negative = Pointer {
+        block: p.block,
+        offset: PointerOffsetTerm::Constant(i64::from(i32::MIN)),
+    };
+    let own = |base, end| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            0u32.into(),
+            end,
+            1,
+        ))
+    };
+    let facts = PureFactContext::new();
+    let resources = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_fact(own(positive.clone(), 1u32.into()))
+        .unchecked_with_fact(own(negative, 1u32.into()));
+    let required = own(positive, 2u32.into());
+    // The first piece's end has INT32_MIN's residue, but its true byte
+    // address is 2^31. The negative piece cannot fill the adjacent byte.
+    assert!(!resources.satisfies_fact(&required, &facts));
+    assert!(
+        resources
+            .without_fact_incrementally(&required, &facts)
+            .is_none()
+    );
+}
+
+#[test]
+fn constant_memory_miss_ignores_unrelated_zero_bound_neighbors() {
+    let p = Pointer::symbolic(Variable(980_000));
+    let required = view(&p, 0, 1);
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut facts = PureFactContext::new();
+        for k in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_greater_equal(
+                    Bitvector32Term::Variable(Variable(980_001 + u64::from(k))),
+                    0u32.into(),
+                ),
+                true,
+            );
+        }
+        let resources =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(view(&p, 10, 20));
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(
+                    resources
+                        .directly_supporting_fact(&required, &facts)
+                        .is_none()
+                );
+                assert!(!resources.satisfies_fact(&required, &facts));
+            })
+        });
+        samples.push((work, map_work));
+    }
+    for (work, map_work) in &samples {
+        assert!(
+            *work <= samples[0].0 * 2 + 128,
+            "constant miss searched unrelated bounds: {samples:?}"
+        );
+        assert!(
+            *map_work <= samples[0].1 * 3 + 128,
+            "constant miss visited unrelated bounds: {samples:?}"
+        );
+    }
 }
