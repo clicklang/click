@@ -8,7 +8,6 @@ bug, which includes inaccurate and wall-of-text diagnostics. Each file states
 the violated invariant, a small intended regression, and acceptance criteria.
 Delete a bug file when its fix, regression coverage, and documentation land.
 
-- [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
 - [`auto` expansion re-verifies against a callee with no verified clause](auto-expansion-loses-callee-contract-clauses.md)
 - [Expanded `simp` in a loop `initialize` leaves the invariant entry goal open](loop-initialize-expansion-does-not-close-entry-goal.md)
 - [Expanded `simp` in a loop `initialize` emits an arithmetic step the checker rejects](loop-initialize-expansion-emits-rejected-arithmetic-certificate.md)
@@ -27,3 +26,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [`click audit` cannot resolve an `ensures` source it inventoried](audit-cannot-resolve-ensures-source.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
+- [Connected-fact selection indexes the context once per context, not incrementally](connected-fact-selection-indexes-the-context-per-derivation.md)
