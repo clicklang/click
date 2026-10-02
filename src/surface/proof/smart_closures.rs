@@ -108,6 +108,45 @@ fn collect_signed_surface_terms<'a>(
     }
 }
 
+// Arithmetic combinations may mix snapshots. Put each selector on its
+// operands so generated comparisons keep those snapshots when combined.
+fn surface_comparison_with_anchored_operands(proposition: &ClickProposition) -> ClickProposition {
+    let mut inner = proposition;
+    let mut selectors = Vec::new();
+    while let ClickProposition::At {
+        selector,
+        proposition,
+    } = inner
+    {
+        selectors.push(selector);
+        inner = proposition;
+    }
+    let ClickProposition::Comparison {
+        left,
+        operator,
+        right,
+    } = inner
+    else {
+        return proposition.clone();
+    };
+    let anchor = |expression: &ContractExpression| {
+        selectors
+            .iter()
+            .rev()
+            .fold(expression.clone(), |expression, selector| {
+                ContractExpression::At {
+                    selector: (*selector).clone(),
+                    expression: Box::new(expression),
+                }
+            })
+    };
+    ClickProposition::Comparison {
+        left: anchor(left),
+        operator: *operator,
+        right: anchor(right),
+    }
+}
+
 fn collect_signed_surface_proposition_terms<'a>(
     proposition: &'a ClickProposition,
     terms: &mut Vec<&'a ContractExpression>,
@@ -233,6 +272,10 @@ fn signed_surface_terms_equal(
                 pending.push((left, other_left));
                 pending.push((right, other_right));
             }
+            (
+                crate::kernel::Bitvector32Term::UInt32From64(left),
+                crate::kernel::Bitvector32Term::UInt32From64(right),
+            ) => pending.push((left, right)),
             _ => return false,
         }
     }
@@ -260,7 +303,10 @@ pub(super) fn integer_plan_to_surface_certificate(
                     proposition: surface.clone(),
                     result: surface.clone(),
                 };
-                (surface, certificate)
+                (
+                    surface_comparison_with_anchored_operands(&surface),
+                    certificate,
+                )
             }
             IntegerArithmeticNode::Scale {
                 source,
@@ -931,9 +977,13 @@ impl<'a> Proof<'a> {
                 operation_count += 1;
             }
         }
+        let rendered_premises: Vec<_> = premise_pairs
+            .iter()
+            .map(|(_, surface)| surface_comparison_with_anchored_operands(surface))
+            .collect();
         let mut terms: Vec<&ContractExpression> = Vec::new();
         collect_signed_surface_proposition_terms(surface_goal, &mut terms);
-        for (_, surface) in premise_pairs {
+        for surface in &rendered_premises {
             collect_signed_surface_proposition_terms(surface, &mut terms);
         }
         let term = |term: &crate::kernel::Bitvector32Term| self.signed_surface_term(term, &terms);
@@ -967,7 +1017,7 @@ impl<'a> Proof<'a> {
         for node in &plan.nodes {
             let value = match node {
                 SignedArithmeticNode::Premise { index, .. } => {
-                    Some(premise_pairs.get(*index)?.1.clone())
+                    Some(rendered_premises.get(*index)?.clone())
                 }
                 SignedArithmeticNode::Scale {
                     source,

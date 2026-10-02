@@ -5610,13 +5610,23 @@ impl CState {
         selected: &CResourceFact,
         definition: &super::super::CCompositeResourceDefinition,
         assumptions: &PureFactContext,
+        wildcard_members: &std::collections::BTreeMap<
+            super::super::ResourceDescription,
+            Vec<CResourceFact>,
+        >,
     ) -> Result<Self, String> {
         let events = self
             .population_effects
             .creation
             .as_ref()
             .ok_or("opaque control requires authority mode")?
-            .import_checked_control_wrapper(self, selected, definition, assumptions)?;
+            .import_checked_control_wrapper_with_members(
+                self,
+                selected,
+                definition,
+                assumptions,
+                wildcard_members,
+            )?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
         Ok(next)

@@ -380,7 +380,8 @@ pub(in crate::surface) fn prove_claim_by_tactics(
         claim_label,
         Some(&caller_source_owner),
         function_source_registry.resource_semantics_mode(),
-    )?;
+    )
+    .map_err(|error| error.at_declaration(function_block.signature().name()))?;
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
         function_block,
@@ -632,7 +633,8 @@ pub(in crate::surface) fn prove_claims_by_grouped_tactics(
         &proof_label,
         Some(&caller_source_owner),
         function_source_registry.resource_semantics_mode(),
-    )?;
+    )
+    .map_err(|error| error.at_declaration(function_block.signature().name()))?;
     let caller_requirement_index = CallerRequirementIndex::from_entry_facts(
         caller_source_owner.clone(),
         function_block,
@@ -4116,7 +4118,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         )
                                                     })
                                                     .unwrap_or_default();
-                                                return Err(ClickError::new(format!(
+                                                return Err(direct_proof.step_error(format!(
                                                     "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `simp` search did not retain a complete proof for `{claim_label}`{detail}{transition_detail}",
                                                 )));
                                             };
@@ -4475,7 +4477,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             )? {
                                 Ok(Some(obligation)) => {
                                     return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}",
+                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
                                         describe_runtime_error(
                                             &crate::kernel::CRuntimeError::LiveAllocationLeak {
                                                 allocation: obligation.allocation().clone(),
@@ -4484,18 +4486,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                             },
                                             parsed_function.parameters(),
                                             arguments,
-                                        )
+                                        ),
+                                        outcome_substrate
+                                            .describe_outcome_statement_site(path_index),
                                     )));
                                 }
                                 Ok(None) => {}
                                 Err(error) => {
                                     return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}",
+                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
                                         describe_runtime_error(
                                             &error,
                                             parsed_function.parameters(),
                                             arguments,
-                                        )
+                                        ),
+                                        outcome_substrate
+                                            .describe_outcome_statement_site(path_index),
                                     )));
                                 }
                             }

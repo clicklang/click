@@ -3467,6 +3467,43 @@ pub fn program_prepared_tactic_source_position(
     c0_tactic_source_position_context(&sources, click_source, claim_label, source_index)
 }
 
+/// Where the Click declaration named `name` is written: a function block,
+/// a named contract or a theorem. The position is the first token of the
+/// line the name is on, so the excerpt starts at the return type or
+/// keyword. `None` when the source declares no such name.
+///
+/// A failure with no tactic or C statement to address, such as a contract
+/// that could not be set up at entry, shows this declaration instead. A
+/// declaration is the name followed by `(` outside every brace; a use of the
+/// name inside a body is not one.
+pub fn click_declaration_source_position(click_source: &str, name: &str) -> Option<SourcePosition> {
+    let tokens = scan_source_tokens(click_source).ok()?;
+    let mut depth = 0usize;
+    let declared = tokens.iter().enumerate().find_map(|(index, token)| {
+        match token.text.as_str() {
+            "{" => depth += 1,
+            "}" => depth = depth.saturating_sub(1),
+            text if depth == 0
+                && text == name
+                && tokens.get(index + 1).map(|token| token.text.as_str()) == Some("(") =>
+            {
+                return Some(token.span.start);
+            }
+            _ => {}
+        }
+        None
+    })?;
+    let line_start = click_source[..declared]
+        .rfind('\n')
+        .map_or(0, |newline| newline + 1);
+    let first_token = tokens
+        .iter()
+        .find(|token| token.span.start >= line_start)?
+        .span
+        .start;
+    Some(position_at_offset(click_source, first_token))
+}
+
 pub fn c0_project_tactic_source_position(
     project: &ClickProject,
     c_sources: &[(&str, &str)],

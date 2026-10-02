@@ -11,5 +11,4 @@ coverage, and documentation land.
 - [Atomic evidence rebuilds and retains ambient contexts](atomic-evidence-retains-ambient-context.md)
 - [`simp` and `arithmetic()` stop at short order chains](unsigned-and-long-order-chains-in-simp-and-arithmetic.md)
 - [A refused store through a widened unsigned index doesn't name the element](store-refusal-through-unsigned-index-names-no-element.md)
-- [Whole-path refusals don't name a C statement](whole-path-refusals-lack-a-statement-location.md)
 - [`simp` and `arithmetic()` treat sign-bit-flipped unsigned values as opaque](unsigned-order-arithmetic-in-closers.md)

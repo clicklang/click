@@ -386,22 +386,16 @@ fn is_pointer_relation(p: &Proposition) -> bool {
 }
 fn is_signed_scalar_bound(p: &Proposition) -> bool {
     let Proposition::ConditionIs(
-        ConditionTerm::Bitvector32SignedLessThan(left, right)
-        | ConditionTerm::Bitvector32SignedLessEqual(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterThan(left, right)
-        | ConditionTerm::Bitvector32SignedGreaterEqual(left, right),
+        ConditionTerm::Bitvector32SignedLessThan(_, _)
+        | ConditionTerm::Bitvector32SignedLessEqual(_, _)
+        | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
+        | ConditionTerm::Bitvector32SignedGreaterEqual(_, _),
         true,
     ) = p
     else {
         return false;
     };
-    matches!(
-        left.as_ref(),
-        Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_)
-    ) && matches!(
-        right.as_ref(),
-        Bitvector32Term::Variable(_) | Bitvector32Term::Constant(_)
-    )
+    true
 }
 fn is_bitvector64_equality(p: &Proposition) -> bool {
     matches!(
@@ -551,6 +545,7 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
                 pending.push(left);
                 pending.push(right);
             }
+            Bitvector32Term::UInt32From64(value) => pending.push(value),
             Bitvector32Term::PointerAddress(pointer) if !bounded_offset_work(&pointer.offset) => {
                 return false;
             }
@@ -590,6 +585,9 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             return false;
         }
         match (left, right) {
+            (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
+                pending.push((left, right))
+            }
             (Bitvector32Term::Constant(a), Bitvector32Term::Constant(b)) if a == b => {}
             (Bitvector32Term::Int64Constant(a), Bitvector32Term::Int64Constant(b)) if a == b => {}
             (Bitvector32Term::UInt64Constant(a), Bitvector32Term::UInt64Constant(b)) if a == b => {}

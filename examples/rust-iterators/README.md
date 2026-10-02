@@ -2,19 +2,28 @@
 
 The unchanged `sum.rs` uses `for &byte in bytes` to sum arbitrary input bytes.
 Its contract accepts lengths `0..=1000`, including empty input, and proves an
-exact mathematical sum of the bytes at function entry. Prefix invariants and
-`0 <= total <= 255 * counter` prove the result and every signed addition safe.
+exact mathematical sum of the bytes at function entry. The sidecar chooses a
+prefix invariant and bounds each intermediate sum by 255 times that prefix's
+length.
 
-The compiler exporter recognizes the resolved standard slice iterator
-protocol and copies each yielded byte through checked indexing. It exposes
-`__rust_iter_index_3_5`, a native `usize` counter named for this loop's source
-location, for invariants and the decreasing measure `bytes_len - counter`.
-The sidecar retains views of the input and checked full-width index bounds.
+The compiler exporter retains the standard slice iterator protocol. The checked
+state is `__rust_iter_3_5_cursor` and `__rust_iter_3_5_remaining`: a successful
+`next()` saves the yielded address, advances the cursor, and reduces the remaining
+slice length before the source body. The copied pattern reads the saved address.
+An exhausted iterator performs no read or pointer advance. Remaining length is
+signed under the shared memory model's checked length limit.
 
-This first iterator subset accepts immutable shared byte-slice bindings and
-copied byte patterns. Mutable slices/bindings, reference-valued loop variables,
-array iteration, `.iter()`, `.chunks_exact()`, labels, `break`, and `continue`
-remain unsupported. The pinned checksum libraries remain unverified.
+No processed count or index is supplied by default. This sidecar explicitly
+derives its prefix length as original slice length minus remaining length and
+relates it to the cursor. It retains views of the input and uses remaining
+length as its decreasing measure.
+
+Immutable shared byte-slice bindings support copied byte patterns and shared
+reference variables, directly or through `.iter()`. The
+[reference iterator example](../rust-iter-references/README.md) proves a sum
+using yielded references. Mutable slices/bindings, array iteration, stored
+iterator locals, `.chunks_exact()`, labels, `break`, and `continue` remain
+unsupported. The pinned checksum libraries remain unverified.
 
 Build the pinned exporter with `scripts/build-rust-exporter.sh`, then run:
 

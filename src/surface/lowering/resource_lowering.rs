@@ -431,7 +431,12 @@ pub(in crate::surface) fn initial_call_state(
             .collect::<Vec<_>>();
         for (control, definition) in controls {
             state = state
-                .import_opaque_control_wrapper(&control, definition, &PureFactContext::new())
+                .import_opaque_control_wrapper(
+                    &control,
+                    definition,
+                    &PureFactContext::new(),
+                    &wildcard_members,
+                )
                 .map_err(ClickError::new)?;
         }
     }
