@@ -8,9 +8,11 @@ former `mdtests/rb_insert_color.md` fixture.
 model and unchanged C load together, but intentionally selects no insert
 proof. `rbtree_insert.frontier` contains the full insert contract and current
 proof attempt. The examples integration test selects that frontier separately
-and requires its bounded diagnostic to remain at the first unfinished
-black-uncle path (statement 52 of the loop body, `tmp = parent->rb_left`,
-with 67 `break`s and 4 `continue`s complete). A passing import-only
+and requires its bounded diagnostic to remain the loop rule's refusal to join
+the loop's exits: every path of the loop body is written (3 early `break`s,
+96 rotation `break`s, and 4 `continue`s), and the exits hold the same binders
+and bytes in different representations, which the exit join compares
+structurally. A passing import-only
 entry therefore does not represent the insert proof as complete.
 
 The proof so far covers `initialize`, the root-blackening and black-parent
@@ -42,7 +44,8 @@ great-grandparent's frame. The old parent and the grandparent are refolded as
 the cursor's two red children, the cursor as the new black subtree root, and
 the great-grandparent's frame at `node` as the loop's context;
 `ctx_insert_case2_left_exit_step` states the whole-tree facts on that shape.
-The mirrored cursor-`Left`, grandparent-`Right` frames, the body's end, the
+The mirrored cursor-`Left`, grandparent-`Right` frames are the same 32 leaves
+through `ctx_insert_case2_right_exit_step`. The loop rule's exit join, the
 post-loop proof, and `rb_insert_color` remain.
 
 Run the normal full rbtree scope with:

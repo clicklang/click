@@ -663,7 +663,24 @@ against 0.15 for chunk 4's shorter leaves; counted work is 77,000 and 67,000
 units per leaf against 68,000. The marginal cost of same-shaped leaves does
 not grow with the size of the proof.
 
-**Chunk 6. Right-left combination.** The mirror of chunk 5. Depends on 5.
+**Chunk 6. Right-left combination: landed 2026-10-02; the loop rule is not
+yet certified.** The mirror of chunk 5 on the cursor-`Left`,
+grandparent-`Right` frames, 32 leaves through
+`ctx_insert_case2_right_exit_step`, model unchanged. Every path of the loop
+body now ends: 3 early `break`s, 96 rotation `break`s, and 4 `continue`s. The
+frontier report is gone, and the loop rule itself is refused:
+`loop exits reach different states, so they have no common successor: memory,
+resource ownership`, which `tests/examples.rs` now pins. The exits hold the
+same binders and bytes in different representations (the two binders in
+different fold orders, cells cached as concrete cells at some exits and as
+run slots at others), and the exit join compares them structurally; see
+`bugs/loop-exits-equal-up-to-representation-do-not-join.md`, which has three
+small reductions. Chunk 7 cannot start until that is fixed. Verify time of the
+frontier, release build, user seconds, back to back at load average 8 to 10:
+15.0 with 67 `break`s, 18.3 with the first sixteen leaves here, 27.4 with all
+of them and the join. Counted work is 4.63, 5.86, and 6.94 million units, so
+the second step adds 1.08 million units but 9.1 seconds: the exit join over
+99 exits takes several seconds its work count does not show.
 
 **Chunk 7. Post-loop and `rb_insert_color`.** The body's end, the post-loop
 `is_rb_root(plug(ctx.model, sub.model)) == 1`, in-order preservation and

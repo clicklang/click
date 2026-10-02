@@ -197,16 +197,17 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
     )
     .unwrap_or_else(|error| panic!("{error}"))
     .expect_err("the insert proof frontier is deliberately unfinished");
-    // The uncle-red `continue`s are complete on every frame combination,
-    // and the black-uncle rotation `break`s of the left-left and
-    // right-right frames (case 3, sixteen leaves each) and of the
-    // cursor-`Right`, grandparent-`Left` frames (case 2 then case 3, 32
-    // leaves). The report is at the case-2 test of the remaining
-    // cursor-`Left`, grandparent-`Right` combination.
+    // Every path of the loop body ends: the uncle-red `continue`s on every
+    // frame combination, and the black-uncle rotation `break`s of all four
+    // (case 3 on the outer frames, case 2 then case 3 on the inner ones).
+    // The loop rule then refuses to join the exits, which hold the same
+    // binders and bytes in different representations
+    // (bugs/loop-exits-equal-up-to-representation-do-not-join.md).
     let message = error.message();
     assert!(
-        message.contains("the frontier is at statement 52, `tmp = ")
-            && message.contains("67 at a `break` and 4 at a `continue`"),
+        message.contains(
+            "loop exits reach different states, so they have no common successor: memory, resource ownership"
+        ),
         "unexpected insert frontier: {message}"
     );
 }
