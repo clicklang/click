@@ -3137,7 +3137,7 @@ fn install_borrowed_contract_inputs(
 }
 
 pub(super) fn prove_claim_by_auto(
-    mut expansion_capture: Option<&mut ExpansionCapture>,
+    expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
     parsed_function: &syntax::C0Function,
@@ -3150,63 +3150,34 @@ pub(super) fn prove_claim_by_auto(
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    let mut loop_verification_error = None;
-    for tactics in auto_loop_verification_tactic_candidates(function_block, claim) {
-        match prove_claim_by_tactics(
-            expansion_capture.as_deref_mut(),
-            source_path,
-            function_block,
-            parsed_function,
-            claim,
-            claim_label,
-            function_environment,
-            predicate_environment,
-            click_function_environment,
-            resource_environment,
-            theorem_environment,
-            function_source_registry.clone(),
-            &tactics,
-            ProofTacticSource::GeneratedBy { source_index: 0 },
-        ) {
-            Ok(mut theorems) => {
-                for theorem in &mut theorems.theorems {
-                    theorem.proof_kind = ProofKind::LoopVerification;
-                }
-                return Ok(theorems.theorems);
-            }
-            Err(error) => loop_verification_error = Some(error),
+    // `auto` is exactly the script `execute(); simp();`.
+    let tactics = [ProofTactic::SmartExecute, ProofTactic::Simp];
+    let mut theorems = prove_claim_by_tactics(
+        expansion_capture,
+        source_path,
+        function_block,
+        parsed_function,
+        claim,
+        claim_label,
+        function_environment,
+        predicate_environment,
+        click_function_environment,
+        resource_environment,
+        theorem_environment,
+        function_source_registry,
+        &tactics,
+        ProofTacticSource::GeneratedBy { source_index: 0 },
+    )?;
+    if function_block
+        .structural_clauses()
+        .iter()
+        .any(|clause| matches!(clause.region(), CodeRegion::Loop(_)))
+    {
+        for theorem in &mut theorems.theorems {
+            theorem.proof_kind = ProofKind::LoopVerification;
         }
     }
-
-    let mut bounded_error = None;
-    for tactics in bounded_execution_tactic_candidates(claim) {
-        match prove_claim_by_tactics(
-            expansion_capture.as_deref_mut(),
-            source_path,
-            function_block,
-            parsed_function,
-            claim,
-            claim_label,
-            function_environment,
-            predicate_environment,
-            click_function_environment,
-            resource_environment,
-            theorem_environment,
-            function_source_registry.clone(),
-            &tactics,
-            ProofTacticSource::GeneratedBy { source_index: 0 },
-        ) {
-            Ok(theorems) => return Ok(theorems.theorems),
-            Err(error) => bounded_error = Some(error),
-        }
-    }
-    Err(loop_verification_error
-        .or(bounded_error)
-        .unwrap_or_else(|| {
-            ClickError::new(format!(
-                "`{claim_label}`: `auto` had no proof candidate to try"
-            ))
-        }))
+    Ok(theorems.theorems)
 }
 
 pub(super) fn prove_claim_by_simp(

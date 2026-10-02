@@ -14,8 +14,9 @@ either **smart**, **simple**, or **control**:
 - Control tactics contain, scope, split, or join proof scripts. Their descendants, not
   the container itself, determine whether an expanded proof is simple.
 
-`by auto;` and an omitted proof clause invoke the default orchestrator. They
-are not script tactics. Successful smart tactics and `auto` retain the checked
+`by auto;` and an omitted proof clause run exactly the script
+`execute(); simp();`, per claim or once for a grouped proof. `auto` has no
+script-tactic spelling of its own. Successful smart tactics and `auto` retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 
 For ordinary authoring, start with the omitted default, `by auto;`, or the

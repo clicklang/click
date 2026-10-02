@@ -336,9 +336,14 @@ for arithmetic bounds, memory safety, and postconditions.
 
 ## `simp` is not a solver
 
-`simp` performs deterministic local normalization and selected proof rules. It
-does not search broadly, infer missing invariants, synthesize frame conditions,
-or invent arithmetic theorems.
+`simp` is a smart tactic: a bounded, deterministic search over the ambient pure
+facts and a fixed set of proof rules, including equality rewriting, case splits
+on relevant disjunctions, and evidence for supported linear comparisons. A miss
+means the search found no proof within its budget, not that the claim is false.
+
+It never executes C, infers missing loop invariants, invents induction, or
+solves general nonlinear arithmetic. The [tactics reference](../tactics/index.md)
+lists what the search covers.
 
 ## Diagnostics are developer-oriented
 
