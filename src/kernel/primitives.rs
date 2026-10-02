@@ -5862,9 +5862,6 @@ pub(super) struct ResourceContextIndex {
     /// contribute same-block separation candidates, so projecting a
     /// composition's pairs visits these blocks and not one per allocation.
     pub(super) shared_owned_memory_blocks: PersistentMap<PointerBlock, ()>,
-    pub(super) memory_starts:
-        PersistentMap<(PointerBlock, bool, Bitvector32Term), ResourceEntryIds>,
-    pub(super) memory_ends: PersistentMap<(PointerBlock, bool, Bitvector32Term), ResourceEntryIds>,
     /// Owned and viewed ranges with constant endpoints, keyed by base, mode,
     /// and the **signed** values of those endpoints. The key's order is what
     /// the partition check's predecessor and successor probes stand in for a

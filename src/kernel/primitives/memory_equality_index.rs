@@ -17,13 +17,12 @@ use crate::kernel::equality_graph::{AffineOffset, EqualityGraph, PointerClassMer
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum AddressKind {
-    Base,
     OwnedStart,
     ViewedStart,
 }
 
 fn range_addresses(range: &CMemoryRange, owned: bool) -> Vec<(AddressKind, Pointer)> {
-    let mut addresses = vec![(
+    let addresses = vec![(
         if owned {
             AddressKind::OwnedStart
         } else {
@@ -33,11 +32,6 @@ fn range_addresses(range: &CMemoryRange, owned: bool) -> Vec<(AddressKind, Point
             .base()
             .offset_by_elements(range.start().clone(), range.element_width()),
     )];
-    // Concrete spans use their start index, so one base with thousands of
-    // disjoint ranges never creates a thousand-entry exact-base candidate set.
-    if range.start().as_const().is_none() || range.end().as_const().is_none() {
-        addresses.push((AddressKind::Base, range.base().clone()));
-    }
     addresses
 }
 
@@ -126,6 +120,7 @@ struct AddressBucket {
     owners: ResourceEntryIds,
     suppliers: ResourceEntryIds,
     memory_count: usize,
+    // Structural queries require constant raw start coordinates.
     general_coordinates: usize,
 }
 
@@ -232,16 +227,14 @@ impl MemoryAddresses {
         let Some(key) = offset.checked_add(&bucket.origin) else {
             return;
         };
-        let general = kind == AddressKind::Base || !key.is_constant();
+        let general = !key.is_constant();
         let key = (kind, AddressCoordinate(key));
         let entries = bucket.entries.get(&key).cloned().unwrap_or_default();
         let present = entries.contains(&entry);
         if insert == present {
             return;
         }
-        if key.0 != AddressKind::Base
-            && let Some(extent) = read_extent
-        {
+        if let Some(extent) = read_extent {
             for intervals in std::iter::once(&mut bucket.read_intervals)
                 .chain((key.0 == AddressKind::OwnedStart).then_some(&mut bucket.write_intervals))
             {
@@ -333,7 +326,7 @@ impl MemoryAddresses {
             let Some(offset) = offset.0.checked_add(&shift) else {
                 continue;
             };
-            let general = *kind == AddressKind::Base || !offset.is_constant();
+            let general = !offset.is_constant();
             let offset = (kind.clone(), AddressCoordinate(offset));
             let mut combined = larger.entries.get(&offset).cloned().unwrap_or_default();
             for entry in entries.iter() {
@@ -377,6 +370,8 @@ struct AddressPointBucket {
     // with the requested checked footprint, independent of other shapes at
     // this address or elsewhere in the pointer-block class.
     entries: ResourceEntryIds,
+    // Symbolic fragment selection must not enumerate views to find an owner.
+    owners: ResourceEntryIds,
     reads: PersistentMap<u32, ResourceEntryIds>,
     // Writes require their own payload: a read footprint may contain only
     // views, even when a larger owner shares the same start address.
@@ -403,6 +398,10 @@ impl AddressPoints {
         for entry in smaller.entries.iter() {
             crate::instrumentation::record_deterministic_work(1);
             larger.entries = larger.entries.with_value(*entry);
+        }
+        for entry in smaller.owners.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            larger.owners = larger.owners.with_value(*entry);
         }
         // Each occurrence contributes at most two footprints per access kind. Using the
         // same smaller occurrence payload for both indexes bounds all moves,
@@ -467,6 +466,13 @@ impl AddressPoints {
         } else {
             bucket.entries.without_value(&entry)
         };
+        if fact.is_own() {
+            bucket.owners = if insert {
+                bucket.owners.with_value(entry)
+            } else {
+                bucket.owners.without_value(&entry)
+            };
+        }
         if let Some(extent) = start_access_extent(fact) {
             for access in std::iter::once(&mut bucket.read_capacities)
                 .chain(fact.is_own().then_some(&mut bucket.write_capacities))
@@ -574,6 +580,269 @@ impl MemoryAccessCandidates {
     }
 }
 
+/// Explicit supplier occurrences and the graph checkpoint which selected them.
+/// Consumers cannot replace this evidence with a spelling from another fork.
+pub(super) struct MemoryFactCandidates {
+    pub(super) entries: MemoryFactEntries,
+    index: std::sync::Arc<PairedMemoryIndex>,
+}
+/// One explicit bound in object-relative element coordinates. This is a
+/// candidate key, not a numeric equality or a provenance judgment: combining
+/// bitvector indices can wrap, and ordinary coverage/merging must validate the
+/// selected original footprints. No alternative resource spelling is tried.
+fn memory_candidate_coordinate(
+    range: &CMemoryRange,
+    bound: &Bitvector32Term,
+) -> Option<(Pointer, Bitvector32Term)> {
+    let base = range.base().object_base();
+    let delta = range
+        .base()
+        .exact_element_delta_from_base(&base, range.element_width(), None)?;
+    let constant = i32::try_from(delta.constant).ok()? as u32;
+    Some((
+        base,
+        Bitvector32Term::add(
+            Bitvector32Term::add(delta.index, bound.clone()),
+            constant.into(),
+        ),
+    ))
+}
+
+/// Supplier delivery is lazy: a direct proof pays only for the occurrences it
+/// checks. Only explicit fragment composition exhausts the selected frontier.
+pub(super) struct MemoryFactEntries {
+    index: std::sync::Arc<PairedMemoryIndex>,
+    range: CMemoryRange,
+    owned: bool,
+    assumptions: PureFactContext,
+    bound_coordinates: Option<(Pointer, Bitvector32Term)>,
+}
+impl MemoryFactEntries {
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    pub(super) fn iter(&self) -> Box<dyn Iterator<Item = ResourceEntryId> + '_> {
+        let index = &self.index;
+        let graph = &index.graph;
+        let range = &self.range;
+        let owned = self.owned;
+        let mut streams: Vec<Box<dyn Iterator<Item = ResourceEntryId> + '_>> = Vec::new();
+        // Exact typed footprints need no publication or equality inference.
+        // This also supports explicitly supplied, unpublished symbolic inputs.
+        if let Some(entries) = index
+            .resources
+            .index
+            .by_resource
+            .get(&CResource::Memory(range.clone()))
+        {
+            streams.push(Box::new(entries.clone().owned_values()));
+        }
+        if index.points_initialized
+            && let Some(class) = graph.footprint_class(range)
+            && let Some(entries) = index.symbolic.footprint_entries(class, owned)
+        {
+            streams.push(Box::new(entries.owned_values()));
+        }
+        let start_pointer = range
+            .base()
+            .offset_by_elements(range.start().clone(), range.element_width());
+        let end_pointer = range
+            .base()
+            .offset_by_elements(range.end().clone(), range.element_width());
+        if let (Some(point), Some(limit)) = (
+            graph.canonical_pointer(&start_pointer),
+            graph.canonical_pointer(&end_pointer),
+        ) && point.representative == limit.representative
+            && limit
+                .offset
+                .constant_difference(&point.offset)
+                .is_some_and(|bytes| bytes > 0)
+            && let Some(bucket) = index.addresses.classes.get(&point.representative)
+            && let (Some(start), Some(end)) = (
+                point.offset.checked_add(&bucket.origin),
+                limit.offset.checked_add(&bucket.origin),
+            )
+        {
+            let intervals = if owned {
+                &bucket.write_intervals
+            } else {
+                &bucket.read_intervals
+            };
+            // Check whole-span suppliers before the fragment frontier. Otherwise
+            // a late owner can be hidden behind arbitrarily many short views.
+            streams.push(Box::new(intervals.covering(
+                &AddressCoordinate(start.clone()),
+                &AddressCoordinate(end.clone()),
+            )));
+            if let Some(after) = start.checked_add(&AffineOffset::constant(1)) {
+                streams.push(Box::new(intervals.covering(
+                    &AddressCoordinate(start.clone()),
+                    &AddressCoordinate(after),
+                )));
+            }
+            for kind in std::iter::once(AddressKind::OwnedStart)
+                .chain((!owned).then_some(AddressKind::ViewedStart))
+            {
+                let entries = bucket.entries.clone();
+                let mut cursor = (kind.clone(), AddressCoordinate(start.clone()));
+                let mut current = entries
+                    .get(&cursor)
+                    .cloned()
+                    .unwrap_or_default()
+                    .owned_values();
+                let end = end.clone();
+                streams.push(Box::new(std::iter::from_fn(move || {
+                    loop {
+                        if let Some(entry) = current.next() {
+                            return Some(entry);
+                        }
+                        let (next, values) = entries.get_greater_than(&cursor)?;
+                        if next.0 != kind
+                            || !end
+                                .constant_difference(&next.1.0)
+                                .is_some_and(|distance| distance > 0)
+                        {
+                            return None;
+                        }
+                        crate::instrumentation::record_deterministic_work(1);
+                        cursor = next.clone();
+                        current = values.clone().owned_values();
+                    }
+                })));
+            }
+        }
+        if index.points_initialized
+            && let Some((bound_base, bound_start)) = &self.bound_coordinates
+            // Shared literals (especially zero) have unrelated bound neighbors.
+            // Constant queries use geometric indexes, never that neighborhood.
+            && crate::kernel::eval::canonical_term(bound_start).as_const().is_none()
+        {
+            // An indexed lower-bound premise names a possible residual start.
+            // i < j selects the unique start at i+1; i+1 <= j names it directly.
+            // This visits only bounds incident to the query, never resource
+            // spellings or a block's holdings. Coverage still checks authority.
+            streams.push(Box::new(
+                self.assumptions
+                    .signed_order_bound_entries(bound_start)
+                    .filter_map(move |(endpoint, lower, strict, forward)| {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if forward || !graph.are_int32_equal(&endpoint, bound_start) {
+                            return None;
+                        }
+                        let lower = if strict {
+                            Bitvector32Term::add(lower, 1u32.into())
+                        } else {
+                            lower
+                        };
+                        let pointer = bound_base.offset_by_elements(lower, range.element_width());
+                        let class = graph.address_class(&pointer)?;
+                        let bucket = index.points.classes.get(&class)?;
+                        let suppliers = if !bucket.owners.is_empty() {
+                            &bucket.owners
+                        } else if !owned {
+                            &bucket.entries
+                        } else {
+                            return None;
+                        };
+                        (suppliers.len() == 1)
+                            .then(|| *suppliers.iter().next().expect("unique bound supplier"))
+                    }),
+            ));
+        }
+        if index.points_initialized {
+            let paired = self.index.clone();
+            let requested = range.clone();
+            let assumptions = self.assumptions.clone();
+            let target = memory_candidate_coordinate(range, range.end())
+                .map(|(base, end)| base.offset_by_elements(end, range.element_width()));
+            let mut cursor = memory_candidate_coordinate(range, range.start())
+                .map(|(base, start)| base.offset_by_elements(start, range.element_width()));
+            let mut visited = BTreeSet::new();
+            streams.push(Box::new(std::iter::from_fn(move || {
+                let pointer = cursor.take()?;
+                if paired.graph.are_equal(&pointer, target.as_ref()?) {
+                    return None;
+                }
+                let class = paired.graph.address_class(&pointer)?;
+                let bucket = paired.points.classes.get(&class)?;
+                let suppliers = if !bucket.owners.is_empty() {
+                    &bucket.owners
+                } else if !owned {
+                    &bucket.entries
+                } else {
+                    return None;
+                };
+                // No choice/search among overlapping symbolic fragment starts.
+                if suppliers.len() != 1 {
+                    return None;
+                }
+                let entry = *suppliers.iter().next()?;
+                if !visited.insert(entry) {
+                    return None;
+                }
+                let available = paired.resources.facts.get(&entry)?.memory_range()?;
+                let mut aligned = available.clone();
+                aligned.base = paired
+                    .graph
+                    .pointer_at_base(available.base(), requested.base())?;
+                // Only follow an endpoint after ordinary coverage establishes
+                // that this selected fragment belongs to the explicit request.
+                // A larger supplier is still delivered for direct entailment,
+                // but cannot start a walk outside the requested footprint.
+                if super::resource_algebra::memory_range_covers(&requested, &aligned, &assumptions)
+                {
+                    cursor = memory_candidate_coordinate(available, available.end())
+                        .map(|(base, end)| base.offset_by_elements(end, available.element_width()));
+                }
+                Some(entry)
+            })));
+        }
+        let mut entries = streams.into_iter().flatten().peekable();
+        let sole = if entries.peek().is_none() && index.points_initialized {
+            ResourceContext::sole_access_supplier(index, &start_pointer, owned)
+        } else {
+            None
+        };
+        let mut seen = BTreeSet::new();
+        Box::new(entries.chain(sole).filter(move |entry| {
+            seen.insert(*entry)
+                && (!owned
+                    || index.resources.facts.get(entry).is_some_and(|fact| {
+                        fact.owned_quantity_term().is_some_and(|quantity| {
+                            super::resource_algebra::resource_quantity_is_positive(
+                                quantity,
+                                &self.assumptions,
+                            )
+                        })
+                    }))
+        }))
+    }
+}
+impl MemoryFactCandidates {
+    pub(super) fn requirement(
+        &self,
+        entry: ResourceEntryId,
+        fact: &CResourceFact,
+    ) -> Option<CResourceFact> {
+        let range = fact.memory_range()?;
+        let available = self.index.resources.facts.get(&entry)?.memory_range()?;
+        let base = self
+            .index
+            .graph
+            .pointer_at_base(range.base(), available.base())?;
+        let mut range = range.clone();
+        range.base = base;
+        Some(match fact {
+            CResourceFact::Own(_, quantity) => {
+                CResourceFact::Own(CResource::Memory(range), quantity.clone())
+            }
+            CResourceFact::View(_) => CResourceFact::View(CResource::Memory(range)),
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 enum MemoryQuery<'a> {
     Address(&'a Pointer),
@@ -600,7 +869,15 @@ impl MemoryQuery<'_> {
                 });
             }
             Self::Footprint(range) => {
-                graph.address_class(range.base());
+                let start = range
+                    .base()
+                    .offset_by_elements(range.start().clone(), range.element_width());
+                let end = range
+                    .base()
+                    .offset_by_elements(range.end().clone(), range.element_width());
+                MemoryQuery::Address(range.base()).register(graph);
+                MemoryQuery::Address(&start).register(graph);
+                MemoryQuery::Address(&end).register(graph);
                 graph.footprint_class(range);
             }
         }
@@ -1171,6 +1448,7 @@ impl ResourceContext {
     /// Owned whole-cell matches or complete affine interval candidates for
     /// writes. Read payloads are unsuitable: a matching view could hide an owner.
     /// Unknown support is refused before testing any candidate.
+    #[cfg(test)]
     pub(super) fn concrete_write_entries(
         &self,
         pointer: &Pointer,
@@ -1220,6 +1498,7 @@ impl ResourceContext {
         ))
     }
 
+    #[cfg(test)]
     fn concrete_access_entries(
         &self,
         pointer: &Pointer,
@@ -1301,94 +1580,31 @@ impl ResourceContext {
         Some(MemoryAccessEntries::Intervals(entries))
     }
 
-    pub(super) fn equal_address_entries(
+    /// Select only suppliers at the explicit footprint, covering its start,
+    /// or starting inside its concrete byte span. Symbolic ambiguity refuses;
+    /// no base bucket, spelling enumeration, or ambient normalization is used.
+    pub(super) fn memory_fact_candidates(
         &self,
         range: &CMemoryRange,
         owned: bool,
         assumptions: &PureFactContext,
-    ) -> Vec<ResourceEntryId> {
-        let start = range
-            .base()
-            .offset_by_elements(range.start().clone(), range.element_width());
-        let index = self.pair_memory_equalities(assumptions, false, Some(&start));
-        let graph = &index.graph;
-        let point_class = graph.address_class(&start);
-        let mut result = BTreeSet::new();
-        if let Some(class) = point_class {
-            let class = graph.address_class_root(class);
-            if let Some(bucket) = index.points.classes.get(&class) {
-                result.extend(bucket.entries.iter().copied());
-            }
+    ) -> MemoryFactCandidates {
+        let index = self.pair_memory_equalities_in_graph(
+            assumptions.equality_graph.clone(),
+            false,
+            Some(MemoryQuery::Footprint(range)),
+        );
+        let bound_coordinates = memory_candidate_coordinate(range, range.start());
+        MemoryFactCandidates {
+            entries: MemoryFactEntries {
+                index: index.clone(),
+                range: range.clone(),
+                owned,
+                assumptions: assumptions.clone(),
+                bound_coordinates,
+            },
+            index,
         }
-        let start = range
-            .base()
-            .offset_by_elements(range.start().clone(), range.element_width());
-        let end = range
-            .base()
-            .offset_by_elements(range.end().clone(), range.element_width());
-        let mut addresses = vec![
-            (AddressKind::Base, range.base().clone()),
-            (
-                if owned {
-                    AddressKind::OwnedStart
-                } else {
-                    AddressKind::ViewedStart
-                },
-                start.clone(),
-            ),
-        ];
-        if !owned {
-            addresses.push((AddressKind::OwnedStart, start));
-        }
-        for (kind, address) in addresses {
-            let Some(pointer) = graph.canonical_pointer(&address) else {
-                continue;
-            };
-            let Some(bucket) = index.addresses.classes.get(&pointer.representative) else {
-                continue;
-            };
-            let Some(offset) = pointer.offset.checked_add(&bucket.origin) else {
-                continue;
-            };
-            let key = (kind.clone(), AddressCoordinate(offset));
-            if let Some(entries) = bucket.entries.get(&key) {
-                result.extend(entries.iter().copied());
-            }
-            if kind == AddressKind::Base
-                || range.start().as_const().is_none()
-                || range.end().as_const().is_none()
-            {
-                continue;
-            }
-            // Visit a predecessor and starts inside the explicitly required
-            // span. Coverage checks reject a predecessor ending before it.
-            if let Some(((previous_kind, previous), entries)) = bucket.entries.get_less_than(&key)
-                && *previous_kind == kind
-                && key.1.0.constant_difference(&previous.0).is_some()
-            {
-                result.extend(entries.iter().copied());
-            }
-            let Some(end) = graph.canonical_pointer(&end) else {
-                continue;
-            };
-            let Some(end_offset) = end.offset.checked_add(&bucket.origin) else {
-                continue;
-            };
-            let mut cursor = key;
-            while let Some((next, entries)) = bucket.entries.get_greater_than(&cursor) {
-                if next.0 != kind
-                    || !end_offset
-                        .constant_difference(&next.1.0)
-                        .is_some_and(|difference| difference > 0)
-                {
-                    break;
-                }
-                crate::instrumentation::record_deterministic_work(1);
-                result.extend(entries.iter().copied());
-                cursor = next.clone();
-            }
-        }
-        result.into_iter().collect()
     }
 }
 
