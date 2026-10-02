@@ -1,4 +1,5 @@
 //! Experimental safe Rust imports, compiler-owned typed HIR and direct kernel lowering.
+mod charon;
 mod import;
 pub(crate) mod lowering;
 pub mod schema;
