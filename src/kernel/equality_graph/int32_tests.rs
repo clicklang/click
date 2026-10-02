@@ -557,7 +557,7 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
     let later = sum(load(&after, b.clone()));
     let goal = |right| Proposition::ConditionIs(eq(&left, &right), true);
     let certifies = |context: &PureFactContext, goal: &Proposition| {
-        crate::kernel::api::contract_certification::certification_proves_proposition(context, goal)
+        crate::kernel::PureFactContext::settles_exactly(context, goal)
     };
     let premise = eq(&a, &b);
     let parent = PureFactContext::new();
@@ -587,11 +587,9 @@ fn certified_int32_graph_queries_scale_without_fact_index() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
                 let goal = Proposition::ConditionIs(eq(&left, &sum(var(index))), true);
-                assert!(
-                    crate::kernel::api::contract_certification::certification_proves_proposition(
-                        &context, &goal,
-                    )
-                );
+                assert!(crate::kernel::PureFactContext::settles_exactly(
+                    &context, &goal,
+                ));
             }
         });
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);

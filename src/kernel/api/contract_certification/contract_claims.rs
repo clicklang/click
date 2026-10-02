@@ -1526,11 +1526,8 @@ fn function_claim_holds_on_prepared_path(
             }
             // Lowering records the ensure's load obligations instead of
             // searching the whole path context for each one as it goes; they
-            // are discharged below, resources and exact facts first. The
-            // general prover is the last resort because on a certified path,
-            // whose facts include every loadability the proof established at
-            // intermediate memories, its quantified and disjunctive search is
-            // the dominant certification cost.
+            // are discharged below from the contract's resources and exact
+            // facts.
             let lowering_assumptions = assumptions
                 .clone()
                 .allow_symbolic_contract_loads()

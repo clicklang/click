@@ -267,11 +267,18 @@ impl PureFactContext {
     // Keep rule-local by-value temporaries out of the recursive dispatcher.
 
     /// Whether this context settles `proposition` by an exact route: the
-    /// fact index, or the frozen checker for its one atomic shape. It
-    /// searches no logical structure and instantiates nothing, so a
-    /// proposition it does not settle is left for a tactic to prove.
+    /// fact index, read up to the names of bound variables for a quantified
+    /// or conditional proposition, or the frozen checker for one atomic
+    /// shape. It searches no logical structure and instantiates nothing, so
+    /// a proposition it does not settle is left for a tactic to prove.
     pub(crate) fn settles_exactly(&self, proposition: &Proposition) -> bool {
-        self.proves_exact(proposition) || self.proves_atomic_without_search(proposition)
+        self.proves_exact(proposition)
+            || match proposition {
+                Proposition::ForAll { .. }
+                | Proposition::Exists { .. }
+                | Proposition::Implies(..) => self.states_required_goal(proposition),
+                _ => self.proves_atomic_without_search(proposition),
+            }
     }
 
     pub(crate) fn proves_atomic_without_search(&self, proposition: &Proposition) -> bool {
@@ -512,7 +519,12 @@ impl PureFactContext {
             else {
                 return false;
             };
+            // The goal may not mention the fact's binder free: renaming the
+            // fact's body cannot reach an occurrence the goal leaves free,
+            // and a witness for the fact says nothing about that variable.
             fact_sort == sort
+                && (*fact_var == var
+                    || !crate::kernel::api::proposition_variables(body).contains(fact_var))
                 && crate::kernel::api::substitute_quantified_body_capture_free(
                     fact_body, *fact_var, var, sort,
                 )

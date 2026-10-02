@@ -5476,9 +5476,7 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
     );
     let fact = path_exists_at_snapshot(&ty, 100, 100, before.clone(), 0);
     let facts = PureFactContext::new().assume_proposition(fact);
-    let proves = |goal| {
-        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal)
-    };
+    let proves = |goal| crate::kernel::PureFactContext::settles_exactly(&facts, &goal);
     assert!(proves(path_exists_at_snapshot(
         &ty,
         200,
@@ -5495,6 +5493,16 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
         "a free path is not the existential binder"
     );
     assert!(
+        !facts.proves_atomic_without_search(&path_exists_at_snapshot(
+            &ty,
+            200,
+            100,
+            before.clone(),
+            0
+        )),
+        "the atomic existential rule must not match a free path either"
+    );
+    assert!(
         !proves(path_exists_at_snapshot(&ty, 200, 200, before.clone(), 1)),
         "the endpoint must match"
     );
@@ -5507,79 +5515,6 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
             0
         )),
         "the witness sort must match"
-    );
-}
-
-#[test]
-fn certification_generalization_keeps_facts_about_an_outer_variable() {
-    let outer = Variable(100);
-    let other = Variable(101);
-    let equal = |left, right| {
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-            true,
-        )
-    };
-    let old_is_zero = equal(
-        Bitvector32Term::Variable(outer),
-        Bitvector32Term::Constant(0),
-    );
-    let old_equals_other = equal(
-        Bitvector32Term::Variable(outer),
-        Bitvector32Term::Variable(other),
-    );
-    let facts = PureFactContext::new()
-        .assume_proposition(old_is_zero.clone())
-        .assume_proposition(old_equals_other);
-    let goal = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(equal(
-            Bitvector32Term::Variable(other),
-            Bitvector32Term::Constant(0),
-        )),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal)
-    );
-
-    let invalid = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(old_is_zero),
-    };
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_proposition(
-            &facts, &invalid,
-        )
-    );
-}
-
-#[test]
-fn certification_generalization_handles_nested_binders() {
-    let outer = Variable(120);
-    let inner = Variable(121);
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::Bitvector32Equal(
-            Box::new(Bitvector32Term::Variable(outer)),
-            Box::new(Bitvector32Term::Variable(outer)),
-        ),
-        true,
-    );
-    let goal = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::ForAll {
-            var: inner,
-            sort: Sort::CInt32,
-            body: Box::new(equality),
-        }),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_proposition(
-            &PureFactContext::new(),
-            &goal,
-        )
     );
 }
 
@@ -5608,11 +5543,9 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         )),
     };
     let facts = PureFactContext::new().assume_proposition(assumed);
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_proposition(
-            &facts, &goal
-        )
-    );
+    assert!(!crate::kernel::PureFactContext::settles_exactly(
+        &facts, &goal
+    ));
 }
 
 #[test]
@@ -5621,44 +5554,6 @@ fn kernel_fresh_identity_cannot_be_forged_by_the_numeric_constructor() {
     let second = Variable::allocate_fresh().expect("another fresh identity");
     assert_ne!(first, second);
     assert_ne!(first, Variable(first.0));
-}
-
-#[test]
-fn certification_generalization_retains_outer_facts_for_a_binder_dependent_body() {
-    let outer = Variable(140);
-    let other = Variable(141);
-    let equal = |left, right| {
-        Proposition::ConditionIs(
-            ConditionTerm::Bitvector32Equal(Box::new(left), Box::new(right)),
-            true,
-        )
-    };
-    let facts = PureFactContext::new()
-        .assume_proposition(equal(
-            Bitvector32Term::Variable(outer),
-            Bitvector32Term::Constant(0),
-        ))
-        .assume_proposition(equal(
-            Bitvector32Term::Variable(outer),
-            Bitvector32Term::Variable(other),
-        ));
-    let goal = Proposition::ForAll {
-        var: outer,
-        sort: Sort::CInt32,
-        body: Box::new(Proposition::And(
-            Box::new(equal(
-                Bitvector32Term::Variable(outer),
-                Bitvector32Term::Variable(outer),
-            )),
-            Box::new(equal(
-                Bitvector32Term::Variable(other),
-                Bitvector32Term::Constant(0),
-            )),
-        )),
-    };
-    assert!(
-        crate::kernel::api::contract_certification::certification_proves_proposition(&facts, &goal,)
-    );
 }
 
 #[test]
@@ -5689,12 +5584,8 @@ fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
         let missing = path_exists_at_snapshot(&ty, 200, 200, memory, 1_000);
         let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &goal,
-                ),
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &missing,
-                ),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &goal),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &missing),
             )
         });
         assert_eq!(verdicts, (true, false));
@@ -5743,10 +5634,7 @@ fn certification_keeps_conditional_universal_guards_snapshots_and_sorts() {
     let proof_facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&fact));
     let facts = PureFactContext::new().assume_proposition(fact);
     let proves = |goal: &Proposition| {
-        let certified =
-            crate::kernel::api::contract_certification::certification_proves_proposition(
-                &facts, goal,
-            );
+        let certified = crate::kernel::PureFactContext::settles_exactly(&facts, goal);
         assert_eq!(proof_facts.pure_assumption_available(goal), certified);
         certified
     };
@@ -5820,12 +5708,8 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
         let missing = conditional_path_universal(&ty, 200, memory, 1_000);
         let (verdicts, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &goal,
-                ),
-                crate::kernel::api::contract_certification::certification_proves_proposition(
-                    &facts, &missing,
-                ),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &goal),
+                crate::kernel::PureFactContext::settles_exactly(&facts, &missing),
                 proof_facts.pure_assumption_available(&goal),
                 proof_facts.pure_assumption_available(&missing),
             )

@@ -1971,12 +1971,10 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
         pointer: address,
         value_type: CType::Int32,
     };
-    assert!(
-        !crate::kernel::api::contract_certification::certification_proves_proposition(
-            &assumptions,
-            &stale
-        )
-    );
+    assert!(!crate::kernel::PureFactContext::settles_exactly(
+        &assumptions,
+        &stale
+    ));
 }
 
 #[test]
@@ -2272,10 +2270,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             value_type: CType::Int32,
         };
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::api::contract_certification::certification_proves_proposition(
-                &assumptions,
-                &goal,
-            )
+            crate::kernel::PureFactContext::settles_exactly(&assumptions, &goal)
         });
         assert!(proved, "failure to allocate must preserve an existing read");
         samples.push(work);

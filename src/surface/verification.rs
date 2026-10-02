@@ -4494,7 +4494,7 @@ fn describe_unauthorized_entry_premise(
     } else {
         String::new()
     };
-    // The facts the certification prover had to derive the premise from,
+    // The facts the premise was checked against,
     // so the reader can tell a missing requirement from a missing rule.
     const SHOWN_CONTEXT_FACTS: usize = 12;
     let mut shown = context_facts
