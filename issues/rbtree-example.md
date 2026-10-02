@@ -530,13 +530,12 @@ blocks C3; each is a candidate package when it starts to.
   a time only read authority is published, not a full arm re-decision,
   because a per-clause re-decision broke the near-linear width contract
   (A28).
-- **Pointer spellings across a write or a fold** (blocks C3b's last two
-  left-left leaves): after `p->word = 5` with `p == id` proved, `have
-  id->word == 5` is refused while `have p->word == 5` holds, and a fold at an
-  arm binding cannot consume cells an unfold published under a loaded
-  pointer's spelling. (A fold's resource arguments may now name a proof-arm
-  binding: `mdtests/fold_argument_names_an_arm_binding.md`.)
-  Loads in fold arguments (`fold(rb_at(x->left), ...)`) are also unsupported.
+- **Pointer spellings across a write or a fold** (blocks chunk 1; restated
+  there with its reduction on 2026-10-02): a read through an arm identity at
+  a nonzero field offset is not identified with the read through the owning
+  pointer after a store separated only by ownership. Owned-cell consumption
+  by a fold at an arm binding now passes. Loads in fold arguments
+  (`fold(rb_at(x->left), ...)`) are unsupported.
 - **Stale prose:** `mdtests/rb_replace_node.md` says a victim with
   children cannot be contracted, which `rb_replace_node_with_children.md`
   contradicts.
@@ -577,12 +576,78 @@ the uncle-black arms also end, which is chunk 6. Measure verify time again as
 the rotation arms land: a superlinear step is a scaling regression under
 `docs/internals/verification-efficiency.md`.
 
-**Chunk 1. Last two left-left leaves.** Recheck the frontier on current
-master, resolve the `step()` that stops on two statement successors in the
-inlined `__rb_rotate_set_parents` (see
-[egraph.md](egraph.md#producer-recorded-read-identities-2026-09-30)), and
-finish the two case-3 leaves under a `Right` great-grandparent frame in the
-cursor-`Left`, grandparent-`Left` combination.
+**Chunk 1. Last two left-left leaves.** The two case-3 leaves under a
+`Right` great-grandparent frame in the cursor-`Left`, grandparent-`Left`
+combination. Blocked on the kernel gap below; the fix is its own pull
+request ahead of the leaves.
+
+Recheck 2026-10-02 on `07ed80171`: the frontier is unchanged at statement 42
+with 9 `break`s and 4 `continue`s. The "two statement successors" stop
+reported on 2026-09-30 is not a kernel gap. It appears only when `xs` is
+refolded before `step()`, which hides the cells that decide
+`parent->rb_left == old` in the inlined `__rb_change_child`; with
+`unfold(xs); step();` the step passes. The remaining failure is the
+post-step `fold(rb_at(yid), ...)`, refused with `selected child does not
+satisfy the proposed parent model`. The left child read through the arm
+identity `yid` at a nonzero field offset is a fresh load after the
+rotation's stores to other nodes. Those stores are separated from it only by
+ownership, and the load is not identified with the unfold-time read. This is
+the first leaf where a node that is unfolded, but neither written nor in a
+written block, must survive stores to other nodes. No proof-side route was
+found: pointer disequality from separate ownership is not provable as a
+proposition, loads cannot appear in fold arguments, and the inline call is
+one `step()`.
+
+Violated invariant: with `p == id` proved and a cell owned under `p`, a read
+through `id` at a nonzero constant field offset, after a store separated
+from it only by ownership, is the read through `p`. Intended regression,
+which must pass and currently fails at the fold:
+
+```c
+struct node { struct node *left; struct node *right; int tag; };
+void roundtrip(struct node *p, struct node *q) { q->tag = 1; }
+```
+
+```click
+spec enum Tree { Empty, Node(struct node*, Tree, Tree) }
+resource tree(p: struct node*) {
+    field model: Tree;
+    match model {
+        Tree::Empty => { fact p == 0; },
+        Tree::Node(id, lm, rm) => {
+            owns &p->left; owns &p->right; owns &p->tag;
+            owns left: tree(p->left); owns right: tree(p->right);
+            fact p != 0; fact p == id;
+            fact left.model == lm; fact right.model == rm;
+        },
+    }
+}
+void roundtrip(struct node* p, struct node* q) {
+    owns t: tree(p);
+    owns &q->tag;
+    requires t.model != Tree::Empty;
+    ensures t.model == old(t.model);
+} by {
+    match t.model {
+        Tree::Empty => { contradiction(t.model == Tree::Empty); },
+        Tree::Node(id, lm, rm) => {
+            let { left: l, right: r } = unfold(t);
+            step();
+            let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
+            execute(); simp();
+        },
+    }
+}
+```
+
+`fold(tree(p), ...)` passes, as do stores to `p`'s own `tag`. Only a child
+at a nonzero field offset fails: `left` at offset 0 passes, and moving `tag`
+first in the struct makes `left` fail. After the step, `have id->right ==
+p->right` is refused although `have p == id` holds. Acceptance: the
+regression passes; a negative that drops `owns &q->tag`, and one that
+overwrites `p->right`, are still refused; no history walk is added to
+equality queries or `fold`; then the two leaves are finished and the pinned
+frontier moves.
 
 **Chunk 2. Empty-uncle leaves of left-left.** The text is the same after
 refolding the uncle as `Empty`. Depends on 1.
