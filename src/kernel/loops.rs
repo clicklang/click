@@ -3635,6 +3635,22 @@ fn abstract_loop_exit_memory(
         }
     }
     let mut abstracted = BTreeSet::new();
+    // The same missing authority seen from the other side: a cell some exit
+    // holds and the successor never did. There is nothing to drop from the
+    // successor, and that exit's own copy is not a component the exits
+    // disagree about, so it is abstracted like a dropped cell. Without this
+    // the join depended on which exit came first: an exit that opened an
+    // instance the first exit left folded was refused as a memory difference.
+    for state in exits {
+        if std::sync::Arc::ptr_eq(&state.memory().cells, &memory.cells) {
+            continue;
+        }
+        for pointer in state.memory().cells.keys() {
+            if !resynced.contains(pointer) && !memory.cells.contains_key(pointer) {
+                abstracted.insert(pointer.clone());
+            }
+        }
+    }
     if !dropped.is_empty() || !havoced.is_empty() {
         let cells = std::sync::Arc::make_mut(&mut memory.cells);
         for pointer in dropped {
@@ -3727,6 +3743,12 @@ fn loop_exit_residual_difference(
     binders: &[CLoopBinder],
 ) -> Option<String> {
     let mut witness = successor.clone();
+    // Where a path last folded a binder is not a component of its state: a
+    // resource context is a multiset, and the witness below re-seats each
+    // binder instance after everything else. The exit is re-seated the same
+    // way, so an exit that refolded one binder and left another untouched is
+    // compared by what it holds rather than by the order it folded in.
+    let mut seated = exit.clone();
     for binder in binders {
         let Some(joined) = witness.resources().owned_instance(binder.identity).cloned() else {
             continue;
@@ -3740,22 +3762,39 @@ fn loop_exit_residual_difference(
         ) else {
             continue;
         };
-        witness = witness.with_resource_context(
-            resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(held))),
-        );
+        let held_fact = CResourceFact::own(CResource::Instance(held));
+        let Some(exit_resources) = seated
+            .resources()
+            .clone()
+            .without_fact_incrementally(&held_fact, &PureFactContext::new())
+        else {
+            continue;
+        };
+        witness = witness.with_resource_context(resources.unchecked_with_fact(held_fact.clone()));
+        seated = seated.with_resource_context(exit_resources.unchecked_with_fact(held_fact));
     }
     for (name, c_type) in locals {
-        let value = exit.locals().get(name)?.clone();
+        let value = seated.locals().get(name)?.clone();
         sync_stack_local(&mut witness, name, &value);
         witness.locals.set_typed(name.clone(), value, *c_type);
     }
     if !cells.is_empty() {
         let mut memory = witness.memory().clone();
+        let mut exit_memory = seated.memory().clone();
         let restored = std::sync::Arc::make_mut(&mut memory.cells);
+        let held = std::sync::Arc::make_mut(&mut exit_memory.cells);
         for pointer in cells {
-            match exit.memory().cells.get(pointer) {
+            if !restored.contains_key(pointer) {
+                // The successor does not hold this cell: it was dropped, or
+                // only some exit ever held it. That is knowledge the exit has
+                // and the successor does not claim, so it is set aside on the
+                // exit's side rather than written into the witness.
+                held.remove(pointer);
+                continue;
+            }
+            match held.get(pointer) {
                 Some(value) => {
-                    restored.insert(pointer.clone(), value.clone());
+                    restored.insert(pointer.clone(), value);
                 }
                 None => {
                     restored.remove(pointer);
@@ -3763,8 +3802,9 @@ fn loop_exit_residual_difference(
             }
         }
         witness = witness.with_memory(memory);
+        seated = seated.with_memory(exit_memory);
     }
-    loop_exit_state_difference(&witness, exit)
+    loop_exit_state_difference(&witness, &seated)
 }
 
 /// What two loop exit states disagree about, named for a refusal.

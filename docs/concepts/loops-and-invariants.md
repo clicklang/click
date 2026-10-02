@@ -419,6 +419,14 @@ back through that binder's model. A loop that declares no binder has nothing to
 read such a cell through, and the difference is refused naming the cell
 (`mdtests/loop_break_exit_unowned_cell_rejected.md`).
 
+The exits are compared by what they hold, not by how they came to hold it. An
+exit that unfolded and refolded a binder and an exit that left it untouched
+hold the same instance, whatever order their folds ran in
+(`mdtests/loop_break_exit_join_ignores_fold_order.md`), and a cell only some
+exit read, because only that path opened the instance owning it, is knowledge
+the successor does not claim rather than a difference between the exits
+(`mdtests/loop_break_exit_join_sets_aside_unshared_cells.md`).
+
 What every exit states survives the join as an ordinary fact, so a claim that
 does not distinguish the exits needs nothing special
 (`mdtests/loop_break_exit_refold_join.md`). A claim that does distinguish them
