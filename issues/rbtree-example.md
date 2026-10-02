@@ -6,10 +6,11 @@ work. The models, the two syntax extensions (loop binders `owns name:
 res(args);`, keyword-free `decreases name;`), decision D7's single
 publication point, and packages A1 through A28, T1 through T8, S1, B1
 through B3, C1, C1b, C2, C2b, C2c, and C4's replacement half are landed.
-What remains is finishing the specific example: the verbatim `__rb_insert`
-(C3), the traversals, erase (C5), the augmented callbacks (C6), and
-attaching the sidecars to the pinned source (D1). The full history is in
-git: `git log --follow issues/rbtree-example.md`.
+What remains is finishing the specific example: the verbatim `__rb_insert`,
+the traversals, erase, the augmented callbacks, and attaching the sidecars
+to the pinned source. That work is numbered as
+[chunks 1 to 17](#remaining-work-chunks-1-to-17), one pull request each. The
+full history is in git: `git log --follow issues/rbtree-example.md`.
 
 P1: required for MVR. Linux rbtree does not store keys, so its generic
 correctness property is preservation of node identity and in-order order
@@ -540,60 +541,109 @@ blocks C3; each is a candidate package when it starts to.
   children cannot be contracted, which `rb_replace_node_with_children.md`
   contradicts.
 
-## Remaining work packages
+## Remaining work: chunks 1 to 17
 
-Each lands as one coherent green commit with its regressions and docs,
-judged by `scripts/check.sh`'s exit status. C is fixed; adaptation goes
-into contracts, lemmas, resources, tactics, lowering, or the kernel. No
-package creates issues. A package that hits a tooling failure listed in
-`AGENTS.md` stops and reports.
+Renumbered on 2026-10-02. A **chunk** is one pull request: one coherent green
+commit series with its regressions and docs. C is fixed; adaptation goes into
+contracts, lemmas, resources, tactics, lowering, or the kernel. No chunk
+creates issues. A chunk that hits a tooling failure listed in `AGENTS.md`
+stops and reports; if the failure needs its own kernel fix, that fix is its
+own pull request ahead of the chunk.
 
-**I1. Imports, first slice — complete 2026-09-13** (in
-[specification-imports.md](specification-imports.md)). Transitive
-`import "path.click";` declarations are loaded once; the importing entry alone
-selects proof obligations and `verifying` sources. The insert fixture is now
-`examples/rbtree-insert`, imports `examples/rbtree-model`, and retains the
-unfinished proof as an explicit negative frontier. The duplicated mdtest was
-deleted. I1 has no remaining P1 work; the imports issue now retains only P2
-follow-ups.
+The dated state sections, decisions, and tables elsewhere in this file, and
+some fixtures and other issues, still use the earlier package names. They map
+as follows:
 
-**E1. Per-frame duplication and verify time — delivered with C3a.** The
-case reasoning is one theorem per case in the model
-(`ctx_insert_case1_*_step`); each C arm is the bookkeeping between its frame
-facts and the theorem's spelling, and the four arms are written out per D9.
-The frontier verifies in about 2.8s to the first uncle-black path. Measure
-again when C3b lands the rotation arms; a superlinear step is a scaling
-regression under `docs/internals/verification-efficiency.md`.
+| Earlier name | Now |
+| --- | --- |
+| I1 (imports), E1 (per-frame duplication), C3a (recolour `continue`s) | landed |
+| C3b (rotation `break`s) | chunks 1 to 6 |
+| C3c (post-loop and `rb_insert_color`) | chunk 7 |
+| C4b (traversals) | chunks 8 and 9 |
+| C5 (erase) | chunks 10 to 13 |
+| C6 (augmented variants and callbacks) | chunk 14 |
+| [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 and 16 |
+| D1 (attach sidecars to the pinned source; not design decision D1) | chunk 17 |
 
-**C3a. Recolour `continue`s — written 2026-09-25, certified with C3b.**
-Case 1 on all four frame combinations: recolour parent, uncle, and
-grandparent through `rb_set_parent_color`, refold at the recoloured models,
-`ctx_insert_case1_left_step`/`_right_step` for the restated invariants at the
-grandparent, `node = gparent; parent = rb_parent(node); continue;` owing all
-nine invariants and `decreases c`. Every tactic of every arm is checked on
-the unchanged source; the loop rule itself is certified once the
-uncle-black arms also end, which is C3b.
+Chunks 1, 3, 8, 10, and 15 have no unlanded prerequisite. None depends on the
+[authority migration](authority-migration.md): the rbtree fixtures use neither
+`count(...)` nor `guarded_by`.
 
-**C3b. Rotation `break`s.** Cases 2 and 3 on both frames: the writes
+### Insert
+
+Case 1 (uncle red) is written on all four frame combinations and every tactic
+is checked on the unchanged source; the loop rule itself is certified once
+the uncle-black arms also end, which is chunk 6. Measure verify time again as
+the rotation arms land: a superlinear step is a scaling regression under
+`docs/internals/verification-efficiency.md`.
+
+**Chunk 1. Last two left-left leaves.** Recheck the frontier on current
+master, resolve the `step()` that stops on two statement successors in the
+inlined `__rb_rotate_set_parents` (see
+[egraph.md](egraph.md#producer-recorded-read-identities-2026-09-30)), and
+finish the two case-3 leaves under a `Right` great-grandparent frame in the
+cursor-`Left`, grandparent-`Left` combination.
+
+**Chunk 2. Empty-uncle leaves of left-left.** The text is the same after
+refolding the uncle as `Empty`. Depends on 1.
+
+**Chunk 3. Case-2 step theorems.** `_step` forms of `ctx_insert_case2_*` in
+the model, in the shape of `ctx_insert_case1_*_step` and
+`ctx_insert_case3_*_step`. Pure; no C.
+
+**Chunk 4. Right-right combination.** The mirror of left-left: case 3 only,
 through `__rb_rotate_set_parents` and `__rb_change_child`, refolds at the
-rotated models, `ctx_insert_case2_*` and `_case3_*`, then `break` owing the
-binders. Depends on C3a.
+rotated models, `break` owing the binders. Depends on 2.
 
-**C3c. Post-loop and `rb_insert_color`.** The body's end, the post-loop
+**Chunk 5. Left-right combination.** Case 2's rotation at the parent, then
+case 3. Depends on 3 and 4.
+
+**Chunk 6. Right-left combination.** The mirror of chunk 5. Depends on 5.
+
+**Chunk 7. Post-loop and `rb_insert_color`.** The body's end, the post-loop
 `is_rb_root(plug(ctx.model, sub.model)) == 1`, in-order preservation and
-parent consistency from the joined exits, and `rb_insert_color`'s own
-proof by `execute(); simp();`. `expect pass`, audit-clean; a negative that
-skips a recolour. Depends on C3b.
+parent consistency from the joined exits, and `rb_insert_color`'s own proof
+by `execute(); simp();`. `expect pass`, audit-clean; a negative that skips a
+recolour; the verify-time measurement over the completed body. Depends on 6.
 
-**C5. Erase (D3, D4, D10).** `__rb_erase_augmented` and
-`____rb_erase_color`, contracted so the in-order sequence loses exactly
-the designated node and the exit model is red-black; the two-child case
-uses the splice lemma. Larger than insert; expect the same cadence of
-verifier gaps. Depends on C3c.
+### Traversals
 
-**C6. Augmented variants and callbacks.** `__rb_insert_augmented`,
+`mdtests/rb_first_last.md` already proves `rb_first` and `rb_last`: both
+structural results and their positions in the entry tree's in-order sequence,
+with the null result and structural ownership preserved on an empty tree. The
+assignment-expression parser/lowering prerequisite is delivered for simple
+scalar variable targets, including the unchanged `rb_next` guard.
+
+**Chunk 8. `rb_next`.** The complete descent and ascent on the node-keyed
+model, on the verbatim body. The unchanged regression currently stops at the
+first descent branch because `rb_at(node)` is folded and no view of
+`node->rb_right` has yet been published.
+
+**Chunk 9. `rb_prev`.** The mirror of chunk 8. Depends on 8.
+
+### Erase (D3, D4, D10)
+
+Larger than insert; expect the same cadence of verifier gaps, and expect this
+split to be revised once chunk 11 is under way.
+
+**Chunk 10. Erase model theorems.** The splice lemma for the two-child case
+and one step theorem per rebalancing case, D10 shape. Pure; no C.
+
+**Chunk 11. `__rb_erase_augmented`.** The unlink in its no-child, one-child,
+and two-child cases, contracted so the in-order sequence loses exactly the
+designated node. Depends on 7 and 10.
+
+**Chunk 12. `____rb_erase_color`, left-sibling cases.** A checked measure on
+every continuing back edge. Depends on 11.
+
+**Chunk 13. `____rb_erase_color`, right-sibling cases, and `rb_erase`.** The
+mirror of chunk 12; the exit model is red-black; a negative. Depends on 12.
+
+### Augmented
+
+**Chunk 14. Augmented variants and callbacks.** `__rb_insert_augmented`,
 `rb_erase_augmented`, and the propagate/copy/rotate callbacks over an
-abstract augmentation. Depends on C3c and C5. The callback and resource
+abstract augmentation. Depends on 7 and 13. The callback and resource
 transport it needed landed on 2026-09-15 (one contract interface, one
 checked transition per application, dependent clause sets carried across
 calls; see [the architecture note](../docs/internals/architecture.md) and
@@ -607,22 +657,22 @@ broader [global initializer issue](global-variables.md) is P2. Keep the table
 const and preserve the callback guarantees; the no-op fixture is not evidence
 for the complete mutation-capable augmentation proof.
 
-**C4b. Traversals.** `rb_first`, `rb_last`, `rb_next`, `rb_prev` on the
-verbatim bodies. The assignment-expression parser/lowering prerequisite is
-delivered for simple scalar variable targets, including the unchanged
-`rb_next` guard. `mdtests/rb_first_last.md` now proves both structural results
-and their positions in the entry tree's in-order sequence: for a non-empty
-tree, `rb_first` is the first element and `rb_last` is the last; both guarded
-contracts preserve the existing null result and structural ownership on an
-empty tree. Remaining: prove the complete `rb_next`/`rb_prev` descent and ascent
-on the node-keyed model. The unchanged regression currently stops at the first
-descent branch because `rb_at(node)` is folded and no view of `node->rb_right`
-has yet been published.
+### Pinned source
 
-**D1. Attach the Phase C sidecars to the imported pinned translation
-unit** and replace the verbatim-copy fixtures with the pinned regression.
-Depends on C3c, C5, C6, C4b, and
-[kernel-scale-preprocessing.md](kernel-scale-preprocessing.md).
+**Chunk 15. Import the pinned translation unit.** The retained C semantics
+the expanded `lib/rbtree.c` needs (`typeof`, statement expressions,
+branch-expectation builtins, and the export/assembly storage decisions), as
+scoped in [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md). May
+split once the first rejection on the pinned source is known.
+
+**Chunk 16. Pinned inline helpers.** The actual `rbtree.h` and
+`rbtree_augmented.h` inline bodies as called from the pinned source, per
+[linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md). Depends on
+15.
+
+**Chunk 17. Attach the sidecars to the pinned translation unit** and replace
+the verbatim-copy fixtures with the pinned regression. Depends on 9, 14, and
+16.
 
 ## Structural termination audit, 2026-09-14
 
