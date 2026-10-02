@@ -153,6 +153,25 @@ this list.
    rule or query-time resource publication. Other provisional read boundaries
    and the symbolic per-access supplier migration remain to be reduced before
    the general retries can be removed.
+   **Symbolic write-selection slice:** a prepared affine address class now
+   retains all flat memory owners separately from views. When the class has
+   exactly one owner with symbolic bounds, `memory_write_range` selects that
+   occurrence without iterating views, then checks positive quantity and the
+   ordinary access bounds. Late base equalities, resource deltas, and persistent
+   forks maintain the summary. Ambiguous classes return unknown before checking
+   candidates; the general compatibility retries still exist outside this
+   fragment. A red scaling regression measured persistent-index work growing
+   from 672 to 9,837 as same-class views grew from 16 to 1,024; indexed selection
+   removes that traversal. Controls cover missing equality/bounds, endpoints,
+   access width, view-only authority, nonpositive quantities, and owner deltas.
+
+   The C reduction `q[i] = 7` with checked `p == q`, `1 <= i`, `i < n`,
+   and `owns p[1..n]` still fails ordinary verification. Instrumentation confirmed
+   that execution reaches write permission with an **unprepared** resource
+   index, so this new prepared fragment is unavailable there. Retain this
+   unchanged-source reduction when fixing execution's publication boundary;
+   do not publish ambient resources inside permission lookup or claim this
+   slice fixes C alias stores. General retry deletion remains unfinished.
 5. **Delete symbolic-range read searches.** Migrate
    `memory_state::resource_context_has_symbolic_range_read`. Remove its
    exact-base-then-whole-context retry. Reuse the symbolic supplier evidence
