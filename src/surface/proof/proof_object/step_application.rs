@@ -773,6 +773,15 @@ impl<'a> Proof<'a> {
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
         }
+        // An unsigned order is the signed order of sign-flipped operands,
+        // which the arithmetic certificates treat as opaque atoms. A goal
+        // one uint32 lemma away from a listed premise is closed by that
+        // lemma, recorded as the `apply` steps it is.
+        if let ProofStep::ArithmeticUsing(premises) = &step
+            && let Some(proof) = self.try_unsigned_order_lemma_using(premises)
+        {
+            return Ok(proof);
+        }
         if matches!(
             &step,
             ProofStep::Step | ProofStep::StepContract(_) | ProofStep::StepCall(_)

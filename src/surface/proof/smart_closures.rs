@@ -4283,6 +4283,7 @@ impl<'a> Proof<'a> {
         &self,
         lower: &Bitvector32Term,
         upper: &Bitvector32Term,
+        surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
     ) -> Option<(
         Self,
         ClickProposition,
@@ -4293,7 +4294,7 @@ impl<'a> Proof<'a> {
             ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
             true,
         );
-        if let Some(surface) = self.unsigned_surface_fact(&less) {
+        if let Some(surface) = surface_fact(&less) {
             let (lower, upper) = surface_strict_parts(&surface)?;
             return Some((self.clone(), surface, lower, upper));
         }
@@ -4301,7 +4302,7 @@ impl<'a> Proof<'a> {
             ConditionTerm::unsigned_greater_than(upper.clone(), lower.clone()),
             true,
         );
-        let surface = self.unsigned_surface_fact(&greater)?;
+        let surface = surface_fact(&greater)?;
         let (lower, upper) = surface_strict_parts(&surface)?;
         let reversed = ClickProposition::Comparison {
             left: lower.clone(),
@@ -4354,11 +4355,47 @@ impl<'a> Proof<'a> {
     /// is looked up exactly, so the work is a fixed number of lookups
     /// whatever the context holds.
     pub(super) fn try_unsigned_order_lemma(&self) -> Option<Self> {
+        self.try_unsigned_order_lemma_from(&|kernel| self.unsigned_surface_fact(kernel))
+    }
+
+    /// [`Self::try_unsigned_order_lemma`] with the premise taken from the
+    /// surface premises a tactic lists, and from nowhere else: the step
+    /// `arithmetic() using { ... }` promises to use exactly those.
+    pub(in crate::surface::proof) fn try_unsigned_order_lemma_using(
+        &self,
+        surface_premises: &[ClickProposition],
+    ) -> Option<Self> {
+        // Only an unsigned order goal has a lemma, so only then are the
+        // listed premises lowered.
+        unsigned_order_parts(self.goal()?)?;
+        let listed = surface_premises
+            .iter()
+            .filter_map(|surface| {
+                let kernel = self
+                    .lower_cited_surface_proposition(surface, "`arithmetic using` premise")
+                    .ok()?;
+                self.facts()
+                    .listed_premise_available(&kernel, &[], false)
+                    .then(|| (kernel, surface.clone()))
+            })
+            .collect::<Vec<_>>();
+        self.try_unsigned_order_lemma_from(&|kernel| {
+            listed
+                .iter()
+                .find(|(listed, _)| listed == kernel)
+                .map(|(_, surface)| surface.clone())
+        })
+    }
+
+    fn try_unsigned_order_lemma_from(
+        &self,
+        surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
+    ) -> Option<Self> {
         let (order, left, right) = unsigned_order_parts(self.goal()?)?;
         let zero = Bitvector32Term::Constant(0);
         let one = Bitvector32Term::Constant(1);
         let reversed_fact = |condition: ConditionTerm, name: &str, strict: bool| {
-            let surface = self.unsigned_surface_fact(&Proposition::ConditionIs(condition, true))?;
+            let surface = surface_fact(&Proposition::ConditionIs(condition, true))?;
             let (lower, upper) = if strict {
                 surface_strict_parts(&surface)?
             } else {
@@ -4379,7 +4416,7 @@ impl<'a> Proof<'a> {
                 if left == Bitvector32Term::Subtract(Box::new(right.clone()), Box::new(one.clone()))
                 {
                     if let Some((proof, premise, _, value)) =
-                        self.unsigned_strict_fact(&zero, &right)
+                        self.unsigned_strict_fact(&zero, &right, surface_fact)
                     {
                         return proof.close_with_unsigned_lemma(
                             "uint32_positive_predecessor_strictly_decreases",
@@ -4391,7 +4428,7 @@ impl<'a> Proof<'a> {
                     // because `lower <u upper`.
                     if let Bitvector32Term::Subtract(upper, lower) = &right
                         && let Some((proof, premise, lower, upper)) =
-                            self.unsigned_strict_fact(lower, upper)
+                            self.unsigned_strict_fact(lower, upper, surface_fact)
                     {
                         // The difference is spelled from the premise's own
                         // operands, so it lowers to the goal's term.
@@ -4438,7 +4475,7 @@ impl<'a> Proof<'a> {
                     && bound != 0
                     && lower == bound - 1
                     && let Some((proof, premise, value, bound)) =
-                        self.unsigned_strict_fact(value, right_offset)
+                        self.unsigned_strict_fact(value, right_offset, surface_fact)
                 {
                     return proof.close_with_unsigned_lemma(
                         "uint32_difference_decreases_after_increment",
@@ -4457,7 +4494,7 @@ impl<'a> Proof<'a> {
                 if let Bitvector32Term::Add(value, amount) = &left
                     && amount.as_ref() == &one
                     && let Some((proof, premise, value, upper)) =
-                        self.unsigned_strict_fact(value, &right)
+                        self.unsigned_strict_fact(value, &right, surface_fact)
                 {
                     return proof.close_with_unsigned_lemma(
                         "uint32_increment_upper_bound",
