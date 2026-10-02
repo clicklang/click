@@ -779,7 +779,7 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
     }
     format!(
         "could not make fact transport premises explicit: {}",
-        error.message()
+        error.raw_summary()
     )
 }
 

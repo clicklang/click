@@ -1277,7 +1277,7 @@ fn validate_iterated_resource_clauses(
         .map_err(|error| {
             ClickError::new(format!(
                 "{context}: the guard must read only cells the same body owns, so that it cannot change while the resource is folded\n{}",
-                error.message()
+                error.raw_summary()
             ))
         })?;
     }

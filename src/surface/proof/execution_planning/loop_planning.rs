@@ -1200,10 +1200,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 environment.function.composite_resource_definitions(),
             )
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` (loop {loop_index} state join): {}",
-                    error.message()
-                ))
+                error.with_context(format!("`{claim_label}` (loop {loop_index} state join)"))
             })?;
             leaf.clone()
         } else {
@@ -1227,10 +1224,15 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 None => Ok(leaf.clone()),
             })
             .map_err(|error| {
-                ClickError::new(format!(
-                    "`{claim_label}` (loop {loop_index} invariant bundle preservation): {}",
-                    error.message()
-                ))
+                let error = error.with_context(format!(
+                    "`{claim_label}` (loop {loop_index} invariant bundle preservation)"
+                ));
+                // A closer the `loop` tactic generated is no written tactic;
+                // the `loop` tactic is where the user reads its failure.
+                match environment.frontier_loop_source {
+                    Some(source) => error.attributed_to_source_tactic(source.loop_source_index),
+                    None => error,
+                }
             })?
         };
         let checked_execution = checked.execution_view()?.execution.clone();

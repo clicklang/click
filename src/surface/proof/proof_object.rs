@@ -2358,7 +2358,7 @@ impl<'a> NestedTacticCaptureGuard<'a> {
         let occurrence = after
             .certificate_after_node(Some(&self.checkpoint.node))
             .map(|certificate| certificate.to_proof_tactics())
-            .map_err(|error| error.message().to_string());
+            .map_err(|error| error.raw_summary().to_string());
         self.capture.finish(occurrence);
         self.finished = true;
     }

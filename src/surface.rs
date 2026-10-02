@@ -6924,8 +6924,30 @@ impl ClickError {
         }
     }
 
+    /// A summary is one error's own statement. A rendered diagnostic (the
+    /// stage, location, premises and search candidates `message()` appends)
+    /// is not part of one: an error built from another error's rendered text
+    /// would report that whole block as its summary. Wrap an error with
+    /// `with_context`, or quote its `raw_summary()`, instead. A summary that
+    /// arrives with a rendered block anyway keeps only the text before it.
+    fn summary_without_rendered_diagnostic(mut summary: String) -> String {
+        const RENDERED_SECTIONS: [&str; 2] = ["\n  stage: ", "\n  search candidates:"];
+        let rendered = RENDERED_SECTIONS
+            .iter()
+            .filter_map(|section| summary.find(section))
+            .min();
+        debug_assert!(
+            rendered.is_none(),
+            "an error summary contains another error's rendered diagnostic: {summary}"
+        );
+        if let Some(rendered) = rendered {
+            summary.truncate(rendered);
+        }
+        summary
+    }
+
     fn new(message: impl Into<String>) -> Self {
-        let message = message.into();
+        let message = Self::summary_without_rendered_diagnostic(message.into());
         let message = match crate::instrumentation::exceeded_verification_limit_context() {
             // Deliberate limit diagnostics already include the active context
             // and often add useful target/premise detail. Preserve those;
@@ -6953,9 +6975,10 @@ impl ClickError {
 
     pub(crate) fn with_diagnostic(
         summary: impl Into<String>,
-        diagnostic: proof_diagnostics::ProofFailureDiagnostic,
+        mut diagnostic: proof_diagnostics::ProofFailureDiagnostic,
     ) -> Self {
-        let summary = summary.into();
+        let summary = Self::summary_without_rendered_diagnostic(summary.into());
+        diagnostic.reason = Self::summary_without_rendered_diagnostic(diagnostic.reason);
         let summary = match crate::instrumentation::exceeded_verification_limit_context() {
             Some(context) if !summary.contains(&context) => {
                 format!("verification budget exhausted inside {context}")
@@ -7381,6 +7404,20 @@ impl ClickError {
             diagnostic.reason = reason;
             self.diagnostic = Some(std::sync::Arc::new(diagnostic));
             self.rendered = std::sync::OnceLock::new();
+        }
+        self
+    }
+
+    /// Attributes a failure no written tactic owns to the written tactic
+    /// that generated the failing step, so the report can show its source.
+    /// A failure that already names a written tactic keeps it.
+    pub(crate) fn attributed_to_source_tactic(mut self, source_index: usize) -> Self {
+        if let Some(diagnostic) = self.diagnostic.as_mut()
+            && diagnostic.origin.source_tactic_path.is_none()
+        {
+            std::sync::Arc::make_mut(diagnostic)
+                .origin
+                .source_tactic_path = Some(vec![source_index]);
         }
         self
     }

@@ -166,13 +166,13 @@ pub(super) fn tokenize(
             }
             '"' => {
                 let (value, next_index) = tokenize_string(&chars, index)
-                    .map_err(|error| ClickError::new(format!("{position}: {}", error.message())))?;
+                    .map_err(|error| error.with_context(position.to_string()))?;
                 tokens.push(Token::String(value));
                 index = next_index;
             }
             '\'' => {
                 let (value, next_index) = tokenize_char_literal(&chars, index)
-                    .map_err(|error| ClickError::new(format!("{position}: {}", error.message())))?;
+                    .map_err(|error| error.with_context(position.to_string()))?;
                 tokens.push(Token::CharLiteral(value));
                 index = next_index;
             }

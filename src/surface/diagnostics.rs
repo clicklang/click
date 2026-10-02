@@ -222,7 +222,7 @@ pub(super) fn describe_unexpressed_pure_facts(
         format!(
             "{}: {}",
             describe_pure_fact(fact, parameters, arguments),
-            error.message()
+            error.raw_summary()
         )
     })
 }
