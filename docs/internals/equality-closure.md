@@ -542,10 +542,11 @@ views where the nearest predecessor is too short. A read stops at the first
 candidate accepted by the ordinary permission and bounds checks; it does not
 materialize every overlapping view. Updates copy only the affected tree path,
 and class merges shift only the smaller resource payload's interval tree.
-The occurrence count detects incomplete index coverage and selects the general
-checker before lookup; an indexed miss is final. This avoids scanning unrelated
-ranges for both hits and misses, including resources published before a later
-address equality. Reads outside that fragment retain the general checker.
+The occurrence count detects incomplete index coverage. A miss is final for
+a complete concrete fragment; incomplete fragments use the bounded candidate
+classifier described below. Positive hits retain their suppliers even when
+coverage is incomplete. Neither case scans unrelated resources, including
+resources published before a later address equality.
 Whole-cell read hits also use an exact-start payload attached to typed graph
 address classes. Offset congruence and late same-snapshot loaded-pointer
 merges update this payload through the graph's persistent term-merge stream.
@@ -563,15 +564,16 @@ contributes at most two footprints (including the logical pointer-slot rule),
 and merges move both indexes from the smaller occurrence payload. Input
 registration still belongs to the execution proof boundary. An unbound class
 is unknown: scalar arithmetic or snapshot transport may justify an equality
-outside this closure, so that case retains the existing general checker. Candidate delivery is lazy; equality selects the
+outside this closure, but permission lookup cannot search for that evidence.
+Candidate delivery is lazy; equality selects the
 occurrence's own start and the ordinary checker still validates its quantity,
 access mode, and bounds. The logical four-byte pointer-slot convention remains
 unchanged, including interior reads of longer int32 ranges, which cannot use
 the whole-cell path. Unrelated scalar equality no longer disables this cell
 fragment. The same address payload supplies fold candidates, whose coverage
 and consumption checks remain authoritative. Cold lookups cannot trigger full
-input registration; they retain the existing affine/general paths until a
-proof boundary establishes complete coverage. Branches inherit registered
+input registration; the shared classifier uses retained evidence or refuses
+unprepared selection. A proof boundary establishes input publication. Branches inherit registered
 persistent roots. Pairing now keys cached views by the persistent history of
 admitted pointer, offset, int32, and checked-read equalities, independently of
 query registrations. The initial boundary registers a premise-free resource
@@ -652,12 +654,9 @@ class merges move the smaller payload and query checks inspect a class marker.
 Multi-size regressions cover unrelated scalar facts, same-class non-supplier
 ranges, and repeated forks beside already-affected parent applications.
 Unsupported range coordinates, incomplete read-core coverage, and unregistered
-fragments still report unknown before selection. Removing those unknown cases
-and their general checker belongs to the remaining containment migrations.
-
-Symbolic containment, partial-range reads with non-affine offset aliases, and
-snapshot-based matching still need complete indexed coverage before the
-general read lookup can be retired. The interval summary is part of the trusted kernel's derived index;
+fragments report unknown when the shared candidate service below cannot select
+a checked supplier. General permission queries refuse these cases without a
+compatibility search. The interval summary is part of the trusted kernel's derived index;
 it creates no proposition or access capability.
 Candidate footprint calculation shares the kernel's existing logical
 pointer-cell rule: a pointer read may use one 4-byte logical element, while
@@ -689,8 +688,8 @@ these calls neither reconstruct the ambient fact list nor register ambient
 resources during a read query. A reduced fold of `tag(q[i])` through a view of
 `p[0..n]` uses checked `p == q` and `0 <= i < n`, expands, and independently
 reverifies. Dropping the equality or either bound refuses the read. This
-corrects context loss at the fold boundary; the general permission fallbacks
-remain pending their separate supplier migration.
+corrects context loss at the fold boundary; general permissions now share the
+bounded supplier service below.
 An indexed miss or failed candidate check is decisive for this covered
 fragment; it does not retry spellings or scan the remaining resources.
 Whole-cell writes additionally use a separate footprint payload containing
@@ -702,8 +701,9 @@ exact-size view cannot hide a larger owner. The read and write payloads share
 the existing footprint/width eligibility rule and move only the smaller
 occurrence payload on a class merge. Exact candidates do not depend on an
 affine coordinate bucket. Unbound footprints and unsupported containment or
-snapshot shapes still select the general lookup before candidate checks;
-unknown equality is not disequality. The existing logical pointer-cell width
+snapshot shapes proceed through the shared candidate classifier below; when
+it cannot select a supplier, permission is refused. Unknown equality is not
+disequality. The existing logical pointer-cell width
 rule is preserved for both access judgments. Input registration remains a
 proof-boundary operation, not a scan performed by a cold lookup.
 
@@ -717,29 +717,24 @@ The regression asks the read and write indexes directly before any equality
 warm-up, rejects sibling, displacement, width, and snapshot mismatches, and
 checks cold address registration at multiple unrelated-definition counts.
 
-Structural read checks and structural "already held" range checks no longer
-scan a pointer block's resources. They share a publication-maintained index
-of base shapes and affine origins, plus the raw interval summary for complete
-concrete coverage at a plain origin with constant displacement. A structural
-read can also name its base as either explicit operand of offset addition;
-those subterms select occurrences directly. Cold queries do not register the
-resource input in a graph. Updates and consumption maintain persistent roots,
-and branch copies share them.
+Structural "already held" range checks no longer scan a pointer block's
+resources. They use a publication-maintained index of base shapes and affine
+origins, plus the raw interval summary for complete concrete coverage at a
+plain origin with constant displacement. Updates and consumption maintain
+persistent roots, and branch copies share them. The separate structural-read
+permission API has been retired; reads use the shared graph candidate service.
 
-These structural indexes are part of the trusted kernel. Shape fingerprints
-ignore snapshots only to select candidates for the existing structural
-judgment; a hash match or collision never proves pointer equality, range
-containment, initialization, or permission. Each selected occurrence still
-passes the original check, including element width, exact signed displacement,
-ownership mode, and the logical pointer-cell read convention. Proved graph
-aliases do not become structural matches. Multi-size regressions cover cold
-hits and misses beside unrelated pointer parameters, and controls cover
-partial ranges, consumption, branch isolation, and read width.
+The structural index is part of the trusted kernel. Shape fingerprints ignore
+snapshots only to select candidates for the existing structural judgment; a
+hash match or collision never proves pointer equality, range containment,
+initialization, or permission. Each selected occurrence still passes the
+original range check. Proved graph aliases do not become structural matches.
+Multi-size regressions cover cold hits and misses beside unrelated pointer
+parameters, and controls cover partial ranges, consumption, and branch isolation.
 
-This retires the two structural block scans, not all general permission
-lookup. General read/write checks still have spelling and resource-search
-paths for addresses outside the complete indexed fragments. Checked resource
-construction now owns attachment: an empty input captures the closed graph
+This retires the two structural block scans. General read/write permission
+also uses the shared candidate service described below, with bounded refusal
+outside its supported fragments. Checked resource construction owns attachment: an empty input captures the closed graph
 before insertion, and composition advances a prepared lineage. Normalization
 already visits its full input and publishes even when no representation changes. These boundaries also
 cover temporary contexts built during resource-clause evaluation, independent
@@ -782,9 +777,8 @@ slice migrates direct satisfaction from a selected occurrence.
 An unchecked context with no attachment remains unprepared. Extending a valid
 ambient context through a delta-only API does not silently publish all its
 unrelated resources; use a whole-input normalization/publication boundary when
-attachment is required. Removing the remaining general paths still needs
-migration of unchecked temporary producers and complete indexed selection for
-symbolic containment and retained load-origin forms. Forks of a published
+attachment is required. Unsupported symbolic containment and retained
+load-origin forms refuse when the indexed service cannot select a supplier. Forks of a published
 input retain their pairing. An attempted replacement by address anchors alone rejected existing
 completed-read and borrowed-buffer proofs whose temporary contexts had no
 complete attachment, even when the graph knew their base equality; it is not
@@ -840,37 +834,50 @@ late endpoint equality, snapshots, sibling contexts, retired occurrences,
 read/write authority, and same-base non-supplier scaling at multiple sizes.
 
 The symbolic-byte-extent consumer uses this service for known selections.
-Its old unknown-case search remains for milestone 5. General read/write callers
-and structural satisfaction still require milestones 4 and 6; this interface
-is the common support they will use, not a claim that all scans are gone.
+Its old unknown-case search remains for milestone 5. Satisfaction and storage
+consumers retain the separately tracked work in milestones 6–7.
 
-A prepared affine address bucket also retains all flat memory owner occurrences
-separately from views, regardless of whether their extent is concrete or their
-quantity is positive. After exact and concrete interval selection are unknown,
-`write_access_entries` may select a sole owner with symbolic bounds in a complete
-affine block. It checks cardinality without enumerating views or ambiguous owner
-sets. The existing checker then validates positive quantity, alignment, width,
-and bounds using the retained graph checkpoint. A failed selected-owner check
-is final. Resource deltas and graph block merges maintain this persistent summary;
-permission lookup never initializes it by traversing ambient resources.
+General read/write permission uses one shared classifier. Exact address/start
+payloads include eligible partial reads; physical interval hits select retained
+suppliers even when the index cannot establish complete coverage. A miss is
+final only for a complete concrete interval fragment. Otherwise, prepared base
+and affine-class summaries can select a sole supplier by cardinality. Symbolic
+read starts have their own class payload, so a partition rooted in an outer
+storage block does not hide its logical pointer base. A multi-size regression
+selects the left partition beside unrelated same-base ranges without searching
+them; missing bounds and view-only write authority still refuse. Ambiguous
+or unsupported queries refuse before checking. No consumer retries spellings,
+searches a block/frame, or tries another strategy after a failed supplier check.
+Views supply read authority; writes select owners. Quantity, alignment, width,
+signed bounds, initialization, and no-wrap obligations remain checked separately.
 
-This fragment applies only to prepared inputs. Function-entry construction
-publishes its selected resources against the final exported pure context, once
-after provisional clause evaluation and entry-fact construction. Both proof
-drivers retain that context through `ProofFacts::from_source`: selected-fact
-indexes are built at the root, while the source's trusted graph is shared.
-A source with no cached context builds one once. Root conversion must not erase
-the lineage by converting a cached source to a plain proposition vector.
-Deterministic regressions check indexed entry selection and graph sharing with
-zero pure-history readmission over increasing root sizes. A same-base symbolic
-store expands and independently rechecks, including authority/bounds controls.
+Each address has a stable raw application connected to its checked affine
+projection. Completed typed-read equality joins those address applications as
+well as the pointer equality service. Explicit query subterms register before
+pairing class deltas with resource payloads. Opaque pointer-read tokens cannot
+be treated as ordinary offsets using coarse block membership: their supplier
+base must have a checked graph bridge to the query. Persistent siblings retain
+their own admitted read evidence.
 
-The unchanged reduced alias store `q[i] = 7` with `p == q` and `owns p[1..n]`
-now reaches permission lookup with a prepared input but still fails its relative
-address bounds check. Aligning that access through the shared candidate/coverage
-interface remains separate work. Unsupported permission queries still have the
-milestone-4 compatibility path. The symbolic-owner regression measures both
-checker and persistent-index work beside increasing same-class symbolic views.
+`MemoryAccessCandidates::address` aligns the query against the selected
+occurrence's base using the same retained graph. It preserves explicit byte
+increments and their bounds obligations. The unchanged alias store `q[i] = 7`
+with `p == q` and `owns p[1..n]` verifies, expands, and independently rechecks;
+missing equality, bounds, and write authority still reject it.
+
+Function entry and certification publish selected inputs at their construction
+boundary. Clause prefixes capture their checked graph while empty and maintain
+occurrence deltas as they grow. Proof roots and planners use `from_source` to
+retain the graph instead of rebuilding a fresh lineage from a proposition
+vector. Reused borrowed-input authority and certification caller states pair
+against the new claim's premise context at those explicit producer boundaries.
+The shared kernel contract-entry builder also pairs its selected caller and
+entry input before clause evaluation; independent certification uses that same
+entry interface. The surface entry view pairs its selected resource input
+after choosing the kernel-admitted premise list, before execution starts.
+Permission queries never initialize an index by traversing ambient input.
+Deterministic regressions measure checker and persistent-index work beside
+increasing unrelated resources, same-class views, late merges, and forks.
 
 ## Resource producer publication audit
 

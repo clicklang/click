@@ -2990,7 +2990,9 @@ impl PureFactContext {
         let resolved = if pointer == base || self.pointers_known_equal(pointer, base) {
             base.clone()
         } else {
-            crate::kernel::reasoning::resolve_symbolic_pointer_alias(pointer, self)
+            self.equality_graph
+                .pointer_at_base(pointer, base)
+                .unwrap_or_else(|| pointer.clone())
         };
         let pointer = &resolved;
         let proves_order = |left: &Bitvector32Term, right: &Bitvector32Term, strict: bool| {

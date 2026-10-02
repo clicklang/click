@@ -2933,6 +2933,12 @@ fn verify_c0_sources_in_context(
                 bytes: Bitvector32Term::Constant(*bytes),
             });
         }
+        // Certification reuses the checked caller's authority identities,
+        // while its selected premises form a fresh proof context. Pair that
+        // explicit input once here, before annotations or contract checking.
+        certification_state
+            .resources()
+            .synchronize_memory_equalities(&assumptions_from_propositions(&certification_facts));
         let has_frontier_loop_rules = frontier_loop_artifacts.is_some();
         let contract_function = annotated_function_with_assumptions(
             &certification_function_block,

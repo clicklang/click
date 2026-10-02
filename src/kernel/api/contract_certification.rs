@@ -1388,6 +1388,15 @@ fn c_function_contract_entry_facts(
             proposition,
         );
     }
+    // The trusted contract-entry builder creates its admissible premise context.
+    // Attach the selected caller input to that context once, before the
+    // contract clauses are evaluated; clause reads never publish a frame.
+    caller_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
+    entry_state
+        .resources()
+        .synchronize_memory_equalities(&assumptions);
     let (required_resources, required_entry_clauses) =
         match evaluate_function_resource_context_with_metadata(
             &entry_state,

@@ -25572,6 +25572,7 @@ fn evaluate_resource_clauses_against_whole_section(
     // Each successful clause extends a shared persistent prefix. Rebuilding
     // every earlier clause for each new one makes a flat contract quadratic.
     let mut evaluation_resources = state.resources().clone();
+    evaluation_resources.capture_empty_memory_input(assumptions);
     let mut failures: Vec<Option<CRuntimeError>> = vec![None; resources.len()];
     let mut dependencies: Vec<Vec<CResourceFact>> = vec![Vec::new(); resources.len()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -26445,6 +26446,7 @@ pub(in crate::kernel) fn resource_clause_section_supply(
     assumptions: &PureFactContext,
 ) -> ResourceContext {
     let mut base = state.resources().clone();
+    base.capture_empty_memory_input(assumptions);
     for fact in supplied {
         if !matches!(fact.resource(), CResource::Instance(_))
             || !base.contains_exact_representation(fact)

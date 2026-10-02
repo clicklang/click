@@ -627,7 +627,8 @@ fn typed_cell_candidates_follow_raw_offset_syntax_and_check_ownership() {
             .without_fact_incrementally(&cell(alias.clone()), &empty)
             .is_none()
     );
-    let view_only = ResourceContext::new().unchecked_with_fact(view(&owner, 0, 4));
+    let view_only =
+        ResourceContext::new_with_equalities(&empty).unchecked_with_fact(view(&owner, 0, 4));
     assert!(view_only.permits_memory_read(&alias, 4, &facts));
     assert!(view_only.memory_write_range(&alias, 4, &facts).is_none());
     assert!(
@@ -806,7 +807,7 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
 }
 
 #[test]
-fn unspellable_affine_shifts_cannot_produce_decisive_cell_misses() {
+fn exact_address_classes_survive_unspellable_affine_shifts() {
     let owner = Pointer::symbolic(Variable(855_000));
     let alias = Pointer::symbolic(Variable(855_001));
     let x = PointerOffsetTerm::Variable(Variable(855_002));
@@ -831,9 +832,17 @@ fn unspellable_affine_shifts_cannot_produce_decisive_cell_misses() {
         true,
     );
     assert!(facts.equality_graph.are_equal(&owner, &displaced));
+    let mut candidates = resources
+        .concrete_read_entries(&displaced, 4, &facts)
+        .expect("exact address equality does not require spelling an affine displacement");
+    let entry = candidates.next().expect("retained supplier");
+    assert_eq!(candidates.address(entry), Some(owner.clone()));
+    assert!(resources.permits_memory_read(&displaced, 4, &facts));
+    // A nearby address has no exact class witness; an unspellable coordinate
+    // cannot turn the interval classifier's unknown into a decisive miss.
     assert!(
         resources
-            .concrete_read_entries(&displaced, 4, &facts)
+            .concrete_read_entries(&displaced.offset_by_bytes(8), 4, &facts)
             .is_none()
     );
 }
@@ -975,9 +984,11 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
         .clone()
         .without_exact_representation(&short)
         .unwrap();
-    // A partial read of the longer range is still allowed by the existing
-    // range checker; removing its whole-cell counterpart must prune size 4.
-    assert!(removed.concrete_read_entries(&alias, 4, &facts).is_none());
+    // Removing the whole-cell counterpart prunes its size-4 payload. The
+    // remaining longer view supplies an indexed partial-read candidate.
+    let partial = removed.concrete_read_entries(&alias, 4, &facts).unwrap();
+    assert!(!partial.exact());
+    assert_eq!(partial.count(), 1);
     assert!(removed.permits_memory_read(&alias, 4, &facts));
     assert!(
         removed
@@ -1211,10 +1222,24 @@ fn interval_completeness_is_local_and_follows_late_offset_dependencies() {
         ),
         true,
     );
-    assert!(
+    assert_eq!(
         resources
             .concrete_read_entries(&base.offset_by_bytes(12), 4, &connected)
+            .expect("retained interval hit survives incomplete coverage")
+            .count(),
+        1
+    );
+    assert!(
+        resources
+            .concrete_read_entries(&base.offset_by_bytes(48), 4, &connected)
             .is_none()
+    );
+    assert_eq!(
+        resources
+            .concrete_read_entries(&base.offset_by_bytes(48), 4, &initial)
+            .expect("complete concrete miss")
+            .count(),
+        0
     );
     assert!(
         resources
@@ -1489,5 +1514,56 @@ fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
     assert_eq!(
         resources.memory_write_range(&query, 1, &facts),
         Some(&range)
+    );
+}
+
+#[test]
+fn symbolic_partition_read_start_is_indexed_without_searching_other_ranges() {
+    let base = Pointer::symbolic(Variable(899_000));
+    let i = Bitvector32Term::Variable(Variable(899_001));
+    let split = Bitvector32Term::Variable(Variable(899_002));
+    let end = Bitvector32Term::Variable(Variable(899_003));
+    let empty = PureFactContext::new();
+    let facts = empty
+        .clone()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(i.clone(), split.clone()),
+            true,
+        );
+    let query = base.offset_by_elements(i, 1);
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut resources = ResourceContext::new_with_equalities(&empty)
+            .unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), split.clone(), 1),
+            ))
+            .unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(base.clone(), split.clone(), end.clone(), 1),
+            ));
+        for k in 1..=size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(base.clone(), k.into(), end.clone(), 1),
+            ));
+        }
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(resources.permits_memory_read(&query, 1, &facts));
+            })
+        });
+        assert!(!resources.permits_memory_read(&query, 1, &empty));
+        assert!(resources.memory_write_range(&query, 1, &facts).is_none());
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples[3].1 <= samples[0].1 * 2 + 64,
+        "read searched partitions: {samples:?}"
+    );
+    assert!(
+        samples[3].2 <= samples[0].2 * 4 + 512,
+        "read traversed unrelated payloads: {samples:?}"
     );
 }

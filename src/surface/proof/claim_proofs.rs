@@ -5516,5 +5516,12 @@ fn contract_entry_view(
             origins.push(EntryFactOrigin::Derived);
         }
     }
-    (PureFactList::from(facts), origins)
+    let facts = PureFactList::from(facts);
+    // The authoritative entry view selects a new premise lineage. Publish the
+    // selected resource input at this producer boundary, before proof steps;
+    // permission queries only advance the paired graph's checked deltas.
+    state
+        .resources()
+        .synchronize_memory_equalities(&facts.context());
+    (facts, origins)
 }

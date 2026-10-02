@@ -175,15 +175,15 @@ mod tests {
         let restored = removed.unchecked_with_fact(owner);
         assert!(restored.satisfies_memory_fact_structurally(&partial));
 
-        let slot = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
-        ));
-        assert!(slot.permits_memory_read_structurally(&base, 8, &empty));
-        assert!(!slot.permits_memory_read_structurally(&base, 9, &empty));
+        let slot = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
+            CResourceFact::own_memory(CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into())),
+        );
+        assert!(slot.permits_memory_read(&base, 8, &empty));
+        assert!(!slot.permits_memory_read(&base, 9, &empty));
         let alias = Pointer::symbolic(Variable(873_001));
         let equal = empty.assume_condition(ConditionTerm::pointer_equal(base, alias.clone()), true);
         assert!(equal.pointers_known_equal(&alias, &Pointer::symbolic(Variable(873_000)),));
-        assert!(!slot.permits_memory_read_structurally(&alias, 4, &equal));
+        assert!(slot.permits_memory_read(&alias, 4, &equal));
         assert!(
             !slot.satisfies_memory_fact_structurally(&CResourceFact::view_memory(
                 CMemoryRange::new(alias, 0u32.into(), 1u32.into()),

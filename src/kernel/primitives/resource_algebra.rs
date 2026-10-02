@@ -5183,7 +5183,7 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        if let Some(mut entries) = self.concrete_read_entries(pointer, byte_width, assumptions) {
+        if let Some(mut entries) = self.read_access_entries(pointer, byte_width, assumptions) {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
@@ -5195,77 +5195,6 @@ impl ResourceContext {
                 }
             }
             return false;
-        }
-        // A contract expression can reload a pointer-valued field after an
-        // opaque call. Match that kernel-minted name to the resource's
-        // retained load origin before consulting the block and range
-        // indexes, just as the write lookup below does. The indexed
-        // structural check then answers from the exact supporting resource
-        // instead of comparing every historical range through call havoc.
-        //
-        // A proved pointer equality names the same cell two ways: a frame's
-        // identity payload (symbolic) and the C value loaded for it
-        // (external plus an offset). The facts sit under whichever spelling
-        // the unfold that published them used, so the lookup consults both;
-        // resolving to one spelling and looking only there refused a read
-        // of a cell the state plainly owned.
-        let spellings = self.pointer_spellings(pointer, assumptions);
-        if spellings.iter().any(|pointer| {
-            self.permits_memory_read_structurally(pointer, byte_width, assumptions)
-                || self.memory_block_facts(&pointer.block).any(|resource| {
-                    memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-                })
-        }) {
-            return true;
-        }
-        // The indexed lookups answer every read whose pointer names the
-        // owning fact's block. A pointer proved equal to one in another
-        // block is decided by the range check under the assumptions, as
-        // the write lookup below already does; this is reached only when
-        // the indexed answer was no, so a permitted read pays for it only
-        // through an alias.
-        spellings.iter().any(|pointer| {
-            self.iter().any(|resource| {
-                memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-            })
-        })
-    }
-
-    /// The spellings of one address a resource lookup consults: the pointer
-    /// itself, its retained load origin when it is a kernel-minted name,
-    /// and the non-symbolic side of a proved pointer equality when it is a
-    /// symbolic block. At most three, deduplicated, in that order.
-    fn pointer_spellings(&self, pointer: &Pointer, assumptions: &PureFactContext) -> Vec<Pointer> {
-        let mut spellings = vec![pointer.clone()];
-        let minted = crate::kernel::reasoning::resolve_minted_load_pointer(pointer, assumptions);
-        if !spellings.contains(&minted) {
-            spellings.push(minted.clone());
-        }
-        let aliased =
-            crate::kernel::reasoning::resolve_symbolic_pointer_alias(&minted, assumptions);
-        if !spellings.contains(&aliased) {
-            spellings.push(aliased);
-        }
-        spellings
-    }
-
-    pub(in crate::kernel) fn permits_memory_read_structurally(
-        &self,
-        pointer: &Pointer,
-        byte_width: u32,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        let bytes = crate::kernel::assumptions::read_candidate_byte_width(byte_width);
-        for entry in self.structural_memory_entries(pointer, pointer, Some(bytes)) {
-            let resource = self.fact(entry);
-            let Some(range) = resource_fact_read_core_range(resource) else {
-                continue;
-            };
-            if pointer_has_structural_range_base(pointer, range.base())
-                && memory_resource_fact_permits_read(resource, pointer, byte_width, assumptions)
-            {
-                return true;
-            }
         }
         false
     }
@@ -5351,34 +5280,7 @@ impl ResourceContext {
             }
             return None;
         }
-        // A kernel-minted address resolves to its load term first, so it
-        // matches owned ranges still written through loads; a proved
-        // pointer equality's other spelling is consulted as for reads.
-        let spellings = self.pointer_spellings(pointer, assumptions);
-        for pointer in &spellings {
-            for resource in self.memory_block_facts(&pointer.block) {
-                let CResourceFact::Own(CResource::Memory(range), _) = resource else {
-                    continue;
-                };
-                if pointer_has_structural_range_base(pointer, range.base())
-                    && memory_resource_fact_permits_write(
-                        resource,
-                        pointer,
-                        byte_width,
-                        assumptions,
-                    )
-                {
-                    return Some(range);
-                }
-            }
-        }
-        spellings.iter().find_map(|pointer| {
-            self.iter().find_map(|resource| {
-                memory_resource_fact_permits_write(resource, pointer, byte_width, assumptions)
-                    .then(|| resource.memory_own_range())
-                    .flatten()
-            })
-        })
+        None
     }
 
     pub fn without_fact(self, fact: &CResourceFact, assumptions: &PureFactContext) -> Option<Self> {
@@ -7717,32 +7619,6 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
     assert!(!owner.permits_memory_read(&d, 12, &connected));
     assert!(!owner.permits_memory_read(&d, 4, &facts));
-}
-
-fn pointer_has_structural_range_base(pointer: &Pointer, base: &Pointer) -> bool {
-    if pointer.block != base.block {
-        return false;
-    }
-    if crate::kernel::assumptions::pointers_equal_ignoring_memories(pointer, base) {
-        return true;
-    }
-    matches!(
-        &pointer.offset,
-        PointerOffsetTerm::Add(left, right)
-            if crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                &Pointer {
-                    block: pointer.block.clone(),
-                    offset: left.as_ref().clone(),
-                },
-                base,
-            ) || crate::kernel::assumptions::pointers_equal_ignoring_memories(
-                &Pointer {
-                    block: pointer.block.clone(),
-                    offset: right.as_ref().clone(),
-                },
-                base,
-            )
-    )
 }
 
 /// Range endpoints compare like ordinary terms, and additionally two loads

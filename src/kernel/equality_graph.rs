@@ -548,7 +548,12 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         self.register_logical_read_values(&mut state, [left, right]);
         state.register_blocks([left.block.clone(), right.block.clone()]);
-        if state.close(vec![(left.clone(), right.clone())]) {
+        let left_address = state.register_pointer_address(left);
+        let right_address = state.register_pointer_address(right);
+        let address_changed = state
+            .terms
+            .add_address_equality(left_address, right_address);
+        if state.close(vec![(left.clone(), right.clone())]) || address_changed {
             state.remember_input(inputs::Input::CheckedRead(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -687,20 +692,10 @@ impl EqualityGraph {
         // by scanning premises, resources, or other logical reads.
         self.register_logical_read_values(&mut state, [pointer]);
         state.register_blocks([pointer.block.clone()]);
-        let (block, delta) = state.find(&pointer.block);
-        let offset = if delta == AffineOffset::default() {
-            pointer.offset.clone()
-        } else {
-            PointerOffsetTerm::Add(
-                Box::new(pointer.offset.clone()),
-                Box::new(delta.to_offset_term()?),
-            )
-        };
-        let (id, new) = state.terms.address(block.clone(), offset);
-        if new {
-            let weight = state.weight(&block) + 1;
-            state.weights.insert(block, weight);
-        }
+        // Keep one stable raw application for this explicit address. Its
+        // checked affine projection joins the same class; later coordinate
+        // changes must not strand a resource payload on an older projection.
+        let id = state.register_pointer_address(pointer);
         Some(state.terms.class_root(id))
     }
 
@@ -778,6 +773,40 @@ impl EqualityGraph {
             block: block.clone(),
             offset: pointer.offset.checked_sub(&delta)?.to_offset_term()?,
         })
+    }
+
+    /// Align the explicit address expression to a supplier's base. A term
+    /// such as q + i retains i when the graph knows q = p, including when
+    /// p and q are offsets within the same external-argument block. Work is
+    /// bounded by the queried expression; no class members are enumerated.
+    pub(in crate::kernel) fn pointer_at_base(
+        &self,
+        pointer: &Pointer,
+        base: &Pointer,
+    ) -> Option<Pointer> {
+        if self.are_equal(pointer, base) {
+            return Some(base.clone());
+        }
+        if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
+            for (part, rest) in [(left, right), (right, left)] {
+                let part = Pointer {
+                    block: pointer.block.clone(),
+                    offset: part.as_ref().clone(),
+                };
+                if let Some(aligned) = self.pointer_at_base(&part, base) {
+                    // Only a graph-checked base replacement or block relation
+                    // changes coordinates. Adding the original rest preserves
+                    // the exact byte displacement and its no-wrap obligations.
+                    if aligned.offset == base.offset {
+                        return Some(Pointer {
+                            block: aligned.block,
+                            offset: PointerOffsetTerm::add(aligned.offset, rest.as_ref().clone()),
+                        });
+                    }
+                }
+            }
+        }
+        self.pointer_in_block(pointer, &base.block)
     }
 
     /// The initial pairing boundary applies this graph's merge deltas once.

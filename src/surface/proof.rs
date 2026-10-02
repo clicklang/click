@@ -2829,8 +2829,9 @@ fn evaluate_entry_resource_context(
             Some(CResourceFact::view_memory(range))
         })
         .collect::<Vec<_>>();
+    let assumptions = pure_facts.context();
     let mut evaluation_state = state.clone().with_resource_context(
-        ResourceContext::new()
+        ResourceContext::new_with_equalities(&assumptions)
             .unchecked_with_facts(explicit_entry_facts)
             .unchecked_with_facts(precondition_read_facts),
     );
@@ -2840,7 +2841,6 @@ fn evaluate_entry_resource_context(
             evaluation_state = evaluation_state.with_local(parameter.name(), value.clone());
         }
     }
-    let assumptions = pure_facts.context();
     let definitions = crate::surface::verification::composite_resource_definitions(
         resource_environment,
         predicate_environment,

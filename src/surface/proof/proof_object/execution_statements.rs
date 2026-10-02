@@ -1710,7 +1710,7 @@ impl<'a> Proof<'a> {
                 .clone(),
             ..ProofCertificateBuilder::default()
         };
-        let mut planning_facts = PureFactList::from(facts_vec);
+        let mut planning_facts = PureFactList::from_source(self.facts());
         execute_step_from_frontier_position(
             &mut planning,
             &tactic_context,
@@ -2013,7 +2013,7 @@ impl<'a> Proof<'a> {
         let mut sink = planning_sink();
         // Both planners below start from these facts; building their context
         // once here lets a retry reuse it.
-        let planning_start_facts = PureFactList::from(facts_vec.clone());
+        let planning_start_facts = PureFactList::from_source(self.facts());
         planning_start_facts.context();
         let mut planning_facts = planning_start_facts.clone();
         let direct_result = (!force_all_paths).then(|| {
@@ -2174,7 +2174,7 @@ impl<'a> Proof<'a> {
             .execution()
             .cloned()
             .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let mut facts = PureFactList::from(self.facts().to_vec());
+        let mut facts = PureFactList::from_source(self.facts());
         let base_facts = facts.len();
         let capture_this_tactic = begin_tactic_expansion_capture(
             expansion_capture.as_deref_mut(),

@@ -61,9 +61,18 @@ impl Suppliers {
 pub(super) struct RangeSupports {
     footprints: Suppliers,
     owned_footprints: Suppliers,
+    bases: Suppliers,
+    owned_bases: Suppliers,
+    read_starts: Suppliers,
 }
 impl RangeSupports {
+    fn needs_base(range: &CMemoryRange) -> bool {
+        Self::symbolic(range) || !matches!(range.base().offset, PointerOffsetTerm::Constant(_))
+    }
     pub(super) fn register(range: &CMemoryRange, graph: &EqualityGraph) {
+        if Self::needs_base(range) {
+            graph.address_class(range.base());
+        }
         graph.address_class(
             &range
                 .base()
@@ -86,6 +95,22 @@ impl RangeSupports {
         let Some(range) = fact.memory_range() else {
             return;
         };
+        if Self::needs_base(range)
+            && let Some(class) = graph.address_class(range.base())
+        {
+            self.bases.update(entry, insert, class, graph);
+            if fact.is_own() {
+                self.owned_bases.update(entry, insert, class, graph);
+            }
+        }
+        if Self::symbolic(range) {
+            let start = range
+                .base()
+                .offset_by_elements(range.start().clone(), range.element_width());
+            if let Some(class) = graph.address_class(&start) {
+                self.read_starts.update(entry, insert, class, graph);
+            }
+        }
         if Self::symbolic(range)
             && let Some(class) = graph.footprint_class(range)
         {
@@ -95,7 +120,19 @@ impl RangeSupports {
             }
         }
     }
+    pub(super) fn sole_base(&self, class: u64, owned: bool) -> Option<ResourceEntryId> {
+        if owned {
+            self.owned_bases.sole(class)
+        } else {
+            self.read_starts
+                .sole(class)
+                .or_else(|| self.bases.sole(class))
+        }
+    }
     pub(super) fn merge(&mut self, moved: u64, kept: u64) {
+        self.read_starts.merge(moved, kept);
+        self.bases.merge(moved, kept);
+        self.owned_bases.merge(moved, kept);
         self.footprints.merge(moved, kept);
         self.owned_footprints.merge(moved, kept);
     }

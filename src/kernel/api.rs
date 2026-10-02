@@ -2735,6 +2735,12 @@ pub(crate) fn c_state_with_borrowed_contract_inputs(
             .filter(|(installed_on, _)| installed_on == &state)
             .map(|(_, rooted)| rooted.clone())
     }) {
+        // Loan identities are reused across separately checked claims, but
+        // their pure contexts have independent graph lineages. This is the
+        // selected contract-input producer boundary, not a permission query.
+        rooted
+            .resources()
+            .synchronize_memory_equalities(assumptions);
         return Ok(rooted);
     }
     let mut rooted = if has_views {
