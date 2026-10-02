@@ -400,13 +400,19 @@ Initialization explicitly receives storage and empty authorities; it cannot
 mint them for an external pointer. Cleanup returns ordinary memory after
 retiring both populations. The example gate includes this companion.
 
-The next small slice is integrating checkout/return into this companion and
-proving the original two-object pipeline through cleanup, using the focused
-proofs already established. Keep batch splitting, symbolic grow/shrink, and
-two-pool transfer separate. The
-original bounded-pool project still uses legacy counting and is not migrated
-as a whole. The speculative cache repair remains removed; the checkout proofs
-required no count-model or authority change.
+The companion now also verifies the original checkout and return helpers.
+Checkout converts one slot plus private object memory into a concrete member;
+return restores that memory unchanged and produces a slot. Both preserve the
+folded control's invariant, deriving arithmetic safety from conservation.
+These reuse the focused proofs without changing C or the authority model.
+
+The next small slice is the final cleanup call in the original two-object
+pipeline. Checkout, private writes, and both returns verify, but the cleanup
+call rejects its returned slot batch with `MissingMembers`. Reduce that
+specific call-transfer gap before adding the full pipeline to the companion.
+Keep batch splitting, symbolic grow/shrink, and two-pool transfer separate.
+The original bounded-pool project still uses legacy counting and is not
+migrated as a whole. The speculative cache repair remains removed.
 Missing facts inside `open(...)` report `Requires f`.
 
 ### Milestone 2: Finish member identity and proof fields (3–4 chunks)
