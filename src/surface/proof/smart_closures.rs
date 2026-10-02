@@ -1020,6 +1020,27 @@ impl<'a> Proof<'a> {
             SignedArithmeticComparison::Equal => SignedInt32Comparison::Equal,
             SignedArithmeticComparison::Disequal => SignedInt32Comparison::Disequal,
         };
+        // The additions of a chain of three or more inequalities: an `Add`
+        // whose left input is an `Add` of two inequalities, and that input.
+        // Each is spelled as the comparison of the chain's ends, because the
+        // sum of the source operands grows by one term per premise and no
+        // longer reads back as the claim it denotes.
+        let mut chain_additions = BTreeSet::new();
+        for (index, node) in plan.nodes.iter().enumerate() {
+            if let SignedArithmeticNode::Add { left, right, .. } = node
+                && matches!(
+                    plan.nodes.get(*left),
+                    Some(SignedArithmeticNode::Add { .. })
+                )
+                && !matches!(
+                    plan.nodes.get(*right),
+                    Some(SignedArithmeticNode::Trivial { .. })
+                )
+            {
+                chain_additions.insert(index);
+                chain_additions.insert(*left);
+            }
+        }
         let mut surfaces: Vec<Option<ClickProposition>> = Vec::with_capacity(plan.nodes.len());
         let claim_surface = |claim: &SignedArithmeticClaim| {
             let value = claim.constant.to_i32()?;
@@ -1072,6 +1093,11 @@ impl<'a> Proof<'a> {
                         // chain's ends. Summing the source operands instead
                         // would spell a wrapping `uint32` addition, a
                         // different value from the flipped atoms' sum.
+                        Some(chained)
+                    } else if chain_additions.contains(&surfaces.len())
+                        && let Some(chained) =
+                            integer_surface_transitive(left_surface, right_surface)
+                    {
                         Some(chained)
                     } else {
                         claim_surface(result).or_else(|| {
@@ -1584,11 +1610,78 @@ impl<'a> Proof<'a> {
             scope.succeed();
             return Ok(Some(proof));
         }
-        let result = self.try_simp_closure_after_direct(false)?;
+        let result = match self.try_simp_closure_after_direct(false)? {
+            Some(proof) => Some(proof),
+            None => self.try_restated_constant_upper_bound()?,
+        };
         if result.is_some() {
             scope.succeed();
         }
         Ok(result)
+    }
+
+    /// Closes `value <= c` over a constant by proving the same bound
+    /// written `value < c + 1`. The two are one claim, but an order chain
+    /// that ends at `c + 1` concludes the strict form, and the derivation
+    /// asked for the non-strict form finds no chain ending at `c`.
+    ///
+    /// It runs only after every other strategy has missed, on a goal of
+    /// exactly this shape, and the restated goal is strict, so it does not
+    /// recur.
+    fn try_restated_constant_upper_bound(&self) -> Result<Option<Self>, ClickError> {
+        let Some(Proposition::ConditionIs(
+            ConditionTerm::Bitvector32SignedLessEqual(_, bound),
+            true,
+        )) = self.goal()
+        else {
+            return Ok(None);
+        };
+        // `c + 1` must not wrap in the order the comparison is made in.
+        let Some(bound) = bound.as_const().filter(|bound| *bound as i32 != i32::MAX) else {
+            return Ok(None);
+        };
+        let Some(ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::LessEqual,
+            right,
+        }) = self.surface_goal().cloned()
+        else {
+            return Ok(None);
+        };
+        // The source bound is the kernel bound, or its sign-flipped form
+        // for an unsigned comparison; the successor is spelled in the
+        // operand's own type.
+        let successor = match &right {
+            ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
+                Bitvector32Term::Constant(value),
+            ))) if *value == bound ^ 0x8000_0000 => ContractExpression::CFragment(
+                CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(value + 1))),
+            ),
+            ContractExpression::IntegerLiteral(literal)
+                if literal.parse::<i32>().ok() == Some(bound as i32) =>
+            {
+                ContractExpression::IntegerLiteral((i64::from(bound as i32) + 1).to_string())
+            }
+            _ => return Ok(None),
+        };
+        let strict = ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::LessThan,
+            right: successor,
+        };
+        let Ok(scope) = self.begin_have(strict.clone()) else {
+            return Ok(None);
+        };
+        let Some(proved) = scope.try_simp_closure()? else {
+            return Ok(None);
+        };
+        let Ok(joined) = proved.join() else {
+            return Ok(None);
+        };
+        Ok(joined
+            .apply_step(ProofStep::ArithmeticUsing(vec![strict]))
+            .ok()
+            .filter(|proof| proof.is_complete() || proof.goal() != self.goal()))
     }
 
     /// Continues smart closure after direct logical candidates have either

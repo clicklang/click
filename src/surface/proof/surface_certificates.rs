@@ -3841,12 +3841,11 @@ pub(super) fn plan_recorded_signed_order_path_for_context(
             surface_nonstrict_parts(&next.1)?
         };
         let strict = current_strict || next_strict;
-        let theorem = match (current_strict, next_strict) {
-            (false, false) => "int32_le_transitive",
-            (false, true) => "int32_le_lt_transitive",
-            (true, false) => "int32_lt_le_transitive",
-            (true, true) => "int32_lt_transitive",
-        };
+        let theorem = order_transitivity_theorem(
+            current_strict,
+            next_strict,
+            unsigned_order_edge(&current.0),
+        );
         let surface_target = ClickProposition::Comparison {
             left: surface_lower.clone(),
             operator: if strict {
@@ -3887,12 +3886,108 @@ pub(super) fn plan_recorded_signed_order_path_for_context(
         current = (kernel_target, surface_target);
     }
     let final_edge = path.last()?.clone();
+    if unsigned_order_edge(&current.0) {
+        let mut suffix = plan_unsigned_order_suffix(goal, &current, &final_edge)?;
+        if fixed_state_application_closes_goal {
+            remove_trailing_theorem_assumption(&mut suffix)?;
+        }
+        tactics.extend(suffix);
+        return Some(tactics);
+    }
     let mut suffix = plan_explicit_named_signed_rule(goal, &[current, final_edge])?;
     if fixed_state_application_closes_goal {
         remove_trailing_theorem_assumption(&mut suffix)?;
     }
     tactics.extend(suffix);
     Some(tactics)
+}
+
+/// Whether an order fact is a 32-bit unsigned order: the signed order of
+/// sign-flipped operands, a constant operand arriving already flipped.
+fn unsigned_order_edge(proposition: &Proposition) -> bool {
+    let flipped = |term: &Bitvector32Term| {
+        matches!(term, Bitvector32Term::BitwiseXor(left, right)
+            if left.as_const() == Some(0x8000_0000) || right.as_const() == Some(0x8000_0000))
+    };
+    signed_strict_parts(proposition)
+        .or_else(|| signed_nonstrict_parts(proposition))
+        .is_some_and(|(lower, upper)| flipped(lower) || flipped(upper))
+}
+
+/// The lemma composing two order facts, for the carrier the chain is over.
+/// An unsigned chain's operands are `uint32` values, which the `int32`
+/// lemmas do not accept.
+fn order_transitivity_theorem(
+    first_strict: bool,
+    second_strict: bool,
+    unsigned: bool,
+) -> &'static str {
+    match (unsigned, first_strict, second_strict) {
+        (false, false, false) => "int32_le_transitive",
+        (false, false, true) => "int32_le_lt_transitive",
+        (false, true, false) => "int32_lt_le_transitive",
+        (false, true, true) => "int32_lt_transitive",
+        (true, false, false) => "uint32_le_transitive",
+        (true, false, true) => "uint32_le_lt_transitive",
+        (true, true, false) => "uint32_lt_le_transitive",
+        (true, true, true) => "uint32_lt_transitive",
+    }
+}
+
+/// The last two edges of an unsigned chain, composed by the matching
+/// `uint32` transitivity lemma, whose conclusion is the chain's goal.
+fn plan_unsigned_order_suffix(
+    goal: &Proposition,
+    current: &(Proposition, ClickProposition),
+    last: &(Proposition, ClickProposition),
+) -> Option<Vec<ProofTactic>> {
+    let parts = |edge: &(Proposition, ClickProposition)| {
+        if let Some((lower, upper)) = signed_strict_parts(&edge.0) {
+            let (surface_lower, surface_upper) = surface_strict_parts(&edge.1)?;
+            Some((
+                lower.clone(),
+                upper.clone(),
+                true,
+                surface_lower,
+                surface_upper,
+            ))
+        } else {
+            let (lower, upper) = signed_nonstrict_parts(&edge.0)?;
+            let (surface_lower, surface_upper) = surface_nonstrict_parts(&edge.1)?;
+            Some((
+                lower.clone(),
+                upper.clone(),
+                false,
+                surface_lower,
+                surface_upper,
+            ))
+        }
+    };
+    let (lower, middle, first_strict, surface_lower, surface_middle) = parts(current)?;
+    let (next_lower, upper, second_strict, _, surface_upper) = parts(last)?;
+    if middle != next_lower {
+        return None;
+    }
+    // The lemma concludes `lower < upper` or `lower <= upper`, written
+    // that way round; a goal written the other way round is not this one.
+    let concluded = if first_strict || second_strict {
+        goal_exact_less_than_parts(goal)?
+    } else {
+        goal_exact_less_equal_parts(goal)?
+    };
+    if concluded != (&lower, &upper) {
+        return None;
+    }
+    Some(vec![
+        ProofTactic::ApplyTheoremUsing {
+            application: TheoremApplication {
+                name: order_transitivity_theorem(first_strict, second_strict, true).to_string(),
+                arguments: vec![surface_lower, surface_middle, surface_upper],
+            },
+            premises: vec![current.1.clone(), last.1.clone()],
+        },
+        ProofTactic::Assumption,
+    ])
 }
 
 pub(super) fn remove_trailing_theorem_assumption(tactics: &mut Vec<ProofTactic>) -> Option<()> {

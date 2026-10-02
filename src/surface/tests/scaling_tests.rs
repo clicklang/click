@@ -4396,3 +4396,48 @@ fn resource_reference_entry_setup_has_near_linear_work() {
         );
     }
 }
+
+/// `arithmetic() using` over a chain of listed order facts adds the premises
+/// once each, so its work grows with the chain and not with its square.
+/// Both a signed and an unsigned chain are measured at several lengths.
+#[test]
+fn listed_order_chain_arithmetic_is_near_linear_in_the_chain() {
+    for (value_type, bound) in [("int32", "4"), ("uint32", "4u32")] {
+        let samples = [8usize, 16, 32].map(|edges| {
+            let names = (0..edges).map(|index| format!("v{index}")).collect::<Vec<_>>();
+            let parameters = names
+                .iter()
+                .map(|name| format!("{name}: {value_type}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut facts = names
+                .windows(2)
+                .map(|pair| format!("{} <= {}", pair[0], pair[1]))
+                .collect::<Vec<_>>();
+            facts.push(format!("{} < {bound}", names[edges - 1]));
+            let requires = facts
+                .iter()
+                .map(|fact| format!("requires {fact}; "))
+                .collect::<String>();
+            let listed = facts
+                .iter()
+                .map(|fact| format!("{fact}; "))
+                .collect::<String>();
+            let source = format!(
+                "theorem chained({parameters}) {{ {requires}ensures v0 < {bound} by {{ arithmetic() using {{ {listed}}} }} }}"
+            );
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&source, &[])
+            });
+            result.unwrap_or_else(|error| panic!("{edges}-edge chain: {}", error.message()));
+            (edges, work)
+        });
+        eprintln!("{value_type} chain work: {samples:?}");
+        for pair in samples.windows(2) {
+            assert!(
+                pair[1].1 <= pair[0].1.saturating_mul(3),
+                "{value_type}: {samples:?}"
+            );
+        }
+    }
+}
