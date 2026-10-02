@@ -3449,7 +3449,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(applied) = scope.try_theorem_application(application)? else {
+            let Some(applied) = scope.apply_theorem_application(application)? else {
                 return decline();
             };
             scope = applied;
@@ -3557,7 +3557,8 @@ fn advance_linear_open_scope<'a>(
         let nested = scope.begin_have(have.proposition.clone())?;
         let selected = solve_nested_have(nested, have)?;
         let Some(selected) = selected else {
-            return decline();
+            let fact = crate::surface::diagnostics::describe_click_proposition(&have.proposition);
+            return Err(ClickError::new(format!("Requires {fact}")));
         };
         scope = scope.join_nested(selected)?;
         if indexed.source_index != owning_source_index
