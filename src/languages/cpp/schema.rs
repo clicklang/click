@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const EXPORT_SCHEMA: u32 = 21;
+pub(crate) const EXPORT_SCHEMA: u32 = 22;
 pub(crate) const MAX_PREPROCESSOR_FILES: usize = 4096;
 pub(crate) const LANGUAGE: &str = "c++";
 pub(crate) const STANDARD: &str = "c++20";
@@ -186,6 +186,11 @@ pub struct CppPlace {
 #[serde(rename_all = "snake_case")]
 pub enum CppBinaryOperator {
     Add,
+    Subtract,
+    Divide,
+    Remainder,
+    LessThan,
+    GreaterThan,
     Equal,
     Multiply,
     LessEqual,
@@ -492,6 +497,8 @@ impl CppExport {
                     "{record_name}_{}",
                     if member == "operator+=" {
                         "operator_add_assign"
+                    } else if member == "operator-=" {
+                        "operator_subtract_assign"
                     } else {
                         member
                     }
@@ -780,7 +787,7 @@ impl CppFunction {
         match &self.function_kind {
             CppFunctionKind::Free | CppFunctionKind::Method { .. } => {
                 if self.return_type != CppType::Void
-                    && require_int32(&self.return_type, false, "function return type").is_err()
+                    && require_signed_scalar(&self.return_type, "function return type").is_err()
                 {
                     require_bool(&self.return_type, false, "function return type")?;
                 }
@@ -810,7 +817,7 @@ impl CppFunction {
         {
             validate_record_reference(records, record_declaration_id, record_name)?;
         }
-        self.return_type.validate_aliases(logical_source)?;
+        self.return_type.validate_aliases_in(alias_sources)?;
         if !self.declared_noexcept
             && (!exceptions_enabled
                 || matches!(
@@ -846,6 +853,9 @@ impl CppFunction {
             match &parameter.value_type {
                 CppType::Boolean { .. } => {
                     require_bool(&parameter.value_type, false, "by-value parameter")?;
+                }
+                CppType::Integer { .. } => {
+                    require_signed_scalar(&parameter.value_type, "by-value parameter")?;
                 }
                 CppType::LvalueReference { pointee } => {
                     if let CppType::Record {
@@ -1035,7 +1045,7 @@ impl CppFunction {
                 }
                 match &local.value_type {
                     CppType::Integer { .. } => {
-                        require_int32(&local.value_type, false, "automatic local")?;
+                        require_signed_scalar(&local.value_type, "automatic local")?;
                     }
                     CppType::Record {
                         declaration_id,
@@ -1453,7 +1463,7 @@ impl CppStatement {
                         require_int32(pointee, false, "assignment target")?;
                     }
                     CppType::Integer { .. } => {
-                        require_int32(target_type, false, "assignment target")?;
+                        require_signed_scalar(target_type, "assignment target")?;
                     }
                     _ => {
                         return Err(
@@ -1462,7 +1472,14 @@ impl CppStatement {
                     }
                 }
                 value.validate(places, records, logical_source)?;
-                require_int32(value.value_type(), false, "assignment value")
+                let expected = match target_type {
+                    CppType::LvalueReference { pointee } => pointee.as_ref(),
+                    value => value,
+                };
+                if !same_scalar_type(expected, value.value_type()) {
+                    return Err("C++ assignment requires matching signed widths".into());
+                }
+                require_signed_scalar(value.value_type(), "assignment value")
             }
             Self::Store {
                 pointer,
@@ -1508,7 +1525,7 @@ impl CppStatement {
             } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
-                if require_int32(value.value_type(), false, "return value").is_err() {
+                if require_signed_scalar(value.value_type(), "return value").is_err() {
                     require_bool(value.value_type(), false, "return value")?;
                 }
                 for cleanup in cleanups {
@@ -1606,7 +1623,10 @@ impl CppInitializer {
         match (self, local_type) {
             (Self::Value { value }, CppType::Integer { .. }) => {
                 value.validate(places, records, logical_source)?;
-                require_int32(value.value_type(), false, "local initializer")
+                if !same_scalar_type(local_type, value.value_type()) {
+                    return Err("C++ local initializer requires matching signed widths".into());
+                }
+                require_signed_scalar(value.value_type(), "local initializer")
             }
             (
                 Self::Call {
@@ -1773,10 +1793,15 @@ impl CppExpression {
                 value_type,
                 span,
             } => {
-                value
-                    .parse::<i32>()
+                require_signed_scalar(value_type, "integer literal type")?;
+                let parsed = value
+                    .parse::<i64>()
                     .map_err(|_| format!("unsupported C++ integer literal `{value}`"))?;
-                require_int32(value_type, false, "integer literal type")?;
+                if matches!(value_type, CppType::Integer { bits: 32, .. })
+                    && i32::try_from(parsed).is_err()
+                {
+                    return Err(format!("unsupported C++ integer literal `{value}`"));
+                }
                 span.validate(logical_source)
             }
             Self::ConstantReference {
@@ -1812,8 +1837,11 @@ impl CppExpression {
                         require_bool(value_type, false, "loaded value type")
                     }
                     CppType::Integer { .. } => {
-                        require_int32(place_type, false, "loaded local")?;
-                        require_int32(value_type, false, "loaded value type")
+                        require_signed_scalar(place_type, "loaded scalar")?;
+                        if !same_scalar_type(place_type, value_type) {
+                            return Err("C++ scalar load requires matching signed widths".into());
+                        }
+                        require_signed_scalar(value_type, "loaded value type")
                     }
                     CppType::Pointer { .. } => {
                         require_mutable_int32_pointer(place_type, "loaded pointer parameter")?;
@@ -1878,11 +1906,16 @@ impl CppExpression {
             } => {
                 span.validate(logical_source)?;
                 value.validate(places, records, logical_source)?;
-                require_int32(value.value_type(), false, "integral cast operand")?;
-                require_signed_int64(value_type, false, "integral cast result")
+                require_integral_scalar(value.value_type(), "integral cast operand")?;
+                require_integral_scalar(value_type, "integral cast result")
             }
             Self::Binary {
-                operator: CppBinaryOperator::Add,
+                operator:
+                    CppBinaryOperator::Add
+                    | CppBinaryOperator::Subtract
+                    | CppBinaryOperator::Multiply
+                    | CppBinaryOperator::Divide
+                    | CppBinaryOperator::Remainder,
                 left,
                 right,
                 value_type,
@@ -1898,12 +1931,17 @@ impl CppExpression {
                 if !same_scalar_type(left.value_type(), value_type)
                     || !same_scalar_type(right.value_type(), value_type)
                 {
-                    return Err("C++ addition requires same-width signed operands".into());
+                    return Err("C++ arithmetic requires same-width signed operands".into());
                 }
                 Ok(())
             }
             Self::Binary {
-                operator: CppBinaryOperator::Equal,
+                operator:
+                    CppBinaryOperator::Equal
+                    | CppBinaryOperator::LessThan
+                    | CppBinaryOperator::GreaterThan
+                    | CppBinaryOperator::LessEqual
+                    | CppBinaryOperator::GreaterEqual,
                 left,
                 right,
                 value_type,
@@ -1922,27 +1960,6 @@ impl CppExpression {
                 Ok(())
             }
             Self::Binary {
-                operator: CppBinaryOperator::LessEqual,
-                left,
-                right,
-                value_type,
-                span,
-            }
-            | Self::Binary {
-                operator: CppBinaryOperator::GreaterEqual,
-                left,
-                right,
-                value_type,
-                span,
-            } => {
-                require_bool(value_type, false, "comparison result type")?;
-                span.validate(logical_source)?;
-                left.validate(places, records, logical_source)?;
-                right.validate(places, records, logical_source)?;
-                require_signed_int64(left.value_type(), false, "comparison left operand")?;
-                require_signed_int64(right.value_type(), false, "comparison right operand")
-            }
-            Self::Binary {
                 operator: CppBinaryOperator::LogicalAnd,
                 left,
                 right,
@@ -1955,12 +1972,6 @@ impl CppExpression {
                 right.validate(places, records, logical_source)?;
                 require_bool(left.value_type(), false, "logical-and left operand")?;
                 require_bool(right.value_type(), false, "logical-and right operand")
-            }
-            Self::Binary {
-                operator: CppBinaryOperator::Multiply,
-                ..
-            } => {
-                Err("C++ multiplication is supported only in a checked constant initializer".into())
             }
         }
     }
@@ -2278,7 +2289,9 @@ fn validate_reachable_calls(
     collect_calls(&function.body, &mut calls);
     for call in calls {
         let (callee, arguments) = match &call {
-            CollectedCall::Ordinary { callee, arguments }
+            CollectedCall::Ordinary {
+                callee, arguments, ..
+            }
             | CollectedCall::Constructor {
                 callee, arguments, ..
             } => (*callee, *arguments),
@@ -2298,7 +2311,10 @@ fn validate_reachable_calls(
             ));
         }
         match call {
-            CollectedCall::Ordinary { .. } => {
+            CollectedCall::Ordinary { destination, .. } => {
+                if destination.is_some_and(|value| !same_scalar_type(value, &target.return_type)) {
+                    return Err("C++ call capture requires matching return and local types".into());
+                }
                 if !matches!(
                     target.function_kind,
                     CppFunctionKind::Free | CppFunctionKind::Method { .. }
@@ -2395,6 +2411,7 @@ enum CollectedCall<'a> {
     Ordinary {
         callee: &'a CppFunctionReference,
         arguments: &'a [CppCallArgument],
+        destination: Option<&'a CppType>,
     },
     Constructor {
         local: &'a CppPlace,
@@ -2411,12 +2428,17 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
     for statement in statements {
         match statement {
             CppStatement::Declare {
+                local,
                 initializer:
                     CppInitializer::Call {
                         callee, arguments, ..
                     },
                 ..
-            } => calls.push(CollectedCall::Ordinary { callee, arguments }),
+            } => calls.push(CollectedCall::Ordinary {
+                callee,
+                arguments,
+                destination: Some(&local.value_type),
+            }),
             CppStatement::Declare {
                 local,
                 initializer:
@@ -2432,7 +2454,11 @@ fn collect_calls<'a>(statements: &'a [CppStatement], calls: &mut Vec<CollectedCa
             CppStatement::Declare { .. } => {}
             CppStatement::Call {
                 callee, arguments, ..
-            } => calls.push(CollectedCall::Ordinary { callee, arguments }),
+            } => calls.push(CollectedCall::Ordinary {
+                callee,
+                arguments,
+                destination: None,
+            }),
             CppStatement::If {
                 then_branch,
                 else_branch,
@@ -2498,6 +2524,9 @@ fn validate_call_arguments(
                     is_const: false,
                 }
             ),
+            (CppCallArgument::Value { value }, CppType::Integer { .. }) => {
+                same_scalar_type(value.value_type(), &parameter.value_type)
+            }
             (
                 CppCallArgument::Reference { place },
                 CppType::LvalueReference { pointee: expected },
@@ -3081,6 +3110,22 @@ fn require_signed_int64(value: &CppType, allow_const: bool, label: &str) -> Resu
     }
 }
 
+fn require_signed_scalar(value: &CppType, label: &str) -> Result<(), String> {
+    if require_int32(value, false, label).is_ok() {
+        Ok(())
+    } else {
+        require_signed_int64(value, false, label)
+    }
+}
+
+fn require_integral_scalar(value: &CppType, label: &str) -> Result<(), String> {
+    if require_bool(value, false, label).is_ok() {
+        Ok(())
+    } else {
+        require_signed_scalar(value, label)
+    }
+}
+
 fn require_const_signed_int64(value: &CppType, label: &str) -> Result<(), String> {
     match value {
         CppType::Integer {
@@ -3398,7 +3443,7 @@ mod tests {
     }
 
     #[test]
-    fn wide_addition_artifacts_reject_mixed_width_operands() {
+    fn signed_arithmetic_artifacts_reject_mixed_width_operands() {
         let literal = CppExpression::IntegerLiteral {
             value: "1".into(),
             value_type: signed_integer(32, false),
@@ -3416,9 +3461,20 @@ mod tests {
             value_type: signed_integer(64, false),
             span: cleanup_span(),
         };
-        expression
-            .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
-            .unwrap();
+        for operator in [
+            CppBinaryOperator::Add,
+            CppBinaryOperator::Subtract,
+            CppBinaryOperator::Multiply,
+            CppBinaryOperator::Divide,
+            CppBinaryOperator::Remainder,
+        ] {
+            if let CppExpression::Binary { operator: slot, .. } = &mut expression {
+                *slot = operator;
+            }
+            expression
+                .validate(&BTreeMap::new(), &BTreeMap::new(), "fixture.cpp")
+                .unwrap();
+        }
         if let CppExpression::Binary { right, .. } = &mut expression {
             **right = literal;
         }
