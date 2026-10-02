@@ -1363,3 +1363,131 @@ fn write_permission_does_not_enumerate_covering_views() {
         "write candidate selection visited covering views: {samples:?}"
     );
 }
+
+#[test]
+fn symbolic_write_permission_does_not_search_views() {
+    let base = Pointer::symbolic(Variable(961_000));
+    let alias = Pointer::symbolic(Variable(961_001));
+    let i = Bitvector32Term::Variable(Variable(961_002));
+    let n = Bitvector32Term::Variable(Variable(961_003));
+    let facts = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(1u32.into(), i.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+    let query = base.offset_by_elements(i, 1);
+    let owned = CMemoryRange::new_with_element_width(base.clone(), 1u32.into(), n.clone(), 1);
+    let mut samples = Vec::new();
+    for size in [16u32, 64, 256, 1024] {
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for k in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::view_memory(
+                CMemoryRange::new_with_element_width(base.clone(), k.into(), n.clone(), 1),
+            ));
+        }
+        resources = resources.unchecked_with_fact(CResourceFact::own_memory(owned.clone()));
+        resources.synchronize_memory_equalities(&facts);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(
+                    resources.memory_write_range(&query, 1, &facts),
+                    Some(&owned)
+                );
+            })
+        });
+        samples.push((size, work, map_work));
+    }
+    assert!(
+        samples
+            .iter()
+            .all(|(_, work, _)| *work <= samples[0].1 * 2 + 64),
+        "symbolic write searched view suppliers: {samples:?}"
+    );
+    assert!(
+        samples
+            .iter()
+            .all(|(_, _, work)| *work <= samples[0].2 * 4 + 512),
+        "symbolic write visited an ambient index: {samples:?}"
+    );
+}
+
+#[test]
+fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
+    let base = Pointer::symbolic(Variable(961_100));
+    let alias = Pointer::symbolic(Variable(961_101));
+    let i = Bitvector32Term::Variable(Variable(961_102));
+    let n = Bitvector32Term::Variable(Variable(961_103));
+    let empty = PureFactContext::new();
+    let bounds = empty
+        .clone()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(1u32.into(), i.clone()),
+            true,
+        )
+        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+    let facts = bounds.clone().assume_condition(
+        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        true,
+    );
+    let range = CMemoryRange::new_with_element_width(base.clone(), 1u32.into(), n.clone(), 1);
+    let owner = CResourceFact::own_memory(range.clone());
+    let resources = ResourceContext::new_with_equalities(&empty)
+        .unchecked_with_fact(CResourceFact::view_memory(range.clone()))
+        .unchecked_with_fact(owner.clone());
+    resources.synchronize_memory_equalities(&empty);
+    let query = alias.offset_by_elements(i.clone(), 1);
+    assert_eq!(
+        resources.memory_write_range(&query, 1, &facts),
+        Some(&range)
+    );
+    assert!(resources.memory_write_range(&query, 1, &bounds).is_none());
+    assert!(resources.memory_write_range(&base, 1, &facts).is_none());
+    assert!(
+        resources
+            .memory_write_range(&alias.offset_by_elements(n, 1), 1, &facts)
+            .is_none()
+    );
+    assert!(resources.memory_write_range(&query, 2, &facts).is_none());
+    let no_bounds = empty.clone().assume_condition(
+        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        true,
+    );
+    assert!(
+        resources
+            .memory_write_range(&query, 1, &no_bounds)
+            .is_none()
+    );
+    let views = resources
+        .clone()
+        .without_exact_representation(&owner)
+        .unwrap();
+    assert!(views.memory_write_range(&query, 1, &facts).is_none());
+    for quantity in [0u32, u32::MAX] {
+        let invalid = views.clone().unchecked_with_fact(CResourceFact::Own(
+            CResource::Memory(range.clone()),
+            Box::new(quantity.into()),
+        ));
+        assert!(invalid.memory_write_range(&query, 1, &facts).is_none());
+    }
+    // Both occurrences must follow the late class merge. Selection reports
+    // unknown rather than trying owners until one happens to cover the query.
+    let second = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        alias,
+        0u32.into(),
+        range.end().clone(),
+        1,
+    ));
+    let ambiguous = resources.clone().unchecked_with_fact(second.clone());
+    assert!(ambiguous.write_access_entries(&query, 1, &facts).is_none());
+    let restored = ambiguous.without_exact_representation(&second).unwrap();
+    assert_eq!(restored.memory_write_range(&query, 1, &facts), Some(&range));
+    assert_eq!(
+        resources.memory_write_range(&query, 1, &facts),
+        Some(&range)
+    );
+}

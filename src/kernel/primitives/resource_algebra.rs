@@ -5281,7 +5281,7 @@ impl ResourceContext {
         byte_width: u32,
         assumptions: &PureFactContext,
     ) -> Option<&CMemoryRange> {
-        if let Some(mut entries) = self.concrete_write_entries(pointer, byte_width, assumptions) {
+        if let Some(mut entries) = self.write_access_entries(pointer, byte_width, assumptions) {
             while let Some(entry) = entries.next() {
                 crate::instrumentation::record_deterministic_work(1);
                 let resource = self.fact(entry);
@@ -7495,14 +7495,17 @@ fn memory_resource_fact_permits_write(
     assumptions: &PureFactContext,
 ) -> bool {
     match resource {
-        CResourceFact::Own(CResource::Memory(range), _) => assumptions.pointer_access_in_range(
-            pointer,
-            byte_width,
-            range.base(),
-            range.start(),
-            range.end(),
-            range.element_width(),
-        ),
+        CResourceFact::Own(CResource::Memory(range), quantity) => {
+            resource_quantity_is_positive(quantity, assumptions)
+                && assumptions.pointer_access_in_range(
+                    pointer,
+                    byte_width,
+                    range.base(),
+                    range.start(),
+                    range.end(),
+                    range.element_width(),
+                )
+        }
         CResourceFact::Own(
             CResource::Composite { .. }
             | CResource::Token { .. }

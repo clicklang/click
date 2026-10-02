@@ -99,6 +99,9 @@ struct AddressBucket {
     // Writes must not enumerate covering views before reaching an owner.
     // Both summaries follow the same persistent updates and class merges.
     write_intervals: ReadIntervals,
+    // All memory owners, independently of views or representable extents.
+    // Cardinality selects a sole supplier; quantity and bounds are checked later.
+    owners: ResourceEntryIds,
     memory_count: usize,
     general_coordinates: usize,
 }
@@ -124,7 +127,7 @@ impl MemoryAddresses {
             };
             self.update_coordinate(pointer.block, kind, offset, entry, insert, extent);
         }
-        self.update_memory_count(range.base().block.clone(), insert);
+        self.update_memory_count(range.base().block.clone(), entry, owned, insert);
     }
 
     fn update_in_graph(
@@ -158,11 +161,24 @@ impl MemoryAddresses {
                 extent,
             );
         }
-        self.update_memory_count(base.representative, insert);
+        self.update_memory_count(base.representative, entry, owned, insert);
     }
 
-    fn update_memory_count(&mut self, block: PointerBlock, insert: bool) {
+    fn update_memory_count(
+        &mut self,
+        block: PointerBlock,
+        entry: ResourceEntryId,
+        owned: bool,
+        insert: bool,
+    ) {
         let mut bucket = self.classes.get(&block).cloned().unwrap_or_default();
+        if owned {
+            bucket.owners = if insert {
+                bucket.owners.with_value(entry)
+            } else {
+                bucket.owners.without_value(&entry)
+            };
+        }
         if insert {
             bucket.memory_count += 1;
         } else {
@@ -262,6 +278,10 @@ impl MemoryAddresses {
             (moved, kept, shift)
         };
         larger.memory_count += smaller.memory_count;
+        for entry in smaller.owners.iter() {
+            crate::instrumentation::record_deterministic_work(1);
+            larger.owners = larger.owners.with_value(*entry);
+        }
         for (larger_intervals, smaller_intervals) in [
             (&mut larger.read_intervals, &smaller.read_intervals),
             (&mut larger.write_intervals, &smaller.write_intervals),
@@ -429,6 +449,7 @@ impl AddressPoints {
 pub(super) enum MemoryAccessEntries {
     Intervals(read_intervals::CoveringIntervals),
     Exact(crate::persistent::OwnedSetValues<ResourceEntryId>),
+    SingleOwner(Option<ResourceEntryId>),
     Structural(std::collections::btree_set::IntoIter<ResourceEntryId>),
 }
 impl Iterator for MemoryAccessEntries {
@@ -437,6 +458,7 @@ impl Iterator for MemoryAccessEntries {
         match self {
             Self::Intervals(entries) => entries.next(),
             Self::Exact(entries) => entries.next(),
+            Self::SingleOwner(entry) => entry.take(),
             Self::Structural(entries) => entries.next(),
         }
     }
@@ -890,6 +912,47 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<MemoryAccessCandidates> {
         self.concrete_access_entries(pointer, bytes, assumptions, true)
+    }
+
+    /// Write candidates from the shared trusted graph/index checkpoint.
+    /// Beside views, a prepared, complete affine block with one memory owner
+    /// needs no supplier search even when its bounds or access are symbolic.
+    /// Ambiguity or unsupported equality reports unknown before checking; a
+    /// selected owner's failed quantity or coverage check is final.
+    pub(super) fn write_access_entries(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<MemoryAccessCandidates> {
+        let index = self.pair_memory_equalities(assumptions, false, Some(pointer));
+        let entries =
+            if let Some(entries) = Self::indexed_access_entries(&index, pointer, bytes, true) {
+                entries
+            } else {
+                if !index.points_initialized {
+                    return None;
+                }
+                let point = index.graph.canonical_pointer(pointer)?;
+                if !index.graph.affine_addresses_complete(&point.representative) {
+                    return None;
+                }
+                let owners = &index.addresses.classes.get(&point.representative)?.owners;
+                if owners.len() != 1 {
+                    return None;
+                }
+                let entry = *owners.iter().next().expect("sole owner");
+                let range = index.resources.facts.get(&entry)?.memory_own_range()?;
+                if range.start().as_const().is_some() && range.end().as_const().is_some() {
+                    return None;
+                }
+                MemoryAccessEntries::SingleOwner(Some(entry))
+            };
+        Some(MemoryAccessCandidates {
+            entries,
+            query: pointer.clone(),
+            index,
+        })
     }
 
     /// Positive affine candidates for joining owned fragments. This index
