@@ -6833,6 +6833,11 @@ struct Parser {
     string_literal_names: BTreeSet<String>,
     loop_contexts: Vec<CLoopContext>,
     function_declarations: BTreeMap<String, C0FunctionHeader>,
+    /// The most recent attribute that is valid only on `static inline`.
+    static_inline_attribute: &'static str,
+    /// Unnamed parameters seen by `parse_parameters`; a function header
+    /// records how many belong to it.
+    unnamed_parameters: usize,
     function_declaration_lines: BTreeMap<String, Vec<usize>>,
     shadowed_pthread_names: BTreeSet<String>,
     function_source_names: BTreeMap<String, String>,
@@ -6904,6 +6909,8 @@ pub(crate) struct C0FunctionHeader {
     /// this; calls and address uses are refused because the variable
     /// arguments have no model.
     variadic: bool,
+    /// A parameter has no name, which only a body-less prototype may do.
+    has_unnamed_parameter: bool,
     parameters: Vec<C0Parameter>,
 }
 
@@ -7112,6 +7119,8 @@ impl Parser {
             string_literal_names: BTreeSet::new(),
             loop_contexts: Vec::new(),
             function_declarations: BTreeMap::new(),
+            static_inline_attribute: "always-inline",
+            unnamed_parameters: 0,
             function_declaration_lines: BTreeMap::new(),
             shadowed_pthread_names: BTreeSet::new(),
             function_source_names: BTreeMap::new(),
@@ -8078,9 +8087,10 @@ impl Parser {
                 ));
             }
             if has_always_inline_attribute && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if !self.is_type_start() {
                 return Err(self.error_here(format!(
@@ -8097,9 +8107,10 @@ impl Parser {
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
             if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if self.peek() == Some(&Token::LBrace) {
                 self.reject_variadic_definition(&header)?;
@@ -8178,9 +8189,10 @@ impl Parser {
                 ));
             }
             if has_always_inline_attribute && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if !self.is_type_start() {
                 return Err(self.error_here(format!(
@@ -8197,9 +8209,10 @@ impl Parser {
             header.weak_linkage = prefix_weak || suffix_weak;
             header.returns_twice = prefix_returns_twice || suffix_returns_twice;
             if (has_always_inline_attribute || has_trailing_always_inline_attribute) && !is_static {
-                return Err(self.error_here(
-                    "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-                ));
+                return Err(self.error_here(format!(
+                    "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                    self.static_inline_attribute
+                )));
             }
             if self.peek() == Some(&Token::LBrace) {
                 self.reject_variadic_definition(&header)?;
@@ -8254,9 +8267,10 @@ impl Parser {
             ));
         }
         if (prefix_inline || suffix_inline) && !internal_linkage {
-            return Err(self.error_here(
-                "the GNU always-inline attribute requires `static inline` or `static __always_inline`",
-            ));
+            return Err(self.error_here(format!(
+                "the GNU {} attribute requires `static inline` or `static __always_inline`",
+                self.static_inline_attribute
+            )));
         }
         self.register_function_declaration(&header, true)?;
         if self.peek() != Some(&Token::LBrace) {
@@ -8356,6 +8370,12 @@ impl Parser {
     /// A variadic body would read its variable arguments through `va_arg`,
     /// which has no model. Only the body-less prototype is retained.
     fn reject_variadic_definition(&self, header: &C0FunctionHeader) -> Result<(), C0SyntaxError> {
+        if header.has_unnamed_parameter {
+            return Err(self.error_here(format!(
+                "function definition `{}` has an unnamed parameter; only a body-less prototype may omit parameter names",
+                header.source_name
+            )));
+        }
         if header.variadic {
             return Err(self.error_here(format!(
                 "variadic function definitions (`...`) are not supported in C0; only a body-less prototype of `{}` can be declared",
@@ -8424,7 +8444,9 @@ impl Parser {
         let source_name = self.expect_ident("function name")?;
         self.expect(Token::LParen)?;
         self.push_scope();
+        let unnamed_before = self.unnamed_parameters;
         let parameters = self.parse_parameters()?;
+        let has_unnamed_parameter = self.unnamed_parameters != unnamed_before;
         let variadic = self.peek() == Some(&Token::Ellipsis);
         if variadic {
             self.position += 1;
@@ -8447,6 +8469,7 @@ impl Parser {
             weak_linkage: false,
             returns_twice: false,
             variadic,
+            has_unnamed_parameter,
             parameters,
         })
     }
@@ -8469,7 +8492,17 @@ impl Parser {
             loop {
                 let attribute = self.expect_ident("GNU function attribute")?;
                 match attribute.as_str() {
-                    "always_inline" | "__always_inline__" => always_inline = true,
+                    "always_inline" | "__always_inline__" => {
+                        always_inline = true;
+                        self.static_inline_attribute = "always-inline";
+                    }
+                    // On a `static inline` function `gnu_inline` selects
+                    // nothing: it changes only when a non-static inline
+                    // definition is emitted. It is refused anywhere else.
+                    "gnu_inline" | "__gnu_inline__" => {
+                        always_inline = true;
+                        self.static_inline_attribute = "gnu-inline";
+                    }
                     "weak" | "__weak__" => weak = true,
                     "returns_twice" | "__returns_twice__" => returns_twice = true,
                     "access" | "__access__" => {
@@ -8504,9 +8537,13 @@ impl Parser {
                         }
                         self.expect(Token::RParen)?;
                     }
+                    // `unused` silences a warning and
+                    // `no_instrument_function` omits profiling hooks; neither
+                    // changes what the function computes.
                     "nothrow" | "__nothrow__" | "leaf" | "__leaf__" | "const"
                     | "__const__" | "noreturn" | "__noreturn__" | "deprecated"
-                    | "__deprecated__" => {},
+                    | "__deprecated__" | "unused" | "__unused__"
+                    | "no_instrument_function" | "__no_instrument_function__" => {},
                     "nonnull" | "__nonnull__" => {
                         if self.peek() == Some(&Token::LParen) {
                             self.position += 1;
@@ -8530,7 +8567,7 @@ impl Parser {
                         }
                     }
                     _ => return Err(self.error_at_previous(format!(
-                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `weak`, `returns_twice`, and `access` are supported in this slice"
+                        "unsupported GNU function attribute `{attribute}`; only `always_inline`, `gnu_inline`, `nothrow`, `leaf`, `const`, `nonnull`, `noreturn`, `deprecated`, `unused`, `no_instrument_function`, `weak`, `returns_twice`, and `access` are supported in this slice"
                     ))),
                 }
                 if self.peek() != Some(&Token::Comma) {
@@ -10610,7 +10647,15 @@ impl Parser {
                 }
                 return Err(self.error_here("function parameters cannot have type `void`"));
             }
-            let name = self.expect_ident("parameter name")?;
+            // A prototype may leave a parameter unnamed. The placeholder
+            // cannot be spelled in C, and a definition that has one is
+            // rejected by the caller.
+            let name = if matches!(self.peek(), Some(Token::Comma | Token::RParen)) {
+                self.unnamed_parameters += 1;
+                format!("#unnamed{}", parameters.len())
+            } else {
+                self.expect_ident("parameter name")?
+            };
             let kernel_name = self.declare_name(&name)?;
             if parsed_type.is_volatile && self.peek() == Some(&Token::LBracket) {
                 return Err(self.error_here(

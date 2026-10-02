@@ -612,79 +612,75 @@ The gate pins the first rejection on each route:
   and hexadecimal escapes were modeled, the pin was the lexical rejection of
   `'\001'` at `printk.h:21`; the artifact has no lexical rejection now.
 
-The inventory below was measured at the commit that modeled numeric character
-escapes, with
+The inventory below was measured at the commit that accepted the kernel's
+`inline` attributes and unnamed prototype parameters, with
 `CLICK_LINUX_RBTREE_INVENTORY` (see the integration README). Each file-scope
 declaration is parsed after the accepted ones before it; a rejected one is
 blanked. A declaration reports only its first rejection, and a declaration
 that needs a rejected one is rejected too, so the counts include cascades.
+A rejection can hide others in the same declaration, so every count is a
+lower bound on the work.
 
 The artifact has 2,575 file-scope declarations from 138 files. The frontend
-accepts 758 and rejects 1,817:
+accepts 1,244 and rejects 1,331 (it rejected 1,817 before those two forms
+were accepted):
 
 | Count | First rejection | Notes |
 | ---: | --- | --- |
-| 1,321 | function attribute `__gnu_inline__` | first at `compiler.h:220`; the kernel's `inline` expands to `inline __attribute__((__gnu_inline__)) __attribute__((__unused__)) __attribute__((no_instrument_function))` on every inline helper |
-| 91 | unknown type name | `__signed__` 4 (first at `uapi/asm-generic/int-ll64.h:20`); the rest cascade from it and from rejected typedefs: `u64` 38, `s32` 9, `__u64` 8, `va_list`, `__builtin_va_list`, `u128`, callback typedefs |
-| 61 | unsupported file-scope object form | includes the twelve `extern typeof(fn) fn;` export redeclarations |
-| 54 | declarator form (`expected type ..., got (` or `;`) | function-pointer declarators 49, others 5 |
-| 53 | other function attributes | `__format__` 25, `section` 14, `__externally_visible__` 4, `__error__` 4, `nocf_check` 2, `__alloc_size__` 2, `__malloc__` 1, `no_instrument_function` 1 |
-| 53 | unknown or embedded struct | cascades |
-| 52 | unnamed prototype parameter | includes the eight in `rbtree.h:39`-`51` |
-| 33 | file-scope form (`expected function declaration`) | file-scope `asm(...)` 12 (the exports), `_Static_assert` 9, empty declaration 3, `__extension__` 2, `register ... asm("rsp")` 1, cascades 6 |
-| 27 | declarator tail (`expected ;` and similar) | attribute between type and declarator 13 (the export pointers), bitfields 4, array bounds with arithmetic or `sizeof` 8, others 2 |
+| 368 | unknown type name | `__signed__` and cascades through the fixed-width typedef chain, `atomic_long_t`, `atomic64_t`, `va_list` |
+| 200 | file-scope form (`expected function declaration`) | mostly cascades from unknown return types; file-scope `asm(...)` 12 (the exports), `_Static_assert` 9, `register ... asm("rsp")` 1 |
+| 178 | declarator form (`expected type ..., got ...`) | function-pointer declarators and pointer returns of rejected types |
+| 80 | statement form (`expected statement`) | inline `asm` statements 70, others 10 |
+| 67 | unsupported file-scope object form | includes the twelve `extern typeof(fn) fn;` export redeclarations |
+| 64 | unsupported builtin | `__builtin_constant_p` 56, `__builtin_bswap32` 4, `__builtin_bswap16` 2, `__builtin_mul_overflow` 2 |
+| 58 | function attribute | `__format__` 26, `section` 14, `__warn_unused_result__` 4, `__externally_visible__` 4, `__error__` 4, `nocf_check` 2, `__alloc_size__` 2, `__pure__` 1, `__malloc__` 1 |
+| 57 | unknown or embedded struct | cascades |
+| 53 | undeclared identifier | `__noreturn__` 14 (block-scope declarations from `compiletime_assert`); the rest cascade |
+| 42 | field access through an incomplete struct | cascades |
+| 45 | declarator tail (`expected ;` and similar) | attribute between type and declarator (the export pointers), bitfields, array bounds with arithmetic or `sizeof` |
 | 12 | function-pointer typedef name | |
-| 11 | anonymous `union` or `struct` member | first at `compiler_types.h:172`, the first unsupported declaration in the artifact |
-| 10 | undeclared identifier | cascades from rejected rbtree definitions |
-| 6 | struct attribute `packed` | |
-| 5 | empty struct | |
-| 28 | thirteen further forms, at most five each | enum parameters and returns, deeper `const`, struct arrays, function-pointer objects, and const discarding |
-
-A scratch experiment that ignored every unknown function attribute, and
-landed nothing, still rejected 1,357 declarations. The next layer inside the
-inline bodies is: inline `asm` statements (70), `__builtin_constant_p` (57),
-`__builtin_bswap16`/`32` and `__builtin_mul_overflow` (8), block-scope
-function declarations with attributes from `compiletime_assert` (14), and
-aggregate, cast, and sequencing forms the checked subset rejects. Most of the
-rest are cascades from `atomic_long_t`, `atomic64_t`, and the fixed-width
-typedef chain.
+| 11 | anonymous `union` or `struct` member | first at `compiler_types.h:172`, the first unsupported declaration in the artifact and the gate's pin |
+| 96 | further forms, at most nine each | call sequencing, casts, enum parameters and returns, `packed`, empty structs, const forms, conditional typing |
 
 Most of that graph is not rbtree. A token-level estimate of the declarations
 that `lib/rbtree.c` transitively names finds 80: the 58 in `lib/rbtree.c`, 20
 in `rbtree.h`, `rbtree_augmented.h`, and `rbtree_types.h`, the `false`/`true`
-enumeration in `stddef.h`, and the `uintptr_t` typedef in
-`types.h`. The estimate is heuristic and was not checked by a compiler. Of
-those 80, 15 are accepted today. Within them the distinct rejections are:
+enumeration in `stddef.h`, and the `uintptr_t` typedef in `types.h`. The
+estimate is heuristic and was not checked by a compiler. Of those 80, 34 are
+accepted today and 46 are rejected. 36 of the 46 are the twelve exports,
+three declarations each: `extern typeof(fn) fn;`, a `static void *` with
+`__used__` and `__section__(".discard.addressable")` initialized to the
+function's address, and a file-scope `asm` that emits the `.export_symbol`
+record. No verified function depends on them, so the projection excludes
+them and they are outside the claim. The other ten are:
 
-1. The `__gnu_inline__`, `__unused__`, and `no_instrument_function`
-   attributes on every inline helper.
-2. Unnamed parameters in the eight `rbtree.h` prototypes.
-3. Per export, three declarations: `extern typeof(fn) fn;`, a `static void *`
-   with `__used__` and `__section__(".discard.addressable")` initialized to
-   the function's address, and a file-scope `asm` that emits the
-   `.export_symbol` record. There are twelve exports. This needs the owner's
-   decision.
-4. Block-scope `extern void f(void)` declarations with `__noreturn__` and
-   `__error__`, from `compiletime_assert` inside `WRITE_ONCE`.
-5. `__builtin_constant_p`, from `rcu_assign_pointer`
-   (`rbtree_augmented.h:207`).
-6. `conditional operator branches have incompatible types` in
-   `__rb_erase_augmented` (`rbtree_augmented.h:223`).
-7. `cannot discard const qualification from a pointer initializer` in
-   `rb_next` and `rb_prev` (`lib/rbtree.c:507`, `:539`), and
-   `expected a pointer to struct rb_node` in the postorder functions
-   (`:615`, `:628`).
-8. The static non-inline function `rb_left_deepest_node` (`lib/rbtree.c:592`).
+| Declaration | First rejection | At |
+| --- | --- | --- |
+| `__rb_change_child` | block-scope `extern` declaration with `__noreturn__` and `__error__`, from `compiletime_assert` inside `WRITE_ONCE` | `rbtree_augmented.h:200` |
+| `__rb_change_child_rcu` | `__builtin_constant_p`, from `rcu_assign_pointer`; the same body also holds the `barrier()` assembly `__asm__ __volatile__("": : :"memory")` | `rbtree_augmented.h:213` |
+| `__rb_erase_augmented` | `conditional operator branches have incompatible types` | `rbtree_augmented.h:247` |
+| `__rb_insert` | the `compiletime_assert` declaration | `lib/rbtree.c:155` |
+| `____rb_erase_color` | the `compiletime_assert` declaration | `lib/rbtree.c:253` |
+| `rb_next`, `rb_prev` | `cannot discard const qualification from a pointer initializer` | `lib/rbtree.c:507`, `:539` |
+| `rb_left_deepest_node` | static non-inline function | `lib/rbtree.c:592` |
+| `rb_next_postorder`, `rb_first_postorder` | `expected a pointer to struct rb_node` | `lib/rbtree.c:615`, `:628` |
 
-Items 4 to 6 were seen only with the attributes ignored in the scratch
-experiment, and each declaration may hide further rejections behind its
-first. `typeof`, statement expressions, and `__builtin_expect` did not appear
-as rejections.
+`typeof`, statement expressions, and `__builtin_expect` do not appear as
+rejections.
 
-Whether Click must model all 2,575 declarations, or may import a checked
-dependency closure of the functions it verifies, is the decision that sets
-the size of package 3. It is open, as are the export and assembly
-representation and the compiler-option policy.
+Decisions, 2026-10-02. Click imports a checked dependency closure of the
+functions it verifies, not the whole artifact: the closure is computed from
+the names those functions reference, anything unsupported inside it is
+rejected with a located diagnostic, and declarations outside it are neither
+parsed for semantics nor claimed. Until that projection lands, the gate's pin
+stays at the first unsupported declaration of the whole artifact.
+`__builtin_constant_p` is to be an unknown 0 or 1, so both arms are checked.
+Exactly the empty-template `barrier()` assembly is to be a no-op in the
+sequential semantics; every other assembly stays rejected. The recorded
+compiler options are to be accepted one by one where ignoring the option
+cannot make Click accept a program the compiler would treat differently.
+This arrangement is sized for the rbtree demo; it is not general
+kernel-scale import machinery.
 
 The earlier `/tmp/linux-6.8.12` tree and `/tmp/rbtree-6.8.12.i` combined upstream
 sources with host-generated headers and failed compiler validation. They are
