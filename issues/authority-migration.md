@@ -444,8 +444,11 @@ wrong member/anchor identities, and extra effects. Standalone contract checking
 checks both consumptions; focused source refusals cover an omitted second
 consumption and an extra birth without explicit count postconditions.
 
-The next slice integrates the original two-counter transfer and its pipeline
-through the two ordinary controls. Keep additional
+The original two-counter transfer now verifies through two ordinary controls.
+The source member and destination slot supply its counter bounds; the proof
+preserves the object's value and restores both pool invariants. No C, syntax,
+or further checker change is required. The next slice integrates its original
+caller pipeline. Keep additional
 batch splitting support driven by those actual consumers.
 The original bounded-pool project still uses legacy counting and is not
 migrated as a whole. The speculative cache repair remains removed.

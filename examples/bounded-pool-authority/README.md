@@ -3,7 +3,7 @@
 This is the first project-level authority checkpoint for the bounded pool.
 The sidecar references the C files in `../bounded-pool` directly; no C source
 is copied or changed. It proves initialization, checkout, return,
-growth, shrink, and cleanup, plus the original zero-capacity, two-object, and resize
+growth, shrink, transfer, and cleanup, plus the original zero-capacity, two-object, and resize
 pipelines.
 
 `pool_storage(pool)` owns pool memory and both population authorities.
@@ -54,6 +54,10 @@ bounds for both population growth and invariant restoration. Zero growth has
 no member effect. Focused regressions reject capacity overflow and slot
 creation without matching authority.
 
-Transfer remains in the original project during migration. Focused
-authority fixtures already cover several of their prerequisites; integrate
-them in separate green checkpoints.
+`pool_transfer` borrows the source and destination controls, consumes the
+source's concrete object member and one destination slot, and produces the
+destination member and one source slot. Its proof updates the original C
+counters, preserves the object's private value and both capacities, and restores
+both conservation invariants. The supplied member and slot establish safe
+counter updates; no extra counter-bound precondition is needed. Integrating the
+original transfer pipeline is the next separate checkpoint.
