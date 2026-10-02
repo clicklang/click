@@ -601,8 +601,19 @@ load's address in the run's block
 negatives; see
 [the equality-closure note](../docs/internals/equality-closure.md#checked-pointer-read-sources)).
 
-**Chunk 2. Empty-uncle leaves of left-left.** The text is the same after
-refolding the uncle as `Empty`. Depends on 1.
+**Chunk 2. Empty-uncle leaves of left-left: landed 2026-10-02.** All eight
+leaves under an empty uncle run case 3 to the `break`. The uncle is refolded
+as `fold(rb_at(tmp), { model: RbTree::Empty })` with
+`rb_root_black(RbTree::Empty) == 1` by unfolding, and the rest is the
+node-uncle arm's text with the uncle model spelled `RbTree::Empty`; the arm
+starts one statement earlier than the old three-`step()` stub left it, at the
+join after `if (tmp && rb_is_red(tmp))`. The frontier report named this path
+before the change (checked by advancing each empty-uncle leaf one step: only
+this one moved the report, although the report's `tactic@` line points at the
+last leaf in the file). It is now at statement 52, `tmp = parent->rb_left`,
+with 19 `break`s and 4 `continue`s complete; `tests/examples.rs` pins it.
+Verify time of the frontier on a release build, user seconds, load average
+about 10: 3.1 with 9 `break`s, 3.2 with 11, 4.3 with 19.
 
 **Chunk 3. Case-2 step theorems.** `_step` forms of `ctx_insert_case2_*` in
 the model, in the shape of `ctx_insert_case1_*_step` and

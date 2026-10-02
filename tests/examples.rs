@@ -198,13 +198,13 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
     .unwrap_or_else(|error| panic!("{error}"))
     .expect_err("the insert proof frontier is deliberately unfinished");
     // The uncle-red `continue`s are complete on every frame combination,
-    // and all eight black-uncle case-3 rotation `break`s on the left-left
-    // frames whose uncle is a node. The report is now at an empty-uncle
-    // path, which stops before the case-2 test.
+    // and all sixteen black-uncle case-3 rotation `break`s of the
+    // left-left frames, under a node uncle and under an empty one. The
+    // report is now in the mirrored half of the loop body.
     let message = error.message();
     assert!(
-        message.contains("the frontier is at statement 23, `tmp = ")
-            && message.contains("11 at a `break` and 4 at a `continue`"),
+        message.contains("the frontier is at statement 52, `tmp = ")
+            && message.contains("19 at a `break` and 4 at a `continue`"),
         "unexpected insert frontier: {message}"
     );
 }
