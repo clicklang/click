@@ -1938,3 +1938,49 @@ fn execute_splits_a_short_circuit_condition_without_the_planner() {
         .join()
         .unwrap();
 }
+
+/// A null check on a fresh `malloc` result is an ordinary C branch: the
+/// condition's two paths decide the pending allocation, one per arm, and
+/// `execute()` splits it on the checked `Proof` without the planner.
+#[test]
+fn execute_branches_on_a_pending_allocation_without_the_planner() {
+    let c_source = r#"
+        void *malloc(unsigned long size);
+        void free(void *ptr);
+
+        int f(void) {
+            int *p = malloc(sizeof(int));
+            if (p == 0) {
+                return 0;
+            }
+            *p = 1;
+            free(p);
+            return 0;
+        }
+    "#;
+    let click_source = r#"
+        verifying "pending.c";
+
+        int f() {
+            ensures result == 0;
+        } by {
+            execute();
+            simp();
+        }
+    "#;
+    std::thread::Builder::new()
+        .stack_size(64 << 20)
+        .spawn(move || {
+            let before = crate::kernel::reasoning::path_facts::smart_planning_entries();
+            verify_c0_sources(click_source, &[("pending.c", c_source)])
+                .unwrap_or_else(|error| panic!("{}", error.message()));
+            assert_eq!(
+                crate::kernel::reasoning::path_facts::smart_planning_entries() - before,
+                0,
+                "`execute()` handed a branch on a pending allocation to the planner"
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

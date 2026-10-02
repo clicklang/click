@@ -790,13 +790,6 @@ impl<'a> Proof<'a> {
         if execution.core.frontier.is_at_function_exit() {
             return Ok(false);
         }
-        if execution.core.state.memory().has_pending_heap_allocation() {
-            // A pending malloc result is an independent execution split. The
-            // current branch container owns one C-condition split, not the
-            // Cartesian product of both; compatibility execution retains
-            // that frontier from the unchanged Proof root.
-            return Ok(false);
-        }
         let Some(context) = self.execution_context() else {
             return Ok(false);
         };
