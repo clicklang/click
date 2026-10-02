@@ -7,10 +7,9 @@ is `(n - x) - 1 <u n - x` at the entry value of `x`. That holds exactly when
 needed: the measure is ranked on the wrapped value C computes, and the
 guard is what keeps that value from wrapping.
 
-The claim is true, but closing it needs unsigned order arithmetic over the
-sign-bit-flipped differences, which the closer does not do yet. That open
-decrease member is the refusal this test pins; it changes to `pass` when
-`bugs/unsigned-order-arithmetic-in-closers.md` is fixed.
+The closer does not do unsigned order arithmetic by itself. The proof
+states the two steps: the difference is nonzero under the guard, and the
+predecessor of a nonzero `uint32` is smaller.
 
 ```c filename=an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.c
 int32 count(uint32 n) {
@@ -35,6 +34,16 @@ int32 count(uint32 n) {
         initialize by { simp(); }
         preserve by {
             step();
+            have 0u32 < n - at(statement(3).entry, x) by {
+                apply(uint32_lt_implies_positive_difference(at(statement(3).entry, x), n)) using {
+                    at(statement(3).entry, x) < n;
+                }
+            }
+            have (n - at(statement(3).entry, x)) - 1u32 < n - at(statement(3).entry, x) by {
+                apply(uint32_positive_predecessor_strictly_decreases(n - at(statement(3).entry, x))) using {
+                    0u32 < n - at(statement(3).entry, x);
+                }
+            }
             close_invariants();
         }
     }
@@ -44,5 +53,5 @@ int32 count(uint32 n) {
 ```
 
 ```expect
-fail: `((n - at(statement(3).entry, x)) - 1) < (n - at(statement(3).entry, x)) (unsigned)` remained open; this loop declares `decreases`, so the bundle also has `0 <= n - x` at the back edge, `n - x` decreases at the back edge
+pass
 ```

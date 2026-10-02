@@ -8239,6 +8239,119 @@ pub fn prove_int32_positive_predecessor_strictly_decreases(value: Bitvector32Ter
     ))
 }
 
+fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(premise, true)),
+        Box::new(Proposition::ConditionIs(conclusion, true)),
+    ))
+}
+
+/// Decrementing a nonzero uint32 value strictly decreases it. A nonzero
+/// value has a predecessor that does not wrap; at zero the predecessor is
+/// `UINT_MAX`, which the premise excludes.
+pub fn prove_uint32_positive_predecessor_strictly_decreases(value: Bitvector32Term) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(Bitvector32Term::Constant(0), value.clone()),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::Subtract(
+                Box::new(value.clone()),
+                Box::new(Bitvector32Term::Constant(1)),
+            ),
+            value,
+        ),
+    )
+}
+
+/// A uint32 increment preserves a strict upper bound as a non-strict bound.
+/// The strict premise rules out wraparound: if `value` were `UINT_MAX`, no
+/// uint32 `upper` could be greater than it.
+pub fn prove_uint32_increment_upper_bound(
+    value: Bitvector32Term,
+    upper: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
+        ConditionTerm::unsigned_less_equal(
+            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
+            upper,
+        ),
+    )
+}
+
+/// A uint32 increment is strictly greater than its input when a strict
+/// upper bound rules out wraparound.
+pub fn prove_uint32_increment_strictly_increases(
+    value: Bitvector32Term,
+    upper: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value.clone(), upper),
+        ConditionTerm::unsigned_less_than(
+            value.clone(),
+            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
+        ),
+    )
+}
+
+/// The uint32 difference `upper - value` is nonzero when `value` is strictly
+/// below `upper`. The subtraction does not wrap, because `value <= upper`.
+pub fn prove_uint32_lt_implies_positive_difference(
+    value: Bitvector32Term,
+    upper: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::Constant(0),
+            Bitvector32Term::Subtract(Box::new(upper), Box::new(value)),
+        ),
+    )
+}
+
+/// `greater > lower` and `lower < greater` are one uint32 order.
+pub fn prove_uint32_gt_implies_reversed_lt(
+    greater: Bitvector32Term,
+    lower: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_greater_than(greater.clone(), lower.clone()),
+        ConditionTerm::unsigned_less_than(lower, greater),
+    )
+}
+
+/// `lower < greater` and `greater > lower` are one uint32 order.
+pub fn prove_uint32_lt_implies_reversed_gt(
+    lower: Bitvector32Term,
+    greater: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
+        ConditionTerm::unsigned_greater_than(greater, lower),
+    )
+}
+
+/// `greater >= lower` and `lower <= greater` are one uint32 order.
+pub fn prove_uint32_ge_implies_reversed_le(
+    greater: Bitvector32Term,
+    lower: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
+        ConditionTerm::unsigned_less_equal(lower, greater),
+    )
+}
+
+/// `lower <= greater` and `greater >= lower` are one uint32 order.
+pub fn prove_uint32_le_implies_reversed_ge(
+    lower: Bitvector32Term,
+    greater: Bitvector32Term,
+) -> Theorem {
+    uint32_implication(
+        ConditionTerm::unsigned_less_equal(lower.clone(), greater.clone()),
+        ConditionTerm::unsigned_greater_equal(greater, lower),
+    )
+}
+
 /// Signed non-strict order followed by strict order is strict order.
 pub fn prove_int32_le_lt_transitive(
     first: Bitvector32Term,

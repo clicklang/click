@@ -8723,3 +8723,154 @@ fn wide_constant_arithmetic_work_scales_with_selected_expression() {
         prior = Some(work);
     }
 }
+
+/// Each uint32 order axiom holds at every boundary value: the kernel's own
+/// evaluation of its premise and conclusion over constants never finds the
+/// premise true and the conclusion false. The values straddle zero, the sign
+/// bit the unsigned order is encoded through, and `UINT_MAX`, where an
+/// increment or a decrement wraps.
+#[test]
+fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
+    const BOUNDARIES: [u32; 9] = [
+        0,
+        1,
+        2,
+        0x7fff_ffff,
+        0x8000_0000,
+        0x8000_0001,
+        0xffff_fffd,
+        0xffff_fffe,
+        0xffff_ffff,
+    ];
+    fn holds(theorem: &Theorem) -> bool {
+        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
+            panic!("a uint32 order axiom is one implication");
+        };
+        let decide = |proposition: &Proposition| {
+            let Proposition::ConditionIs(condition, true) = proposition else {
+                panic!("a uint32 order axiom relates two conditions");
+            };
+            PureFactContext::decide_intrinsically(condition)
+                .expect("a condition over constants is decided")
+        };
+        !decide(premise) || decide(conclusion)
+    }
+    let constant = Bitvector32Term::Constant;
+    let mut premises_true = 0usize;
+    for left in BOUNDARIES {
+        assert!(
+            holds(&prove_uint32_positive_predecessor_strictly_decreases(
+                constant(left)
+            )),
+            "predecessor at {left:#x}"
+        );
+        for right in BOUNDARIES {
+            let pair: [(&str, Theorem); 7] = [
+                (
+                    "increment upper bound",
+                    prove_uint32_increment_upper_bound(constant(left), constant(right)),
+                ),
+                (
+                    "increment increases",
+                    prove_uint32_increment_strictly_increases(constant(left), constant(right)),
+                ),
+                (
+                    "positive difference",
+                    prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
+                ),
+                (
+                    "gt reversed",
+                    prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
+                ),
+                (
+                    "lt reversed",
+                    prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
+                ),
+                (
+                    "ge reversed",
+                    prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
+                ),
+                (
+                    "le reversed",
+                    prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
+                ),
+            ];
+            for (name, theorem) in &pair {
+                assert!(holds(theorem), "{name} at {left:#x}, {right:#x}");
+            }
+            if left < right {
+                premises_true += 1;
+            }
+        }
+    }
+    // The strict-order premises are exercised, not only vacuous cases.
+    assert_eq!(premises_true, 36);
+
+    // Near-equal pairs, where a bound is tight, and a spread of ordinary
+    // values from a fixed linear congruential sequence.
+    let mut state = 0x2545_f491u32;
+    let mut sampled = Vec::new();
+    for _ in 0..4096 {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let left = state;
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        sampled.push((left, state));
+        for delta in [0u32, 1, 2, u32::MAX, u32::MAX - 1] {
+            sampled.push((left, left.wrapping_add(delta)));
+        }
+    }
+    for left in BOUNDARIES {
+        for delta in [0u32, 1, 2, u32::MAX, u32::MAX - 1] {
+            sampled.push((left, left.wrapping_add(delta)));
+        }
+    }
+    for (left, right) in sampled {
+        assert!(
+            holds(&prove_uint32_positive_predecessor_strictly_decreases(
+                constant(left)
+            )),
+            "predecessor at {left:#x}"
+        );
+        for theorem in [
+            prove_uint32_increment_upper_bound(constant(left), constant(right)),
+            prove_uint32_increment_strictly_increases(constant(left), constant(right)),
+            prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
+            prove_uint32_gt_implies_reversed_lt(constant(left), constant(right)),
+            prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
+            prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
+            prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
+        ] {
+            assert!(
+                holds(&theorem),
+                "{:?} at {left:#x}, {right:#x}",
+                theorem.proposition()
+            );
+        }
+    }
+
+    // The check can fail: each conclusion is false where its premise is,
+    // so a statement without its premise would not pass.
+    let conclusion_holds = |theorem: &Theorem| {
+        let Proposition::Implies(_, conclusion) = theorem.proposition() else {
+            panic!("a uint32 order axiom is one implication");
+        };
+        let Proposition::ConditionIs(condition, true) = conclusion.as_ref() else {
+            panic!("a uint32 order axiom relates two conditions");
+        };
+        PureFactContext::decide_intrinsically(condition)
+            .expect("a condition over constants is decided")
+    };
+    assert!(!conclusion_holds(
+        &prove_uint32_positive_predecessor_strictly_decreases(constant(0))
+    ));
+    assert!(!conclusion_holds(&prove_uint32_increment_upper_bound(
+        constant(5),
+        constant(5)
+    )));
+    assert!(!conclusion_holds(
+        &prove_uint32_increment_strictly_increases(constant(u32::MAX), constant(0))
+    ));
+    assert!(!conclusion_holds(
+        &prove_uint32_lt_implies_positive_difference(constant(7), constant(7))
+    ));
+}

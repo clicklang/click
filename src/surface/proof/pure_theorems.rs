@@ -2208,6 +2208,14 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "int32_nonnegative_predecessor_upper_bound"
                 | "int32_successor_le_implies_lt"
                 | "int32_lt_successor_implies_le"
+                | "uint32_positive_predecessor_strictly_decreases"
+                | "uint32_increment_upper_bound"
+                | "uint32_increment_strictly_increases"
+                | "uint32_lt_implies_positive_difference"
+                | "uint32_gt_implies_reversed_lt"
+                | "uint32_lt_implies_reversed_gt"
+                | "uint32_ge_implies_reversed_le"
+                | "uint32_le_implies_reversed_ge"
         )
 }
 
@@ -2263,6 +2271,14 @@ fn verify_kernel_standard_theorem_axiom(
         | "int32_lt_le_transitive"
         | "int32_lt_transitive"
         | "int32_ge_transitive" => (3, 2),
+        "uint32_positive_predecessor_strictly_decreases" => (1, 1),
+        "uint32_increment_upper_bound"
+        | "uint32_increment_strictly_increases"
+        | "uint32_lt_implies_positive_difference"
+        | "uint32_gt_implies_reversed_lt"
+        | "uint32_lt_implies_reversed_gt"
+        | "uint32_ge_implies_reversed_le"
+        | "uint32_le_implies_reversed_ge" => (2, 1),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2298,6 +2314,45 @@ fn verify_kernel_standard_theorem_axiom(
             )));
         };
         crate::kernel::prove_integer_machine_round_trip(value.clone(), destination)
+    } else if theorem.name().starts_with("uint32_") {
+        let uint32_parameter = |index: usize| {
+            let parameter = &theorem.parameters()[index];
+            match context.values.get(parameter.name()) {
+                Some(CValue::UInt32(term)) => Ok(term.clone()),
+                _ => Err(ClickError::new(format!(
+                    "`{claim_label}` kernel parameter `{}` must be uint32",
+                    parameter.name()
+                ))),
+            }
+        };
+        let value = uint32_parameter(0)?;
+        match theorem.name() {
+            "uint32_positive_predecessor_strictly_decreases" => {
+                prove_uint32_positive_predecessor_strictly_decreases(value)
+            }
+            "uint32_increment_upper_bound" => {
+                prove_uint32_increment_upper_bound(value, uint32_parameter(1)?)
+            }
+            "uint32_increment_strictly_increases" => {
+                prove_uint32_increment_strictly_increases(value, uint32_parameter(1)?)
+            }
+            "uint32_lt_implies_positive_difference" => {
+                prove_uint32_lt_implies_positive_difference(value, uint32_parameter(1)?)
+            }
+            "uint32_gt_implies_reversed_lt" => {
+                prove_uint32_gt_implies_reversed_lt(value, uint32_parameter(1)?)
+            }
+            "uint32_lt_implies_reversed_gt" => {
+                prove_uint32_lt_implies_reversed_gt(value, uint32_parameter(1)?)
+            }
+            "uint32_ge_implies_reversed_le" => {
+                prove_uint32_ge_implies_reversed_le(value, uint32_parameter(1)?)
+            }
+            "uint32_le_implies_reversed_ge" => {
+                prove_uint32_le_implies_reversed_ge(value, uint32_parameter(1)?)
+            }
+            _ => unreachable!("checked above"),
+        }
     } else {
         let int32_parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
