@@ -5819,6 +5819,10 @@ pub(super) struct ResourceContextIndex {
     pub(super) owned_instances_by_pointer_argument: PersistentMap<Pointer, ResourceEntryIds>,
     pub(super) exact: PersistentMap<CResourceFact, ResourceEntryIds>,
     pub(super) by_resource: PersistentMap<CResource, ResourceEntryIds>,
+    /// Constant owned units of quantity-bearing families. A quantity query
+    /// reads one exact key rather than enumerating separately retained units.
+    /// u128 covers every u64 entry ID times a positive signed-32 quantity.
+    pub(super) numeric_owned_units: PersistentMap<CResource, (u128, usize)>,
     /// Presence of composite heads, independent of ownership mode/quantity.
     /// Reuses the population alias index without granting count authority.
     pub(super) population_heads: CountedPopulations,

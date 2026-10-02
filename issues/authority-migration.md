@@ -296,17 +296,14 @@ populations; zero has no member rights. Symbolic batches forwarded through
 another opaque helper still need support. These tests do not complete the
 original bounded-pool migration.
 
-The attempted original sidecar exposed the following dependency before the
-pipeline can migrate. Keep the original sidecar on its existing verification
-path until these regressions pass:
-
-- **Multiple identified members under imported authority.** A pipeline whose
-  pool is an external argument checks out two different private objects and
-  returns each. The current opaque wildcard import represents one selected
-  member. Extend its custody by exact member identity before admitting a
-  second birth: aggregate cardinality alone must not authorize consumption or
-  helper transfer of a different member. Test retained neighbors, aliasing,
-  wrong-member consumption, and deterministic scaling over unrelated members.
+The two-object checkout/write/return sequence now has a reduced regression in
+`mdtests/authority_pool_control_two_members.md`, including private writes with
+control closed, two exact custodies, opposite-order returns, and a final slot
+quantity of two. Positive fixed exclusive memory footprints justify exact
+member uniqueness; this follows ownership and does not use proof-field presence
+to determine countedness. Wrong-member and double-spend tests preserve the
+separate count and custody checks. Symbolic batches and the original
+resize/transfer/cleanup paths remain to migrate.
 
 The original C is unchanged. Do not replace these pipelines with locally
 allocated synthetic pools or weaken their final claims to avoid the gaps.

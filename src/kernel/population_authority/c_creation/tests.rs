@@ -2589,6 +2589,223 @@ mod wildcard_scope_tests {
     }
 
     #[test]
+    fn empty_opaque_population_entails_zero_for_every_exact_member() {
+        let (scope, member) = opaque_scope(0);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_authority(&scope)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap().entry_count;
+        let empty = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(count.clone(), Bitvector32Term::Constant(0)),
+            true,
+        );
+        assert_eq!(
+            entry
+                .observe_exact_member(&member, &empty)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+        let nonempty = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(count, Bitvector32Term::Constant(1)),
+            true,
+        );
+        assert!(matches!(
+            entry
+                .observe_exact_member(&member, &nonempty)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Variable(_)
+        ));
+        let child = entry.enter_call();
+        let away = entry
+            .transfer_call_fact(&entry, &child, &scope, true)
+            .unwrap();
+        assert!(away.observe_exact_member(&member, &empty).is_err());
+    }
+
+    #[test]
+    fn exclusive_wildcard_members_keep_exact_custody_through_a_call() {
+        let (scope, first) = opaque_scope(0);
+        let different = |index| {
+            let mut arguments = first.arguments().to_vec();
+            arguments[1] = int32(index).into();
+            ResourceDescription::new(
+                first.family().into(),
+                arguments.into(),
+                first.schema().clone(),
+            )
+        };
+        let second = different(8);
+        let wrong = different(9);
+        let entry = CreationEvents::new()
+            .import_opaque_wildcard_authority(&scope)
+            .unwrap();
+        let count = entry.observe_symbolic(&scope).unwrap().entry_count;
+        let bounds = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_greater_equal(
+                Bitvector32Term::Constant(i32::MAX as u32 - 3),
+                count,
+            ),
+            true,
+        );
+        let birth = |events: &CreationEvents, member: &ResourceDescription| {
+            events
+                .checked_exclusive_member_exchange_quantity(
+                    &PointerBlock::ExternalArgument,
+                    member,
+                    true,
+                    &Bitvector32Term::Constant(1),
+                    &bounds,
+                )
+                .unwrap()
+                .0
+        };
+        let one = birth(&entry, &first);
+        let two = birth(&one, &second);
+        assert_eq!(two.observe_symbolic(&scope).unwrap().delta, 2);
+        assert!(two.owns_imported_population_member(&first));
+        assert!(two.owns_imported_population_member(&second));
+        assert!(!two.owns_imported_population_member(&wrong));
+        assert!(
+            two.checked_member_exchange(&PointerBlock::ExternalArgument, &wrong, false)
+                .is_err()
+        );
+        assert!(two.observe_exact_member(&wrong, &bounds).is_err());
+        assert_eq!(
+            two.observe_exact_member(&first, &bounds)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+        let child = two.enter_call();
+        let sent_first = child
+            .transfer_call_fact(&two, &child, &scope, true)
+            .unwrap()
+            .transfer_call_fact(&two, &child, &first, false)
+            .unwrap();
+        let sent_second = child
+            .transfer_call_fact(&two, &child, &scope, true)
+            .unwrap()
+            .transfer_call_fact(&two, &child, &second, false)
+            .unwrap();
+        assert_ne!(
+            sent_first, sent_second,
+            "memoization must include exact member identity"
+        );
+        assert!(sent_first.owns_imported_population_member(&first));
+        assert!(!sent_first.owns_imported_population_member(&second));
+        assert!(
+            sent_first
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &second, false)
+                .is_err()
+        );
+        let spent = sent_first
+            .checked_member_exchange(&PointerBlock::ExternalArgument, &first, false)
+            .unwrap()
+            .0;
+        assert!(
+            spent
+                .checked_member_exchange(&PointerBlock::ExternalArgument, &first, false)
+                .is_err()
+        );
+        let returned = spent
+            .transfer_call_fact(&child, &two, &scope, true)
+            .unwrap()
+            .finish_call(&two)
+            .unwrap();
+        assert!(!returned.owns_imported_population_member(&first));
+        assert!(returned.owns_imported_population_member(&second));
+        assert_eq!(returned.observe_symbolic(&scope).unwrap().delta, 1);
+        assert_eq!(
+            returned
+                .observe_exact_member(&first, &bounds)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(0)
+        );
+        let three = birth(&returned, &wrong);
+        assert!(
+            three.observe_exact_member(&first, &bounds).is_err(),
+            "a later unresolved birth cannot preserve an old exact absence"
+        );
+        assert_eq!(
+            three
+                .observe_exact_member(&second, &bounds)
+                .unwrap()
+                .entry_count,
+            Bitvector32Term::Constant(1)
+        );
+    }
+
+    #[test]
+    fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
+        let samples = [16_u32, 64, 256, 1024].map(|size| {
+            let (scope, first) = opaque_scope(0);
+            let at = |index| {
+                let mut arguments = first.arguments().to_vec();
+                arguments[1] = int32(index).into();
+                ResourceDescription::new(
+                    first.family().into(),
+                    arguments.into(),
+                    first.schema().clone(),
+                )
+            };
+            let mut events = CreationEvents::new()
+                .import_opaque_wildcard_authority(&scope)
+                .unwrap();
+            let bounds = PureFactContext::new().assume_condition(
+                ConditionTerm::signed_greater_equal(
+                    Bitvector32Term::Constant(i32::MAX as u32 - size - 1),
+                    events.observe_symbolic(&scope).unwrap().entry_count,
+                ),
+                true,
+            );
+            for index in 0..size {
+                events = events
+                    .checked_exclusive_member_exchange_quantity(
+                        &PointerBlock::ExternalArgument,
+                        &at(index),
+                        true,
+                        &Bitvector32Term::Constant(1),
+                        &bounds,
+                    )
+                    .unwrap()
+                    .0;
+            }
+            let selected = at(size / 2);
+            let child = events.enter_call();
+            let ((), work) = crate::persistent::measure_persistent_work(|| {
+                let sent = child
+                    .transfer_call_fact(&events, &child, &scope, true)
+                    .unwrap()
+                    .transfer_call_fact(&events, &child, &selected, false)
+                    .unwrap();
+                let spent = sent
+                    .checked_member_exchange(&PointerBlock::ExternalArgument, &selected, false)
+                    .unwrap()
+                    .0;
+                let returned = spent
+                    .transfer_call_fact(&child, &events, &scope, true)
+                    .unwrap()
+                    .finish_call(&events)
+                    .unwrap();
+                assert!(!returned.owns_imported_population_member(&selected));
+                assert!(returned.owns_imported_population_member(&at(0)));
+                assert_eq!(
+                    returned.observe_symbolic(&scope).unwrap().delta,
+                    size as i32 - 1
+                );
+            });
+            work
+        });
+        assert!(samples[0] > 0, "{samples:?}");
+        for (index, work) in samples.iter().enumerate() {
+            assert!(*work <= samples[0] + 80 * index, "{samples:?}");
+        }
+    }
+
+    #[test]
     fn wildcard_helper_birth_checks_bound_identity_and_single_transition() {
         let (scope, member) = opaque_scope(0);
         let entry = CreationEvents::new()
