@@ -1085,6 +1085,13 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
         unreachable!("certificate validation requires an explicit proof script")
     };
     output.push_str("by {\n");
+    if tactics.is_empty() {
+        // A `by` block must hold a tactic. A generated proof with no step,
+        // such as the `initialize` phase of a loop with no invariant, keeps
+        // `assumption();`, the step a phase with nothing to prove is
+        // checked by.
+        line(output, &"    ".repeat(indent + 1), "assumption();");
+    }
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));
     output.push('}');

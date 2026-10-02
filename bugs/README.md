@@ -16,7 +16,6 @@ coverage, and documentation land.
 - [Expansion of a by-value struct copy emits a `have` that lowers to zero paths](expansion-emits-have-that-lowers-to-no-path.md)
 - [Expanded `simp` emits an `assumption` that matches no goal](simp-expansion-assumption-matches-no-goal.md)
 - [Expansion refuses a witness that has no surface spelling](expansion-needs-unspellable-resource-witness.md)
-- [`loop` expansion emits an empty `by` block](loop-expansion-emits-empty-by-block.md)
 - [Expansion is unavailable where a call has an exceptional path](expansion-unavailable-for-exceptional-call-paths.md)
 - [Expanded sidecar prints a multidimensional array field with too few indices](expanded-sidecar-misprints-multidimensional-array-fields.md)
 - [Expansion refuses a tactic whose rewrite differs by execution path or obligation](expansion-refuses-path-dependent-rewrites-at-one-leaf.md)
