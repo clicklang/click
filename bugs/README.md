@@ -27,3 +27,4 @@ Delete a bug file when its fix, regression coverage, and documentation land.
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [`click audit` cannot resolve an `ensures` source it inventoried](audit-cannot-resolve-ensures-source.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
+- [A function with early returns verifies in work quadratic in their count](early-return-paths-store-facts-whole.md)
