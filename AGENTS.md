@@ -10,11 +10,16 @@ is ready to merge. Do not push development branches or changes directly to the
 upstream repository, even with write or admin access. Maintainers integrate
 reviewed changes through pull requests.
 
-For follow-on work on the same effort, keep updating its existing open pull
-request and branch with each coherent green increment; do not open a duplicate
-pull request. Once that pull request merges, start later work from current
-upstream `master` on a new branch and pull request. Keep independent efforts in
-separate pull requests.
+Each task thread, whether a human working session or one agent, has at most
+one open pull request at a time. While it is open, add each further coherent
+green increment to that same branch and pull request, even when the increment
+is a different chunk of the effort or an unrelated fix found along the way, and
+describe each increment in the pull request body. Do not open a second pull
+request, and do not stack pull requests on one another. Once the thread's pull
+request merges or is closed, start later work from current upstream `master` on
+a new branch and pull request. A thread that opens many pull requests floods the
+merge queue, which merges one at a time, and turns every failure low in a stack
+into a blocked chain.
 
 Upstream `master` requires a pull request, a passing GitHub Actions `test`
 check, and the merge queue. The queue runs `scripts/check.sh` on the prospective
@@ -27,8 +32,9 @@ Use this preferred path when Lacker is working with an agent authenticated to
 GitHub as `lacker` and has authorized the agent to deliver the change. Other
 contributors follow the normal PR and review process.
 
-1. Before follow-up work, inspect the branch's PR. If it is still open, keep
-   working on that PR. If it merged, create a new PR for the new work.
+1. Before follow-up work, inspect the thread's PR. If it is still open, add
+   the new work to that PR, whatever it is. If it merged, create a new PR for
+   the new work.
 2. Make a coherent change and use judgment to choose useful local checks. A
    full `scripts/check.sh` run is not required before every PR; report the
    checks that did run.
@@ -42,7 +48,9 @@ contributors follow the normal PR and review process.
 5. Once GitHub confirms the request, continue with the next work without
    waiting for the check or merge to finish.
 6. On the next update, inspect the PR again. Update the same open PR and run
-   `gh pr merge <PR> --auto` again if needed. If it merged, open a new PR.
+   `gh pr merge <PR> --auto` again if needed: a push to a PR in the merge queue
+   takes it out of the queue until its checks pass again. If it merged, open a
+   new PR.
 7. If checks fail, a conflict appears, or GitHub removes the PR from the
    queue, resolve the problem, update the PR, and register the merge request
    again. Then continue with the next work.
