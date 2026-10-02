@@ -6981,10 +6981,24 @@ pub(in crate::surface) fn build_function_environment(
         };
         environment = environment.with_function(function);
     }
+    // A standard-library declaration is built only for a program that
+    // refers to it, by the same call graph targeted verification follows.
+    // The library's declarations are in every program's block list, and
+    // building one costs an entry construction.
+    let mut referenced = BTreeSet::new();
+    for (_, parsed) in parsed_sources.values() {
+        referenced.extend(c0_statement_calls(parsed).into_iter().flatten());
+    }
     for function_block in function_blocks
         .iter()
         .filter(|function| function.is_external())
     {
+        let name = function_block.signature().name();
+        if !referenced.contains(name)
+            && standard_library_function_block(name)?.as_ref() == Some(function_block)
+        {
+            continue;
+        }
         let parsed_function = external_c0_function(function_block);
         let (state, arguments, _, _) = initial_claim_context(
             function_block,
