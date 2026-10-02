@@ -2385,6 +2385,33 @@ impl RecordedSnapshots {
         prior
     }
 
+    /// The index of the C statement whose snapshot was recorded most
+    /// recently and is still recorded: the statement an execution path last
+    /// stepped. Diagnostics read this to name where a path ended.
+    ///
+    /// The walk follows the change history from its newest entry and stops
+    /// at the first statement, so it costs the few non-statement changes
+    /// (marks, loop and label points) recorded after that statement. It
+    /// gives up after `LATEST_STATEMENT_WALK` changes rather than scan a
+    /// long history for a location note.
+    fn latest_statement(&self) -> Option<usize> {
+        const LATEST_STATEMENT_WALK: usize = 64;
+        let mut change = self.version.history.as_ref();
+        for _ in 0..LATEST_STATEMENT_WALK {
+            let entry = change?;
+            if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Statement(index),
+                ..
+            }) = &entry.selector
+                && self.contains_key(&entry.selector)
+            {
+                return Some(*index);
+            }
+            change = entry.parent.as_ref();
+        }
+        None
+    }
+
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
         let selector = key.to_selector();
         let prior = self.get(key).cloned();

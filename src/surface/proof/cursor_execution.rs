@@ -724,9 +724,11 @@ pub(super) fn execute_branch_step_from_frontier_position(
                     .automatic_exits(skip_index, false),
             )
             .map_err(|error| {
-                ClickError::new(
+                ClickError::new(format!(
+                    "{}{}",
                     crate::surface::diagnostics::describe_runtime_error_over_locals(&error, &state),
-                )
+                    crate::surface::diagnostics::describe_c_statement_site(),
+                ))
                 .with_kind(runtime_refusal_kind(&error))
             })?;
         execution.core.state = state.clone().into();
@@ -1046,12 +1048,14 @@ fn execute_concrete_loop_head_step(
                 .automatic_exits(statement_index, false),
         )
         .map_err(|error| {
-            ClickError::new(
+            ClickError::new(format!(
+                "{}{}",
                 crate::surface::diagnostics::describe_runtime_error_over_locals(
                     &error,
-                    &current_state,
+                    &current_state
                 ),
-            )
+                crate::surface::diagnostics::describe_c_statement_site(),
+            ))
             .with_kind(runtime_refusal_kind(&error))
         })?;
     execution.core.state = current_state.clone().into();
@@ -3194,11 +3198,13 @@ fn execute_step_from_frontier_position_selecting_path(
                 .core
                 .record_automatic_lifetime_end(state, ended)
                 .map_err(|error| {
-                    ClickError::new(
+                    ClickError::new(format!(
+                        "{}{}",
                         crate::surface::diagnostics::describe_runtime_error_over_locals(
-                            &error, state,
+                            &error, state
                         ),
-                    )
+                        crate::surface::diagnostics::describe_c_statement_site(),
+                    ))
                     .with_kind(runtime_refusal_kind(&error))
                 })?;
         }

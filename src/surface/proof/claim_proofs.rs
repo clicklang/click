@@ -4475,7 +4475,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             )? {
                                 Ok(Some(obligation)) => {
                                     return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}",
+                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
                                         describe_runtime_error(
                                             &crate::kernel::CRuntimeError::LiveAllocationLeak {
                                                 allocation: obligation.allocation().clone(),
@@ -4484,18 +4484,22 @@ pub(super) fn finish_ordered_proof<'a>(
                                             },
                                             parsed_function.parameters(),
                                             arguments,
-                                        )
+                                        ),
+                                        outcome_substrate
+                                            .describe_outcome_statement_site(path_index),
                                     )));
                                 }
                                 Ok(None) => {}
                                 Err(error) => {
                                     return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}",
+                                        "`{proof_label}` path {path_index}: C operation could not be verified: {}{}",
                                         describe_runtime_error(
                                             &error,
                                             parsed_function.parameters(),
                                             arguments,
-                                        )
+                                        ),
+                                        outcome_substrate
+                                            .describe_outcome_statement_site(path_index),
                                     )));
                                 }
                             }
