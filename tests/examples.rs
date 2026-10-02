@@ -201,12 +201,13 @@ fn rbtree_insert_frontier_remains_explicit_and_uses_the_shared_model() {
     // frame combination, and the black-uncle rotation `break`s of all four
     // (case 3 on the outer frames, case 2 then case 3 on the inner ones).
     // The loop rule then refuses to join the exits, which hold the same
-    // binders and bytes in different representations
-    // (bugs/loop-exits-equal-up-to-representation-do-not-join.md).
+    // bytes in different memory representations
+    // (bugs/loop-exits-equal-up-to-representation-do-not-join.md). The
+    // exits' differing fold orders already join by what they hold.
     let message = error.message();
     assert!(
         message.contains(
-            "loop exits reach different states, so they have no common successor: memory, resource ownership"
+            "loop exits reach different states, so they have no common successor: memory)"
         ),
         "unexpected insert frontier: {message}"
     );
