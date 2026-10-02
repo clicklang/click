@@ -25,3 +25,5 @@ coverage, and documentation land.
 - [Expansion changes what a later C branch condition is decided from](expansion-changes-branch-condition-decision.md)
 - [`click audit` cannot resolve an `ensures` source it inventoried](audit-cannot-resolve-ensures-source.md)
 - [Proof failures still print kernel renderings of facts](proof-failures-print-kernel-renderings.md)
+- [A read through an arm identity is not the read through the parameter after a store](arm-identity-read-differs-from-parameter-read-after-a-store.md)
+- [`--trace-proof` prints no trace when the failure is a loop frontier report](trace-proof-prints-no-trace-at-a-loop-frontier.md)
