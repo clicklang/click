@@ -9,7 +9,7 @@ through B3, C1, C1b, C2, C2b, C2c, and C4's replacement half are landed.
 What remains is finishing the specific example: the verbatim `__rb_insert`,
 the traversals, erase, the augmented callbacks, and attaching the sidecars
 to the pinned source. That work is numbered as
-[chunks 1 to 17](#remaining-work-chunks-1-to-17), one pull request each. The
+[chunks 1 to 24](#remaining-work-chunks-1-to-24), one pull request each. The
 full history is in git: `git log --follow issues/rbtree-example.md`.
 
 P1: required for MVR. Linux rbtree does not store keys, so its generic
@@ -540,9 +540,10 @@ blocks C3; each is a candidate package when it starts to.
   children cannot be contracted, which `rb_replace_node_with_children.md`
   contradicts.
 
-## Remaining work: chunks 1 to 17
+## Remaining work: chunks 1 to 24
 
-Renumbered on 2026-10-02. A **chunk** is one pull request: one coherent green
+Renumbered on 2026-10-02, and the importer chunks again the same day once
+the pinned source was measured. A **chunk** is one pull request: one coherent green
 commit series with its regressions and docs. C is fixed; adaptation goes into
 contracts, lemmas, resources, tactics, lowering, or the kernel. No chunk
 creates issues. A chunk that hits a tooling failure listed in `AGENTS.md`
@@ -561,10 +562,10 @@ as follows:
 | C4b (traversals) | chunks 8 and 9 |
 | C5 (erase) | chunks 10 to 13 |
 | C6 (augmented variants and callbacks) | chunk 14 |
-| [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 and 16 |
-| D1 (attach sidecars to the pinned source; not design decision D1) | chunk 17 |
+| [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md), [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md) | chunks 15 to 23 |
+| D1 (attach sidecars to the pinned source; not design decision D1) | chunk 24 |
 
-Chunks 1, 3, 8, 10, and 15 have no unlanded prerequisite. None depends on the
+Chunks 8, 10, and 15 have no unlanded prerequisite; chunk 3 is landed. None depends on the
 [authority migration](authority-migration.md): the rbtree fixtures use neither
 `count(...)` nor `guarded_by`.
 
@@ -652,9 +653,14 @@ frontier moves.
 **Chunk 2. Empty-uncle leaves of left-left.** The text is the same after
 refolding the uncle as `Empty`. Depends on 1.
 
-**Chunk 3. Case-2 step theorems.** `_step` forms of `ctx_insert_case2_*` in
-the model, in the shape of `ctx_insert_case1_*_step` and
-`ctx_insert_case3_*_step`. Pure; no C.
+**Chunk 3. Case-2 step theorems — landed 2026-10-02.**
+`ctx_insert_case2_left_step` / `_right_step` state the model between the
+case-2 rotation and the case-3 code, with conclusions in the spelling
+`ctx_insert_case3_*_step` takes with parent and cursor exchanged.
+`ctx_insert_case2_left_exit_step` / `_right_exit_step` chain the two and
+conclude on `plug(up2, rotated subtree)`, because `node` is the subtree root
+at this `break`. The exit spelling was inferred from the C and the finished
+left-left leaf; chunk 5 is its first consumer.
 
 **Chunk 4. Right-right combination.** The mirror of left-left: case 3 only,
 through `__rb_rotate_set_parents` and `__rb_change_child`, refolds at the
@@ -724,20 +730,62 @@ for the complete mutation-capable augmentation proof.
 
 ### Pinned source
 
-**Chunk 15. Import the pinned translation unit.** The retained C semantics
-the expanded `lib/rbtree.c` needs (`typeof`, statement expressions,
-branch-expectation builtins, and the export/assembly storage decisions), as
-scoped in [kernel-scale-preprocessing.md](kernel-scale-preprocessing.md). May
-split once the first rejection on the pinned source is known.
+The in-repository import fixture is a demonstration arrangement, chosen for
+expedience; work that uses imports is expected to move out of this
+repository. Click imports only the checked dependency closure of the verified
+rbtree functions, about 80 of the 2,575 file-scope declarations in the
+preprocessed unit, and makes no claim about the rest. A declaration inside
+the closure that is unsupported is rejected, not dropped. Export storage and
+`.export_symbol` assembly are outside the closure and outside the claim.
+The measured inventory is in
+[kernel-scale-preprocessing.md](kernel-scale-preprocessing.md).
 
-**Chunk 16. Pinned inline helpers.** The actual `rbtree.h` and
+Landed or in the merge queue: variadic prototypes retained as uncallable
+declarations, and the
+pinned closure `integrations/linux-rbtree/` with its gate test and measured
+frontier. `typeof`, statement expressions, and `__builtin_expect` were
+already supported.
+
+Chunks 15 to 20 are independent of each other but edit the same parser, so
+they run serially. Each moves the first rejection pinned in the gate.
+
+**Chunk 15. Character-literal escapes.** Octal and hexadecimal escapes; the
+current first rejection is `'\001'` at `include/linux/printk.h:21`.
+
+**Chunk 16. Declaration-only attributes.** `__gnu_inline__`, `__unused__`,
+and `no_instrument_function` on `static inline`, with near-miss negatives;
+`gnu_inline` on a non-static inline stays rejected.
+
+**Chunk 17. Unnamed parameters** in body-less prototypes (eight in
+`rbtree.h`).
+
+**Chunk 18. Static non-inline file-scope functions**
+(`rb_left_deepest_node`).
+
+**Chunk 19. Qualifier and conditional typing.** The const forms in `rb_next`,
+`rb_prev`, and the postorder functions, and the conditional-operator type in
+`__rb_erase_augmented`, by the actual C rules.
+
+**Chunk 20. `compiletime_assert` and `__builtin_constant_p`.** Block-scope
+`extern` declarations with `noreturn`/`error`, and a constant-p semantics
+under which the code Click verifies in `rcu_assign_pointer` is the code the
+pinned compiler compiled.
+
+**Chunk 21. Checked dependency-closure projection.** Depends on 15 to 20.
+
+**Chunk 22. Recorded compiler-option profile and lock.** Accept a recorded
+option only where ignoring it cannot make Click accept what the compiler
+treats differently; then a real import lock replaces the negative gate.
+Depends on 21.
+
+**Chunk 23. Pinned inline helpers.** The actual `rbtree.h` and
 `rbtree_augmented.h` inline bodies as called from the pinned source, per
 [linux-rbtree-inline-helpers.md](linux-rbtree-inline-helpers.md). Depends on
-15.
+22.
 
-**Chunk 17. Attach the sidecars to the pinned translation unit** and replace
+**Chunk 24. Attach the sidecars to the pinned translation unit** and replace
 the verbatim-copy fixtures with the pinned regression. Depends on 9, 14, and
-16.
+23.
 
 ## Structural termination audit, 2026-09-14
 
