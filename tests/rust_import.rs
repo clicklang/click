@@ -66,6 +66,106 @@ fn charon_project() -> Project {
     .unwrap();
     p
 }
+const CHARON_LOOP_SOURCE: &str = include_str!("../design/charon-trial/borrowed-loop/loop.rs");
+const CHARON_LOOP_SIDECAR: &str = include_str!("../design/charon-trial/borrowed-loop/loop.click");
+fn charon_loop_project() -> Project {
+    let p = Project::new(CHARON_LOOP_SOURCE);
+    fs::write(p.root.join("loop.rs"), CHARON_LOOP_SOURCE).unwrap();
+    fs::write(p.root.join("borrow.click"), CHARON_LOOP_SIDECAR).unwrap();
+    fs::write(
+        p.config(),
+        include_bytes!("../design/charon-trial/borrowed-loop/loop.click.import.json"),
+    )
+    .unwrap();
+    fs::write(
+        p.root.join("loop.ullbc"),
+        include_bytes!("../design/charon-trial/borrowed-loop/loop.ullbc"),
+    )
+    .unwrap();
+    fs::write(
+        p.config().with_file_name("borrow.click.import.json.lock"),
+        include_bytes!("../design/charon-trial/borrowed-loop/loop.click.import.json.lock"),
+    )
+    .unwrap();
+    p
+}
+#[test]
+fn charon_borrowed_loop_checks_restoration_bounds_and_ranking() {
+    let p = charon_loop_project();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_LOOP_SIDECAR, &prepared).unwrap();
+    for n in [0, 1, 2147483647] {
+        let concrete =
+            CHARON_LOOP_SIDECAR.replace("requires n >= 0;", &format!("requires n == {n};"));
+        C0VerificationSession::new_program_prepared(&concrete, &prepared).unwrap();
+    }
+    for invalid in [
+        CHARON_LOOP_SIDECAR.replace("result == n", "result == n + 1"),
+        CHARON_LOOP_SIDECAR.replace("value[0] == old(value[0])", "value[0] == 7"),
+        CHARON_LOOP_SIDECAR.replace("requires n >= 0;", "requires n == -1;"),
+        CHARON_LOOP_SIDECAR.replace(
+            "invariant 0 <= i and i <= n;",
+            "invariant 0 <= i and i < n;",
+        ),
+        CHARON_LOOP_SIDECAR.replace("decreases n - i;", "decreases i;"),
+        CHARON_LOOP_SIDECAR.replace("    owns value[0..1];\n", ""),
+        CHARON_LOOP_SIDECAR.replace("execute_until(loop(0))", "execute_until(loop(99))"),
+    ] {
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+}
+#[test]
+fn charon_borrowed_loop_cli_expands_checked_loop_certificate() {
+    let p = charon_loop_project();
+    for command in ["verify", "profile", "audit"] {
+        assert_cli(&p, &[command]);
+    }
+    assert_cli(
+        &p,
+        &["expand", "--claim", "guarded_walk.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+    fs::write(
+        p.root.join("borrow.click"),
+        CHARON_LOOP_SIDECAR.replace("requires n >= 0;", "requires n == 0;"),
+    )
+    .unwrap();
+    assert_cli(&p, &["verify"]);
+    assert_cli(
+        &p,
+        &["expand", "--claim", "guarded_walk.contract", "--in-place"],
+    );
+    assert_cli(&p, &["verify"]);
+}
+#[test]
+#[ignore = "requires the separately built pinned Charon/compiler"]
+fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
+    let p = charon_loop_project();
+    let mut config: serde_json::Value =
+        serde_json::from_slice(&fs::read(p.config()).unwrap()).unwrap();
+    config["exporter"] = serde_json::json!(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/charon/debug/charon")
+    );
+    fs::write(p.config(), serde_json::to_vec(&config).unwrap()).unwrap();
+    refresh_import(&p.config()).unwrap();
+    let prepared = load_import(&p.config()).unwrap();
+    C0VerificationSession::new_program_prepared(CHARON_LOOP_SIDECAR, &prepared).unwrap();
+    for (source, diagnostic) in [
+        (CHARON_LOOP_SOURCE.replace("        *slot = i;", "        *value = 0;\n        *slot = i;"), "E0506"),
+        ("pub fn bad(n:i32) { let mut i=0; while i<n { let mut j=0; while j<n { j+=1; } i+=1; } }".into(), "overlapping MIR loops"),
+        ("pub fn bad(n:i32) { let mut i=0; while i<n { if i==2 { break; } i+=1; } }".into(), "extra exit"),
+        ("pub fn bad(n:&i32) { let mut i=0; while i<*n { i+=1; } }".into(), "pure scalar"),
+    ] {
+        fs::remove_file(p.root.join("loop.ullbc")).unwrap();
+        fs::write(p.root.join("loop.rs"), source).unwrap();
+        let error = refresh_import(&p.config()).unwrap_err();
+        assert!(error.contains(diagnostic), "{error}");
+        assert!(!p.root.join("loop.ullbc").exists());
+        fs::write(p.root.join("loop.rs"), CHARON_LOOP_SOURCE).unwrap();
+        refresh_import(&p.config()).unwrap();
+    }
+}
+
 #[test]
 fn charon_trial_checks_arithmetic_and_owned_cleanup_through_shared_engine() {
     let p = charon_project();

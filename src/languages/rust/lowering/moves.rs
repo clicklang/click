@@ -1,7 +1,8 @@
-//! Acyclic compiler drop CFGs emit shared joins once. Checked live flags consume
+//! Compiler drop CFGs emit shared joins and supported natural while loops once. Checked live flags consume
 //! a whole value on move/drop and reject duplicate cleanup even when scalar
 //! field bits remain in old storage.
 use super::*;
+mod flow;
 use crate::languages::rust::schema::{MirBody, MirStatement as S, MirTerminator as T};
 
 pub(super) fn lower(
@@ -50,42 +51,8 @@ pub(super) fn lower(
     if mir.blocks.is_empty() {
         return Err("MIR body has no entry block".into());
     }
-    // Build reachable nodes in reverse topological order. This is linear in the
-    // graph, independent of how many paths reach a shared cleanup suffix.
-    let mut order = Vec::new();
-    let mut colors = vec![0_u8; mir.blocks.len()];
-    let mut stack = vec![(0, false)];
-    while let Some((block, visited)) = stack.pop() {
-        if block >= mir.blocks.len() {
-            return Err("invalid MIR successor".into());
-        }
-        if visited {
-            colors[block] = 2;
-            order.push(block);
-            continue;
-        }
-        match colors[block] {
-            2 => continue,
-            1 => return Err("cyclic MIR is outside the move/drop slice".into()),
-            _ => {}
-        }
-        colors[block] = 1;
-        stack.push((block, true));
-        let successors = match mir.blocks[block].terminator {
-            T::Goto { target } | T::Drop { target, .. } | T::Call { target, .. } => vec![target],
-            T::If {
-                then_target,
-                else_target,
-                ..
-            } => vec![then_target, else_target],
-            _ => vec![],
-        };
-        for target in successors {
-            stack.push((target, false));
-        }
-    }
+    let flow = flow::Flow::analyze(f, mir)?;
     let mut nodes = vec![None; mir.blocks.len()];
-    let joins = postdominators(mir, &order);
     let check = |local: &str, record: &str| -> Result<&str, String> {
         if records.get(local).copied() != Some(record) {
             return Err("owned MIR place disagrees with record type".into());
@@ -100,7 +67,7 @@ pub(super) fn lower(
             c_int32_literal(u32::from(is_live)),
         ))
     };
-    for block in order {
+    for &block in &flow.order {
         let terminal = match &mir.blocks[block].terminator {
             T::Goto { .. } => c_skip(),
             T::If { condition, .. } => accesses(&[condition], &live),
@@ -275,7 +242,7 @@ pub(super) fn lower(
         nodes[block] = Some(c_seq(statements, terminal));
     }
     let mut emitted = vec![false; mir.blocks.len()];
-    let structured = region(cx, mir, &nodes, &joins, &mut emitted, 0, mir.blocks.len())?;
+    let structured = region(cx, mir, &nodes, &flow, &mut emitted, 0, mir.blocks.len())?;
     Ok(c_seq(declarations, structured))
 }
 
@@ -292,14 +259,23 @@ fn successors(t: &T, exit: usize) -> Vec<usize> {
 }
 // A reverse topological pass builds the postdominator tree. Binary lifting
 // keeps each merge logarithmic; no path enumeration or graph-wide set clones.
+#[cfg(test)]
 fn postdominators(mir: &MirBody, order: &[usize]) -> Vec<usize> {
-    let exit = mir.blocks.len();
+    let graph = mir
+        .blocks
+        .iter()
+        .map(|b| successors(&b.terminator, mir.blocks.len()))
+        .collect::<Vec<_>>();
+    graph_postdominators(&graph, order)
+}
+fn graph_postdominators(graph: &[Vec<usize>], order: &[usize]) -> Vec<usize> {
+    let exit = graph.len();
     let levels = (usize::BITS - (exit + 1).leading_zeros()) as usize;
     let mut ancestors = vec![vec![exit; levels]; exit + 1];
     let mut depths = vec![0usize; exit + 1];
     let mut joins = vec![exit; exit];
     for &block in order {
-        let targets = successors(&mir.blocks[block].terminator, exit);
+        let targets = &graph[block];
         let mut a = targets[0];
         for &b in &targets[1..] {
             let mut b = b;
@@ -335,7 +311,7 @@ fn region(
     cx: &mut Context<'_>,
     mir: &MirBody,
     nodes: &[Option<CStatement>],
-    joins: &[usize],
+    flow: &flow::Flow,
     emitted: &mut [bool],
     mut block: usize,
     stop: usize,
@@ -344,6 +320,36 @@ fn region(
     while block != stop && block != mir.blocks.len() {
         if std::mem::replace(&mut emitted[block], true) {
             return Err("unstructured shared MIR region outside move/drop slice".into());
+        }
+        if let Some(loop_) = flow.loops.get(&block) {
+            let T::If { condition, .. } = &mir.blocks[block].terminator else {
+                return Err("natural while header is not conditional".into());
+            };
+            let body = region(cx, mir, nodes, flow, emitted, loop_.body, block)?;
+            let condition = flow::header_condition(mir, block, condition, &flow.scalar_names)?;
+            let condition = if loop_.body_on_true {
+                condition
+            } else if let E::Not { value } = condition {
+                *value
+            } else {
+                E::Not {
+                    value: Box::new(condition),
+                }
+            };
+            let condition = cx.expr(&condition)?;
+            let header = nodes[block].as_ref().ok_or("missing loop header")?;
+            // The pure condition denotes the value after the header's scalar
+            // assignments. Keep those assignments before each taken body and
+            // once on the final false test, without an artificial break exit.
+            result = c_seq(
+                result,
+                c_seq(
+                    c_while(condition, Vec::new(), c_seq(header.clone(), body)),
+                    header.clone(),
+                ),
+            );
+            block = loop_.exit;
+            continue;
         }
         result = c_seq(
             result,
@@ -355,9 +361,13 @@ fn region(
                 then_target,
                 else_target,
             } => {
-                let join = joins[block];
-                let yes = region(cx, mir, nodes, joins, emitted, *then_target, join)?;
-                let no = region(cx, mir, nodes, joins, emitted, *else_target, join)?;
+                let join = if flow.joins[block] == mir.blocks.len() {
+                    stop
+                } else {
+                    flow.joins[block]
+                };
+                let yes = region(cx, mir, nodes, flow, emitted, *then_target, join)?;
+                let no = region(cx, mir, nodes, flow, emitted, *else_target, join)?;
                 result = c_seq(result, c_if(cx.expr(condition)?, yes, no));
                 block = join;
             }
@@ -549,7 +559,12 @@ mod tests {
                 &mut cx,
                 &mir,
                 &nodes,
-                &joins,
+                &flow::Flow {
+                    order,
+                    joins,
+                    loops: BTreeMap::new(),
+                    scalar_names: BTreeSet::new(),
+                },
                 &mut emitted,
                 0,
                 mir.blocks.len(),
