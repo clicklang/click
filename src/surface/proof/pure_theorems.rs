@@ -2216,6 +2216,11 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "uint32_lt_implies_reversed_gt"
                 | "uint32_ge_implies_reversed_le"
                 | "uint32_le_implies_reversed_ge"
+                | "uint32_difference_decreases_after_increment"
+                | "uint32_lt_le_transitive"
+                | "uint32_le_lt_transitive"
+                | "uint32_lt_transitive"
+                | "uint32_le_transitive"
         )
 }
 
@@ -2278,7 +2283,12 @@ fn verify_kernel_standard_theorem_axiom(
         | "uint32_gt_implies_reversed_lt"
         | "uint32_lt_implies_reversed_gt"
         | "uint32_ge_implies_reversed_le"
-        | "uint32_le_implies_reversed_ge" => (2, 1),
+        | "uint32_le_implies_reversed_ge"
+        | "uint32_difference_decreases_after_increment" => (2, 1),
+        "uint32_lt_le_transitive"
+        | "uint32_le_lt_transitive"
+        | "uint32_lt_transitive"
+        | "uint32_le_transitive" => (3, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2350,6 +2360,21 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "uint32_le_implies_reversed_ge" => {
                 prove_uint32_le_implies_reversed_ge(value, uint32_parameter(1)?)
+            }
+            "uint32_difference_decreases_after_increment" => {
+                prove_uint32_difference_decreases_after_increment(value, uint32_parameter(1)?)
+            }
+            "uint32_lt_le_transitive" => {
+                prove_uint32_lt_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            "uint32_le_lt_transitive" => {
+                prove_uint32_le_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            "uint32_lt_transitive" => {
+                prove_uint32_lt_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
+            }
+            "uint32_le_transitive" => {
+                prove_uint32_le_transitive(value, uint32_parameter(1)?, uint32_parameter(2)?)
             }
             _ => unreachable!("checked above"),
         }

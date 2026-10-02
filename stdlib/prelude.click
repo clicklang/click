@@ -579,6 +579,40 @@ theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
     ensures 0u32 < upper - value;
 }
 
+theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+    requires value < bound;
+
+    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
+}
+
+theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+
+theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+
+theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+
 theorem uint32_gt_implies_reversed_lt(greater: uint32, lower: uint32) {
     requires greater > lower;
 

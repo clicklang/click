@@ -3,8 +3,8 @@
 An unsigned order is not the signed order of the same operands, so the
 `int32` lemmas do not apply to `uint32` values. These are the unsigned
 counterparts a proof applies by name: a predecessor, a successor under a
-strict bound, a nonzero difference, and one comparison read the other way
-round.
+strict bound, a nonzero difference, a chain of two orders, the descent of
+a difference from a constant, and one comparison read the other way round.
 
 ```click
 theorem predecessor(x: uint32) {
@@ -42,6 +42,21 @@ theorem read_the_other_way_round(x: uint32) {
     requires x > 1u32;
     ensures 1u32 < x by {
         apply(uint32_gt_implies_reversed_lt(x, 1u32)) using { x > 1u32; }
+    }
+}
+
+theorem chained(x: uint32, n: uint32) {
+    requires x < n;
+    requires n <= 4u32;
+    ensures x < 4u32 by {
+        apply(uint32_lt_le_transitive(x, n, 4u32)) using { x < n; n <= 4u32; }
+    }
+}
+
+theorem difference_from_a_constant_decreases(x: uint32) {
+    requires x < 4u32;
+    ensures (0u32 - x) + 3u32 < (0u32 - x) + 4u32 by {
+        apply(uint32_difference_decreases_after_increment(x, 4u32)) using { x < 4u32; }
     }
 }
 

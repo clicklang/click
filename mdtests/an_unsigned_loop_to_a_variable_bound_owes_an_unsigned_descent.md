@@ -7,9 +7,9 @@ is `(n - x) - 1 <u n - x` at the entry value of `x`. That holds exactly when
 needed: the measure is ranked on the wrapped value C computes, and the
 guard is what keeps that value from wrapping.
 
-The closer does not do unsigned order arithmetic by itself. The proof
-states the two steps: the difference is nonzero under the guard, and the
-predecessor of a nonzero `uint32` is smaller.
+The closer states the two steps with the `uint32` order lemmas: the
+difference is nonzero under the guard, and the predecessor of a nonzero
+`uint32` is smaller.
 
 ```c filename=an_unsigned_loop_to_a_variable_bound_owes_an_unsigned_descent.c
 int32 count(uint32 n) {
@@ -34,16 +34,6 @@ int32 count(uint32 n) {
         initialize by { simp(); }
         preserve by {
             step();
-            have 0u32 < n - at(statement(3).entry, x) by {
-                apply(uint32_lt_implies_positive_difference(at(statement(3).entry, x), n)) using {
-                    at(statement(3).entry, x) < n;
-                }
-            }
-            have (n - at(statement(3).entry, x)) - 1u32 < n - at(statement(3).entry, x) by {
-                apply(uint32_positive_predecessor_strictly_decreases(n - at(statement(3).entry, x))) using {
-                    0u32 < n - at(statement(3).entry, x);
-                }
-            }
             close_invariants();
         }
     }

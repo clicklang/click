@@ -9,13 +9,10 @@ fact for the widened index.
 arithmetic conversions, so the loop ranks by unsigned order: the bundle's
 nonnegativity member is `true`, and its decrease member is the unsigned
 comparison `3 - x <u 4 - x` of the two wrapped differences at the entry
-value of `x`. Both it and the invariant member `x + 1 <=u 4` are true here,
-but closing either needs unsigned order arithmetic over the counter, which
-the closer does not do yet: it reads an unsigned comparison as a signed
-order between sign-bit-flipped values, and a flipped `x + 1` is not related
-to a flipped `x` (`bugs/unsigned-order-arithmetic-in-closers.md`). The
-first open member, the invariant, is the refusal this test pins; it changes
-to `pass` when that bug is fixed.
+value of `x`, which the loop evaluates to `(0 - x) + 3 <u (0 - x) + 4`.
+
+The closer proves both back-edge members from the guard with the `uint32`
+order lemmas: the invariant `x + 1 <=u 4` and the descent.
 
 ```c filename=an_unsigned_loop_counter_store_is_bounded_by_its_guard.c
 void clear(int32* values) {
@@ -50,5 +47,5 @@ void clear(int32* values) {
 ```
 
 ```expect
-fail: `x <= 4u32` remained open; this loop declares `decreases`, so the bundle also has `0 <= 4 - x` at the back edge, `4 - x` decreases at the back edge
+pass
 ```
