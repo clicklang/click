@@ -2258,6 +2258,26 @@ id = "stdlib.theorem.uint32_lt_implies_positive_difference"
 path = "reference/library/index.md#uint32_lt_implies_positive_difference"
 
 [[item]]
+id = "stdlib.theorem.uint32_difference_decreases_after_increment"
+path = "reference/library/index.md#uint32_difference_decreases_after_increment"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_le_transitive"
+path = "reference/library/index.md#uint32_lt_le_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_le_lt_transitive"
+path = "reference/library/index.md#uint32_le_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_lt_transitive"
+path = "reference/library/index.md#uint32_lt_transitive"
+
+[[item]]
+id = "stdlib.theorem.uint32_le_transitive"
+path = "reference/library/index.md#uint32_le_transitive"
+
+[[item]]
 id = "stdlib.theorem.uint32_gt_implies_reversed_lt"
 path = "reference/library/index.md#uint32_gt_implies_reversed_lt"
 

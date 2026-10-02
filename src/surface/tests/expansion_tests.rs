@@ -14819,3 +14819,37 @@ void put(int32* p, int32* q, int32 i, int32 n) {
         "a published view is not write authority"
     );
 }
+
+/// A loop with no invariant has nothing to initialize, so a `simp` that is
+/// its `initialize` block's only tactic contributes no step. A `by { ... }`
+/// block must hold a tactic, so the expansion keeps `assumption();` there
+/// rather than emptying the block, and the rewritten proof verifies.
+#[test]
+fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
+    let c_source =
+        "int32 drain(uint32 x) {\n    while (x > 0u) {\n        x--;\n    }\n    return 0;\n}\n";
+    let click_source = "verifying \"drain.c\";\n\
+        int32 drain(uint32 x) {\n\
+        \x20   ensures result == 0;\n\
+        } by {\n\
+        \x20   loop {\n\
+        \x20       decreases x;\n\
+        \x20       initialize by { simp(); }\n\
+        \x20       preserve by {\n\
+        \x20           step();\n\
+        \x20           close_invariants();\n\
+        \x20       }\n\
+        \x20   }\n\
+        \x20   execute();\n\
+        \x20   simp();\n\
+        }\n";
+    let c_sources = [("drain.c", c_source)];
+    let column = click_source.lines().nth(6).unwrap().find("simp").unwrap() + 1;
+    let expanded = expand_c0_tactic_source_at(click_source, &c_sources, 7, column)
+        .expect("the initialize `simp` expands");
+    assert!(
+        expanded.contains("initialize by { assumption(); }"),
+        "{expanded}"
+    );
+    verify_c0_sources(&expanded, &c_sources).expect("the expanded proof verifies");
+}

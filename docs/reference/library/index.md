@@ -1293,6 +1293,90 @@ theorem uint32_lt_implies_positive_difference(value: uint32, upper: uint32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
+### `uint32_difference_decreases_after_increment`
+
+```click
+theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
+    requires value < bound;
+
+    ensures (0u32 - value) + (bound - 1u32) < (0u32 - value) + bound;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `(0u32 - value) + (bound - 1u32) < (0u32 - value) + bound`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_lt_le_transitive`
+
+```click
+theorem uint32_lt_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle <= last;
+
+    ensures first < last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_le_lt_transitive`
+
+```click
+theorem uint32_le_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_lt_transitive`
+
+```click
+theorem uint32_lt_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first < middle;
+    requires middle < last;
+
+    ensures first < last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first < last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `uint32_le_transitive`
+
+```click
+theorem uint32_le_transitive(first: uint32, middle: uint32, last: uint32) {
+    requires first <= middle;
+    requires middle <= last;
+
+    ensures first <= last;
+}
+```
+
+**Meaning:** Given its listed requirements, proves `first <= last`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
 ### `uint32_gt_implies_reversed_lt`
 
 ```click

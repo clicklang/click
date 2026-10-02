@@ -1647,6 +1647,13 @@ impl<'a> Proof<'a> {
         introduced_surfaces: &[ClickProposition],
         allow_function_unfold: bool,
     ) -> Result<Option<Self>, ClickError> {
+        // An unsigned order is the signed order of sign-flipped operands,
+        // which the derivation below treats as opaque atoms. The uint32
+        // lemmas state the steps, so a goal of one of their shapes is closed
+        // by naming the lemma, from the exact premise it requires.
+        if let Some(proof) = self.try_unsigned_order_lemma() {
+            return Ok(Some(proof));
+        }
         // Integer arithmetic has its own compact, locally checked evidence
         // path. Keep it ahead of the legacy signed arithmetic derivation so
         // a mathematical Integer goal cannot accidentally enter the machine
@@ -4234,6 +4241,249 @@ impl<'a> Proof<'a> {
     /// this visits only selected equalities connected to that value and one
     /// exact upper-bound premise; it never tries every partially synthesizable
     /// context fact as a candidate step.
+    /// The surface spelling of an exact fact, looked up as `simp` resolves
+    /// the premises of a derivation it selected.
+    fn unsigned_surface_fact(&self, kernel: &Proposition) -> Option<ClickProposition> {
+        match self.context.as_ref() {
+            ProofContext::Pure(context) => self.available_surface_fact(
+                &context.theorem_context.surface_requirements,
+                None,
+                kernel,
+            ),
+            ProofContext::FixedState(context) => self.available_surface_fact(
+                context.surface_propositions,
+                context.premise_anchor.as_ref(),
+                kernel,
+            ),
+            ProofContext::Execution(_) => {
+                if let Some(data) = self.focused_outcome_data() {
+                    self.available_surface_fact(
+                        &data.surface_propositions,
+                        data.premise_anchor.as_ref(),
+                        kernel,
+                    )
+                } else {
+                    let execution = self.execution()?;
+                    let anchor = frontier_premise_anchor(execution);
+                    self.available_surface_fact(
+                        &execution.presentation.surface_propositions,
+                        anchor.as_ref(),
+                        kernel,
+                    )
+                }
+            }
+        }
+    }
+
+    /// The fact `lower <u upper` as a proof that has it in that spelling,
+    /// with the fact's surface and its two operands. The fact may be held
+    /// as `upper >u lower`; the lemma that reads it the other way round is
+    /// applied first. Both lookups are exact: no fact is scanned.
+    fn unsigned_strict_fact(
+        &self,
+        lower: &Bitvector32Term,
+        upper: &Bitvector32Term,
+    ) -> Option<(
+        Self,
+        ClickProposition,
+        ContractExpression,
+        ContractExpression,
+    )> {
+        let less = Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
+            true,
+        );
+        if let Some(surface) = self.unsigned_surface_fact(&less) {
+            let (lower, upper) = surface_strict_parts(&surface)?;
+            return Some((self.clone(), surface, lower, upper));
+        }
+        let greater = Proposition::ConditionIs(
+            ConditionTerm::unsigned_greater_than(upper.clone(), lower.clone()),
+            true,
+        );
+        let surface = self.unsigned_surface_fact(&greater)?;
+        let (lower, upper) = surface_strict_parts(&surface)?;
+        let reversed = ClickProposition::Comparison {
+            left: lower.clone(),
+            operator: ComparisonOperator::LessThan,
+            right: upper.clone(),
+        };
+        let proof = self
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: "uint32_gt_implies_reversed_lt".to_string(),
+                    arguments: vec![upper.clone(), lower.clone()],
+                },
+                premises: vec![surface],
+            })
+            .ok()?;
+        Some((proof, reversed, lower, upper))
+    }
+
+    /// Applies one uint32 lemma and closes the goal with its conclusion.
+    fn close_with_unsigned_lemma(
+        &self,
+        name: &str,
+        arguments: Vec<ContractExpression>,
+        premise: ClickProposition,
+    ) -> Option<Self> {
+        let applied = self
+            .apply_step(ProofStep::ApplyTheoremUsing {
+                application: TheoremApplication {
+                    name: name.to_string(),
+                    arguments,
+                },
+                premises: vec![premise],
+            })
+            .ok()?;
+        // The lemma's conclusion is the goal, so applying it discharges the
+        // goal where it is stated exactly; the focus then leaves it, though
+        // sibling goals (other members of a loop bundle) may remain.
+        if applied.is_complete() || applied.goal() != self.goal() {
+            return Some(applied);
+        }
+        applied.try_direct_logical_closure().ok().flatten()
+    }
+
+    /// Closes an unsigned order goal that is one step of uint32 arithmetic
+    /// from an exact fact, by the lemma that states that step: a
+    /// predecessor, a successor under a strict bound, the descent of a
+    /// difference, or one comparison read the other way round.
+    ///
+    /// The goal's shape names the lemma and the one premise it needs, which
+    /// is looked up exactly, so the work is a fixed number of lookups
+    /// whatever the context holds.
+    pub(super) fn try_unsigned_order_lemma(&self) -> Option<Self> {
+        let (order, left, right) = unsigned_order_parts(self.goal()?)?;
+        let zero = Bitvector32Term::Constant(0);
+        let one = Bitvector32Term::Constant(1);
+        let reversed_fact = |condition: ConditionTerm, name: &str, strict: bool| {
+            let surface = self.unsigned_surface_fact(&Proposition::ConditionIs(condition, true))?;
+            let (lower, upper) = if strict {
+                surface_strict_parts(&surface)?
+            } else {
+                surface_nonstrict_parts(&surface)?
+            };
+            // Each reversal lemma takes the operands in the order its
+            // premise writes them.
+            let arguments = if name.starts_with("uint32_g") {
+                vec![upper, lower]
+            } else {
+                vec![lower, upper]
+            };
+            self.close_with_unsigned_lemma(name, arguments, surface)
+        };
+        match order {
+            UnsignedOrder::Less => {
+                // `value - 1 <u value` from `0 <u value`.
+                if left == Bitvector32Term::Subtract(Box::new(right.clone()), Box::new(one.clone()))
+                {
+                    if let Some((proof, premise, _, value)) =
+                        self.unsigned_strict_fact(&zero, &right)
+                    {
+                        return proof.close_with_unsigned_lemma(
+                            "uint32_positive_predecessor_strictly_decreases",
+                            vec![value],
+                            premise,
+                        );
+                    }
+                    // The value is a difference `upper - lower`, nonzero
+                    // because `lower <u upper`.
+                    if let Bitvector32Term::Subtract(upper, lower) = &right
+                        && let Some((proof, premise, lower, upper)) =
+                            self.unsigned_strict_fact(lower, upper)
+                    {
+                        // The difference is spelled from the premise's own
+                        // operands, so it lowers to the goal's term.
+                        let difference = ContractExpression::Subtract(
+                            Box::new(upper.clone()),
+                            Box::new(lower.clone()),
+                        );
+                        let positive = ClickProposition::Comparison {
+                            left: ContractExpression::CFragment(CExpression::Value(
+                                CValue::UInt32(Bitvector32Term::Constant(0)),
+                            )),
+                            operator: ComparisonOperator::LessThan,
+                            right: difference.clone(),
+                        };
+                        let proof = proof
+                            .apply_step(ProofStep::ApplyTheoremUsing {
+                                application: TheoremApplication {
+                                    name: "uint32_lt_implies_positive_difference".to_string(),
+                                    arguments: vec![lower, upper],
+                                },
+                                premises: vec![premise],
+                            })
+                            .ok()?;
+                        return proof.close_with_unsigned_lemma(
+                            "uint32_positive_predecessor_strictly_decreases",
+                            vec![difference],
+                            positive,
+                        );
+                    }
+                    return None;
+                }
+                // `(0 - value) + (bound - 1) <u (0 - value) + bound` from
+                // `value <u bound`: the affine forms a measure `bound -
+                // value` over a constant evaluates to.
+                if let (
+                    Bitvector32Term::Add(left_base, left_offset),
+                    Bitvector32Term::Add(right_base, right_offset),
+                ) = (&left, &right)
+                    && left_base == right_base
+                    && let Bitvector32Term::Subtract(negated_zero, value) = left_base.as_ref()
+                    && negated_zero.as_ref() == &zero
+                    && let (Some(lower), Some(bound)) =
+                        (left_offset.as_const(), right_offset.as_const())
+                    && bound != 0
+                    && lower == bound - 1
+                    && let Some((proof, premise, value, bound)) =
+                        self.unsigned_strict_fact(value, right_offset)
+                {
+                    return proof.close_with_unsigned_lemma(
+                        "uint32_difference_decreases_after_increment",
+                        vec![value, bound],
+                        premise,
+                    );
+                }
+                reversed_fact(
+                    ConditionTerm::unsigned_greater_than(right, left),
+                    "uint32_gt_implies_reversed_lt",
+                    true,
+                )
+            }
+            UnsignedOrder::LessEqual => {
+                // `value + 1 <=u upper` from `value <u upper`.
+                if let Bitvector32Term::Add(value, amount) = &left
+                    && amount.as_ref() == &one
+                    && let Some((proof, premise, value, upper)) =
+                        self.unsigned_strict_fact(value, &right)
+                {
+                    return proof.close_with_unsigned_lemma(
+                        "uint32_increment_upper_bound",
+                        vec![value, upper],
+                        premise,
+                    );
+                }
+                reversed_fact(
+                    ConditionTerm::unsigned_greater_equal(right, left),
+                    "uint32_ge_implies_reversed_le",
+                    false,
+                )
+            }
+            UnsignedOrder::Greater => reversed_fact(
+                ConditionTerm::unsigned_less_than(right, left),
+                "uint32_lt_implies_reversed_gt",
+                true,
+            ),
+            UnsignedOrder::GreaterEqual => reversed_fact(
+                ConditionTerm::unsigned_less_equal(right, left),
+                "uint32_le_implies_reversed_ge",
+                false,
+            ),
+        }
+    }
+
     pub(super) fn try_selected_predecessor_upper_bound(
         &self,
         goal: &Proposition,
@@ -7481,4 +7731,58 @@ mod synthesized_literal_tests {
             )
         );
     }
+}
+
+/// How a 32-bit unsigned order relates its two operands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnsignedOrder {
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+}
+
+/// A 32-bit unsigned order and its operands, read from the signed order of
+/// sign-flipped operands the kernel states it as. A constant operand arrives
+/// already flipped; at least one operand carries the flip itself, so two
+/// bare constants are an ordinary signed comparison.
+fn unsigned_order_parts(
+    proposition: &Proposition,
+) -> Option<(UnsignedOrder, Bitvector32Term, Bitvector32Term)> {
+    const SIGN_BIT: u32 = 0x8000_0000;
+    let Proposition::ConditionIs(condition, true) = proposition else {
+        return None;
+    };
+    let (order, left, right) = match condition {
+        ConditionTerm::Bitvector32SignedLessThan(left, right) => (UnsignedOrder::Less, left, right),
+        ConditionTerm::Bitvector32SignedLessEqual(left, right) => {
+            (UnsignedOrder::LessEqual, left, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterThan(left, right) => {
+            (UnsignedOrder::Greater, left, right)
+        }
+        ConditionTerm::Bitvector32SignedGreaterEqual(left, right) => {
+            (UnsignedOrder::GreaterEqual, left, right)
+        }
+        _ => return None,
+    };
+    let flipped = |term: &Bitvector32Term| match term {
+        Bitvector32Term::BitwiseXor(value, sign) if sign.as_const() == Some(SIGN_BIT) => {
+            Some(value.as_ref().clone())
+        }
+        Bitvector32Term::BitwiseXor(sign, value) if sign.as_const() == Some(SIGN_BIT) => {
+            Some(value.as_ref().clone())
+        }
+        _ => None,
+    };
+    let unflipped = |term: &Bitvector32Term| {
+        flipped(term).or_else(|| {
+            term.as_const()
+                .map(|value| Bitvector32Term::Constant(value ^ SIGN_BIT))
+        })
+    };
+    if flipped(left).is_none() && flipped(right).is_none() {
+        return None;
+    }
+    Some((order, unflipped(left)?, unflipped(right)?))
 }

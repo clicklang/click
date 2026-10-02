@@ -8335,6 +8335,101 @@ pub fn prove_uint32_lt_implies_positive_difference(
     )
 }
 
+/// Incrementing a uint32 `value` below `bound` decreases the difference
+/// `bound - value`, stated over the affine forms a loop measure `bound -
+/// value` evaluates to: `(0 - value) + (bound - 1)` after the increment and
+/// `(0 - value) + bound` before it. Neither wraps: `value <= bound - 1`, so
+/// the first is `bound - 1 - value` in `[0, bound - 1]` and the second is
+/// one more.
+pub fn prove_uint32_difference_decreases_after_increment(
+    value: Bitvector32Term,
+    bound: Bitvector32Term,
+) -> Theorem {
+    let negated = Bitvector32Term::Subtract(
+        Box::new(Bitvector32Term::Constant(0)),
+        Box::new(value.clone()),
+    );
+    uint32_implication(
+        ConditionTerm::unsigned_less_than(value, bound.clone()),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::Add(
+                Box::new(negated.clone()),
+                Box::new(Bitvector32Term::Subtract(
+                    Box::new(bound.clone()),
+                    Box::new(Bitvector32Term::Constant(1)),
+                )),
+            ),
+            Bitvector32Term::Add(Box::new(negated), Box::new(bound)),
+        ),
+    )
+}
+
+fn uint32_transitivity(
+    first: ConditionTerm,
+    second: ConditionTerm,
+    conclusion: ConditionTerm,
+) -> Theorem {
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(first, true)),
+        Box::new(Proposition::Implies(
+            Box::new(Proposition::ConditionIs(second, true)),
+            Box::new(Proposition::ConditionIs(conclusion, true)),
+        )),
+    ))
+}
+
+/// Unsigned strict order followed by non-strict order is strict order.
+pub fn prove_uint32_lt_le_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_than(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_equal(middle, last.clone()),
+        ConditionTerm::unsigned_less_than(first, last),
+    )
+}
+
+/// Unsigned non-strict order followed by strict order is strict order.
+pub fn prove_uint32_le_lt_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_than(middle, last.clone()),
+        ConditionTerm::unsigned_less_than(first, last),
+    )
+}
+
+/// Unsigned strict order is transitive.
+pub fn prove_uint32_lt_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_than(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_than(middle, last.clone()),
+        ConditionTerm::unsigned_less_than(first, last),
+    )
+}
+
+/// Unsigned non-strict order is transitive.
+pub fn prove_uint32_le_transitive(
+    first: Bitvector32Term,
+    middle: Bitvector32Term,
+    last: Bitvector32Term,
+) -> Theorem {
+    uint32_transitivity(
+        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
+        ConditionTerm::unsigned_less_equal(middle, last.clone()),
+        ConditionTerm::unsigned_less_equal(first, last),
+    )
+}
+
 /// `greater > lower` and `lower < greater` are one uint32 order.
 pub fn prove_uint32_gt_implies_reversed_lt(
     greater: Bitvector32Term,

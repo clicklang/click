@@ -1433,6 +1433,18 @@ fn expand_c0_tactic_source_at_context(
             (span, replacement)
         }
     };
+    // A tactic that contributed no step is removed, but a `by { ... }` block
+    // must hold at least one tactic. When it is the only tactic of its
+    // block, the block keeps `assumption();`, the step a phase with nothing
+    // to prove is checked by.
+    let replacement = if replacement.is_empty()
+        && click_source[..span.start].trim_end().ends_with('{')
+        && click_source[span.end..].trim_start().starts_with('}')
+    {
+        "assumption();".to_string()
+    } else {
+        replacement
+    };
     // An empty replacement removes the selected tactic: take its whole line
     // when nothing else shares it, so the rewrite leaves no blank residue.
     let span = if replacement.is_empty() {

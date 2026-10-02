@@ -8743,17 +8743,25 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         0xffff_ffff,
     ];
     fn holds(theorem: &Theorem) -> bool {
-        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-            panic!("a uint32 order axiom is one implication");
-        };
         let decide = |proposition: &Proposition| {
             let Proposition::ConditionIs(condition, true) = proposition else {
-                panic!("a uint32 order axiom relates two conditions");
+                panic!("a uint32 order axiom relates conditions");
             };
             PureFactContext::decide_intrinsically(condition)
                 .expect("a condition over constants is decided")
         };
-        !decide(premise) || decide(conclusion)
+        // One premise, or two for a transitivity, then the conclusion.
+        let mut proposition = theorem.proposition();
+        let mut premises = 0usize;
+        while let Proposition::Implies(premise, rest) = proposition {
+            if !decide(premise) {
+                return true;
+            }
+            premises += 1;
+            proposition = rest;
+        }
+        assert!(premises > 0, "a uint32 order axiom has a premise");
+        decide(proposition)
     }
     let constant = Bitvector32Term::Constant;
     let mut premises_true = 0usize;
@@ -8765,7 +8773,7 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
             "predecessor at {left:#x}"
         );
         for right in BOUNDARIES {
-            let pair: [(&str, Theorem); 7] = [
+            let pair: [(&str, Theorem); 8] = [
                 (
                     "increment upper bound",
                     prove_uint32_increment_upper_bound(constant(left), constant(right)),
@@ -8794,7 +8802,28 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
                     "le reversed",
                     prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
                 ),
+                (
+                    "difference decreases",
+                    prove_uint32_difference_decreases_after_increment(
+                        constant(left),
+                        constant(right),
+                    ),
+                ),
             ];
+            for last in BOUNDARIES {
+                let (first, middle) = (constant(left), constant(right));
+                for theorem in [
+                    prove_uint32_lt_le_transitive(first.clone(), middle.clone(), constant(last)),
+                    prove_uint32_le_lt_transitive(first.clone(), middle.clone(), constant(last)),
+                    prove_uint32_lt_transitive(first.clone(), middle.clone(), constant(last)),
+                    prove_uint32_le_transitive(first.clone(), middle.clone(), constant(last)),
+                ] {
+                    assert!(
+                        holds(&theorem),
+                        "transitivity at {left:#x}, {right:#x}, {last:#x}"
+                    );
+                }
+            }
             for (name, theorem) in &pair {
                 assert!(holds(theorem), "{name} at {left:#x}, {right:#x}");
             }
@@ -8839,6 +8868,23 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
             prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
             prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
             prove_uint32_le_implies_reversed_ge(constant(left), constant(right)),
+            prove_uint32_difference_decreases_after_increment(constant(left), constant(right)),
+            prove_uint32_lt_le_transitive(
+                constant(left),
+                constant(right),
+                constant(right.wrapping_add(left)),
+            ),
+            prove_uint32_le_lt_transitive(
+                constant(left),
+                constant(right),
+                constant(right.wrapping_add(1)),
+            ),
+            prove_uint32_lt_transitive(
+                constant(left),
+                constant(right),
+                constant(right.wrapping_mul(3)),
+            ),
+            prove_uint32_le_transitive(constant(left), constant(right), constant(left)),
         ] {
             assert!(
                 holds(&theorem),
@@ -8851,11 +8897,12 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     // The check can fail: each conclusion is false where its premise is,
     // so a statement without its premise would not pass.
     let conclusion_holds = |theorem: &Theorem| {
-        let Proposition::Implies(_, conclusion) = theorem.proposition() else {
-            panic!("a uint32 order axiom is one implication");
-        };
-        let Proposition::ConditionIs(condition, true) = conclusion.as_ref() else {
-            panic!("a uint32 order axiom relates two conditions");
+        let mut conclusion = theorem.proposition();
+        while let Proposition::Implies(_, rest) = conclusion {
+            conclusion = rest;
+        }
+        let Proposition::ConditionIs(condition, true) = conclusion else {
+            panic!("a uint32 order axiom relates conditions");
         };
         PureFactContext::decide_intrinsically(condition)
             .expect("a condition over constants is decided")
@@ -8873,4 +8920,12 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     assert!(!conclusion_holds(
         &prove_uint32_lt_implies_positive_difference(constant(7), constant(7))
     ));
+    assert!(!conclusion_holds(
+        &prove_uint32_difference_decreases_after_increment(constant(7), constant(7))
+    ));
+    assert!(!conclusion_holds(&prove_uint32_lt_le_transitive(
+        constant(9),
+        constant(3),
+        constant(5)
+    )));
 }
