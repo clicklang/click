@@ -380,10 +380,21 @@ through ordinary direct and nested helper calls in
 `authority_symbolic_batch_cleanup_helper.md`, including zero-sized callers.
 The call uses the checked entry quantity, and retired consumption accounting
 survives return for certificate checking without conveying live rights. A
-negative companion rejects missing batch custody. The next small slice is
-retiring the additional already-empty authority in bounded-pool cleanup's
-consumed control; the reduced helper fixture covers only one authority. Keep
-batch splitting, symbolic grow/shrink, and two-pool transfer separate. The
+negative companion rejects missing batch custody.
+
+`authority_pool_control_cleanup_helper.md` now applies cleanup through direct,
+nested, and zero-capacity helper calls with both pool authorities. It preserves
+`pool_destroy.c` verbatim. The caller exposes and restores the control to prove
+its slot conservation and private-object emptiness before the call. Call
+application selects all authorities from the checked entry control body and
+retires each only with global zero and exhausted custody. Proof exit checks
+require retirement evidence for every authority in the consumed control. A
+kernel regression rejects leaving the second authority outstanding or retiring
+it with a nonzero global count and no locally owned members.
+
+The next small slice is integrating these proved cleanup contracts into the
+bounded-pool authority sidecar, keeping the existing C fixed. Keep batch
+splitting, symbolic grow/shrink, and two-pool transfer separate. The
 original bounded-pool project still uses legacy counting and is not migrated
 as a whole. The speculative cache repair remains removed; the checkout proofs
 required no count-model or authority change.

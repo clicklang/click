@@ -3619,3 +3619,79 @@ fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
         CreationRefusal::MissingAuthority
     );
 }
+
+#[test]
+fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
+    let slots = member_description(PointerBlock::ExternalArgument);
+    let private = ResourceDescription::new(
+        "private".into(),
+        slots.arguments().to_vec().into(),
+        ResourceFieldSchema::new(vec![]).unwrap(),
+    )
+    .with_population_arity(2)
+    .unwrap();
+    let assumptions = PureFactContext::new();
+    for private_total in [0, 1] {
+        let entry = CreationEvents::new()
+            .import_opaque_contract_population_inner(
+                &slots,
+                3,
+                Some(Bitvector32Term::Constant(3)),
+                None,
+                None,
+            )
+            .unwrap()
+            .import_opaque_contract_population_with_member(
+                &private,
+                0,
+                Some(Bitvector32Term::Constant(private_total)),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let child = entry.enter_call();
+        let held = child
+            .transfer_call_fact(&entry, &child, &slots, true)
+            .unwrap()
+            .transfer_call_fact(&entry, &child, &private, true)
+            .unwrap()
+            .transfer_call_fact_quantity(
+                &entry,
+                &child,
+                &slots,
+                false,
+                &Bitvector32Term::Constant(3),
+                &assumptions,
+            )
+            .unwrap();
+        let spent = held
+            .checked_member_exchange_quantity(
+                &PointerBlock::ExternalArgument,
+                &slots,
+                false,
+                &Bitvector32Term::Constant(3),
+                &assumptions,
+            )
+            .unwrap()
+            .0;
+        let retired_slots = spent
+            .checked_retire_imported(&slots, &assumptions)
+            .unwrap()
+            .0;
+        assert_eq!(
+            retired_slots.finish_call(&entry).unwrap_err(),
+            CreationRefusal::OutstandingOwnership
+        );
+        let result = retired_slots.checked_retire_imported(&private, &assumptions);
+        if private_total == 0 {
+            let returned = result.unwrap().0.finish_call(&entry).unwrap();
+            assert!(returned.checked_empty_population(&slots));
+            assert!(returned.checked_empty_population(&private));
+            assert!(!returned.owns_population_authority(&slots));
+            assert!(!returned.owns_population_authority(&private));
+        } else {
+            assert_eq!(result.unwrap_err(), CreationRefusal::UnknownTotal);
+        }
+    }
+}
