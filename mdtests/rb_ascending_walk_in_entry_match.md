@@ -75,7 +75,7 @@ The simple assignment-expression form and the short-circuit loop exits are now
 supported. The full guard still stops at the first left frame, a position this
 fixture's older parameter-keyed contract cannot name, which is why package C4b
 owns `rb_next` in full; see
-[`rb_next_conjunctive_guard.md`](rb_next_conjunctive_guard.md).
+[`rb_next.md`](rb_next.md).
 
 The loop carries the same structural measure the scaffold ascent does,
 `decreases c;`, even though its body calls the contract-less inline
