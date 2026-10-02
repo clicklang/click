@@ -8721,11 +8721,27 @@ impl Parser {
                                 indexes.len()
                             )));
                         }
-                        let offset = flatten_array_indices(indexes, &shape);
-                        expression = ContractExpression::Index(
-                            Box::new(expression),
-                            Box::new(ContractExpression::CFragment(offset)),
-                        );
+                        let offset = flatten_array_indices(indexes.clone(), &shape);
+                        // Keep the source rank of a multidimensional field
+                        // access, as a global array access does: the
+                        // flattened index alone prints as one subscript,
+                        // which does not parse back.
+                        expression = match contract_expression_as_c_fragment(&expression) {
+                            Some(lowered_base) if indexes.len() > 1 => {
+                                ContractExpression::ArrayIndex {
+                                    base: Box::new(expression),
+                                    indexes,
+                                    lowered: CExpression::Index(
+                                        Box::new(lowered_base),
+                                        Box::new(offset),
+                                    ),
+                                }
+                            }
+                            _ => ContractExpression::Index(
+                                Box::new(expression),
+                                Box::new(ContractExpression::CFragment(offset)),
+                            ),
+                        };
                         struct_name = None;
                         union_name = None;
                         struct_array_element_width = None;
@@ -10137,7 +10153,10 @@ fn named_place_base(expression: &CExpression) -> Option<&String> {
     }
 }
 
-fn flatten_array_indices(indexes: Vec<CExpression>, dimensions: &[u32]) -> CExpression {
+pub(in crate::surface) fn flatten_array_indices(
+    indexes: Vec<CExpression>,
+    dimensions: &[u32],
+) -> CExpression {
     let mut terms = Vec::with_capacity(indexes.len());
     for (index, expression) in indexes.into_iter().enumerate() {
         let stride = dimensions[index + 1..]

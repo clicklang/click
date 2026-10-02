@@ -2764,6 +2764,11 @@ pub struct CAggregateField {
     pub(super) name: String,
     pub(super) offset_bytes: u32,
     pub(super) c_type: CType,
+    /// The source dimensions of an array field with more than one, outermost
+    /// first. `c_type` holds such a field as one flat array; nothing reasons
+    /// from the shape, which only lets a proof term about an element be
+    /// spelled with the subscripts the source declares.
+    pub(super) array_shape: Option<Vec<u32>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -2841,7 +2846,18 @@ impl CAggregateField {
             name: name.into(),
             offset_bytes,
             c_type,
+            array_shape: None,
         }
+    }
+
+    /// Records the source dimensions of a multidimensional array field.
+    pub fn with_array_shape(mut self, shape: Option<&[u32]>) -> Self {
+        self.array_shape = shape.filter(|shape| shape.len() > 1).map(<[u32]>::to_vec);
+        self
+    }
+
+    pub fn array_shape(&self) -> Option<&[u32]> {
+        self.array_shape.as_deref()
     }
 
     pub fn name(&self) -> &str {

@@ -697,6 +697,41 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
 }
 
+/// An element of a multidimensional array field keeps one subscript per
+/// dimension when a proof about it is expanded. The parser used to keep only
+/// the flattened index, so the expansion printed `p->words[((1 * 2) + 1)]`,
+/// which the parser itself rejects for a two-dimensional field.
+#[test]
+fn multidimensional_array_field_expands_with_every_subscript() {
+    let anchor = "ensures p->words[1][1] == value by ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/struct_wide_integer_arrays.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(
+        expanded.contains("have p->words[1][1] == value by {"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("words[(("), "{expanded}");
+}
+
+/// The same for an element the expansion spells from the checked state
+/// rather than from the written clause: a local struct's field is a flat
+/// array there, and its layout carries the declared dimensions so the
+/// element reads `copy->values[1][2]`, not `copy->values[5]`.
+#[test]
+fn multidimensional_local_array_field_expands_with_every_subscript() {
+    let anchor = "ensures result == 75;\n} by {\n    execute();\n    ";
+    let expanded = expand_mdtest_site_and_reverify(
+        "mdtests/struct_multidimensional_scalar_array.md",
+        anchor,
+        anchor.len(),
+    );
+    assert!(expanded.contains("copy->values[1][2]"), "{expanded}");
+    assert!(!expanded.contains("values[5]"), "{expanded}");
+}
+
 /// The `simp()` closing the loop's `preserve` proof in `arena_init` expands
 /// in parseable source spelling. It once cited the function-entry alignment
 /// fact, rendered as a pointer cast Click cannot parse; it now separates the
