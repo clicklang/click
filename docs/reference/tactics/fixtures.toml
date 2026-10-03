@@ -140,7 +140,7 @@ needle = "have result == 1 by simp;"
 [[form]]
 id = "open"
 path = "mdtests/resource_population_open.md"
-needle = "open(object_ref(obj)) {"
+needle = "open(control(obj)) {"
 
 [[form]]
 id = "if"
