@@ -583,6 +583,20 @@ selector does not precede its earlier right-hand-side helpers, and assignment
 selectors are not snapshot expressions. This mechanism adds no generated ghost
 state and does not close frozen numeric-selector or iterator-observation gaps;
 fixture parity remains 10/16 (62.5%) and imports 14/16 (87.5%).
+The layout also indexes `execute_until(read(N))`: the Nth statement containing
+an explicit scalar memory load, before its checked execution. It excludes
+address-only operations and implicit callee/aggregate reads, introduces no
+permission or ghost state, and has linear construction and indexed-lookup
+regressions in both layout paths. The full unchanged byte-sum source and
+original prefix-sum contract now verify with loop, read, and assignment
+selectors, including overflow, invariant preservation and termination.
+The inventory records migrated proof sidecars separately and the live gate
+verifies them after fresh extraction. AST comparisons preserve the original
+contracts and pure specification definitions. Source-and-contract coverage
+with these proof ports is 12/16 (75%); strict frozen-sidecar parity remains
+10/16 (62.5%) and imports remain 14/16 (87.5%). Remaining proof work is stable
+iterator observations and frozen numeric-selector compatibility; normalization
+still needs owned iterators and tuple/slice returns.
 Before switching the default, close every parity gap and retain stable proof
 observations. Then retire the legacy exporter and its structured-body schema
 path. Preserve qualified declaration identities before broader module/crate

@@ -61,3 +61,24 @@ local in an isolated probe. Verification, profiling, auditing, and expanded
 certificates agree. Frozen sources and original sidecars are unchanged; parity
 remains 10/16 and imports 14/16. Numeric-selector compatibility and stable
 iterator observations remain migration work.
+
+## Byte-sum proof frontiers
+
+`sum-proof.click` verifies the unchanged `rust-byte-sum` body and original
+prefix-sum contract. It selects `loop(0)` for initialization, `read(0)` before
+the actual byte load, and `assignment(i, 1)` before the index update. Checked
+steps establish the byte bounds and overflow obligations; three final steps
+execute the remaining real header cleanup before returning to the backedge.
+No compiler temporary name or generated processed count appears in the proof.
+Verification, profiling, auditing, expansion and expanded rechecking cover
+this complete proof, including a false result claim.
+
+The parity inventory separately records migrated proof sidecars. Together with
+the ten frozen successes, these prove the original sources and contracts of
+12/16 fixtures (75%). AST comparisons protect the original contracts and pure
+specification functions; the live gate checks both migrated sidecars after
+fresh extraction. Frozen-sidecar parity remains 10/16 (62.5%), and import
+coverage remains 14/16 (87.5%). These are distinct measures, not Rust-language
+coverage. Remaining work includes iterator observations, owned iterator and
+tuple/slice-return normalization, and frozen selector compatibility before
+the default changes.

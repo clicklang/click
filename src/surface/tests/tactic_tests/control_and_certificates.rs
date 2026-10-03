@@ -1091,3 +1091,24 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
         assert!(parse(&source).is_err());
     }
 }
+
+#[test]
+fn parses_execute_until_read_and_preserves_read_labels() {
+    for (spelling, region) in [
+        ("read(2)", CodeRegionRef::Read(2)),
+        ("read", CodeRegionRef::Label("read".into())),
+    ] {
+        let source = FILL3_CLICK.replace(
+            "by auto;",
+            &format!("by {{execute_until({spelling}); execute(); simp();}}"),
+        );
+        let file = parse(&source).unwrap();
+        assert_eq!(
+            file.function_blocks()[0].ensures()[0]
+                .proof()
+                .tactics()
+                .unwrap()[0],
+            ProofTactic::ExecuteUntil(region)
+        );
+    }
+}

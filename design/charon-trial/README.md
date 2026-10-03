@@ -557,6 +557,15 @@ processed count or rewriting Rust bodies. The default switch and legacy
 retirement remain later migration gates; fixture parity is not a Rust-language
 completeness metric.
 
+The optional `migrated_sidecar` field records a separate proof port for an
+unchanged source and contract. `rust-loops` and `rust-byte-sum` now pass with
+these sidecars, so source-and-contract coverage with migrated proofs is
+**12/16 (75%)**. A regression compares their parsed contracts and specification
+functions with the frozen originals, and the live sweep verifies each port
+against freshly extracted original source. It still checks the original
+sidecar and its recorded outcome separately; frozen-sidecar parity remains
+10/16 and is still a default-switch gate.
+
 The gate also runs all existing live compiler/borrow-checker rejection tests.
 Locally use `scripts/check.sh --charon-live` after building the legacy exporter.
 CI builds pinned Charon, reuses the prepared Click test archive, and requires
@@ -642,3 +651,12 @@ counting unrelated helper statements; it preserves checked forward execution.
 Selecting a final store does not move before right-hand-side helpers. This
 adds a stable observation mechanism without changing frozen numeric-selector
 sidecars, Rust interpretation pins, locks, or parity percentages.
+
+`execute_until(read(N))` additionally selects the Nth statement containing an
+explicit scalar load, before the statement executes. The complete unchanged
+byte-sum source and original prefix-sum contract now verify using loop, read,
+and named assignment frontiers. The load, overflow checks, index update,
+invariant preservation, and termination are checked through ordinary steps;
+the proof uses neither compiler temporary names nor generated iterator state.
+Both executable layout paths index read frontiers once with deterministic
+linear scaling checks and constant-work lookups.

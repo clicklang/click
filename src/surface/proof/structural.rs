@@ -7,9 +7,9 @@ pub(super) fn resolve_code_region_ref(
     tactic_index: usize,
 ) -> Result<CodeRegion, ClickError> {
     Ok(match region_ref {
-        CodeRegionRef::Assignment { .. } => {
+        CodeRegionRef::Assignment { .. } | CodeRegionRef::Read(_) => {
             return Err(ClickError::new(
-                "assignment regions are supported only by `execute_until`",
+                "assignment and read regions are supported only by `execute_until`",
             ));
         }
         CodeRegionRef::Function => CodeRegion::Function,

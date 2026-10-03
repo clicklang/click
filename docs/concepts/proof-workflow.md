@@ -423,6 +423,17 @@ does not move the frontier before those helpers. Use `loop(N)` to stop before
 a loop's header/body work and `mark` to name a reached state. Assignment
 selectors currently serve `execute_until`, not `at(...)` snapshot expressions.
 
+`execute_until(read(N))` stops before the zero-based Nth statement containing
+an explicit scalar memory load, in executable preorder. A statement counts
+once even when its expression contains several loads; repeated iterations
+reuse the same static occurrence. This selects the whole statement, so a
+conditional expression need not read on every path. Taking an address such as
+`&*p` does not count as reading the pointed-to cell; a nested pointer load in
+`&**pp` does count. Implicit aggregate copies and reads inside callees do not
+count. The selector grants no access permission: `step()` checks the actual
+operation using the current resources. Like assignment selectors, read
+selectors serve execution targets rather than snapshot expressions.
+
 `statement(N)` selects the Nth source statement code region in structural
 order for execution targets and snapshots:
 

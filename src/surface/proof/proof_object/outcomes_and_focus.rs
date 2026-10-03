@@ -883,6 +883,13 @@ impl<'a> Proof<'a> {
                 .assignment_entry(local, *occurrence)
                 .map_err(|message| self.step_error(message));
         }
+        if let CodeRegionRef::Read(occurrence) = region {
+            return context
+                .constants
+                .source_layout
+                .read_entry(*occurrence)
+                .map_err(|message| self.step_error(message));
+        }
         let region = resolve_code_region_ref(
             context.function_block,
             region,

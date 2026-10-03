@@ -4901,6 +4901,7 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
     match region {
         CodeRegionRef::Function => "function".to_string(),
         CodeRegionRef::Loop(index) => format!("loop({index})"),
+        CodeRegionRef::Read(index) => format!("read({index})"),
         CodeRegionRef::Statement(index) => format!("statement({index})"),
         CodeRegionRef::Label(name) => name.clone(),
         CodeRegionRef::Assignment { local, occurrence } => {

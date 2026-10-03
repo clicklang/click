@@ -7286,6 +7286,12 @@ impl Parser {
                 self.expect(Token::RParen)?;
                 Ok(CodeRegionRef::Statement(index))
             }
+            Some(Token::Ident(kind)) if kind == "read" && self.peek() == Some(&Token::LParen) => {
+                self.expect(Token::LParen)?;
+                let occurrence = self.expect_index("read occurrence")?;
+                self.expect(Token::RParen)?;
+                Ok(CodeRegionRef::Read(occurrence))
+            }
             Some(Token::Ident(kind)) if kind == "assignment" && self.peek() == Some(&Token::LParen) => {
                 self.expect(Token::LParen)?;
                 let local = self.expect_ident("assignment local")?;
@@ -7296,10 +7302,10 @@ impl Parser {
             }
             Some(Token::Ident(label)) => Ok(CodeRegionRef::Label(label)),
             Some(token) => Err(self.error(format!(
-                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, or label, got {token}"
+                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, `read(N)`, or label, got {token}"
             ))),
             None => Err(self.error(
-                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, or label, got end of input",
+                "expected code region `function`, `loop(N)`, `statement(N)`, `assignment(local, N)`, `read(N)`, or label, got end of input",
             )),
         }
     }

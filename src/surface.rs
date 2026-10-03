@@ -5461,6 +5461,8 @@ pub enum CodeRegionRef {
         local: String,
         occurrence: usize,
     },
+    /// A statement with an explicit scalar memory load, in executable preorder.
+    Read(usize),
 }
 
 /// A proof-visible name for one recorded symbolic state.

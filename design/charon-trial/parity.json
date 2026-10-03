@@ -22,7 +22,8 @@
   {
     "config": "examples/rust-byte-sum/sum.click.import.json",
     "outcome": "proof-gap",
-    "diagnostic": "local `i` has no value at this frontier"
+    "diagnostic": "local `i` has no value at this frontier",
+    "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click"
   },
   {
     "config": "examples/rust-chunks-exact/chunks.click.import.json",
@@ -52,7 +53,8 @@
   {
     "config": "examples/rust-loops/loops.click.import.json",
     "outcome": "proof-gap",
-    "diagnostic": "requires the execution frontier to be at a loop"
+    "diagnostic": "requires the execution frontier to be at a loop",
+    "migrated_sidecar": "design/charon-trial/loop-headers/loops-assignments.click"
   },
   {
     "config": "examples/rust-move-drop/guard.click.import.json",

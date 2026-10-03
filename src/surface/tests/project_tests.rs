@@ -1929,3 +1929,86 @@ int32 f(int32 n) {ensures result==1;} by {execute_until(assignment(x, 0)); step(
     let snapshots = proof.replace("have x==3", "have at(assignment(x, 0).entry, x==3)");
     assert!(verify_c0_sources(&snapshots, &[("assignment.c", source)]).is_err());
 }
+
+#[test]
+fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
+    let source =
+        "int32 f(const uint8* p) {int32 x;int32 other;other=1;x=(int32)*p;other=2;return x;}";
+    let proof = r#"verifying "read.c";
+int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
+    execute_until(read(0)); step(); have 0<=x and x<=255 by {simp();} execute(); simp();
+}"#;
+    verify_c0_sources(proof, &[("read.c", source)]).unwrap();
+    for (from, to) in [
+        ("views p[0..1];", ""),
+        ("read(0)", "read(1)"),
+        ("have 0<=x and x<=255", "have x==256"),
+    ] {
+        assert!(verify_c0_sources(&proof.replace(from, to), &[("read.c", source)]).is_err());
+    }
+    let backwards = proof.replace("step(); have", "step(); execute_until(read(0)); have");
+    assert!(
+        verify_c0_sources(&backwards, &[("read.c", source)])
+            .unwrap_err()
+            .message()
+            .contains("backward")
+    );
+}
+
+#[test]
+fn charon_migrated_sidecars_preserve_original_source_contracts() {
+    for (original, migrated) in [
+        (
+            include_str!("../../../examples/rust-loops/loops.click"),
+            include_str!("../../../design/charon-trial/loop-headers/loops-assignments.click"),
+        ),
+        (
+            include_str!("../../../examples/rust-byte-sum/sum.click"),
+            include_str!("../../../design/charon-trial/loop-headers/sum-proof.click"),
+        ),
+    ] {
+        let original = parse(original).unwrap();
+        let migrated = parse(migrated).unwrap();
+        assert_eq!(original.verifying_sources(), migrated.verifying_sources());
+        assert_eq!(original.imports(), migrated.imports());
+        assert_eq!(
+            original.click_function_definitions(),
+            migrated.click_function_definitions()
+        );
+        assert_eq!(
+            original.predicate_definitions(),
+            migrated.predicate_definitions()
+        );
+        assert_eq!(
+            original.resource_definitions(),
+            migrated.resource_definitions()
+        );
+        assert_eq!(
+            original.function_blocks().len(),
+            migrated.function_blocks().len()
+        );
+        for (a, b) in original
+            .function_blocks()
+            .iter()
+            .zip(migrated.function_blocks())
+        {
+            assert_eq!(a.signature(), b.signature());
+            assert_eq!(a.is_external(), b.is_external());
+            assert_eq!(a.requires(), b.requires());
+            assert_eq!(a.decreases(), b.decreases());
+            assert_eq!(a.constructs(), b.constructs());
+            assert_eq!(a.parameter_struct_casts(), b.parameter_struct_casts());
+            assert!(a.structural_clauses().is_empty());
+            assert!(b.structural_clauses().is_empty());
+            assert_eq!(a.ensures().len(), b.ensures().len());
+            for (a, b) in a.ensures().iter().zip(b.ensures()) {
+                assert_eq!(a.ensure(), b.ensure());
+                assert_eq!(a.borrowed(), b.borrowed());
+                assert_eq!(a.condition(), b.condition());
+                assert_eq!(a.name(), b.name());
+            }
+            assert!(a.exceptional_ensures().is_empty());
+            assert!(b.exceptional_ensures().is_empty());
+        }
+    }
+}
