@@ -1,11 +1,11 @@
 # User-defined tactics (design)
 
-Status: delivery steps 1 and 2 are implemented: declarations, certification,
-application in C proofs before function exit, and self-recursion ranked by an
-expression measure (see
-[User-defined tactics](../reference/language/index.md#user-defined-tactics)).
-The refold example below still waits on the rbtree model's depth function, so
-it stays in a `text` fence.
+Status: delivery steps 1, 2, and 5 are implemented: declarations,
+certification, application in C proofs before function exit, self-recursion
+ranked by an expression measure (see
+[User-defined tactics](../reference/language/index.md#user-defined-tactics)),
+and the consumer, `refold_to_root` in `examples/rbtree-insert`, which gives
+`__rb_insert` its root-form contract. Steps 3 and 4 remain.
 
 ## Why Click needs them
 
@@ -35,24 +35,28 @@ resource context and fact context, never memory and never C state.
 
 ```text
 tactic refold_to_root(focus: struct rb_node*, root: struct rb_root*) {
-    decreases c;
     consumes c: ctx_at(focus, root);
+    decreases ctx_depth(c.model);
     consumes t: rb_at(focus);
-    requires ctx_holds(c.model, t.model) == 1;
-    produces tree: rb_at(root->rb_node);
-    ensures tree.model == plug(old(c.model), old(t.model));
+    requires rb_tree_parent_consistent(plug(c.model, t.model)) == 1;
+    produces whole: rb_root_at(root);
+    ensures whole.model == plug(old(c.model), old(t.model));
 } by {
     match c.model {
-        Context::Top => { ... the focus is root->rb_node; rename t ... },
+        Context::Top => { ... fold the root cell and t into rb_root_at(root) ... },
         Context::Left(identity, grandparent, color, sibling_model, up_model) => {
+            ... derive rb_parent_is(t.model, identity) from parent consistency ...
             let { sibling: s, up: u } = unfold(c);
             let sub = fold(rb_at(identity), { ... }, { left: t, right: s });
-            let { tree: whole } = refold_to_root(identity, root) { c: u, t: sub };
+            ... establish the measure's descent ...
+            let { whole: whole } = refold_to_root(identity, root) { c: u, t: sub };
         },
         Context::Right(...) => { ... mirrored ... },
     }
 }
 ```
+
+The full proof is in `examples/rbtree-insert/rbtree_insert.click`.
 
 A C proof applies it with an explicit binder map, like a call step but with no
 C statement:

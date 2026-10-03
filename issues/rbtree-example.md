@@ -20,12 +20,13 @@ tree and produces another cannot state that without an abstract model.
 ## State, 2026-10-02
 
 **`__rb_insert` verifies end to end** on the unchanged Linux C
-(`examples/rbtree-insert/rbtree_insert.click`, in the example gate), with a
-restated contract that produces the fixed-up tree at its focus rather than at
-`root->rb_node`; see chunk 7. **`rb_insert_color` verifies too** (2026-10-03):
-inline helpers with a verified contract are now called through it, so its one
-call to `__rb_insert` applies that contract. Restoring the root-form contract
-waits on recursive lemmas.
+(`examples/rbtree-insert/rbtree_insert.click`, in the example gate), and since
+2026-10-03 with the root-form contract: it produces the whole fixed-up tree at
+`root->rb_node` as `rb_root_at(root)`. The recursive user-defined tactic
+`refold_to_root` folds the context frames above the fixup's stopping point back
+into one tree in a single application. **`rb_insert_color` verifies too**:
+inline helpers with a verified contract are called through it, so its one call
+to `__rb_insert` applies that contract.
 
 ## Priorities, 2026-09-13
 
@@ -416,9 +417,10 @@ pure functions and predicates with induction theorems. Rotation, splice, and
 recolor lemmas are stated over models and proved once; C proofs apply them.
 
 **Deferred language questions.** Decided 2026-09-11 to add no language
-beyond D5 and D6. The following stay out of scope for every package here:
-resource-transforming lemmas (which would give a reusable "focus the tree at
-a member" step and proof reuse across mirrored cases), a binder map on loop
+beyond D5 and D6. Superseded in part on 2026-10-03: user-defined tactics
+(`docs/internals/user-defined-tactics.md`) now give recursive,
+resource-transforming steps, such as `refold_to_root`. The following stay out
+of scope for every package here: a binder map on loop
 headers, loop-entry snapshots such as `at(loop.entry, sub.model)`, and a
 positive constructor test such as `requires c.model is Some`. A package that
 appears to need one reports the need instead of adding it.
