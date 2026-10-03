@@ -1851,7 +1851,6 @@ pub(super) fn finish_ordered_proof<'a>(
     let retained_surface = {
         let record = &proof_execution.presentation.surface_record;
         let mut retained = ProofCertificateBuilder {
-            last_step_entry: record.last_step_entry.clone(),
             path_choices: record.path_choices.clone(),
             blocker: record.blocker.clone(),
             ..ProofCertificateBuilder::default()

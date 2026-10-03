@@ -254,11 +254,6 @@ fn surface_children(proposition: &ClickProposition) -> Children<'_, ClickProposi
     }
 }
 
-/// Whether a kernel proposition is a logical connective rather than an atom.
-pub(in crate::surface) fn is_kernel_connective(proposition: &Proposition) -> bool {
-    kernel_children(proposition).is_some()
-}
-
 /// The node at preorder position `target`, one step per level from the root.
 fn preorder_node<'a, T>(
     root: &'a T,
@@ -1123,11 +1118,6 @@ impl SurfacePropositionMap {
     /// order.
     pub(in crate::surface) fn universal_kernel_facts(&self) -> impl Iterator<Item = &Proposition> {
         in_proposition_order(self.storage.universal_kernels.iter().map(|(_, node)| node))
-    }
-
-    /// Whether this exact kernel proposition has a recorded surface form.
-    pub(in crate::surface) fn has_kernel_fact(&self, kernel: &Proposition) -> bool {
-        self.kernel_forms(kernel).is_some()
     }
 
     pub fn available_kernel(

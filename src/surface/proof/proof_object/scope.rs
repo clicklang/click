@@ -686,11 +686,6 @@ impl<'a> ProofScope<'a> {
             .presentation
             .surface_propositions
             .record_lowering(proposition, kernel)?;
-        execution
-            .presentation
-            .surface_record
-            .certificate_facts
-            .insert(kernel.clone());
         execution.presentation.surface_record.retained_have_facts = execution
             .presentation
             .surface_record

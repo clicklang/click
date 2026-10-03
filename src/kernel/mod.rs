@@ -176,7 +176,6 @@ pub(crate) use reasoning::memory_resolution::{
     ClosureFactCheck, closure_memoized_fact_check, with_closure_failure_memo,
 };
 pub(crate) use reasoning::resolve_load_variables_from_registry;
-pub(crate) use reasoning::resolve_load_variables_via;
 pub(crate) use reasoning::resolve_minted_load_variables;
 pub(crate) use reasoning::substitute_integer_variable_in_pure_proposition;
 pub(crate) use reasoning::substitute_pointer_variable_in_proposition;

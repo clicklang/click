@@ -244,7 +244,6 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
     condition: &CExpression,
     context_label: &str,
     prerequisite_policy: StatementPrerequisitePolicy,
-    filter_assumption_conflicts: bool,
     context: Option<&PureFactContext>,
 ) -> Result<Vec<CertifiedConditionTransition>, ClickError> {
     // The list keeps its context, so consulting it here and on every path
@@ -255,9 +254,6 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
         | StatementPrerequisitePolicy::Explicit
         | StatementPrerequisitePolicy::Contextual
         | StatementPrerequisitePolicy::Retained => context.cloned().unwrap_or_else(pure_context),
-        StatementPrerequisitePolicy::Planning => {
-            pure_context().defer_non_exact_loadability_obligations()
-        }
     };
     if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
         assumptions = assumptions.defer_non_exact_loadability_obligations();
@@ -289,9 +285,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
             !path.facts().iter().any(|path_fact| {
                 pure_facts.iter().any(|available| {
                     exact_facts_directly_conflict(available, path_fact.proposition())
-                }) || filter_assumption_conflicts
-                    && matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-                    && fact_conflicts_with_assumptions(path_fact.proposition(), &pure_context())
+                })
             })
         })
         .map(|path| {
@@ -339,30 +333,6 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         } else {
                             return Err(missing_condition_prerequisite_error(context_label, obligation, state));
                         }
-                    }
-                    StatementPrerequisitePolicy::Planning => {
-                        if source_backed_requirement_should_intercept(
-                            obligation,
-                            state.memory(),
-                        )? {
-                            return Err(missing_condition_prerequisite_error(context_label, obligation, state));
-                        }
-                        // The prover moved out of the kernel with package
-                        // 15, so a derivation is now planning output rather
-                        // than a kernel result. This leg still discharges an
-                        // obligation, so it checks the derivation it planned
-                        // before accepting it. That the discharge never
-                        // reaches a proof site at all is package 10(c2)'s
-                        // remaining audit gap, recorded in
-                        // `issues/simplify-step.md`.
-                        prerequisite_assumptions
-                            .derive_proposition(obligation.proposition())
-                            .filter(|derivation| {
-                                derivation.check(&prerequisite_assumptions)
-                            })
-                            .ok_or_else(|| {
-                                missing_condition_prerequisite_error(context_label, obligation, state)
-                            })?;
                     }
                 }
             }
@@ -449,59 +419,10 @@ pub(in crate::surface) fn certified_statement_transitions(
             &mut budget,
         )
     };
-    let precise_call_provenance =
-        matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-            && statement_contains_call(statement);
-    let ((execution, loop_rule), mut planning_premises) = if precise_call_provenance {
-        crate::kernel::collect_reasoning_provenance(execute)
-    } else {
-        let planning_premises =
-            if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning)
-                && (statement_consults_conditions(state, statement)
-                    || context_reasons_about_memory(state, pure_facts))
-            {
-                ambient_condition_facts(pure_facts)
-            } else {
-                Default::default()
-            };
-        (execute(), planning_premises)
-    };
-    if precise_call_provenance {
-        planning_premises.retain(|premise| exact_fact_is_available(premise, pure_facts));
-        let mut leaf_premises = Vec::new();
-        for premise in planning_premises {
-            // An exact consumed premise is already the smallest stable
-            // certificate dependency. Do not replace it with a different
-            // ambient fact that can re-derive it: that would turn a simple
-            // statement step back into heuristic reasoning during check.
-            if pure_facts.contains(&premise) {
-                if !leaf_premises.contains(&premise) {
-                    leaf_premises.push(premise);
-                }
-                continue;
-            }
-            let alternatives = pure_facts
-                .iter()
-                .filter(|available| *available != &premise)
-                .cloned()
-                .collect::<Vec<_>>();
-            if let Some(derivation) = minimal_proposition_derivation(&premise, &alternatives)? {
-                for dependency in derivation.context_premises() {
-                    if exact_fact_is_available(&dependency, pure_facts)
-                        && !leaf_premises.contains(&dependency)
-                    {
-                        leaf_premises.push(dependency);
-                    }
-                }
-            } else if !leaf_premises.contains(&premise) {
-                leaf_premises.push(premise);
-            }
-        }
-        planning_premises = leaf_premises;
-    }
+    let (execution, loop_rule) = execute();
     *next_opaque_call = budget.next_opaque_call();
     *next_kernel_variable = budget.next_kernel_variable();
-    let (mut transitions, loop_rule) = certified_transitions_from_execution(
+    let (transitions, loop_rule) = certified_transitions_from_execution(
         execution,
         state,
         statement,
@@ -516,81 +437,7 @@ pub(in crate::surface) fn certified_statement_transitions(
         context,
         &executed_under,
     )?;
-    for transition in &mut transitions {
-        transition.planning_premises = planning_premises.clone();
-    }
     Ok((transitions, loop_rule))
-}
-
-fn ambient_condition_facts(available: &[Proposition]) -> Vec<Proposition> {
-    let mut conjuncts = Vec::new();
-    for fact in available {
-        atomic_conjuncts(fact, &mut conjuncts);
-    }
-    conjuncts
-        .into_iter()
-        .filter(|fact| matches!(fact, Proposition::ConditionIs(_, _)))
-        .cloned()
-        .collect()
-}
-
-/// Whether anything in this proof context can turn a condition into a memory or
-/// resource conclusion.
-fn context_reasons_about_memory(state: &CState, pure_facts: &[Proposition]) -> bool {
-    if !state.resources().facts().is_empty() {
-        return true;
-    }
-    let mut conjuncts = Vec::new();
-    for fact in pure_facts {
-        atomic_conjuncts(fact, &mut conjuncts);
-    }
-    conjuncts
-        .iter()
-        .any(|fact| !matches!(fact, Proposition::ConditionIs(_, _)))
-}
-
-/// Whether executing this non-call statement can consult ambient conditions.
-fn statement_consults_conditions(state: &CState, statement: &CStatement) -> bool {
-    fn expression_consults(expression: &CExpression) -> bool {
-        !matches!(expression, CExpression::Value(_) | CExpression::Variable(_))
-    }
-    match statement {
-        CStatement::Skip
-        | CStatement::Break
-        | CStatement::Continue
-        | CStatement::Goto { .. }
-        | CStatement::Declare { .. }
-        | CStatement::DeclareAggregate { .. } => false,
-        CStatement::ForStep { step, .. } => statement_consults_conditions(state, step),
-        CStatement::Assign { name, expression } => {
-            state.local_object_type(name) == Some(CType::UInt8) || expression_consults(expression)
-        }
-        CStatement::Return(expression) | CStatement::Throw(expression) => {
-            expression_consults(expression)
-        }
-        CStatement::Seq(first, second) => {
-            statement_consults_conditions(state, first)
-                || statement_consults_conditions(state, second)
-        }
-        CStatement::TryCatchInt32 {
-            try_body, handler, ..
-        } => {
-            statement_consults_conditions(state, try_body)
-                || statement_consults_conditions(state, handler)
-        }
-        CStatement::CallAssign { .. }
-        | CStatement::Call { .. }
-        | CStatement::HeapAllocate { .. }
-        | CStatement::HeapFree { .. }
-        | CStatement::Assert { .. }
-        | CStatement::Store { .. }
-        | CStatement::TypedStore { .. }
-        | CStatement::Update { .. }
-        | CStatement::If { .. }
-        | CStatement::While { .. }
-        | CStatement::Switch { .. } => true,
-        CStatement::CopyAggregate { .. } | CStatement::InitializeScalarArray { .. } => true,
-    }
 }
 
 pub(in crate::surface::proof) fn certified_loop_exit_transitions_with_proven_phases(
@@ -749,16 +596,6 @@ fn certified_transitions_from_execution(
             limit.describe()
         )));
     }
-    let has_failure_path = execution.paths().iter().any(|path| {
-        matches!(
-            implication_body(path.theorem().proposition()),
-            Proposition::CStatementVerifies {
-                outcome: CStatementOutcome::UndefinedBehavior(_)
-                    | CStatementOutcome::RuntimeError(_),
-                ..
-            }
-        )
-    });
     let feasible = |path: &&crate::kernel::SymbolicCExecutionPath| {
         !path.facts().iter().any(|path_fact| {
             pure_facts
@@ -766,11 +603,6 @@ fn certified_transitions_from_execution(
                 .any(|available| exact_facts_directly_conflict(available, path_fact.proposition()))
         })
     };
-    // Several feasible paths are the cases of one statement. Each case's own
-    // path facts are what select it: a split on them supplies them to the
-    // case, so a theorem premise that is one of them is that case's
-    // assumption, never something the ambient facts must derive.
-    let paths_are_cases = execution.paths().iter().filter(feasible).count() > 1;
     let transitions = execution
         .paths()
         .iter()
@@ -781,12 +613,12 @@ fn certified_transitions_from_execution(
                 .map(|rule| rule.loop_invariant_correspondence(path_index).to_vec())
                 .unwrap_or_default();
             let mut successor_facts = pure_facts.clone();
-            let mut statement_facts = path
+            let statement_facts = path
                 .facts()
                 .iter()
                 .map(|fact| fact.proposition().clone())
                 .collect::<Vec<_>>();
-            let mut statement_fact_sources = statement_facts.clone();
+            let statement_fact_sources = statement_facts.clone();
             successor_facts.extend(statement_facts.iter().cloned());
             let mut execution_facts = path.execution_facts();
             // The direct-transport context of the successor facts followed by
@@ -831,156 +663,6 @@ fn certified_transitions_from_execution(
                 None => successor_facts.context(),
             };
             let mut prerequisite_derivations = Vec::new();
-            if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-                let mut seen_prerequisites = BTreeSet::new();
-                let mut theorem_context = pure_facts.to_vec();
-                for premise in theorem_implication_premises(path.theorem()) {
-                    if paths_are_cases
-                        && path
-                            .facts()
-                            .iter()
-                            .any(|fact| fact.proposition() == &premise)
-                    {
-                        if !theorem_context.contains(&premise) {
-                            theorem_context.push(premise);
-                        }
-                        continue;
-                    }
-                    // An ambient condition the theorem merely carried along is
-                    // already checkable as itself; recording an identity
-                    // derivation for it would advertise it as something the
-                    // execution consumed and force it into the certificate.
-                    if matches!(premise, Proposition::ConditionIs(_, _))
-                        && !exact_fact_is_available(&premise, &theorem_context)
-                        && let Some(derivation) =
-                            search_condition_derivation(&premise, pure_facts)?
-                        && !derivation.context_premises().is_empty()
-                    {
-                        if !prerequisite_derivations
-                            .iter()
-                            .any(|existing: &PropositionDerivation| {
-                                existing.conclusion() == derivation.conclusion()
-                            })
-                        {
-                            prerequisite_derivations.push(derivation);
-                        }
-                        if !theorem_context.contains(&premise) {
-                            theorem_context.push(premise);
-                        }
-                        continue;
-                    }
-                    let already_certified = exact_fact_is_available(&premise, &theorem_context)
-                        || exactly_available_fact(
-                            &premise,
-                            &theorem_context,
-                        )
-                        .is_some()
-                        || matches!(normalize_proposition(&premise), SimpProposition::True)
-                        || execution_facts.iter().any(|fact| {
-                                fact.is_certified() && fact.proposition() == &premise
-                            })
-                            && !path
-                                .obligations()
-                                .iter()
-                                .any(|obligation| obligation.proposition() == &premise);
-                    if !already_certified {
-                        let derivation =
-                            minimal_proposition_derivation(&premise, &theorem_context)?;
-                        let Some(derivation) = derivation else {
-                            if has_failure_path {
-                                if !theorem_context.contains(&premise) {
-                                    theorem_context.push(premise);
-                                }
-                                continue;
-                            }
-                            // A premise the statement owes, such as a bounds
-                            // check the C frontend lowered to `assert`, is
-                            // named as the statement's prerequisite.
-                            if let Some(obligation) = path
-                                .obligations()
-                                .iter()
-                                .find(|obligation| obligation.proposition() == &premise)
-                            {
-                                return Err(ClickError::new(format!(
-                                    "{context_label} is missing prerequisite{}: {}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    describe_statement_prerequisite_failure(
-                                        &premise,
-                                        &theorem_context,
-                                        &statement_facts,
-                                        state,
-                                        statement,
-                                        environment,
-                                        predicate_environment,
-                                    ),
-                                )));
-                            }
-                            return Err(ClickError::new(format!(
-                                "{context_label} used an assumption-derived theorem premise without a checkable derivation: {}",
-                                describe_derivation_failure(
-                                    &premise,
-                                    &theorem_context,
-                                    state,
-                                    environment,
-                                    predicate_environment,
-                                ),
-                            )));
-                        };
-                        if !prerequisite_derivations
-                            .iter()
-                            .any(|existing: &PropositionDerivation| {
-                                existing.conclusion() == derivation.conclusion()
-                            })
-                        {
-                            prerequisite_derivations.push(derivation);
-                        }
-                    }
-                    if !theorem_context.contains(&premise) {
-                        theorem_context.push(premise);
-                    }
-                }
-                for path_fact in path.facts().iter().chain(execution_facts.iter()) {
-                    if path_fact.is_certified()
-                        || !seen_prerequisites.insert(path_fact.proposition().clone())
-                    {
-                        continue;
-                    }
-                    let proposition = path_fact.proposition();
-                    if exact_fact_is_available(proposition, pure_facts)
-                        || matches!(normalize_proposition(proposition), SimpProposition::True)
-                    {
-                        continue;
-                    }
-                    if let Some(derivation) =
-                        minimal_proposition_derivation(proposition, pure_facts)?
-                    {
-                        if !prerequisite_derivations
-                            .iter()
-                            .any(|existing: &PropositionDerivation| {
-                                existing.conclusion() == derivation.conclusion()
-                            })
-                        {
-                            prerequisite_derivations.push(derivation);
-                        }
-                    } else if proposition_has_contextual_derivation_rules(proposition)
-                        && pure_context().proves(proposition)
-                    {
-                        return Err(ClickError::new(format!(
-                            "{context_label} used an assumption-derived execution fact without a checkable derivation: {}",
-                            describe_derivation_failure(
-                                proposition,
-                                pure_facts,
-                                state,
-                                environment,
-                                predicate_environment,
-                            ),
-                        )));
-                    }
-                }
-            }
             for obligation in path.obligations() {
                 let proposition = obligation.proposition();
                 let derivation = match prerequisite_policy {
@@ -1194,82 +876,10 @@ fn certified_transitions_from_execution(
                             ));
                         }
                     }
-                    StatementPrerequisitePolicy::Planning => {
-                        if source_backed_requirement_should_intercept(
-                            obligation,
-                            state.memory(),
-                        )? {
-                            return Err(missing_prerequisite_error(
-                                format!(
-                                    "{context_label} is missing prerequisite{}: {}",
-                                    obligation
-                                        .context()
-                                        .map(|context| format!(" ({context})"))
-                                        .unwrap_or_default(),
-                                    describe_statement_prerequisite_failure(
-                                        proposition,
-                                        pure_facts,
-                                        &statement_facts,
-                                        state,
-                                        statement,
-                                        environment,
-                                        predicate_environment,
-                                    ),
-                                ),
-                                obligation,
-                            ));
-                        }
-                        if exact_fact_is_available(proposition, pure_facts) {
-                            None
-                        } else {
-                            let derivation_facts = successor_facts
-                                .iter()
-                                .filter(|fact| *fact != proposition)
-                                .cloned()
-                                .collect::<Vec<_>>();
-                            Some(
-                                minimal_proposition_derivation(proposition, &derivation_facts)?
-                                    .ok_or_else(|| {
-                                    missing_prerequisite_error(
-                                        format!(
-                                            "{context_label} is missing prerequisite{}: {}",
-                                            obligation
-                                                .context()
-                                                .map(|context| format!(" ({context})"))
-                                                .unwrap_or_default(),
-                                            describe_statement_prerequisite_failure(
-                                                proposition,
-                                                &derivation_facts,
-                                                &statement_facts,
-                                                state,
-                                                statement,
-                                                environment,
-                                                predicate_environment,
-                                            ),
-                                        ),
-                                        obligation,
-                                    )
-                                })?,
-                            )
-                        }
-                    }
                 };
                 if let Some(derivation) = derivation {
                     prerequisite_derivations.push(derivation);
                 }
-            }
-            if matches!(prerequisite_policy, StatementPrerequisitePolicy::Planning) {
-                let is_derived_prerequisite = |fact: &Proposition| {
-                    prerequisite_derivations
-                        .iter()
-                        .any(|derivation| derivation.conclusion() == fact)
-                        && !exact_fact_is_available(fact, pure_facts)
-                };
-                statement_facts.retain(|fact| !is_derived_prerequisite(fact));
-                statement_fact_sources.retain(|fact| !is_derived_prerequisite(fact));
-                successor_facts.retain(|fact| !is_derived_prerequisite(fact));
-                execution_facts
-                    .retain(|fact| !is_derived_prerequisite(fact.proposition()));
             }
             let mut introduced_facts = statement_facts.clone();
             let Proposition::CStatementVerifies {
@@ -1679,7 +1289,7 @@ mod condition_transition_tests {
     }
 
     #[test]
-    fn planning_condition_transition_still_checks_execution_obligations() {
+    fn condition_transition_still_checks_execution_obligations() {
         let state = CState::new().with_local(
             "p",
             CValue::pointer(Pointer {
@@ -1694,11 +1304,10 @@ mod condition_transition_tests {
             &PureFactList::default(),
             &condition,
             "condition obligation regression",
-            StatementPrerequisitePolicy::Planning,
-            true,
+            StatementPrerequisitePolicy::Contextual,
             None,
         ) {
-            Ok(_) => panic!("planning accepted an unproved viewability obligation"),
+            Ok(_) => panic!("a step accepted an unproved viewability obligation"),
             Err(error) => error,
         };
 

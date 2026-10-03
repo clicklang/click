@@ -86,34 +86,6 @@ pub(super) fn facts_for_direct_derivation_lowering(
     facts
 }
 
-/// Facts that may establish that a restricted simplifier's surface goal and
-/// premises are defined without performing an equality step on its behalf.
-/// Array bounds are part of expression lowering; equalities remain available
-/// only through the explicitly listed `simp() using` premises.
-pub(super) fn facts_for_restricted_simp_lowering(propositions: &[Proposition]) -> Vec<Proposition> {
-    let mut facts = facts_for_direct_surface_lowering(propositions);
-    for proposition in propositions {
-        let mut conjuncts = Vec::new();
-        atomic_conjuncts(proposition, &mut conjuncts);
-        for proposition in conjuncts {
-            if matches!(
-                proposition,
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(_, _)
-                        | ConditionTerm::Bitvector32SignedLessEqual(_, _)
-                        | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
-                        | ConditionTerm::Bitvector32SignedGreaterEqual(_, _),
-                    _,
-                )
-            ) && !facts.contains(proposition)
-            {
-                facts.push(proposition.clone());
-            }
-        }
-    }
-    facts
-}
-
 pub(super) fn facts_for_smart_have_lowering(propositions: &[Proposition]) -> Vec<Proposition> {
     let mut facts = facts_for_direct_derivation_lowering(propositions);
     for proposition in propositions {
@@ -136,46 +108,6 @@ pub(super) fn facts_for_smart_have_lowering(propositions: &[Proposition]) -> Vec
                 )
             );
             if is_atomic_alias && !facts.contains(proposition) {
-                facts.push(proposition.clone());
-            }
-        }
-    }
-    facts
-}
-
-pub(super) fn facts_for_simple_goal_lowering(propositions: &[Proposition]) -> Vec<Proposition> {
-    let mut facts = facts_for_smart_have_lowering(propositions);
-    for proposition in propositions {
-        let mut conjuncts = Vec::new();
-        atomic_conjuncts(proposition, &mut conjuncts);
-        for proposition in conjuncts {
-            let include = match proposition {
-                Proposition::ConditionIs(
-                    ConditionTerm::Bitvector32SignedLessThan(_, _)
-                    | ConditionTerm::Bitvector32SignedLessEqual(_, _)
-                    | ConditionTerm::Bitvector32SignedGreaterThan(_, _)
-                    | ConditionTerm::Bitvector32SignedGreaterEqual(_, _)
-                    | ConditionTerm::PointerOffsetEqual(_, _),
-                    _,
-                ) => true,
-                // A false-polarity atomic alias decides branch conditions
-                // (`if (p[i] == x)`) whose negative arm the goal's `If` terms
-                // still carry; the smart-have set only admits the true polarity.
-                Proposition::ConditionIs(ConditionTerm::Bitvector32Equal(left, right), false) => {
-                    matches!(
-                        (left.as_ref(), right.as_ref()),
-                        (
-                            Bitvector32Term::MemoryLoad(_, _, _),
-                            Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_)
-                        ) | (
-                            Bitvector32Term::Constant(_) | Bitvector32Term::Variable(_),
-                            Bitvector32Term::MemoryLoad(_, _, _)
-                        )
-                    )
-                }
-                _ => false,
-            };
-            if include && !facts.contains(proposition) {
                 facts.push(proposition.clone());
             }
         }

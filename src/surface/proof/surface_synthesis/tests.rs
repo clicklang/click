@@ -1,4 +1,5 @@
 use super::*;
+use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Lowers a written proposition exactly as a `have` in a fixed-state proof
 /// does, so a synthesized spelling is accepted only when it re-lowers to the
