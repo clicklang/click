@@ -126,7 +126,7 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
 }
 
 #[test]
-fn wide_scalar_rejects_legacy_carriers_arithmetic_casts_and_address_access() {
+fn wide_scalar_rejects_legacy_carriers_arithmetic_and_address_access() {
     let assert_mismatch = |expression| {
         assert_eq!(
             evaluated(expression),
@@ -165,10 +165,6 @@ fn wide_scalar_rejects_legacy_carriers_arithmetic_casts_and_address_access() {
         c_add(c_int128_literal(1), c_int128_literal(2)),
         c_multiply(c_int128_literal(1), c_int128_literal(2)),
         c_less_than(c_uint128_literal(1), c_uint128_literal(2)),
-        c_cast(c_uint128_literal(1), CType::UInt64),
-        c_cast(c_uint64_literal(1), CType::UInt128),
-        c_integer_cast_modulo(c_uint128_literal(1), CType::UInt64),
-        c_integer_cast_modulo(c_uint64_literal(1), CType::UInt128),
     ] {
         assert_mismatch(expression);
     }
@@ -308,4 +304,258 @@ fn wide_scalar_root_validation_does_not_scan_legacy_operand_trees() {
         assert!(!accepted);
         assert_eq!(work, 1);
     }
+}
+
+#[test]
+fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
+    for source in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt8,
+        MachineIntegerType::Int16,
+        MachineIntegerType::UInt16,
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let term = Bitvector32Term::Variable(Variable(149_003));
+        let wide =
+            Bitvector32Term::machine_integer_cast(source, MachineIntegerType::Int128, term.clone());
+        assert_eq!(
+            IntegerTerm::from_machine(MachineIntegerType::Int128, wide).unwrap(),
+            IntegerTerm::from_machine(source, term).unwrap()
+        );
+    }
+    let term = Bitvector32Term::Variable(Variable(149_004));
+    let narrowed = Bitvector32Term::machine_integer_cast(
+        MachineIntegerType::UInt128,
+        MachineIntegerType::Int64,
+        term.clone(),
+    );
+    let observation = IntegerTerm::from_machine(MachineIntegerType::Int64, narrowed).unwrap();
+    assert_ne!(
+        observation,
+        IntegerTerm::from_machine(MachineIntegerType::UInt128, term).unwrap()
+    );
+    let IntegerTerm::Machine(machine) = observation else {
+        unreachable!()
+    };
+    assert_eq!(machine.ty(), MachineIntegerType::Int64);
+    assert!(matches!(
+        machine.value(),
+        Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::UInt128,
+            destination: MachineIntegerType::Int64,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn wide_cast_runtime_preserves_modulo_policy_and_operand_definedness() {
+    assert_eq!(
+        evaluated(c_integer_cast_modulo(c_int128_literal(-1), CType::UInt64)),
+        evaluated(c_uint64_literal(u64::MAX))
+    );
+    assert_eq!(
+        evaluated(c_integer_cast_modulo(
+            c_uint128_literal(u128::MAX),
+            CType::Int64
+        )),
+        evaluated(c_int64_literal(-1))
+    );
+    assert_eq!(
+        evaluated(c_integer_cast_modulo(c_int64_literal(-1), CType::UInt128)),
+        evaluated(c_uint128_literal(u128::MAX))
+    );
+    assert_eq!(
+        evaluated(c_cast(c_uint64_literal(u64::MAX), CType::Int128)),
+        evaluated(c_int128_literal(i128::from(u64::MAX)))
+    );
+    assert_eq!(
+        evaluated(c_cast(c_int128_literal(-1), CType::UInt64)),
+        evaluated(c_uint64_literal(u64::MAX))
+    );
+    assert!(matches!(
+        evaluated(c_cast(c_uint128_literal(u128::MAX), CType::Int64)),
+        CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+    ));
+    assert!(matches!(
+        evaluated(c_integer_cast_modulo(
+            c_divide(c_int64_literal(1), c_int64_literal(0)),
+            CType::Int128
+        )),
+        CExpressionOutcome::UndefinedBehavior(_)
+    ));
+    assert!(matches!(
+        evaluated(c_integer_cast_modulo(
+            c_add(c_int64_literal(i64::MAX), c_int64_literal(1)),
+            CType::Int128
+        )),
+        CExpressionOutcome::UndefinedBehavior(_)
+    ));
+}
+
+#[test]
+fn wide_cast_ordinary_signed_narrowing_keeps_both_range_obligations() {
+    let value = CValue::Int128(Bitvector32Term::Variable(Variable(149_005)));
+    let mut obligations = Vec::new();
+    let result = coerce_c_value_to_type(
+        value,
+        CType::Int64,
+        &mut obligations,
+        &PureFactContext::new(),
+    )
+    .unwrap();
+    assert_eq!(result.c_type(), CType::Int64);
+    assert_eq!(obligations.len(), 2);
+    for kind in [true, false] {
+        assert!(
+            obligations
+                .iter()
+                .any(|obligation| match obligation.proposition() {
+                    Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(_, _), true) =>
+                        kind,
+                    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(_, _), true) => !kind,
+                    _ => false,
+                })
+        );
+    }
+    let bounds: Vec<_> = obligations
+        .iter()
+        .map(|obligation| obligation.proposition().clone())
+        .collect();
+    for provided in 0..=2 {
+        let mut assumptions = PureFactContext::new();
+        for proposition in &bounds[..provided] {
+            let Proposition::ConditionIs(condition, true) = proposition else {
+                unreachable!()
+            };
+            assumptions = assumptions.assume_condition(condition.clone(), true);
+        }
+        let mut remaining = Vec::new();
+        let result = coerce_c_value_to_type(
+            CValue::Int128(Bitvector32Term::Variable(Variable(149_005))),
+            CType::Int64,
+            &mut remaining,
+            &assumptions,
+        )
+        .unwrap();
+        assert_eq!(result.c_type(), CType::Int64);
+        assert_eq!(remaining.len(), 2 - provided);
+    }
+    let value = CValue::Int128(Bitvector32Term::Variable(Variable(149_005)));
+    assert!(
+        MachineIntegerType::Int64
+            .convert_modulo_value(value)
+            .is_some()
+    );
+}
+
+#[test]
+fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_early() {
+    let function = c_function(
+        CType::UInt64,
+        "wide_cast_call",
+        vec![c_parameter("input", CType::Int128)],
+        c_return(c_integer_cast_modulo(c_variable("input"), CType::UInt64)),
+    );
+    let theorem = prove_symbolic_c_function_execution(
+        CState::new(),
+        function,
+        vec![c_int64_literal(-1)],
+        PureFactContext::new(),
+    )
+    .unwrap();
+    assert!(matches!(
+        theorem.proposition(),
+        Proposition::CFunctionExecutes {
+            outcome: CFunctionOutcome::Return {
+                value: CValue::UInt64(Bitvector32Term::UInt64Constant(u64::MAX)),
+                ..
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
+    for term in [
+        Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::Int64,
+            destination: MachineIntegerType::UInt128,
+            value: Box::new(Bitvector32Term::Variable(Variable(149_006))),
+        },
+        Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::Int128,
+            destination: MachineIntegerType::Int128,
+            value: Box::new(Bitvector32Term::Constant(1)),
+        },
+        Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::Int64,
+            destination: MachineIntegerType::Int128,
+            value: Box::new(Bitvector32Term::UInt64Constant(1)),
+        },
+        Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::Int64,
+            destination: MachineIntegerType::Int128,
+            value: Box::new(Bitvector32Term::MachineIntegerCast {
+                source: MachineIntegerType::Int32,
+                destination: MachineIntegerType::Int64,
+                value: Box::new(Bitvector32Term::Int64Constant(1)),
+            }),
+        },
+    ] {
+        assert!(!MachineIntegerType::Int128.accepts_wide_term(&term));
+        assert_eq!(
+            evaluated(CExpression::Value(CValue::Int128(term))),
+            CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
+        );
+    }
+    assert!(
+        MachineIntegerType::Int128
+            .convert_modulo_value(CValue::Int64(Bitvector32Term::MachineIntegerConstant(
+                MachineIntegerConstant::from_unsigned(
+                    MachineIntegerType::UInt128.format(),
+                    u128::MAX
+                )
+                .unwrap()
+            )))
+            .is_none()
+    );
+}
+
+#[test]
+fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() {
+    let pointer = Pointer {
+        block: "wide-cast-source".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let memory = CMemory::new().with_block("wide-cast-source", 4).store(
+        pointer.clone(),
+        CValue::Int32(Bitvector32Term::Constant((-1i32) as u32)),
+    );
+    let load =
+        Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Bits32);
+    let wide = Bitvector32Term::machine_integer_cast(
+        MachineIntegerType::Int32,
+        MachineIntegerType::Int128,
+        load,
+    );
+    assert!(
+        crate::kernel::memory_provenance::c_condition_fact_has_memory(&Proposition::ConditionIs(
+            ConditionTerm::equal(wide.clone(), Bitvector32Term::Variable(Variable(149_009))),
+            true
+        ))
+    );
+    assert_eq!(
+        crate::kernel::api::canonicalize_atomic_loads(&wide),
+        MachineIntegerType::Int128
+            .constant_term(
+                MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), -1)
+                    .unwrap()
+            )
+            .unwrap()
+    );
 }

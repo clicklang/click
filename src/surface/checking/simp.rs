@@ -620,6 +620,8 @@ pub(in crate::surface) fn simp_condition_without_assumptions(
 
 pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option<u32> {
     match term {
+        Bitvector32Term::MachineIntegerCast { .. } => None,
+
         Bitvector32Term::Constant(value) => Some(*value),
         Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)
@@ -744,6 +746,12 @@ pub(in crate::surface) fn simp_bitvector_const(term: &Bitvector32Term) -> Option
 
 pub(in crate::surface) fn simp_bitvector(term: &Bitvector32Term) -> Bitvector32Term {
     match term {
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } => Bitvector32Term::machine_integer_cast(*source, *destination, simp_bitvector(value)),
+
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Int64Constant(_)
         | Bitvector32Term::UInt64Constant(_)

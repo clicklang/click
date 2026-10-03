@@ -128,6 +128,7 @@ fn collect_offset_load_variables_from_term(
             collect_offset_load_variables_from_term(value, load_variables);
         }
         Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -237,6 +238,7 @@ fn assert_scaled_index_free_of_raw_loads(
             assert_scaled_index_free_of_raw_loads(right, load_variables);
         }
         Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)

@@ -546,6 +546,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
             | Bitvector32Term::Float32Negate(value)
             | Bitvector32Term::Float64Negate(value)
             | Bitvector32Term::Int64From32(value)
+            | Bitvector32Term::MachineIntegerCast { value, .. }
             | Bitvector32Term::Int64FromUInt32(value)
             | Bitvector32Term::UInt64From32(value)
             | Bitvector32Term::UInt32From64(value)
@@ -2563,6 +2564,8 @@ fn synthesize_surface_bitvector(
         ))
     };
     match term {
+        Bitvector32Term::MachineIntegerCast { .. } => None,
+
         Bitvector32Term::MachineIntegerConstant(_) => None,
         Bitvector32Term::Constant(_) => unreachable!("constants returned above"),
         Bitvector32Term::Add(left, right) => {
@@ -3351,6 +3354,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             | Bitvector32Term::Int64BitwiseNot(value)
             | Bitvector32Term::UInt64BitwiseNot(value)
             | Bitvector32Term::Int64From32(value)
+            | Bitvector32Term::MachineIntegerCast { value, .. }
             | Bitvector32Term::UInt64From32(value)
             | Bitvector32Term::UInt32From64(value)
             | Bitvector32Term::Int64FromUInt32(value)

@@ -353,11 +353,19 @@ and variables, scalar locals and function parameters/results, substitution,
 16-byte scalar size/alignment under the pinned profile, and exact Integer
 observations. Reverse Integer conversions retain both wide range obligations;
 truthiness observes all bits. Legacy arithmetic carriers, native arithmetic,
-wide signedness/width-changing casts, and address-based wide access are refused.
+and address-based wide access are refused.
 C0 identities carry the kernel types without adding source parser admission.
 
-Next add symbolic widening and narrowing for wide values, then checked
-multiplication and its definedness rules. Wide addressable storage/loads and
+Symbolic wide widening, narrowing, and signedness changes are delivered at
+the shared explicit modulo boundary. Cast terms retain both machine types;
+constant substitution preserves every bit and sign extension. Ordinary C
+wide signed conversions retain representability obligations. Exact Integer
+observation preserves numeric widening, while value-changing casts remain
+typed machine observations. Root construction and validation stay bounded,
+including large operands; native arithmetic and source admission remain open.
+
+Next add checked wide multiplication and its definedness rules.
+Wide addressable storage/loads and
 frontend source admission must retain the source's resolved machine semantics. Use the shared formats
 and conversion policies rather than inventing a C++-specific numeric carrier.
 Then cover wide truncating division/remainder and checked narrowing

@@ -2317,6 +2317,7 @@ fn collect_bitvector_integer_variables_seen(
         }
         Bitvector32Term::BitwiseNot(value)
         | Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -3001,6 +3002,7 @@ pub(crate) fn collect_bitvector_variables(
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value)
         | Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -3155,6 +3157,7 @@ fn collect_bitvector_capture_variables_seen(
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value)
         | Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -3909,6 +3912,7 @@ fn collect_bitvector_scope_summary(
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value)
         | Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -4537,6 +4541,7 @@ fn collect_bitvector_binder_variables_seen(
         | Bitvector32Term::Int64BitwiseNot(value)
         | Bitvector32Term::UInt64BitwiseNot(value)
         | Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)

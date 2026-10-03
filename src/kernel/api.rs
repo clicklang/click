@@ -7717,6 +7717,8 @@ fn rewrite_int32_term_by_exact_equality(
         )
     };
     match term {
+        Bitvector32Term::MachineIntegerCast { .. } => term.clone(),
+
         Bitvector32Term::Add(left, right) => {
             let (left, right) = binary(left, right);
             Bitvector32Term::add(left, right)

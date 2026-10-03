@@ -1627,6 +1627,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | Bitvector32Term::UInt64Constant(_)
         | Bitvector32Term::MachineIntegerConstant(_) => {}
         Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
         | Bitvector32Term::Int64FromUInt32(value)
@@ -4695,6 +4696,16 @@ pub(crate) fn substitute_bitvector_variable(
     to: &Bitvector32Term,
 ) -> Bitvector32Term {
     match term {
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } => Bitvector32Term::machine_integer_cast(
+            *source,
+            *destination,
+            substitute_bitvector_variable(value, from, to),
+        ),
+
         Bitvector32Term::MachineIntegerConstant(value) => {
             Bitvector32Term::MachineIntegerConstant(*value)
         }

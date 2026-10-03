@@ -1551,6 +1551,16 @@ fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, 
 fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, hasher: &mut H) {
     std::hash::Hash::hash(&std::mem::discriminant(term), hasher);
     match term {
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } => {
+            std::hash::Hash::hash(source, hasher);
+            std::hash::Hash::hash(destination, hasher);
+            hash_memory_blind_bitvector(value, hasher);
+        }
+
         Bitvector32Term::Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::Int64Constant(value) => std::hash::Hash::hash(value, hasher),
         Bitvector32Term::UInt64Constant(value) => std::hash::Hash::hash(value, hasher),
@@ -1773,6 +1783,7 @@ fn collect_bitvector_memory_load_keys(
             collect_bitvector_memory_load_keys(right, keys);
         }
         Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt32From64(value)
@@ -2055,6 +2066,16 @@ fn collect_bitvector_memory_loads_with_width(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match term {
+        Bitvector32Term::MachineIntegerCast { value, source, .. } => {
+            collect_bitvector_memory_loads_with_width(
+                value,
+                current_memory,
+                loads,
+                Some(source.format().byte_width()),
+                seen_integers,
+            )
+        }
+
         Bitvector32Term::Constant(_)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::Int64Constant(_)

@@ -847,6 +847,7 @@ enum AlphaBitvectorKey {
     RegisteredLoad(AlphaRegisteredLoadId),
     Address(Box<AlphaPointerKey>),
     IntegerToMachine(MachineIntegerType, AlphaIntegerKey),
+    MachineIntegerCast(MachineIntegerType, MachineIntegerType, Box<Self>),
     Int64From32(Box<Self>),
     UInt64From32(Box<Self>),
     UInt32From64(Box<Self>),
@@ -1984,6 +1985,20 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             ))
         };
     Some(match term {
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } => AlphaBitvectorKey::MachineIntegerCast(
+            *source,
+            *destination,
+            Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                value,
+                bindings,
+                next_binder,
+            )?),
+        ),
+
         Bitvector32Term::MachineIntegerConstant(value) => {
             AlphaBitvectorKey::MachineIntegerConstant(*value)
         }
@@ -3519,6 +3534,54 @@ mod integer_alpha_scaling_tests {
                 &make(Variable(882), MachineIntegerType::UInt32),
                 &mut BTreeMap::from([(Variable(882), 0)]),
                 &mut 1,
+            )
+        );
+    }
+
+    #[test]
+    fn wide_cast_alpha_keys_include_source_and_destination_and_rename_operands() {
+        let make = |variable, source, destination| {
+            Bitvector32Term::machine_integer_cast(
+                source,
+                destination,
+                Bitvector32Term::Variable(variable),
+            )
+        };
+        let key = |variable, source, destination| {
+            alpha_bitvector_key::<false>(
+                &make(variable, source, destination),
+                &mut BTreeMap::from([(variable, 0)]),
+                &mut 1,
+            )
+            .unwrap()
+        };
+        let left = key(
+            Variable(149_007),
+            MachineIntegerType::Int64,
+            MachineIntegerType::Int128,
+        );
+        assert_eq!(
+            left,
+            key(
+                Variable(149_008),
+                MachineIntegerType::Int64,
+                MachineIntegerType::Int128
+            )
+        );
+        assert_ne!(
+            left,
+            key(
+                Variable(149_007),
+                MachineIntegerType::UInt64,
+                MachineIntegerType::Int128
+            )
+        );
+        assert_ne!(
+            left,
+            key(
+                Variable(149_007),
+                MachineIntegerType::Int64,
+                MachineIntegerType::UInt128
             )
         );
     }

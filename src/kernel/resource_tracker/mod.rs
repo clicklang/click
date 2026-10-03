@@ -1457,6 +1457,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
         }
         Bitvector32Term::BitwiseNot(inner)
         | Bitvector32Term::Int64From32(inner)
+        | Bitvector32Term::MachineIntegerCast { value: inner, .. }
         | Bitvector32Term::UInt64From32(inner)
         | Bitvector32Term::UInt32From64(inner)
         | Bitvector32Term::Int64FromUInt32(inner)

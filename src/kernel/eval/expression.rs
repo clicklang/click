@@ -647,6 +647,43 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Option<CValue> {
+    if matches!(value.c_type(), CType::Int128 | CType::UInt128)
+        || matches!(target_type, CType::Int128 | CType::UInt128)
+    {
+        let destination = MachineIntegerType::from_c_type(target_type)?;
+        let source = if matches!(value, CValue::Bool(_)) {
+            MachineIntegerType::UInt8
+        } else {
+            MachineIntegerType::from_c_type(value.c_type())?
+        };
+        // Ordinary C signed conversion retains the existing representable
+        // range policy. Modulo casts use their separate explicit boundary.
+        if destination.format().is_signed() && !destination.format().contains(source.format()) {
+            let observed = IntegerTerm::from_machine(source, c_value_bitvector_term(&value)?)?;
+            let (min, max) = destination.format().bounds();
+            for (condition, context) in [
+                (
+                    ConditionTerm::integer_greater_equal(
+                        observed.clone(),
+                        IntegerTerm::constant(min),
+                    ),
+                    "signed narrowing lower bound",
+                ),
+                (
+                    ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max)),
+                    "signed narrowing upper bound",
+                ),
+            ] {
+                add_proof_obligation_with_context(
+                    obligations,
+                    assumptions,
+                    Proposition::ConditionIs(condition, true),
+                    Some(context),
+                )?;
+            }
+        }
+        return destination.convert_modulo_value(value);
+    }
     if let Some(value) = coerce_c_null_pointer_constant(value.clone(), target_type) {
         return Some(value);
     }
@@ -674,16 +711,6 @@ pub(in crate::kernel) fn coerce_c_value_to_type(
     }
 
     match (target_type, value) {
-        (CType::Int128, CValue::Int128(value))
-            if MachineIntegerType::Int128.accepts_wide_term(&value) =>
-        {
-            Some(CValue::Int128(value))
-        }
-        (CType::UInt128, CValue::UInt128(value))
-            if MachineIntegerType::UInt128.accepts_wide_term(&value) =>
-        {
-            Some(CValue::UInt128(value))
-        }
         (CType::Bool, CValue::Bool(value)) => Some(CValue::Bool(value)),
         (
             CType::Bool,
