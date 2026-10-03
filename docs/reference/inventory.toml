@@ -543,10 +543,6 @@ id = "language.word.apply"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.apply_loop_summary"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.as"
 path = "reference/language/grammar.md#word-index"
 
@@ -560,10 +556,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.auto"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.bounded_execute"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -587,19 +579,11 @@ id = "language.word.c"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.calculate"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.cases"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.close_invariants"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.conjunction"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -647,10 +631,6 @@ id = "language.word.diverges"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.double_negation"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.else"
 path = "reference/language/grammar.md#word-index"
 
@@ -676,22 +656,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.execute"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_else_step"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_rest"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_step"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.execute_then_step"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -942,14 +906,6 @@ id = "language.word.struct"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.summarize"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.symbolic_execute"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.target"
 path = "reference/language/grammar.md#word-index"
 
@@ -979,10 +935,6 @@ path = "reference/language/grammar.md#word-index"
 
 [[item]]
 id = "language.word.using"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
-id = "language.word.vacuous"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
@@ -1460,54 +1412,6 @@ path = "reference/tactics/index.md#resources-and-snapshots"
 [[item]]
 id = "tactic.close_invariants"
 path = "reference/tactics/index.md#resources-and-snapshots"
-
-[[item]]
-id = "tactic.conjunction"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.apply_loop_summary"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.summarize"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_rest"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.symbolic_execute"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_step"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_then_step"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.execute_else_step"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.bounded_execute"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.calculate"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.double_negation"
-path = "reference/tactics/index.md#compatibility"
-
-[[item]]
-id = "tactic.vacuous"
-path = "reference/tactics/index.md#compatibility"
 
 [[item]]
 id = "tactic-form.mark"
