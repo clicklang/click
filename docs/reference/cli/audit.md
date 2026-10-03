@@ -17,7 +17,9 @@ mdtests directory, or repository root. A repository-root audit covers both
 `examples/` and `mdtests/`. `--claim`, `--changed-since`, and `--start-at`
 narrow that target; their exact interaction and defaults are listed below.
 For a sidecar with Click imports, the inventory contains only smart sites owned
-by the selected entry module. The retained session keeps imported interfaces
+by the selected entry module. Its imports resolve under the project root
+`click verify` selects for it, so a sidecar that imports a sibling project's
+model, as `examples/rbtree-insert` does, audits as it verifies. The retained session keeps imported interfaces
 fixed while checking each rewritten local proof; audit the library path itself
 to select library sites.
 

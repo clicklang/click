@@ -3815,6 +3815,19 @@ pub(super) fn execute_c_function_call_paths(
             budget,
         );
     }
+    // A binder map selects a contract boundary, and an inline body has none:
+    // the body runs on the caller's resources, so the map would bind nothing
+    // and silently mean something other than what the proof wrote.
+    if function.has_inline_body()
+        && environment
+            .selected_call_binders
+            .as_ref()
+            .is_some_and(|transport| transport.names_call_to(function.name()))
+    {
+        return Ok(vec![resource_call_failure(
+            "a binder map cannot select a `static inline` helper's contract, because its body executes at the call site on the caller's resources and its contract is not a call boundary; step the call with `step()` or `execute()`",
+        )]);
+    }
     // A header-provided `static inline` or `static __always_inline` body has
     // no Click contract to apply.
     // Its checked C body is the call-site semantics, including while the
@@ -4172,7 +4185,7 @@ fn selected_call_binder_application(
     let Some(transport) = environment.selected_call_binders.as_ref() else {
         return Ok(None);
     };
-    if transport.function.as_ref() != function_name {
+    if !transport.names_call_to(function_name) {
         return Ok(None);
     }
     // Only the binders required at entry are checked here; a `produces`

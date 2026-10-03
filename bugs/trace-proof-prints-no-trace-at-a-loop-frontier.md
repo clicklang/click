@@ -28,7 +28,9 @@ command:
 click verify --trace-proof __rb_insert --trace-to 1142 examples/rbtree-insert/rbtree_insert.frontier
 ```
 
-Line 1142 is a `fold` inside a finished proof `match` arm of the `preserve`
+(That frontier was finished and renamed `rbtree_insert.click` in rbtree
+chunk 7; the multi-exit mdtest above still reproduces the bug.) Line 1142 is
+a `fold` inside a finished proof `match` arm of the `preserve`
 body; lines 1244 and 520 (a tactic before the loop) print no trace either.
 For contrast, a proof that fails on an ordinary tactic inside `preserve`
 prints the section

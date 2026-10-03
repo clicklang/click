@@ -733,6 +733,16 @@ pub fn read_click_project(sidecar: &Path, click_source: &str) -> Result<ClickPro
     read_click_project_at_root(sidecar, click_source, root)
 }
 
+/// Loads a lone sidecar under the project root `click verify` selects for it
+/// ([`lone_sidecar_project_root`]), so an entry that imports a sibling
+/// project's model loads the same way in every command.
+pub fn read_lone_sidecar_project(
+    sidecar: &Path,
+    click_source: &str,
+) -> Result<ClickProject, String> {
+    read_click_project_at_root(sidecar, click_source, &lone_sidecar_project_root(sidecar)?)
+}
+
 /// Loads an entry sidecar and its transitive local Click imports within an
 /// explicit project root.
 ///

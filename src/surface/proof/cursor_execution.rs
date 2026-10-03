@@ -2125,7 +2125,7 @@ fn execute_step_from_frontier_position_selecting_path(
             _ => None,
         };
         match called {
-            Some((name, arity)) if name == transport.function.as_ref() => {
+            Some((name, arity)) if transport.names_call_to(name) => {
                 if arity != transport.arity {
                     return Err(ClickError::new(format!(
                         "`{name}` is called with {arity} argument(s) here, but the step writes {}",

@@ -1,67 +1,54 @@
-# Linux rbtree insertion frontier
+# Linux rbtree insertion
 
 This project uses the shared model from `../rbtree-model/rbtree_model.click`.
 The Linux-derived C in `rbtree.h` and `rb_insert_color.c` is unchanged from the
-former `mdtests/rb_insert_color.md` fixture.
+former `mdtests/rb_insert_color.md` fixture; `tests/examples.rs` pins both
+files by SHA-256.
 
-`rbtree_insert.click` is the green project entry: it checks that the shared
-model and unchanged C load together, but intentionally selects no insert
-proof. `rbtree_insert.frontier` contains the full insert contract and current
-proof attempt. The examples integration test selects that frontier separately
-and requires its bounded diagnostic to remain the loop rule's refusal to join
-the loop's exits: every path of the loop body is written (3 early `break`s,
-96 rotation `break`s, and 4 `continue`s), and the exits hold the same binders
-and bytes in different representations, which the exit join compares
-structurally. A passing import-only
-entry therefore does not represent the insert proof as complete.
+`rbtree_insert.click` proves the Linux insert fixup, `__rb_insert`, end to end.
+It takes the context and the red subtree at the inserted node
+(`ctx_at(node, root)` and `rb_at(node)`, with the frame-level red-black,
+order, and parent-link facts the case theorems use) and produces the fixed-up
+tree as `rb_tree_at(root)`: a context and a subtree at some focus node, whose
+`focus_tree` is red-black with a black root, has the entry's in-order
+sequence, and has consistent parent links.
 
-The proof so far covers `initialize`, the root-blackening and black-parent
-`break`s, and the uncle-red `continue` on all four frame combinations: each
-recolours the uncle, the parent, and the grandparent, refolds the three nodes
-at their new models, and closes the loop's nine invariants and the two-frame
-structural descent through `ctx_insert_case1_left_step` or
-`ctx_insert_case1_right_step` from the shared model.
+The tree is produced at a focus rather than at `root->rb_node` because the
+fixup stops wherever its rotation or recolouring finishes, with an arbitrary
+number of context frames above that point. Folding them back into one subtree
+at the root would take one `fold` per frame, which a finite proof cannot
+write, and the C has no loop that climbs back up. The packaging owns the same
+cells, including `root->rb_node` in the `Top` frame, and states the same whole
+tree through `plug`.
 
-Case 3 on the left-left frames with a black uncle is complete on all sixteen
-leaves, eight under a node uncle and eight under an empty one, which is
-refolded as `RbTree::Empty` and otherwise reads the same: the proof splits on
-the parent's other child (empty or a node,
-since `if (tmp)` writes its parent word) and on the grandparent's own frame
-(`Top`, `Left`, or `Right`, since `__rb_change_child` writes that frame's child
-cell), steps through the rotation and the inline `__rb_rotate_set_parents`,
-refolds the grandparent and the new frame at the rotated parent, and states
-the three whole-tree facts the post-loop proof will read at the `break`
-through `ctx_insert_case3_left_step`. Under a `Right` grandparent frame whose
-other child is a node, that child is unfolded before the step, so that
-`parent->rb_left == old` is decided, and refolded at its arm identity after
-it. The right-right frames are the mirror image, sixteen leaves through
-`ctx_insert_case3_right_step`.
+The proof covers `initialize`, the root-blackening and black-parent `break`s,
+the uncle-red `continue` on all four frame combinations, and all 96 rotation
+`break`s: case 3 on the outer frames and case 2 then case 3 on the inner
+ones, split on the uncle, the rotated nodes' children, and the
+great-grandparent's frame. Every `break` states the three whole-tree facts
+about `plug(c.model, t.model)`, so they survive the loop's exit join, and the
+post-loop proof folds the two binders into `rb_tree_at(root)`.
 
-The cursor-`Right`, grandparent-`Left` frames rotate at the parent first
-(case 2) and then at the grandparent, on 32 leaves: the uncle, each of the
-cursor's two children (each `if (tmp)` writes one's parent word), and the
-great-grandparent's frame. The old parent and the grandparent are refolded as
-the cursor's two red children, the cursor as the new black subtree root, and
-the great-grandparent's frame at `node` as the loop's context;
-`ctx_insert_case2_left_exit_step` states the whole-tree facts on that shape.
-The mirrored cursor-`Left`, grandparent-`Right` frames are the same 32 leaves
-through `ctx_insert_case2_right_exit_step`. The loop rule's exit join, the
-post-loop proof, and `rb_insert_color` remain.
+`rb_insert_color` itself has no proof here. It calls `__rb_insert`, a
+`static __always_inline` helper, and Click executes an inline helper's body at
+each call site instead of applying its contract, so a proof of
+`rb_insert_color` would have to execute the fixup loop again without its
+invariants. See `bugs/inline-helper-symbolic-loop-call-runs-away.md`.
 
-Run the normal full rbtree scope with:
+`tests/examples.rs` also checks that the proof refuses a copy of the C whose
+root case skips `rb_set_parent_color(node, NULL, RB_BLACK)`.
+
+Run it with:
 
 ```sh
 click verify examples/rbtree-model
 click verify examples/rbtree-insert
 ```
 
-Inspect the unfinished proof directly with:
+The sidecar imports the model from the sibling project, so its project root is
+`examples`, the nearest directory holding both. `--trace-to` reaches the
+tactics inside the fixup's proof `match` arms and its `preserve` body:
 
 ```sh
-click verify examples/rbtree-insert/rbtree_insert.frontier
-click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree-insert/rbtree_insert.frontier
+click verify --trace-proof __rb_insert --trace-to LINE examples/rbtree-insert/rbtree_insert.click
 ```
-
-The frontier imports the model from the sibling project, so its project root
-is `examples`, the nearest directory holding both; `--trace-to` reaches the
-tactics inside the fixup's proof `match` arms and its `preserve` body.

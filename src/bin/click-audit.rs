@@ -11,7 +11,8 @@ use std::time::{Duration, Instant};
 use click::cli::{
     self, CInput, MdTestExpectation, TargetSelection, containing_directory, find_mdtests,
     format_duration, looks_like_mdtest, parse_duration, prepare_mdtest_inputs, read_c_inputs,
-    read_click_project, read_mdtest_project_if_needed, select_targets, shell_quote, source_refs,
+    read_lone_sidecar_project, read_mdtest_project_if_needed, select_targets, shell_quote,
+    source_refs,
 };
 use click::surface::{
     C0VerificationSession, ClickProject, SourcePosition, c0_incremental_selection,
@@ -958,7 +959,7 @@ fn load_audit_source_from_text(
         });
     }
     let inputs = read_c_inputs(path, &container_source)?;
-    let project = read_click_project(path, &container_source)?;
+    let project = read_lone_sidecar_project(path, &container_source)?;
     let c_sources = match &inputs {
         CInput::Bundle(sources) => sources.clone(),
         CInput::Prepared(_) | CInput::PreparedProgram(_) => Vec::new(),
